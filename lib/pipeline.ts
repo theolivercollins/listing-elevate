@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { ingestDriveFolder } from "./drive-ingest.js";
 import {
   getSupabase,
   getPhotosForProperty,
@@ -56,9 +57,17 @@ export async function runPipeline(propertyId: string): Promise<void> {
   try {
     await log(propertyId, "intake", "info", "Pipeline started");
 
-    // Stage 1: Intake (photos already uploaded by the API route)
-    // Just verify photos exist
-    const photos = await getPhotosForProperty(propertyId);
+    // Stage 1: Intake — if photos haven't been uploaded yet and the
+    // property was submitted with a Drive link, pull them now.
+    let photos = await getPhotosForProperty(propertyId);
+    if (photos.length === 0) {
+      const property = await getProperty(propertyId);
+      if (property?.drive_link) {
+        await updatePropertyStatus(propertyId, "ingesting");
+        await ingestDriveFolder(propertyId, property.drive_link);
+        photos = await getPhotosForProperty(propertyId);
+      }
+    }
     if (photos.length < 5) {
       await updatePropertyStatus(propertyId, "failed");
       await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`);

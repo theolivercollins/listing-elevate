@@ -1,5 +1,6 @@
 export type PropertyStatus =
   | "queued"
+  | "ingesting"
   | "analyzing"
   | "scripting"
   | "generating"
@@ -79,6 +80,7 @@ export interface Property {
   vertical_video_url: string | null;
   thumbnail_url: string | null;
   submitted_by: string | null;
+  drive_link: string | null;
 }
 
 export interface Photo {
