@@ -46,6 +46,10 @@ import { sanitizeDirectorPrompt } from "../lib/sanitize-prompt.js";
 
 const CONFIG_PATH = "scripts/router-grid-config.json";
 const TEST_RENDER_LOG = "docs/audits/test-render-log-2026-04-21.md";
+// Listing created_by — matches the auth.users row every existing
+// prompt_lab_listings row was created with. Hard-coded because the
+// script owns the listing it creates and runs in Oliver's context only.
+const OLIVER_USER_ID = "29a51ea1-0339-47e3-9666-dd8985c00b0d";
 
 const CAMERA_STABILITY_PREFIX =
   "LOCKED-OFF CAMERA on a gimbal-stabilized Steadicam rig. Smooth motorized dolly motion only. Zero camera shake, zero handheld jitter, tripod-stable framing. ";
@@ -164,6 +168,7 @@ async function findOrCreateListing(
     .from("prompt_lab_listings")
     .insert({
       name: config.listing_name,
+      created_by: OLIVER_USER_ID,
       notes: config.listing_notes,
       model_name: "kling-v2-6-pro",
       status: "ready_to_render",
