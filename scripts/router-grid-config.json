@@ -1,6 +1,6 @@
 {
   "listing_name": "Router Grid 2026-04-21 — 5 Quota Buckets",
-  "listing_notes": "Phase B targeted rating grid. One scene per quota-high bucket; hand-written director prompt; ≤5 SKU candidates per bucket. Re-run scripts/build-router-table.ts after rating to emit a winning router-table. Seeded by scripts/seed-router-grid.ts.",
+  "listing_notes": "Phase B targeted rating grid. One scene per quota-high bucket; hand-written director prompt; ≤5 SKU candidates per bucket. Re-run scripts/build-router-table.ts after rating to emit a winning router-table. Seeded by scripts/seed-router-grid.ts. v2 — stripped start+end-frame models (kling-v3-pro, kling-v2-1-pair) from every single-image bucket per Oliver 2026-04-21 direction; v3-pro's shake profile is optimized for paired renders, not single-image.",
   "buckets": [
     {
       "id": "kitchen_push_in",
@@ -10,7 +10,7 @@
       "source_photo_id": "08264059-49bd-4720-b092-8cff87f7ec20",
       "source_table": "prompt_lab_listing_photos",
       "rationale": "Almadyde Ct kitchen, aesthetic 7.5, suggested_motion matches (push_in). Oliver has rated this listing's scenes before.",
-      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v3-pro", "kling-o3-pro"]
+      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-o3-pro"]
     },
     {
       "id": "living_room_push_in",
@@ -20,7 +20,7 @@
       "source_photo_id": "ee07f1ea-6228-49cc-93ff-246c7b27e29f",
       "source_table": "prompt_lab_listing_photos",
       "rationale": "Macedonia Drive living room, aesthetic 9. Hero shot; premium SKU tested here.",
-      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v3-pro", "kling-v2-master"]
+      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v2-master"]
     },
     {
       "id": "master_bedroom_push_in",
@@ -30,7 +30,7 @@
       "source_photo_id": "dbf79916-d481-4d5c-b94f-f19ef7499a19",
       "source_table": "photos",
       "rationale": "Prod property 6f508e16 master bedroom, aesthetic 8, suggested_motion push_in ✓. No master_bedroom photos in Lab corpus — importing the prod photo Oliver has already rated via scene_ratings.",
-      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v3-pro", "kling-v2-master"]
+      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v2-master"]
     },
     {
       "id": "exterior_front_push_in",
@@ -40,7 +40,7 @@
       "source_photo_id": "0e89700c-6c3f-4705-9ccd-82c0ba3ba97e",
       "source_table": "prompt_lab_listing_photos",
       "rationale": "Macedonia Drive exterior_front, aesthetic 8.5, suggested_motion push_in ✓. Hero shot; premium + o3 baseline both tested.",
-      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v3-pro", "kling-v2-master", "kling-o3-pro"]
+      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v2-master", "kling-o3-pro"]
     },
     {
       "id": "aerial_drone_push_in",
@@ -49,8 +49,8 @@
       "director_prompt": "Aerial drone push forward over the driveway, descending gently toward the roofline, revealing the property layout.",
       "source_photo_id": "a3a877c9-8709-4f4c-ad5f-7b451f3eb405",
       "source_table": "prompt_lab_listing_photos",
-      "rationale": "Macedonia Drive aerial, aesthetic 9, suggested_motion drone_push_in ✓. Includes runway (drone specialist per router.ts) + Phase 2.8 closest-to-winner kling-v3-pro.",
-      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-v3-pro", "kling-o3-pro", "runway"]
+      "rationale": "Macedonia Drive aerial, aesthetic 9, suggested_motion drone_push_in ✓. Includes runway (drone specialist per router.ts).",
+      "skus": ["kling-v2-native", "kling-v2-6-pro", "kling-o3-pro", "runway"]
     }
   ],
   "sku_cost_estimates_cents": {
