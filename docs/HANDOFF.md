@@ -12,7 +12,7 @@ See also:
 
 ## Right now
 
-**Phase M.2 shipped. DA.1 Gemini-eyes merged to main (2026-04-21).** Director now receives `motion_headroom` booleans from Gemini 3 Flash per photo and hard-bans geometrically impossible camera moves. Window D Round 1 audit (2026-04-21) confirmed **Phase B cannot be auto-derived from existing signal** — only 32% of 170 rated iterations are SKU-granular (Phase 2.8 Lab only), and no (room × movement) bucket has ≥3 iterations on a single SKU. See `docs/audits/router-coverage-2026-04-21.md`. Current next action: **Phase B — targeted rating session** on the quota-high buckets (kitchen, living_room, master_bedroom, exterior_front, aerial) using the script's coverage output to scope the grid minimally. `lib/providers/router.ts` stays on intuition-based routing until real signal lands.
+**Phase M.2 shipped. DA.1 Gemini-eyes on main. Window D Round 2 targeted-grid seeded (partial — Atlas wallet exhausted mid-run).** Router-grid listing `1746b7de-ac3f-45e0-baae-db5b168c4cb9` has 22 iterations: 12 submitted + rendering (kitchen + living_room complete 4-SKU grids; master_bedroom/exterior_front/aerial only 1-2 SKUs each) and 10 failed on Atlas 402 "insufficient balance". **Blocker write-up at `docs/sessions/2026-04-21-window-D-blocker.md`**. Current next action for Oliver: (a) top up Atlas wallet, then re-run `npx tsx scripts/seed-router-grid.ts --write` from `.worktrees/wt-router` (idempotent — only retries the 10 failed), **and in parallel** (b) start rating the 12 already-rendered iterations via the prep doc at `docs/briefs/2026-04-21-rating-session-prep.md`. Once all ~22 ratings land, re-run `scripts/build-router-table.ts` to emit the real router table. `lib/providers/router.ts` stays on intuition-based routing until that emerges.
 
 ## Plan state
 
@@ -27,12 +27,13 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 | CI — Cost integrity | shipped (CI.1–CI.5) | Model-aware Claude pricing, OpenAI embedding tracking, Shotstack per-minute, failed-render policy, dashboard drill-down |
 | C — Production end-to-end | shipped | Router `ProviderDecision`, base64 → URL, duration-aware director, lazy failover Kling → Atlas |
 | M.2 — ML consolidation | ✅ shipped | SKU capture, dead code removal, prod embedding backfill |
-| B — Model head-to-head | audit complete (2026-04-21); blocked on targeted rating session | Per Window D audit: existing 170 ratings insufficient (32 buckets, 0 winners, 32% SKU-granular). Narrowed plan: targeted grid on 5 quota-high buckets — seed + render + rate, then re-run `scripts/build-router-table.ts` to emit a real table |
+| B — Model head-to-head | audit complete (2026-04-21); **grid partially seeded**, Atlas wallet blocker | Per Window D audit: existing 170 ratings insufficient (32 buckets, 0 winners, 32% SKU-granular). Window D Round 2 seeded Router-Grid listing with 5 scenes + 22 planned iterations; 12 rendering, 10 failed on Atlas 402. Atlas top-up unblocks retry; 12 iterations rateable now |
 
 ## Recent shipping log
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-04-21 — Window D Round 2: `scripts/seed-router-grid.ts` + router-grid config + listing `1746b7de-ac3f-45e0-baae-db5b168c4cb9` seeded with 22 iterations across 5 quota-high buckets. 12 rendering (kitchen + living_room full 4-SKU grids), 10 failed on Atlas 402 (wallet top-up required to retry). Actual iteration spend ~$3.85 of $40 cap. Rating-prep doc at `docs/briefs/2026-04-21-rating-session-prep.md`.
 - 2026-04-21 — `1653606` — Window C Rating Ledger UI: `/dashboard/rating-ledger` + `/api/admin/rating-ledger` (unified legacy Lab + Listings Lab + prod scene_ratings, with retrieval-status chip)
 - 2026-04-21 — `6c7cc6d` — DA.1 smoke tests + cost-reconcile note + STACK update (Window B, 5/5)
 - 2026-04-21 — `47010d4` — DA.1 Gemini-first prod + Lab analysis + DA.3 motion_headroom validator (Window B, 4/5)
