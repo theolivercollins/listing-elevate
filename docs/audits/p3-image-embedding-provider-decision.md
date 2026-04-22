@@ -1,8 +1,9 @@
 # P3 — Image-Embedding Provider Preflight Decision
 
-Last updated: 2026-04-22
+Last updated: 2026-04-22 (open questions resolved by Oliver same day)
 Author: Window C (Opus, 2026-04-22)
 Purpose: Pre-cook the provider decision for P3 Session 1 (2026-04-25) so that session is pure implementation.
+Status: **Final.** All 5 open questions resolved (see §8). Ready for P3 Session 1 execution.
 
 See also:
 - [../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md](../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md) — P3 program spec
@@ -36,7 +37,7 @@ Sources (accessed 2026-04-22):
 - Replicate hardware pricing (T4 $0.000225/sec): [replicate.com/pricing](https://replicate.com/pricing)
 - Replicate CLIP features (ViT-L/14, T4, ~1s run, ~$0.00022/prediction): [replicate.com/andreasjansson/clip-features](https://replicate.com/andreasjansson/clip-features)
 
-<!-- Q5 — Vertex per-image price is the commonly-cited $0.0001 figure but was not surfaced on the consolidated 2026 pricing page when fetched. If Oliver or implementation session confirms a different number, update cost model below. -->
+Note: Vertex per-image price ($0.0001) is the commonly-cited figure but was not surfaced on the consolidated 2026 Google Cloud pricing page when fetched. Resolved as moot per §8 Q5 — we're not picking Vertex.
 
 ---
 
@@ -141,8 +142,8 @@ export interface ImageEmbeddingResult {
 }
 
 export async function embedImage(imageUrl: string, opts?: {
-  scope: string;            // e.g. 'lab_listing_session_embed' | 'prod_scene_embed' | 'backfill'
-  sourceId?: string;        // photo_id or prompt_lab_sessions.id
+  surface?: "lab" | "prod" | "backfill"; // maps to metadata.surface
+  photoId?: string;                      // maps to metadata.photo_id
 }): Promise<ImageEmbeddingResult> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
@@ -161,12 +162,19 @@ export async function embedImage(imageUrl: string, opts?: {
   if (!vector) throw new Error("Gemini returned no embedding vector");
 
   // Cost event fires here, always — even on a retry path, once per successful call.
+  // Uses the existing stage='analysis' enum (no migration) with metadata.subtype
+  // for per-feature breakdowns — same pattern as DA.1 photo-eyes and P1 Lab renders.
   await recordCostEvent({
-    scope: opts?.scope ?? "image_embed",
+    stage: "analysis",
     provider: "google",
     model: MODEL,
     cost_cents: COST_CENTS_PER_IMAGE,
-    meta: { dim: OUTPUT_DIM, source_id: opts?.sourceId ?? null },
+    metadata: {
+      subtype: "image_embedding",
+      surface: opts?.surface ?? "lab",  // 'lab' | 'prod' | 'backfill'
+      photo_id: opts?.photoId ?? null,
+      dim: OUTPUT_DIM,
+    },
   });
 
   return { vector, model: MODEL, dim: OUTPUT_DIM, usage: { costCents: COST_CENTS_PER_IMAGE } };
@@ -186,13 +194,17 @@ Key shape properties:
 
 ## 6. Migration number reservation
 
-**Migration 034 is free and reserved for P3 Session 1.** Confirmed against `supabase/migrations/`:
+**Migration 034 is free and reserved for P3 Session 1.** Confirmed against `supabase/migrations/` and cross-confirmed against parallel worker branches (Window D on P5 confirmed 038 free; 034/035/038 all clean):
 
 - 030 — `photo_camera_state` (DA.1, applied 2026-04-21)
-- 031 — `prompt_lab_iterations_sku` (P1, in progress on main today 2026-04-22)
-- 032 — reserved by P2 Session 1 for `prompt_lab_iterations_judge` (2026-04-23, not yet written)
-- 033 — reserved by P2 Session 2 for `judge_calibration_examples` (2026-04-24, not yet written)
+- 031 — `prompt_lab_iterations_sku` (P1, shipping on main today 2026-04-22)
+- 032 — reserved by P2 Session 1 for `prompt_lab_iterations_judge` (2026-04-23)
+- 033 — reserved by P2 Session 2 for `judge_calibration_examples` (2026-04-24)
 - **034 — reserved for P3 Session 1: `photos.image_embedding vector(768)` + `prompt_lab_sessions.image_embedding vector(768)` + HNSW indexes on both**
+- 035 — reserved by P3 Session 2 for `iterations_tsvector` (hybrid retrieval)
+- 036 — reserved by P4 Session 1 for `prompt_lab_session_analysis`
+- 037 — reserved by P4 Session 1 for `unified_rated_pool_view`
+- 038 — reserved by P5 Session 1 for `router_bucket_stats` (Thompson bandit)
 
 Dimension (`vector(768)`) is baked into the migration and must match `OUTPUT_DIM` in `lib/embeddings-image.ts`. Change one, change the other — enforce via a review-time check in P3 Session 1 implementation plan.
 
@@ -236,30 +248,59 @@ The methodology deliberately does NOT pretend to have enough data for a statisti
 
 ---
 
-## 8. Open questions for Oliver
+## 8. Open questions — resolved by Oliver (2026-04-22)
 
-<!-- Q1 -->
-**Q1 — Confirm dim=768 is acceptable.** The chosen provider (Gemini) is flexible 128–3072. I'm recommending 768 because it (a) matches CLIP-L if we ever fall back, (b) is small enough for fast HNSW, (c) is rich enough to capture visual signal. Alternatives: 512 (Vertex-compatible for easier swap) or 1536 (matches OpenAI text embedding dim; slightly oversized for images). Decision locks in migration 034.
+All five resolved the same day the audit was written. Decisions recorded inline below; P3 Session 1 executes against these.
 
-<!-- Q2 -->
-**Q2 — Free-tier vs paid-tier for Gemini embeddings.** Gemini pricing page shows free tier at $0 for embeddings. If `GEMINI_API_KEY` is on a paid project (because `gemini-analyzer.ts` is already using it in prod), confirm that the embeddings model specifically is billed at the paid tier — some projects have independent tier-per-model.
+### Q1 — Dim lock-in: **768 confirmed**
 
-<!-- Q3 -->
-**Q3 — Cost-event scope naming.** The sketch uses `scope='image_embed'` for the generic case and `scope='backfill'` for the one-shot. Prefer that, or match the existing pattern of per-surface scopes (e.g. `lab_listing_session_embed`, `prod_scene_embed`)? Affects dashboard grouping.
+Text and image live in separate columns; fusion happens at score level (weighted hybrid), not via embedding concatenation, so matching OpenAI's 1536 buys nothing. 512 was only relevant if we had picked CLIP on Replicate. 768 is the correct middle ground: ~half the storage of 1536, HNSW index stays fast at scale, and signal-loss vs Gemini's native 3072 is empirically minor for visual-similarity tasks. **Migration 034 uses `vector(768)`. No further debate.**
 
-<!-- Q4 -->
-**Q4 — Provider-abstraction form factor.** Current sketch is a single file with a provider-specific body. Alternative: interface-first (`ImageEmbeddingProvider` with `GeminiImageEmbedder`, `VertexImageEmbedder`, `ReplicateCLIPEmbedder` implementations) matching `lib/providers/provider.interface.ts` pattern. More code, cleaner swap. Recommend deferring the interface until a second provider is actually needed; P3 Session 1 writes the single-provider version.
+### Q2 — Gemini billing tier for embeddings: **defer to P3 Session 1 preflight**
 
-<!-- Q5 -->
-**Q5 — Vertex pricing validation.** The commonly-cited $0.0001/image figure for `multimodalembedding@001` was not surfaced on the consolidated pricing page when this audit was written. If the decision flips to Vertex later (cost pressure unlikely given how small totals are), confirm the per-image rate at Session 1 preflight before committing a GCP service-account setup.
+Not a doc-time blocker. First Gemini embedding call at P3 Session 1 kickoff will either succeed (billing OK) or 403 with a clear error. Backfill budget is $3; even a 2× surprise is absorbed. Existing `GEMINI_API_KEY` is known to work for vision analysis via `lib/providers/gemini-analyzer.ts` (DA.1 ship). The embeddings endpoint may or may not be on the same billing SKU — verify at first call, not at doc time.
+
+### Q3 — `cost_event` shape: **match existing pattern, no schema change**
+
+Do NOT introduce a new `scope` column or a new `stage` enum value. Use the existing pattern already codified for photo analysis:
+
+```
+stage       = 'analysis'                      // existing enum value; extending would need a migration we don't need
+provider    = 'google'
+model       = 'gemini-embedding-2'
+metadata.subtype = 'image_embedding'
+metadata.surface = 'lab' | 'prod' | 'backfill'
+metadata.photo_id = <uuid>
+metadata.dim = 768
+```
+
+Dashboard queries filter on `metadata.subtype` for per-feature spend breakdowns. Same approach as P1 Task 10 (Lab render cost_events use `metadata.surface='lab'`, no new schema). §5 integration sketch now reflects this shape.
+
+### Q4 — Provider abstraction form factor: **single-file, defer interface (YAGNI)**
+
+Single-file `lib/embeddings-image.ts` wrapping Gemini directly. Refactor into a proper `ImageEmbeddingProvider` interface (matching `lib/providers/provider.interface.ts`) only when a second provider actually exists. P3 Session 1 writes the single-provider version. No multi-implementation scaffolding today.
+
+### Q5 — Vertex pricing uncertainty: **moot (we're on Gemini)**
+
+See §9 "Historical alternatives" below for the 1-line note. Not a blocker.
+
+---
+
+## 9. Historical alternatives (one-line notes)
+
+For future reference if provider ever flips:
+
+- **Vertex `multimodalembedding@001`:** commonly-cited $0.0001/image was not surfaced on the consolidated Google Cloud 2026 pricing page during this audit; validate before committing a GCP service-account setup if plan ever flips. Per-region RPM 120–600, native dims 128/256/512/1408.
+- **Replicate CLIP ViT-L/14 (`andreasjansson/clip-features`):** fixed 768-dim, ~$0.00022/prediction on T4, ~1s warm / 3–10s cold-start. Most-stable pinned checkpoint of the three; least convenient (new SDK + API token + cold-start risk).
 
 ---
 
 ## Summary for coordinator
 
-- **Recommendation:** Gemini `gemini-embedding-2` via `@google/genai`, `outputDimensionality: 768`.
+- **Recommendation:** Gemini `gemini-embedding-2` via `@google/genai`, `outputDimensionality: 768`. All 5 open questions resolved by Oliver 2026-04-22.
 - **Rationale:** Zero new SDKs, zero new env vars, cost parity with Vertex, clean integration pattern already proven by `gemini-analyzer.ts`.
-- **Migration 034 reservation:** `photos.image_embedding vector(768)` + `prompt_lab_sessions.image_embedding vector(768)` + HNSW cosine indexes.
+- **Migration 034 reservation:** `photos.image_embedding vector(768)` + `prompt_lab_sessions.image_embedding vector(768)` + HNSW cosine indexes. 035 / 036 / 037 / 038 also reserved across P3 Session 2 / P4 / P5.
+- **`cost_event` shape:** `stage='analysis'`, `provider='google'`, `metadata.subtype='image_embedding'`, `metadata.surface`, `metadata.photo_id`, `metadata.dim`. No schema change.
+- **Abstraction:** single-file `lib/embeddings-image.ts`. No interface scaffolding until a second provider exists.
 - **Fusion weights:** spec-default `w_text=0.4, w_image=0.6` as starting point; validated via 10-query test in Session 1, committed to `docs/audits/retrieval-fusion-2026-04-25.md`.
-- **Open questions pending Oliver:** Q1 (dim=768 lock-in), Q2 (billing tier sanity check), Q3 (cost-event scope naming), Q4 (interface-first vs single-file), Q5 (Vertex pricing validation if plan changes).
 - **Must NOT do in P3 Session 1 preflight (30-min callout in spec):** call the actual endpoint. That's Session 1's implementation job. This audit is docs-only.
