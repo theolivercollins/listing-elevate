@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fetchRatingLedger, type LedgerRow, type LedgerSurface } from "@/lib/ratingLedgerApi";
+import { BucketProgressStrip, type BucketClickPayload } from "@/components/ledger/BucketProgressStrip";
 
 type SurfaceFilter = LedgerSurface | "all";
 type CommentFilter = "any" | "with" | "without";
@@ -38,6 +39,7 @@ export default function RatingLedger() {
   const [minRating, setMinRating] = useState<MinRatingFilter>("any");
   const [comment, setComment] = useState<CommentFilter>("any");
   const [offset, setOffset] = useState(0);
+  const [activeBucket, setActiveBucket] = useState<BucketClickPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +53,8 @@ export default function RatingLedger() {
           sku: sku === "all" ? null : sku,
           minRating: minRating === "any" ? null : Number(minRating),
           hasComment: comment === "any" ? null : comment === "with",
+          roomType: activeBucket?.room_type ?? null,
+          cameraMovement: activeBucket?.camera_movement ?? null,
         });
         if (cancelled) return;
         setRows(data.rows);
@@ -68,12 +72,12 @@ export default function RatingLedger() {
     return () => {
       cancelled = true;
     };
-  }, [surface, sku, minRating, comment, offset]);
+  }, [surface, sku, minRating, comment, offset, activeBucket]);
 
   // Reset offset whenever a filter other than the page cursor changes.
   useEffect(() => {
     setOffset(0);
-  }, [surface, sku, minRating, comment]);
+  }, [surface, sku, minRating, comment, activeBucket]);
 
   const skuOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -96,6 +100,12 @@ export default function RatingLedger() {
           legacy Prompt Lab, Phase 2.8 Listings Lab, and production scene_ratings.
         </p>
       </div>
+
+      {/* Bucket progress strip (Phase B scoreboard, auto-refreshing 30s) */}
+      <BucketProgressStrip
+        activeBucketId={activeBucket?.bucket_id ?? null}
+        onBucketClick={setActiveBucket}
+      />
 
       {/* Summary strip */}
       <div className="grid gap-3 sm:grid-cols-3">
@@ -152,6 +162,16 @@ export default function RatingLedger() {
             <SelectItem value="without">No comment</SelectItem>
           </SelectContent>
         </Select>
+        {activeBucket && (
+          <button
+            type="button"
+            onClick={() => setActiveBucket(null)}
+            className="inline-flex items-center gap-1.5 border border-foreground/40 bg-foreground/5 px-2 py-1 text-[10px] uppercase tracking-[0.18em] text-foreground transition hover:border-foreground"
+          >
+            {activeBucket.room_type} × {activeBucket.camera_movement}
+            <span aria-hidden>✕</span>
+          </button>
+        )}
         <div className="ml-auto text-xs text-muted-foreground">
           {loading ? "Loading…" : `${total} row${total === 1 ? "" : "s"}`}
         </div>
@@ -274,6 +294,11 @@ function LedgerRowView({ row }: { row: LedgerRow }) {
       </div>
       <div className="min-w-0 text-xs">
         <div className="truncate font-medium">{row.listing_name ?? "—"}</div>
+        {(row.room_type || row.camera_movement) && (
+          <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+            {row.room_type ?? "?"} × {row.camera_movement ?? "?"}
+          </div>
+        )}
         {row.scene_id && (
           <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
             scene {row.scene_id.slice(0, 8)}

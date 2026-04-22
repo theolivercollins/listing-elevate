@@ -15,6 +15,8 @@ export interface LedgerRow {
   listing_name: string | null;
   scene_id: string | null;
   iteration_id: string;
+  room_type: string | null;
+  camera_movement: string | null;
   has_embedding: boolean;
   has_model_used: boolean;
   recipe_id: string | null;
@@ -33,6 +35,8 @@ export interface LedgerParams {
   sku?: string | null;
   minRating?: number | null;
   hasComment?: boolean | null;
+  roomType?: string | null;
+  cameraMovement?: string | null;
 }
 
 export async function fetchRatingLedger(params: LedgerParams = {}): Promise<LedgerResponse> {
@@ -43,6 +47,8 @@ export async function fetchRatingLedger(params: LedgerParams = {}): Promise<Ledg
   if (params.sku) qs.set("sku", params.sku);
   if (params.minRating != null) qs.set("min_rating", String(params.minRating));
   if (params.hasComment != null) qs.set("has_comment", String(params.hasComment));
+  if (params.roomType) qs.set("room_type", params.roomType);
+  if (params.cameraMovement) qs.set("camera_movement", params.cameraMovement);
 
   const {
     data: { session },

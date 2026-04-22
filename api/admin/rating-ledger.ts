@@ -8,6 +8,8 @@ import { getSupabase } from "../../lib/client.js";
 //   &sku=kling-v2-6-pro                     (exact match on model_used / provider)
 //   &min_rating=4                            (1..5)
 //   &has_comment=true|false
+//   &room_type=kitchen                       (from bucket-card click-to-filter)
+//   &camera_movement=push_in                 (from bucket-card click-to-filter)
 //
 // Returns { rows: LedgerRow[], total: number, counts: { legacy_lab, listings_lab, prod } }.
 // Pulls all rated rows across the three surfaces (bounded, ~hundreds), combines in memory,
@@ -29,6 +31,8 @@ export interface LedgerRow {
   listing_name: string | null;
   scene_id: string | null;
   iteration_id: string;
+  room_type: string | null;
+  camera_movement: string | null;
   has_embedding: boolean;
   has_model_used: boolean;
   recipe_id: string | null;
@@ -73,6 +77,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const minRating = Number.isFinite(minRatingRaw) && minRatingRaw >= 1 && minRatingRaw <= 5 ? minRatingRaw : null;
   const hasCommentRaw = req.query.has_comment;
   const hasComment = hasCommentRaw === "true" ? true : hasCommentRaw === "false" ? false : null;
+  const roomTypeFilter = typeof req.query.room_type === "string" && req.query.room_type.trim()
+    ? req.query.room_type.trim()
+    : null;
+  const cameraMovementFilter = typeof req.query.camera_movement === "string" && req.query.camera_movement.trim()
+    ? req.query.camera_movement.trim()
+    : null;
 
   try {
     const [legacyRows, listingsRows, prodRows, recipeRows] = await Promise.all([
@@ -97,6 +107,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (hasComment === true) combined = combined.filter((r) => typeof r.user_comment === "string" && r.user_comment.trim().length > 0);
     if (hasComment === false) combined = combined.filter((r) => !(typeof r.user_comment === "string" && r.user_comment.trim().length > 0));
     if (skuFilter) combined = combined.filter((r) => r.sku === skuFilter);
+    if (roomTypeFilter) combined = combined.filter((r) => r.room_type === roomTypeFilter);
+    if (cameraMovementFilter) combined = combined.filter((r) => r.camera_movement === cameraMovementFilter);
 
     combined.sort((a, b) => (a.rated_at < b.rated_at ? 1 : a.rated_at > b.rated_at ? -1 : 0));
 
@@ -113,7 +125,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 async function fetchLegacyLab(supabase: ReturnType<typeof getSupabase>): Promise<LedgerRow[]> {
   const { data: iterations, error: iterErr } = await supabase
     .from("prompt_lab_iterations")
-    .select("id, session_id, rating, user_comment, tags, clip_url, provider, embedding, created_at")
+    .select(
+      "id, session_id, rating, user_comment, tags, clip_url, provider, embedding, analysis_json, director_output_json, created_at",
+    )
     .not("rating", "is", null);
   if (iterErr) throw iterErr;
 
@@ -139,6 +153,8 @@ async function fetchLegacyLab(supabase: ReturnType<typeof getSupabase>): Promise
     const provider = (i.provider as string | null) ?? null;
     const sku = providerToSku(provider);
     const listingName = session?.label ?? session?.batch_label ?? null;
+    const analysis = (i.analysis_json ?? null) as { room_type?: string | null } | null;
+    const director = (i.director_output_json ?? null) as { camera_movement?: string | null } | null;
     return {
       surface: "legacy_lab",
       rated_at: String(i.created_at),
@@ -152,6 +168,8 @@ async function fetchLegacyLab(supabase: ReturnType<typeof getSupabase>): Promise
       listing_name: listingName,
       scene_id: null,
       iteration_id: i.id as string,
+      room_type: analysis?.room_type ?? null,
+      camera_movement: director?.camera_movement ?? null,
       has_embedding: i.embedding != null,
       has_model_used: false,
       recipe_id: null,
@@ -167,17 +185,22 @@ async function fetchListingsLab(supabase: ReturnType<typeof getSupabase>): Promi
   if (iterErr) throw iterErr;
 
   const sceneIds = Array.from(new Set((iterations ?? []).map((i) => i.scene_id as string)));
-  const sceneIndex = new Map<string, { listing_id: string; photo_id: string }>();
+  const sceneIndex = new Map<
+    string,
+    { listing_id: string; photo_id: string; room_type: string | null; camera_movement: string | null }
+  >();
   if (sceneIds.length > 0) {
     const { data: scenes, error: sceneErr } = await supabase
       .from("prompt_lab_listing_scenes")
-      .select("id, listing_id, photo_id")
+      .select("id, listing_id, photo_id, room_type, camera_movement")
       .in("id", sceneIds);
     if (sceneErr) throw sceneErr;
     for (const s of scenes ?? []) {
       sceneIndex.set(s.id as string, {
         listing_id: s.listing_id as string,
         photo_id: s.photo_id as string,
+        room_type: (s.room_type as string | null) ?? null,
+        camera_movement: (s.camera_movement as string | null) ?? null,
       });
     }
   }
@@ -222,6 +245,8 @@ async function fetchListingsLab(supabase: ReturnType<typeof getSupabase>): Promi
       listing_name: listingName,
       scene_id: (i.scene_id as string | null) ?? null,
       iteration_id: i.id as string,
+      room_type: scene?.room_type ?? null,
+      camera_movement: scene?.camera_movement ?? null,
       has_embedding: i.embedding != null,
       has_model_used: modelUsed != null && modelUsed.length > 0,
       recipe_id: null,
@@ -306,6 +331,8 @@ async function fetchProd(supabase: ReturnType<typeof getSupabase>): Promise<Ledg
       listing_name: listingName,
       scene_id: (r.scene_id as string | null) ?? null,
       iteration_id: r.id as string,
+      room_type: (r.rated_room_type as string | null) ?? null,
+      camera_movement: (r.rated_camera_movement as string | null) ?? null,
       has_embedding: hasEmbedding,
       has_model_used: false,
       recipe_id: null,
