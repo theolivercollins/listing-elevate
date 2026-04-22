@@ -14,14 +14,20 @@ See also:
 
 **P1 V1 Foundation landed on main (2026-04-22).** V1 Prompt Lab is now the daily-driver iteration surface. Lab renders route through AtlasCloud with `kling-v2-6-pro` default. Every iteration captures its SKU via migration 031 (`model_used` + `sku_source`). Migration 032 widens `cost_events.provider` to include `atlas`/`google`/`higgsfield` so Lab cost tracking lands cleanly. IterationCard has per-iteration SKU selector + cost chip + "Try another SKU" shortcut. TopNav renamed "Prompt Lab (legacy)" → "Prompt Lab"; Listings Lab (V2 paired-image) hidden from nav but direct URLs preserved. Canonical V1 vs V2 reference at [`state/MODEL-VERSIONS.md`](./state/MODEL-VERSIONS.md). Program spec for the next 2 weeks (P2–P7) at [`specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md`](./specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md) — supersedes the M.1-era back-on-track plan for all V1/ML work.
 
+**2026-04-22 offline-session pre-cook (Oliver offline ~3h; coordinator advanced P2/P3/P5 skeletons on branches):**
+- `session/p5-s1-implementation-draft` (`4ceb580`) — Thompson math kernel + migration 038 + 20/20 tests passing. Fully implementable (pure TS, no API surface). P5 S1 wires `pickArm` into router.
+- `session/p2-s1-implementation-draft` (`171c260`) — Migration 033 + rubric module + validator (10/10 tests) + Gemini provider SKELETON (binding stubbed behind `JUDGE_ENABLED`). P2 S1 fills TODO block.
+- `session/p3-s1-implementation-draft` (`255d265`) — Migration 034 + image-embed wrapper SKELETON + backfill script + 7/7 tests. Gemini binding stubbed behind `ENABLE_IMAGE_EMBEDDINGS`. P3 S1 fills TODO block.
+- See [`sessions/2026-04-22-offline-work-questions.md`](./sessions/2026-04-22-offline-work-questions.md) for the full review queue.
+
 **Pre-cooked design artifacts on parked branches (ready for integration at phase-scheduled sessions):**
 - `session/p2-rubric-design` — P2 Gemini auto-judge rubric (JUDGE-RUBRIC-V1.md, 7 Qs resolved). Integrates at P2 S1 2026-04-23.
 - `session/p3-embedding-preflight` — P3 image-embedding provider decision (Gemini 768-dim, 5 Qs resolved). Integrates at P3 S1 2026-04-25.
 - `session/p5-thompson-design` — P5 Thompson router design (528-line spec, 6 Qs resolved). Integrates at P5 S1 2026-04-30.
 
-**Migrations 031 + 032 committed but NOT yet applied to the Supabase DB.** Apply before next V1 render (Task 12 smoke-render prerequisite). Once applied, first V1 render should populate `prompt_lab_iterations.model_used` + emit a `cost_events` row with `metadata.sku`.
+**Migrations 031 + 032 committed on main but NOT yet applied to the Supabase DB.** Apply before next V1 render (P1 Task 12 smoke-render prerequisite + before any user hits the Lab, else render writes fail on missing columns / provider CHECK). Question Q-A1 in the offline-questions doc.
 
-**Not pushed:** all 2026-04-22 commits are local on `main`. Push pending explicit approval.
+**Not pushed:** all 2026-04-22 commits are local. `origin/main` is 14 commits behind `main`. Push pending explicit approval (Q-A2/Q-A4).
 
 ## Plan state
 
@@ -49,6 +55,11 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-04-22 — `255d265` — **(branch `session/p3-s1-implementation-draft`)** feat(p3): image embeddings skeleton (migration 034, embedImage wrapper, backfill script, 7/7 tests). Binding stubbed behind ENABLE_IMAGE_EMBEDDINGS.
+- 2026-04-22 — `171c260` — **(branch `session/p2-s1-implementation-draft`)** feat(p2): Gemini judge skeleton (migration 033, rubric module, validator 10/10 tests, stub provider). Binding stubbed behind JUDGE_ENABLED.
+- 2026-04-22 — `4ceb580` — **(branch `session/p5-s1-implementation-draft`)** feat(p5): Thompson-sampling SKU router pure-logic module (migration 038, bandit math, 20/20 tests, refresh script). Fully implementable; wiring is P5 S1.
+- 2026-04-22 — `5eb7fd4` — feat(p1): V1 Lab SKU selector + cost chip + try-another-SKU (tasks 15-16)
+- 2026-04-22 — `133e058` — docs(state): P1 V1 Foundation closeout — HANDOFF + PROJECT-STATE
 - 2026-04-22 — `ad63c6a` — migration 032: widen cost_events.provider CHECK for atlas/google/higgsfield (unblocks P1 cost-event emission)
 - 2026-04-22 — `55491f0` — spec: V1 Prompt Lab UX plan (deferred, synthesized from Task 14 audit)
 - 2026-04-22 — `3e9bf1d` — audit: kling v2-master vs v2-6-pro verdict — Validate-day-1
