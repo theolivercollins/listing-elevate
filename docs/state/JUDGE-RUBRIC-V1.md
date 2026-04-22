@@ -1,8 +1,10 @@
 # Judge Rubric v1 — Gemini Auto-Judge for V1 Prompt Lab
 
-Status: **pre-cooked** (Window B, 2026-04-22). Awaiting P2 Session 1 implementation 2026-04-23.
+Status: **FINAL v1.0** (Window B, 2026-04-22). All 7 open questions resolved by Oliver same-day. Ready for P2 Session 1 implementation 2026-04-23.
 
 Owner: Oliver. Designer: Window B (Audit/ML, Opus). Parent spec: [`docs/specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md`](../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md) — sections "P2 — Gemini Auto-Judge" + "Risks + mitigations".
+
+Sidecar: [`judge-excluded-legacy.md`](./judge-excluded-legacy.md) — running list of legacy iterations excluded from calibration because their prompts use banned camera-movement vocabulary (per Q3 below).
 
 This document is the canonical rubric the Gemini judge consumes at every V1 render. P2 Session 1 implements `lib/providers/gemini-judge.ts` against this rubric verbatim. Once shipped, every change to the rubric **must bump `judge_version` per the versioning rules below** so historical ratings remain interpretable.
 
@@ -244,7 +246,9 @@ These are the seed few-shot examples for the very first judge calls. They are pu
 
 After P2 Session 2 ships and Oliver's corrections start landing, this pool is **superseded per-bucket** by entries from `judge_calibration_examples` (table created in P2 Session 2 migration 033). This v0 pool persists as the cold-start fallback for any (room × movement) bucket with < 3 corrected examples.
 
-**Provider/SKU note:** legacy `prompt_lab_iterations` rows store `provider` only ('kling' | 'runway' | …), not the per-SKU `model_used` that P1 is adding today. The 5★ pool below is mostly Kling v2-family (Lab Q4 2025 / Q1 2026 era). Calibration examples should be re-balanced across SKUs once V1 has emitted ≥ 30 SKU-tagged renders per bucket — see `<!-- Q4 -->` in Section 7.
+**Provider/SKU note:** legacy `prompt_lab_iterations` rows store `provider` only ('kling' | 'runway' | …), not the per-SKU `model_used` that P1 is adding today. The 5★ pool below is mostly Kling v2-family (Lab Q4 2025 / Q1 2026 era). Per the resolved Q4 (Section 7), calibration examples are re-balanced via stratified sampling across SKUs once **either** ≥ 5 V1 renders per SKU on each of the top-10 buckets land, **or** 14 days after V1 daily-driver date — whichever comes first.
+
+**Banned-enum exclusion (per Q3):** the pool-builder script reads [`docs/state/judge-excluded-legacy.md`](./judge-excluded-legacy.md) as its denylist. Any iteration whose `director_output_json.camera_movement` matches a removed enum value (currently: `drone_pull_back`, `pull_out`, `tilt_up`, `tilt_down`, `crane_up`, `crane_down`, `slow_pan`, `orbital_slow`) is excluded from calibration regardless of star rating. Example B5 below is the seed entry — it's INCLUDED in this v0 doc as the null-clip / banned-enum *teaching anchor*, but it would be filtered out of any auto-rebuilt calibration pool.
 
 ---
 
@@ -479,7 +483,7 @@ After P2 Session 2 ships and Oliver's corrections start landing, this pool is **
   "calibration_examples_used": []
 }
 ```
-**Why included:** the **null-clip / unscorable** anchor. Trains the judge (and the implementation) on the mandatory abstention pathway. Also surfaces an enum-history issue: B5's prompt uses `drone_pull_back`, a banned movement. The judge will encounter legacy clips with banned-enum prompts — see `<!-- Q3 -->`.
+**Why included:** the **null-clip / unscorable** anchor. Trains the judge (and the implementation) on the mandatory abstention pathway. Also surfaces an enum-history issue: B5's prompt uses `drone_pull_back`, a banned movement. Per the resolved Q3 (Section 7), the pool-builder filters such rows out via the [`judge-excluded-legacy.md`](./judge-excluded-legacy.md) denylist; B5 is preserved here in this v0 hand-curated pool as a teaching anchor for the abstention path.
 
 ---
 
@@ -569,6 +573,7 @@ Persisted to `prompt_lab_iterations.judge_version`. Format: `v{major}.{minor}` �
 - Changing the JSON schema in a way that breaks deserialization (renamed field, changed type).
 - Replacing the underlying judge model when the new model produces materially different ratings on the same clip (compare on a calibration set; if mean per-axis delta > 0.4, treat as major).
 - Removing or renaming a value in `hallucination_flags` enum.
+- **Q6 promotion trigger fires**: `too_fast` OR `too_slow` flags fire on > 20% of iterations across any 7-day rolling window. Promote duration-faithfulness to its own axis.
 
 **Minor bump (`v1.0 → v1.1`)** — required when:
 - Tightening or loosening anchor wording for a 1/3/5 score on an existing axis.
@@ -576,6 +581,9 @@ Persisted to `prompt_lab_iterations.judge_version`. Format: `v{major}.{minor}` �
 - Adding a cross-axis hard rule.
 - Replacing the calibration pool wholesale (v0 → v1 of the pool).
 - Updating rubric prose that the judge reads (it sees this document essentially verbatim — see below).
+- **Q2 escalation trigger fires**: `motion_faithfulness` agreement with Oliver < 70% on the v0 calibration pool. Switch judge input from 6-frame sample to full clip; bump version.
+- **Q4 v0 retirement trigger fires**: whichever comes first — (a) ≥ 5 V1 renders per SKU on each of the top-10 (room × movement) buckets (top-10 recomputed at trigger time), OR (b) 14 days after V1 daily-driver date. Regenerate calibration pool via stratified sampling across SKUs; bump version.
+- **Q7 cold-start relaxation fires**: per-axis variance > 1.5 on iterations from buckets with zero in-bucket calibration examples. Enable cross-bucket borrowing via image-embedding cosine to nearest bucket; bump version.
 
 **No bump** — when:
 - Changing the *implementation* of `gemini-judge.ts` without changing the rubric content (refactor, retry logic, cost-event metadata).
@@ -594,30 +602,37 @@ Any major version bump triggers a **re-baseline pass**: re-judge the entire cali
 
 ---
 
-## 7. Open questions for Oliver
+## 7. Resolved decisions (Oliver, 2026-04-22)
 
-These are issues the spec + DB + director.ts didn't resolve. Each is intentionally a blocker for P2 Session 1 implementation if not answered before kick-off — answers either make the rubric tighter or change a code path.
+All seven Window-B-flagged questions resolved by Oliver same-day. The original questions are preserved verbatim in italics for traceability. The decision is the line that follows. Anchor markers (`<!-- Q1 -->` …) retained so cross-references in this doc and downstream docs continue to resolve.
 
 <!-- Q1 -->
-**Q1 — Source photo input: full image or `analysis_json`?** The judge needs the source photo's geometry to score `geometry_coherence` and `room_consistency`. Two options: (a) pass the actual photo bytes (more tokens, higher cost, true visual comparison); (b) pass only the `analysis_json` text (cheap, but the judge can't see what wasn't analyzed). **Recommendation:** option (a) — the cost delta is ~1¢/call, and visual comparison is the whole point. Confirm before P2 Session 1 codes the input shape.
+**Q1 — Source photo input: full image or `analysis_json`?** *Original question: pass photo bytes (true visual comparison, ~1¢/call delta) or analysis_json text (cheaper but a degraded signal)?*
+**Decision (Oliver, 2026-04-22): pass photo BYTES.** Text is a degraded signal; bytes preserve hallucination-detection fidelity. The +1¢ per call is negligible against the cost of a missed hallucination, and cost-tracking captures it (migration 032 lands on main with `provider='google'` already allowed for the judge call). Implementation: `gemini-judge.ts` fetches the source photo bytes (via signed URL or storage SDK) and passes them inline alongside the clip. NOT the `analysis_json` text.
 
 <!-- Q2 -->
-**Q2 — Frame sampling vs. full clip?** Gemini 3 Flash accepts video input but pricing is per-frame-equivalent. A 4s clip at 24fps is 96 frames. Full-clip is most accurate but most expensive. Frame-sampling (e.g., 4 evenly spaced frames + first + last) caps cost at ~6 frames/call. **Recommendation:** frame-sample to 6 frames at start. If `motion_faithfulness` agreement with Oliver < 70% on the v0 calibration pool, increase to full clip and bump `judge_version`. Confirm.
+**Q2 — Frame sampling vs. full clip?** *Original question: sample 6 frames per clip (cheap) or full-clip (accurate)?*
+**Decision (Oliver, 2026-04-22): 6 FRAMES TO START.** Sample first frame + last frame + 4 evenly spaced intermediates. **Mandatory escalation trigger** (defined here, NOT a later judgment call): if P2 Session 2 calibration audit shows `motion_faithfulness` agreement with Oliver's ratings **< 70%** on the v0 pool, escalate to full-clip input and bump `judge_version` to v1.1. This trigger is also written into Section 6's minor-bump list.
 
 <!-- Q3 -->
-**Q3 — How does the judge handle banned-enum prompts in legacy data?** Example B5 uses `drone_pull_back` (removed 2026-04-19). The judge will be invoked on legacy 5★ Lab clips during the calibration pool seeding (and possibly during retrospective scoring). Should the judge ignore the `camera_movement` field when it's a banned value, or should the calibration script filter banned-enum rows out before they get to the judge? **Recommendation:** filter at the calibration-pool-builder level. The judge should only see clips whose prompts use the current enum. Confirm.
+**Q3 — How does the judge handle banned-enum prompts in legacy data?** *Original question: filter banned-enum rows at pool-builder level, or have the judge ignore the `camera_movement` field?*
+**Decision (Oliver, 2026-04-22): FILTER AT POOL-BUILDER LEVEL.** A judge calibrated on banned vocabulary (e.g., `drone_pull_back`, `tilt_up`, `crane_up`, `pull_out`, `slow_pan`, `orbital_slow`) will score against obsolete mental models. Excluded rows are preserved in the sidecar file [`docs/state/judge-excluded-legacy.md`](./judge-excluded-legacy.md) with iteration_id + reason so the exclusion list is auditable if judge behavior surprises us later. Example B5 (`a7249526`) is the seed entry. The pool-builder script (P2 Session 2 deliverable) reads this list as its denylist.
 
 <!-- Q4 -->
-**Q4 — When does the v0 calibration pool retire?** The pool above is heavily Kling. It's appropriate for cold-start. The threshold to swap in a SKU-balanced pool: *"≥ 30 SKU-tagged V1 renders per (room × movement) bucket"* is a guess. **Recommendation:** the threshold is whichever comes first: (a) ≥ 5 V1 renders per SKU per top-10 buckets, OR (b) 2 weeks of V1 use. Define formally before P2 Session 2 ships the calibration table. Confirm.
+**Q4 — When does the v0 calibration pool retire?** *Original question: pool is heavily Kling; when do we swap in SKU-balanced examples?*
+**Decision (Oliver, 2026-04-22): WHICHEVER COMES FIRST — (a) ≥ 5 V1 renders per SKU on each of the top-10 (room × movement) buckets, OR (b) 2 weeks of V1 use (P1 daily-driver date + 14d).** Pool retirement triggers a calibration-pool regenerate via the P2 Session 2 stratified-sampling script and a `judge_version` minor bump (v1.0 → v1.1). Top-10 buckets are recomputed at retirement time from V1 render counts (do NOT hard-code today's top-10 here; the distribution shifts as Oliver works). This rule is also written into Section 6's minor-bump list.
 
 <!-- Q5 -->
-**Q5 — Rerender provenance: should the judge see the prior iteration's rating?** Several rows in the pool (e.g., e2c35317) are explicit re-renders of an earlier iteration ("[rerender] Same prompt, trying kling (source: iteration 2)"). When the judge evaluates a re-render, should it see the prior iteration's clip + rating, or only the current clip? Risk: passing prior rating contaminates the judge with anchoring bias. Risk on the other side: ignoring prior rating throws away the most useful signal we have. **Recommendation:** do NOT pass the prior iteration's rating to the judge. The judge rates the clip on its own merits. Re-render comparisons happen downstream in retrieval/bandit, not in the rating call. Confirm.
+**Q5 — Rerender provenance: should the judge see the prior iteration's rating?** *Original question: when judging a rerender, show the judge the prior iteration's clip + rating, or only the current one?*
+**Decision (Oliver, 2026-04-22): NO. NO EXCEPTIONS.** Showing the prior rating would anchor the judge and collapse the variance P2 needs to detect iteration-over-iteration improvement. Each iteration is judged independently on its own clip, prompt, source photo, and bucket-scoped few-shot. Rerender chain comparisons happen downstream — in retrieval, in the bandit, in Oliver's "rate these first" panel — never inside the judge call.
 
 <!-- Q6 -->
-**Q6 — Where does duration-faithfulness fit?** The `duration_seconds` field in `director_output_json` is what the prompt asks for; the rendered clip may overrun or under-run. `too_fast` / `too_slow` flags partially capture this on the motion axis, but a clip that's exactly 4s with motion that completes in 1.5s and stares for 2.5s is technically "too_fast" in motion terms but not "too_fast" in duration terms. Should there be a sixth axis `duration_faithfulness`? **Recommendation:** no — keep it as a flag (`too_fast` / `too_slow`) under `motion_faithfulness`. Six axes cap is enough; adding more dilutes. Revisit in v2 if the flag-as-flag approach loses signal. Confirm.
+**Q6 — Where does duration-faithfulness fit?** *Original question: add a 6th `duration_faithfulness` axis or keep `too_fast` / `too_slow` as flags under `motion_faithfulness`?*
+**Decision (Oliver, 2026-04-22): FLAGS ONLY.** No 6th axis. **Mandatory promotion trigger** (defined here, NOT a later judgment call): if `too_fast` OR `too_slow` flags fire on **> 20% of iterations across any 7-day window** (rolling), escalate to a `judge_version` MAJOR bump that promotes duration-faithfulness to its own axis. This trigger is also written into Section 6's major-bump list. Until then, the existing flags carry the signal.
 
 <!-- Q7 -->
-**Q7 — Can the judge see `judge_calibration_examples` from OTHER buckets when the target bucket is cold?** P2 Session 2 builds the bucket-scoped few-shot mechanism. For a brand-new (room × movement) bucket with zero corrections, the judge falls back to the v0 pool above. But could it borrow corrections from a *similar* bucket (e.g., dining/push_in corrections inform kitchen/push_in)? **Recommendation:** start strict — only same-bucket corrections. If cold-start judging accuracy is poor, consider a "neighborhood" relaxation in v1.1. Confirm.
+**Q7 — Can the judge see `judge_calibration_examples` from OTHER buckets when the target bucket is cold?** *Original question: borrow few-shot from neighboring buckets, or stay strict same-bucket?*
+**Decision (Oliver, 2026-04-22): STRICT SAME-BUCKET.** Zero cross-bucket borrowing in v1.0. Cold buckets fall back to the v0 pool in Section 4. If P2 Session 2's calibration audit shows judge instability on cold buckets (defined as: per-axis variance > 1.5 on iterations from buckets with zero in-bucket calibration examples), revisit and consider borrowing from the structurally-nearest bucket via image-embedding cosine. Image embeddings are a P3 primitive anyway, so the relaxation has a natural landing point. Not today.
 
 ---
 
