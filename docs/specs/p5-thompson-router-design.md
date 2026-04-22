@@ -1,9 +1,9 @@
 # P5 — Thompson-Sampling SKU Router — Design
 
-Last updated: 2026-04-22
+Last updated: 2026-04-22 (all open questions resolved by Oliver — see §11)
 Owner: Oliver
 Designer: Window D (Opus), 2026-04-22
-Status: Design only — no code, no migrations, no router changes. Pre-cook for P5 Session 1 (scheduled 2026-04-30).
+Status: Design final. No code, no migrations, no router changes. Ready for P5 Session 1 (scheduled 2026-04-30).
 
 See also:
 - [2026-04-22-v1-primary-tool-and-ml-roadmap-design.md](./2026-04-22-v1-primary-tool-and-ml-roadmap-design.md) — parent roadmap, P5 section
@@ -88,14 +88,14 @@ Reference: Russo et al. (2018), §3.2.
 
 ### 2.4 Why Bernoulli, not multinomial over `{1,2,3,4,5}`
 
+**Success threshold locked at 4★+ (Oliver 2026-04-22).** α = count of 4★ or 5★; β = count of 1★/2★/3★. 4.5★ is not a ratable value on the integer 1–5 scale, so the binary is effectively 4★+ vs ≤3★.
+
 Considered: model the full 1–5 rating as a categorical posterior (Dirichlet-multinomial) so we can optimize `E[rating]` instead of `P(rating ≥ 4)`.
 
 Rejected for V1 because:
 - Our rating signal is roughly bimodal (good / not good); threshold at 4★ captures ~all decision-relevant variance.
 - Bernoulli math is cleaner, faster, and every Thompson tutorial ships with Beta-Bernoulli code.
 - Upgrading to multinomial is a migration-free change later: store `α`, `β` derived from ratings, and add `rating_histogram jsonb` if we want to switch models.
-
-<!-- Q1 — Oliver: confirm 4★ as the success threshold, or prefer 4.5★? -->
 
 ---
 
@@ -133,6 +133,10 @@ If the bucket is fully cold (no SKU has `n ≥ 3`), rule 3 still applies — uni
 ### 3.4 Why `n = 3` specifically
 
 `n = 3` is the minimum where a Beta-posterior's 95% credible interval width drops below ~0.6 (on `E[θ] = 0.5`). Below that, the arm's posterior is nearly the prior — Thompson samples are dominated by noise. At `n = 3` we begin to have actionable evidence.
+
+**Locked at 3 (Oliver 2026-04-22).** 4 SKUs × 3 forced samples = 12 renders per new bucket, ~$0.72 at the default SKU mix. Acceptable.
+
+**Scheduled review:** first monthly bandit audit (after P2 auto-judge pool is live) checks within-bucket variance at `n = 3`. If high variance indicates the posterior hasn't stabilized by then, raise the threshold. Flag this as a one-off scheduled review item.
 
 Changing this threshold later is a one-line constant change (no migration).
 
@@ -231,7 +235,7 @@ Re-evaluate if rating volume crosses ~500/day (post-P2 auto-judge scale).
 
 ## 6. Rating weighting — auto-judge vs. human
 
-**Decision: weighted fractional `α`/`β`. Oliver weight = 1.0; auto-judge weight scales with judge confidence; judge-overridden ratings use Oliver's corrected value at weight 1.0.**
+**Decision (Oliver 2026-04-22): humans only at P5 launch. Judge weight gated behind `JUDGE_ALPHA_WEIGHT` env var, default `0.0`. Flip to `0.5` only after the P2 calibration audit shows ≥80% human-judge agreement on a ≥50-sample holdout. Revisit the multiplier after 2 more weeks of judge-in-loop data. Env-var switch, no migration.**
 
 ### 6.1 Why weighting matters
 
@@ -240,40 +244,48 @@ P2 introduces Gemini auto-judge producing structured ratings with a `confidence`
 1. Letting auto-judge noise drown out Oliver's gold-standard signal, OR
 2. Wasting the 5× throughput multiplier auto-judge provides.
 
-Treating all ratings equally (weight = 1.0) is the first failure mode — judge drift in P2's risk section would cascade directly into the bandit. Ignoring auto-judge is the second failure mode — we forfeit P2's whole point.
+Treating all ratings equally (weight = 1.0) is the first failure mode — judge drift in P2's risk section would cascade directly into the bandit. Ignoring auto-judge forever is the second failure mode — we forfeit P2's whole point.
+
+Oliver's directive resolves this by phasing: humans-only at launch, then promote the judge to a half-vote once it's been proven against a held-out sample.
 
 ### 6.2 Weighting scheme
 
-Define per-rating `weight` as a column on the `v_unified_rated_pool_with_weights` view:
+`JUDGE_ALPHA_WEIGHT` is a single env var. Cron refresh (§5.3) multiplies every judge rating's pseudo-count contribution by this value.
 
-| Rating source | Weight | Rationale |
+| Phase | `JUDGE_ALPHA_WEIGHT` | Judge contribution |
 |---|---|---|
-| Human (Oliver) | **1.0** | Gold standard |
-| Human override of judge (Oliver corrected) | **1.0** (replaces judge row, not additive) | Same as human |
-| Judge, confidence = 5 | **0.6** | High-confidence auto-rating |
-| Judge, confidence = 4 | **0.4** | |
-| Judge, confidence = 3 | **0.25** | |
-| Judge, confidence ≤ 2 | **0.0** (stat-poison; excluded) | Low-confidence = no signal |
+| P5 launch (2026-04-30) | `0.0` | Excluded — humans only feed α/β |
+| Post-P2-audit pass (≥80% agreement on ≥50 samples) | `0.5` | One judge rating = half a human vote |
+| Two-weeks-later re-review | TBD | Adjust up/down based on judge-in-loop data |
+
+Per-rating effective `weight` on the `v_unified_rated_pool_with_weights` view:
+
+| Rating source | Effective weight |
+|---|---|
+| Human (Oliver) | **1.0** |
+| Human override of judge (Oliver corrected) | **1.0** (replaces the judge row; no double-count) |
+| Judge, confidence ≥ 3 | `JUDGE_ALPHA_WEIGHT` (0.0 at launch) |
+| Judge, confidence ≤ 2 | **0.0** (stat-poison; excluded regardless of env) |
 
 Fractional weights are valid in Beta-Bernoulli as long as the posterior remains `Beta(α + 1, β + 1)` — the math generalizes from counts to weighted pseudo-counts without loss.
 
 Reference: Kuleshov & Precup (2014), "Algorithms for multi-armed bandit problems," §3.3, notes that Bayesian bandits admit weighted observations naturally via the conjugate update.
 
-### 6.3 Why these specific weights
+### 6.3 Why this scheme
 
-- **Judge-drift mitigation (P2 risk §):** calibration examples are scoped per `(room × movement)`. Judge ratings reflect scoped calibration; they're decent but not gold. 0.4–0.6 weight respects that.
-- **0.25 floor at confidence 3:** the judge is hedging; we want *some* signal (better than pure uniform prior when `n` is low) but not enough to override a single Oliver rating.
-- **Stat-poison exclusion (confidence ≤ 2):** a judge saying "I'm not sure" is noise. Better to treat as no observation than to count it at low weight.
-- **Override replaces, not augments:** when Oliver overrides a judge, the judge's row is effectively retracted (weight 0 applied to the original judge rating) and Oliver's corrected rating lands at weight 1.0. Otherwise we'd double-count.
+- **Echo-chamber prevention (NS #2 > velocity).** Zero judge weight at launch means Thompson is calibrated on Oliver's gold-standard signal only. Judge is proven before it influences routing. 2026-04-22 Oliver directive.
+- **0.5× cap post-audit.** One judge rating = half a vote — weaker than Oliver, strong enough to matter at scale. Anything higher risks amplifying judge biases before we've seen them stabilize over time.
+- **Confidence ≥ 3 gate.** A judge saying "I'm not sure" (conf ≤ 2) is noise. Better to treat as no observation than to count it at small weight.
+- **Override replaces, not augments.** When Oliver overrides a judge, the judge's row is retracted (weight 0) and Oliver's corrected rating lands at weight 1.0. No double-count.
+- **Env-var, not migration.** Flipping `JUDGE_ALPHA_WEIGHT` in Vercel re-weights the whole posterior on the next cron tick (§5) or manual refresh. No migration, no deploy dance.
 
 ### 6.4 Failure mode: calibration collapse
 
-If auto-judge systematically over-rates (all clips → 5★, confidence 5), all arms' `α` grows uniformly, all arms' `β` stagnates, Thompson degenerates to "they're all equally great." Mitigations:
+If auto-judge systematically over-rates (all clips → 5★, conf 5), all arms' `α` grows uniformly, all arms' `β` stagnates, Thompson degenerates to "they're all equally great." Mitigations:
 
-- Monthly **judge-human agreement audit** (P7 cadence). If Pearson correlation drops below 0.5 on the overlap set, pause auto-judge contribution (`weight = 0` for judge across all confidences) until re-calibration.
-- Dashboard surfaces `judge_contribution_pct` per bucket. If >90% of a bucket's α comes from judge, flag for human sampling (feeds P6 "Rate these first" panel).
-
-<!-- Q2 — Oliver: are these weights right, or do you want judge weight = 0 at V1 (use only human ratings for bandit) until we trust the judge? Defers P5 value but eliminates drift risk. -->
+- **Kill switch:** set `JUDGE_ALPHA_WEIGHT=0` via env change. Next refresh (§5) re-weights the posterior to humans-only. Zero-downtime, zero-migration.
+- **Monthly judge-human agreement audit** (P7 cadence). If Pearson correlation drops below 0.5 on the overlap set, pull the kill switch pending re-calibration.
+- **Dashboard surfaces `judge_contribution_pct`** per bucket. If >90% of a bucket's α comes from judge, flag for human sampling (feeds P6 "Rate these first" panel).
 
 ---
 
@@ -318,15 +330,16 @@ Any of these halts the audit and prevents rollout:
 - Judge-human Pearson correlation on the 40-scene set falls below 0.4 (judge is unreliable for this audit).
 - A router bug causes ≥ 2 scenes to fail to render (implementation broken; fix before re-running).
 
-### 7.5 Proposed rollout threshold (to prod — deferred decision)
+### 7.5 Prod rollout threshold (locked 2026-04-22)
 
-Audit Session 2 stops at "Thompson enabled for V1 only." Prod rollout is a separate Oliver decision. My recommendation for the threshold:
+Audit Session 2 stops at "Thompson enabled for V1 only." Prod rollout is a separate Oliver decision. All four conditions must hold:
 
-- ≥ 2 weeks of V1-only Thompson operation with no router bugs.
-- ≥ 100 human-rated Thompson-routed iterations.
-- Thompson mean human rating ≥ static baseline by ≥ 0.2★ (measured on the ML health dashboard's rolling window).
+1. **≥ 2 weeks** of V1-only Thompson operation with no router bugs.
+2. **≥ 100** human-rated Thompson-routed iterations.
+3. **Thompson mean human rating ≥ static baseline by ≥ 0.2★** (measured on the ML health dashboard's rolling window).
+4. **No individual bucket regressed by >0.3★** vs. its static baseline. *Added 2026-04-22 — protects against Thompson winning on average while losing badly on specific buckets. A per-bucket regression would be user-visible and is a credibility failure regardless of aggregate gains.*
 
-<!-- Q3 — Oliver: what's the prod-rollout bar? The above is my proposed threshold; you may want stricter (e.g., 4 weeks, ≥ 500 iterations) or different axes (e.g., "I haven't seen a Thompson-routed bad clip in 2 weeks"). -->
+Dashboard `/dashboard/development/router-bandit` must expose per-bucket Thompson-vs-static mean-rating delta so condition 4 is auditable at a glance. Any bucket breaching the 0.3★ regression threshold blocks prod rollout until that bucket recovers.
 
 ---
 
@@ -375,7 +388,7 @@ Verified `supabase/migrations/` ends at `031_prompt_lab_iterations_sku.sql` on m
 ```sql
 -- supabase/migrations/038_router_bucket_stats.sql
 CREATE TABLE router_bucket_stats (
-  room_type        text NOT NULL,
+  room_type        text NOT NULL,             -- free text, no enum; survives taxonomy drift (Q6)
   camera_movement  text NOT NULL,
   sku              text NOT NULL,
   alpha            numeric(10, 2) NOT NULL DEFAULT 0,  -- fractional weights → numeric
@@ -386,6 +399,22 @@ CREATE TABLE router_bucket_stats (
 );
 
 CREATE INDEX idx_router_bucket_stats_bucket ON router_bucket_stats (room_type, camera_movement);
+
+-- Shadow log — dedicated table (Q5). One row per V1 render routing decision
+-- during dry-run mode (P5 Session 1) AND live mode (P5 Session 2+).
+-- Keeps prompt_lab_iterations lean; powers /dashboard/development/router-bandit
+-- divergence metric + per-bucket A/B analysis.
+CREATE TABLE router_shadow_log (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  iteration_id           uuid NOT NULL REFERENCES prompt_lab_iterations(id) ON DELETE CASCADE,
+  thompson_decision_json jsonb NOT NULL,   -- { sku, alpha, beta, sampled_theta, reason }
+  static_decision_json   jsonb NOT NULL,   -- { sku, reason } from resolveDecision()
+  divergence_reason      text,             -- null if same SKU; else 'thompson_posterior' | 'cold_start' | 'sparse_fallback' | 'preference_override'
+  created_at             timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_router_shadow_log_iteration ON router_shadow_log (iteration_id);
+CREATE INDEX idx_router_shadow_log_created   ON router_shadow_log (created_at DESC);
 
 -- Refresh function — idempotent
 CREATE OR REPLACE FUNCTION refresh_router_bucket_stats() RETURNS void LANGUAGE sql AS $$
@@ -398,6 +427,8 @@ SELECT cron.schedule('refresh-router-bucket-stats', '0 */4 * * *',
 ```
 
 Full SQL is produced by P5 Session 1. This sketch validates the shape only.
+
+**Taxonomy note.** `room_type` (and `camera_movement`) are `text`, not enum-checked. Rationale: taxonomy drifts (e.g. `master_bedroom → primary_bedroom` rename campaigns) would break enum-checked schemas and require blocking migrations. Runtime validation lives in application code (`lib/db.ts` type guards + the V1 render pipeline's existing `RoomType` validation). Stats rows for retired labels become orphaned harmlessly and can be cleaned by an opt-in one-off script.
 
 ---
 
@@ -450,7 +481,8 @@ Net-new admin dashboard page. Read-only (no mutations from UI in P5 Session 1; O
 ### 10.4 Top-of-page metrics
 
 - **Flag state** — `USE_THOMPSON_ROUTER` effective value (read from env).
-- **Thompson↔Static divergence (rolling 7d)** — percentage of scenes where the sampled Thompson choice differs from what the static router would have returned. Computed from a shadow-log table populated by the router module (not part of migration 038 — added as a separate concern in P5 Session 1 if we want dry-run visibility).
+- **Thompson↔Static divergence (rolling 7d)** — percentage of scenes where Thompson's sampled SKU differs from what the static router would have returned. Computed from `router_shadow_log` (created in migration 038 per §9.1).
+- **Per-bucket Thompson-vs-static mean rating delta** — required by the prod rollout bar (§7.5 condition 4). Column per bucket row showing `Δ★ vs. static baseline`. Negative deltas >0.3★ flagged red.
 - **`last_updated`** — most recent `router_bucket_stats.last_updated` timestamp.
 
 ### 10.5 Manual refresh button
@@ -463,25 +495,18 @@ Per parent roadmap §Cross-cutting — Success dashboard, `ml-health` already su
 
 ---
 
-## 11. Open questions for Oliver
+## 11. Open questions — RESOLVED 2026-04-22
 
-<!-- Q1 — Success threshold for Bernoulli mapping -->
-**Q1.** Is `rating ≥ 4★` the right success threshold for the bandit? Alternative: `≥ 4.5★` (stricter, fewer successes, slower convergence but higher standard). §2.4.
+All six open questions posed in this design's first draft were resolved by Oliver on 2026-04-22. Decisions are inlined in the sections cited below; this table is preserved as the change log.
 
-<!-- Q2 — Judge weight at V1 launch -->
-**Q2.** At V1 Thompson launch, do you want auto-judge to contribute to the posterior at all, or should we set judge weight = 0 until we've audited judge-human agreement for ≥ 2 weeks? The default spec (§6.2) gives judge weight 0.25–0.6; a conservative opener would be "humans only for the first 2 weeks of P5, then turn judge on after the P2 audit passes." §6.
-
-<!-- Q3 — Prod rollout threshold -->
-**Q3.** What's the bar for proposing Thompson → prod rollout after P5 Session 2's A/B audit passes? My proposal (§7.5): 2 weeks + 100 iterations + mean rating ≥ static + 0.2★. You may want stricter (4 weeks, 500 iterations) or softer (your qualitative "I've been watching, it looks good"). §7.
-
-<!-- Q4 — Cold-start trial count -->
-**Q4.** §3.4 sets `n = 3` as the cold-start threshold. At `n = 3` the posterior still has ~0.6-wide CI; you may want `n = 5` or `n = 10` for more conservative exploration before exploitation. Higher threshold = more cold-start cost but more confidence when Thompson kicks in.
-
-<!-- Q5 — Do we want a shadow-log in Session 1? -->
-**Q5.** P5 Session 1 is "dry-run mode: logs sampled Thompson decision alongside actual static decision." That shadow log lives in some table — parent spec doesn't name it. Recommend: reuse `prompt_lab_iterations.router_decision_json` (jsonb) where the Thompson choice + reason code land alongside the actual choice. Avoids a separate table. OK to plan it this way, or do you want a dedicated `router_shadow_log` table?
-
-<!-- Q6 — Room-type taxonomy stability -->
-**Q6.** If the room-type taxonomy changes (new room types added, existing ones renamed), `router_bucket_stats` rows for old buckets become orphaned. Should migration 038 include a `CHECK` constraint against `RoomType` enum, or leave it `text` and handle taxonomy drift at the view layer? Recommend: `text` + view-layer handling, because enum changes require separate migrations and we want the bandit to survive schema evolution.
+| # | Section | Decision |
+|---|---|---|
+| Q1 | §2.4 | Success threshold locked at **4★+**. 4.5★ isn't a ratable value on the integer 1–5 scale. |
+| Q2 | §6 | Humans only at P5 launch. `JUDGE_ALPHA_WEIGHT` env var gates judge contribution: `0.0` at launch → `0.5` after P2 audit passes (≥80% agreement on ≥50-sample holdout) → revisit after 2 more weeks. Env-var switch, no migration. |
+| Q3 | §7.5 | Prod rollout requires **all four**: 2 weeks + 100 iter + mean ≥ static + 0.2★ + **no bucket regressed >0.3★**. The per-bucket regression guard was added in Oliver's answer to protect against average-gain / bucket-loss credibility failures. |
+| Q4 | §3.4 | Cold-start `n = 3` locked. Scheduled review at first monthly bandit audit if judge-era variance at n=3 warrants raising. |
+| Q5 | §§9.1, 10.4 | Dedicated `router_shadow_log` table in migration 038. Keeps `prompt_lab_iterations` lean; per scale-first architecture invariant. |
+| Q6 | §9.1 | `router_bucket_stats.room_type` is free `text`, no enum check. Runtime validation in app code. Survives taxonomy drift. |
 
 ---
 
