@@ -452,9 +452,14 @@ Development landing (`/dashboard/development`) shows:
 
 `/dashboard/rating-ledger` is a read-only unified view of every rating Oliver has ever given: legacy Prompt Lab iterations, Phase 2.8 Listings Lab iterations, and production `scene_ratings`. `api/admin/rating-ledger.ts` normalizes the three surfaces into one paginated JSON with filters (`surface`, `sku`, `min_rating`, `has_comment`) and attaches the active recipe via `prompt_lab_recipes.source_iteration_id`. Each row shows image thumb → clip preview → SKU chip → stars → reasons + comment → surface chip → retrieval-status chip (green/amber/red indicating whether the rating is actually wired into director retrieval). Built to satisfy criterion #1 (no HITL) via transparency — Oliver can audit every rating linked back to image + clip + SKU + retrieval readiness.
 
+Round 2 (2026-04-21) added a bucket-progress scoreboard on top of the ledger: a 5-card strip across the 5 quota-high (room × movement) buckets (kitchen/push_in, living_room/push_in, master_bedroom/push_in, exterior_front/push_in, aerial/drone_push_in) that auto-refreshes every 30s (Page Visibility API pauses polling when the tab is hidden). Clicking a card filters the ledger to that bucket via new `?room_type=` + `?camera_movement=` params on `/api/admin/rating-ledger`, and a clear-filter pill reverts. Progress comes from a new `GET /api/admin/bucket-progress` endpoint — winner rule is ≥3 iterations on one SKU AND ≥80% rated 4★+, tiebreak higher avg_rating then cheaper `priceCentsPerClip`. SKU-level signal counts Phase 2.8 only; legacy Lab + prod contribute to `total_iter` / `total_rated_4plus`. The 5 buckets are defined once in a `BUCKETS` const at the top of the endpoint file.
+
 - `api/admin/rating-ledger.ts` — GET admin endpoint, unified ledger
 - `src/pages/dashboard/RatingLedger.tsx` — page UI
 - `src/lib/ratingLedgerApi.ts` — typed fetch helper
+- `api/admin/bucket-progress.ts` — GET admin endpoint, per-bucket progress + winner rule (NEW 2026-04-21, R2)
+- `src/components/ledger/BucketProgressStrip.tsx` — 5-card scoreboard with 30s auto-poll + click-to-filter (NEW 2026-04-21, R2)
+- `src/lib/bucketProgressApi.ts` — typed fetch helper (NEW 2026-04-21, R2)
 
 ---
 
@@ -811,13 +816,16 @@ SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the liv
 | `api/admin/prompt-lab/promote-to-prod.ts` | Lab→prod promotion: readiness stats + promote override to prompt_revisions (NEW) |
 | `api/admin/prompt-lab/*` | Lab endpoints |
 | `api/admin/dev-notes.ts` | Development dashboard session notes |
-| `api/admin/rating-ledger.ts` | Unified rating ledger (legacy Lab + Listings Lab + prod scene_ratings); filters + retrieval-status per row (NEW 2026-04-21) |
+| `api/admin/rating-ledger.ts` | Unified rating ledger (legacy Lab + Listings Lab + prod scene_ratings); filters + retrieval-status per row (NEW 2026-04-21; R2 added `room_type` + `camera_movement` filters/fields) |
+| `api/admin/bucket-progress.ts` | Per-bucket progress + winner rule for the 5 quota-high (room × movement) buckets; feeds scoreboard on /dashboard/rating-ledger (NEW 2026-04-21, R2) |
 | `src/pages/dashboard/PromptLab.tsx` | Main Lab UI |
 | `src/pages/dashboard/PromptLabRecipes.tsx` | Recipe library |
 | `src/pages/dashboard/PromptProposals.tsx` | Rule-mining proposals |
 | `src/pages/dashboard/Development.tsx` | Dev landing page |
-| `src/pages/dashboard/RatingLedger.tsx` | Rating ledger page at `/dashboard/rating-ledger` (NEW 2026-04-21) |
-| `src/lib/ratingLedgerApi.ts` | Typed fetch helper for rating ledger (NEW 2026-04-21) |
+| `src/pages/dashboard/RatingLedger.tsx` | Rating ledger page at `/dashboard/rating-ledger` (NEW 2026-04-21; R2 hosts bucket-progress strip + click-to-filter state) |
+| `src/lib/ratingLedgerApi.ts` | Typed fetch helper for rating ledger (NEW 2026-04-21; R2 adds roomType + cameraMovement params) |
+| `src/components/ledger/BucketProgressStrip.tsx` | 5-card bucket-progress scoreboard with 30s auto-poll + click-to-filter (NEW 2026-04-21, R2) |
+| `src/lib/bucketProgressApi.ts` | Typed fetch helper for bucket-progress endpoint (NEW 2026-04-21, R2) |
 | `src/components/TopNav.tsx` | Global sticky nav with Development dropdown |
 | `docs/PROJECT-STATE.md` | This file |
 | `docs/PROMPT-LAB-PLAN.md` | Lab design + milestone status |

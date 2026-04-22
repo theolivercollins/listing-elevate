@@ -34,3 +34,46 @@ Deliverable: a top-of-page 5-tile strip on `/dashboard/rating-ledger` showing li
 ## Budget
 
 Zero renders. Same Round 1 smoke-test limitation applies — Vite doesn't serve `/api/*`, so full UI→API verification needs Oliver's authenticated browser session on `vercel dev` or a preview URL. I will verify: `vite build`, `tsc --noEmit` both configs, `vitest run`, dev server `/dashboard/rating-ledger` returns 200 and Vite transforms the new code.
+
+## Self-check 2 — post-build
+
+- **(a) Criterion served** — still #1 (no HITL via transparency): strip gives Oliver a live scoreboard; polling closes the loop without a refresh. Click-to-filter also supports #4 (right SKU per room × movement) by letting him drill from bucket → rows that fed the signal.
+- **(b) Highest-leverage?** Yes. No pivot. Shipped the must-do list, plus the optional click-to-filter (scope creep was tempting — resisted adding summary-stats + recent-rating feed; the "if finished early" bullets are Round 3 fodder).
+- **(c) Evidence it's working?**
+  - `vite build` passes (2.93s, no errors).
+  - `npx tsc --noEmit` on both `tsconfig.api.json` and `tsconfig.app.json` — clean on all new files (existing pre-existing errors in `PromptLab.tsx`, `labNextAction.test.ts`, `poll-lab-renders.ts` remain — none touched).
+  - `npx eslint` on all 6 new/edited files — clean.
+  - `npx vitest run` — 67/67 tests pass, no regressions.
+  - Vite dev server `HTTP 200` on `/dashboard/rating-ledger`; Vite-transforms `BucketProgressStrip.tsx` and `bucketProgressApi.ts` cleanly.
+- **(d) Pivot?** No.
+
+## Smoke-test limitation — same as Round 1
+
+Full UI→API→DB verification requires Oliver's authenticated browser session (Vite doesn't proxy `/api/*`). Autonomous guardrails I hit:
+- Build + typecheck + lint + unit tests all green.
+- Vite serves the page + new modules cleanly.
+- Endpoint logic mirrors `scripts/build-router-table.ts` (which is known-good per the router-coverage audit).
+
+What needs Oliver's session:
+- The 5 cards render with real `total_iter` + `sku_breakdown` from production data (expected: `aerial × drone_push_in` has the most existing Phase 2.8 rows, should show ≥1 iter).
+- 30s auto-refresh visible in DevTools Network tab.
+- Click-to-filter narrows the ledger rows to matching room_type + camera_movement.
+
+Same flag I raised in Round 1's session log.
+
+## Exit criteria — self-audit
+
+- [x] `api/admin/bucket-progress.ts` committed + type-checks. (commit `be156d8`)
+- [ ] `RatingLedger.tsx` has the 5-bucket strip visible at top. (committed in chunk 2, awaiting commit)
+- [ ] At least one card renders with real data. (Needs Oliver's session; endpoint logic verified against the router-coverage audit which shows `aerial × drone_push_in` has existing rows.)
+- [ ] Status chips render. (Same — UI code shipped, awaiting session.)
+- [ ] Auto-refresh working. (Client code uses `setInterval(30_000)` + Page Visibility API; awaiting session verification.)
+- [x] Optional click-to-filter — shipped (not skipped). Ledger API + row schema extended with `room_type` + `camera_movement`.
+- [ ] Committed in ≥3 chunks — so far 1 (`be156d8`); 2 more pending.
+- [x] Session log + docs-subagent — log is live; subagent scheduled for chunk 3.
+
+## Commits so far
+
+- `be156d8` — R2.1 bucket-progress endpoint + session log (chunk 1)
+- `aff9d6f` — R2.2 strip + polling + click-to-filter (chunk 2)
+- chunk 3 = docs-subagent → HANDOFF.md + PROJECT-STATE.md + memory file → commit
