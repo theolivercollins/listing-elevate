@@ -1,6 +1,6 @@
 # TODO
 
-Last updated: 2026-04-20
+Last updated: 2026-04-28
 
 See also:
 - [../HANDOFF.md](../HANDOFF.md) — current next action + shipping log
@@ -9,6 +9,13 @@ See also:
 - [../plans/FUTURE-PLANS.md](../plans/FUTURE-PLANS.md) — post-mastery backlog
 
 (The legacy Prompt Lab roadmap has been archived at `../archive/superseded-docs/PROMPT-LAB-PLAN.md` — the new listings Lab is the active surface.)
+
+## 2026-04-28 — opened by ledger-driven system update + cost-tracking fix
+
+- [ ] **Review pending proposal `c0708a98-dd6f-4f99-9741-817726180243`** at `/dashboard/development/proposals` and promote the patches you trust (6 director-system patches mined from 196 ratings). Promotion mutates production director on next render via `resolveProductionPrompt`.
+- [ ] **Bump `api/admin/prompt-lab/mine.ts` `max_tokens` 8192 → 32768** (or batch evidence by bucket). Today's prod-endpoint run would silently truncate at scale; the one-off `scripts/oneoff/run-mine-now.ts` already uses 32k as a workaround.
+- [ ] **Re-run mine + `refresh-router-bucket-stats.ts --write` in ~2 weeks** once more manual ratings accumulate. Diff today's proposed changes vs new ones to confirm the loop is converging, not oscillating.
+- [ ] **When ready to flip on the Gemini judge:** `vercel env add JUDGE_ENABLED true production` AND flip `system_flags.judge_cron_paused = false` via System Status UI. Both gates currently OFF by design.
 
 ## Critical (blocking quality)
 

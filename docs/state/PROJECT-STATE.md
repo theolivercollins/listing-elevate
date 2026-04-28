@@ -7,9 +7,33 @@ See also:
 - [../plans/back-on-track-plan.md](../plans/back-on-track-plan.md) — active roadmap
 - [../specs/2026-04-20-back-on-track-design.md](../specs/2026-04-20-back-on-track-design.md) — full roadmap spec
 
-Last updated: **2026-04-22 (P1 V1 Foundation merged to main)** — Phases A, M.1, DQ, DM, CI.1–CI.5, C, M.2 shipped through 2026-04-20; DA.1 Gemini-eyes 2026-04-21; **P1 V1 Foundation** 2026-04-22. V1 Prompt Lab is now the daily-driver iteration surface with Atlas routing, per-iteration SKU capture, SKU selector UI, cost tracking compliance. Multi-day V1 + ML roadmap (P1–P7) at [`../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md`](../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md); supersedes back-on-track plan for V1/ML work.
+Last updated: **2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).** Earlier: P1 V1 Foundation 2026-04-22; DA.1 Gemini-eyes 2026-04-21; Phases A, M.1, DQ, DM, CI.1–CI.5, C, M.2 shipped through 2026-04-20. V1 Prompt Lab is the daily-driver iteration surface with Atlas routing, per-iteration SKU capture, SKU selector UI, cost tracking compliance. Multi-day V1 + ML roadmap (P1–P7) at [`../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md`](../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md); supersedes back-on-track plan for V1/ML work.
 
 Authoritative state doc. Read first when entering the repo. If anything here conflicts with the code, trust the code and update this doc.
+
+---
+
+## 2026-04-28 — Ledger-driven system update + lab cost-tracking fix (merged to main, commit `cd242fc`)
+
+Triggered by Oliver flagging "prompts aren't improving from my ratings". Investigation confirmed the rating loop works post-`140c8f4`, but the latent ledger had never been crystallized into hard rules and a bigger bug was masking lab cost telemetry. Full session note: [`../sessions/2026-04-28-lab-cost-tracking-fix.md`](../sessions/2026-04-28-lab-cost-tracking-fix.md).
+
+### Ledger-driven outputs (no code, ledger only)
+- **Pending proposal `c0708a98-…`** with 6 director-system patches mined from 196 ratings × 23 buckets ($0.31 Sonnet 4.6).
+- **Recipe pool 84 → 115** (27 winners backfilled via `scripts/oneoff/backfill-recipes.ts`).
+- **Thompson router 0 → 41 arms** (`scripts/refresh-router-bucket-stats.ts --write`); previously empty so SKU choice was always falling through to default.
+
+### Bug fix
+- **Migration 045** — `ALTER TABLE cost_events ALTER COLUMN property_id DROP NOT NULL`. System-scoped events (rule mining, lab embeddings, lab analysis, lab generation, lab listing director/refine/chat) had no associated property; insert was silently failing the FK NOT NULL constraint. 30-day audit before fix: 378 lab iterations created, 17 lab-stage cost rows.
+- **10 silent-swallow sites fixed**: replaced `try/catch` with `{error: costErr}` checks at every system-scoped insert in `api/admin/prompt-lab/{analyze,mine,recipes}.ts`, both listing chat handlers, both lab-render polling crons, and `lib/{db,prompt-lab,prompt-lab-listings,refine-prompt}.ts`. Supabase JS returns `{error}` rather than throwing — the catch never fired.
+- **Side-fix**: two listing chat handlers were inserting `scene_id=<listing-scene-id>` which violates the `cost_events.scene_id` FK against the prod `scenes` table; moved to metadata, scene_id null.
+- **Today's $0.31 rule-mining cost backfilled** as `cost_events` row.
+
+### P2 Gemini judge — corrected memory
+The earlier "P2 Gemini binding TODO" was stale. Binding shipped in commits `0f71d9e` / `77ce652` / `cff08f8`. Two-gate dormancy (must satisfy both): `JUDGE_ENABLED=true` env var + `system_flags.judge_cron_paused = false` (currently true since 2026-04-24). Code lives at `api/cron/poll-judge.ts` + `lib/providers/gemini-judge.ts` (default `gemini-2.5-flash`).
+
+### Open follow-ups
+- `mine.ts` `max_tokens=8192` will silently truncate at scale — bump to 32k or batch by bucket. The one-off `scripts/oneoff/run-mine-now.ts` already uses 32k.
+- Re-run mining + router refresh in ~2 weeks once Oliver has accumulated more manual ratings, to see whether the proposed patches divergence from today's set.
 
 ---
 
