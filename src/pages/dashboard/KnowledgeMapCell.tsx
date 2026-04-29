@@ -1,8 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Loader2, ArrowLeft, Star } from "lucide-react";
 import { fetchCellDrillDown } from "@/lib/knowledgeMapApi";
 import type { CellDrillDown } from "../../../lib/knowledge-map/types.js";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 
 const STATE_COLOR: Record<string, string> = {
   untested: "text-muted-foreground",
@@ -53,7 +57,7 @@ export default function KnowledgeMapCell() {
         <Link to="/dashboard/development/knowledge-map" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> back to map
         </Link>
-        <h2 className="mt-2 text-3xl font-semibold tracking-[-0.02em]">{cellKey}</h2>
+        <h2 className="mt-2" style={PAGE_H1}>{cellKey}</h2>
         {data && (
           <p className="mt-2 text-sm text-muted-foreground">
             <span className={STATE_COLOR[data.state]}>{data.state}</span> · {data.sample_size} samples
@@ -70,7 +74,7 @@ export default function KnowledgeMapCell() {
       {data && (
         <>
           <section className="border border-border bg-background p-6">
-            <span className="label text-muted-foreground">Failure tag histogram</span>
+            <span style={EYEBROW}>Failure tag histogram</span>
             {data.fail_tags.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No fail:* tags recorded in this cell.</p>
             ) : (
@@ -86,7 +90,7 @@ export default function KnowledgeMapCell() {
           </section>
 
           <section className="border border-border bg-background p-6">
-            <span className="label text-muted-foreground">Active recipes</span>
+            <span style={EYEBROW}>Active recipes</span>
             {data.recipes.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No active recipes in this cell.</p>
             ) : (
@@ -105,7 +109,7 @@ export default function KnowledgeMapCell() {
           </section>
 
           <section className="border border-border bg-background p-6">
-            <span className="label text-muted-foreground">Overrides matching this cell</span>
+            <span style={EYEBROW}>Overrides matching this cell</span>
             {data.overrides.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">None.</p>
             ) : (
@@ -121,7 +125,7 @@ export default function KnowledgeMapCell() {
           </section>
 
           <section className="border border-border bg-background p-6">
-            <span className="label text-muted-foreground">Recent iterations ({data.iterations.length})</span>
+            <span style={EYEBROW}>Recent iterations ({data.iterations.length})</span>
             {data.iterations.length === 0 ? (
               <p className="mt-3 text-sm text-muted-foreground">No rated iterations yet.</p>
             ) : (

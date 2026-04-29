@@ -30,7 +30,7 @@ export default function AuthCallback() {
             }
           }, 500);
         } else {
-          navigate("/login", { replace: true });
+          navigate("/?login=1", { replace: true });
         }
       })
       .catch((err) => {
@@ -57,7 +57,7 @@ export default function AuthCallback() {
             <h1 className="display-md mt-4">Sign-in interrupted.</h1>
             <p className="mx-auto mt-4 max-w-sm text-sm text-muted-foreground">{error}</p>
             <Link
-              to="/login"
+              to="/?login=1"
               className="mt-8 inline-flex items-center gap-2 text-xs text-foreground underline underline-offset-4"
             >
               <ArrowLeft className="h-3 w-3" /> Back to sign in

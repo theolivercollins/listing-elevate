@@ -1,10 +1,41 @@
-import { useState, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, Pause, Play, Download, Loader2 } from "lucide-react";
 import type { PipelineLog, PipelineStage, LogLevel } from "@/lib/types";
 import { fetchLogs } from "@/lib/api";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.45)",
+};
+const PAGE_H1: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: "clamp(28px, 4vw, 44px)",
+  fontWeight: 500,
+  letterSpacing: "-0.035em",
+  lineHeight: 0.98,
+  color: "#fff",
+  margin: 0,
+};
+const GHOST_BTN: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  fontSize: 11,
+  fontWeight: 500,
+  background: "transparent",
+  color: "#fff",
+  border: "1px solid rgba(220,230,255,0.18)",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
 
 const Logs = () => {
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -69,8 +100,8 @@ const Logs = () => {
   return (
     <div className="space-y-12">
       <div>
-        <span className="label text-muted-foreground">— Telemetry</span>
-        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Pipeline logs</h2>
+        <span style={EYEBROW}>— Telemetry</span>
+        <h2 className="mt-3" style={PAGE_H1}>Pipeline logs</h2>
         <p className="mt-3 max-w-md text-sm text-muted-foreground">
           Live stream of every pipeline stage. Filter by stage or severity, search the message body, export to CSV.
         </p>
@@ -113,13 +144,13 @@ const Logs = () => {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" onClick={() => setAutoScroll(!autoScroll)}>
+        <button type="button" style={GHOST_BTN} onClick={() => setAutoScroll(!autoScroll)}>
           {autoScroll ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
           {autoScroll ? "Pause" : "Resume"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={exportCSV}>
+        </button>
+        <button type="button" style={GHOST_BTN} onClick={exportCSV}>
           <Download className="h-3.5 w-3.5" /> Export CSV
-        </Button>
+        </button>
       </div>
 
       {/* Log viewer */}
@@ -141,8 +172,9 @@ const Logs = () => {
                 <div
                   key={log.id}
                   className="grid grid-cols-[80px_140px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed transition-colors hover:bg-secondary"
+                  style={{ fontFamily: "var(--le-font-mono)" }}
                 >
-                  <span className="tabular text-muted-foreground/60">
+                  <span className="text-muted-foreground/60">
                     {new Date(log.created_at).toLocaleTimeString([], {
                       hour: "2-digit",
                       minute: "2-digit",
@@ -150,9 +182,9 @@ const Logs = () => {
                     })}
                   </span>
                   <span className="truncate text-muted-foreground">{getPropertyAddress(log)}</span>
-                  <span className="label text-muted-foreground">{log.stage}</span>
+                  <span style={{ ...EYEBROW, fontSize: 10 }}>{log.stage}</span>
                   <span
-                    className={`label ${
+                    className={
                       log.level === "error"
                         ? "text-destructive"
                         : log.level === "warn"
@@ -160,7 +192,8 @@ const Logs = () => {
                         : log.level === "debug"
                         ? "text-muted-foreground/60"
                         : "text-muted-foreground"
-                    }`}
+                    }
+                    style={{ ...EYEBROW, fontSize: 10, color: undefined }}
                   >
                     {log.level}
                   </span>

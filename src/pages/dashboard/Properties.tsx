@@ -1,6 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ChevronLeft, ChevronRight, Loader2, ArrowRight } from "lucide-react";
@@ -10,6 +9,38 @@ import { fetchProperties } from "@/lib/api";
 import { supabase } from "@/lib/supabase";
 import { motion } from "framer-motion";
 import { ImageOff } from "lucide-react";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.45)",
+};
+const PAGE_H1: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: "clamp(28px, 4vw, 44px)",
+  fontWeight: 500,
+  letterSpacing: "-0.035em",
+  lineHeight: 0.98,
+  color: "#fff",
+  margin: 0,
+};
+const GHOST_BTN: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  fontSize: 11,
+  fontWeight: 500,
+  background: "transparent",
+  color: "#fff",
+  border: "1px solid rgba(220,230,255,0.18)",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -102,9 +133,9 @@ const Properties = () => {
     <div className="space-y-12">
       <div className="flex items-end justify-between gap-6">
         <div>
-          <span className="label text-muted-foreground">— All listings</span>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">
-            <span className="tabular">{total}</span> total
+          <span style={EYEBROW}>— All listings</span>
+          <h2 className="mt-3" style={PAGE_H1}>
+            <span style={{ fontFamily: "var(--le-font-mono)" }}>{total}</span> total
           </h2>
         </div>
       </div>
@@ -137,16 +168,16 @@ const Properties = () => {
 
       {/* Table */}
       <div className="border-t border-border">
-        <div className="grid grid-cols-[64px_3fr_1.2fr_1fr_1.2fr_0.6fr_1fr_1fr_0.5fr] gap-6 border-b border-border py-4">
-          <span className="label text-muted-foreground">Photo</span>
-          <span className="label text-muted-foreground">Property</span>
-          <span className="label text-muted-foreground">Agent</span>
-          <span className="label text-right text-muted-foreground">Price</span>
-          <span className="label text-muted-foreground">Status</span>
-          <span className="label text-right text-muted-foreground">Photos</span>
-          <span className="label text-right text-muted-foreground">Cost</span>
-          <span className="label text-muted-foreground">Created</span>
-          <span className="label text-right text-muted-foreground">View</span>
+        <div className="grid grid-cols-[64px_3fr_1.2fr_1fr_1.2fr_0.6fr_1fr_1fr_0.5fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+          <span style={EYEBROW}>Photo</span>
+          <span style={EYEBROW}>Property</span>
+          <span style={EYEBROW}>Agent</span>
+          <span className="text-right" style={EYEBROW}>Price</span>
+          <span style={EYEBROW}>Status</span>
+          <span className="text-right" style={EYEBROW}>Photos</span>
+          <span className="text-right" style={EYEBROW}>Cost</span>
+          <span style={EYEBROW}>Created</span>
+          <span className="text-right" style={EYEBROW}>View</span>
         </div>
 
         {loading ? (
@@ -192,7 +223,7 @@ const Properties = () => {
                 </Link>
                 <span className="truncate text-xs text-muted-foreground">{p.listing_agent}</span>
                 <span className="tabular text-right text-sm">${p.price.toLocaleString()}</span>
-                <span className={`label ${tone}`}>{statusLabel[p.status] || p.status}</span>
+                <span className={tone} style={{ ...EYEBROW, color: undefined }}>{statusLabel[p.status] || p.status}</span>
                 <span className="tabular text-right text-xs text-muted-foreground">{p.photo_count}</span>
                 <span className="tabular text-right text-xs">{formatCents(p.total_cost_cents)}</span>
                 <span className="tabular text-xs text-muted-foreground">{getRelativeTime(p.created_at)}</span>
@@ -212,19 +243,19 @@ const Properties = () => {
       {/* Pagination */}
       {totalPages > 1 && !loading && (
         <div className="flex items-center justify-between">
-          <span className="label text-muted-foreground">
-            <span className="tabular">{total}</span> properties
+          <span style={EYEBROW}>
+            <span style={{ fontFamily: "var(--le-font-mono)" }}>{total}</span> properties
           </span>
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+            <button type="button" style={{ ...GHOST_BTN, opacity: page <= 1 ? 0.4 : 1 }} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               <ChevronLeft className="h-4 w-4" /> Previous
-            </Button>
-            <span className="tabular px-3 text-xs text-muted-foreground">
+            </button>
+            <span className="px-3 text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
               Page {page} / {totalPages}
             </span>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
+            <button type="button" style={{ ...GHOST_BTN, opacity: page >= totalPages ? 0.4 : 1 }} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
               Next <ChevronRight className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         </div>
       )}

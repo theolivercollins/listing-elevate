@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, ArrowLeft, Archive, Trash2, Edit2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { listRecipes, updateRecipe, deleteRecipe, type LabRecipe } from "@/lib/recipesApi";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
+const PRIMARY_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", fontSize: 12, fontWeight: 500, background: "#fff", color: "#07080c", border: "none", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
+const GHOST_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
+const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
 
 const PromptLabRecipes = () => {
   const [recipes, setRecipes] = useState<LabRecipe[] | null>(null);
@@ -31,8 +37,8 @@ const PromptLabRecipes = () => {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <div>
-          <span className="label text-muted-foreground">— Prompt Lab</span>
-          <h2 className="mt-1 text-2xl font-semibold tracking-[-0.02em]">Recipe library</h2>
+          <span style={EYEBROW}>— Prompt Lab</span>
+          <h2 className="mt-1" style={PAGE_H1}>Recipe library</h2>
         </div>
       </div>
 
@@ -114,8 +120,8 @@ function RecipeRow({
           <Textarea value={tmpl} onChange={(e) => setTmpl(e.target.value)} className="mt-1 min-h-[80px] font-mono text-xs" />
         </div>
         <div className="flex justify-end gap-2">
-          <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button size="sm" onClick={save}>Save</Button>
+          <button onClick={onCancel} style={GHOST_BTN}>Cancel</button>
+          <button onClick={save} style={PRIMARY_BTN}>Save</button>
         </div>
       </div>
     );
@@ -127,10 +133,10 @@ function RecipeRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono text-sm font-medium">{recipe.archetype}</span>
-            <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">{recipe.room_type}</span>
-            <span className="rounded bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-wider">{recipe.camera_movement}</span>
+            <span className="bg-muted px-2 py-0.5" style={BADGE}>{recipe.room_type}</span>
+            <span className="bg-foreground/10 px-2 py-0.5" style={BADGE}>{recipe.camera_movement}</span>
             {recipe.provider && (
-              <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">{recipe.provider}</span>
+              <span className="bg-muted px-2 py-0.5" style={BADGE}>{recipe.provider}</span>
             )}
             <span className="text-xs text-muted-foreground">
               applied {recipe.times_applied}×
