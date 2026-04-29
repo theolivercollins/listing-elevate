@@ -126,19 +126,29 @@ export async function publishToSierra(
     // ────────────────────────────────────────────────────────────
 
     async function pasteIntoLargestEditor(body: string, label: string): Promise<void> {
-      const result = await page.evaluate((b: string) => {
+      const diag = await page.evaluate((b: string) => {
         const w = globalThis as unknown as {
           CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
-          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
+          document?: {
+            querySelectorAll: (sel: string) => ArrayLike<unknown>;
+            title?: string;
+          };
+          location?: { href: string };
         };
-        if (w.CKEDITOR?.instances) {
-          const keys = Object.keys(w.CKEDITOR.instances);
-          if (keys.length > 0) {
-            w.CKEDITOR.instances[keys[0]].setData(b);
-            return `ckeditor:${keys[0]}`;
-          }
+        const ckKeys = w.CKEDITOR?.instances ? Object.keys(w.CKEDITOR.instances) : [];
+        if (w.CKEDITOR?.instances && ckKeys.length > 0) {
+          w.CKEDITOR.instances[ckKeys[0]].setData(b);
+          return {
+            outcome: `ckeditor:${ckKeys[0]}`,
+            url: w.location?.href || "",
+            title: w.document?.title || "",
+            ckCount: ckKeys.length,
+            taCount: 0,
+            taSummary: [] as Array<{ id: string; w: number; h: number }>,
+          };
         }
         const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
+        const taSummary: Array<{ id: string; w: number; h: number }> = [];
         let best: {
           offsetWidth?: number;
           offsetHeight?: number;
@@ -156,24 +166,55 @@ export async function publishToSierra(
             dispatchEvent: (e: unknown) => void;
           };
           const area = (ta.offsetWidth || 0) * (ta.offsetHeight || 0);
+          taSummary.push({
+            id: ta.id || "(no-id)",
+            w: ta.offsetWidth || 0,
+            h: ta.offsetHeight || 0,
+          });
           if (area > bestArea) {
             bestArea = area;
             best = ta;
           }
         }
-        if (best && bestArea > 5000) {
+        if (best && bestArea > 1000) {
           best.value = b;
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
           best.dispatchEvent(new Event("input", { bubbles: true }));
           best.dispatchEvent(new Event("change", { bubbles: true }));
-          return `textarea:${best.id || "(no-id)"}`;
+          return {
+            outcome: `textarea:${best.id || "(no-id)"}`,
+            url: w.location?.href || "",
+            title: w.document?.title || "",
+            ckCount: ckKeys.length,
+            taCount: tas.length as number,
+            taSummary,
+          };
         }
-        return "none";
+        return {
+          outcome: "none",
+          url: w.location?.href || "",
+          title: w.document?.title || "",
+          ckCount: ckKeys.length,
+          taCount: tas.length as number,
+          taSummary,
+        };
       }, body);
-      if (result === "none") {
-        throw new Error(`Could not paste ${label} into widget editor. Watch: ${sessionUrl}`);
+      console.log(`[sierra-publish] paste ${label}:`, JSON.stringify(diag));
+      if (diag.outcome === "none") {
+        throw new Error(
+          `Could not paste ${label} into widget editor.\n` +
+            `Page URL: ${diag.url}\n` +
+            `Page title: ${diag.title}\n` +
+            `CKEditor instances: ${diag.ckCount}\n` +
+            `Textareas (${diag.taCount}): ${JSON.stringify(diag.taSummary)}\n` +
+            `Watch: ${sessionUrl}`
+        );
       }
+    }
+
+    async function logUrl(label: string) {
+      console.log(`[sierra-publish] ${label}: ${page.url()}`);
     }
 
     // A.1 — HTML widget
@@ -182,12 +223,15 @@ export async function publishToSierra(
         "In the top navigation, click the 'CONTENT' menu category, then click the link inside that menu for Shared HTML Widgets (the widgets management page)"
       );
       await sleep(2000);
+      await logUrl("after-nav-to-widgets");
       await stagehand.act("Click the button to create a new Shared HTML Widget");
       await sleep(2000);
+      await logUrl("after-click-create-widget");
       await stagehand.act(`Set the widget Name to "${htmlWidgetName}"`);
       await pasteIntoLargestEditor(htmlBody, "HTML body");
       await stagehand.act("Click the Save button to save this Shared HTML Widget");
       await sleep(2500);
+      await logUrl("after-save-html-widget");
     }
 
     // A.2 — CSS widget
@@ -202,6 +246,7 @@ export async function publishToSierra(
       await pasteIntoLargestEditor(cssWrapped, "CSS");
       await stagehand.act("Click the Save button to save this Shared HTML Widget");
       await sleep(2500);
+      await logUrl("after-save-css-widget");
     }
 
     // ────────────────────────────────────────────────────────────
