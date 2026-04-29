@@ -105,125 +105,145 @@ export async function publishToSierra(
       throw new Error(`Sierra login failed (still on /login.aspx). Watch session: ${sessionUrl}`);
     }
 
-    // 2) Navigate to content-pages list, then click the "Add" action.
-    await page.goto(`${adminUrl}/content-pages.aspx`, { waitUntil: "networkidle", timeoutMs: 60_000 });
-    await stagehand.act("Click the button or link to add a new content page");
-    await sleep(2000);
+    // The real Sierra workflow per operator:
+    //   Phase A — Shared Widgets library: create one Shared HTML Widget per
+    //     piece of content (one for HTML, one for CSS). Each widget is named
+    //     so we can pick it by name later. Order: HTML widget, then CSS widget.
+    //   Phase B — Content Pages: create the new page (Title + URL + Section),
+    //     then add page components that REFERENCE the just-created Shared HTML
+    //     Widgets by name. Order on the page: CSS first (so styles load before
+    //     markup), then HTML.
+    //   Phase C — Save the content page.
 
-    // 3) Fill Title + URL slug + Section.
-    await stagehand.act(`Set the page Title field to "${input.pageTitle}"`);
-    await stagehand.act(`Set the page URL slug field to "${slug}"`);
-    const section = input.sierraSection || "Featured";
-    await stagehand.act(`Select "${section}" from the page Section dropdown`);
-
-    // 4) Save the initial page (creates the page record so we can add widgets).
-    await stagehand.act("Click the Save button to save this content page");
-    await sleep(3500);
-
-    // 5) Add Shared HTML Widget #1 with the HTML body.
     const { htmlBody, cssOnly } = splitHtmlAndCss(input.pageHtml);
     const cssWrapped = cssOnly ? `<style>\n${cssOnly}\n</style>` : "";
+    const htmlWidgetName = `Walkthrough — ${input.pageTitle} — HTML`;
+    const cssWidgetName = `Walkthrough — ${input.pageTitle} — CSS`;
+    const section = input.sierraSection || "Featured";
 
+    // ────────────────────────────────────────────────────────────
+    // Phase A — Create the two Shared HTML Widgets in the library
+    // ────────────────────────────────────────────────────────────
+
+    async function pasteIntoLargestEditor(body: string, label: string): Promise<void> {
+      const result = await page.evaluate((b: string) => {
+        const w = globalThis as unknown as {
+          CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
+          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
+        };
+        if (w.CKEDITOR?.instances) {
+          const keys = Object.keys(w.CKEDITOR.instances);
+          if (keys.length > 0) {
+            w.CKEDITOR.instances[keys[0]].setData(b);
+            return `ckeditor:${keys[0]}`;
+          }
+        }
+        const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
+        let best: {
+          offsetWidth?: number;
+          offsetHeight?: number;
+          id?: string;
+          value: string;
+          dispatchEvent: (e: unknown) => void;
+        } | null = null;
+        let bestArea = 0;
+        for (let i = 0; i < tas.length; i++) {
+          const ta = tas[i] as {
+            offsetWidth?: number;
+            offsetHeight?: number;
+            id?: string;
+            value: string;
+            dispatchEvent: (e: unknown) => void;
+          };
+          const area = (ta.offsetWidth || 0) * (ta.offsetHeight || 0);
+          if (area > bestArea) {
+            bestArea = area;
+            best = ta;
+          }
+        }
+        if (best && bestArea > 5000) {
+          best.value = b;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
+          best.dispatchEvent(new Event("input", { bubbles: true }));
+          best.dispatchEvent(new Event("change", { bubbles: true }));
+          return `textarea:${best.id || "(no-id)"}`;
+        }
+        return "none";
+      }, body);
+      if (result === "none") {
+        throw new Error(`Could not paste ${label} into widget editor. Watch: ${sessionUrl}`);
+      }
+    }
+
+    // A.1 — HTML widget
     if (htmlBody) {
-      await stagehand.act("Click 'Add New Page Component' to add a new component to this page");
-      await sleep(1500);
-      await stagehand.act("Choose 'Shared HTML Widget' from the component type list");
+      await stagehand.act("Navigate to the Shared HTML Widgets management page in Sierra admin");
       await sleep(2000);
-      // Configure the new widget — Sierra prompts for a name, then HTML.
-      await stagehand.act(
-        `Set the widget Name to "${input.pageTitle} — HTML"`
-      );
-      // Paste the HTML body into the widget's HTML editor (source/code view).
-      const htmlPasted = await page.evaluate((body: string) => {
-        const w = globalThis as unknown as {
-          CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
-          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
-        };
-        if (w.CKEDITOR?.instances) {
-          const keys = Object.keys(w.CKEDITOR.instances);
-          if (keys.length > 0) {
-            w.CKEDITOR.instances[keys[0]].setData(body);
-            return `ckeditor:${keys[0]}`;
-          }
-        }
-        const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
-        for (let i = 0; i < tas.length; i++) {
-          const ta = tas[i] as {
-            offsetWidth?: number;
-            offsetHeight?: number;
-            id?: string;
-            value: string;
-            dispatchEvent: (e: unknown) => void;
-          };
-          // Pick the largest visible textarea on the page (the widget editor).
-          if ((ta.offsetWidth || 0) * (ta.offsetHeight || 0) > 50_000) {
-            ta.value = body;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
-            ta.dispatchEvent(new Event("input", { bubbles: true }));
-            ta.dispatchEvent(new Event("change", { bubbles: true }));
-            return `textarea:${ta.id || "(no-id)"}`;
-          }
-        }
-        return "none";
-      }, htmlBody);
-      if (htmlPasted === "none") {
-        throw new Error(`Could not paste HTML body into widget editor. Watch: ${sessionUrl}`);
-      }
-      await stagehand.act("Click the Save button on this widget configuration");
+      await stagehand.act("Click the button to create a new Shared HTML Widget");
+      await sleep(2000);
+      await stagehand.act(`Set the widget Name to "${htmlWidgetName}"`);
+      await pasteIntoLargestEditor(htmlBody, "HTML body");
+      await stagehand.act("Click the Save button to save this Shared HTML Widget");
       await sleep(2500);
     }
 
-    // 6) Add Shared HTML Widget #2 with the CSS.
+    // A.2 — CSS widget
     if (cssWrapped) {
-      await stagehand.act("Click 'Add New Page Component' to add another component");
+      await stagehand.act("Navigate to the Shared HTML Widgets management page in Sierra admin");
+      await sleep(2000);
+      await stagehand.act("Click the button to create a new Shared HTML Widget");
+      await sleep(2000);
+      await stagehand.act(`Set the widget Name to "${cssWidgetName}"`);
+      await pasteIntoLargestEditor(cssWrapped, "CSS");
+      await stagehand.act("Click the Save button to save this Shared HTML Widget");
+      await sleep(2500);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase B — Create the Content Page and attach both widgets
+    // ────────────────────────────────────────────────────────────
+
+    await page.goto(`${adminUrl}/content-pages.aspx`, { waitUntil: "networkidle", timeoutMs: 60_000 });
+    await stagehand.act("Click the button or link to create a new content page");
+    await sleep(2000);
+    await stagehand.act(`Set the page Title field to "${input.pageTitle}"`);
+    await stagehand.act(`Set the page URL slug field to "${slug}"`);
+    await stagehand.act(`Select "${section}" from the page Section dropdown`);
+    await stagehand.act("Click the Save button to save this content page (creates the page record)");
+    await sleep(3500);
+
+    // B.1 — Attach CSS widget first (CSS should appear above HTML so styles load first).
+    if (cssWrapped) {
+      await stagehand.act("Click 'Add New Page Component' to add a component to this page");
       await sleep(1500);
       await stagehand.act("Choose 'Shared HTML Widget' from the component type list");
       await sleep(2000);
       await stagehand.act(
-        `Set the widget Name to "${input.pageTitle} — CSS"`
+        `Select the Shared HTML Widget named "${cssWidgetName}" from the dropdown or list`
       );
-      const cssPasted = await page.evaluate((css: string) => {
-        const w = globalThis as unknown as {
-          CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
-          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
-        };
-        if (w.CKEDITOR?.instances) {
-          const keys = Object.keys(w.CKEDITOR.instances);
-          if (keys.length > 0) {
-            w.CKEDITOR.instances[keys[0]].setData(css);
-            return `ckeditor:${keys[0]}`;
-          }
-        }
-        const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
-        for (let i = 0; i < tas.length; i++) {
-          const ta = tas[i] as {
-            offsetWidth?: number;
-            offsetHeight?: number;
-            id?: string;
-            value: string;
-            dispatchEvent: (e: unknown) => void;
-          };
-          if ((ta.offsetWidth || 0) * (ta.offsetHeight || 0) > 50_000) {
-            ta.value = css;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
-            ta.dispatchEvent(new Event("input", { bubbles: true }));
-            ta.dispatchEvent(new Event("change", { bubbles: true }));
-            return `textarea:${ta.id || "(no-id)"}`;
-          }
-        }
-        return "none";
-      }, cssWrapped);
-      if (cssPasted === "none") {
-        throw new Error(`Could not paste CSS into widget editor. Watch: ${sessionUrl}`);
-      }
-      await stagehand.act("Click the Save button on this widget configuration");
+      await stagehand.act("Click Submit or Save to add this widget to the page");
       await sleep(2500);
     }
 
-    // 7) Final save of the content page (after both widgets are attached).
-    await stagehand.act("Click the Save button to save the content page with all its components");
+    // B.2 — Attach HTML widget.
+    if (htmlBody) {
+      await stagehand.act("Click 'Add New Page Component' to add another component to this page");
+      await sleep(1500);
+      await stagehand.act("Choose 'Shared HTML Widget' from the component type list");
+      await sleep(2000);
+      await stagehand.act(
+        `Select the Shared HTML Widget named "${htmlWidgetName}" from the dropdown or list`
+      );
+      await stagehand.act("Click Submit or Save to add this widget to the page");
+      await sleep(2500);
+    }
+
+    // ────────────────────────────────────────────────────────────
+    // Phase C — Final save
+    // ────────────────────────────────────────────────────────────
+
+    await stagehand.act("Click the Save button to save the content page with both widgets attached");
     await sleep(3500);
 
     // 6) Verify the page was actually created. Sierra silently rejects
