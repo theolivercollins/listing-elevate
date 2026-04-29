@@ -10,7 +10,8 @@
 
 import { Stagehand } from "@browserbasehq/stagehand";
 
-const STAGEHAND_MODEL = process.env.STAGEHAND_MODEL || "claude-sonnet-4-5-20250929";
+// Stagehand v3 requires the provider/model format (e.g. anthropic/claude-sonnet-4-5).
+const STAGEHAND_MODEL = process.env.STAGEHAND_MODEL || "anthropic/claude-sonnet-4-5";
 
 export interface SierraPublishInput {
   sierraAdminUrl: string;
