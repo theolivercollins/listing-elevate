@@ -162,11 +162,10 @@ export async function publishToSierra(
       // Best-effort: capture what's on the admin page so we can debug.
       const adminUrlNow = page.url();
       const visibleErr = await stagehand
-        .extract({
-          instruction:
-            "Find any visible error message, validation warning, or notice on the page that explains why the save didn't complete. If none, return 'no visible error'.",
-          schema: zErrorMessage,
-        })
+        .extract(
+          "Find any visible error message, validation warning, or notice on the page that explains why the save didn't complete. If none, return 'no visible error'.",
+          zErrorMessage
+        )
         .then((r) => r.message)
         .catch(() => "extract failed");
       throw new Error(
