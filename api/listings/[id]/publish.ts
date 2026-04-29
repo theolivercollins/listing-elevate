@@ -83,14 +83,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Credential decryption failed" });
   }
 
-  const slug = `walkthrough/${lp.slug}`;
   const result = await publishToSierra({
     sierraAdminUrl: client.sierra_admin_url,
     sierraSiteName: client.sierra_site_name || "",
     sierraAdminUsername: client.sierra_admin_username,
     sierraAdminPassword: password,
     sierraPublicBaseUrl: client.sierra_public_base_url,
-    pageSlug: slug,
+    pageSlug: lp.slug,
     pageTitle: `${listing.address} — Walkthrough`,
     pageHtml: html,
   });
@@ -104,7 +103,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", id);
-    return res.status(502).json({ error: result.error });
+    return res.status(502).json({
+      error: result.error,
+      session_url: result.session_url,
+    });
   }
 
   // Generate QR via api.qrserver.com (free, public).
@@ -130,6 +132,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     listing: updated,
     sierra_page_url: result.sierra_page_url,
     qr_url,
-    apify_run_id: result.apify_run_id,
+    session_url: result.session_url,
   });
 }

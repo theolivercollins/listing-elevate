@@ -1,264 +1,142 @@
-// Publish a custom listing landing page to a client's Sierra Interactive site
-// by running an Apify Playwright actor that drives the Sierra admin UI:
-//   1. Log in with the client's stored Sierra admin credentials.
-//   2. Navigate to Content Pages → New.
-//   3. Set URL slug + title.
-//   4. Add a Content Area component, paste our pre-rendered HTML.
-//   5. Add a Contact Form component.
-//   6. Save.
-//   7. Return the published page URL.
+// Publish a custom listing landing page to a client's Sierra Interactive site.
+// Drives Sierra admin via Stagehand v3 (Browserbase + Claude as the action LLM).
+// Stagehand's `act()` lets us describe each step in natural language, which
+// sidesteps Sierra's unlabeled inputs and randomized CKEditor IDs.
 //
-// Apify generic JS-Playwright actor: jancurn/playwright-scraper or apify/playwright-scraper.
-// We POST a "run" with our pageFunction script + input data, then poll for completion.
-// Apify Pro account expected; APIFY_API_TOKEN must be set.
+// Required env (Vercel preview/prod + local credentials.env):
+//   BROWSERBASE_API_KEY
+//   BROWSERBASE_PROJECT_ID
+//   ANTHROPIC_API_KEY  (already set for the judge)
 
-const APIFY_BASE = "https://api.apify.com/v2";
-const APIFY_ACTOR_ID = process.env.APIFY_SIERRA_ACTOR_ID || "apify~playwright-scraper";
+import { Stagehand } from "@browserbasehq/stagehand";
+
+const STAGEHAND_MODEL = process.env.STAGEHAND_MODEL || "claude-sonnet-4-5-20250929";
 
 export interface SierraPublishInput {
-  sierraAdminUrl: string;        // e.g. https://client2.sierrainteractivedev.com (no trailing slash)
-  sierraSiteName: string;        // e.g. "thehelgemoteam" — the Sierra "Site Name" login field
+  sierraAdminUrl: string;
+  sierraSiteName: string;
   sierraAdminUsername: string;
   sierraAdminPassword: string;
-  sierraPublicBaseUrl: string;   // e.g. https://www.thehelgemoteam.com
-  pageSlug: string;              // e.g. "walkthrough/193-santa-fe-st"
-  pageTitle: string;             // e.g. "193 Santa Fe St — Walkthrough"
-  pageHtml: string;              // pre-rendered HTML for the Content Area
+  sierraPublicBaseUrl: string;
+  pageSlug: string;
+  pageTitle: string;
+  pageHtml: string;
 }
 
 export interface SierraPublishResult {
   ok: boolean;
   sierra_page_url?: string;
-  apify_run_id?: string;
+  session_url?: string;
   error?: string;
 }
 
 export async function publishToSierra(
   input: SierraPublishInput
 ): Promise<SierraPublishResult> {
-  const token = process.env.APIFY_API_TOKEN;
-  if (!token) {
-    return { ok: false, error: "APIFY_API_TOKEN not set" };
-  }
+  if (!process.env.BROWSERBASE_API_KEY) return { ok: false, error: "BROWSERBASE_API_KEY not set" };
+  if (!process.env.BROWSERBASE_PROJECT_ID) return { ok: false, error: "BROWSERBASE_PROJECT_ID not set" };
+  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, error: "ANTHROPIC_API_KEY not set" };
 
-  // Strip trailing slash so we don't end up with `//login.aspx`.
   const adminUrl = input.sierraAdminUrl.replace(/\/+$/, "");
   const publicBase = input.sierraPublicBaseUrl.replace(/\/+$/, "");
+  const slug = `walkthrough/${input.pageSlug.replace(/^\/+/, "")}`;
 
-  const startResp = await fetch(
-    `${APIFY_BASE}/acts/${encodeURIComponent(APIFY_ACTOR_ID)}/runs?token=${token}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        startUrls: [{ url: `${adminUrl}/login.aspx` }],
-        pageFunction: buildPageFunction(),
-        customData: {
-          adminUrl,
-          siteName: input.sierraSiteName,
-          username: input.sierraAdminUsername,
-          password: input.sierraAdminPassword,
-          publicBaseUrl: publicBase,
-          slug: input.pageSlug,
-          title: input.pageTitle,
-          html: input.pageHtml,
-        },
-        // Anti-bot: residential US proxy + stealth + persistent session cookies.
-        proxyConfiguration: {
-          useApifyProxy: true,
-          apifyProxyGroups: ["RESIDENTIAL"],
-          apifyProxyCountry: "US",
-        },
-        useChrome: true,
-        launcher: "chromium",
-        useStealth: true,
-        ignoreCorsAndCsp: true,
-        persistCookiesPerSession: true,
-        sessionPoolName: "sierra-publish",
-        requestHandlerTimeoutSecs: 180,
-        navigationTimeoutSecs: 60,
-        maxRequestsPerCrawl: 5,
-        viewportWidth: 1440,
-        viewportHeight: 900,
-      }),
+  const stagehand = new Stagehand({
+    env: "BROWSERBASE",
+    apiKey: process.env.BROWSERBASE_API_KEY,
+    projectId: process.env.BROWSERBASE_PROJECT_ID,
+    model: {
+      modelName: STAGEHAND_MODEL,
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      provider: "anthropic",
+    },
+    verbose: 1,
+  });
+
+  let sessionUrl: string | undefined;
+  try {
+    await stagehand.init();
+    sessionUrl = stagehand.browserbaseSessionURL;
+
+    const page = stagehand.context.activePage();
+    if (!page) throw new Error("Stagehand: no active page after init");
+
+    // 1) Login.
+    await page.goto(`${adminUrl}/login.aspx`, { waitUntil: "networkidle", timeoutMs: 60_000 });
+    await stagehand.act(`Type "${input.sierraSiteName}" into the Site Name field`);
+    await stagehand.act(`Type "${input.sierraAdminUsername}" into the Username field`);
+    await stagehand.act(`Type "${input.sierraAdminPassword}" into the Password field`);
+    await stagehand.act("Click the Login button");
+    await sleep(2000);
+
+    if (/\/login\.aspx/i.test(page.url())) {
+      throw new Error(`Sierra login failed (still on /login.aspx). Watch session: ${sessionUrl}`);
     }
-  );
-  if (!startResp.ok) {
-    const errText = await startResp.text();
-    return { ok: false, error: `Apify start failed: ${startResp.status} ${errText}` };
-  }
-  const startJson = (await startResp.json()) as { data: { id: string; defaultDatasetId: string } };
-  const runId = startJson.data.id;
-  const datasetId = startJson.data.defaultDatasetId;
 
-  // Poll up to 90 seconds (Vercel Pro fn timeout = 300s).
-  const deadline = Date.now() + 90_000;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 3_000));
-    const statusResp = await fetch(
-      `${APIFY_BASE}/actor-runs/${runId}?token=${token}`
+    // 2) Navigate to content-pages list, then click the "Add" action.
+    await page.goto(`${adminUrl}/content-pages.aspx`, { waitUntil: "networkidle", timeoutMs: 60_000 });
+    await stagehand.act("Click the button or link to add a new content page");
+    await sleep(2000);
+
+    // 3) Fill Title + URL slug.
+    await stagehand.act(`Set the page Title field to "${input.pageTitle}"`);
+    await stagehand.act(`Set the page URL slug field to "${slug}"`);
+
+    // 4) Paste HTML into the main rich-text editor (Content Area).
+    // act() can't reliably handle a multi-KB HTML blob, so set the CKEditor
+    // value directly via its API. Try CKEditor 4 first, then fall back to a
+    // textarea whose id starts with `contentarea_`.
+    const htmlSetResult = await page.evaluate(
+      (html: string) => {
+        // Browser context — DOM types are available here at runtime even though
+        // the Vercel/Node tsconfig doesn't include the dom lib. Use `any` casts.
+        const w = globalThis as unknown as {
+          CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
+          document?: {
+            querySelector: (sel: string) => unknown;
+          };
+        };
+        if (w.CKEDITOR?.instances) {
+          const keys = Object.keys(w.CKEDITOR.instances);
+          if (keys.length > 0) {
+            w.CKEDITOR.instances[keys[0]].setData(html);
+            return `ckeditor4:${keys[0]}`;
+          }
+        }
+        const ta = w.document?.querySelector('textarea[id^="contentarea_"]') as
+          | { id: string; value: string; dispatchEvent: (e: unknown) => void }
+          | null;
+        if (ta) {
+          ta.value = html;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          ta.dispatchEvent(new Event("change", { bubbles: true }));
+          return `textarea:${ta.id}`;
+        }
+        return "none";
+      },
+      input.pageHtml
     );
-    if (!statusResp.ok) continue;
-    const statusJson = (await statusResp.json()) as {
-      data: { status: string };
-    };
-    const status = statusJson.data.status;
-    if (status === "SUCCEEDED") {
-      const dsResp = await fetch(
-        `${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&clean=true`
-      );
-      const items = (await dsResp.json()) as Array<{
-        sierra_page_url?: string;
-        error?: string;
-      }>;
-      const item = items[0];
-      if (item?.sierra_page_url) {
-        return { ok: true, sierra_page_url: item.sierra_page_url, apify_run_id: runId };
-      }
-      return {
-        ok: false,
-        error: item?.error || "Actor finished but no sierra_page_url returned",
-        apify_run_id: runId,
-      };
+
+    if (htmlSetResult === "none") {
+      throw new Error(`Could not find a CKEditor or content textarea to paste HTML into. Watch session: ${sessionUrl}`);
     }
-    if (status === "FAILED" || status === "ABORTED" || status === "TIMED-OUT") {
-      return { ok: false, error: `Apify actor ${status}`, apify_run_id: runId };
-    }
+
+    // 5) Save the page.
+    await stagehand.act("Click the Save button to save this content page");
+    await sleep(3000);
+
+    const sierra_page_url = `${publicBase}/${slug.replace(/^\/+/, "")}`;
+    return { ok: true, sierra_page_url, session_url: sessionUrl };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message, session_url: sessionUrl };
+  } finally {
+    await stagehand.close().catch(() => null);
   }
-  return { ok: false, error: "Apify actor timed out client-side", apify_run_id: runId };
 }
 
-// The script that runs inside the Apify Playwright actor.
-// Returned as a string so it can be sent over the wire.
-function buildPageFunction(): string {
-  return `
-    async function pageFunction(context) {
-      const { page, customData, log } = context;
-      const { adminUrl, siteName, username, password, slug, title, html, publicBaseUrl } = customData;
-
-      // Try several plausible Site Name formats. Sierra's login form has
-      // type="url" but may also accept plain domains depending on the customer.
-      function siteNameVariants(s) {
-        const trimmed = (s || '').trim().replace(/\\/+$/, '');
-        const noScheme = trimmed.replace(/^https?:\\/\\//, '');
-        const noWww = noScheme.replace(/^www\\./, '');
-        const variants = [trimmed, noScheme, noWww, 'https://' + noWww, 'https://www.' + noWww];
-        return Array.from(new Set(variants.filter(Boolean)));
-      }
-
-      async function loginAttempt(siteNameValue) {
-        log.info('Login attempt with siteName="' + siteNameValue + '"');
-        // Wait for networkidle so login-form.js has time to initialize and bind handlers.
-        await page.goto(adminUrl + '/login.aspx', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => null);
-        await page.waitForSelector('#txtSiteName', { timeout: 30000 });
-        // Use real keystrokes so input/change events fire and Sierra's JS sees the values.
-        await page.click('#txtSiteName', { clickCount: 3 });
-        await page.type('#txtSiteName', siteNameValue, { delay: 25 });
-        await page.click('#txtUserName', { clickCount: 3 });
-        await page.type('#txtUserName', username, { delay: 25 });
-        await page.click('#txtPassword', { clickCount: 3 });
-        await page.type('#txtPassword', password, { delay: 25 });
-        // Press Enter inside password field — this triggers the form's onsubmit handler
-        // (which the JS validator hooks). Falls back to button click if no nav within 5s.
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null),
-          page.press('#txtPassword', 'Enter'),
-        ]);
-        await page.waitForTimeout(1500);
-        const url = page.url();
-        const onLoginPage = /\\/login\\.aspx/i.test(url);
-        if (onLoginPage) {
-          const errText = await page.locator('#ErrorContainer .text, .alert, .error, [class*="error"]').first().innerText({ timeout: 1000 }).catch(() => '');
-          log.warning('Login still on /login.aspx — siteName="' + siteNameValue + '" rejected. Error text: "' + (errText || '(none)') + '"');
-          return { ok: false, errText, url };
-        }
-        log.info('Login succeeded with siteName="' + siteNameValue + '". URL: ' + url);
-        return { ok: true, url };
-      }
-
-      let result = null;
-      let lastErr = '';
-      for (const variant of siteNameVariants(siteName)) {
-        result = await loginAttempt(variant);
-        if (result.ok) break;
-        lastErr = result.errText || ('Still on ' + result.url);
-      }
-      if (!result || !result.ok) {
-        throw new Error('Sierra login failed for all site-name variants. Last error: ' + lastErr);
-      }
-
-      // Sierra requires visiting /content-pages.aspx first to establish
-      // server-side state before the new-page form will render.
-      log.info('Navigating to content-pages.aspx (list)');
-      await page.goto(adminUrl + '/content-pages.aspx', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => null);
-      if (/\\/login\\.aspx/i.test(page.url())) {
-        throw new Error('Bounced to /login.aspx when opening content-pages — session not authenticated.');
-      }
-
-      log.info('Navigating to new Content Page form');
-      await page.goto(adminUrl + '/content-page-form.aspx?secid=-1&clid=-1&sb=2&so=0&pn=1&asid=-1', {
-        waitUntil: 'networkidle',
-        timeout: 30000,
-      }).catch(() => null);
-      if (/\\/login\\.aspx/i.test(page.url())) {
-        throw new Error('Bounced to /login.aspx when opening content-page-form — session not authenticated.');
-      }
-
-      // Diagnostic: dump every input/select on the form so we can see the actual
-      // selectors Sierra uses for Title / URL slug. Logs visible in Apify run.
-      const inputDump = await page.evaluate(() => {
-        const els = Array.from(document.querySelectorAll('input, textarea, select'));
-        return els.slice(0, 60).map((el) => ({
-          tag: el.tagName.toLowerCase(),
-          type: el.type || '',
-          name: el.name || '',
-          id: el.id || '',
-          placeholder: el.placeholder || '',
-        }));
-      }).catch(() => []);
-      log.info('Fields on content-page-form: ' + JSON.stringify(inputDump));
-
-      // Try a wider set of selectors. ASP.NET names vary across builds.
-      const titleSelectors = [
-        'input[id*="Title"]',
-        'input[name*="Title"]',
-        'input[id*="title"]',
-        'input[name*="title"]',
-        'input[id*="PageName"]',
-        'input[id*="Name"][type="text"]',
-      ].join(', ');
-      const urlSelectors = [
-        'input[id*="Url"]',
-        'input[name*="Url"]',
-        'input[id*="Slug"]',
-        'input[id*="Path"]',
-      ].join(', ');
-
-      await page.fill(titleSelectors, title);
-      await page.fill(urlSelectors, slug);
-
-      // Click "Add New Page Component" → choose "Content Area".
-      await page.click('text=Add New Page Component', { timeout: 15000 });
-      await page.click('text=Content Area', { timeout: 15000 });
-
-      // Wait for the CKEditor instance to render.
-      await page.waitForSelector('iframe[id*="cke"], iframe[title*="Rich Text"]', { timeout: 30000 });
-      // Toggle to source view, paste HTML, toggle back.
-      const sourceBtn = page.locator('a.cke_button__source, button[title*="Source"]').first();
-      await sourceBtn.click();
-      const sourceTextarea = page.locator('textarea.cke_source').first();
-      await sourceTextarea.fill(html);
-      await sourceBtn.click();
-
-      // Save the Content Page.
-      await page.click('text=Save');
-      await page.waitForLoadState('networkidle', { timeout: 30000 });
-
-      // The published URL is the public-base + slug.
-      const sierra_page_url = publicBaseUrl + '/' + slug.replace(/^\\//, '');
-      log.info('Sierra page URL: ' + sierra_page_url);
-
-      return { sierra_page_url };
-    }
-  `.trim();
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
