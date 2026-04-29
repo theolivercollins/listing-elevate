@@ -9,6 +9,9 @@
 //   ANTHROPIC_API_KEY  (already set for the judge)
 
 import { Stagehand } from "@browserbasehq/stagehand";
+import { z } from "zod";
+
+const zErrorMessage = z.object({ message: z.string() });
 
 // Stagehand v3 requires the provider/model format (e.g. anthropic/claude-sonnet-4-5).
 const STAGEHAND_MODEL = process.env.STAGEHAND_MODEL || "anthropic/claude-sonnet-4-5";
@@ -53,9 +56,12 @@ export async function publishToSierra(
         apiKey: process.env.ANTHROPIC_API_KEY,
         provider: "anthropic",
       },
-      // Pino's worker-thread logger breaks in Vercel serverless. Use a no-op.
+      // Pino's worker-thread logger breaks in Vercel serverless.
       disablePino: true,
       verbose: 0,
+      // Retry act() with refined instructions if the first attempt doesn't
+      // change page state (silent failures kill us otherwise).
+      selfHeal: true,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -137,7 +143,39 @@ export async function publishToSierra(
     await stagehand.act("Click the Save button to save this content page");
     await sleep(3000);
 
+    // 6) Verify the page was actually created. Sierra silently rejects
+    // duplicate slugs / missing fields / etc. — without this check we'd lie
+    // about success when nothing landed.
     const sierra_page_url = `${publicBase}/${slug.replace(/^\/+/, "")}`;
+    let verifyStatus = 0;
+    try {
+      const verifyResp = await fetch(sierra_page_url, {
+        method: "GET",
+        redirect: "follow",
+        headers: { "User-Agent": "Mozilla/5.0 (LE publish-verify)" },
+      });
+      verifyStatus = verifyResp.status;
+    } catch (e) {
+      verifyStatus = -1;
+    }
+    if (verifyStatus !== 200) {
+      // Best-effort: capture what's on the admin page so we can debug.
+      const adminUrlNow = page.url();
+      const visibleErr = await stagehand
+        .extract({
+          instruction:
+            "Find any visible error message, validation warning, or notice on the page that explains why the save didn't complete. If none, return 'no visible error'.",
+          schema: zErrorMessage,
+        })
+        .then((r) => r.message)
+        .catch(() => "extract failed");
+      throw new Error(
+        `Page not live after save (GET ${sierra_page_url} returned ${verifyStatus}). ` +
+          `Admin page is now at ${adminUrlNow}. Sierra error text: "${visibleErr}". ` +
+          `Watch the recording: ${sessionUrl}`
+      );
+    }
+
     return { ok: true, sierra_page_url, session_url: sessionUrl };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
