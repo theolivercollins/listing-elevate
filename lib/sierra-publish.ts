@@ -22,9 +22,25 @@ export interface SierraPublishInput {
   sierraAdminUsername: string;
   sierraAdminPassword: string;
   sierraPublicBaseUrl: string;
+  /** Sierra section to file the page under (e.g. "Featured"). */
+  sierraSection?: string;
   pageSlug: string;
   pageTitle: string;
+  /** Full rendered HTML (with inline <style>). We split it server-side. */
   pageHtml: string;
+}
+
+/** Split a rendered page into body (no <style>) and the inline CSS contents. */
+function splitHtmlAndCss(rendered: string): { htmlBody: string; cssOnly: string } {
+  const styleRegex = /<style[^>]*>([\s\S]*?)<\/style>/gi;
+  const cssBlocks: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = styleRegex.exec(rendered)) !== null) {
+    cssBlocks.push(match[1].trim());
+  }
+  const htmlBody = rendered.replace(styleRegex, "").trim();
+  const cssOnly = cssBlocks.join("\n\n").trim();
+  return { htmlBody, cssOnly };
 }
 
 export interface SierraPublishResult {
@@ -94,54 +110,121 @@ export async function publishToSierra(
     await stagehand.act("Click the button or link to add a new content page");
     await sleep(2000);
 
-    // 3) Fill Title + URL slug.
+    // 3) Fill Title + URL slug + Section.
     await stagehand.act(`Set the page Title field to "${input.pageTitle}"`);
     await stagehand.act(`Set the page URL slug field to "${slug}"`);
+    const section = input.sierraSection || "Featured";
+    await stagehand.act(`Select "${section}" from the page Section dropdown`);
 
-    // 4) Paste HTML into the main rich-text editor (Content Area).
-    // act() can't reliably handle a multi-KB HTML blob, so set the CKEditor
-    // value directly via its API. Try CKEditor 4 first, then fall back to a
-    // textarea whose id starts with `contentarea_`.
-    const htmlSetResult = await page.evaluate(
-      (html: string) => {
-        // Browser context — DOM types are available here at runtime even though
-        // the Vercel/Node tsconfig doesn't include the dom lib. Use `any` casts.
+    // 4) Save the initial page (creates the page record so we can add widgets).
+    await stagehand.act("Click the Save button to save this content page");
+    await sleep(3500);
+
+    // 5) Add Shared HTML Widget #1 with the HTML body.
+    const { htmlBody, cssOnly } = splitHtmlAndCss(input.pageHtml);
+    const cssWrapped = cssOnly ? `<style>\n${cssOnly}\n</style>` : "";
+
+    if (htmlBody) {
+      await stagehand.act("Click 'Add New Page Component' to add a new component to this page");
+      await sleep(1500);
+      await stagehand.act("Choose 'Shared HTML Widget' from the component type list");
+      await sleep(2000);
+      // Configure the new widget — Sierra prompts for a name, then HTML.
+      await stagehand.act(
+        `Set the widget Name to "${input.pageTitle} — HTML"`
+      );
+      // Paste the HTML body into the widget's HTML editor (source/code view).
+      const htmlPasted = await page.evaluate((body: string) => {
         const w = globalThis as unknown as {
           CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
-          document?: {
-            querySelector: (sel: string) => unknown;
-          };
+          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
         };
         if (w.CKEDITOR?.instances) {
           const keys = Object.keys(w.CKEDITOR.instances);
           if (keys.length > 0) {
-            w.CKEDITOR.instances[keys[0]].setData(html);
-            return `ckeditor4:${keys[0]}`;
+            w.CKEDITOR.instances[keys[0]].setData(body);
+            return `ckeditor:${keys[0]}`;
           }
         }
-        const ta = w.document?.querySelector('textarea[id^="contentarea_"]') as
-          | { id: string; value: string; dispatchEvent: (e: unknown) => void }
-          | null;
-        if (ta) {
-          ta.value = html;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
-          ta.dispatchEvent(new Event("input", { bubbles: true }));
-          ta.dispatchEvent(new Event("change", { bubbles: true }));
-          return `textarea:${ta.id}`;
+        const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
+        for (let i = 0; i < tas.length; i++) {
+          const ta = tas[i] as {
+            offsetWidth?: number;
+            offsetHeight?: number;
+            id?: string;
+            value: string;
+            dispatchEvent: (e: unknown) => void;
+          };
+          // Pick the largest visible textarea on the page (the widget editor).
+          if ((ta.offsetWidth || 0) * (ta.offsetHeight || 0) > 50_000) {
+            ta.value = body;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
+            ta.dispatchEvent(new Event("input", { bubbles: true }));
+            ta.dispatchEvent(new Event("change", { bubbles: true }));
+            return `textarea:${ta.id || "(no-id)"}`;
+          }
         }
         return "none";
-      },
-      input.pageHtml
-    );
-
-    if (htmlSetResult === "none") {
-      throw new Error(`Could not find a CKEditor or content textarea to paste HTML into. Watch session: ${sessionUrl}`);
+      }, htmlBody);
+      if (htmlPasted === "none") {
+        throw new Error(`Could not paste HTML body into widget editor. Watch: ${sessionUrl}`);
+      }
+      await stagehand.act("Click the Save button on this widget configuration");
+      await sleep(2500);
     }
 
-    // 5) Save the page.
-    await stagehand.act("Click the Save button to save this content page");
-    await sleep(3000);
+    // 6) Add Shared HTML Widget #2 with the CSS.
+    if (cssWrapped) {
+      await stagehand.act("Click 'Add New Page Component' to add another component");
+      await sleep(1500);
+      await stagehand.act("Choose 'Shared HTML Widget' from the component type list");
+      await sleep(2000);
+      await stagehand.act(
+        `Set the widget Name to "${input.pageTitle} — CSS"`
+      );
+      const cssPasted = await page.evaluate((css: string) => {
+        const w = globalThis as unknown as {
+          CKEDITOR?: { instances?: Record<string, { setData: (s: string) => void }> };
+          document?: { querySelectorAll: (sel: string) => ArrayLike<unknown> };
+        };
+        if (w.CKEDITOR?.instances) {
+          const keys = Object.keys(w.CKEDITOR.instances);
+          if (keys.length > 0) {
+            w.CKEDITOR.instances[keys[0]].setData(css);
+            return `ckeditor:${keys[0]}`;
+          }
+        }
+        const tas = (w.document?.querySelectorAll("textarea") || []) as ArrayLike<unknown>;
+        for (let i = 0; i < tas.length; i++) {
+          const ta = tas[i] as {
+            offsetWidth?: number;
+            offsetHeight?: number;
+            id?: string;
+            value: string;
+            dispatchEvent: (e: unknown) => void;
+          };
+          if ((ta.offsetWidth || 0) * (ta.offsetHeight || 0) > 50_000) {
+            ta.value = css;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const Event = (globalThis as any).Event as new (n: string, o?: unknown) => unknown;
+            ta.dispatchEvent(new Event("input", { bubbles: true }));
+            ta.dispatchEvent(new Event("change", { bubbles: true }));
+            return `textarea:${ta.id || "(no-id)"}`;
+          }
+        }
+        return "none";
+      }, cssWrapped);
+      if (cssPasted === "none") {
+        throw new Error(`Could not paste CSS into widget editor. Watch: ${sessionUrl}`);
+      }
+      await stagehand.act("Click the Save button on this widget configuration");
+      await sleep(2500);
+    }
+
+    // 7) Final save of the content page (after both widgets are attached).
+    await stagehand.act("Click the Save button to save the content page with all its components");
+    await sleep(3500);
 
     // 6) Verify the page was actually created. Sierra silently rejects
     // duplicate slugs / missing fields / etc. — without this check we'd lie

@@ -91,6 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       sierraAdminUsername: client.sierra_admin_username,
       sierraAdminPassword: password,
       sierraPublicBaseUrl: client.sierra_public_base_url,
+      sierraSection: client.sierra_section || "Featured",
       pageSlug: lp.slug,
       pageTitle: `${listing.address} — Walkthrough`,
       pageHtml: html,
