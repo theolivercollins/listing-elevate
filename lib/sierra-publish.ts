@@ -178,7 +178,9 @@ export async function publishToSierra(
 
     // A.1 — HTML widget
     if (htmlBody) {
-      await stagehand.act("Navigate to the Shared HTML Widgets management page in Sierra admin");
+      await stagehand.act(
+        "In the top navigation, click the 'CONTENT' menu category, then click the link inside that menu for Shared HTML Widgets (the widgets management page)"
+      );
       await sleep(2000);
       await stagehand.act("Click the button to create a new Shared HTML Widget");
       await sleep(2000);
@@ -190,7 +192,9 @@ export async function publishToSierra(
 
     // A.2 — CSS widget
     if (cssWrapped) {
-      await stagehand.act("Navigate to the Shared HTML Widgets management page in Sierra admin");
+      await stagehand.act(
+        "In the top navigation, click the 'CONTENT' menu category, then click the link inside that menu for Shared HTML Widgets (the widgets management page)"
+      );
       await sleep(2000);
       await stagehand.act("Click the button to create a new Shared HTML Widget");
       await sleep(2000);
