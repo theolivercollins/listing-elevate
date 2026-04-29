@@ -8,11 +8,12 @@ import { AuthProvider } from "@/lib/auth";
 import { RequireAuth, RequireAdmin } from "@/components/ProtectedRoute";
 import { TopNav } from "@/components/TopNav";
 import Index from "./pages/Index";
+import V2Landing from "./v2/pages/Landing";
 import Upload from "./pages/Upload";
 import Presets from "./pages/Presets";
 import Status from "./pages/Status";
-import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
+import { LoginDialogProvider } from "@/v2/components/auth/LoginDialogContext";
 import Account from "./pages/Account";
 import AccountProperties from "./pages/account/Properties";
 import AccountBilling from "./pages/account/Billing";
@@ -48,53 +49,58 @@ const App = () => (
           <Toaster />
           <Sonner />
           <BrowserRouter>
-            <TopNav />
-            <Routes>
-              {/* Public routes */}
-              <Route path="/" element={<Index />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/status/:id" element={<Status />} />
+            <LoginDialogProvider>
+              <TopNav />
+              <Routes>
+                {/* Public routes */}
+                <Route path="/" element={<V2Landing />} />
+                {/* Legacy preview routes — redirect to the new root */}
+                <Route path="/v2" element={<Navigate to="/" replace />} />
+                <Route path="/legacy" element={<Index />} />
+                <Route path="/login" element={<Navigate to="/?login=1" replace />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/status/:id" element={<Status />} />
 
-              {/* Authenticated user routes */}
-              <Route element={<RequireAuth />}>
-                <Route path="/upload" element={<Upload />} />
-                <Route path="/presets" element={<Presets />} />
-                <Route path="/account" element={<Account />}>
-                  <Route index element={<Navigate to="properties" replace />} />
-                  <Route path="properties" element={<AccountProperties />} />
-                  <Route path="billing" element={<AccountBilling />} />
-                  <Route path="profile" element={<AccountProfile />} />
+                {/* Authenticated user routes */}
+                <Route element={<RequireAuth />}>
+                  <Route path="/upload" element={<Upload />} />
+                  <Route path="/presets" element={<Presets />} />
+                  <Route path="/account" element={<Account />}>
+                    <Route index element={<Navigate to="properties" replace />} />
+                    <Route path="properties" element={<AccountProperties />} />
+                    <Route path="billing" element={<AccountBilling />} />
+                    <Route path="profile" element={<AccountProfile />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              {/* Admin routes */}
-              <Route element={<RequireAdmin />}>
-                <Route path="/dashboard" element={<Dashboard />}>
-                  <Route index element={<DashboardOverview />} />
-                  <Route path="pipeline" element={<DashboardPipeline />} />
-                  <Route path="properties" element={<DashboardProperties />} />
-                  <Route path="properties/:id" element={<PropertyDetail />} />
-                  <Route path="logs" element={<DashboardLogs />} />
-                  <Route path="development" element={<DashboardDevelopment />} />
-                  <Route path="development/prompt-lab" element={<DashboardPromptLab />} />
-                  <Route path="development/prompt-lab/recipes" element={<DashboardPromptLabRecipes />} />
-                  <Route path="development/prompt-lab/:sessionId" element={<DashboardPromptLab />} />
-                  <Route path="development/proposals" element={<DashboardPromptProposals />} />
-                  <Route path="development/knowledge-map" element={<DashboardKnowledgeMap />} />
-                  <Route path="development/knowledge-map/:cellKey" element={<DashboardKnowledgeMapCell />} />
-                  <Route path="development/system-status" element={<DashboardSystemStatus />} />
-                  <Route path="development/lab" element={<DashboardLabListings />} />
-                  <Route path="development/lab/new" element={<DashboardLabListingNew />} />
-                  <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
-                  <Route path="rating-ledger" element={<DashboardRatingLedger />} />
-                  <Route path="finances" element={<DashboardFinances />} />
-                  <Route path="settings" element={<DashboardSettings />} />
+                {/* Admin routes */}
+                <Route element={<RequireAdmin />}>
+                  <Route path="/dashboard" element={<Dashboard />}>
+                    <Route index element={<DashboardOverview />} />
+                    <Route path="pipeline" element={<DashboardPipeline />} />
+                    <Route path="properties" element={<DashboardProperties />} />
+                    <Route path="properties/:id" element={<PropertyDetail />} />
+                    <Route path="logs" element={<DashboardLogs />} />
+                    <Route path="development" element={<DashboardDevelopment />} />
+                    <Route path="development/prompt-lab" element={<DashboardPromptLab />} />
+                    <Route path="development/prompt-lab/recipes" element={<DashboardPromptLabRecipes />} />
+                    <Route path="development/prompt-lab/:sessionId" element={<DashboardPromptLab />} />
+                    <Route path="development/proposals" element={<DashboardPromptProposals />} />
+                    <Route path="development/knowledge-map" element={<DashboardKnowledgeMap />} />
+                    <Route path="development/knowledge-map/:cellKey" element={<DashboardKnowledgeMapCell />} />
+                    <Route path="development/system-status" element={<DashboardSystemStatus />} />
+                    <Route path="development/lab" element={<DashboardLabListings />} />
+                    <Route path="development/lab/new" element={<DashboardLabListingNew />} />
+                    <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
+                    <Route path="rating-ledger" element={<DashboardRatingLedger />} />
+                    <Route path="finances" element={<DashboardFinances />} />
+                    <Route path="settings" element={<DashboardSettings />} />
+                  </Route>
                 </Route>
-              </Route>
 
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </LoginDialogProvider>
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>

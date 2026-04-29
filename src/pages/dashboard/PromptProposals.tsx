@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, ArrowLeft, Check, X, AlertTriangle, Play, ChevronDown, ChevronUp, Rocket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
+const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
+const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
 import {
   listProposals,
   reviewProposal,
@@ -73,8 +79,8 @@ const PromptProposals = () => {
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <span className="label text-muted-foreground">— Development</span>
-            <h2 className="mt-1 text-2xl font-semibold tracking-[-0.02em]">Prompt proposals</h2>
+            <span style={EYEBROW}>— Development</span>
+            <h2 className="mt-1" style={PAGE_H1}>Prompt proposals</h2>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -109,10 +115,10 @@ const PromptProposals = () => {
           Lab-scoped until one is manually promoted here; promotion
           writes a new prompt_revisions row that the next production
           pipeline run picks up via resolveProductionPrompt. */}
-      <section className="border border-border p-5">
+      <section className="border border-border p-5" style={{ borderRadius: 0 }}>
         <div className="mb-4 flex items-center gap-3">
           <Rocket className="h-4 w-4" />
-          <h3 className="text-base font-semibold">Active Lab overrides → production</h3>
+          <h3 style={SECTION_H3}>Active Lab overrides → production</h3>
         </div>
         {overrides === null ? (
           <div className="py-6 text-center"><Loader2 className="mx-auto h-4 w-4 animate-spin text-muted-foreground" /></div>
@@ -126,9 +132,10 @@ const PromptProposals = () => {
               <div key={o.override_id} className="flex flex-wrap items-center justify-between gap-3 border border-border p-3 text-sm">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="label text-muted-foreground">{o.prompt_name}</span>
+                    <span style={EYEBROW}>{o.prompt_name}</span>
                     <span
-                      className={`rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider ${
+                      style={BADGE}
+                      className={`bg-muted px-2 py-0.5 ${
                         o.ready_for_promotion
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-muted-foreground"
@@ -214,8 +221,8 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="label text-muted-foreground">{proposal.prompt_name}</span>
-            <span className={`rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider ${statusColor}`}>
+            <span style={EYEBROW}>{proposal.prompt_name}</span>
+            <span style={BADGE} className={`bg-muted px-2 py-0.5 ${statusColor}`}>
               {proposal.status}
             </span>
             <span className="text-xs text-muted-foreground">

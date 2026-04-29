@@ -1,8 +1,45 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Plus, FlaskConical, ArrowRight, Clock, CheckCircle, AlertTriangle } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.45)",
+};
+const PAGE_H1: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: "clamp(28px, 4vw, 44px)",
+  fontWeight: 500,
+  letterSpacing: "-0.035em",
+  lineHeight: 0.98,
+  color: "#fff",
+  margin: 0,
+};
+const PRIMARY_BTN: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px 14px",
+  fontSize: 12,
+  fontWeight: 500,
+  background: "#fff",
+  color: "#07080c",
+  border: "none",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
+const BADGE: CSSProperties = {
+  borderRadius: 0,
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 9,
+  letterSpacing: "0.18em",
+};
 
 const STATUS_CHIP: Record<string, { label: string; classes: string; Icon: typeof Clock }> = {
   draft: { label: "Draft", classes: "bg-muted/50 text-muted-foreground", Icon: Clock },
@@ -37,20 +74,18 @@ export default function LabListings() {
     <div className="space-y-10">
       <div className="flex items-start justify-between">
         <div>
-          <span className="label text-muted-foreground">— Prompt Lab</span>
-          <h2 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.02em]">
-            <FlaskConical className="h-6 w-6 text-muted-foreground" />
+          <span style={EYEBROW}>— Prompt Lab</span>
+          <h2 className="mt-3 flex items-center gap-3" style={PAGE_H1}>
+            <FlaskConical className="h-6 w-6" style={{ color: "rgba(255,255,255,0.45)" }} />
             Listings
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             Upload a batch of photos as if you were running a real listing. The director pairs photos into start/end keyframes, plans scenes, and you render clips. Rate each clip to feed the Knowledge Map.
           </p>
         </div>
-        <Button asChild>
-          <Link to="/dashboard/development/lab/new">
-            <Plus className="mr-2 h-4 w-4" /> Create listing
-          </Link>
-        </Button>
+        <Link to="/dashboard/development/lab/new" style={PRIMARY_BTN}>
+          <Plus className="h-4 w-4" /> Create listing
+        </Link>
       </div>
 
       {error && (
@@ -84,10 +119,10 @@ export default function LabListings() {
                   <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                 </div>
                 <div className="mt-4 flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider ${chip.classes}`}>
+                  <span className={`inline-flex items-center gap-1 border border-border px-2 py-0.5 ${chip.classes}`} style={BADGE}>
                     <Icon className="h-3 w-3" /> {chip.label}
                   </span>
-                  <span className="border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <span className="border border-border px-2 py-0.5 text-muted-foreground" style={BADGE}>
                     {l.model_name}
                   </span>
                 </div>

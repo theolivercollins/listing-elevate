@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import {
   BarChart,
   Bar,
@@ -17,6 +17,39 @@ import type { Property, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
 import type { CostBreakdown, CostBreakdownRow } from "@/lib/api";
 import { motion } from "framer-motion";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.45)",
+};
+const PAGE_H1: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: "clamp(28px, 4vw, 44px)",
+  fontWeight: 500,
+  letterSpacing: "-0.035em",
+  lineHeight: 0.98,
+  color: "#fff",
+  margin: 0,
+};
+const SECTION_H3: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: 20,
+  fontWeight: 500,
+  letterSpacing: "-0.025em",
+  color: "#fff",
+  margin: 0,
+};
+const MONO_VALUE: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 24,
+  fontWeight: 600,
+  letterSpacing: "-0.02em",
+  color: "#fff",
+};
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -109,7 +142,7 @@ const Overview = () => {
             <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
           </div>
           <div>
-            <span className="label text-destructive">— Error</span>
+            <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>— Error</span>
             <p className="mt-3 text-sm text-muted-foreground">{error}</p>
           </div>
         </div>
@@ -205,8 +238,8 @@ const Overview = () => {
       {/* Page heading — compact so the dashboard feels dense like a control room */}
       <div className="flex items-end justify-between gap-6">
         <div>
-          <span className="label text-muted-foreground">— Today</span>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">Studio overview</h2>
+          <span style={EYEBROW}>— Today</span>
+          <h2 className="mt-3" style={PAGE_H1}>Studio overview</h2>
         </div>
       </div>
 
@@ -221,10 +254,10 @@ const Overview = () => {
             className="bg-background p-8"
           >
             <div className="flex items-start justify-between gap-3">
-              <span className="label text-muted-foreground">{k.label}</span>
+              <span style={EYEBROW}>{k.label}</span>
               <Delta value={k.delta} positiveIsGood={k.label !== "Spend · 7d"} />
             </div>
-            <div className="tabular mt-6 text-4xl font-semibold tracking-[-0.03em]">{k.value}</div>
+            <div className="mt-6" style={{ ...MONO_VALUE, fontSize: 36 }}>{k.value}</div>
             <p className="mt-3 text-xs text-muted-foreground">{k.sub}</p>
           </motion.div>
         ))}
@@ -236,10 +269,10 @@ const Overview = () => {
         <div className="bg-background p-8">
           <div className="flex items-end justify-between">
             <div>
-              <span className="label text-muted-foreground">— Spend</span>
-              <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">14-day trend</h3>
+              <span style={EYEBROW}>— Spend</span>
+              <h3 className="mt-3" style={SECTION_H3}>14-day trend</h3>
             </div>
-            <span className="tabular text-xs text-muted-foreground">
+            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
               {formatCents(last7Cost + prev7Cost)} total
             </span>
           </div>
@@ -248,39 +281,40 @@ const Overview = () => {
               <AreaChart data={dailyStatsData} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
                 <defs>
                   <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#fff" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#fff" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="0" stroke="hsl(var(--border))" vertical={false} />
+                <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
                 />
                 <Tooltip
-                  cursor={{ stroke: "hsl(var(--foreground))", strokeWidth: 1 }}
+                  cursor={{ stroke: "#fff", strokeWidth: 1 }}
                   contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
+                    background: "#0b0d12",
+                    border: "1px solid rgba(220,230,255,0.18)",
                     borderRadius: 0,
                     fontSize: 11,
                     padding: 10,
+                    color: "#fff",
                   }}
                   formatter={(v: number) => formatCents(v)}
                 />
                 <Area
                   type="monotone"
                   dataKey="total_cost_cents"
-                  stroke="hsl(var(--accent))"
+                  stroke="#fff"
                   strokeWidth={1.5}
                   fill="url(#spendArea)"
                 />
@@ -291,8 +325,8 @@ const Overview = () => {
 
         {/* Delivery SLA ring */}
         <div className="bg-background p-8">
-          <span className="label text-muted-foreground">— Delivery SLA</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">Under 72h</h3>
+          <span style={EYEBROW}>— Delivery SLA</span>
+          <h3 className="mt-3" style={SECTION_H3}>Under 72h</h3>
           <div className="mt-8 flex flex-col items-center">
             <div className="relative h-[180px] w-[180px]">
               <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
@@ -312,10 +346,10 @@ const Overview = () => {
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="tabular text-3xl font-semibold tracking-[-0.02em]">
+                <span style={{ ...MONO_VALUE, fontSize: 30 }}>
                   {slaRate.toFixed(0)}%
                 </span>
-                <span className="label mt-1 text-muted-foreground">on time</span>
+                <span className="mt-1" style={EYEBROW}>on time</span>
               </div>
             </div>
             <p className="tabular mt-6 text-[11px] text-muted-foreground">
@@ -326,8 +360,8 @@ const Overview = () => {
 
         {/* Status distribution */}
         <div className="bg-background p-8">
-          <span className="label text-muted-foreground">— Distribution</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">All listings</h3>
+          <span style={EYEBROW}>— Distribution</span>
+          <h3 className="mt-3" style={SECTION_H3}>All listings</h3>
           <div className="mt-8 space-y-5">
             {[
               { key: "delivered", label: "Delivered", tone: "bg-accent", count: statusBuckets.delivered },
@@ -339,8 +373,8 @@ const Overview = () => {
               return (
                 <div key={row.key}>
                   <div className="flex items-baseline justify-between">
-                    <span className="label text-foreground">{row.label}</span>
-                    <span className="tabular text-xs text-muted-foreground">
+                    <span style={{ ...EYEBROW, color: "#fff" }}>{row.label}</span>
+                    <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
                       {row.count} · {pct.toFixed(0)}%
                     </span>
                   </div>
@@ -368,41 +402,42 @@ const Overview = () => {
         <div className="bg-background p-8">
           <div className="flex items-end justify-between">
             <div>
-              <span className="label text-muted-foreground">— Throughput</span>
-              <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">Videos delivered</h3>
+              <span style={EYEBROW}>— Throughput</span>
+              <h3 className="mt-3" style={SECTION_H3}>Videos delivered</h3>
             </div>
-            <span className="tabular text-xs text-muted-foreground">
+            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
               {last7Videos} this week
             </span>
           </div>
           <div className="mt-8 h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={dailyStatsData.slice(-14)} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="0" stroke="hsl(var(--border))" vertical={false} />
+                <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: "hsl(var(--secondary))" }}
+                  cursor={{ fill: "rgba(255,255,255,0.06)" }}
                   contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
+                    background: "#0b0d12",
+                    border: "1px solid rgba(220,230,255,0.18)",
                     borderRadius: 0,
                     fontSize: 11,
                     padding: 10,
+                    color: "#fff",
                   }}
                 />
-                <Bar dataKey="properties_completed" fill="hsl(var(--foreground))" />
+                <Bar dataKey="properties_completed" fill="#fff" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -410,8 +445,8 @@ const Overview = () => {
 
         {/* Top agents */}
         <div className="bg-background p-8">
-          <span className="label text-muted-foreground">— Leaderboard</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">Top agents</h3>
+          <span style={EYEBROW}>— Leaderboard</span>
+          <h3 className="mt-3" style={SECTION_H3}>Top agents</h3>
           <ul className="mt-8 space-y-5">
             {topAgents.length === 0 && (
               <li className="text-xs text-muted-foreground">No agent data yet</li>
@@ -556,23 +591,24 @@ const Overview = () => {
       <section>
         <div className="flex items-end justify-between">
           <div>
-            <span className="label text-muted-foreground">— Active</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">In production</h3>
+            <span style={EYEBROW}>— Active</span>
+            <h3 className="mt-3" style={SECTION_H3}>In production</h3>
           </div>
           <Link
             to="/dashboard/pipeline"
-            className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
+            style={EYEBROW}
           >
             View pipeline <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
         <div className="mt-10 border-t border-border">
-          <div className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] gap-6 border-b border-border py-4">
-            <span className="label text-muted-foreground">Property</span>
-            <span className="label text-muted-foreground">Stage</span>
-            <span className="label text-muted-foreground">Progress</span>
-            <span className="label text-right text-muted-foreground">Started</span>
+          <div className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <span style={EYEBROW}>Property</span>
+            <span style={EYEBROW}>Stage</span>
+            <span style={EYEBROW}>Progress</span>
+            <span className="text-right" style={EYEBROW}>Started</span>
           </div>
           {inProgressProps.length === 0 ? (
             <div className="py-16 text-center text-sm text-muted-foreground">No properties in pipeline</div>
@@ -591,7 +627,7 @@ const Overview = () => {
                 >
                   {p.address}
                 </Link>
-                <span className="label text-foreground capitalize">{p.status.replace("_", " ")}</span>
+                <span className="capitalize" style={{ ...EYEBROW, color: "#fff" }}>{p.status.replace("_", " ")}</span>
                 <div className="h-px w-full bg-border">
                   <motion.div
                     className="h-full bg-foreground"
@@ -613,23 +649,24 @@ const Overview = () => {
       <section>
         <div className="flex items-end justify-between">
           <div>
-            <span className="label text-muted-foreground">— Recent</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Delivered</h3>
+            <span style={EYEBROW}>— Recent</span>
+            <h3 className="mt-3" style={SECTION_H3}>Delivered</h3>
           </div>
           <Link
             to="/dashboard/properties"
-            className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
+            style={EYEBROW}
           >
             All listings <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
         <div className="mt-10 border-t border-border">
-          <div className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-b border-border py-4">
-            <span className="label text-muted-foreground">Property</span>
-            <span className="label text-muted-foreground">Completed</span>
-            <span className="label text-muted-foreground">Duration</span>
-            <span className="label text-right text-muted-foreground">Cost</span>
+          <div className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+            <span style={EYEBROW}>Property</span>
+            <span style={EYEBROW}>Completed</span>
+            <span style={EYEBROW}>Duration</span>
+            <span className="text-right" style={EYEBROW}>Cost</span>
           </div>
           {completedProps.length === 0 ? (
             <div className="py-16 text-center text-sm text-muted-foreground">No completed properties yet</div>

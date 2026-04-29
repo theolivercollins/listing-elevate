@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, RefreshCw, Map as MapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 import {
   fetchCells,
   fetchCalibrationStatus,
@@ -42,9 +47,9 @@ const STATE_LABEL: Record<string, string> = {
 
 function StatBlock({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="border border-border bg-background p-4">
-      <div className="label text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight">{value}</div>
+    <div className="border border-border bg-background p-4" style={{ borderRadius: 0 }}>
+      <div style={EYEBROW}>{label}</div>
+      <div className="mt-2" style={MONO_VALUE}>{value}</div>
       {sub && <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   );
@@ -93,8 +98,8 @@ export default function KnowledgeMap() {
   return (
     <div className="space-y-10">
       <div>
-        <span className="label text-muted-foreground">— Knowledge Map</span>
-        <h2 className="mt-3 flex items-center gap-3 text-3xl font-semibold tracking-[-0.02em]">
+        <span style={EYEBROW}>— Knowledge Map</span>
+        <h2 className="mt-3 flex items-center gap-3" style={PAGE_H1}>
           <MapIcon className="h-6 w-6 text-muted-foreground" />
           Machine learning coverage at a glance
         </h2>

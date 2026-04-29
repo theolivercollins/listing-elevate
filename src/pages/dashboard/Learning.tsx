@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Loader2, AlertTriangle, Star, ChevronDown, ChevronUp } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { LearningData, PromptRevision } from "@/lib/types";
 import { fetchLearningData, fetchPromptRevisions } from "@/lib/api";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
+const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 
 const Learning = () => {
   const [learning, setLearning] = useState<LearningData | null>(null);
@@ -63,8 +69,8 @@ const Learning = () => {
   return (
     <div className="space-y-16">
       <div>
-        <span className="label text-muted-foreground">— Learning</span>
-        <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em]">Feedback &amp; prompt changelog</h2>
+        <span style={EYEBROW}>— Learning</span>
+        <h2 className="mt-3" style={PAGE_H1}>Feedback &amp; prompt changelog</h2>
         <p className="mt-2 text-sm text-muted-foreground">
           Every rated scene feeds into the next director run as in-context learning. The changelog tracks how system prompts have evolved.
         </p>
@@ -79,19 +85,19 @@ const Learning = () => {
         {/* ─── Feedback tab ─── */}
         <TabsContent value="feedback" className="mt-10 space-y-16">
           {/* Summary strip */}
-          <div className="grid gap-px border border-border bg-border md:grid-cols-3">
-            <div className="bg-background p-6">
-              <span className="label text-muted-foreground">Total ratings</span>
-              <div className="tabular mt-4 text-2xl font-semibold">{learning.totalRatings}</div>
+          <div className="grid gap-px border border-border bg-border md:grid-cols-3" style={{ borderRadius: 0 }}>
+            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
+              <span style={EYEBROW}>Total ratings</span>
+              <div className="mt-4" style={MONO_VALUE}>{learning.totalRatings}</div>
             </div>
-            <div className="bg-background p-6">
-              <span className="label text-muted-foreground">Average</span>
-              <div className="tabular mt-4 text-2xl font-semibold">
+            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
+              <span style={EYEBROW}>Average</span>
+              <div className="mt-4" style={MONO_VALUE}>
                 {learning.avgAll != null ? `${learning.avgAll} / 5` : "—"}
               </div>
             </div>
-            <div className="bg-background p-6">
-              <span className="label text-muted-foreground">14-day trend</span>
+            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
+              <span style={EYEBROW}>14-day trend</span>
               <div className="tabular mt-4 flex items-end gap-1 text-[10px] text-muted-foreground">
                 {learning.trend.length === 0 ? (
                   <span>no data yet</span>
@@ -116,8 +122,8 @@ const Learning = () => {
 
           {/* Winners */}
           <section>
-            <span className="label text-muted-foreground">— Top winners</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">What's working</h3>
+            <span style={EYEBROW}>— Top winners</span>
+            <h3 className="mt-3" style={SECTION_H3}>What's working</h3>
             {learning.winners.length === 0 ? (
               <p className="mt-6 text-sm text-muted-foreground">No 4–5 star ratings yet.</p>
             ) : (
@@ -161,8 +167,8 @@ const Learning = () => {
 
           {/* Losers */}
           <section>
-            <span className="label text-muted-foreground">— Top losers</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">What's failing</h3>
+            <span style={EYEBROW}>— Top losers</span>
+            <h3 className="mt-3" style={SECTION_H3}>What's failing</h3>
             {learning.losers.length === 0 ? (
               <p className="mt-6 text-sm text-muted-foreground">No 1–2 star ratings with comments yet.</p>
             ) : (
@@ -206,8 +212,8 @@ const Learning = () => {
 
           {/* Combo table */}
           <section>
-            <span className="label text-muted-foreground">— Room + movement</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Average rating per combo</h3>
+            <span style={EYEBROW}>— Room + movement</span>
+            <h3 className="mt-3" style={SECTION_H3}>Average rating per combo</h3>
             {learning.combos.length === 0 ? (
               <p className="mt-6 text-sm text-muted-foreground">No data yet.</p>
             ) : (
@@ -238,13 +244,13 @@ const Learning = () => {
           {/* Provider breakdown */}
           {learning.providers.length > 0 && (
             <section>
-              <span className="label text-muted-foreground">— By provider</span>
-              <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Average rating per provider</h3>
-              <div className="mt-6 grid gap-px border border-border bg-border md:grid-cols-3">
+              <span style={EYEBROW}>— By provider</span>
+              <h3 className="mt-3" style={SECTION_H3}>Average rating per provider</h3>
+              <div className="mt-6 grid gap-px border border-border bg-border md:grid-cols-3" style={{ borderRadius: 0 }}>
                 {learning.providers.map((p) => (
-                  <div key={p.provider} className="bg-background p-6">
-                    <span className="label text-muted-foreground">{p.provider}</span>
-                    <div className="tabular mt-4 text-2xl font-semibold">{p.avg_rating} / 5</div>
+                  <div key={p.provider} className="bg-background p-6" style={{ borderRadius: 0 }}>
+                    <span style={EYEBROW}>{p.provider}</span>
+                    <div className="mt-4" style={MONO_VALUE}>{p.avg_rating} / 5</div>
                     <div className="tabular mt-1 text-[10px] text-muted-foreground">{p.count} ratings</div>
                   </div>
                 ))}
@@ -262,8 +268,8 @@ const Learning = () => {
           ) : (
             revisions.map((group) => (
               <section key={group.prompt_name}>
-                <span className="label text-muted-foreground">— {group.prompt_name}</span>
-                <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">
+                <span style={EYEBROW}>— {group.prompt_name}</span>
+                <h3 className="mt-3" style={SECTION_H3}>
                   {group.revisions.length} {group.revisions.length === 1 ? "revision" : "revisions"}
                 </h3>
                 <div className="mt-6 space-y-1 border-t border-border">

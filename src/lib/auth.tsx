@@ -25,6 +25,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithMagicLink: (email: string) => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -35,6 +36,7 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   signInWithMagicLink: async () => {},
+  signInWithPassword: async () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -116,6 +118,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  async function signInWithPassword(email: string, password: string) {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
@@ -125,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, profile, session, loading, signInWithMagicLink, signOut, refreshProfile }}
+      value={{ user, profile, session, loading, signInWithMagicLink, signInWithPassword, signOut, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>
