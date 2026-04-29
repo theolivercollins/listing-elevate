@@ -41,17 +41,26 @@ export async function publishToSierra(
   const publicBase = input.sierraPublicBaseUrl.replace(/\/+$/, "");
   const slug = `walkthrough/${input.pageSlug.replace(/^\/+/, "")}`;
 
-  const stagehand = new Stagehand({
-    env: "BROWSERBASE",
-    apiKey: process.env.BROWSERBASE_API_KEY,
-    projectId: process.env.BROWSERBASE_PROJECT_ID,
-    model: {
-      modelName: STAGEHAND_MODEL,
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      provider: "anthropic",
-    },
-    verbose: 1,
-  });
+  let stagehand: Stagehand;
+  try {
+    stagehand = new Stagehand({
+      env: "BROWSERBASE",
+      apiKey: process.env.BROWSERBASE_API_KEY,
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      model: {
+        modelName: STAGEHAND_MODEL,
+        apiKey: process.env.ANTHROPIC_API_KEY,
+        provider: "anthropic",
+      },
+      // Pino's worker-thread logger breaks in Vercel serverless. Use a no-op.
+      disablePino: true,
+      verbose: 0,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[sierra-publish] Stagehand constructor failed:", message);
+    return { ok: false, error: `Stagehand init: ${message}` };
+  }
 
   let sessionUrl: string | undefined;
   try {
@@ -131,6 +140,8 @@ export async function publishToSierra(
     return { ok: true, sierra_page_url, session_url: sessionUrl };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : "";
+    console.error("[sierra-publish] error:", message, "\n", stack);
     return { ok: false, error: message, session_url: sessionUrl };
   } finally {
     await stagehand.close().catch(() => null);

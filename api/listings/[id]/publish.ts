@@ -83,16 +83,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Credential decryption failed" });
   }
 
-  const result = await publishToSierra({
-    sierraAdminUrl: client.sierra_admin_url,
-    sierraSiteName: client.sierra_site_name || "",
-    sierraAdminUsername: client.sierra_admin_username,
-    sierraAdminPassword: password,
-    sierraPublicBaseUrl: client.sierra_public_base_url,
-    pageSlug: lp.slug,
-    pageTitle: `${listing.address} — Walkthrough`,
-    pageHtml: html,
-  });
+  let result;
+  try {
+    result = await publishToSierra({
+      sierraAdminUrl: client.sierra_admin_url,
+      sierraSiteName: client.sierra_site_name || "",
+      sierraAdminUsername: client.sierra_admin_username,
+      sierraAdminPassword: password,
+      sierraPublicBaseUrl: client.sierra_public_base_url,
+      pageSlug: lp.slug,
+      pageTitle: `${listing.address} — Walkthrough`,
+      pageHtml: html,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : "";
+    console.error("[publish] publishToSierra threw:", message, "\n", stack);
+    await supabase
+      .from("landing_pages")
+      .update({
+        status: "failed",
+        publish_error: message,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    return res.status(502).json({ error: message });
+  }
 
   if (!result.ok) {
     await supabase
