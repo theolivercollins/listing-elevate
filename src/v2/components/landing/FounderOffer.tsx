@@ -4,11 +4,11 @@ export function FounderOffer() {
   return (
     <section
       style={{
-        background: "rgba(255,255,255,0.02)",
-        color: "#fff",
+        background: "var(--le-bg-sunken)",
+        color: "var(--le-text)",
         padding: "24px 48px",
-        borderTop: "1px solid rgba(255,255,255,0.08)",
-        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        borderTop: "1px solid var(--le-border)",
+        borderBottom: "1px solid var(--le-border)",
       }}
     >
       <div
@@ -23,14 +23,14 @@ export function FounderOffer() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <span className="le-mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em", color: "rgba(255,255,255,0.55)" }}>
+          <span className="le-mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em", color: "var(--le-text-muted)" }}>
             Founding agents
           </span>
-          <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 15, color: "rgba(255,255,255,0.85)" }}>
+          <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 15, color: "var(--le-text)" }}>
             50% off your first three videos. First 50 signups.
           </span>
         </div>
-        <Link to="/upload" style={{ background: "#fff", color: "#07080c", padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 4, textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em" }}>
+        <Link to="/upload" style={{ background: "var(--le-accent)", color: "var(--le-accent-fg)", padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 4, textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em" }}>
           Claim spot →
         </Link>
       </div>

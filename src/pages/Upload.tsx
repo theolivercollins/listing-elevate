@@ -299,11 +299,11 @@ const Upload = () => {
     <div className="flex min-h-screen flex-col" style={{ background: "var(--le-bg)", color: "var(--le-text)", fontFamily: "var(--le-font-sans)", paddingTop: 80 }}>
       <SiteNav showSectionLinks={false} solid />
       {/* Step header */}
-      <div style={{ borderBottom: "1px solid rgba(220,230,255,0.09)" }}>
+      <div style={{ borderBottom: "1px solid var(--le-border)" }}>
         <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-8 md:px-12">
           <div>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "rgba(255,255,255,0.55)" }}>— New listing</span>
-            <h1 style={{ marginTop: 12, fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
+            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>— New listing</span>
+            <h1 style={{ marginTop: 12, fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
               {step === 0 && "Define the cut."}
               {step === 1 && "Refine with add-ons."}
               {step === 2 && "Tell us about the property."}
@@ -339,13 +339,13 @@ const Upload = () => {
                   <span className="flex items-center gap-2">
                     <span
                       className="tabular text-[10px] font-medium"
-                      style={{ color: active || done ? "#fff" : "rgba(255,255,255,0.32)" }}
+                      style={{ color: active || done ? "var(--le-text)" : "var(--le-text-faint)" }}
                     >
                       0{i + 1}
                     </span>
                     <span
                       className="text-[11px] font-medium uppercase tracking-[0.18em] transition-colors"
-                      style={{ color: active ? "#fff" : done ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.32)" }}
+                      style={{ color: active ? "var(--le-text)" : done ? "var(--le-text-muted)" : "var(--le-text-faint)" }}
                     >
                       {label}
                     </span>
@@ -356,7 +356,7 @@ const Upload = () => {
                       height: 1,
                       width: "100%",
                       transition: "background 0.7s",
-                      background: active ? "#fff" : done ? "rgba(255,255,255,0.4)" : "rgba(220,230,255,0.09)",
+                      background: active ? "var(--le-text)" : done ? "var(--le-text-faint)" : "var(--le-border)",
                     }}
                   />
                 </button>
@@ -377,7 +377,7 @@ const Upload = () => {
                 <section>
                   <span className="label text-muted-foreground">— Package</span>
                   <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Choose a story.</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-2" style={{ background: "rgba(220,230,255,0.09)" }}>
+                  <div className="mt-8 grid gap-px md:grid-cols-2" style={{ background: "var(--le-border)" }}>
                     {packages.map((pkg) => {
                       const Icon = pkg.icon;
                       const sel = selectedPackage === pkg.id;
@@ -387,7 +387,7 @@ const Upload = () => {
                           type="button"
                           onClick={() => setSelectedPackage(pkg.id)}
                           className="group relative flex items-start gap-5 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "#0b0f1c" : "#050710" }}
+                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <span
                             className={`flex h-12 w-12 shrink-0 items-center justify-center border transition-colors duration-500 ${
@@ -416,7 +416,7 @@ const Upload = () => {
                 <section>
                   <span className="label text-muted-foreground">— Duration</span>
                   <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Set the length.</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "rgba(220,230,255,0.09)" }}>
+                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
                     {durations.map((d) => {
                       const sel = selectedDuration === d.id;
                       const p = isLifeCycle ? d.lifeCyclePrice : d.price;
@@ -426,7 +426,7 @@ const Upload = () => {
                           type="button"
                           onClick={() => setSelectedDuration(d.id)}
                           className="group flex items-end justify-between p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "#0b0f1c" : "#050710" }}
+                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <div>
                             <div className="flex items-baseline gap-1">
@@ -450,7 +450,7 @@ const Upload = () => {
                 <section>
                   <span className="label text-muted-foreground">— Format</span>
                   <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Pick your canvas.</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "rgba(220,230,255,0.09)" }}>
+                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
                     {orientations.map((o) => {
                       const Icon = o.icon;
                       const sel = selectedOrientation === o.id;
@@ -460,7 +460,7 @@ const Upload = () => {
                           type="button"
                           onClick={() => setSelectedOrientation(o.id)}
                           className="group flex items-center justify-between p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "#0b0f1c" : "#050710" }}
+                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <div className="flex items-center gap-5">
                             <span
@@ -499,7 +499,7 @@ const Upload = () => {
                     Each add-on is optional. Voice clone and AI voiceover are mutually exclusive — pick one or neither.
                   </p>
 
-                  <div className="mt-10 grid gap-px" style={{ background: "rgba(220,230,255,0.09)" }}>
+                  <div className="mt-10 grid gap-px" style={{ background: "var(--le-border)" }}>
                     {[
                       {
                         active: addVoiceover,
@@ -536,7 +536,7 @@ const Upload = () => {
                           type="button"
                           onClick={addon.toggle}
                           className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: addon.active ? "#0b0f1c" : "#050710" }}
+                          style={{ background: addon.active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <span
                             className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
@@ -730,7 +730,7 @@ const Upload = () => {
                     }}
                     onClick={() => fileInputRef.current?.click()}
                     className="relative mt-10 flex aspect-[16/7] cursor-pointer items-center justify-center border-2 border-dashed text-center transition-all duration-500 ease-cinematic"
-                    style={{ borderColor: isDragging ? "rgba(255,255,255,0.8)" : "rgba(220,230,255,0.2)", background: isDragging ? "rgba(255,255,255,0.05)" : "rgba(11,15,28,0.6)" }}
+                    style={{ borderColor: isDragging ? "var(--le-text)" : "var(--le-border-strong)", background: isDragging ? "var(--le-bg-sunken)" : "var(--le-bg-elev)" }}
                   >
                     <input
                       ref={fileInputRef}
@@ -822,12 +822,12 @@ const Upload = () => {
       </div>
 
       {/* Sticky footer */}
-      <div className="sticky bottom-0 z-30 backdrop-blur-xl" style={{ borderTop: "1px solid rgba(220,230,255,0.09)", background: "rgba(5,7,16,0.9)" }}>
+      <div className="sticky bottom-0 z-30 backdrop-blur-xl" style={{ borderTop: "1px solid var(--le-border)", background: "var(--le-bg)" }}>
         <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-5 md:px-12">
           <div className="flex items-center gap-8">
             <div>
-              <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "rgba(255,255,255,0.55)" }}>Total</span>
-              <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" }}>${totalPrice}</div>
+              <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>Total</span>
+              <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)" }}>${totalPrice}</div>
             </div>
             {step === 0 && step0Valid && (
               <button
@@ -848,8 +848,8 @@ const Upload = () => {
                 disabled={submitting}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
-                  background: "transparent", color: submitting ? "rgba(255,255,255,0.32)" : "#fff",
-                  border: "1px solid rgba(220,230,255,0.18)", borderRadius: 4,
+                  background: "transparent", color: submitting ? "var(--le-text-faint)" : "var(--le-text)",
+                  border: "1px solid var(--le-border-strong)", borderRadius: 4,
                   padding: "10px 16px", fontSize: 13, fontWeight: 500,
                   cursor: submitting ? "not-allowed" : "pointer",
                   fontFamily: "var(--le-font-sans)",
@@ -865,8 +865,8 @@ const Upload = () => {
                 disabled={!canAdvance}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
-                  background: !canAdvance ? "rgba(255,255,255,0.25)" : "#fff",
-                  color: "#07080c", border: "none", borderRadius: 4,
+                  background: !canAdvance ? "var(--le-border-strong)" : "var(--le-accent)",
+                  color: "var(--le-accent-fg)", border: "none", borderRadius: 4,
                   padding: "10px 20px", fontSize: 13, fontWeight: 500,
                   cursor: !canAdvance ? "not-allowed" : "pointer",
                   fontFamily: "var(--le-font-sans)",
@@ -881,8 +881,8 @@ const Upload = () => {
                 disabled={!canSubmit || submitting}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6,
-                  background: !canSubmit || submitting ? "rgba(255,255,255,0.25)" : "#fff",
-                  color: "#07080c", border: "none", borderRadius: 4,
+                  background: !canSubmit || submitting ? "var(--le-border-strong)" : "var(--le-accent)",
+                  color: "var(--le-accent-fg)", border: "none", borderRadius: 4,
                   padding: "12px 24px", fontSize: 14, fontWeight: 500,
                   cursor: !canSubmit || submitting ? "not-allowed" : "pointer",
                   fontFamily: "var(--le-font-sans)",

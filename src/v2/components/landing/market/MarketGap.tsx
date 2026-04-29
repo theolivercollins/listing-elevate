@@ -8,11 +8,11 @@ import { useInView } from "@/v2/hooks/useInView";
 import { useCountUp } from "@/v2/hooks/useCountUp";
 import { AnimatedCircleCheck, AnimatedCircleX } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 export default function MarketGap() {
   const { ref, isInView } = useInView(0.15);
@@ -57,7 +57,7 @@ export default function MarketGap() {
 
           {/* Animated progress bar */}
           <div className="mt-6">
-            <div className="w-full h-2" style={{ background: "oklch(1 0 0 / 4%)" }}>
+            <div className="w-full h-2" style={{ background: "var(--le-border)" }}>
               <motion.div
                 initial={{ width: 0 }}
                 animate={isInView ? { width: "73%" } : {}}
@@ -109,7 +109,7 @@ export default function MarketGap() {
             style={{
               fontFamily: "var(--le-font-sans)",
               fontSize: "clamp(3.5rem, 10vw, 5.5rem)",
-              color: "oklch(0.97 0 0 / 25%)",
+              color: "var(--le-text-faint)",
               letterSpacing: "-0.04em",
               lineHeight: 0.85,
             }}
@@ -122,13 +122,13 @@ export default function MarketGap() {
 
           {/* Tiny bar showing how small 11% is */}
           <div className="mt-6">
-            <div className="w-full h-2" style={{ background: "oklch(1 0 0 / 4%)" }}>
+            <div className="w-full h-2" style={{ background: "var(--le-border)" }}>
               <motion.div
                 initial={{ width: 0 }}
                 animate={isInView ? { width: "11%" } : {}}
                 transition={{ duration: 1.0, delay: 0.5, ease: [0.22, 1, 0.36, 1] }}
                 className="h-full"
-                style={{ background: "oklch(0.97 0 0 / 20%)" }}
+                style={{ background: "var(--le-text-faint)" }}
               />
             </div>
           </div>
@@ -177,7 +177,7 @@ export default function MarketGap() {
             {/* Animated gap visualization — two bars with arrow */}
             <div className="mt-6 relative">
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-2" style={{ background: "oklch(1 0 0 / 4%)" }}>
+                <div className="flex-1 h-2" style={{ background: "var(--le-border)" }}>
                   <motion.div
                     initial={{ width: 0 }}
                     animate={isInView ? { width: "100%" } : {}}

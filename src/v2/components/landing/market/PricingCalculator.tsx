@@ -9,11 +9,11 @@ import { useState, useMemo, useRef } from "react";
 import { motion, AnimatePresence, useInView as fmUseInView } from "framer-motion";
 import { AnimatedCircleCheck } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 const AVG_HOME_PRICE = 420000;
 const COMMISSION_RATE = 0.025; // 2.5% agent side
@@ -143,7 +143,7 @@ export default function PricingCalculator() {
                   onChange={(e) => setListings(Number(e.target.value))}
                   className="w-full h-2 appearance-none cursor-pointer"
                   style={{
-                    background: `linear-gradient(to right, oklch(0.97 0.005 240) 0%, oklch(0.97 0.005 240) ${listings}%, oklch(1 0 0 / 6%) ${listings}%, oklch(1 0 0 / 6%) 100%)`,
+                    background: `linear-gradient(to right, var(--le-text) 0%, var(--le-text) ${listings}%, var(--le-border) ${listings}%, var(--le-border) 100%)`,
                     borderRadius: 0,
                     outline: "none",
                   }}
@@ -153,16 +153,16 @@ export default function PricingCalculator() {
                     -webkit-appearance: none;
                     width: 18px;
                     height: 18px;
-                    background: oklch(0.97 0.005 240);
-                    border: 2px solid oklch(0.1 0.025 240);
+                    background: var(--le-text);
+                    border: 2px solid var(--le-bg);
                     cursor: pointer;
                     margin-top: -1px;
                   }
                   input[type="range"]::-moz-range-thumb {
                     width: 18px;
                     height: 18px;
-                    background: oklch(0.97 0.005 240);
-                    border: 2px solid oklch(0.1 0.025 240);
+                    background: var(--le-text);
+                    border: 2px solid var(--le-bg);
                     cursor: pointer;
                     border-radius: 0;
                   }
@@ -191,8 +191,8 @@ export default function PricingCalculator() {
                     style={{
                       fontFamily: "'JetBrains Mono', monospace",
                       color: listings === n ? WHITE : DIM,
-                      border: `1px solid ${listings === n ? "oklch(0.97 0 0 / 25%)" : LINE}`,
-                      background: listings === n ? "oklch(0.97 0 0 / 8%)" : "transparent",
+                      border: `1px solid ${listings === n ? "var(--le-border-strong)" : LINE}`,
+                      background: listings === n ? "var(--le-bg-sunken)" : "transparent",
                       borderRadius: 4,
                     }}
                   >
@@ -214,8 +214,8 @@ export default function PricingCalculator() {
                     onClick={() => setVideoType(type)}
                     className="flex-1 p-4 text-left transition-all duration-200"
                     style={{
-                      border: `1px solid ${videoType === type ? "oklch(0.97 0 0 / 25%)" : LINE}`,
-                      background: videoType === type ? "oklch(0.97 0 0 / 6%)" : "transparent",
+                      border: `1px solid ${videoType === type ? "var(--le-border-strong)" : LINE}`,
+                      background: videoType === type ? "var(--le-bg-sunken)" : "transparent",
                       borderRadius: 4,
                     }}
                   >
@@ -227,7 +227,7 @@ export default function PricingCalculator() {
                       style={{
                         fontFamily: "var(--le-font-sans)",
                         fontSize: "1.6rem",
-                        color: videoType === type ? WHITE : "oklch(0.97 0 0 / 25%)",
+                        color: videoType === type ? WHITE : DIMMER,
                         letterSpacing: "-0.03em",
                         lineHeight: 1,
                       }}
@@ -250,7 +250,7 @@ export default function PricingCalculator() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* Total cost */}
-            <div className="p-6" style={{ background: "oklch(0.1 0.025 240)", border: `1px solid ${LINE}` }}>
+            <div className="p-6" style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}>
               <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIM }}>
                 Your annual Listing Elevate cost
               </span>
@@ -279,7 +279,7 @@ export default function PricingCalculator() {
             </div>
 
             {/* Total commission */}
-            <div className="p-6" style={{ background: "oklch(0.1 0.025 240)", border: `1px solid ${LINE}` }}>
+            <div className="p-6" style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}>
               <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIM }}>
                 Your annual commission
               </span>
@@ -308,7 +308,7 @@ export default function PricingCalculator() {
             </div>
 
             {/* Cost as % */}
-            <div className="p-6" style={{ background: "oklch(0.1 0.025 240)", border: `1px solid ${LINE}` }}>
+            <div className="p-6" style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}>
               <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIM }}>
                 Video cost as % of earnings
               </span>
@@ -338,7 +338,7 @@ export default function PricingCalculator() {
           </div>
 
           {/* Visual comparison bar */}
-          <div className="mt-8 p-6" style={{ background: "oklch(0.1 0.025 240)", border: `1px solid ${LINE}` }}>
+          <div className="mt-8 p-6" style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}>
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-5" style={{ color: DIM }}>
               Cost vs. commission — visual
             </span>
@@ -351,7 +351,7 @@ export default function PricingCalculator() {
                   {formatCurrency(calc.totalCommission)}
                 </span>
               </div>
-              <div className="w-full h-4" style={{ background: "oklch(1 0 0 / 4%)" }}>
+              <div className="w-full h-4" style={{ background: "var(--le-border)" }}>
                 <motion.div
                   className="h-full"
                   style={{ background: WHITE }}
@@ -370,10 +370,10 @@ export default function PricingCalculator() {
                   {formatCurrency(calc.totalCost)}
                 </span>
               </div>
-              <div className="w-full h-4" style={{ background: "oklch(1 0 0 / 4%)" }}>
+              <div className="w-full h-4" style={{ background: "var(--le-border)" }}>
                 <motion.div
                   className="h-full relative"
-                  style={{ background: "oklch(0.97 0 0 / 30%)", minWidth: "4px" }}
+                  style={{ background: "var(--le-text-faint)", minWidth: "4px" }}
                   initial={{ width: 0 }}
                   animate={{ width: `${costBarWidth}%` }}
                   transition={{ duration: 0.8, delay: 0.2, ease: [0.22, 1, 0.36, 1] }}
@@ -470,7 +470,7 @@ export default function PricingCalculator() {
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 className="text-[14px] sm:text-[15px] leading-relaxed"
-                style={{ color: "oklch(0.97 0 0 / 60%)" }}
+                style={{ color: DIM }}
               >
                 At <strong style={{ color: WHITE }}>{listings} listings per year</strong>, Listing Elevate costs you{" "}
                 <strong style={{ color: WHITE }}>{formatCurrency(calc.totalCost)}</strong> — just{" "}

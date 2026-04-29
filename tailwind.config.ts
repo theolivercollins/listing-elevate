@@ -14,9 +14,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["Geist", "Inter", "system-ui", "-apple-system", "sans-serif"],
+        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
-        display: ["Geist", "Inter", "system-ui", "sans-serif"],
+        display: ["Inter", "system-ui", "sans-serif"],
       },
       transitionTimingFunction: {
         cinematic: "cubic-bezier(0.16, 1, 0.3, 1)",

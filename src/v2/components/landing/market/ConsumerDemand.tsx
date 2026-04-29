@@ -7,11 +7,11 @@ import { useInView } from "@/v2/hooks/useInView";
 import { useCountUp } from "@/v2/hooks/useCountUp";
 import { AnimatedCircleCheck } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 export default function ConsumerDemand() {
   const { ref, isInView } = useInView(0.15);
@@ -65,7 +65,7 @@ export default function ConsumerDemand() {
                 }}
                 className="flex-1 h-3 origin-bottom"
                 style={{
-                  background: i < 8 ? WHITE : i === 8 ? "oklch(0.97 0 0 / 40%)" : "oklch(1 0 0 / 6%)",
+                  background: i < 8 ? WHITE : i === 8 ? "var(--le-text-faint)" : "var(--le-border)",
                 }}
               />
             ))}
@@ -140,7 +140,7 @@ export default function ConsumerDemand() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px]" style={{ color: DIM }}>$65 of ~$9,000 commission</span>
             </div>
-            <div className="w-full h-3 relative" style={{ background: "oklch(1 0 0 / 4%)" }}>
+            <div className="w-full h-3 relative" style={{ background: "var(--le-border)" }}>
               <motion.div
                 initial={{ width: 0 }}
                 animate={isInView ? { width: "0.72%" } : {}}
@@ -164,7 +164,7 @@ export default function ConsumerDemand() {
                 <span className="text-[10px]" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>$65 Listing Elevate</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5" style={{ background: "oklch(1 0 0 / 4%)" }} />
+                <div className="w-2.5 h-2.5" style={{ background: "var(--le-border)" }} />
                 <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>~$9K commission</span>
               </div>
             </div>

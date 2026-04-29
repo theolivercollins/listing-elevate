@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -111,17 +111,17 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
     font-feature-settings: 'ss01', 'cv11';
   }
   /* Legacy utility classes from old system — now route to Inter */
   .font-mono {
-    font-family: 'Geist', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-variant-numeric: tabular-nums;
     font-feature-settings: 'tnum';
   }
   .font-display {
-    font-family: 'Geist', 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 600;
     letter-spacing: -0.02em;
   }

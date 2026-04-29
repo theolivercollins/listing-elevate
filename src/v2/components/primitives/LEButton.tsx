@@ -22,9 +22,9 @@ function base(variant: Variant): CSSProperties {
     gap: 8,
     cursor: "pointer",
     textDecoration: "none",
-    background: variant === "primary" ? "#fff" : "transparent",
-    color: variant === "primary" ? "#07080c" : "#fff",
-    border: variant === "primary" ? "none" : "1px solid rgba(220,230,255,0.18)",
+    background: variant === "primary" ? "var(--le-accent)" : "transparent",
+    color: variant === "primary" ? "var(--le-accent-fg)" : "var(--le-text)",
+    border: variant === "primary" ? "none" : "1px solid var(--le-border-strong)",
   };
 }
 
@@ -50,7 +50,7 @@ export function LEButton({ variant, size, style, children, ...rest }: ButtonProp
   const computed = leButtonStyle({ variant, size, style });
   // Honour disabled visual affordance
   const finalStyle: CSSProperties = rest.disabled
-    ? { ...computed, background: variant === "ghost" ? "transparent" : "rgba(255,255,255,0.3)", color: variant === "ghost" ? "rgba(255,255,255,0.35)" : "#07080c", cursor: "not-allowed" }
+    ? { ...computed, background: variant === "ghost" ? "transparent" : "var(--le-border-strong)", color: variant === "ghost" ? "var(--le-text-faint)" : "var(--le-accent-fg)", cursor: "not-allowed" }
     : computed;
   return <button style={finalStyle} {...rest}>{children}</button>;
 }

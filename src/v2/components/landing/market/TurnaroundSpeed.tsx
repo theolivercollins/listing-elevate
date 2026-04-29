@@ -7,11 +7,11 @@ import { motion } from "framer-motion";
 import { useScrollProgress } from "@/v2/hooks/useScrollProgress";
 import { AnimatedCircleCheck, AnimatedCircleX } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 interface TimelineStep {
   time: string;
@@ -54,13 +54,13 @@ function TimelineTrack({
         className="absolute top-4 bottom-4 w-px"
         style={{
           left: "11px",
-          background: "oklch(1 0 0 / 6%)",
+          background: "var(--le-border)",
         }}
       >
         <motion.div
           className="w-full origin-top"
           style={{
-            background: isElevate ? WHITE : "oklch(0.97 0 0 / 15%)",
+            background: isElevate ? WHITE : "var(--le-text-faint)",
             height: `${lineProgress * 100}%`,
             transition: "height 0.3s ease-out",
           }}
@@ -89,12 +89,12 @@ function TimelineTrack({
                     width: 10,
                     height: 10,
                     background: isActive
-                      ? isElevate ? WHITE : "oklch(0.97 0 0 / 20%)"
-                      : "oklch(1 0 0 / 5%)",
-                    border: isActive ? "none" : `1px solid oklch(1 0 0 / 10%)`,
+                      ? isElevate ? WHITE : "var(--le-text-faint)"
+                      : "var(--le-border)",
+                    border: isActive ? "none" : `1px solid var(--le-border-strong)`,
                     transition: "all 0.4s ease-out",
                     transform: isCurrent ? "scale(1.4)" : "scale(1)",
-                    boxShadow: isCurrent && isElevate ? "0 0 14px oklch(0.97 0 0 / 25%)" : "none",
+                    boxShadow: isCurrent && isElevate ? "0 0 14px var(--le-border-strong)" : "none",
                   }}
                 />
               </div>
@@ -105,7 +105,7 @@ function TimelineTrack({
                   <span
                     className="text-[12px] sm:text-[11px] tabular-nums font-semibold shrink-0"
                     style={{
-                      color: isActive ? (isElevate ? WHITE : "oklch(0.97 0 0 / 40%)") : DIMMER,
+                      color: isActive ? (isElevate ? WHITE : DIM) : DIMMER,
                       fontFamily: "'JetBrains Mono', monospace",
                       transition: "color 0.4s ease-out",
                     }}
@@ -115,7 +115,7 @@ function TimelineTrack({
                   <span
                     className="text-[14px] sm:text-[13px] font-medium"
                     style={{
-                      color: isActive ? (isElevate ? WHITE : "oklch(0.97 0 0 / 35%)") : DIMMER,
+                      color: isActive ? (isElevate ? WHITE : DIM) : DIMMER,
                       transition: "color 0.4s ease-out",
                     }}
                   >
@@ -125,7 +125,7 @@ function TimelineTrack({
                 <span
                   className="text-[12px] sm:text-[11px] block leading-relaxed"
                   style={{
-                    color: isActive ? DIM : "oklch(0.97 0 0 / 10%)",
+                    color: isActive ? DIM : DIMMER,
                     transition: "color 0.4s ease-out",
                   }}
                 >
@@ -160,7 +160,7 @@ export default function TurnaroundSpeed() {
       <div className="flex gap-2 mb-4 lg:hidden">
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase font-semibold"
-          style={{ color: WHITE, background: "oklch(0.97 0 0 / 6%)", border: `1px solid ${LINE}` }}
+          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
         >
           Listing Elevate · &lt;24h
         </div>
@@ -186,7 +186,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "oklch(0.97 0 0 / 5%)" }}
+              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}
             >
               Listing Elevate
             </span>
@@ -199,7 +199,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-              style={{ color: WHITE, background: "oklch(0.97 0 0 / 8%)" }}
+              style={{ color: WHITE, background: "var(--le-bg-sunken)" }}
             >
               Listing Elevate
             </span>
@@ -254,7 +254,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-                style={{ color: DIMMER, border: `1px solid oklch(1 0 0 / 6%)` }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}` }}
               >
                 Traditional
               </span>
@@ -265,7 +265,7 @@ export default function TurnaroundSpeed() {
               style={{
                 fontFamily: "var(--le-font-sans)",
                 fontSize: "clamp(2.5rem, 12vw, 4.5rem)",
-                color: "oklch(0.97 0 0 / 25%)",
+                color: "var(--le-text-faint)",
                 letterSpacing: "-0.04em",
                 lineHeight: 0.85,
               }}
@@ -300,7 +300,7 @@ export default function TurnaroundSpeed() {
         animate={progress > 0.5 ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.4 }}
         className="mt-4 lg:hidden p-4"
-        style={{ background: "oklch(0.97 0 0 / 4%)", border: `1px solid ${LINE}` }}
+        style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -317,7 +317,7 @@ export default function TurnaroundSpeed() {
             </div>
             <span className="text-[10px]" style={{ color: DIMMER }}>vs</span>
             <div className="text-right">
-              <span className="text-[11px] font-medium block" style={{ color: "oklch(0.97 0 0 / 35%)" }}>72h+</span>
+              <span className="text-[11px] font-medium block" style={{ color: DIM }}>72h+</span>
               <span className="text-[9px]" style={{ color: DIMMER }}>Traditional</span>
             </div>
           </div>

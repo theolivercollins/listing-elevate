@@ -8,11 +8,11 @@ import { useInView } from "@/v2/hooks/useInView";
 import { useCountUp } from "@/v2/hooks/useCountUp";
 import { AnimatedCircleCheck, AnimatedCircleX } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 export default function CostComparison() {
   const { ref, isInView } = useInView(0.15);
@@ -36,7 +36,7 @@ export default function CostComparison() {
             <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: DIM }}>
               Cost per listing
             </span>
-            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "oklch(0.97 0 0 / 5%)" }}>
+            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}>
               Listing Elevate
             </span>
           </div>
@@ -71,7 +71,7 @@ export default function CostComparison() {
                 </div>
                 <span className="text-[12px] font-semibold tabular-nums" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>${ourPrice}</span>
               </div>
-              <div className="w-full h-3" style={{ background: "oklch(1 0 0 / 4%)" }}>
+              <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
                   initial={{ width: 0 }}
                   animate={isInView ? { width: "14.4%" } : {}}
@@ -84,7 +84,7 @@ export default function CostComparison() {
                     animate={isInView ? { opacity: 1 } : {}}
                     transition={{ delay: 1.8 }}
                     className="absolute -right-1 -top-1 w-1 h-5"
-                    style={{ background: WHITE, boxShadow: "0 0 8px oklch(0.97 0 0 / 30%)" }}
+                    style={{ background: WHITE, boxShadow: "0 0 8px var(--le-border-strong)" }}
                   />
                 </motion.div>
               </div>
@@ -99,13 +99,13 @@ export default function CostComparison() {
                 </div>
                 <span className="text-[12px] tabular-nums" style={{ color: DIM, fontFamily: "'JetBrains Mono', monospace" }}>${avgPrice}</span>
               </div>
-              <div className="w-full h-3" style={{ background: "oklch(1 0 0 / 4%)" }}>
+              <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
                   initial={{ width: 0 }}
                   animate={isInView ? { width: "100%" } : {}}
                   transition={{ duration: 1.6, delay: 0.7, ease: [0.22, 1, 0.36, 1] }}
                   className="h-full"
-                  style={{ background: "oklch(0.97 0 0 / 15%)" }}
+                  style={{ background: "var(--le-text-faint)" }}
                 />
               </div>
             </div>
@@ -119,13 +119,13 @@ export default function CostComparison() {
                 </div>
                 <span className="text-[12px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>$1,500</span>
               </div>
-              <div className="w-full h-3" style={{ background: "oklch(1 0 0 / 4%)" }}>
+              <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
                   initial={{ width: 0 }}
                   animate={isInView ? { width: "100%" } : {}}
                   transition={{ duration: 2.0, delay: 0.9, ease: [0.22, 1, 0.36, 1] }}
                   className="h-full"
-                  style={{ background: "oklch(0.97 0 0 / 8%)" }}
+                  style={{ background: "var(--le-border-strong)" }}
                 />
               </div>
             </div>
@@ -185,7 +185,7 @@ export default function CostComparison() {
                   className="flex items-center gap-3"
                 >
                   <AnimatedCircleCheck isInView={isInView} delay={0.9 + i * 0.15} size={14} />
-                  <span className="text-[12px]" style={{ color: "oklch(0.97 0 0 / 70%)" }}>{item}</span>
+                  <span className="text-[12px]" style={{ color: DIM }}>{item}</span>
                 </motion.div>
               ))}
             </div>

@@ -7,11 +7,11 @@ import { motion } from "framer-motion";
 import { useInView } from "@/v2/hooks/useInView";
 import { AnimatedCircleCheck, AnimatedCircleX } from "@/v2/components/primitives/AnimatedIcons";
 
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
-const DIMMER = "oklch(0.28 0.01 240)";
-const LINE = "oklch(1 0 0 / 9%)";
-const CARD_BG = "oklch(0.13 0.025 240)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
+const DIMMER = "var(--le-text-faint)";
+const LINE = "var(--le-border)";
+const CARD_BG = "var(--le-bg-elev)";
 
 export default function MarketDomination() {
   const { ref, isInView } = useInView(0.1);
@@ -77,7 +77,7 @@ export default function MarketDomination() {
           <div className="grid grid-cols-2 gap-6">
             {/* With Listing Elevate */}
             <div>
-              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "oklch(0.97 0 0 / 5%)" }}>
+              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}>
                 With Listing Elevate
               </span>
               <div className="space-y-4">
@@ -95,7 +95,7 @@ export default function MarketDomination() {
                     className="flex items-center gap-3"
                   >
                     <AnimatedCircleCheck isInView={isInView} delay={0.7 + i * 0.15} size={16} />
-                    <span className="text-[12px]" style={{ color: "oklch(0.97 0 0 / 75%)" }}>{item}</span>
+                    <span className="text-[12px]" style={{ color: DIM }}>{item}</span>
                   </motion.div>
                 ))}
               </div>
@@ -188,7 +188,7 @@ export default function MarketDomination() {
                       {step.icon}
                     </span>
                   )}
-                  <span className="text-[12px]" style={{ color: step.active ? "oklch(0.97 0 0 / 70%)" : DIMMER }}>
+                  <span className="text-[12px]" style={{ color: step.active ? DIM : DIMMER }}>
                     {step.label}
                   </span>
                 </motion.div>

@@ -15,10 +15,10 @@ export function SelectedWork() {
   return (
     <section
       id="showcase"
-      style={{ padding: "140px 48px", color: "#fff", background: "transparent" }}
+      style={{ padding: "140px 48px", color: "var(--le-text)", background: "transparent" }}
     >
       <div style={{ maxWidth: 1440, margin: "0 auto" }}>
-        <div className="le-eyebrow" style={{ marginBottom: 24, color: "rgba(255,255,255,0.55)" }}>— SHOWCASE</div>
+        <div className="le-eyebrow" style={{ marginBottom: 24, color: "var(--le-text-muted)" }}>— SHOWCASE</div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 56 }}>
           <h2 className="le-display" style={{ fontSize: "clamp(44px, 5.5vw, 76px)", lineHeight: 0.98, margin: 0 }}>
             Selected work.

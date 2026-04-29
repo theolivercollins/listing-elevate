@@ -238,8 +238,8 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <Link
               to="/upload"
               style={{
-                background: "#fff",
-                color: "#07080c",
+                background: "var(--le-accent)",
+                color: "var(--le-accent-fg)",
                 border: "none",
                 padding: "8px 16px",
                 borderRadius: 4,
@@ -254,7 +254,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
                 fontFamily: "var(--le-font-sans)",
               }}
             >
-              Get started <LEIcon name="arrow" size={12} color="#07080c" />
+              Get started <LEIcon name="arrow" size={12} color="var(--le-accent-fg)" />
             </Link>
           </>
         )}

@@ -18,9 +18,9 @@ import { motion } from "framer-motion";
  * archived per user request; its component file is still on disk.
  */
 
-const LINE = "oklch(1 0 0 / 9%)";
-const WHITE = "oklch(0.97 0.005 240)";
-const DIM = "oklch(0.45 0.01 240)";
+const LINE = "var(--le-border)";
+const WHITE = "var(--le-text)";
+const DIM = "var(--le-text-muted)";
 
 // Luxury modern home at dusk — full-bleed backdrop for the First
 // Impression plate. Same treatment as Hero + FinalCTA (brightness(0.45)
@@ -76,7 +76,7 @@ function FirstImpression() {
             marginBottom: 28,
           }}
         >
-          <div style={{ width: 20, height: 1, background: WHITE }} />
+          <div style={{ width: 20, height: 1, background: "#fff" }} />
           <span
             style={{
               fontSize: 11,
@@ -96,7 +96,7 @@ function FirstImpression() {
             fontWeight: 700,
             letterSpacing: "-0.035em",
             lineHeight: 0.94,
-            color: WHITE,
+            color: "#fff",
             margin: 0,
             maxWidth: 980,
           }}
@@ -139,7 +139,7 @@ function SectionHeader({ label }: { label: string }) {
 
 export function MarketComparison() {
   return (
-    <section id="compare" style={{ background: "var(--le-bg)", color: "#fff" }}>
+    <section id="compare" style={{ background: "var(--le-bg)", color: "var(--le-text)" }}>
       {/* Intro headline */}
       <div
         className="px-6 sm:px-12 pt-10 sm:pt-14 pb-10 sm:pb-14"

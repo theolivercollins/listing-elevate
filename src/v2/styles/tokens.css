@@ -3,8 +3,8 @@
 :root {
   /* Light — stark gallery white */
   --le-bg: #ffffff;
-  --le-bg-elev: #ffffff;
-  --le-bg-sunken: #f7f7f9;
+  --le-bg-elev: #f7f7f9;
+  --le-bg-sunken: #eeeef2;
   --le-border: rgba(10, 12, 20, 0.07);
   --le-border-strong: rgba(10, 12, 20, 0.14);
   --le-text: #07080c;
@@ -28,8 +28,8 @@
   --le-info-soft: oklch(0.94 0.04 240);
 
   /* Type */
-  --le-font-display: "Geist", -apple-system, BlinkMacSystemFont, "Inter Tight", "Segoe UI", sans-serif;
-  --le-font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Inter Tight", "Segoe UI", sans-serif;
+  --le-font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --le-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --le-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* Radii */

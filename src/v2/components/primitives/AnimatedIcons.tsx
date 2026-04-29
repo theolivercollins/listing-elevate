@@ -18,14 +18,14 @@ export function AnimatedCheck({ isInView, delay = 0, size = 22 }: IconProps) {
       style={{
         width: size + 8,
         height: size + 8,
-        border: "1px solid oklch(0.97 0 0 / 15%)",
-        background: "oklch(0.97 0 0 / 5%)",
+        border: "1px solid var(--le-border-strong)",
+        background: "var(--le-bg-sunken)",
       }}
     >
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
         <motion.path
           d="M4 12.5L9.5 18L20 6"
-          stroke="oklch(0.97 0.005 240)"
+          stroke="var(--le-text)"
           strokeWidth="2"
           strokeLinecap="square"
           strokeLinejoin="miter"
@@ -49,14 +49,14 @@ export function AnimatedX({ isInView, delay = 0, size = 22 }: IconProps) {
       style={{
         width: size + 8,
         height: size + 8,
-        border: "1px solid oklch(0.97 0 0 / 8%)",
+        border: "1px solid var(--le-border)",
         background: "transparent",
       }}
     >
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
         <motion.path
           d="M6 6L18 18"
-          stroke="oklch(0.97 0 0 / 25%)"
+          stroke="var(--le-text-muted)"
           strokeWidth="1.5"
           strokeLinecap="square"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -68,7 +68,7 @@ export function AnimatedX({ isInView, delay = 0, size = 22 }: IconProps) {
         />
         <motion.path
           d="M18 6L6 18"
-          stroke="oklch(0.97 0 0 / 25%)"
+          stroke="var(--le-text-muted)"
           strokeWidth="1.5"
           strokeLinecap="square"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -93,7 +93,7 @@ export function AnimatedCircleCheck({ isInView, delay = 0, size = 20 }: IconProp
           cx="12"
           cy="12"
           r="10"
-          stroke="oklch(0.97 0.005 240)"
+          stroke="var(--le-text)"
           strokeWidth="1.5"
           fill="none"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -106,7 +106,7 @@ export function AnimatedCircleCheck({ isInView, delay = 0, size = 20 }: IconProp
         {/* Check */}
         <motion.path
           d="M7 12.5L10.5 16L17 8"
-          stroke="oklch(0.97 0.005 240)"
+          stroke="var(--le-text)"
           strokeWidth="1.5"
           strokeLinecap="square"
           strokeLinejoin="miter"
@@ -133,7 +133,7 @@ export function AnimatedCircleX({ isInView, delay = 0, size = 20 }: IconProps) {
           cx="12"
           cy="12"
           r="10"
-          stroke="oklch(0.97 0 0 / 18%)"
+          stroke="var(--le-border-strong)"
           strokeWidth="1"
           fill="none"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -146,7 +146,7 @@ export function AnimatedCircleX({ isInView, delay = 0, size = 20 }: IconProps) {
         {/* X */}
         <motion.path
           d="M8.5 8.5L15.5 15.5"
-          stroke="oklch(0.97 0 0 / 25%)"
+          stroke="var(--le-text-muted)"
           strokeWidth="1.2"
           strokeLinecap="square"
           initial={{ pathLength: 0, opacity: 0 }}
@@ -158,7 +158,7 @@ export function AnimatedCircleX({ isInView, delay = 0, size = 20 }: IconProps) {
         />
         <motion.path
           d="M15.5 8.5L8.5 15.5"
-          stroke="oklch(0.97 0 0 / 25%)"
+          stroke="var(--le-text-muted)"
           strokeWidth="1.2"
           strokeLinecap="square"
           initial={{ pathLength: 0, opacity: 0 }}

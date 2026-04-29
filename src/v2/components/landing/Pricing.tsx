@@ -12,7 +12,7 @@ export function Pricing() {
   return (
     <section
       id="pricing"
-      style={{ background: "transparent", color: "#fff", padding: "140px 48px" }}
+      style={{ background: "transparent", color: "var(--le-text)", padding: "140px 48px" }}
     >
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <div className="le-eyebrow" style={{ marginBottom: 24 }}>— PRICING</div>
@@ -47,7 +47,7 @@ export function Pricing() {
                 style={t.isLead ? {
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
                   width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 500,
-                  background: "#fff", color: "#07080c", borderRadius: 4,
+                  background: "var(--le-accent)", color: "var(--le-accent-fg)", borderRadius: 4,
                   textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em",
                 } : {
                   display: "inline-flex", alignItems: "center", justifyContent: "center",
