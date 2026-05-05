@@ -35,15 +35,16 @@ One Vercel project, three long-lived branches:
 
 | Branch | Vercel env | URL | Supabase | Crons |
 |---|---|---|---|---|
-| `main` | Production | `listingelevate.com` | **prod** project | All 6 enabled |
-| `staging` | Preview (aliased) | `staging.listingelevate.com` | **staging** project | Disabled |
-| `dev` | Preview (aliased) | `dev.listingelevate.com` | **staging** project (shared) | Disabled |
+| `main` | Production | `listingelevate.com` | **prod** (`reelready` project) | All 6 enabled |
+| `staging` | Preview (auto URL) | `listing-elevate-git-staging-recasi.vercel.app` | **prod, shared** | Disabled |
+| `dev` | Preview (auto URL) | `listing-elevate-git-dev-recasi.vercel.app` | **prod, shared** | Disabled |
 
+- **Cost decision (revised 2026-05-05):** Original spec called for a separate `listing-elevate-staging` Supabase project. Cost check via Supabase MCP returned $10/month for a new project on the Recasi org's paid plan (not free as originally claimed). Decision: skip the separate project, share prod Supabase across all 3 envs, save $120/yr. Isolation moves to the app layer.
 - Promotion: `feat/* → dev → staging → main`, each via PR + `git merge --no-ff`. No direct push to `staging` or `main`.
-- Vercel env vars scoped per environment: prod uses prod Supabase + prod provider keys; preview (staging+dev) uses staging Supabase + (likely same) provider keys with optional budget caps.
-- Crons fire on Production only by default — verify after first staging deploy.
-- New Supabase project `listing-elevate-staging` in Recasi org. Schema cloned from prod via `supabase db dump --schema public`. Storage buckets recreated empty. RLS copied. No data migrated — staging starts empty by design.
-- Migrations: every `supabase/migrations/NNN_*.sql` runs first on staging via Supabase MCP, then prod once verified.
+- Vercel auto-distinguishes Production from Preview via `VERCEL_ENV`; branch is in `VERCEL_GIT_COMMIT_REF`. No per-env Supabase config — same URL/keys everywhere.
+- Crons fire on Production only by default — Vercel native behavior.
+- **App-layer isolation (the missing piece, since Supabase is shared):** every destructive code path (write to `properties`, `scenes`, `cost_events`, `prompt_lab_*`, storage uploads, real provider renders) must check `VERCEL_ENV === 'production'` OR `process.env.LE_ALLOW_NONPROD_WRITES === 'true'` before proceeding. Doctor + governance hooks (Phase 5) enforce this convention by greppping for unguarded write paths.
+- Pretty subdomains (`staging.listingelevate.com`, `dev.listingelevate.com`) deferred — `*.vercel.app` URLs work fine for an internal staging gate.
 
 ### 3. Doc + governance system
 
