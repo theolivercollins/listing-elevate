@@ -1,6 +1,6 @@
 # docs/archive — What's in here and why
 
-Last updated: 2026-04-21
+Last updated: 2026-05-05
 
 See also:
 - [../README.md](../README.md) — top-level docs entry point
@@ -42,6 +42,11 @@ See also:
 | `docs/SCENE-ALLOCATION-PLAN.md` | 2026-04-21 | Proposal for dynamic clip budgeting. Current system uses static quotas that are working well enough; proposal not implemented. | Resurrect if per-room allocation becomes a quality bottleneck. |
 | `ARCHITECTURE.md` (repo root) | 2026-04-21 | Root-level ReelReady architecture doc. Same problem as `docs/ARCHITECTURE.md`. | [`../state/PROJECT-STATE.md`](../state/PROJECT-STATE.md) |
 | `LOVABLE_PROMPT.md` (repo root) | 2026-04-21 | Original Lovable bootstrap prompt. Product name + stack are outdated. Historical only. | None. |
+| `docs/briefs/*` (8 files) → `superseded-docs/2026-04-21-windows/` | 2026-05-05 | One-shot session brief docs from the 2026-04-21 parallel-window work. All work landed on main. | [`../sessions/`](../sessions/) for session-level recaps. |
+| `docs/traces/*` (3 files) → `superseded-docs/director-traces/` | 2026-05-05 | Ad-hoc director-trace dumps from Apr 21–22. Reproducible via `scripts/trace-director-prompt.ts`. | Re-run trace script. |
+| `docs/audits/REGRESSION-DIFF-2026-04-21.md` → `superseded-docs/window-a-audits/` | 2026-05-05 | Window-A point-in-time regression audit. Verdict captured in [`project_legacy_lab_regression_hypothesis.md`](memory). | None. |
+| `docs/audits/router-coverage-2026-04-21.md` → `superseded-docs/window-a-audits/` | 2026-05-05 | Window-A router coverage snapshot. Bucket-table state has since changed. | Re-run via `scripts/router-stats.ts` if needed. |
+| `docs/audits/test-render-log-2026-04-21.md` → `superseded-docs/window-a-audits/` | 2026-05-05 | Test-render run log from Apr 21. Historical only. | None. |
 
 ### `completed-plans/` — plans whose work shipped
 
