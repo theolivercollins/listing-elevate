@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-05
+Last updated: 2026-05-06
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,19 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-06: Judge calibration session — v1.3-anchored failed at scale; harness + migration shipped; judge stays paused.** Full session note: [`sessions/2026-05-05-judge-calibration.md`](./sessions/2026-05-05-judge-calibration.md). Full diagnosis + v1.4 hypotheses: [`audits/judge-calibration-2026-05-05.md`](./audits/judge-calibration-2026-05-05.md).
+
+- **Diagnosed v1.1 quantitatively:** Pearson −0.10 across 150 paired (human, judge) rows. Judge ≈ constant 4.21 regardless of input. Worst inversion: clips Oliver rated 5★ got the LOWEST judge mean (4.00).
+- **Built `scripts/judge-calibration.ts`** — reusable harness; smoke / baseline / run / report modes. Pure-logic metrics (MAE / Within±1 / Pearson / per-bucket means / distribution match). Parallel runner.
+- **Migration 047 applied via Supabase MCP** — `lab_judge_scores` UNIQUE widened to `(iteration_id, judge_version)` so any clip can carry multiple rubric-version verdicts. Strictly additive.
+- **v1.3-anchored attempt failed at scale.** 189-clip run: MAE 1.31 → 1.99, Within ±1 64% → 37%, Pearson −0.10 → −0.15. Same constant-output disease, different shifted mean (~2.5 instead of ~4.2). **Stays on `feat/judge-calibration-v1.2`; NOT promoted past feat.** v1.1 rubric still canonical in dev/staging/main.
+- **Governance reinforced:** Stop hook + doctor now warn when commits exist for today but no session note + no HANDOFF.md update. Catches the "session ended without memorialization" failure mode that almost happened today.
+- **Judge stays paused** — `JUDGE_ENABLED=false` env + `system_flags.judge_cron_paused=true` both still set. Acceptance criteria not met.
+
+**Next session:** try Gemini 2.5 Pro on the v1.1 prompt to isolate the model variable. If Pearson moves with that single change, prompt-tuning was the wrong lever. If not, populate `judge_calibration_examples` with labeled few-shot examples per (room × movement) bucket.
+
+---
 
 **2026-05-05: Consolidation overhaul shipped — repo renamed, 3-tier deploy live, governance system installed.**
 
