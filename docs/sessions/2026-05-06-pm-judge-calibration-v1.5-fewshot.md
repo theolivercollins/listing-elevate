@@ -89,3 +89,34 @@ My recommendation: **A first** (one cheap test, ~$0.30 + one harness run), then 
 - Promote `feat/judge-calibration-v1.5-fewshot` through `dev → staging → main` for the durable harness wiring + populate scripts. The 38 + 18 calibration rows in prod stay (judge paused so no behavior change).
 - Mark the judge calibration program **paused** in HANDOFF until Oliver picks A / B / C.
 - Reset focus to product gaps for next session unless Oliver explicitly wants to test (A).
+
+## Path A (v1.6 minaxes) — also failed (added 2026-05-06 PM2)
+
+Branch `feat/judge-v1.6-minaxes` (not promoted; preserved as record).
+
+Hypothesis: per-axis output is reliable, only the model's weighted-mean `overall` is broken. Override in TS via `composite = min(motion, geom, room)` with no flag penalty (avoiding the v1.2 double-count trap). Tested with the 38 down-corrections loaded.
+
+Result on 25 fresh stratified clips:
+- MAE: **1.88** (worst yet)
+- Within±1: **44%**
+- Pearson: **−0.271** (worse than zero-shot baseline)
+- Per-bucket judge means: 2.80 / 3.40 / 2.20 / 2.40 / **2.00** ← human=5 collapsed
+
+**Why it failed:** the judge's per-axis output is also miscalibrated, not just overall. Looked at sample clips: judge gave human=5★ clips per-axis values like `(motion=2, geom=4, room=4)`, so `min=2`. Min-of-axes amplifies the per-axis miscalibration the same way weighted-mean masks it.
+
+**Architectural conclusion confirmed:** the model has no reliable signal that distinguishes a good push-in from a bad one in this domain — not at overall, not at per-axis. Four lever attempts (prompt v1.3, model v1.4-pro, few-shot v1.5 both flavors, minaxes v1.6) all failed. The Gemini-as-judge architecture is unsuitable.
+
+## Final scoreboard
+
+| Variant | n | Pearson | Verdict |
+|---|---:|---:|---|
+| v1.1 baseline (Flash zero-shot) | 150 | −0.103 | constant 4.21 |
+| v1.3-anchored | 189 | −0.150 | regression |
+| v1.4-pro | 31 | **+0.048** | best ever; trivial |
+| v1.5-fewshot down-only | 25 | −0.066 | unlocked 1-2★; global down-shift |
+| v1.5-fewshot-balanced | 24 | −0.452 | regression |
+| v1.6-minaxes-fewshot | 25 | −0.271 | per-axis also miscalibrated |
+
+**Best Pearson achieved: +0.048. Ship threshold: +0.30. Gap is fundamental.**
+
+**Recommended next direction:** path B — reallocate effort to product gaps. The judge calibration program is closed unless a new evaluator architecture is brought in (path C — fine-tune, Sonnet vision, multi-stage classifier).
