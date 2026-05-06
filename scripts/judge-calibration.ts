@@ -373,20 +373,28 @@ async function loadV1Candidates(): Promise<V1Candidate[]> {
 
 async function runCalibration(limit: number, concurrency = 5) {
   // Lazy import — keeps --smoke / --baseline / --report fast and dep-free of GEMINI_API_KEY.
-  const { judgeLabIteration } = await import("../lib/providers/gemini-judge.js");
+  const { judgeLabIteration, loadCalibrationFewShot } = await import("../lib/providers/gemini-judge.js");
   const { judgeVersionFor } = await import("../lib/prompts/judge-rubric.js");
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY or GOOGLE_API_KEY required to run --run");
+  const fewShotEnabled = process.argv.includes("--no-fewshot") ? false : true;
 
-  // judge_version is keyed to (prompt rubric × model), so cross-model A/B runs
-  // (e.g. v1.1 prompt × Pro vs v1.1 prompt × Flash) write into separable
-  // lab_judge_scores buckets. Resume + summary inserts must use the same key.
+  // judge_version is keyed to (prompt rubric × model × few-shot state), so
+  // cross-axis A/B runs write into separable lab_judge_scores buckets. The
+  // suffix only appears when few-shot is enabled — bare "v1.1" continues to
+  // identify the original Flash + zero-shot run (150 rows) for backward compat.
+  // --tag <s> appends an extra label so multiple few-shot regimes (e.g.
+  // "fewshot" vs "fewshot-balanced") write into separate buckets.
+  const tagIdx = process.argv.indexOf("--tag");
+  const tag = tagIdx >= 0 ? process.argv[tagIdx + 1] : null;
   const judgeModel = process.env.JUDGE_MODEL ?? "gemini-2.5-flash";
-  const judgeVersion = judgeVersionFor(judgeModel);
+  const baseVersion = judgeVersionFor(judgeModel);
+  const fewShotSuffix = fewShotEnabled ? `-${tag ?? "fewshot"}` : "";
+  const judgeVersion = `${baseVersion}${fewShotSuffix}`;
 
   const candidates = await loadV1Candidates();
   console.log(`Loaded ${candidates.length} V1 candidates with (rating, clip_url).`);
-  console.log(`Run config: judge_model=${judgeModel}  judge_version=${judgeVersion}`);
+  console.log(`Run config: judge_model=${judgeModel}  judge_version=${judgeVersion}  few_shot=${fewShotEnabled ? "enabled" : "disabled"}`);
 
   // Skip iterations already scored at the current judge_version (resume support).
   const { data: existing } = await supabase
@@ -428,6 +436,9 @@ async function runCalibration(limit: number, concurrency = 5) {
             if (r.ok) photoBytes = Buffer.from(await r.arrayBuffer());
           } catch { /* photo fetch non-fatal */ }
         }
+        const calibrationExamples = fewShotEnabled
+          ? await loadCalibrationFewShot(iter.room_type, iter.camera_movement, 10)
+          : [];
         const judged = await judgeLabIteration({
           clipUrl: iter.clip_url,
           photoBytes,
@@ -435,15 +446,19 @@ async function runCalibration(limit: number, concurrency = 5) {
           cameraMovement: iter.camera_movement,
           roomType: iter.room_type,
           iterationId: iter.id,
+          calibrationExamples,
         });
         // composite = model's overall (no override). Prompt iteration is the lever.
         const composite = judged.overall;
         const { error: insErr } = await supabase.from("lab_judge_scores").insert({
           iteration_id: iter.id,
-          rubric: judged,
+          rubric: { ...judged, few_shot_n: calibrationExamples.length },
           composite_1to5: composite,
           confidence: judged.confidence / 5,
-          judge_version: judged.judge_version,
+          // Override the binding's bare judge_version so few-shot runs land
+          // in their own bucket (e.g. v1.1-fewshot) without colliding with
+          // the original 150 zero-shot v1.1 rows.
+          judge_version: judgeVersion,
           model_id: judged.judge_model,
           cost_cents: judged.cost_cents,
         });
