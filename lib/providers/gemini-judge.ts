@@ -13,7 +13,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import type { JudgeRubricResult } from "../prompts/judge-rubric.js";
-import { RUBRIC_VERSION, JUDGE_SYSTEM_PROMPT, validateJudgeOutput } from "../prompts/judge-rubric.js";
+import { JUDGE_SYSTEM_PROMPT, judgeVersionFor, validateJudgeOutput } from "../prompts/judge-rubric.js";
 import { recordCostEvent } from "../db.js";
 import { getSupabase } from "../client.js";
 
@@ -49,6 +49,42 @@ export class JudgeDisabledError extends Error {
 const JUDGE_MODEL_DEFAULT = "gemini-2.5-flash";
 
 /**
+ * Per-million-token USD pricing for Gemini models the judge can use.
+ * Rates from Google's published pricing page; tiered prices (e.g. 2.5 Pro
+ * doubles past 200k input tokens) are not modeled — a single judge call
+ * never crosses that threshold.
+ *
+ * Add new entries here when JUDGE_MODEL is pointed at a new model.
+ */
+const GEMINI_PRICE_USD_PER_MTOK: Record<string, { input: number; output: number }> = {
+  "gemini-2.5-flash": { input: 0.075, output: 0.30 },
+  "gemini-2.5-pro":   { input: 1.25,  output: 10.00 },
+};
+
+/**
+ * Cost in cents for a single Gemini call. Math.ceil with a 1-cent floor so
+ * sub-cent calls still register on the cost dashboard. Falls back to Flash
+ * pricing for unknown models — accepted because the cost_event metadata
+ * always carries the actual `judge_model`, so a price miss is recoverable
+ * during reconciliation.
+ */
+export function geminiCostCents(
+  model: string,
+  promptTokens: number,
+  outputTokens: number,
+): number {
+  if (promptTokens === 0 && outputTokens === 0) return 3; // SDK omitted usage; preserves prior fallback.
+  const rate = GEMINI_PRICE_USD_PER_MTOK[model] ?? GEMINI_PRICE_USD_PER_MTOK["gemini-2.5-flash"];
+  return Math.max(
+    1,
+    Math.ceil(
+      promptTokens * (rate.input / 1_000_000) * 100 +
+        outputTokens * (rate.output / 1_000_000) * 100,
+    ),
+  );
+}
+
+/**
  * Judge a single iteration's clip. Returns the full rubric output or throws.
  * JUDGE_ENABLED=true required. Always logs a cost_event (with subtype='judge')
  * whether the call succeeds or fails (failure writes metadata.judge_error).
@@ -63,6 +99,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
 
   const startedAt = Date.now();
   const judge_model = process.env.JUDGE_MODEL ?? JUDGE_MODEL_DEFAULT;
+  const judge_version = judgeVersionFor(judge_model);
 
   try {
     // Accept either env name. @google/genai's default resolution prefers
@@ -170,17 +207,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
     const outputTokens = usage?.candidatesTokenCount ?? 0;
     const totalTokens = usage?.totalTokenCount ?? (promptTokens + outputTokens);
 
-    // gemini-2.5-flash pricing: $0.075/M input tokens, $0.30/M output tokens.
-    // Math.ceil so sub-cent amounts round UP to 1¢ for dashboard visibility.
-    const estimatedCostCents =
-      totalTokens > 0
-        ? Math.max(1, Math.ceil(
-            promptTokens * (0.075 / 1_000_000) * 100 +
-            outputTokens * (0.30 / 1_000_000) * 100,
-          ))
-        : 3; // fallback when SDK omits usageMetadata (e.g. flash-thinking)
-
-    const cost_cents = estimatedCostCents;
+    const cost_cents = geminiCostCents(judge_model, promptTokens, outputTokens);
 
     try {
       await recordCostEvent({
@@ -196,7 +223,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
           surface: "lab",
           iteration_id: input.iterationId,
           judge_model,
-          judge_version: RUBRIC_VERSION,
+          judge_version,
           latency_ms,
           // Token counts for invoice reconciliation (Audit B C3).
           prompt_tokens: promptTokens,
@@ -209,7 +236,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
     return {
       ...validation.result,
       judge_model,
-      judge_version: RUBRIC_VERSION,
+      judge_version,
       latency_ms,
       cost_cents,
     };
@@ -231,7 +258,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
           surface: "lab",
           iteration_id: input.iterationId,
           judge_model,
-          judge_version: RUBRIC_VERSION,
+          judge_version,
           judge_error: message,
           latency_ms,
         },

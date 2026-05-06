@@ -374,20 +374,27 @@ async function loadV1Candidates(): Promise<V1Candidate[]> {
 async function runCalibration(limit: number, concurrency = 5) {
   // Lazy import — keeps --smoke / --baseline / --report fast and dep-free of GEMINI_API_KEY.
   const { judgeLabIteration } = await import("../lib/providers/gemini-judge.js");
-  const { RUBRIC_VERSION } = await import("../lib/prompts/judge-rubric.js");
+  const { judgeVersionFor } = await import("../lib/prompts/judge-rubric.js");
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY or GOOGLE_API_KEY required to run --run");
 
+  // judge_version is keyed to (prompt rubric × model), so cross-model A/B runs
+  // (e.g. v1.1 prompt × Pro vs v1.1 prompt × Flash) write into separable
+  // lab_judge_scores buckets. Resume + summary inserts must use the same key.
+  const judgeModel = process.env.JUDGE_MODEL ?? "gemini-2.5-flash";
+  const judgeVersion = judgeVersionFor(judgeModel);
+
   const candidates = await loadV1Candidates();
   console.log(`Loaded ${candidates.length} V1 candidates with (rating, clip_url).`);
+  console.log(`Run config: judge_model=${judgeModel}  judge_version=${judgeVersion}`);
 
   // Skip iterations already scored at the current judge_version (resume support).
   const { data: existing } = await supabase
     .from("lab_judge_scores")
     .select("iteration_id")
-    .eq("judge_version", RUBRIC_VERSION);
+    .eq("judge_version", judgeVersion);
   const done = new Set((existing ?? []).map((r: any) => r.iteration_id as string));
-  console.log(`${done.size} already scored at judge_version=${RUBRIC_VERSION}; skipping those.`);
+  console.log(`${done.size} already scored at judge_version=${judgeVersion}; skipping those.`);
 
   let todo = candidates.filter((c) => !done.has(c.id));
   if (limit !== Infinity) {
@@ -461,7 +468,7 @@ async function runCalibration(limit: number, concurrency = 5) {
   console.log(`\nDone: ${ok} ok, ${err} err.`);
   if (results.length > 0) {
     const m = computeMetrics(results);
-    console.log(renderMetrics(`This-run summary (judge_version=${RUBRIC_VERSION})`, m));
+    console.log(renderMetrics(`This-run summary (judge_version=${judgeVersion})`, m));
 
     // Write summary row to lab_judge_calibrations (cell_key="ALL" = aggregate).
     const { error: calErr } = await supabase.from("lab_judge_calibrations").insert({
@@ -472,8 +479,8 @@ async function runCalibration(limit: number, concurrency = 5) {
       exact_match_rate: m.exactMatchRate,
       within_one_star_rate: m.withinOneStarRate,
       mean_abs_error: m.mae,
-      judge_version: RUBRIC_VERSION,
-      model_id: process.env.JUDGE_MODEL ?? "gemini-2.5-flash",
+      judge_version: judgeVersion,
+      model_id: judgeModel,
     });
     if (calErr) console.error(`calibration summary insert err: ${calErr.message}`);
     else console.log(`✓ Wrote summary row to lab_judge_calibrations.`);
