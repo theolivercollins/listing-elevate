@@ -99,6 +99,30 @@ const branch = tryRun("git rev-parse --abbrev-ref HEAD");
 const aheadBehind = tryRun(`git rev-list --left-right --count origin/main...${branch} 2>/dev/null`);
 note(`ℹ on branch '${branch}' — ahead/behind origin/main: ${aheadBehind || "?"}`);
 
+// 8. Session-memorialization check — same logic as Stop hook.
+// Catches the 2026-05-05 failure mode: session work committed but never
+// reflected in HANDOFF or docs/sessions/, so cold-entry reads miss it.
+const today = new Date().toISOString().slice(0, 10);
+const commitsToday = tryRun(`git log --since="${today} 00:00" --until="tomorrow 00:00" --all --format=%h`)
+  .split("\n")
+  .filter(Boolean).length;
+if (commitsToday > 0) {
+  const sessionsDir = join(REPO, "docs/sessions");
+  const todaySessionExists = existsSync(sessionsDir)
+    ? readdirSync(sessionsDir).some((f) => f.startsWith(today + "-") && f.endsWith(".md"))
+    : false;
+  const handoffTodayLog = tryRun(
+    `git log --since="${today} 00:00" --until="tomorrow 00:00" --all --name-only --pretty=format:`,
+  );
+  const handoffTouchedToday = handoffTodayLog.split("\n").some((l) => l === "docs/HANDOFF.md");
+  if (!todaySessionExists && !handoffTouchedToday) {
+    note(
+      `⚠ ${commitsToday} commit(s) today but no docs/sessions/${today}-*.md and no HANDOFF.md change today.\n` +
+        `    Cold-entry readers won't see today's work. Write a session note + HANDOFF entry.`,
+    );
+  }
+}
+
 // Render
 if (findings.length === 0) {
   console.log("✓ No drift detected. Repo is clean.\n");
