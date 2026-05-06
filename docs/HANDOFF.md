@@ -138,7 +138,8 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
-- 2026-05-06 — `6c711e0` — v1.5-fewshot harness auto-loads few-shot + populate scripts; calibration program paused after 3 failed lever attempts
+- 2026-05-06 — `0fd591b` — judge calibration program CLOSED after 4 failed lever attempts (v1.6 minaxes also failed); next session pivots to product gaps
+- 2026-05-06 — `6c711e0` — v1.5-fewshot harness auto-loads few-shot + populate scripts
 - 2026-05-06 — `7955cda` — v1.4-pro calibration harness + standing cost_events FK fix + 249-row cost backfill
 - 2026-04-22 — `ad63c6a` — migration 032: widen cost_events.provider CHECK for atlas/google/higgsfield (unblocks P1 cost-event emission)
 - 2026-04-22 — `55491f0` — spec: V1 Prompt Lab UX plan (deferred, synthesized from Task 14 audit)
