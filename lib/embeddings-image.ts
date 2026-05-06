@@ -106,7 +106,7 @@ export async function embedImage(input: EmbedImageInput): Promise<ImageEmbedding
 
     try {
       await recordCostEvent({
-        propertyId: "00000000-0000-0000-0000-000000000000",
+        propertyId: null,
         sceneId: null,
         stage: "analysis",
         provider: "google",
@@ -134,7 +134,7 @@ export async function embedImage(input: EmbedImageInput): Promise<ImageEmbedding
     const message = err instanceof Error ? err.message : String(err);
     try {
       await recordCostEvent({
-        propertyId: "00000000-0000-0000-0000-000000000000",
+        propertyId: null,
         sceneId: null,
         stage: "analysis",
         provider: "google",
