@@ -78,23 +78,45 @@ Read of the data:
 - **Middle and upper buckets still wrong.** Judge over-strict on 5★ clips, mis-buckets some 2★ clips.
 - **Sample noise:** n=25 makes Within±1 and MAE comparisons unreliable. Full 241-clip run in flight.
 
-## Open: full 241-clip v1.3-anchored run (in progress)
+## Full 189-clip v1.3-anchored run — VERDICT: regression
 
-Background job kicked off mid-session. Output at `/tmp/judge-calibration-v1.3-full.log`. ETA ~15 min. Will populate `lab_judge_scores` with `judge_version='v1.3-anchored'` and write a row to `lab_judge_calibrations`. Statistically robust numbers will replace the n=25 estimates above.
+Ran v1.3-anchored against 196 V1 clips (189 succeeded, 7 errored — likely clip-URL 404s; non-blocking). Honest results:
 
-To check progress / final metrics next session:
+| Metric | v1.1 baseline (n=150) | v1.3-anchored (n=189) | Delta |
+|---|---|---|---|
+| MAE | 1.31 | **1.99** | **+0.68 (worse)** |
+| Within ±1 | 64% | **37%** | **−27pp (worse)** |
+| Pearson | −0.10 | **−0.15** | barely changed, still anti-correlated |
+| Mean on human=1 (n=25) | 4.17 | 2.68 | better but still inflated |
+| Mean on human=2 (n=18) | 4.36 | 3.67 | slight improvement |
+| Mean on human=3 (n=36) | 4.13 | 2.69 | now too low |
+| Mean on human=4 (n=38) | 4.21 | 2.50 | too low |
+| Mean on human=5 (n=72) | 4.00 | **2.42** | severely deflated |
+
+**Root cause:** v1.3's anti-leniency posture worked too well. Judge now defaults to ~2.5 instead of ~4.2 — same constant-output disease, different shifted mean. Pearson stayed near zero, meaning the per-clip discrimination didn't actually improve.
+
+**Single biggest culprit:** the hard rule "5★ overall REQUIRES motion=5 AND geom=5 AND room=5 AND zero flags AND confidence ≥ 4" filters out essentially every clip from the 5★ bucket. Almost no clip survives all five conditions, so almost nothing can be 5★ under v1.3.
+
+The 25-clip preliminary that showed Pearson +0.17 was small-sample noise — the full 189-clip run shows the change is a regression.
+
+**Status:** v1.3-anchored stays on the feat branch as a documented failed experiment. NOT promoted past feat. The v1.1 rubric remains the production prompt (still terrible, just less terrible than v1.3).
+
+To replicate or extend:
 ```bash
-npx tsx scripts/judge-calibration.ts --report v1.3-anchored
+npx tsx scripts/judge-calibration.ts --report v1.3-anchored   # current numbers
+npx tsx scripts/judge-calibration.ts --baseline               # v1.1 + v1.0 numbers
 ```
 
 ## Recommendations for next session (v1.4)
 
-Based on the 25-clip directional signal, the next prompt iteration should target:
+Both v1.1 and v1.3 produced near-constant outputs (just at different means). Pearson stayed near zero in both. Conclusion: **prompt-only tuning hits a ceiling for this model.** Real progress probably requires one of:
 
-1. **Recover the upper end.** v1.3 over-strict on 5★ clips (judge mean 3.20 vs human 5.00). The "5★ requires ALL three axes 5 + zero flags + confidence ≥ 4" rule is too restrictive — it's penalizing legitimately-great clips for having one minor flag.
-2. **Fix 2★ blind spot.** v1.3 still rates 2★ clips as 4.20 — the prompt's worked-anchor for 2★ ("one MAJOR defect — wall warps and re-forms…") may not be triggering on the actual failure modes Oliver tags as 2★. Look at concrete 2★ clips and update anchor.
-3. **Few-shot examples in prompt.** The infrastructure (`judge_calibration_examples` table, `loadCalibrationFewShot()` function) is wired but unused. Loading 3 same-bucket calibrated examples per call could close the remaining gap. Cost: +tokens per call; benefit: anchored calibration.
-4. **Try Gemini 2.5 Pro.** v1.3 used `gemini-2.5-flash` (~$0.0001/call). Pro would cost ~$0.001/call. For 241 clips × 5 rounds = 1,205 calls, that's $1.20 (Pro) vs $0.12 (Flash). Worth testing if prompt-tuning hits a Flash ceiling.
+1. **Drop the rigid 5★ filter, recover the upper end.** Single change with the most leverage. Replace "5★ requires ALL three axes 5 AND zero flags AND confidence ≥ 4" with "5★ requires zero MAJOR flags AND average axis ≥ 4.5". Test this in isolation as v1.4.
+2. **Few-shot examples in every call.** The infrastructure (`judge_calibration_examples` table, `loadCalibrationFewShot()` function) is built but the table is empty. Populate it with 3-5 example clips per (room × movement) bucket — labeled by Oliver — and load them into the prompt at call time. Cost: +1-2k input tokens per call. Benefit: model anchors to actual ground-truth examples, not just verbal descriptions.
+3. **Upgrade to Gemini 2.5 Pro.** v1.3 used `gemini-2.5-flash` (~$0.0001/call, single-shot reasoning). Pro is ~10× cost but materially better at multi-axis reasoning. Try Pro on the SAME v1.1 prompt first to isolate the model variable from the prompt variable.
+4. **Hybrid scoring.** Trust model only on motion_faithfulness + hallucination_flags (where it's most reliable per the diagnosis). Score geometry + room from a separate, cheaper visual-similarity signal. Aggregate in TypeScript. This decouples "what the model is good at" from "what the model is bad at."
+
+Suggested next-session order: try (3) Gemini Pro on v1.1 first. If Pearson moves materially, the issue is model capacity. If it doesn't, the issue is the rubric design itself and we should try (2) few-shot.
 
 ## Conditions to flip on (`JUDGE_ENABLED=true` + un-pause cron)
 
@@ -104,12 +126,14 @@ The judge stays off until **all four acceptance criteria pass on a held-out test
 
 ## What this session shipped
 
-- `scripts/judge-calibration.ts` — calibration harness with metrics + smoke test + parallel runner (commits to come)
-- `lib/prompts/judge-rubric.ts` — v1.1 → v1.3-anchored
-- `supabase/migrations/047_lab_judge_scores_unique_per_version.sql` — enables multi-version-per-iteration scoring (applied via Supabase MCP)
-- This audit doc
+- `scripts/judge-calibration.ts` — calibration harness with metrics + smoke test + parallel runner. **Keep this** — it's the durable infrastructure.
+- `lib/prompts/judge-rubric.ts` — v1.1 → v1.3-anchored. **Failed experiment; documented for the record. Do NOT promote past feat branch.**
+- `supabase/migrations/047_lab_judge_scores_unique_per_version.sql` — enables multi-version-per-iteration scoring (applied via Supabase MCP). **Keep — strictly additive schema improvement.**
+- 189 rows in `lab_judge_scores` with `judge_version='v1.3-anchored'` — preserved as the empirical record of the failed v1.3 attempt.
+- 2 rows in `lab_judge_calibrations` (v1.3 on n=25 then n=189). Preserved as run history.
+- This audit doc with honest verdict.
 
-Branch: `feat/judge-calibration-v1.2` (off `dev`). Per Oliver's instruction this session: **NOT promoted past `dev`**. PR-ready when next session validates the full 241-clip metrics.
+Branch: `feat/judge-calibration-v1.2` (off `dev`). Per Oliver's instruction this session: **NOT promoted past feat**. The branch carries the harness + the failed v1.3 prompt + the audit. Next session can either (a) rebuild a v1.4 prompt on this branch, or (b) revert just the rubric file to v1.1 before any future merge to dev.
 
 ## Cost (this session)
 
