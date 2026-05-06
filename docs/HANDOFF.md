@@ -14,16 +14,15 @@ See also:
 
 ## Right now
 
-**2026-05-06: Judge calibration session — v1.3-anchored failed at scale; harness + migration shipped; judge stays paused.** Full session note: [`sessions/2026-05-05-judge-calibration.md`](./sessions/2026-05-05-judge-calibration.md). Full diagnosis + v1.4 hypotheses: [`audits/judge-calibration-2026-05-05.md`](./audits/judge-calibration-2026-05-05.md).
+**2026-05-06 PM: v1.4-pro experiment + cost_events FK fix shipping through `feat/judge-calibration-v1.4-pro`.** Full session note: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md).
 
-- **Diagnosed v1.1 quantitatively:** Pearson −0.10 across 150 paired (human, judge) rows. Judge ≈ constant 4.21 regardless of input. Worst inversion: clips Oliver rated 5★ got the LOWEST judge mean (4.00).
-- **Built `scripts/judge-calibration.ts`** — reusable harness; smoke / baseline / run / report modes. Pure-logic metrics (MAE / Within±1 / Pearson / per-bucket means / distribution match). Parallel runner.
-- **Migration 047 applied via Supabase MCP** — `lab_judge_scores` UNIQUE widened to `(iteration_id, judge_version)` so any clip can carry multiple rubric-version verdicts. Strictly additive.
-- **v1.3-anchored attempt failed at scale.** 189-clip run: MAE 1.31 → 1.99, Within ±1 64% → 37%, Pearson −0.10 → −0.15. Same constant-output disease, different shifted mean (~2.5 instead of ~4.2). **Stays on `feat/judge-calibration-v1.2`; NOT promoted past feat.** v1.1 rubric still canonical in dev/staging/main.
-- **Governance reinforced:** Stop hook + doctor now warn when commits exist for today but no session note + no HANDOFF.md update. Catches the "session ended without memorialization" failure mode that almost happened today.
-- **Judge stays paused** — `JUDGE_ENABLED=false` env + `system_flags.judge_cron_paused=true` both still set. Acceptance criteria not met.
+- **v1.4-pro hypothesis (model is the lever) REJECTED.** Gemini 2.5 Pro on the unchanged v1.1 prompt produced Pearson +0.048 (n=31) vs Flash's −0.103 (n=150). Direction flipped but absolute correlation still ~zero. MAE 1.31 → 1.52, Within±1 64% → 55% (both worse). Judge still never used ratings 1–2 on either model. Stopped at n=31; full parity run wouldn't change verdict. v1.1 rubric stays canonical.
+- **Standing cost-tracking bug FOUND AND FIXED.** `cost_events.property_id_fkey` was silently rejecting every Lab `recordCostEvent` since 2026-04-30. Sentinel UUID `00000000-…-0` doesn't exist in `properties`; FK survived migration 045's NOT NULL drop; empty catch blocks swallowed all 250 failures. Affected callsites: `gemini-judge`, `embeddings-image`, `prompt-lab.finalizeLabRender` fallback. Fix widens `recordCostEvent.propertyId` to `string | null` and passes null at all three callsites. Backfilled 249 missing rows ($2.49 recovered telemetry) idempotently from `lab_judge_scores.cost_cents`.
+- **Durable artifacts:** `judgeVersionFor(model)` keys `lab_judge_scores.judge_version` to the prompt × model combination (Flash→`v1.1`, Pro→`v1.1-pro`); `geminiCostCents(model, in, out)` model-aware pricing; `scripts/oneoff-backfill-judge-cost-events.mts` reusable for future backfill needs.
+- **Judge stays paused** — `JUDGE_ENABLED=false` + `system_flags.judge_cron_paused=true` both still set.
+- **SDK telemetry caveat:** `@google/genai` reports `promptTokenCount=0` for video inputs, so per-row `cost_cents` lands at the 1¢ Math.ceil floor. Real Pro spend per call is higher; reconcile against Google Cloud invoice. Not blocking; logged for follow-up.
 
-**Next session:** try Gemini 2.5 Pro on the v1.1 prompt to isolate the model variable. If Pearson moves with that single change, prompt-tuning was the wrong lever. If not, populate `judge_calibration_examples` with labeled few-shot examples per (room × movement) bucket.
+**Next session:** populate `judge_calibration_examples` with 25–30 of Oliver's 1–2★ clips as `oliver_correction_json` few-shot examples per (room × movement) bucket. Few-shot is the only untried lever — both prompt-tuning (v1.3) and model-swap (v1.4) failed. Re-run `--run --limit 50` on Flash with calibration examples populated. If Pearson moves above +0.30, that's the lever; if not, judge architecture itself may be unsuitable and we punt.
 
 ---
 
@@ -119,6 +118,7 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-06 — _pending_ — v1.4-pro calibration harness + standing cost_events FK fix + 249-row cost backfill (commits `4849190 → 869053a` on `feat/judge-calibration-v1.4-pro`)
 - 2026-04-22 — `ad63c6a` — migration 032: widen cost_events.provider CHECK for atlas/google/higgsfield (unblocks P1 cost-event emission)
 - 2026-04-22 — `55491f0` — spec: V1 Prompt Lab UX plan (deferred, synthesized from Task 14 audit)
 - 2026-04-22 — `3e9bf1d` — audit: kling v2-master vs v2-6-pro verdict — Validate-day-1
