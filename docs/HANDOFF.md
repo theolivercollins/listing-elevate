@@ -14,15 +14,32 @@ See also:
 
 ## Right now
 
-**2026-05-06 PM: v1.4-pro experiment + cost_events FK fix shipping through `feat/judge-calibration-v1.4-pro`.** Full session note: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md).
+**2026-05-06 PM: judge calibration program PAUSED after 3 failed lever attempts. Cost-fix + harness improvements promoted; product focus shifts.** Full session notes: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md) (AM) and [`sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md`](./sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md) (PM).
 
-- **v1.4-pro hypothesis (model is the lever) REJECTED.** Gemini 2.5 Pro on the unchanged v1.1 prompt produced Pearson +0.048 (n=31) vs Flash's −0.103 (n=150). Direction flipped but absolute correlation still ~zero. MAE 1.31 → 1.52, Within±1 64% → 55% (both worse). Judge still never used ratings 1–2 on either model. Stopped at n=31; full parity run wouldn't change verdict. v1.1 rubric stays canonical.
-- **Standing cost-tracking bug FOUND AND FIXED.** `cost_events.property_id_fkey` was silently rejecting every Lab `recordCostEvent` since 2026-04-30. Sentinel UUID `00000000-…-0` doesn't exist in `properties`; FK survived migration 045's NOT NULL drop; empty catch blocks swallowed all 250 failures. Affected callsites: `gemini-judge`, `embeddings-image`, `prompt-lab.finalizeLabRender` fallback. Fix widens `recordCostEvent.propertyId` to `string | null` and passes null at all three callsites. Backfilled 249 missing rows ($2.49 recovered telemetry) idempotently from `lab_judge_scores.cost_cents`.
-- **Durable artifacts:** `judgeVersionFor(model)` keys `lab_judge_scores.judge_version` to the prompt × model combination (Flash→`v1.1`, Pro→`v1.1-pro`); `geminiCostCents(model, in, out)` model-aware pricing; `scripts/oneoff-backfill-judge-cost-events.mts` reusable for future backfill needs.
-- **Judge stays paused** — `JUDGE_ENABLED=false` + `system_flags.judge_cron_paused=true` both still set.
-- **SDK telemetry caveat:** `@google/genai` reports `promptTokenCount=0` for video inputs, so per-row `cost_cents` lands at the 1¢ Math.ceil floor. Real Pro spend per call is higher; reconcile against Google Cloud invoice. Not blocking; logged for follow-up.
+**Lever scoreboard (best Pearson achieved: +0.048; threshold to ship: +0.30):**
 
-**Next session:** populate `judge_calibration_examples` with 25–30 of Oliver's 1–2★ clips as `oliver_correction_json` few-shot examples per (room × movement) bucket. Few-shot is the only untried lever — both prompt-tuning (v1.3) and model-swap (v1.4) failed. Re-run `--run --limit 50` on Flash with calibration examples populated. If Pearson moves above +0.30, that's the lever; if not, judge architecture itself may be unsuitable and we punt.
+| Variant | n | Pearson | Verdict |
+|---|---:|---:|---|
+| v1.1 baseline (Flash, zero-shot) | 150 | −0.103 | constant-output ~4.21 |
+| v1.3-anchored (Flash, prompt-tuning) | 189 | −0.150 | regression |
+| v1.4-pro (Pro, model swap) | 31 | +0.048 | direction flip; trivial |
+| v1.5-fewshot down-only (Flash, 38 ex) | 25 | −0.066 | unlocked 1-2★ but global down-shift |
+| v1.5-fewshot-balanced (38 down + 18 up) | 24 | −0.452 | regression — up-corrections noisy |
+
+**Same constant-output disease persists across prompt × model × few-shot variants.** Per debugging discipline (3+ failed fixes = architectural problem), pausing this program and routing to one of three paths.
+
+- **Standing cost-tracking bug FIXED + 249 missed rows backfilled** (AM session). `recordCostEvent.propertyId` now accepts null; three Lab callsites updated. Live in prod.
+- **Durable harness improvements** (AM + PM): `judgeVersionFor(model)`, `geminiCostCents(model)`, harness auto-loads `loadCalibrationFewShot` per call (mirrors prod cron), `--no-fewshot` + `--tag <s>` CLI flags for separable A/B buckets. Useful regardless of which calibration approach we eventually pick up.
+- **Judge stays paused** — `JUDGE_ENABLED=false` + `system_flags.judge_cron_paused=true`.
+- **Calibration data in prod** (judge paused so no behavior change): 38 down-correction + 18 up-correction rows in `judge_calibration_examples`. The 18 up-corrections are noisy (some rows are accurate judge calls on clips Oliver rated leniently for non-motion reasons) — do not rely on them without manual review.
+- **SDK telemetry caveat:** `@google/genai` reports `promptTokenCount=0` for video inputs, so per-row `cost_cents` hits 1¢ Math.ceil floor. Real spend is higher; reconcile against Google Cloud invoice.
+
+**Next session — Oliver picks one of three paths:**
+- **(A) Minimal-judge:** trust per-axis output, drop the model's `overall`, derive in TS via `clamp(min(motion, geom, room) − flagPenalty, 1, 5)` with the down-only few-shot loaded. ~$0.30 + one harness run to test. Cheapest experiment.
+- **(B) Reallocate to product gaps:** voiceover, voice clone, brokerage logo, music capture, duration enforcement, order-form persistence — all charged or promised but unshipped. Bigger user-experience ROI than a working judge.
+- **(C) Different evaluator architecture:** fine-tune on the 169 paired rows, or swap to Sonnet vision, or build a multi-stage classifier on flags only. Higher cost; lower confidence the architecture lands. Defer until A and B are exhausted.
+
+Recommendation: A first (cheap), then B regardless of A's outcome unless A pops above +0.30 Pearson.
 
 ---
 
@@ -118,6 +135,7 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-06 — _pending_ — v1.5-fewshot harness auto-loads few-shot + populate scripts; calibration program paused after 3 failed lever attempts (commits on `feat/judge-calibration-v1.5-fewshot`)
 - 2026-05-06 — `7955cda` — v1.4-pro calibration harness + standing cost_events FK fix + 249-row cost backfill
 - 2026-04-22 — `ad63c6a` — migration 032: widen cost_events.provider CHECK for atlas/google/higgsfield (unblocks P1 cost-event emission)
 - 2026-04-22 — `55491f0` — spec: V1 Prompt Lab UX plan (deferred, synthesized from Task 14 audit)
