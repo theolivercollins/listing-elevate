@@ -211,7 +211,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
 
     try {
       await recordCostEvent({
-        propertyId: "00000000-0000-0000-0000-000000000000",
+        propertyId: null,
         sceneId: null,
         stage: "analysis",
         provider: "google",
@@ -246,7 +246,7 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
     // Cost event on failure so we still track any partial API consumption.
     try {
       await recordCostEvent({
-        propertyId: "00000000-0000-0000-0000-000000000000",
+        propertyId: null,
         sceneId: null,
         stage: "analysis",
         provider: "google",

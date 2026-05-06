@@ -365,7 +365,13 @@ function hashString(s: string): string {
 // provider units). Sum of cost_events.cost_cents for a property should
 // exactly match properties.total_cost_cents.
 export async function recordCostEvent(event: {
-  propertyId: string;
+  /**
+   * Owning property. Pass null for Lab-only API calls (judge, prompt mining,
+   * etc.) that aren't tied to a real property — the prior sentinel UUID
+   * pattern violates the property_id FK and silently dropped every Lab cost
+   * row from 2026-04-30 to 2026-05-06.
+   */
+  propertyId: string | null;
   sceneId?: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly";
   provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "openai" | "atlas";
@@ -386,7 +392,9 @@ export async function recordCostEvent(event: {
     metadata: event.metadata ?? null,
   });
   if (insertErr) throw insertErr;
-  if (event.costCents > 0) {
+  // properties.total_cost_cents only updates when the cost actually attributes
+  // to a property. Lab calls (propertyId=null) are still tracked in cost_events.
+  if (event.propertyId && event.costCents > 0) {
     await addPropertyCost(event.propertyId, Math.round(event.costCents));
   }
 }
