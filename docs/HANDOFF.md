@@ -25,8 +25,9 @@ See also:
 | v1.4-pro (Pro, model swap) | 31 | +0.048 | direction flip; trivial |
 | v1.5-fewshot down-only (Flash, 38 ex) | 25 | −0.066 | unlocked 1-2★ but global down-shift |
 | v1.5-fewshot-balanced (38 down + 18 up) | 24 | −0.452 | regression — up-corrections noisy |
+| v1.6-minaxes-fewshot (TS aggregation) | 25 | −0.271 | per-axis output also miscalibrated |
 
-**Same constant-output disease persists across prompt × model × few-shot variants.** Per debugging discipline (3+ failed fixes = architectural problem), pausing this program and routing to one of three paths.
+**Four failed lever attempts. Same constant-output disease persists across prompt × model × few-shot × TS-aggregation variants.** Path A (minimal-judge with TS aggregation) tested 2026-05-06 PM and confirmed the per-axis output is also miscalibrated — judge gave human=5★ clips motion ratings of 2 routinely. **Calibration program is closed.** Re-opening would require path C (different evaluator architecture: fine-tune, Sonnet vision, or multi-stage flag-only classifier).
 
 - **Standing cost-tracking bug FIXED + 249 missed rows backfilled** (AM session). `recordCostEvent.propertyId` now accepts null; three Lab callsites updated. Live in prod.
 - **Durable harness improvements** (AM + PM): `judgeVersionFor(model)`, `geminiCostCents(model)`, harness auto-loads `loadCalibrationFewShot` per call (mirrors prod cron), `--no-fewshot` + `--tag <s>` CLI flags for separable A/B buckets. Useful regardless of which calibration approach we eventually pick up.
@@ -34,12 +35,14 @@ See also:
 - **Calibration data in prod** (judge paused so no behavior change): 38 down-correction + 18 up-correction rows in `judge_calibration_examples`. The 18 up-corrections are noisy (some rows are accurate judge calls on clips Oliver rated leniently for non-motion reasons) — do not rely on them without manual review.
 - **SDK telemetry caveat:** `@google/genai` reports `promptTokenCount=0` for video inputs, so per-row `cost_cents` hits 1¢ Math.ceil floor. Real spend is higher; reconcile against Google Cloud invoice.
 
-**Next session — Oliver picks one of three paths:**
-- **(A) Minimal-judge:** trust per-axis output, drop the model's `overall`, derive in TS via `clamp(min(motion, geom, room) − flagPenalty, 1, 5)` with the down-only few-shot loaded. ~$0.30 + one harness run to test. Cheapest experiment.
-- **(B) Reallocate to product gaps:** voiceover, voice clone, brokerage logo, music capture, duration enforcement, order-form persistence — all charged or promised but unshipped. Bigger user-experience ROI than a working judge.
-- **(C) Different evaluator architecture:** fine-tune on the 169 paired rows, or swap to Sonnet vision, or build a multi-stage classifier on flags only. Higher cost; lower confidence the architecture lands. Defer until A and B are exhausted.
+**Next session — pivot to product gaps (path B).** Path A tested + failed. Per the documented gaps in memory:
+- Voiceover + voice clone — charged but no code paths
+- Brokerage logo + brand colors — captured in `user_profiles`, never rendered
+- Music — not captured on form, not in pipeline (videos would be silent)
+- Duration enforcement — 15/30/60s priced but director plans ~12 scenes regardless
+- Order-form persistence — `selected_package`, `selected_duration`, `selected_orientation`, `days_on_market`, `sold_price`, `add_voiceover`, `add_voice_clone`, `add_custom_request`, `custom_request_text` captured in React state but never persisted to DB
 
-Recommendation: A first (cheap), then B regardless of A's outcome unless A pops above +0.30 Pearson.
+Pick highest-ROI gap (probably order-form persistence — unblocks downstream data) and start there. Path C (different evaluator architecture) deferred indefinitely.
 
 ---
 
