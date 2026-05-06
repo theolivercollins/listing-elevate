@@ -448,8 +448,17 @@ async function runCalibration(limit: number, concurrency = 5) {
           iterationId: iter.id,
           calibrationExamples,
         });
-        // composite = model's overall (no override). Prompt iteration is the lever.
-        const composite = judged.overall;
+        // v1.6 minaxes: trust the model's per-axis output but DROP its
+        // weighted-mean overall. Composite = min(motion, geom, room) —
+        // worst-axis sets the ceiling. NO flag penalty: the validator's
+        // cross-axis hard rules already force the corresponding flag when
+        // any axis ≤2, so an additional penalty would double-count
+        // (the v1.2 attempt failed for exactly this reason). Falls back
+        // to judged.overall when --tag does not include "minaxes".
+        const useMinAxes = (tag ?? "").toLowerCase().includes("minaxes");
+        const composite = useMinAxes
+          ? Math.min(judged.motion_faithfulness, judged.geometry_coherence, judged.room_consistency)
+          : judged.overall;
         const { error: insErr } = await supabase.from("lab_judge_scores").insert({
           iteration_id: iter.id,
           rubric: { ...judged, few_shot_n: calibrationExamples.length },
