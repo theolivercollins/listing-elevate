@@ -10,12 +10,13 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { AlertTriangle, Loader2, ArrowRight, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, Loader2, ArrowRight, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatCents, formatDuration, getRelativeTime } from "@/lib/types";
 import type { Property, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
 import type { CostBreakdown, CostBreakdownRow } from "@/lib/api";
+import { listOrders, formatStatus, type PortalOrder } from "@/lib/portalApi";
 import { motion } from "framer-motion";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -59,17 +60,19 @@ const Overview = () => {
   const [costExpanded, setCostExpanded] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recentOrders, setRecentOrders] = useState<PortalOrder[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [completedRes, allRes, dailyRes, overviewRes, breakdownRes] = await Promise.all([
+        const [completedRes, allRes, dailyRes, overviewRes, breakdownRes, ordersRes] = await Promise.all([
           fetchProperties({ status: "complete", limit: 20 }),
           fetchProperties({ limit: 100 }),
           fetchDailyStats(14),
           fetchStatsOverview(),
           fetchCostBreakdown().catch(() => null),
+          listOrders().catch(() => [] as PortalOrder[]),
         ]);
         if (cancelled) return;
         setCompletedProps(completedRes.properties);
@@ -79,6 +82,7 @@ const Overview = () => {
         setDailyStatsData(dailyRes.stats);
         setStats(overviewRes);
         setCostBreakdown(breakdownRes);
+        setRecentOrders(ordersRes);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -208,7 +212,91 @@ const Overview = () => {
           <span className="label text-muted-foreground">— Today</span>
           <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">Studio overview</h2>
         </div>
+        <Link
+          to="/dashboard/orders/new"
+          className="inline-flex items-center gap-2 border border-foreground bg-foreground px-5 py-2.5 text-sm font-medium text-background transition-colors hover:bg-foreground/90"
+        >
+          <Plus className="h-4 w-4" /> Upload deliverable
+        </Link>
       </div>
+
+      {/* ─── Client work — orders + portal entry point ─── */}
+      <section>
+        <div className="flex items-end justify-between">
+          <div>
+            <span className="label text-muted-foreground">— Client work</span>
+            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Recent orders</h3>
+          </div>
+          <Link
+            to="/dashboard/orders"
+            className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            All orders <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+
+        {recentOrders.length === 0 ? (
+          <div className="mt-8 border border-dashed border-border p-12 text-center">
+            <p className="text-sm text-muted-foreground">No orders yet.</p>
+            <Link
+              to="/dashboard/orders/new"
+              className="label mt-4 inline-flex items-center gap-2 text-foreground hover:opacity-70"
+            >
+              Create your first order <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        ) : (
+          <div className="mt-8 border-t border-border">
+            <div className="grid grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] gap-6 border-b border-border py-4">
+              <span className="label text-muted-foreground">Order</span>
+              <span className="label text-muted-foreground">Client</span>
+              <span className="label text-right text-muted-foreground">Amount</span>
+              <span className="label text-muted-foreground">Status</span>
+              <span className="label text-right text-muted-foreground">Created</span>
+            </div>
+            {recentOrders.slice(0, 5).map((o, i) => {
+              const fmt = formatStatus(o.status);
+              const cls =
+                fmt.tone === "accent"
+                  ? "border-accent/40 bg-accent/10 text-accent"
+                  : fmt.tone === "success"
+                  ? "border-emerald-600/40 bg-emerald-600/10 text-emerald-600"
+                  : fmt.tone === "warning"
+                  ? "border-amber-600/40 bg-amber-600/10 text-amber-600"
+                  : fmt.tone === "destructive"
+                  ? "border-destructive/40 bg-destructive/10 text-destructive"
+                  : "border-border bg-secondary text-muted-foreground";
+              return (
+                <motion.div
+                  key={o.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: i * 0.03, ease: EASE }}
+                >
+                  <Link
+                    to={`/dashboard/orders/${o.id}`}
+                    className="grid grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] items-center gap-6 border-b border-border py-5 transition-colors hover:bg-secondary/40"
+                  >
+                    <span className="truncate text-sm font-medium">{o.title}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {o.customer ? `${o.customer.first_name} ${o.customer.last_name}` : "—"}
+                    </span>
+                    <span className="tabular text-right text-sm font-semibold">
+                      ${(o.amount_cents / 100).toFixed(2)}
+                    </span>
+                    <span>
+                      <span className={`label inline-flex items-center border px-2 py-1 ${cls}`}>{fmt.label}</span>
+                    </span>
+                    <span className="tabular text-right text-xs text-muted-foreground">
+                      {getRelativeTime(o.created_at)}
+                    </span>
+                  </Link>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {/* ─── KPI row ─── */}
       <section className="grid gap-px border border-border bg-border md:grid-cols-2 lg:grid-cols-4">

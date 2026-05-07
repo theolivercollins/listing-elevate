@@ -39,6 +39,10 @@ import DashboardRatingLedger from "./pages/dashboard/RatingLedger";
 import DashboardClients from "./pages/dashboard/Clients";
 import DashboardClientNew from "./pages/dashboard/ClientNew";
 import DashboardCustomListingNew from "./pages/dashboard/CustomListingNew";
+import DashboardOrders from "./pages/dashboard/Orders";
+import DashboardOrderNew from "./pages/dashboard/OrderNew";
+import DashboardOrderDetail from "./pages/dashboard/OrderDetail";
+import Onboard from "./pages/Onboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -58,6 +62,7 @@ const App = () => (
               <Route path="/login" element={<Login />} />
               <Route path="/auth/callback" element={<AuthCallback />} />
               <Route path="/status/:id" element={<Status />} />
+              <Route path="/onboard/:token" element={<Onboard />} />
 
               {/* Authenticated user routes */}
               <Route element={<RequireAuth />}>
@@ -97,6 +102,9 @@ const App = () => (
                   <Route path="clients/new" element={<DashboardClientNew />} />
                   <Route path="clients/:id" element={<DashboardClientNew />} />
                   <Route path="listings/new" element={<DashboardCustomListingNew />} />
+                  <Route path="orders" element={<DashboardOrders />} />
+                  <Route path="orders/new" element={<DashboardOrderNew />} />
+                  <Route path="orders/:id" element={<DashboardOrderDetail />} />
                 </Route>
               </Route>
 

@@ -23,6 +23,8 @@
     { "src": "/api/pipeline/([^/]+)", "dest": "/api/pipeline/[propertyId]?propertyId=$1" },
     { "src": "/api/listings/([^/]+)/publish", "dest": "/api/listings/[id]/publish?id=$1" },
     { "src": "/api/clients/([^/]+)", "dest": "/api/clients/[id]?id=$1" },
+    { "src": "/api/portal/orders/([^/]+)", "dest": "/api/portal/orders/[id]?id=$1" },
+    { "src": "/api/portal/onboard/([^/]+)", "dest": "/api/portal/onboard/[token]?token=$1" },
     { "src": "/api/admin/prompt-lab/listings/([^/]+)/iterations/([^/]+)/rate", "dest": "/api/admin/prompt-lab/listings/[id]/iterations/[iterId]/rate?id=$1&iterId=$2" },
     { "src": "/api/admin/prompt-lab/listings/([^/]+)/iterations/([^/]+)/chat/clear", "dest": "/api/admin/prompt-lab/listings/[id]/iterations/[iterId]/clear-chat?id=$1&iterId=$2" },
     { "src": "/api/admin/prompt-lab/listings/([^/]+)/iterations/([^/]+)/chat", "dest": "/api/admin/prompt-lab/listings/[id]/iterations/[iterId]/chat?id=$1&iterId=$2" },
