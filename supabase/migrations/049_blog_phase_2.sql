@@ -6,7 +6,9 @@ insert into storage.buckets (id, name, public)
   values ('blog-images', 'blog-images', true)
   on conflict (id) do nothing;
 
-create policy if not exists "blog-images service role write"
+-- Postgres has no `create policy if not exists`; use drop-then-create for idempotency.
+drop policy if exists "blog-images service role write" on storage.objects;
+create policy "blog-images service role write"
   on storage.objects for all
   to service_role
   using (bucket_id = 'blog-images')
@@ -24,6 +26,7 @@ begin
 end;
 $$;
 
+drop trigger if exists blog_posts_after_draft_ready_trg on blog_posts;
 create trigger blog_posts_after_draft_ready_trg
   after insert or update of state on blog_posts
   for each row execute function blog_posts_enqueue_image_match();
