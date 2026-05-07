@@ -13,6 +13,7 @@ describe('Sierra selectors', () => {
       'editButton',
       'imageFileInput',
       'loginPasswordInput',
+      'loginSiteNameInput',
       'loginSubmitButton',
       'loginUsernameInput',
       'metaDescriptionInput',

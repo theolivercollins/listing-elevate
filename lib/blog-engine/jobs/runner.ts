@@ -56,6 +56,8 @@ export async function runOneJob(
       state: exhausted ? 'failed' : 'queued',
       attempts: newAttempts,
       last_error: e?.message ?? String(e),
+      browserbase_session_id: e?.browserbaseSessionId ?? null,
+      replay_url: e?.browserbaseReplayUrl ?? null,
       finished_at: exhausted ? new Date().toISOString() : null,
       scheduled_at: exhausted
         ? new Date().toISOString()

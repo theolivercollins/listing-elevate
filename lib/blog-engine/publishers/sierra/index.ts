@@ -2,6 +2,7 @@
 import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from "../types";
 import type { BlogPost } from "../../types";
 import { runInSession } from "../../browserbase";
+import type { SierraCreds } from "./auth";
 import { fetchTaxonomy } from "./taxonomy";
 import { sierraPublish, type SierraPublishInput } from "./publish";
 import { sierraEdit, type SierraEditInput, type EditableField } from "./edit";
@@ -18,6 +19,13 @@ export interface SessionTrace {
 
 export type SierraPublisher = Publisher & { lastSession?: SessionTrace };
 
+function toCreds(opts: PublisherOpts): SierraCreds {
+  if (!opts.siteName) {
+    throw new Error("Sierra publisher requires opts.siteName (the customer's public domain)");
+  }
+  return { siteName: opts.siteName, username: opts.username, password: opts.password };
+}
+
 export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublisher {
   const trace: { last?: SessionTrace } = {};
 
@@ -26,8 +34,7 @@ export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublishe
       const image = await deps.loadImage(post);
       const input: SierraPublishInput = {
         baseUrl: opts.baseUrl,
-        username: opts.username,
-        password: opts.password,
+        creds: toCreds(opts),
         post,
         imageBuffer: image?.buffer ?? null,
         imageFilename: image?.filename ?? null,
@@ -44,8 +51,7 @@ export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublishe
       const fieldsChanged = await deps.diffFields(post);
       const input: SierraEditInput = {
         baseUrl: opts.baseUrl,
-        username: opts.username,
-        password: opts.password,
+        creds: toCreds(opts),
         post,
         fieldsChanged,
       };
@@ -58,8 +64,9 @@ export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublishe
     },
 
     async fetchTaxonomy(opts: PublisherOpts): Promise<TaxonomyResult> {
+      const creds = toCreds(opts);
       const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
-        fetchTaxonomy(page, opts.baseUrl, opts.username, opts.password),
+        fetchTaxonomy(page, opts.baseUrl, creds),
       );
       trace.last = { sessionId, replayUrl };
       publisher.lastSession = trace.last;

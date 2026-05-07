@@ -41,13 +41,18 @@ export async function runInSession<T>(
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const page = context.pages()[0] ?? (await context.newPage());
 
+  const replayUrl = `https://browserbase.com/sessions/${session.id}`;
   try {
     const result = await fn({ browser, context, page, sessionId: session.id });
-    return {
-      result,
-      sessionId: session.id,
-      replayUrl: `https://browserbase.com/sessions/${session.id}`,
-    };
+    return { result, sessionId: session.id, replayUrl };
+  } catch (e: any) {
+    // Re-throw with sessionId/replay attached so callers (job runner) can
+    // surface the replay URL on failure for debugging.
+    if (e && typeof e === "object") {
+      e.browserbaseSessionId = session.id;
+      e.browserbaseReplayUrl = replayUrl;
+    }
+    throw e;
   } finally {
     await browser.close().catch(() => {});
   }

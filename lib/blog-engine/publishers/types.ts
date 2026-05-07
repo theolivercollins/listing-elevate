@@ -25,5 +25,10 @@ export interface PublisherOpts {
   baseUrl: string;
   username: string;
   password: string;
+  /**
+   * Sierra-only: the customer's public domain (e.g. "thehelgemoteam.com").
+   * Sierra requires it as a third login field. Ignored by non-Sierra publishers.
+   */
+  siteName?: string;
   contextId: string;
 }

@@ -13,6 +13,8 @@ export async function resolveSiteOpts(
   if (site.host_kind !== 'sierra') throw new Error(`unsupported host ${site.host_kind}`);
   const username = process.env.SIERRA_HELGEMO_USERNAME;
   const password = process.env.SIERRA_HELGEMO_PASSWORD;
+  const siteName = process.env.SIERRA_HELGEMO_SITE_NAME;
   if (!username || !password) throw new Error('Sierra creds env vars missing');
-  return { site, opts: { baseUrl: site.base_url, username, password } };
+  if (!siteName) throw new Error('SIERRA_HELGEMO_SITE_NAME env var missing (Sierra requires the public domain as a third login field)');
+  return { site, opts: { baseUrl: site.base_url, username, password, siteName } };
 }
