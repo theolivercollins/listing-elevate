@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "blog:import-drive": "tsx scripts/blog/import-from-drive.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
