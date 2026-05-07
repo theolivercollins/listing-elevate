@@ -91,6 +91,7 @@ end;
 $$;
 
 alter table cost_events add column if not exists post_id uuid;
+alter table cost_events add column if not exists site_id uuid;
 
 create trigger blog_cost_events_after_insert_trg
 after insert on cost_events
