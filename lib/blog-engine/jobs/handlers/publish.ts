@@ -27,7 +27,11 @@ export const publishHandler: JobHandler = async ({ supabase, job }) => {
   }
 
   const publisher = createSierraPublisher({
-    loadImage: async () => null,
+    loadImage: async (p) => {
+      if (!p.image_id) return null;
+      const { downloadImageById } = await import("../../image-storage");
+      return downloadImageById(supabase, p.image_id);
+    },
     diffFields: async () => new Set(),
   });
 
