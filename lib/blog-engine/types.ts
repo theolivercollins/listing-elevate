@@ -70,3 +70,20 @@ export interface BlogJob {
   finished_at: string | null;
   created_at: string;
 }
+
+export interface BlogImage {
+  id: string;
+  site_id: string | null;
+  blob_url: string;
+  mime: string | null;
+  width: number | null;
+  height: number | null;
+  uploaded_by: string | null;
+  file_hash: string;
+  vision_tags: string[];
+  vision_caption: string | null;
+  embedding: number[] | null;
+  active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
