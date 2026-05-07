@@ -69,7 +69,7 @@ export default function DashboardOrders() {
         </div>
       ) : (
         <div className="border-t border-border">
-          <div className="grid grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] gap-6 border-b border-border py-4">
+          <div className="hidden grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] gap-6 border-b border-border py-4 md:grid">
             <span className="label text-muted-foreground">Order</span>
             <span className="label text-muted-foreground">Client</span>
             <span className="label text-right text-muted-foreground">Amount</span>
@@ -85,17 +85,24 @@ export default function DashboardOrders() {
             >
               <Link
                 to={`/dashboard/orders/${o.id}`}
-                className="grid grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] items-center gap-6 border-b border-border py-5 transition-colors hover:bg-secondary/40"
+                className="block border-b border-border py-5 transition-colors hover:bg-secondary/40 md:grid md:grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] md:items-center md:gap-6"
               >
-                <span className="truncate text-sm font-medium">{o.title}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {o.customer ? `${o.customer.first_name} ${o.customer.last_name}` : "—"}
-                </span>
-                <span className="tabular text-right text-sm font-semibold">
-                  ${(o.amount_cents / 100).toFixed(2)}
-                </span>
-                <span><StatusBadge status={o.status} /></span>
-                <span className="tabular text-right text-xs text-muted-foreground">
+                <div className="flex items-start justify-between gap-3 md:contents">
+                  <span className="truncate text-sm font-medium">{o.title}</span>
+                  <span className="tabular shrink-0 text-sm font-semibold md:text-right">
+                    ${(o.amount_cents / 100).toFixed(2)}
+                  </span>
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 md:contents md:mt-0">
+                  <span className="truncate text-xs text-muted-foreground">
+                    {o.customer ? `${o.customer.first_name} ${o.customer.last_name}` : "—"}
+                  </span>
+                  <span><StatusBadge status={o.status} /></span>
+                  <span className="tabular hidden text-right text-xs text-muted-foreground md:inline">
+                    {getRelativeTime(o.created_at)}
+                  </span>
+                </div>
+                <span className="tabular mt-2 block text-xs text-muted-foreground md:hidden">
                   {getRelativeTime(o.created_at)}
                 </span>
               </Link>

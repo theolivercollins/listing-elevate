@@ -71,13 +71,13 @@ export default function OrderDetail() {
         <Link to="/dashboard/orders" className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> All orders
         </Link>
-        <div className="mt-8 flex items-end justify-between gap-6">
-          <div>
+        <div className="mt-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 flex-1">
             <span className="label text-muted-foreground">— Order</span>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{order.title}</h2>
+            <h2 className="mt-3 break-words text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{order.title}</h2>
             {order.description && <p className="mt-3 text-sm text-muted-foreground">{order.description}</p>}
           </div>
-          <div className="text-right">
+          <div className="text-left md:text-right">
             <div className="tabular text-3xl font-semibold tracking-[-0.02em]">
               ${(order.amount_cents / 100).toFixed(2)}
             </div>
@@ -86,10 +86,37 @@ export default function OrderDetail() {
         </div>
       </div>
 
-      {/* Stage timeline */}
-      <section className="border border-border p-8">
+      {/* Stage timeline — horizontal on tablet+, compact dot row on mobile */}
+      <section className="border border-border p-6 md:p-8">
         <span className="label text-muted-foreground">— Stage</span>
-        <div className="mt-6 flex items-center gap-4">
+
+        {/* Mobile: simple dot row + current label */}
+        <div className="mt-6 md:hidden">
+          <div className="flex items-center gap-2">
+            {STAGES.map((s, i) => {
+              const reached = i <= idx;
+              return (
+                <div key={s.key} className="flex flex-1 items-center gap-2">
+                  <div
+                    className={`h-2 w-2 shrink-0 rounded-full ${
+                      reached ? "bg-foreground" : "bg-border"
+                    }`}
+                  />
+                  {i < STAGES.length - 1 && (
+                    <div className={`h-px flex-1 ${i < idx ? "bg-foreground" : "bg-border"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4">
+            <span className="label text-muted-foreground">Step {Math.max(idx, 0) + 1} of {STAGES.length}</span>
+            <p className="mt-1 text-sm font-medium">{STAGES[Math.max(idx, 0)]?.label ?? "—"}</p>
+          </div>
+        </div>
+
+        {/* Tablet+: full horizontal timeline */}
+        <div className="mt-6 hidden items-center gap-4 md:flex">
           {STAGES.map((s, i) => {
             const reached = i <= idx;
             const current = i === idx;
@@ -122,7 +149,8 @@ export default function OrderDetail() {
             );
           })}
         </div>
-        <div className="mt-6 flex items-baseline gap-3">
+
+        <div className="mt-6 flex flex-wrap items-baseline gap-3 border-t border-border pt-4 md:border-t-0 md:pt-0">
           <span className="label text-muted-foreground">Status</span>
           <span className="text-sm font-medium">{fmt.label}</span>
           {order.paid_at && (
@@ -144,22 +172,24 @@ export default function OrderDetail() {
             We sent this link to <strong>{customer?.email}</strong>. They confirm billing details, then Stripe issues
             the invoice. You can re-share if needed.
           </p>
-          <div className="mt-6 flex items-center gap-3">
-            <code className="tabular flex-1 truncate border border-border bg-background px-3 py-2 text-xs">
+          <div className="mt-6 space-y-3">
+            <code className="tabular block w-full overflow-x-auto whitespace-nowrap border border-border bg-background px-3 py-2 text-xs">
               {onboardingUrl}
             </code>
-            <button
-              onClick={() => copy(onboardingUrl, "Link")}
-              className="label inline-flex items-center gap-2 border border-border px-3 py-2 hover:bg-secondary/40"
-            >
-              <Copy className="h-3 w-3" /> Copy
-            </button>
-            <a
-              href={`mailto:${customer?.email}?subject=${encodeURIComponent(order.title)}&body=${encodeURIComponent(`Hi ${customer?.first_name ?? ""},\n\nHere's the link to confirm your details:\n${onboardingUrl}`)}`}
-              className="label inline-flex items-center gap-2 border border-border px-3 py-2 hover:bg-secondary/40"
-            >
-              <Mail className="h-3 w-3" /> Email
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => copy(onboardingUrl, "Link")}
+                className="label inline-flex items-center gap-2 border border-border px-3 py-2 hover:bg-secondary/40"
+              >
+                <Copy className="h-3 w-3" /> Copy
+              </button>
+              <a
+                href={`mailto:${customer?.email}?subject=${encodeURIComponent(order.title)}&body=${encodeURIComponent(`Hi ${customer?.first_name ?? ""},\n\nHere's the link to confirm your details:\n${onboardingUrl}`)}`}
+                className="label inline-flex items-center gap-2 border border-border px-3 py-2 hover:bg-secondary/40"
+              >
+                <Mail className="h-3 w-3" /> Email
+              </a>
+            </div>
           </div>
         </section>
       )}

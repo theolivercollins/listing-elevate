@@ -210,41 +210,43 @@ export default function OrderNew() {
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4 md:space-y-3">
               {lineItems.map((li, i) => (
-                <div key={i} className="grid grid-cols-[1fr_140px_80px_40px] items-center gap-3">
+                <div key={i} className="space-y-2 border border-border p-3 md:grid md:grid-cols-[1fr_140px_80px_40px] md:items-center md:gap-3 md:space-y-0 md:border-0 md:p-0">
                   <Input
                     value={li.description}
                     onChange={(e) => updateLine(i, { description: e.target.value })}
                     placeholder="Description"
                   />
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                  <div className="grid grid-cols-[1fr_80px_40px] gap-2 md:contents">
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={li.amountDollars}
+                        onChange={(e) => updateLine(i, { amountDollars: e.target.value })}
+                        className="pl-7 tabular"
+                        placeholder="0.00"
+                      />
+                    </div>
                     <Input
                       type="number"
-                      step="0.01"
-                      min="0"
-                      value={li.amountDollars}
-                      onChange={(e) => updateLine(i, { amountDollars: e.target.value })}
-                      className="pl-7 tabular"
-                      placeholder="0.00"
+                      min="1"
+                      value={li.quantity}
+                      onChange={(e) => updateLine(i, { quantity: e.target.value })}
+                      className="tabular"
                     />
+                    <button
+                      type="button"
+                      onClick={() => removeLine(i)}
+                      className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-destructive"
+                      aria-label="Remove"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </div>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={li.quantity}
-                    onChange={(e) => updateLine(i, { quantity: e.target.value })}
-                    className="tabular"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeLine(i)}
-                    className="flex h-9 w-9 items-center justify-center text-muted-foreground hover:text-destructive"
-                    aria-label="Remove"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
                 </div>
               ))}
               <button
