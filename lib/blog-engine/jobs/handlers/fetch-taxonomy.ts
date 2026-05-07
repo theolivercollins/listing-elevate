@@ -16,10 +16,10 @@ export const fetchTaxonomyHandler: JobHandler = async ({ supabase, job }) => {
   });
   const taxonomy = await publisher.fetchTaxonomy({ ...opts, contextId });
   await supabase.from('blog_sites').update({ taxonomy_cache: taxonomy }).eq('id', site.id);
-  const last = (publisher as any).lastSession ?? {};
+  const last = publisher.lastSession;
   return {
     result: { authors: taxonomy.authors.length, categories: taxonomy.categories.length },
-    browserbase_session_id: last.sessionId,
-    replay_url: last.replayUrl,
+    browserbase_session_id: last?.sessionId,
+    replay_url: last?.replayUrl,
   };
 };

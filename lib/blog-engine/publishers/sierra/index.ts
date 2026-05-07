@@ -1,20 +1,27 @@
 // lib/blog-engine/publishers/sierra/index.ts
-import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from '../types';
-import type { BlogPost } from '../../types';
-import { runInSession } from '../../browserbase';
-import { fetchTaxonomy } from './taxonomy';
-import { sierraPublish, type SierraPublishInput } from './publish';
-import { sierraEdit, type SierraEditInput, type EditableField } from './edit';
+import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from "../types";
+import type { BlogPost } from "../../types";
+import { runInSession } from "../../browserbase";
+import { fetchTaxonomy } from "./taxonomy";
+import { sierraPublish, type SierraPublishInput } from "./publish";
+import { sierraEdit, type SierraEditInput, type EditableField } from "./edit";
 
 export interface SierraPublisherDeps {
   loadImage: (post: BlogPost) => Promise<{ buffer: Buffer; filename: string } | null>;
   diffFields: (post: BlogPost) => Promise<Set<EditableField>>;
 }
 
-export function createSierraPublisher(deps: SierraPublisherDeps): Publisher & {
-  lastSession?: { sessionId: string; replayUrl: string };
-} {
-  const publisher: any = {
+export interface SessionTrace {
+  sessionId: string;
+  replayUrl: string;
+}
+
+export type SierraPublisher = Publisher & { lastSession?: SessionTrace };
+
+export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublisher {
+  const trace: { last?: SessionTrace } = {};
+
+  const publisher: SierraPublisher = {
     async publish(post: BlogPost, opts: PublisherOpts): Promise<PublishResult> {
       const image = await deps.loadImage(post);
       const input: SierraPublishInput = {
@@ -28,7 +35,8 @@ export function createSierraPublisher(deps: SierraPublisherDeps): Publisher & {
       const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
         sierraPublish(page, input),
       );
-      publisher.lastSession = { sessionId, replayUrl };
+      trace.last = { sessionId, replayUrl };
+      publisher.lastSession = trace.last;
       return result;
     },
 
@@ -44,7 +52,8 @@ export function createSierraPublisher(deps: SierraPublisherDeps): Publisher & {
       const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
         sierraEdit(page, input),
       );
-      publisher.lastSession = { sessionId, replayUrl };
+      trace.last = { sessionId, replayUrl };
+      publisher.lastSession = trace.last;
       return result;
     },
 
@@ -52,7 +61,8 @@ export function createSierraPublisher(deps: SierraPublisherDeps): Publisher & {
       const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
         fetchTaxonomy(page, opts.baseUrl, opts.username, opts.password),
       );
-      publisher.lastSession = { sessionId, replayUrl };
+      trace.last = { sessionId, replayUrl };
+      publisher.lastSession = trace.last;
       return result;
     },
   };
