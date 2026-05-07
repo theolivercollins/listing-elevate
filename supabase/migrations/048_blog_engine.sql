@@ -82,7 +82,7 @@ returns trigger language plpgsql as $$
 begin
   if new.post_id is not null and exists (select 1 from blog_posts p where p.id = new.post_id) then
     update blog_posts
-       set cost_usd_cents = cost_usd_cents + coalesce(new.cost_usd_cents, 0),
+       set cost_usd_cents = cost_usd_cents + coalesce(new.cost_cents, 0),
            updated_at = now()
      where id = new.post_id;
   end if;

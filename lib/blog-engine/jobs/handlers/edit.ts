@@ -47,11 +47,11 @@ export const editHandler: JobHandler = async ({ supabase, job }) => {
 
   await recordBlogCost(supabase, {
     stage: "blog_publish_browser",
-    cost_usd_cents: 10,
+    cost_cents: 10,
     post_id: post.id,
     site_id: site.id,
     provider: "browserbase",
-    meta: {
+    metadata: {
       kind: "edit",
       session_id: publisher.lastSession?.sessionId,
       replay_url: publisher.lastSession?.replayUrl,
