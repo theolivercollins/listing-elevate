@@ -70,6 +70,9 @@ Add to Vercel env (all 3 tiers, but cron only fires on prod per LE convention):
 - `SIERRA_HELGEMO_PASSWORD`
 - `SIERRA_HELGEMO_BASE_URL` = `https://client2.sierrainteractivedev.com`
 - `BLOG_CRON_SECRET` (matches existing pattern; reused by `poll-blog-jobs.ts`)
+- `SIERRA_DEFAULT_AUTHOR` (optional — populates manual-publish.ts default)
+- `SIERRA_DEFAULT_CATEGORY` (optional — populates manual-publish.ts default)
+- `LE_ALLOW_NONPROD_WRITES=true` (required for local manual-publish/manual-edit/seed scripts to write to shared Supabase)
 
 Locally: same vars in `credentials.env` (LE uses this file).
 
