@@ -4,6 +4,11 @@ export const maxDuration = 30;
 
 import { getSupabase } from "../../../lib/client.js";
 
+const ALLOWED_KINDS = new Set([
+  "research", "distill_topics", "draft", "image_match",
+  "publish", "edit", "fetch_taxonomy", "distill_correction",
+]);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).end();
   if (req.headers.authorization !== `Bearer ${process.env.BLOG_CRON_SECRET}`) {
@@ -12,6 +17,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { kind, site_id, post_id, payload } = req.body ?? {};
   if (!kind || !site_id) {
     return res.status(400).json({ ok: false, error: "kind and site_id required" });
+  }
+  if (!ALLOWED_KINDS.has(kind)) {
+    return res.status(400).json({ ok: false, error: `invalid kind: ${kind}` });
   }
 
   const supabase = getSupabase();
