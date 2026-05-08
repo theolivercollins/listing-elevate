@@ -11,7 +11,7 @@ function getResend(): Resend | null {
 }
 
 function fromAddress(): string {
-  return process.env.RESEND_FROM_EMAIL ?? "notify@listingelevate.com";
+  return process.env.RESEND_FROM_EMAIL ?? "Oliver Helgemo <oliver@recasi.com>";
 }
 
 export interface EmailArgs {
