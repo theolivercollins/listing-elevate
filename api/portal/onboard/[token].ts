@@ -99,87 +99,103 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const err = validate(body);
     if (err) return res.status(400).json({ error: err });
 
-    const stripe = getStripe();
+    let stripe;
+    try {
+      stripe = getStripe();
+    } catch (e) {
+      console.error("[onboard] getStripe failed", e);
+      return res.status(500).json({ error: "Stripe not configured (STRIPE_SECRET_KEY missing)" });
+    }
 
-    // 1. Create or reuse Stripe Customer
     let stripe_customer_id = customer.stripe_customer_id;
-    if (!stripe_customer_id) {
-      const stripeCustomer = await stripe.customers.create({
-        email: customer.email,
-        name: body.business_name || `${customer.first_name} ${customer.last_name}`,
-        phone: body.phone,
-        address: {
-          line1: body.address_line1,
-          line2: body.address_line2 || undefined,
-          city: body.address_city,
-          state: body.address_state,
-          postal_code: body.address_postal_code,
-          country: body.address_country!.toUpperCase(),
-        },
-        metadata: {
-          portal_customer_id: customer.id,
-          owner_id: order.owner_id,
-        },
-      });
-      stripe_customer_id = stripeCustomer.id;
-    }
+    let invoice: import("stripe").Stripe.Invoice | undefined;
+    let finalized: import("stripe").Stripe.Invoice | undefined;
+    try {
+      // 1. Create or reuse Stripe Customer
+      if (!stripe_customer_id) {
+        const stripeCustomer = await stripe.customers.create({
+          email: customer.email,
+          name: body.business_name || `${customer.first_name} ${customer.last_name}`,
+          phone: body.phone,
+          address: {
+            line1: body.address_line1,
+            line2: body.address_line2 || undefined,
+            city: body.address_city,
+            state: body.address_state,
+            postal_code: body.address_postal_code,
+            country: body.address_country!.toUpperCase(),
+          },
+          metadata: { portal_customer_id: customer.id, owner_id: order.owner_id },
+        });
+        stripe_customer_id = stripeCustomer.id;
+      }
 
-    // 2. Persist customer billing details + Stripe linkage
-    const { error: updCustErr } = await supabase
-      .from("portal_customers")
-      .update({
-        business_name: body.business_name || null,
-        phone: body.phone,
-        address_line1: body.address_line1,
-        address_line2: body.address_line2 || null,
-        address_city: body.address_city,
-        address_state: body.address_state,
-        address_postal_code: body.address_postal_code,
-        address_country: body.address_country!.toUpperCase(),
-        stripe_customer_id,
-        onboarded_at: new Date().toISOString(),
-      })
-      .eq("id", customer.id);
-    if (updCustErr) return res.status(500).json({ error: updCustErr.message });
+      // 2. Persist customer billing details + Stripe linkage
+      const { error: updCustErr } = await supabase
+        .from("portal_customers")
+        .update({
+          business_name: body.business_name || null,
+          phone: body.phone,
+          address_line1: body.address_line1,
+          address_line2: body.address_line2 || null,
+          address_city: body.address_city,
+          address_state: body.address_state,
+          address_postal_code: body.address_postal_code,
+          address_country: body.address_country!.toUpperCase(),
+          stripe_customer_id,
+          onboarded_at: new Date().toISOString(),
+        })
+        .eq("id", customer.id);
+      if (updCustErr) {
+        console.error("[onboard] customer update failed", updCustErr);
+        return res.status(500).json({ error: updCustErr.message });
+      }
 
-    // 3. Create invoice items (one per line, or single from title/amount)
-    const items =
-      Array.isArray(order.line_items) && order.line_items.length > 0
-        ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
-        : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
+      // 3. Create invoice items
+      const items =
+        Array.isArray(order.line_items) && order.line_items.length > 0
+          ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
+          : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
+      for (const li of items) {
+        await stripe.invoiceItems.create({
+          customer: stripe_customer_id,
+          amount: li.amount_cents * li.quantity,
+          currency: order.currency,
+          description: li.description,
+          metadata: { portal_order_id: order.id },
+        });
+      }
 
-    for (const li of items) {
-      await stripe.invoiceItems.create({
+      // 4. Create + finalize the invoice (Stripe emails it automatically)
+      invoice = await stripe.invoices.create({
         customer: stripe_customer_id,
-        amount: li.amount_cents * li.quantity,
-        currency: order.currency,
-        description: li.description,
-        metadata: { portal_order_id: order.id },
+        collection_method: "send_invoice",
+        days_until_due: 14,
+        auto_advance: true,
+        description: order.description || order.title,
+        metadata: { portal_order_id: order.id, owner_id: order.owner_id },
+      });
+      if (!invoice.id) {
+        return res.status(500).json({ error: "Stripe invoice missing id" });
+      }
+      finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+      await stripe.invoices.sendInvoice(invoice.id);
+    } catch (stripeErr) {
+      // Stripe SDK errors carry .type, .code, .message — surface enough to debug.
+      const e = stripeErr as { type?: string; code?: string; message?: string; raw?: { message?: string } };
+      const detail = e?.raw?.message || e?.message || String(stripeErr);
+      console.error("[onboard] Stripe error", { type: e?.type, code: e?.code, detail });
+      return res.status(500).json({
+        error: `Stripe: ${detail}`,
+        type: e?.type,
+        code: e?.code,
       });
     }
-
-    // 4. Create + finalize the invoice (Stripe emails it automatically)
-    const invoice = await stripe.invoices.create({
-      customer: stripe_customer_id,
-      collection_method: "send_invoice",
-      days_until_due: 14,
-      auto_advance: true,
-      description: order.description || order.title,
-      metadata: {
-        portal_order_id: order.id,
-        owner_id: order.owner_id,
-      },
-    });
-
-    if (!invoice.id) {
-      return res.status(500).json({ error: "Stripe invoice missing id" });
-    }
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    // sendInvoice triggers Stripe's hosted email with the pay-link.
-    await stripe.invoices.sendInvoice(invoice.id);
 
     // 5. Update order, consume token
+    if (!invoice || !finalized) {
+      return res.status(500).json({ error: "Invoice not finalized" });
+    }
     const { error: updOrdErr } = await supabase
       .from("portal_orders")
       .update({
