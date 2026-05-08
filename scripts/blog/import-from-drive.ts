@@ -41,15 +41,29 @@ function* walkImages(
 }
 
 async function main() {
-  checkGdownInstalled();
   const supabase = getSupabase();
   const { data: site, error: sErr } = await supabase
     .from("blog_sites").select("id").eq("host_kind", "sierra").single();
   if (sErr || !site) throw new Error("no Sierra blog_sites row — run seed-helgemo-site.ts first");
 
-  const tmp = mkdtempSync(join(tmpdir(), "blog-import-"));
-  console.log(`downloading to ${tmp} ...`);
-  execSync(`gdown --folder "${FOLDER_URL}" -O "${tmp}"`, { stdio: "inherit" });
+  let tmp: string;
+  if (process.env.IMPORT_FROM_DIR) {
+    // Reuse an existing local directory (e.g. partial gdown output, or a
+    // manual zip extracted somewhere). Skips the Drive download.
+    tmp = process.env.IMPORT_FROM_DIR;
+    console.log(`using existing dir ${tmp}`);
+  } else {
+    checkGdownInstalled();
+    tmp = mkdtempSync(join(tmpdir(), "blog-import-"));
+    console.log(`downloading to ${tmp} ...`);
+    try {
+      execSync(`gdown --folder "${FOLDER_URL}" -O "${tmp}"`, { stdio: "inherit" });
+    } catch (e: any) {
+      // gdown commonly hits Drive's per-file rate limit on large folders.
+      // Continue with whatever was downloaded — file_hash dedup makes re-runs idempotent.
+      console.warn(`gdown exited non-zero (likely rate-limited). Proceeding with partial set in ${tmp}`);
+    }
+  }
 
   let imported = 0, skipped = 0, failed = 0;
   for (const { path, rel, folderHint } of walkImages(tmp, tmp)) {
