@@ -1,19 +1,66 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-04-28
+Last updated: 2026-05-06
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
 - [state/PROJECT-STATE.md](./state/PROJECT-STATE.md) — authoritative state
 - [plans/back-on-track-plan.md](./plans/back-on-track-plan.md) — condensed roadmap
+- [specs/2026-05-05-listing-elevate-consolidation-design.md](./specs/2026-05-05-listing-elevate-consolidation-design.md) — repo + 3-tier deploy + governance overhaul
 - [specs/2026-04-20-back-on-track-design.md](./specs/2026-04-20-back-on-track-design.md) — full roadmap spec
-- [specs/2026-04-27-custom-listing-pages-design.md](./specs/2026-04-27-custom-listing-pages-design.md) — Custom Listing Pages feature spec
 - [audits/ML-AUDIT-2026-04-20.md](./audits/ML-AUDIT-2026-04-20.md) — Phase M.1 verdict
 - [sessions/](./sessions/) — per-session notes
+- `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
 
-**2026-04-28 (later): Ledger-driven system update + lab cost-tracking bug fix shipped to main (commit `cd242fc`).** Triggered after Oliver flagged "prompts aren't improving from my ratings". Investigation (full trail in [`sessions/2026-04-28-lab-cost-tracking-fix.md`](./sessions/2026-04-28-lab-cost-tracking-fix.md)) confirmed the rating loop *is* working post-fix `140c8f4`, but the latent ledger had never been crystallized into hard rules and a bigger bug was masking all lab cost telemetry.
+**2026-05-06 PM: judge calibration program PAUSED after 3 failed lever attempts. Cost-fix + harness improvements promoted; product focus shifts.** Full session notes: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md) (AM) and [`sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md`](./sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md) (PM).
+
+**Lever scoreboard (best Pearson achieved: +0.048; threshold to ship: +0.30):**
+
+| Variant | n | Pearson | Verdict |
+|---|---:|---:|---|
+| v1.1 baseline (Flash, zero-shot) | 150 | −0.103 | constant-output ~4.21 |
+| v1.3-anchored (Flash, prompt-tuning) | 189 | −0.150 | regression |
+| v1.4-pro (Pro, model swap) | 31 | +0.048 | direction flip; trivial |
+| v1.5-fewshot down-only (Flash, 38 ex) | 25 | −0.066 | unlocked 1-2★ but global down-shift |
+| v1.5-fewshot-balanced (38 down + 18 up) | 24 | −0.452 | regression — up-corrections noisy |
+| v1.6-minaxes-fewshot (TS aggregation) | 25 | −0.271 | per-axis output also miscalibrated |
+
+**Four failed lever attempts. Same constant-output disease persists across prompt × model × few-shot × TS-aggregation variants.** Path A (minimal-judge with TS aggregation) tested 2026-05-06 PM and confirmed the per-axis output is also miscalibrated — judge gave human=5★ clips motion ratings of 2 routinely. **Calibration program is closed.** Re-opening would require path C (different evaluator architecture: fine-tune, Sonnet vision, or multi-stage flag-only classifier).
+
+- **Standing cost-tracking bug FIXED + 249 missed rows backfilled** (AM session). `recordCostEvent.propertyId` now accepts null; three Lab callsites updated. Live in prod.
+- **Durable harness improvements** (AM + PM): `judgeVersionFor(model)`, `geminiCostCents(model)`, harness auto-loads `loadCalibrationFewShot` per call (mirrors prod cron), `--no-fewshot` + `--tag <s>` CLI flags for separable A/B buckets. Useful regardless of which calibration approach we eventually pick up.
+- **Judge stays paused** — `JUDGE_ENABLED=false` + `system_flags.judge_cron_paused=true`.
+- **Calibration data in prod** (judge paused so no behavior change): 38 down-correction + 18 up-correction rows in `judge_calibration_examples`. The 18 up-corrections are noisy (some rows are accurate judge calls on clips Oliver rated leniently for non-motion reasons) — do not rely on them without manual review.
+- **SDK telemetry caveat:** `@google/genai` reports `promptTokenCount=0` for video inputs, so per-row `cost_cents` hits 1¢ Math.ceil floor. Real spend is higher; reconcile against Google Cloud invoice.
+
+**Next session — pivot to product gaps (path B).** Path A tested + failed. Per the documented gaps in memory:
+- Voiceover + voice clone — charged but no code paths
+- Brokerage logo + brand colors — captured in `user_profiles`, never rendered
+- Music — not captured on form, not in pipeline (videos would be silent)
+- Duration enforcement — 15/30/60s priced but director plans ~12 scenes regardless
+- Order-form persistence — `selected_package`, `selected_duration`, `selected_orientation`, `days_on_market`, `sold_price`, `add_voiceover`, `add_voice_clone`, `add_custom_request`, `custom_request_text` captured in React state but never persisted to DB
+
+Pick highest-ROI gap (probably order-form persistence — unblocks downstream data) and start there. Path C (different evaluator architecture) deferred indefinitely.
+
+---
+
+**2026-05-05: Consolidation overhaul shipped — repo renamed, 3-tier deploy live, governance system installed.**
+
+Phase summary (full spec at [`specs/2026-05-05-listing-elevate-consolidation-design.md`](./specs/2026-05-05-listing-elevate-consolidation-design.md)):
+
+- **Repo renamed:** `theolivercollins/reelready` → `theolivercollins/listing-elevate`. Local: `~/real-estate-pipeline` → `~/listing-elevate`. Vercel project was already `listingelevate`. GitHub keeps the redirect from old URL.
+- **3-tier deployment live:** `dev` and `staging` long-lived branches off `main`. URLs: `listingelevate-git-{dev,staging}-recasi.vercel.app`. Promotion path: `feat/* → dev → staging → main`, every step via PR + `git merge --no-ff`. Crons fire on production only.
+- **Cost decision:** skipped a separate staging Supabase ($120/yr saved). All 3 envs share prod Supabase. App-layer isolation via `VERCEL_ENV === 'production'` checks at every destructive write path — convention to enforce in code reviews going forward.
+- **Cleanup:** branches 24→3 local, 14→3 remote. Worktrees 16→1. Sister folders (`real-estate-pipeline-{ui,finances}`) gone (they were git worktrees, not separate repos). 14 stale doc files archived under `docs/archive/superseded-docs/`. 10 `archive/*` tags created as a lossless safety net before any branch deletion.
+- **Governance installed:** `CLAUDE.md` at root (auto-loaded each session). `.claude/settings.json` hooks: SessionStart (orientation), PreToolUse on `git push` (blocks main pushes that didn't update HANDOFF.md), Stop (turn-end uncommitted-work warning). `pnpm run doctor` (`scripts/doctor.ts`) surfaces stale worktrees, merged-but-undeleted branches, doc rot, inactive feature branches. `/le-status` slash command bundles doctor + git status + commit log + lineage in one shot.
+- **File-revert ghost (2026-04-13 incident):** confirmed gone. Phase 0 canary held; full folder rename completed without incident.
+- **Open follow-ups:** First trip through promotion path = THIS work going `chore/consolidation-2026-05-05 → dev → staging → main`. Phase 6 (delete unreferenced `lib/providers/{higgsfield,runway,luma}.ts` after grep audit) deferred — pick up next session.
+
+---
+
+**2026-04-28: Ledger-driven system update + lab cost-tracking bug fix shipped to main (commit `cd242fc`).** Triggered after Oliver flagged "prompts aren't improving from my ratings". Investigation (full trail in [`sessions/2026-04-28-lab-cost-tracking-fix.md`](./sessions/2026-04-28-lab-cost-tracking-fix.md)) confirmed the rating loop *is* working post-fix `140c8f4`, but the latent ledger had never been crystallized into hard rules and a bigger bug was masking all lab cost telemetry.
 
 - **Pending proposal `c0708a98-…`** — mined 196 rated iterations across 23 buckets into 6 concrete `DIRECTOR_SYSTEM` patches. Review at `/dashboard/development/proposals` and promote what looks right; promoted patches mutate the production director on the next render via `resolveProductionPrompt`.
 - **Recipe pool 84 → 115** — backfilled 27 winners (4★+) that pre-dated the auto-promote logic. Pure DB op via `scripts/oneoff/backfill-recipes.ts`.
@@ -21,26 +68,6 @@ See also:
 - **Cost-tracking bug fixed** (migration 045 + commit `cd242fc`). `cost_events.property_id` was `NOT NULL` with FK to `properties.id`, but every Lab cost-event insert (mine, embedding, recipe promote, listing director, listing chat, lab generation) sent `property_id: null` inside a `try/catch`. Two-layer mask: Supabase JS returns `{error}` rather than throwing (catch never fired) + the unused `console.error` had no audience. Audit before fix: 378 lab iterations created in 30d, only 17 lab-stage `cost_events` rows. Dropped the NOT NULL constraint + replaced every try/catch with explicit `{error: costErr}` checks at 10 insert sites. Today's $0.31 rule-mining cost backfilled. Going forward, every lab API call writes a cost row.
 - **P2 Gemini auto-judge** is fully wired on main and dormant by design. Two-gate kill-switch: `JUDGE_ENABLED !== "true"` env var (poll-judge.ts:23) + `system_flags.judge_cron_paused = true` (DB row, paused 2026-04-24 by operator). Stays off until Oliver finishes manual rating runway.
 - **One-off scripts** (kept under `scripts/oneoff/`): `run-mine-now.ts` (replicates `mine.ts` handler with service-role + streaming + 32k max_tokens — 8k cap truncated the response on 196 ratings × 23 buckets) and `backfill-recipes.ts` (reusable for future winner backfills).
-
-**2026-04-28: Custom Listing Pages feature shipped to preview** on `feat/custom-listing-pages` (not yet merged to main). End-to-end LE-integrated flow for spinning up per-listing video-walkthrough landing pages on a client's Sierra Interactive site. Multi-tenant from day one (per-client Sierra creds + agent card + brand color). Operator effort target <1 min per listing.
-
-- **Feature surface:** Top nav → Listings → New Custom Page. Pick client → paste address + video URL → Fetch → Publish to Sierra → modal with live URL + QR.
-- **Migration 043 applied to live `reelready` Supabase via MCP** (2026-04-27). New tables: `clients` (Sierra-site config + AES-256-GCM-encrypted admin creds), `landing_pages` (per-listing artifacts).
-- **Architecture decision:** Sierra has no Content Page CRUD API and no single-listing-by-MLS# Page Component (researched 2026-04-26). Programmatic publish therefore uses **Apify Playwright** driving the Sierra admin UI — same approach third-party blog publishers reportedly use. LE backend renders HTML server-side + decrypts client password + kicks Apify run + polls (`maxDuration: 300`). The original master-`/walkthrough/?mls=X` design at `~/ht/docs/2026-04-26-walkthrough-landing-design.md` is superseded by this approach (`~/ht/` artifacts retained for reference).
-- **Bridge scraper:** `lib/sierra-scrape.ts` parses Sierra's public detail page (JSON-LD + structured markup) until the Sierra REST API key arrives. Same JSON shape the future API will return — swap is one-line.
-- **Auth:** added password sign-in alongside the existing magic-link flow. Existing accounts (no password set) keep using magic link until they reset via Supabase dashboard.
-- **Top nav restructured:** Listings is now a dropdown grouping Properties (renamed "All Listings") + the new Custom Listings actions (New Custom Page, Clients, Add Client). Removed standalone "Custom Listings" dropdown.
-- **Env:** `APIFY_API_TOKEN` + `CLIENTS_ENCRYPTION_KEY` set in Vercel preview via CLI; mirrored to local `credentials.env` (added to `.gitignore`).
-- **Known risk:** Apify Playwright selectors in `lib/sierra-publish.ts` `buildPageFunction()` are educated guesses for Sierra's admin UI (login form input names, "Add New Page Component" → "Content Area" click flow, CKEditor source-mode toggle). First real publish will likely need 1-3 iterations of selector tuning based on the Apify run log.
-- **Session notes:** [`sessions/2026-04-28-custom-listing-pages.md`](./sessions/2026-04-28-custom-listing-pages.md)
-- **Spec:** [`specs/2026-04-27-custom-listing-pages-design.md`](./specs/2026-04-27-custom-listing-pages-design.md)
-
-**Open follow-ups (post-publish-test):**
-1. Tune Apify Playwright selectors based on first real run.
-2. Edit / republish UI for `landing_pages` rows (no UI today after initial draft create).
-3. Tracking Links integration so leads land in Sierra CRM tagged with MLS# Campaign.
-4. Agent self-service dashboard (v1.1 — operator-only CRUD today).
-5. Request Sierra REST API key from `support@sierrainteractive.com` to retire the bridge scraper.
 
 ---
 
@@ -111,6 +138,9 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-06 — `0fd591b` — judge calibration program CLOSED after 4 failed lever attempts (v1.6 minaxes also failed); next session pivots to product gaps
+- 2026-05-06 — `6c711e0` — v1.5-fewshot harness auto-loads few-shot + populate scripts
+- 2026-05-06 — `7955cda` — v1.4-pro calibration harness + standing cost_events FK fix + 249-row cost backfill
 - 2026-04-22 — `ad63c6a` — migration 032: widen cost_events.provider CHECK for atlas/google/higgsfield (unblocks P1 cost-event emission)
 - 2026-04-22 — `55491f0` — spec: V1 Prompt Lab UX plan (deferred, synthesized from Task 14 audit)
 - 2026-04-22 — `3e9bf1d` — audit: kling v2-master vs v2-6-pro verdict — Validate-day-1

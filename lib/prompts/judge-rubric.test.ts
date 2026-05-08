@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { RUBRIC_VERSION, validateJudgeOutput } from "./judge-rubric.js";
+import { RUBRIC_VERSION, judgeVersionFor, validateJudgeOutput } from "./judge-rubric.js";
 
 describe("judge-rubric — RUBRIC_VERSION", () => {
   it("is a non-empty version string", () => {
     expect(RUBRIC_VERSION).toBe("v1.1");
+  });
+});
+
+describe("judge-rubric — judgeVersionFor", () => {
+  it("returns bare RUBRIC_VERSION for gemini-2.5-flash (backward compat with 150 existing rows)", () => {
+    expect(judgeVersionFor("gemini-2.5-flash")).toBe("v1.1");
+  });
+
+  it("returns v1.1-pro for gemini-2.5-pro", () => {
+    expect(judgeVersionFor("gemini-2.5-pro")).toBe("v1.1-pro");
+  });
+
+  it("slug-suffixes any other model so future runs are separable", () => {
+    expect(judgeVersionFor("gemini-3-flash-preview")).toBe("v1.1-gemini-3-flash-preview");
   });
 });
 

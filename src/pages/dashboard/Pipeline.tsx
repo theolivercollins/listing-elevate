@@ -1,10 +1,63 @@
-import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect, type CSSProperties } from "react";
 import { AlertTriangle, Check, RotateCcw, SkipForward, Loader2, Clock } from "lucide-react";
 import { statusStages, getRelativeTime } from "@/lib/types";
 import type { Property, Scene } from "@/lib/types";
 import { fetchProperties, fetchProperty, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
 import { motion } from "framer-motion";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.45)",
+};
+const PAGE_H1: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: "clamp(28px, 4vw, 44px)",
+  fontWeight: 500,
+  letterSpacing: "-0.035em",
+  lineHeight: 0.98,
+  color: "#fff",
+  margin: 0,
+};
+const SECTION_H3: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: 20,
+  fontWeight: 500,
+  letterSpacing: "-0.025em",
+  color: "#fff",
+  margin: 0,
+};
+const GHOST_BTN: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  fontSize: 11,
+  fontWeight: 500,
+  background: "transparent",
+  color: "#fff",
+  border: "1px solid rgba(220,230,255,0.18)",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
+const GHOST_LIGHT_BTN: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  fontSize: 11,
+  fontWeight: 500,
+  background: "transparent",
+  color: "rgba(255,255,255,0.62)",
+  border: "none",
+  borderRadius: 2,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -86,7 +139,7 @@ const Pipeline = () => {
             <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
           </div>
           <div>
-            <span className="label text-destructive">— Error</span>
+            <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>— Error</span>
             <p className="mt-3 text-sm text-muted-foreground">{error}</p>
           </div>
         </div>
@@ -98,8 +151,8 @@ const Pipeline = () => {
     <div className="space-y-20">
       {/* Stage columns */}
       <section>
-        <span className="label text-muted-foreground">— Pipeline</span>
-        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">By stage.</h2>
+        <span style={EYEBROW}>— Pipeline</span>
+        <h2 className="mt-3" style={PAGE_H1}>By stage.</h2>
 
         <div className="mt-12 grid gap-px bg-border md:grid-cols-3 xl:grid-cols-6">
           {statusStages.map((stage, idx) => {
@@ -107,10 +160,10 @@ const Pipeline = () => {
             return (
               <div key={stage.key} className="flex min-h-[260px] flex-col bg-background p-5">
                 <div className="mb-5 flex items-center justify-between">
-                  <span className="label text-foreground">
-                    <span className="text-muted-foreground">0{idx + 1}</span> {stage.label}
+                  <span style={{ ...EYEBROW, color: "#fff" }}>
+                    <span style={{ color: "rgba(255,255,255,0.45)" }}>0{idx + 1}</span> {stage.label}
                   </span>
-                  <span className="tabular text-xs text-muted-foreground">{props.length}</span>
+                  <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>{props.length}</span>
                 </div>
                 <div className="flex-1 space-y-2">
                   {props.length === 0 ? (
@@ -150,8 +203,8 @@ const Pipeline = () => {
       <section>
         <div className="flex items-end justify-between">
           <div>
-            <span className="label text-muted-foreground">— Manual review</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">
+            <span style={EYEBROW}>— Manual review</span>
+            <h3 className="mt-3" style={SECTION_H3}>
               {reviewScenes.length === 0 ? "All clear" : `${reviewScenes.length} scenes need a decision`}
             </h3>
           </div>
@@ -176,9 +229,9 @@ const Pipeline = () => {
                 </div>
                 <div>
                   <div className="flex items-baseline gap-3">
-                    <span className="tabular text-xs font-semibold">Scene {scene.scene_number}</span>
-                    <span className="label text-destructive">{scene.status.replace(/_/g, " ")}</span>
-                    <span className="tabular text-[11px] text-muted-foreground">
+                    <span className="text-xs font-semibold" style={{ fontFamily: "var(--le-font-mono)", color: "#fff" }}>Scene {scene.scene_number}</span>
+                    <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>{scene.status.replace(/_/g, " ")}</span>
+                    <span className="text-[11px]" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
                       Confidence {(scene.qc_confidence * 100).toFixed(0)}%
                     </span>
                   </div>
@@ -198,26 +251,26 @@ const Pipeline = () => {
                   )}
                 </div>
                 <div className="flex flex-row gap-2 md:flex-col">
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  <button
+                    type="button"
+                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await approveScene(scene.id); })}
                   >
                     <Check className="h-3.5 w-3.5" /> Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await resubmitScene(scene.id); })}
                     title="Resubmit with current prompt. Auto-fails over to another provider on permanent errors."
                   >
                     <RotateCcw className="h-3.5 w-3.5" /> Resubmit
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
                     disabled={actionLoading[scene.id]}
                     onClick={() =>
                       wrap(scene.id, async () => {
@@ -229,10 +282,10 @@ const Pipeline = () => {
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     {scene.provider === "kling" ? "Try Runway" : "Try Kling"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
                     disabled={actionLoading[scene.id]}
                     onClick={async () => {
                       const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
@@ -242,15 +295,15 @@ const Pipeline = () => {
                     title="Edit the prompt and resubmit."
                   >
                     <RotateCcw className="h-3.5 w-3.5" /> Edit prompt
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await skipScene(scene.id); })}
                   >
                     <SkipForward className="h-3.5 w-3.5" /> Skip
-                  </Button>
+                  </button>
                 </div>
               </motion.div>
             ))}

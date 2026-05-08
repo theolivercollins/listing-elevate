@@ -55,7 +55,7 @@ vi.mock("../client.js", () => ({
 }));
 
 // Import after mocks are set up.
-import { judgeLabIteration, loadCalibrationFewShot, JudgeDisabledError } from "./gemini-judge.js";
+import { geminiCostCents, judgeLabIteration, loadCalibrationFewShot, JudgeDisabledError } from "./gemini-judge.js";
 import { GoogleGenAI } from "@google/genai";
 
 const BASE_INPUT = {
@@ -179,6 +179,41 @@ describe("gemini-judge — success path", () => {
       ],
     });
     expect(result.overall).toBeDefined();
+  });
+});
+
+describe("geminiCostCents — model-aware pricing", () => {
+  it("zero tokens → 3¢ fallback (preserves prior behavior when SDK omits usage)", () => {
+    expect(geminiCostCents("gemini-2.5-flash", 0, 0)).toBe(3);
+    expect(geminiCostCents("gemini-2.5-pro", 0, 0)).toBe(3);
+  });
+
+  it("Flash pricing is $0.075 input / $0.30 output per Mtok", () => {
+    // 1M input + 1M output → $0.075 + $0.30 = $0.375 = 38¢ (Math.ceil)
+    expect(geminiCostCents("gemini-2.5-flash", 1_000_000, 1_000_000)).toBe(38);
+  });
+
+  it("Pro pricing is $1.25 input / $10 output per Mtok", () => {
+    // 1M input + 1M output → $1.25 + $10 = $11.25 = 1125¢
+    expect(geminiCostCents("gemini-2.5-pro", 1_000_000, 1_000_000)).toBe(1125);
+  });
+
+  it("Pro is materially more expensive than Flash on a typical judge call", () => {
+    // Realistic-ish judge call: ~50k input (video frames + prompt) + ~500 output (JSON).
+    const flash = geminiCostCents("gemini-2.5-flash", 50_000, 500);
+    const pro = geminiCostCents("gemini-2.5-pro", 50_000, 500);
+    expect(pro).toBeGreaterThan(flash * 5);
+  });
+
+  it("rounds sub-cent calls UP to a 1¢ floor for dashboard visibility", () => {
+    // 1k input on Flash → $0.000075 = sub-cent
+    expect(geminiCostCents("gemini-2.5-flash", 1000, 0)).toBe(1);
+  });
+
+  it("falls back to Flash pricing for unknown models (recoverable via metadata)", () => {
+    const flash = geminiCostCents("gemini-2.5-flash", 50_000, 500);
+    const unknown = geminiCostCents("gemini-99-imaginary", 50_000, 500);
+    expect(unknown).toBe(flash);
   });
 });
 

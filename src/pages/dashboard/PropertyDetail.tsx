@@ -1,7 +1,6 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import "@/v2/styles/v2.css";
 import { ArrowLeft, Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, Star } from "lucide-react";
 import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
@@ -191,30 +190,32 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
     }
   }
 
+  const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
+
   return (
     <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <span className="label text-muted-foreground">Admin actions</span>
-      <Button
-        size="sm"
-        variant="outline"
+      <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>Admin actions</span>
+      <button
+        type="button"
+        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id), "auto")}
       >
         {busy === "auto" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
         Resubmit
-      </Button>
-      <Button
-        size="sm"
-        variant="outline"
+      </button>
+      <button
+        type="button"
+        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id, { provider: other }), "other")}
       >
         {busy === "other" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
         Try {other}
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
+      </button>
+      <button
+        type="button"
+        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={async () => {
           const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
@@ -223,7 +224,7 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
         }}
       >
         <RotateCcw className="h-3.5 w-3.5" /> Edit + resubmit
-      </Button>
+      </button>
       {message && (
         <span
           className={`text-xs ${
@@ -240,12 +241,6 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
     </div>
   );
 }
-
-const statusTone: Record<string, string> = {
-  complete: "text-accent",
-  failed: "text-destructive",
-  needs_review: "text-destructive",
-};
 
 const ACTIVE_STATUSES = new Set([
   "queued",
@@ -265,6 +260,7 @@ const PropertyDetail = () => {
   const [rerunning, setRerunning] = useState(false);
   const [prompts, setPrompts] = useState<{ analysis: string; director: string; qc: string } | null>(null);
   const [copiedScene, setCopiedScene] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"photos" | "shots" | "logs" | "prompts">("photos");
 
   const isPolling = !!property && ACTIVE_STATUSES.has(property.status);
 
@@ -406,96 +402,107 @@ const PropertyDetail = () => {
   const photoById = new Map(photos.map((p) => [p.id, p]));
   const deliverables = scenes.filter((s) => s.clip_url);
   const costTotalCents = costEvents.reduce((s, e) => s + (e.cost_cents ?? 0), 0);
-  const tone = statusTone[property.status] || "text-foreground";
   // Primary image: prefer the first selected photo, fall back to the first
   // photo overall. photos[] is already ordered by created_at from fetchProperty.
   const primaryPhoto = photos.find((p) => p.selected) ?? photos[0] ?? null;
 
   return (
     <div className="space-y-16">
-      {/* Header */}
-      <div>
-        <Link
-          to="/dashboard/properties"
-          className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3 w-3" /> All listings
-        </Link>
-        <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className={`label ${tone}`}>{property.status.replace("_", " ")}</span>
-              {isPolling && (
-                <span className="label inline-flex items-center gap-1.5 text-accent">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75"></span>
-                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent"></span>
-                  </span>
-                  Live
-                </span>
-              )}
-            </div>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">
-              {property.address}
-            </h2>
-            <p className="tabular mt-3 text-xs text-muted-foreground">
-              {property.bedrooms}bd · {property.bathrooms}ba · ${property.price.toLocaleString()} ·{" "}
-              {property.listing_agent}
-            </p>
-            <div className="mt-8">
-              <Button variant="outline" onClick={handleRerun} disabled={rerunning}>
-                <RotateCcw className={`h-4 w-4 ${rerunning ? "animate-spin" : ""}`} /> Rerun pipeline
-              </Button>
-            </div>
-          </div>
-
-          {/* Primary listing image */}
-          <div className="order-first lg:order-last">
-            <div className="relative aspect-[4/3] w-full overflow-hidden border border-border bg-secondary">
-              {primaryPhoto ? (
-                <img
-                  src={primaryPhoto.file_url}
-                  alt={primaryPhoto.file_name || property.address}
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                  <span className="label">— No photos yet</span>
+      {/* Header — full-bleed photo with text overlay */}
+      <div style={{ position: "relative", overflow: "hidden", marginBottom: 0 }}>
+        {primaryPhoto ? (
+          <div style={{ position: "relative", height: 320 }}>
+            <img
+              src={primaryPhoto.file_url}
+              alt={primaryPhoto.file_name || property.address}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.45) saturate(1.1)" }}
+            />
+            <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(5,7,14,0.4) 0%, rgba(5,7,14,0.75) 100%)", pointerEvents: "none" }} />
+            <div style={{ position: "absolute", inset: 0, padding: "32px 0", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+              <Link
+                to="/dashboard/properties"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+              >
+                <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
+              </Link>
+              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: isPolling ? "rgba(80,220,120,0.9)" : "rgba(255,255,255,0.55)" }}>
+                      {property.status.replace(/_/g, " ")}
+                    </span>
+                    {isPolling && (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.14em", color: "rgba(80,220,120,0.9)" }}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "rgba(80,220,120,0.9)", animation: "le-pulse 1.6s ease-in-out infinite", display: "inline-block" }} />
+                        LIVE
+                      </span>
+                    )}
+                  </div>
+                  <h1 style={{ fontSize: "clamp(28px, 4vw, 52px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
+                    {property.address}
+                  </h1>
+                  <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}>
+                    ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
+                  </p>
                 </div>
-              )}
-              {primaryPhoto && (
-                <span className="label absolute left-3 top-3 bg-black/60 px-2 py-1 text-white backdrop-blur-sm">
-                  Primary
-                </span>
-              )}
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <button
+                    type="button"
+                    onClick={handleRerun}
+                    disabled={rerunning}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 2, padding: "8px 14px", fontSize: 12, fontWeight: 500, cursor: rerunning ? "not-allowed" : "pointer", fontFamily: "var(--le-font-sans)", backdropFilter: "blur(8px)" }}
+                  >
+                    <RotateCcw style={{ width: 12, height: 12, ...(rerunning ? { animation: "spin 1s linear infinite" } : {}) }} />
+                    Rerun
+                  </button>
+                </div>
+              </div>
             </div>
-            {primaryPhoto && primaryPhoto.room_type && (
-              <p className="label mt-3 text-muted-foreground">
-                {primaryPhoto.room_type.replace(/_/g, " ")}
-                {primaryPhoto.key_features && primaryPhoto.key_features.length > 0 && (
-                  <> · {primaryPhoto.key_features.slice(0, 2).join(" · ")}</>
-                )}
-              </p>
-            )}
           </div>
-        </div>
+        ) : (
+          <div style={{ padding: "32px 0" }}>
+            <Link
+              to="/dashboard/properties"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+            >
+              <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
+            </Link>
+            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
+              <div>
+                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", display: "block", marginBottom: 12 }}>
+                  {property.status.replace(/_/g, " ")}
+                </span>
+                <h1 style={{ fontSize: "clamp(28px, 4vw, 48px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
+                  {property.address}
+                </h1>
+                <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, color: "rgba(255,255,255,0.62)" }}>
+                  ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRerun}
+                disabled={rerunning}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, padding: "8px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
+              >
+                <RotateCcw style={{ width: 12, height: 12 }} /> Rerun
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stat strip */}
-      <div className="grid gap-px border border-border bg-border md:grid-cols-4">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 48 }}>
         {[
           { label: "Total cost", value: formatCents(property.total_cost_cents) },
-          {
-            label: "Processing time",
-            value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—",
-          },
+          { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
           { label: "Photos", value: `${property.selected_photo_count} / ${property.photo_count}` },
           { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
-        ].map((s) => (
-          <div key={s.label} className="bg-background p-6">
-            <span className="label text-muted-foreground">{s.label}</span>
-            <div className="tabular mt-4 text-2xl font-semibold tracking-[-0.02em]">{s.value}</div>
+        ].map((s, i) => (
+          <div key={s.label} style={{ padding: "20px 24px", borderRight: i < 3 ? "1px solid rgba(220,230,255,0.09)" : "none" }}>
+            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", display: "block" }}>{s.label}</span>
+            <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff", marginTop: 8 }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -503,8 +510,8 @@ const PropertyDetail = () => {
       {/* Deliverables */}
       {deliverables.length > 0 && (
         <section>
-          <span className="label text-muted-foreground">— Deliverables</span>
-          <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">
+          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Deliverables</span>
+          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
             {deliverables.length} {deliverables.length === 1 ? "clip" : "clips"} ready
           </h3>
           <div className="mt-8 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
@@ -520,11 +527,9 @@ const PropertyDetail = () => {
                       {scene.provider ?? "—"} · {scene.duration_seconds}s
                     </p>
                   </div>
-                  <Button asChild size="sm" variant="outline">
-                    <a href={scene.clip_url!} download={`scene_${scene.scene_number}.mp4`}>
-                      <Download className="h-3.5 w-3.5" />
-                    </a>
-                  </Button>
+                  <a href={scene.clip_url!} download={`scene_${scene.scene_number}.mp4`} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "transparent", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, color: "#fff" }}>
+                    <Download style={{ width: 14, height: 14 }} />
+                  </a>
                 </div>
                 <RatingWidget
                   scene={scene}
@@ -550,9 +555,9 @@ const PropertyDetail = () => {
       {/* Cost breakdown */}
       {costEvents.length > 0 && (
         <section>
-          <span className="label text-muted-foreground">— Costs</span>
-          <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">
-            Real per-call breakdown · <span className="text-muted-foreground">{formatCents(costTotalCents)}</span>
+          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Costs</span>
+          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
+            Real per-call breakdown · <span style={{ color: "rgba(255,255,255,0.62)" }}>{formatCents(costTotalCents)}</span>
           </h3>
           <div className="mt-8 border-t border-border">
             <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 border-b border-border py-4">
@@ -587,17 +592,26 @@ const PropertyDetail = () => {
         </section>
       )}
 
-      {/* Tabs */}
-      <Tabs defaultValue="photos" onValueChange={(v) => v === "prompts" && loadPrompts()}>
-        <TabsList>
-          <TabsTrigger value="photos">Photos · {photos.length}</TabsTrigger>
-          <TabsTrigger value="shots">Shot plan · {scenes.length}</TabsTrigger>
-          <TabsTrigger value="logs">Timeline</TabsTrigger>
-          <TabsTrigger value="prompts">System prompts</TabsTrigger>
-        </TabsList>
+      {/* Section tabs */}
+      <div style={{ borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 40, display: "flex", gap: 0 }}>
+        {(["photos", "shots", "logs", "prompts"] as const).map((tab) => {
+          const labels: Record<string, string> = { photos: `Photos · ${photos.length}`, shots: `Shot plan · ${scenes.length}`, logs: "Timeline", prompts: "System prompts" };
+          const active = activeTab === tab;
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => { setActiveTab(tab); if (tab === "prompts") loadPrompts(); }}
+              style={{ padding: "12px 20px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "#fff" : "rgba(255,255,255,0.45)", background: "none", border: "none", borderBottom: active ? "1px solid #fff" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
+            >
+              {labels[tab]}
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Photos */}
-        <TabsContent value="photos" className="mt-10">
+      {activeTab === "photos" && (
+        <div style={{ marginTop: 40 }}>
           {photos.length === 0 ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No photos</p>
           ) : (
@@ -663,10 +677,11 @@ const PropertyDetail = () => {
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Shot plan */}
-        <TabsContent value="shots" className="mt-10">
+      {activeTab === "shots" && (
+        <div style={{ marginTop: 40 }}>
           {scenes.length === 0 ? (
             <p className="py-16 text-center text-sm text-muted-foreground">No scenes yet</p>
           ) : (
@@ -707,7 +722,7 @@ const PropertyDetail = () => {
                           {copiedScene === scene.id ? "Copied" : "Copy"}
                         </button>
                       </div>
-                      <pre className="whitespace-pre-wrap border border-border bg-secondary/30 p-4 text-[11px] leading-relaxed">
+                      <pre className="whitespace-pre-wrap p-4 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
                         {scene.prompt}
                       </pre>
                     </div>
@@ -743,10 +758,6 @@ const PropertyDetail = () => {
                       </div>
                     )}
 
-                    {/* Admin resubmit controls — surfaced on any scene that
-                        isn't a clean qc_pass with a clip_url. This replaces
-                        the old stuck-scene workflow where the only path was
-                        a full property rerun. */}
                     {(scene.status === "needs_review" ||
                       scene.status === "qc_hard_reject" ||
                       scene.status === "qc_soft_reject" ||
@@ -759,10 +770,11 @@ const PropertyDetail = () => {
               })}
             </div>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* Timeline */}
-        <TabsContent value="logs" className="mt-10">
+      {activeTab === "logs" && (
+        <div style={{ marginTop: 40 }}>
           <div className="max-h-[640px] overflow-y-auto border border-border bg-secondary/20">
             {logs.length === 0 ? (
               <p className="py-16 text-center text-sm text-muted-foreground">No logs for this property</p>
@@ -772,6 +784,7 @@ const PropertyDetail = () => {
                   <div
                     key={log.id}
                     className="grid grid-cols-[80px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed"
+                    style={{ fontFamily: "var(--le-font-mono)" }}
                   >
                     <span className="tabular text-muted-foreground/60">
                       {new Date(log.created_at).toLocaleTimeString([], {
@@ -811,10 +824,11 @@ const PropertyDetail = () => {
               </div>
             )}
           </div>
-        </TabsContent>
+        </div>
+      )}
 
-        {/* System prompts */}
-        <TabsContent value="prompts" className="mt-10 space-y-12">
+      {activeTab === "prompts" && (
+        <div style={{ marginTop: 40 }} className="space-y-12">
           {!prompts ? (
             <div className="flex justify-center py-12">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -826,17 +840,17 @@ const PropertyDetail = () => {
               { label: "QC evaluator", desc: "Used to judge generated clips. Currently auto-passing pending frame-extraction infra.", body: prompts.qc },
             ].map((p) => (
               <section key={p.label}>
-                <span className="label text-muted-foreground">— {p.label}</span>
-                <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">{p.label}</h3>
+                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— {p.label}</span>
+                <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>{p.label}</h3>
                 <p className="mt-2 text-xs text-muted-foreground">{p.desc}</p>
-                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap border border-border bg-secondary/30 p-5 text-[11px] leading-relaxed">
+                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap p-5 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
                   {p.body}
                 </pre>
               </section>
             ))
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 };

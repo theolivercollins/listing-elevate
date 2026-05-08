@@ -12,6 +12,21 @@
 export const RUBRIC_VERSION = "v1.1" as const;
 
 /**
+ * Compose the judge_version tag written to lab_judge_scores. Keys to the
+ * combination of (prompt rubric, model) so cross-model A/B runs against the
+ * same prompt are separable.
+ *
+ * Backward compat: gemini-2.5-flash returns the bare RUBRIC_VERSION so the
+ * 150 existing v1.1 rows (all produced on Flash) remain comparable without
+ * a migration. Any other model gets a slug suffix.
+ */
+export function judgeVersionFor(model: string): string {
+  if (model === "gemini-2.5-flash") return RUBRIC_VERSION;
+  if (model === "gemini-2.5-pro") return `${RUBRIC_VERSION}-pro`;
+  return `${RUBRIC_VERSION}-${model.replace(/[^a-z0-9]/gi, "-").toLowerCase()}`;
+}
+
+/**
  * Closed enum of hallucination flags. Mirrors
  * `lib/rating-taxonomy.ts::NEGATIVE_RATING_REASONS` plus the judge-specific
  * additions (subject_drift, end_frame_lurch) and escape hatches

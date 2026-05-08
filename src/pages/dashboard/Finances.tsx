@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import "@/v2/styles/v2.css";
+
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
+const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 import {
   PieChart,
   Pie,
@@ -398,8 +404,8 @@ export default function Finances() {
     <div className="space-y-16">
       {/* Heading */}
       <div>
-        <span className="label text-muted-foreground">— Finances</span>
-        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">
+        <span style={EYEBROW}>— Finances</span>
+        <h2 className="mt-3" style={PAGE_H1}>
           Money in, money out
         </h2>
         <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
@@ -409,7 +415,7 @@ export default function Finances() {
       </div>
 
       {/* ─── KPI row ─── */}
-      <section className="grid gap-px border border-border bg-border md:grid-cols-2 lg:grid-cols-5">
+      <section className="grid gap-px border border-border bg-border md:grid-cols-2 lg:grid-cols-5" style={{ borderRadius: 0 }}>
         {[
           { label: "Revenue in", value: formatCents(totalRevenueCents), icon: Wallet, tone: "text-accent" },
           { label: "Token spend", value: formatCents(totalPurchasesCents), icon: Coins, tone: "text-foreground" },
@@ -435,12 +441,13 @@ export default function Finances() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: i * 0.05, ease: EASE }}
             className="bg-background p-8"
+            style={{ borderRadius: 0 }}
           >
             <div className="flex items-start justify-between">
-              <span className="label text-muted-foreground">{k.label}</span>
+              <span style={EYEBROW}>{k.label}</span>
               <k.icon className={`h-4 w-4 ${k.tone}`} strokeWidth={1.5} />
             </div>
-            <div className={`tabular mt-6 text-4xl font-semibold tracking-[-0.03em] ${k.tone}`}>
+            <div className={`mt-6 ${k.tone}`} style={MONO_VALUE}>
               {"prefix" in k && k.prefix ? k.prefix : ""}
               {k.value}
             </div>
@@ -456,8 +463,8 @@ export default function Finances() {
         <div className="bg-background p-8">
           <div className="flex items-end justify-between">
             <div>
-              <span className="label text-muted-foreground">— Cashflow</span>
-              <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">30-day net</h3>
+              <span style={EYEBROW}>— Cashflow</span>
+              <h3 className="mt-3" style={SECTION_H3}>30-day net</h3>
             </div>
             <span className={`tabular text-xs ${netTone}`}>
               {netCents >= 0 ? "+" : "−"}
@@ -522,9 +529,9 @@ export default function Finances() {
           </div>
         </div>
 
-        <div className="bg-background p-8">
-          <span className="label text-muted-foreground">— Real usage</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">Token spend by provider</h3>
+        <div className="bg-background p-8" style={{ borderRadius: 0 }}>
+          <span style={EYEBROW}>— Real usage</span>
+          <h3 className="mt-3" style={SECTION_H3}>Token spend by provider</h3>
           {pieData.length === 0 ? (
             <p className="mt-16 text-center text-sm text-muted-foreground">No spend recorded yet</p>
           ) : (
@@ -587,8 +594,8 @@ export default function Finances() {
 
       {/* ─── Provider balances — purchased vs spent ─── */}
       <section>
-        <span className="label text-muted-foreground">— Balances</span>
-        <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Token balance by provider</h3>
+        <span style={EYEBROW}>— Balances</span>
+        <h3 className="mt-3" style={SECTION_H3}>Token balance by provider</h3>
 
         {providerSummary.length === 0 ? (
           <p className="mt-10 border border-dashed border-border bg-secondary/30 p-10 text-center text-sm text-muted-foreground">

@@ -1,20 +1,37 @@
+import "@/v2/styles/v2.css";
 import { useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Mail, ArrowRight, ArrowLeft, CheckCircle2, Loader2, Lock } from "lucide-react";
+import { Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
-type AuthMode = "password" | "magic";
+const eyebrowStyle: React.CSSProperties = {
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 10,
+  letterSpacing: "0.22em",
+  textTransform: "uppercase",
+  color: "rgba(255,255,255,0.55)",
+};
+
+const inputStyle: React.CSSProperties = {
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(220,230,255,0.18)",
+  borderRadius: 4,
+  color: "#fff",
+  fontFamily: "var(--le-font-sans)",
+  height: 48,
+};
+
+type Mode = "password" | "magic";
 
 export default function Login() {
   const { user, profile, loading, signInWithMagicLink, signInWithPassword } = useAuth();
-  const [mode, setMode] = useState<AuthMode>("password");
+  const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState(false);
@@ -33,70 +50,177 @@ export default function Login() {
     try {
       if (mode === "password") {
         await signInWithPassword(email, password);
-        // onAuthStateChange will redirect via the Navigate above.
+        // Auth state listener will redirect via the Navigate above.
       } else {
         await signInWithMagicLink(email);
         setSent(true);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed");
+      setError(
+        err instanceof Error
+          ? err.message
+          : mode === "password"
+          ? "Sign in failed"
+          : "Failed to send magic link",
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-background text-foreground md:grid-cols-2">
+    <div
+      style={{
+        display: "grid",
+        minHeight: "100vh",
+        gridTemplateColumns: "1fr 1fr",
+        background: "#050710",
+        color: "#fff",
+        fontFamily: "var(--le-font-sans)",
+      }}
+    >
       {/* Left — editorial copy panel */}
-      <div className="relative hidden flex-col justify-between border-r border-border bg-secondary/30 px-12 py-12 md:flex">
-        <Wordmark size="lg" />
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 1, ease: EASE, delay: 0.1 }}
-          className="max-w-md"
-        >
-          <span className="label text-muted-foreground">— Listing Elevate</span>
-          <h1 className="display-lg mt-6">
-            Cinema for
-            <br />
-            <span className="text-muted-foreground">every listing.</span>
-          </h1>
-          <p className="mt-8 text-sm leading-relaxed text-muted-foreground">
-            Sign in to access your video library, manage in-flight productions, and submit new listings.
-          </p>
-        </motion.div>
-        <Link
-          to="/"
-          className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3 w-3" /> Back to home
-        </Link>
-      </div>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          borderRight: "1px solid rgba(220,230,255,0.09)",
+          background: "#0b0f1c",
+          padding: "48px",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* Background image */}
+        <img
+          src="https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=1200&q=80"
+          alt=""
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: "brightness(0.25)",
+            pointerEvents: "none",
+          }}
+        />
 
-      {/* Right — form */}
-      <div className="flex flex-col justify-between px-8 py-10 md:px-16 md:py-16">
-        <div className="flex items-center justify-between md:hidden">
-          <Wordmark size="md" />
-          <Link to="/" className="label text-muted-foreground">
-            Home
+        {/* Top-left logo — matches the Hero nav placement */}
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <Link
+            to="/"
+            style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+          >
+            <LELogoMark size={38} variant="light" />
           </Link>
         </div>
 
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.9, ease: EASE }}
-          className="mx-auto w-full max-w-sm flex-1 self-center pt-12 md:pt-0"
+          transition={{ duration: 1, ease: EASE, delay: 0.1 }}
+          style={{ maxWidth: 400, position: "relative", zIndex: 1 }}
         >
-          <span className="label text-muted-foreground">— Sign in</span>
-          <h2 className="mt-4 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">
+          <span style={eyebrowStyle}>— Listing Elevate</span>
+          <h1
+            style={{
+              fontSize: "clamp(40px, 5vw, 64px)",
+              fontWeight: 500,
+              letterSpacing: "-0.035em",
+              lineHeight: 0.98,
+              margin: "24px 0 0",
+              color: "#fff",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            Cinema for
+            <br />
+            <span style={{ color: "rgba(255,255,255,0.45)" }}>every listing.</span>
+          </h1>
+          <p
+            style={{
+              marginTop: 32,
+              fontSize: 14,
+              lineHeight: 1.6,
+              color: "rgba(255,255,255,0.62)",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            Sign in to access your video library, manage in-flight productions, and submit new listings.
+          </p>
+        </motion.div>
+
+        <Link
+          to="/"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            color: "rgba(255,255,255,0.55)",
+            textDecoration: "none",
+            fontSize: 12,
+            fontFamily: "var(--le-font-mono)",
+            letterSpacing: "0.1em",
+            position: "relative",
+            zIndex: 1,
+          }}
+        >
+          <ArrowLeft style={{ width: 12, height: 12 }} /> Back to home
+        </Link>
+      </div>
+
+      {/* Right — form */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "48px 64px",
+          background: "#050710",
+          fontFamily: "var(--le-font-sans)",
+        }}
+      >
+        {/* No duplicate logo header — left panel owns the brand on this page */}
+        <div />
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.9, ease: EASE }}
+          style={{
+            width: "100%",
+            maxWidth: 360,
+            flexShrink: 0,
+            alignSelf: "center",
+          }}
+        >
+          <span style={eyebrowStyle}>— Sign in</span>
+          <h2
+            style={{
+              fontSize: 32,
+              fontWeight: 500,
+              letterSpacing: "-0.035em",
+              margin: "16px 0 0",
+              color: "#fff",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
             Welcome back.
           </h2>
-          <p className="mt-3 text-sm text-muted-foreground">
+          <p
+            style={{
+              fontSize: 14,
+              color: "rgba(255,255,255,0.62)",
+              marginTop: 12,
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
             {mode === "password"
               ? "Enter your email and password."
-              : "Enter your email — we'll send a one-time link."}
+              : "We'll send a one-time link to your inbox."}
           </p>
 
           {sent ? (
@@ -104,14 +228,49 @@ export default function Login() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: EASE }}
-              className="mt-12 border border-accent/30 bg-accent/5 p-8"
+              style={{
+                marginTop: 48,
+                border: "1px solid rgba(220,230,255,0.18)",
+                background: "rgba(255,255,255,0.04)",
+                padding: 32,
+              }}
             >
-              <div className="flex h-12 w-12 items-center justify-center border border-accent/40 bg-accent/10 text-accent">
-                <CheckCircle2 className="h-5 w-5" strokeWidth={1.5} />
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 48,
+                  height: 48,
+                  border: "1px solid rgba(220,230,255,0.18)",
+                  background: "rgba(255,255,255,0.06)",
+                  borderRadius: 0,
+                }}
+              >
+                <CheckCircle2 style={{ width: 20, height: 20, color: "#fff" }} strokeWidth={1.5} />
               </div>
-              <h3 className="mt-6 text-lg font-semibold tracking-[-0.01em]">Check your inbox.</h3>
-              <p className="mt-3 text-sm text-muted-foreground">
-                Magic link sent to <span className="font-medium text-foreground">{email}</span>. Click it to sign in.
+              <h3
+                style={{
+                  marginTop: 24,
+                  fontSize: 18,
+                  fontWeight: 500,
+                  letterSpacing: "-0.02em",
+                  color: "#fff",
+                  fontFamily: "var(--le-font-sans)",
+                }}
+              >
+                Check your inbox.
+              </h3>
+              <p
+                style={{
+                  marginTop: 12,
+                  fontSize: 14,
+                  color: "rgba(255,255,255,0.62)",
+                  fontFamily: "var(--le-font-sans)",
+                }}
+              >
+                Magic link sent to{" "}
+                <span style={{ fontWeight: 500, color: "#fff" }}>{email}</span>. Click it to sign in.
               </p>
               <button
                 type="button"
@@ -119,19 +278,53 @@ export default function Login() {
                   setSent(false);
                   setEmail("");
                 }}
-                className="mt-6 text-xs text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+                style={{
+                  marginTop: 24,
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.55)",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 4,
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  fontFamily: "var(--le-font-sans)",
+                }}
               >
                 Use a different email
               </button>
             </motion.div>
           ) : (
-            <form onSubmit={handleSubmit} className="mt-12 space-y-6">
+            <form
+              onSubmit={handleSubmit}
+              style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 20 }}
+            >
               <div>
-                <Label htmlFor="email" className="label text-muted-foreground">
+                <Label
+                  htmlFor="email"
+                  style={{
+                    fontFamily: "var(--le-font-mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.22em",
+                    textTransform: "uppercase",
+                    color: "rgba(255,255,255,0.55)",
+                  }}
+                >
                   Email
                 </Label>
-                <div className="relative mt-3">
-                  <Mail className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+                <div style={{ position: "relative", marginTop: 12 }}>
+                  <Mail
+                    style={{
+                      pointerEvents: "none",
+                      position: "absolute",
+                      left: 16,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 16,
+                      height: 16,
+                      color: "rgba(255,255,255,0.32)",
+                    }}
+                  />
                   <Input
                     id="email"
                     type="email"
@@ -141,17 +334,46 @@ export default function Login() {
                     required
                     autoFocus
                     className="pl-11"
+                    style={inputStyle}
                   />
                 </div>
               </div>
 
               {mode === "password" && (
                 <div>
-                  <Label htmlFor="password" className="label text-muted-foreground">
-                    Password
-                  </Label>
-                  <div className="relative mt-3">
-                    <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <Label
+                      htmlFor="password"
+                      style={{
+                        fontFamily: "var(--le-font-mono)",
+                        fontSize: 10,
+                        letterSpacing: "0.22em",
+                        textTransform: "uppercase",
+                        color: "rgba(255,255,255,0.55)",
+                      }}
+                    >
+                      Password
+                    </Label>
+                  </div>
+                  <div style={{ position: "relative", marginTop: 12 }}>
+                    <Lock
+                      style={{
+                        pointerEvents: "none",
+                        position: "absolute",
+                        left: 16,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: 16,
+                        height: 16,
+                        color: "rgba(255,255,255,0.32)",
+                      }}
+                    />
                     <Input
                       id="password"
                       type="password"
@@ -160,36 +382,83 @@ export default function Login() {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       className="pl-11"
-                      autoComplete="current-password"
+                      style={inputStyle}
                     />
                   </div>
                 </div>
               )}
 
               {error && (
-                <div className="border border-destructive/40 bg-destructive/5 p-4">
-                  <p className="text-xs text-destructive">{error}</p>
+                <div
+                  style={{
+                    border: "1px solid rgba(255,80,80,0.4)",
+                    background: "rgba(255,80,80,0.08)",
+                    padding: 16,
+                    borderRadius: 4,
+                  }}
+                >
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "rgba(255,120,120,0.9)",
+                      margin: 0,
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    {error}
+                  </p>
                 </div>
               )}
 
-              <Button
+              <button
                 type="submit"
-                size="lg"
-                className="w-full"
                 disabled={submitting || !email || (mode === "password" && !password)}
+                style={{
+                  width: "100%",
+                  background:
+                    submitting || !email || (mode === "password" && !password)
+                      ? "rgba(255,255,255,0.3)"
+                      : "#fff",
+                  color: "#07080c",
+                  border: "none",
+                  padding: "14px 24px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  borderRadius: 4,
+                  cursor:
+                    submitting || !email || (mode === "password" && !password)
+                      ? "not-allowed"
+                      : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                  fontFamily: "var(--le-font-sans)",
+                  letterSpacing: "-0.005em",
+                  transition: "background 0.15s ease",
+                }}
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2
+                      style={{
+                        width: 16,
+                        height: 16,
+                        animation: "spin 1s linear infinite",
+                      }}
+                    />{" "}
                     {mode === "password" ? "Signing in" : "Sending"}
+                  </>
+                ) : mode === "password" ? (
+                  <>
+                    Sign in <ArrowRight style={{ width: 16, height: 16 }} />
                   </>
                 ) : (
                   <>
-                    {mode === "password" ? "Sign in" : "Send magic link"}
-                    <ArrowRight className="h-4 w-4" />
+                    Send magic link <ArrowRight style={{ width: 16, height: 16 }} />
                   </>
                 )}
-              </Button>
+              </button>
 
               <button
                 type="button"
@@ -197,16 +466,36 @@ export default function Login() {
                   setError("");
                   setMode(mode === "password" ? "magic" : "password");
                 }}
-                className="block w-full text-center text-xs text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.55)",
+                  background: "none",
+                  border: "none",
+                  textDecoration: "underline",
+                  textUnderlineOffset: 4,
+                  cursor: "pointer",
+                  padding: 0,
+                  fontFamily: "var(--le-font-sans)",
+                  alignSelf: "center",
+                }}
               >
-                {mode === "password"
-                  ? "Use magic link instead"
-                  : "Use password instead"}
+                {mode === "password" ? "Email me a magic link instead" : "Sign in with password instead"}
               </button>
 
-              <p className="text-center text-xs text-muted-foreground">
+              <p
+                style={{
+                  fontSize: 12,
+                  color: "rgba(255,255,255,0.45)",
+                  textAlign: "center",
+                  marginTop: 8,
+                  fontFamily: "var(--le-font-sans)",
+                }}
+              >
                 Don't have an account?{" "}
-                <Link to="/" className="text-foreground underline underline-offset-4">
+                <Link
+                  to="/"
+                  style={{ color: "#fff", textDecoration: "underline", textUnderlineOffset: 4 }}
+                >
                   Sign up on the home page
                 </Link>
               </p>
@@ -214,7 +503,16 @@ export default function Login() {
           )}
         </motion.div>
 
-        <p className="label mt-12 text-muted-foreground/70">© 2026 Listing Elevate</p>
+        <p
+          style={{
+            fontSize: 11,
+            color: "rgba(255,255,255,0.32)",
+            marginTop: 48,
+            fontFamily: "var(--le-font-mono)",
+          }}
+        >
+          © 2026 Listing Elevate
+        </p>
       </div>
     </div>
   );

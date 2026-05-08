@@ -26,11 +26,11 @@ import { embedTextSafe, buildAnalysisText, toPgVector } from "./embeddings.js";
 import { recordCostEvent } from "./db.js";
 import type { RoomType, CameraMovement } from "./types.js";
 
-// Stable zero-UUID used as a placeholder property_id for Lab renders that
-// are not tied to a real property. Allows cost_events rows to be inserted
-// without a real property row (property_id accepts any UUID, and Lab costs
-// do NOT roll up into a real property total).
-export const LAB_SYNTHETIC_PROPERTY_ID = "00000000-0000-0000-0000-000000000000";
+// Lab cost_events use property_id = null. The earlier "zero-UUID sentinel"
+// pattern silently violated cost_events.property_id_fkey (constraint kept
+// post-migration 045) and dropped every Lab cost row from 2026-04-30 to
+// 2026-05-06. recordCostEvent now accepts null and skips the
+// addPropertyCost rollup when there's no property to attribute.
 
 // ---- Types ----
 
@@ -702,9 +702,9 @@ export async function finalizeLabRender(params: {
 
   const computedCostCents = Math.round(result.costCents ?? 0);
 
-  // Emit a cost_events row for every completed Lab render. Uses a synthetic
-  // property_id (zero-UUID) for Lab sessions not tied to a real property.
-  // Wrapped in try/catch so a cost-event failure never breaks clip finalization.
+  // Emit a cost_events row for every completed Lab render. property_id is
+  // null when the session isn't tied to a real property (Lab work is the
+  // common case here).
   try {
     const { getSupabase: getSupabaseForCost } = await import("./client.js");
     const supabaseCost = getSupabaseForCost();
@@ -723,7 +723,7 @@ export async function finalizeLabRender(params: {
     // Audit A C3: use the actual provider from params — not hard-coded "atlas".
     // Native Kling + Runway renders must not land on the books as Atlas spend.
     await recordCostEvent({
-      propertyId: (session?.property_id as string | null | undefined) ?? LAB_SYNTHETIC_PROPERTY_ID,
+      propertyId: (session?.property_id as string | null | undefined) ?? null,
       sceneId: null,
       stage: "generation",
       provider: params.provider ?? "atlas",

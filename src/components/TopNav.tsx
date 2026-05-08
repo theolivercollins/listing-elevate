@@ -31,8 +31,9 @@ import {
   Users,
   LayoutTemplate,
 } from "lucide-react";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
+import { useTheme } from "@/lib/theme";
 
 const dashboardNav = [
   { to: "/dashboard", label: "Overview", icon: LayoutGrid, end: true },
@@ -149,9 +150,16 @@ export function TopNav() {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { theme } = useTheme();
+
+  // v2 shell mounts its own navigation; suppress the legacy TopNav on /v2/*.
+  if (location.pathname.startsWith("/v2")) return null;
 
   // Index.tsx renders its own hero-style navigation with auth modal hookup.
   if (location.pathname === "/") return null;
+
+  // Login + auth callback render their own editorial branding.
+  if (location.pathname === "/login" || location.pathname.startsWith("/auth")) return null;
 
   const isAdmin = profile?.role === "admin";
   const inDashboard = location.pathname.startsWith("/dashboard");
@@ -162,11 +170,20 @@ export function TopNav() {
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/55 backdrop-blur-2xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/40">
+    <header
+      className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/55 backdrop-blur-2xl backdrop-saturate-150 supports-[backdrop-filter]:bg-background/40"
+      style={{ fontFamily: "var(--le-font-sans)" }}
+    >
       <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-6 md:h-[72px] md:px-10">
         {/* Brand — identical size/layout on every page */}
         <div className="flex items-center gap-3">
-          <Wordmark size="md" to={inDashboard ? "/dashboard" : "/"} />
+          <Link
+            to={inDashboard ? "/dashboard" : "/"}
+            className="inline-flex items-center"
+            aria-label="Listing Elevate"
+          >
+            <LELogoMark size={30} variant={theme === "dark" ? "light" : "dark"} />
+          </Link>
           {inDashboard && (
             <>
               <span className="h-3 w-px bg-border" aria-hidden />
@@ -294,14 +311,29 @@ export function TopNav() {
             <>
               <ThemeToggle />
               <Link
-                to="/login"
+                to="/?login=1"
                 className="label hidden text-muted-foreground transition-colors hover:text-foreground md:inline"
               >
                 Sign in
               </Link>
-              <Button asChild size="sm">
-                <Link to="/login">Get started</Link>
-              </Button>
+              <Link
+                to="/upload"
+                style={{
+                  background: "#fff",
+                  color: "#07080c",
+                  borderRadius: 4,
+                  padding: "8px 16px",
+                  fontSize: 13,
+                  fontWeight: 500,
+                  textDecoration: "none",
+                  fontFamily: "var(--le-font-sans)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                Get started
+              </Link>
             </>
           )}
         </div>
