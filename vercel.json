@@ -8,7 +8,8 @@
     { "path": "/api/cron/poll-listing-iterations", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-listing-lifecycle", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-judge", "schedule": "* * * * *" },
-    { "path": "/api/cron/refresh-sku-affinity", "schedule": "0 4 * * *" }
+    { "path": "/api/cron/refresh-sku-affinity", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/poll-blog-jobs", "schedule": "* * * * *" }
   ],
   "routes": [
     { "handle": "filesystem" },
