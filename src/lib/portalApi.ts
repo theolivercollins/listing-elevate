@@ -109,6 +109,8 @@ export async function fetchOnboardingSummary(token: string): Promise<OnboardOrde
 }
 
 export interface OnboardSubmitInput {
+  first_name?: string;
+  last_name?: string;
   business_name?: string;
   phone: string;
   address_line1: string;

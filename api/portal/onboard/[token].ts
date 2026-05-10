@@ -8,6 +8,8 @@ import { sendEmail, emailShell } from "../../../lib/portal/email.js";
 // and the order moves to status='awaiting_payment'.
 
 interface OnboardingPayload {
+  first_name?: string;
+  last_name?: string;
   business_name?: string;
   phone?: string;
   address_line1?: string;
@@ -136,10 +138,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stripe_customer_id = stripeCustomer.id;
       }
 
-      // 2. Persist customer billing details + Stripe linkage
+      // 2. Persist customer billing details + Stripe linkage. Customer can
+      // also edit their first/last name during onboarding (the owner may have
+      // typed it wrong, or the client prefers a different name on file).
       const { error: updCustErr } = await supabase
         .from("portal_customers")
         .update({
+          first_name: body.first_name?.trim() || customer.first_name,
+          last_name: body.last_name?.trim() || customer.last_name,
           business_name: body.business_name || null,
           phone: body.phone,
           address_line1: body.address_line1,

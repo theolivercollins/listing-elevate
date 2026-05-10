@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Check, ExternalLink } from "lucide-react";
+import { Loader2, Check, ExternalLink, MapPin } from "lucide-react";
 import { motion } from "framer-motion";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import {
   submitOnboarding,
   type OnboardOrderSummary,
 } from "@/lib/portalApi";
+import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -19,9 +20,11 @@ export default function Onboard() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // form state
-  const [businessName, setBusinessName] = useState("");
+  // Form state — grouped by section visually but flat for the API.
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
+  const [businessName, setBusinessName] = useState("");
   const [line1, setLine1] = useState("");
   const [line2, setLine2] = useState("");
   const [city, setCity] = useState("");
@@ -33,6 +36,10 @@ export default function Onboard() {
   const [error, setError] = useState<string | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
 
+  const [autocompleteReady, setAutocompleteReady] = useState(false);
+  const addressInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Load existing customer data into form
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -40,6 +47,8 @@ export default function Onboard() {
       .then((s) => {
         if (cancelled) return;
         setSummary(s);
+        setFirstName(s.customer.first_name ?? "");
+        setLastName(s.customer.last_name ?? "");
         setBusinessName(s.customer.business_name ?? "");
         setPhone(s.customer.phone ?? "");
         setLine1(s.customer.address_line1 ?? "");
@@ -57,13 +66,47 @@ export default function Onboard() {
     return () => { cancelled = true; };
   }, [token]);
 
+  // Attach Google Places Autocomplete to the street address input once both
+  // the maps script and the input are ready.
+  useEffect(() => {
+    let mounted = true;
+    loadGoogleMaps().then((ok) => {
+      if (!mounted || !ok || !addressInputRef.current) return;
+      const places = window.google?.maps?.places;
+      if (!places) return;
+      const ac = new places.Autocomplete(addressInputRef.current, {
+        types: ["address"],
+        fields: ["address_components", "formatted_address"],
+      });
+      ac.addListener("place_changed", () => {
+        const place = ac.getPlace();
+        const parsed = parsePlaceToAddress(place);
+        if (parsed.line1) setLine1(parsed.line1);
+        if (parsed.city) setCity(parsed.city);
+        if (parsed.state) setState(parsed.state);
+        if (parsed.postal_code) setPostal(parsed.postal_code);
+        if (parsed.country) setCountry(parsed.country);
+      });
+      setAutocompleteReady(true);
+    });
+    return () => { mounted = false; };
+  }, []);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!token) return;
     setError(null);
+
+    if (!firstName.trim() || !lastName.trim()) {
+      setError("First and last name are required.");
+      return;
+    }
+
     setSubmitting(true);
     try {
       const res = await submitOnboarding(token, {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         business_name: businessName.trim() || undefined,
         phone: phone.trim(),
         address_line1: line1.trim(),
@@ -74,7 +117,6 @@ export default function Onboard() {
         address_country: country.trim().toUpperCase(),
       });
       setInvoiceUrl(res.stripe_invoice_url);
-      // Auto-redirect to Stripe-hosted invoice
       setTimeout(() => {
         window.location.href = res.stripe_invoice_url;
       }, 1500);
@@ -107,7 +149,6 @@ export default function Onboard() {
     );
   }
 
-  // Already onboarded → show "go to invoice" CTA
   if (invoiceUrl) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
@@ -193,37 +234,48 @@ export default function Onboard() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={handleSubmit} className="space-y-12">
+          {/* ─── 1. Billing address (with Google Places autocomplete) ──── */}
           <section className="space-y-4">
-            <span className="label text-muted-foreground">— Billing</span>
-            <div>
-              <label className="label mb-2 block">Business name (optional)</label>
-              <Input value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Acme Studios LLC" />
-            </div>
-            <div>
-              <label className="label mb-2 block">Phone</label>
-              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" required />
+            <div className="flex items-center justify-between">
+              <span className="label text-muted-foreground">— Billing address</span>
+              {autocompleteReady && (
+                <span className="label inline-flex items-center gap-1 text-muted-foreground/70">
+                  <MapPin className="h-3 w-3" /> Suggestions live
+                </span>
+              )}
             </div>
             <div>
               <label className="label mb-2 block">Street address</label>
-              <Input value={line1} onChange={(e) => setLine1(e.target.value)} required />
+              <Input
+                ref={addressInputRef}
+                value={line1}
+                onChange={(e) => setLine1(e.target.value)}
+                placeholder={autocompleteReady ? "Start typing to search…" : "123 Main St"}
+                autoComplete="address-line1"
+                required
+              />
             </div>
             <div>
               <label className="label mb-2 block">Apartment / suite (optional)</label>
-              <Input value={line2} onChange={(e) => setLine2(e.target.value)} />
+              <Input
+                value={line2}
+                onChange={(e) => setLine2(e.target.value)}
+                autoComplete="address-line2"
+              />
             </div>
             <div className="grid gap-4 md:grid-cols-[1fr_120px_140px]">
               <div>
                 <label className="label mb-2 block">City</label>
-                <Input value={city} onChange={(e) => setCity(e.target.value)} required />
+                <Input value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" required />
               </div>
               <div>
                 <label className="label mb-2 block">State</label>
-                <Input value={state} onChange={(e) => setState(e.target.value)} required />
+                <Input value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" required />
               </div>
               <div>
                 <label className="label mb-2 block">Postal code</label>
-                <Input value={postal} onChange={(e) => setPostal(e.target.value)} required />
+                <Input value={postal} onChange={(e) => setPostal(e.target.value)} autoComplete="postal-code" required />
               </div>
             </div>
             <div className="max-w-[200px]">
@@ -233,9 +285,54 @@ export default function Onboard() {
                 onChange={(e) => setCountry(e.target.value.toUpperCase())}
                 maxLength={2}
                 placeholder="US"
+                autoComplete="country"
                 required
               />
               <p className="mt-2 text-xs text-muted-foreground">2-letter code (US, CA, GB, etc.)</p>
+            </div>
+          </section>
+
+          {/* ─── 2. Customer name ────────────────────────────────────────── */}
+          <section className="space-y-4 border-t border-border pt-12">
+            <span className="label text-muted-foreground">— Customer name</span>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="label mb-2 block">First name</label>
+                <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" required />
+              </div>
+              <div>
+                <label className="label mb-2 block">Last name</label>
+                <Input value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" required />
+              </div>
+            </div>
+            <div>
+              <label className="label mb-2 block">Phone</label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+1 555 123 4567"
+                autoComplete="tel"
+                inputMode="tel"
+                required
+              />
+            </div>
+          </section>
+
+          {/* ─── 3. Legal business name ──────────────────────────────────── */}
+          <section className="space-y-4 border-t border-border pt-12">
+            <span className="label text-muted-foreground">— Legal business name</span>
+            <div>
+              <label className="label mb-2 block">Business name (optional)</label>
+              <Input
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="Acme Studios LLC"
+                autoComplete="organization"
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                If you're billing under a company, enter the legal entity name. Leave blank if you're billing as an
+                individual.
+              </p>
             </div>
           </section>
 
