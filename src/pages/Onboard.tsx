@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Check, ExternalLink, MapPin } from "lucide-react";
+import { Loader2, Check, ExternalLink, User, Phone, MapPin, Building2, Globe2, Hash } from "lucide-react";
 import { motion } from "framer-motion";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   fetchOnboardingSummary,
@@ -12,6 +11,47 @@ import {
 import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+// ─── Field primitive ────────────────────────────────────────────────────────
+// Editorial monochrome input with an icon slot on the left, label above,
+// and an optional hint underneath. Borrows the icon-in-field affordance
+// from the reference design without picking up its rounded/blue chrome.
+interface FieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
+  label: string;
+  icon?: ReactNode;
+  hint?: string;
+  /** Ref passthrough (for the Google Places attachment). */
+  inputRef?: React.Ref<HTMLInputElement>;
+}
+
+function Field({ label, icon, hint, inputRef, className, ...rest }: FieldProps) {
+  return (
+    <label className="block">
+      <span className="label mb-2 block text-muted-foreground">{label}</span>
+      <span className="relative block">
+        {icon && (
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/70">
+            {icon}
+          </span>
+        )}
+        <input
+          ref={inputRef}
+          {...rest}
+          className={[
+            "h-11 w-full border border-border bg-background text-sm",
+            "placeholder:text-muted-foreground/60",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:border-foreground/40",
+            "transition-colors",
+            icon ? "pl-10" : "pl-3",
+            "pr-3",
+            className ?? "",
+          ].join(" ")}
+        />
+      </span>
+      {hint && <span className="mt-2 block text-xs text-muted-foreground/70">{hint}</span>}
+    </label>
+  );
+}
 
 export default function Onboard() {
   const { token } = useParams<{ token: string }>();
@@ -36,7 +76,6 @@ export default function Onboard() {
   const [error, setError] = useState<string | null>(null);
   const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
 
-  const [autocompleteReady, setAutocompleteReady] = useState(false);
   const addressInputRef = useRef<HTMLInputElement | null>(null);
 
   // Load existing customer data into form
@@ -66,8 +105,8 @@ export default function Onboard() {
     return () => { cancelled = true; };
   }, [token]);
 
-  // Attach Google Places Autocomplete to the street address input once both
-  // the maps script and the input are ready.
+  // Attach Google Places Autocomplete to the street address input.
+  // Silent if the Maps script isn't available — user can still type manually.
   useEffect(() => {
     let mounted = true;
     loadGoogleMaps().then((ok) => {
@@ -87,7 +126,6 @@ export default function Onboard() {
         if (parsed.postal_code) setPostal(parsed.postal_code);
         if (parsed.country) setCountry(parsed.country);
       });
-      setAutocompleteReady(true);
     });
     return () => { mounted = false; };
   }, []);
@@ -177,27 +215,36 @@ export default function Onboard() {
     );
   }
 
+  const ICON_CLS = "h-4 w-4";
+
   return (
-    <div className="min-h-screen bg-background px-6 py-16">
+    <div className="min-h-screen bg-background px-6 py-12 md:py-16">
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease: EASE }}
         className="mx-auto max-w-2xl"
       >
-        <div className="mb-12">
+        {/* ─── Header ────────────────────────────────────────────────── */}
+        <div className="mb-10">
           <span className="label text-muted-foreground">— Listing Elevate</span>
           <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">
-            Confirm your billing details
+            Confirm your details
           </h1>
           <p className="mt-4 text-sm text-muted-foreground">
-            Hi {summary.customer.first_name} — your order is ready. Confirm your details below and you'll get a Stripe
-            invoice for <strong>${(summary.order.amount_cents / 100).toFixed(2)}</strong>.
+            Hi {summary.customer.first_name} — your order is ready. Fill in the details below and you'll receive a
+            Stripe invoice for <strong className="text-foreground">${(summary.order.amount_cents / 100).toFixed(2)}</strong>.
           </p>
         </div>
 
-        <div className="mb-12 border border-border p-8">
-          <span className="label text-muted-foreground">— Order</span>
+        {/* ─── Order summary card ────────────────────────────────────── */}
+        <div className="mb-12 border border-border bg-background p-6 md:p-8">
+          <div className="flex items-baseline justify-between">
+            <span className="label text-muted-foreground">— Order</span>
+            <span className="tabular text-xs text-muted-foreground">
+              {summary.order.currency.toUpperCase()}
+            </span>
+          </div>
           <h2 className="mt-3 text-xl font-semibold tracking-[-0.01em]">{summary.order.title}</h2>
           {summary.order.description && (
             <p className="mt-3 text-sm text-muted-foreground">{summary.order.description}</p>
@@ -234,116 +281,140 @@ export default function Onboard() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-12">
-          {/* ─── 1. Billing address (with Google Places autocomplete) ──── */}
-          <section className="space-y-4">
-            <div className="flex items-center justify-between">
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* ─── 1. Billing address ──────────────────────────────────── */}
+          <section className="border border-border bg-background p-6 md:p-8">
+            <div className="mb-6 flex items-baseline justify-between">
               <span className="label text-muted-foreground">— Billing address</span>
-              {autocompleteReady && (
-                <span className="label inline-flex items-center gap-1 text-muted-foreground/70">
-                  <MapPin className="h-3 w-3" /> Suggestions live
-                </span>
-              )}
+              <span className="text-xs text-muted-foreground/70">Step 1 of 3</span>
             </div>
-            <div>
-              <label className="label mb-2 block">Street address</label>
-              <Input
-                ref={addressInputRef}
+            <div className="space-y-4">
+              <Field
+                label="Street address"
+                icon={<MapPin className={ICON_CLS} />}
+                inputRef={addressInputRef}
                 value={line1}
                 onChange={(e) => setLine1(e.target.value)}
-                placeholder={autocompleteReady ? "Start typing to search…" : "123 Main St"}
+                placeholder="Start typing to search"
                 autoComplete="address-line1"
                 required
               />
-            </div>
-            <div>
-              <label className="label mb-2 block">Apartment / suite (optional)</label>
-              <Input
+              <Field
+                label="Apartment / suite"
                 value={line2}
                 onChange={(e) => setLine2(e.target.value)}
+                placeholder="Optional"
                 autoComplete="address-line2"
               />
-            </div>
-            <div className="grid gap-4 md:grid-cols-[1fr_120px_140px]">
-              <div>
-                <label className="label mb-2 block">City</label>
-                <Input value={city} onChange={(e) => setCity(e.target.value)} autoComplete="address-level2" required />
+              <div className="grid gap-4 md:grid-cols-[1fr_140px_140px]">
+                <Field
+                  label="City"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  autoComplete="address-level2"
+                  required
+                />
+                <Field
+                  label="State"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  autoComplete="address-level1"
+                  required
+                />
+                <Field
+                  label="Postal code"
+                  icon={<Hash className={ICON_CLS} />}
+                  value={postal}
+                  onChange={(e) => setPostal(e.target.value)}
+                  autoComplete="postal-code"
+                  required
+                />
               </div>
-              <div>
-                <label className="label mb-2 block">State</label>
-                <Input value={state} onChange={(e) => setState(e.target.value)} autoComplete="address-level1" required />
+              <div className="max-w-[220px]">
+                <Field
+                  label="Country"
+                  icon={<Globe2 className={ICON_CLS} />}
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                  maxLength={2}
+                  placeholder="US"
+                  autoComplete="country"
+                  hint="2-letter code (US, CA, GB)"
+                  required
+                />
               </div>
-              <div>
-                <label className="label mb-2 block">Postal code</label>
-                <Input value={postal} onChange={(e) => setPostal(e.target.value)} autoComplete="postal-code" required />
-              </div>
-            </div>
-            <div className="max-w-[200px]">
-              <label className="label mb-2 block">Country</label>
-              <Input
-                value={country}
-                onChange={(e) => setCountry(e.target.value.toUpperCase())}
-                maxLength={2}
-                placeholder="US"
-                autoComplete="country"
-                required
-              />
-              <p className="mt-2 text-xs text-muted-foreground">2-letter code (US, CA, GB, etc.)</p>
             </div>
           </section>
 
-          {/* ─── 2. Customer name ────────────────────────────────────────── */}
-          <section className="space-y-4 border-t border-border pt-12">
-            <span className="label text-muted-foreground">— Customer name</span>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="label mb-2 block">First name</label>
-                <Input value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="given-name" required />
-              </div>
-              <div>
-                <label className="label mb-2 block">Last name</label>
-                <Input value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" required />
-              </div>
+          {/* ─── 2. Customer name ────────────────────────────────────── */}
+          <section className="border border-border bg-background p-6 md:p-8">
+            <div className="mb-6 flex items-baseline justify-between">
+              <span className="label text-muted-foreground">— Customer name</span>
+              <span className="text-xs text-muted-foreground/70">Step 2 of 3</span>
             </div>
-            <div>
-              <label className="label mb-2 block">Phone</label>
-              <Input
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field
+                  label="First name"
+                  icon={<User className={ICON_CLS} />}
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  autoComplete="given-name"
+                  required
+                />
+                <Field
+                  label="Last name"
+                  icon={<User className={ICON_CLS} />}
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  autoComplete="family-name"
+                  required
+                />
+              </div>
+              <Field
+                label="Phone"
+                icon={<Phone className={ICON_CLS} />}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+1 555 123 4567"
                 autoComplete="tel"
                 inputMode="tel"
+                type="tel"
                 required
               />
             </div>
           </section>
 
-          {/* ─── 3. Legal business name ──────────────────────────────────── */}
-          <section className="space-y-4 border-t border-border pt-12">
-            <span className="label text-muted-foreground">— Legal business name</span>
-            <div>
-              <label className="label mb-2 block">Business name (optional)</label>
-              <Input
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                placeholder="Acme Studios LLC"
-                autoComplete="organization"
-              />
-              <p className="mt-2 text-xs text-muted-foreground">
-                If you're billing under a company, enter the legal entity name. Leave blank if you're billing as an
-                individual.
-              </p>
+          {/* ─── 3. Legal business name ──────────────────────────────── */}
+          <section className="border border-border bg-background p-6 md:p-8">
+            <div className="mb-6 flex items-baseline justify-between">
+              <span className="label text-muted-foreground">— Legal business name</span>
+              <span className="text-xs text-muted-foreground/70">Step 3 of 3</span>
             </div>
+            <Field
+              label="Business name"
+              icon={<Building2 className={ICON_CLS} />}
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Acme Studios LLC"
+              autoComplete="organization"
+              hint="Optional — leave blank if billing as an individual."
+            />
           </section>
 
           {error && (
             <div className="border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
           )}
 
-          <Button type="submit" disabled={submitting} className="min-w-[220px]">
-            {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Confirm + view invoice
-          </Button>
+          <div className="flex flex-col-reverse gap-3 pt-2 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Payment is processed by Stripe. We never see your card.
+            </p>
+            <Button type="submit" disabled={submitting} className="min-w-[220px]">
+              {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirm + view invoice
+            </Button>
+          </div>
         </form>
       </motion.div>
     </div>
