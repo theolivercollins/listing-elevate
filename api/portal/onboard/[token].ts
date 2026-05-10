@@ -157,26 +157,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updCustErr.message });
       }
 
-      // 3. Create invoice items — idempotent per line within an order
-      const items =
-        Array.isArray(order.line_items) && order.line_items.length > 0
-          ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
-          : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
-      for (let i = 0; i < items.length; i++) {
-        const li = items[i];
-        await stripe.invoiceItems.create(
-          {
-            customer: stripe_customer_id,
-            amount: li.amount_cents * li.quantity,
-            currency: order.currency,
-            description: li.description,
-            metadata: { portal_order_id: order.id },
-          },
-          { idempotencyKey: `portal-invitem-${order.id}-${i}` }
-        );
-      }
-
-      // 4. Create + finalize the invoice — idempotent per order
+      // 3. Create DRAFT invoice FIRST, so we can attach items directly to its
+      // ID. Stripe's modern API no longer auto-pulls "pending" invoice items
+      // into a new invoice (pending_invoice_items_behavior defaults differ
+      // across recent API versions), so attaching items to a specific invoice
+      // ID is the only deterministic way to get a non-$0 total.
+      // Idempotency key bumped to v2 because the request shape changed (the
+      // v1 key would clash with the old failed-attempt invoices).
       invoice = await stripe.invoices.create(
         {
           customer: stripe_customer_id,
@@ -186,11 +173,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           description: order.description || order.title,
           metadata: { portal_order_id: order.id, owner_id: order.owner_id },
         },
-        { idempotencyKey: `portal-invoice-${order.id}` }
+        { idempotencyKey: `portal-invoice-v2-${order.id}` }
       );
       if (!invoice.id) {
         return res.status(500).json({ error: "Stripe invoice missing id" });
       }
+
+      // 4. Create invoice items, attached directly to the draft invoice above
+      const items =
+        Array.isArray(order.line_items) && order.line_items.length > 0
+          ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
+          : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
+      for (let i = 0; i < items.length; i++) {
+        const li = items[i];
+        await stripe.invoiceItems.create(
+          {
+            customer: stripe_customer_id,
+            invoice: invoice.id, // ← attach to the specific draft invoice
+            amount: li.amount_cents * li.quantity,
+            currency: order.currency,
+            description: li.description,
+            metadata: { portal_order_id: order.id },
+          },
+          { idempotencyKey: `portal-invitem-v2-${order.id}-${i}` }
+        );
+      }
+
+      // 5. Finalize the invoice (locks total at sum of attached items)
       finalized = await stripe.invoices.finalizeInvoice(invoice.id);
       // Note: we deliberately do NOT call stripe.invoices.sendInvoice() here.
       // That endpoint depends on Stripe's email infrastructure being enabled
