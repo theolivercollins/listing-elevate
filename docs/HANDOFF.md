@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-06
+Last updated: 2026-05-07
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,22 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-07: Blog Engine Phase 1 + Phase 2 shipped + verified end-to-end.** Full design at [`specs/2026-05-06-blog-engine-design.md`](./specs/2026-05-06-blog-engine-design.md) (master) and [`specs/2026-05-07-blog-engine-phase-2-design.md`](./specs/2026-05-07-blog-engine-phase-2-design.md) (Phase 2). Plans at [`plans/2026-05-06-blog-engine-phase-1-plan.md`](./plans/2026-05-06-blog-engine-phase-1-plan.md) and [`plans/2026-05-07-blog-engine-phase-2-plan.md`](./plans/2026-05-07-blog-engine-phase-2-plan.md).
+
+- **Phase 1 — Sierra publish pipeline LIVE.** `lib/blog-engine/` module + Browserbase persistent context per site + label-based DOM helpers + TinyMCE setContent + 3-field Sierra login (site name + username + password). Migrations 048 + 048a applied. Smoke verified: hand-written posts publish to `client2.sierrainteractivedev.com/blog-manager.aspx` (`post_state=live`, `external_post_url` captured) and round-trip edits land in place. Cost tracking via existing `cost_events` (`blog_publish_browser` stage, provider `browserbase`).
+- **Phase 2 — Image library + auto-match LIVE.** Migrations 049 + 049a + 049b + 049c applied. Supabase Storage `blog-images` bucket. `image-tagging.ts` (Gemini 2.5 Flash vision + 768-dim `gemini-embedding-2`) + `image_tag` and `image_match` job handlers + DB trigger that auto-enqueues `image_match` when a post enters `draft_ready`. Smoke verified: 71 images ingested from Helgemo Drive folder via gdown, all 71 vision-tagged + embedded + cost-tracked (zero failures), draft post auto-matched to a relevant interior shot via cosine + 14-day soft-block, then published to Sierra with the matched image attached.
+- **Storage decision:** chose Supabase Storage over Vercel Blob (master spec §3.1 override). Reuses existing client + cheaper per GB. Documented in Phase 2 spec §1.
+- **Tag distribution across the 71 ingested images:** exterior 37, lifestyle 35, area 34, interior 24, seasonal_summer 20, team 19, aerial 6.
+- **Both phases delivered via the standard subagent flow:** brainstorm → write-plan → TDD → smoke iteration. Phase 1 had 18 tasks + 3 smoke-fix commits; Phase 2 had 11 tasks + smoke-fix migration 049c (image_tag enum value).
+
+**Next session — pick one:**
+- Phase 3: daily Gemini research → 3 topic suggestions per day (master spec §7).
+- Phase 4: Claude Sonnet draft generation with style-rules injection (master spec §6).
+- Phase 5: `/dashboard/blog` portal UI for review + image-library management.
+- Or pivot back to product-gap path B (order-form persistence, voiceover/music wiring) per the prior 2026-05-06 PM handoff.
+
+---
 
 **2026-05-06 PM: judge calibration program PAUSED after 3 failed lever attempts. Cost-fix + harness improvements promoted; product focus shifts.** Full session notes: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md) (AM) and [`sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md`](./sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md) (PM).
 
