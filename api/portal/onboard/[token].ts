@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../../lib/db.js";
 import { getStripe } from "../../../lib/portal/stripe.js";
+import { sendEmail, emailShell } from "../../../lib/portal/email.js";
 
 // PUBLIC endpoint — no auth required. Validated via the unguessable
 // onboarding_token. After successful submit, the token is consumed (set to NULL)
@@ -111,22 +112,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let invoice: import("stripe").Stripe.Invoice | undefined;
     let finalized: import("stripe").Stripe.Invoice | undefined;
     try {
-      // 1. Create or reuse Stripe Customer
+      // 1. Create or reuse Stripe Customer. Idempotency key scoped to
+      // portal_customer.id so retries return the same Stripe Customer
+      // instead of creating duplicates.
       if (!stripe_customer_id) {
-        const stripeCustomer = await stripe.customers.create({
-          email: customer.email,
-          name: body.business_name || `${customer.first_name} ${customer.last_name}`,
-          phone: body.phone,
-          address: {
-            line1: body.address_line1,
-            line2: body.address_line2 || undefined,
-            city: body.address_city,
-            state: body.address_state,
-            postal_code: body.address_postal_code,
-            country: body.address_country!.toUpperCase(),
+        const stripeCustomer = await stripe.customers.create(
+          {
+            email: customer.email,
+            name: body.business_name || `${customer.first_name} ${customer.last_name}`,
+            phone: body.phone,
+            address: {
+              line1: body.address_line1,
+              line2: body.address_line2 || undefined,
+              city: body.address_city,
+              state: body.address_state,
+              postal_code: body.address_postal_code,
+              country: body.address_country!.toUpperCase(),
+            },
+            metadata: { portal_customer_id: customer.id, owner_id: order.owner_id },
           },
-          metadata: { portal_customer_id: customer.id, owner_id: order.owner_id },
-        });
+          { idempotencyKey: `portal-customer-${customer.id}` }
+        );
         stripe_customer_id = stripeCustomer.id;
       }
 
@@ -151,35 +157,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updCustErr.message });
       }
 
-      // 3. Create invoice items
+      // 3. Create invoice items — idempotent per line within an order
       const items =
         Array.isArray(order.line_items) && order.line_items.length > 0
           ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
           : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
-      for (const li of items) {
-        await stripe.invoiceItems.create({
-          customer: stripe_customer_id,
-          amount: li.amount_cents * li.quantity,
-          currency: order.currency,
-          description: li.description,
-          metadata: { portal_order_id: order.id },
-        });
+      for (let i = 0; i < items.length; i++) {
+        const li = items[i];
+        await stripe.invoiceItems.create(
+          {
+            customer: stripe_customer_id,
+            amount: li.amount_cents * li.quantity,
+            currency: order.currency,
+            description: li.description,
+            metadata: { portal_order_id: order.id },
+          },
+          { idempotencyKey: `portal-invitem-${order.id}-${i}` }
+        );
       }
 
-      // 4. Create + finalize the invoice (Stripe emails it automatically)
-      invoice = await stripe.invoices.create({
-        customer: stripe_customer_id,
-        collection_method: "send_invoice",
-        days_until_due: 14,
-        auto_advance: true,
-        description: order.description || order.title,
-        metadata: { portal_order_id: order.id, owner_id: order.owner_id },
-      });
+      // 4. Create + finalize the invoice — idempotent per order
+      invoice = await stripe.invoices.create(
+        {
+          customer: stripe_customer_id,
+          collection_method: "send_invoice",
+          days_until_due: 14,
+          auto_advance: true,
+          description: order.description || order.title,
+          metadata: { portal_order_id: order.id, owner_id: order.owner_id },
+        },
+        { idempotencyKey: `portal-invoice-${order.id}` }
+      );
       if (!invoice.id) {
         return res.status(500).json({ error: "Stripe invoice missing id" });
       }
       finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-      await stripe.invoices.sendInvoice(invoice.id);
+      // Note: we deliberately do NOT call stripe.invoices.sendInvoice() here.
+      // That endpoint depends on Stripe's email infrastructure being enabled
+      // for the account, which can return "This invoice cannot be sent right
+      // now" on newer / unverified accounts. Instead we email the hosted pay
+      // link ourselves via Resend below — same UX, fewer Stripe dependencies.
     } catch (stripeErr) {
       // Stripe SDK errors carry .type, .code, .message — surface enough to debug.
       const e = stripeErr as { type?: string; code?: string; message?: string; raw?: { message?: string } };
@@ -207,7 +224,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq("id", order.id);
     if (updOrdErr) return res.status(500).json({ error: updOrdErr.message });
 
-    // 6. Notify owner
+    // 6. Email the invoice link to the client (replaces Stripe's sendInvoice)
+    if (finalized.hosted_invoice_url) {
+      try {
+        await sendEmail({
+          to: customer.email,
+          subject: `Invoice for ${order.title} — $${(order.amount_cents / 100).toFixed(2)}`,
+          html: emailShell({
+            heading: `Your invoice is ready`,
+            body: `<p>Hi ${customer.first_name},</p><p>Here's your invoice for <strong>${order.title}</strong>. Total: <strong>$${(order.amount_cents / 100).toFixed(2)}</strong>. Payment is due within 14 days.</p>`,
+            cta: { label: "Pay invoice", url: finalized.hosted_invoice_url },
+          }),
+        });
+      } catch (e) {
+        // Email failure is non-fatal — the customer already got auto-redirected
+        // to the hosted invoice in their browser. They can still pay.
+        console.error("[onboard] failed to email invoice link", e);
+      }
+    }
+
+    // 7. Notify owner
     await supabase.from("portal_notifications").insert({
       user_id: order.owner_id,
       kind: "onboarding_completed",
