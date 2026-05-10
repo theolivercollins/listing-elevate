@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Check, ExternalLink, User, Phone, MapPin, Building2, Globe2, Hash } from "lucide-react";
+import { Loader2, Check, ExternalLink, User, Phone, MapPin, Building2, Globe2, Hash, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -281,98 +281,60 @@ export default function Onboard() {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* ─── 1. Billing address ──────────────────────────────────── */}
-          <section className="border border-border bg-background p-6 md:p-8">
-            <div className="mb-6 flex items-baseline justify-between">
-              <span className="label text-muted-foreground">— Billing address</span>
-              <span className="text-xs text-muted-foreground/70">Step 1 of 3</span>
-            </div>
-            <div className="space-y-4">
+        {/* ─── Single continuous form (no section grouping) ──────────── */}
+        <form onSubmit={handleSubmit} className="border border-border bg-background p-6 md:p-10">
+          <span className="label text-muted-foreground">— Customer details</span>
+          <h2 className="mt-3 text-xl font-semibold tracking-[-0.01em] md:text-2xl">
+            We need a few things before we send your invoice
+          </h2>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Enter your name (or company name) plus a billing address. Required for Stripe.
+          </p>
+
+          <div className="mt-8 space-y-5">
+            {/* Row 1 — First name + Last name */}
+            <div className="grid gap-4 md:grid-cols-2">
               <Field
-                label="Street address"
-                icon={<MapPin className={ICON_CLS} />}
-                inputRef={addressInputRef}
-                value={line1}
-                onChange={(e) => setLine1(e.target.value)}
-                placeholder="Start typing to search"
-                autoComplete="address-line1"
+                label="First name"
+                icon={<User className={ICON_CLS} />}
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                autoComplete="given-name"
                 required
               />
               <Field
-                label="Apartment / suite"
-                value={line2}
-                onChange={(e) => setLine2(e.target.value)}
-                placeholder="Optional"
-                autoComplete="address-line2"
+                label="Last name"
+                icon={<User className={ICON_CLS} />}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                autoComplete="family-name"
+                required
               />
-              <div className="grid gap-4 md:grid-cols-[1fr_140px_140px]">
-                <Field
-                  label="City"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  autoComplete="address-level2"
-                  required
-                />
-                <Field
-                  label="State"
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  autoComplete="address-level1"
-                  required
-                />
-                <Field
-                  label="Postal code"
-                  icon={<Hash className={ICON_CLS} />}
-                  value={postal}
-                  onChange={(e) => setPostal(e.target.value)}
-                  autoComplete="postal-code"
-                  required
-                />
-              </div>
-              <div className="max-w-[220px]">
-                <Field
-                  label="Country"
-                  icon={<Globe2 className={ICON_CLS} />}
-                  value={country}
-                  onChange={(e) => setCountry(e.target.value.toUpperCase())}
-                  maxLength={2}
-                  placeholder="US"
-                  autoComplete="country"
-                  hint="2-letter code (US, CA, GB)"
-                  required
-                />
-              </div>
             </div>
-          </section>
 
-          {/* ─── 2. Customer name ────────────────────────────────────── */}
-          <section className="border border-border bg-background p-6 md:p-8">
-            <div className="mb-6 flex items-baseline justify-between">
-              <span className="label text-muted-foreground">— Customer name</span>
-              <span className="text-xs text-muted-foreground/70">Step 2 of 3</span>
-            </div>
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Field
-                  label="First name"
-                  icon={<User className={ICON_CLS} />}
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  autoComplete="given-name"
-                  required
-                />
-                <Field
-                  label="Last name"
-                  icon={<User className={ICON_CLS} />}
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  autoComplete="family-name"
-                  required
-                />
-              </div>
+            {/* Row 2 — Business name */}
+            <Field
+              label="Business name"
+              icon={<Building2 className={ICON_CLS} />}
+              value={businessName}
+              onChange={(e) => setBusinessName(e.target.value)}
+              placeholder="Optional"
+              autoComplete="organization"
+              hint="Leave blank if billing as an individual."
+            />
+
+            {/* Row 3 — Email + Phone */}
+            <div className="grid gap-4 md:grid-cols-2">
               <Field
-                label="Phone"
+                label="Email address"
+                icon={<Mail className={ICON_CLS} />}
+                value={summary.customer.email}
+                readOnly
+                className="cursor-not-allowed bg-secondary/40 text-muted-foreground"
+                aria-readonly
+              />
+              <Field
+                label="Phone number"
                 icon={<Phone className={ICON_CLS} />}
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
@@ -383,30 +345,73 @@ export default function Onboard() {
                 required
               />
             </div>
-          </section>
 
-          {/* ─── 3. Legal business name ──────────────────────────────── */}
-          <section className="border border-border bg-background p-6 md:p-8">
-            <div className="mb-6 flex items-baseline justify-between">
-              <span className="label text-muted-foreground">— Legal business name</span>
-              <span className="text-xs text-muted-foreground/70">Step 3 of 3</span>
-            </div>
+            {/* Row 4 — Street address (Places autocomplete) */}
             <Field
-              label="Business name"
-              icon={<Building2 className={ICON_CLS} />}
-              value={businessName}
-              onChange={(e) => setBusinessName(e.target.value)}
-              placeholder="Acme Studios LLC"
-              autoComplete="organization"
-              hint="Optional — leave blank if billing as an individual."
+              label="Address"
+              icon={<MapPin className={ICON_CLS} />}
+              inputRef={addressInputRef}
+              value={line1}
+              onChange={(e) => setLine1(e.target.value)}
+              placeholder="Start typing your address"
+              autoComplete="address-line1"
+              required
             />
-          </section>
+
+            {/* Row 5 — Apt/suite (optional, full width) */}
+            <Field
+              label="Apartment / suite"
+              value={line2}
+              onChange={(e) => setLine2(e.target.value)}
+              placeholder="Optional"
+              autoComplete="address-line2"
+            />
+
+            {/* Row 6 — Country + State + Postal */}
+            <div className="grid gap-4 md:grid-cols-[160px_1fr_140px]">
+              <Field
+                label="Country"
+                icon={<Globe2 className={ICON_CLS} />}
+                value={country}
+                onChange={(e) => setCountry(e.target.value.toUpperCase())}
+                maxLength={2}
+                placeholder="US"
+                autoComplete="country"
+                required
+              />
+              <Field
+                label="State / province"
+                value={state}
+                onChange={(e) => setState(e.target.value)}
+                autoComplete="address-level1"
+                required
+              />
+              <Field
+                label="Postal code"
+                icon={<Hash className={ICON_CLS} />}
+                value={postal}
+                onChange={(e) => setPostal(e.target.value)}
+                autoComplete="postal-code"
+                required
+              />
+            </div>
+
+            {/* City sits on its own row because Country/State/Postal already
+                take a tight 3-column layout. */}
+            <Field
+              label="City"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              autoComplete="address-level2"
+              required
+            />
+          </div>
 
           {error && (
-            <div className="border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
+            <div className="mt-8 border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">{error}</div>
           )}
 
-          <div className="flex flex-col-reverse gap-3 pt-2 md:flex-row md:items-center md:justify-between">
+          <div className="mt-10 flex flex-col-reverse gap-3 border-t border-border pt-6 md:flex-row md:items-center md:justify-between">
             <p className="text-xs text-muted-foreground">
               Payment is processed by Stripe. We never see your card.
             </p>
