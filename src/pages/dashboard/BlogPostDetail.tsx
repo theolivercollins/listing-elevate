@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PostEditor } from "@/components/blog/PostEditor";
+import { AIDraftModal } from "@/components/blog/AIDraftModal";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
+  listTemplates, getTemplate,
 } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
+import type { EditorMode } from "@/components/blog/PostEditor";
+import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
@@ -39,6 +43,9 @@ export default function BlogPostDetailPage() {
   const isCompose = !id || id === "new";
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const [editorMode, setEditorMode] = useState<EditorMode>("rich");
+  const [aiOpen, setAIOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["blog-post", id],
@@ -79,6 +86,24 @@ export default function BlogPostDetailPage() {
   }, [post]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Load templates for compose dropdown
+  const { data: tplData } = useQuery({
+    queryKey: ["blog-templates"],
+    queryFn: () => listTemplates(),
+    enabled: isCompose,
+  });
+  const templates = tplData?.templates ?? [];
+
+  // Prefill from ?template=ID
+  useEffect(() => {
+    const tplId = searchParams.get("template");
+    if (!tplId || !isCompose) return;
+    getTemplate(tplId).then(({ template }) => {
+      setForm(f => ({ ...f, body_html: template.body_html, title: f.title || template.name }));
+      setEditorMode("source");
+    });
+  }, [searchParams, isCompose]);
 
   function patchFromForm(): UpdatePostInput {
     return {
@@ -166,13 +191,42 @@ export default function BlogPostDetailPage() {
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-4">
+          {isCompose && (
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <select
+                value=""
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  const tpl = templates.find(t => t.id === e.target.value);
+                  if (tpl) {
+                    setForm(f => ({ ...f, body_html: tpl.body_html, title: f.title || tpl.name }));
+                    setEditorMode("source");
+                  }
+                  e.target.value = "";
+                }}
+                className="rounded-md border bg-background px-2 py-1.5 text-sm"
+              >
+                <option value="">Start from template…</option>
+                {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+              <Button variant="outline" size="sm" onClick={() => setAIOpen(true)}>
+                <Sparkles className="mr-1 h-3.5 w-3.5" /> Generate with AI
+              </Button>
+            </div>
+          )}
           <div>
             <Label>Title</Label>
             <Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} disabled={readOnly} />
           </div>
           <div>
             <Label>Body</Label>
-            <PostEditor value={form.body_html} onChange={(html) => setForm({ ...form, body_html: html })} onInsertImageClick={() => setPickerOpen(true)} />
+            <PostEditor
+              value={form.body_html}
+              onChange={(html) => setForm({ ...form, body_html: html })}
+              onInsertImageClick={() => setPickerOpen(true)}
+              mode={editorMode}
+              onModeChange={setEditorMode}
+            />
           </div>
         </div>
 
@@ -231,6 +285,13 @@ export default function BlogPostDetailPage() {
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
 
       <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={(img) => setForm({ ...form, image: img })} />
+
+      <AIDraftModal
+        open={aiOpen}
+        onClose={() => setAIOpen(false)}
+        onAccept={(html) => { setForm(f => ({ ...f, body_html: html })); setEditorMode("source"); }}
+        currentHtml={form.body_html}
+      />
     </div>
   );
 }
