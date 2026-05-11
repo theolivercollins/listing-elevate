@@ -11,12 +11,14 @@ import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
-  listTemplates, getTemplate,
+  listTemplates, getTemplate, getTaxonomy,
 } from "@/lib/blog/api-client";
+import { HtmlPreview } from "@/components/blog/HtmlPreview";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Sparkles } from "lucide-react";
+import { Eye, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
@@ -46,6 +48,7 @@ export default function BlogPostDetailPage() {
   const [searchParams] = useSearchParams();
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [aiOpen, setAIOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["blog-post", id],
@@ -94,6 +97,12 @@ export default function BlogPostDetailPage() {
     enabled: isCompose,
   });
   const templates = tplData?.templates ?? [];
+
+  const { data: taxonomyData } = useQuery({
+    queryKey: ["blog-taxonomy"],
+    queryFn: () => getTaxonomy(),
+  });
+  const taxonomy = taxonomyData ?? { authors: [], categories: [] };
 
   // Prefill from ?template=ID
   useEffect(() => {
@@ -199,7 +208,16 @@ export default function BlogPostDetailPage() {
                   if (!e.target.value) return;
                   const tpl = templates.find(t => t.id === e.target.value);
                   if (tpl) {
-                    setForm(f => ({ ...f, body_html: tpl.body_html, title: f.title || tpl.name }));
+                    setForm(f => ({
+                      ...f,
+                      body_html: tpl.body_html,
+                      title: f.title || tpl.name,
+                      author_label: tpl.default_author_label ?? f.author_label,
+                      category_label: tpl.default_category_label ?? f.category_label,
+                      meta_title: tpl.default_meta_title ?? f.meta_title,
+                      meta_description: tpl.default_meta_description ?? f.meta_description,
+                      meta_tags: tpl.default_meta_tags && tpl.default_meta_tags.length ? tpl.default_meta_tags.join(", ") : f.meta_tags,
+                    }));
                     setEditorMode("source");
                   }
                   e.target.value = "";
@@ -245,8 +263,34 @@ export default function BlogPostDetailPage() {
               <Button variant="outline" onClick={() => setPickerOpen(true)}>Pick image</Button>
             )}
           </div>
-          <div><Label>Author</Label><Input value={form.author_label} onChange={e => setForm({ ...form, author_label: e.target.value })} disabled={readOnly} /></div>
-          <div><Label>Category</Label><Input value={form.category_label} onChange={e => setForm({ ...form, category_label: e.target.value })} disabled={readOnly} /></div>
+          <div>
+            <Label>Author</Label>
+            <select
+              value={form.author_label ?? ""}
+              onChange={e => setForm({ ...form, author_label: e.target.value })}
+              disabled={readOnly}
+              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+            >
+              <option value="">— Select author —</option>
+              {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
+                <option key={a.id} value={a.label}>{a.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label>Category</Label>
+            <select
+              value={form.category_label ?? ""}
+              onChange={e => setForm({ ...form, category_label: e.target.value })}
+              disabled={readOnly}
+              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+            >
+              <option value="">— Select category —</option>
+              {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
+                <option key={c.id} value={c.label}>{c.label}</option>
+              ))}
+            </select>
+          </div>
           <div><Label>Meta title</Label><Input value={form.meta_title} onChange={e => setForm({ ...form, meta_title: e.target.value })} disabled={readOnly} /></div>
           <div><Label>Meta description</Label><Textarea value={form.meta_description} onChange={e => setForm({ ...form, meta_description: e.target.value })} disabled={readOnly} /></div>
           <div><Label>Meta keywords (comma sep)</Label><Input value={form.meta_tags} onChange={e => setForm({ ...form, meta_tags: e.target.value })} disabled={readOnly} /></div>
@@ -280,6 +324,9 @@ export default function BlogPostDetailPage() {
             {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
           </>
         )}
+        <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
+          <Eye className="mr-1 h-4 w-4" /> Preview
+        </Button>
       </div>
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
@@ -289,9 +336,29 @@ export default function BlogPostDetailPage() {
       <AIDraftModal
         open={aiOpen}
         onClose={() => setAIOpen(false)}
-        onAccept={(html) => { setForm(f => ({ ...f, body_html: html })); setEditorMode("source"); }}
+        onAccept={(r) => {
+          setForm(f => ({
+            ...f,
+            body_html: r.body_html,
+            meta_title: r.meta_title || f.meta_title,
+            meta_description: r.meta_description || f.meta_description,
+            meta_tags: r.meta_tags.length ? r.meta_tags.join(", ") : f.meta_tags,
+          }));
+          setEditorMode("source");
+        }}
         currentHtml={form.body_html}
       />
+
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Preview · {form.title || "Untitled"}</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-hidden rounded-md border">
+            <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: "70vh", border: "none", display: "block" }} />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
