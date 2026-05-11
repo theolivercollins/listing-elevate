@@ -3,12 +3,21 @@
 export type AILength = "short" | "standard" | "long";
 export type AITone = "professional" | "casual" | "data_driven";
 
+export interface Attachment {
+  kind: "pdf" | "image" | "text";
+  filename: string;
+  data: string;           // base64 for pdf/image; raw text for text
+  media_type?: string;
+}
+
 export interface GenerateDraftInput {
   prompt: string;
   template_id?: string | null;
   template_html?: string | null;
   length: AILength;
   tone: AITone;
+  attachments?: Attachment[];
+  paste_data?: string | null;
 }
 
 export interface GenerateDraftResult {
@@ -24,7 +33,7 @@ export interface AnthropicLike {
       model: string;
       max_tokens: number;
       system: string;
-      messages: { role: "user"; content: string }[];
+      messages: { role: "user"; content: any }[];
     }) => Promise<{
       content: Array<{ type: string; text?: string }>;
       usage: { input_tokens: number; output_tokens: number };
@@ -58,13 +67,20 @@ Output requirements:
 - Always end with a soft CTA inviting the reader to reach out about a tour or market consult.
 
 If a template is provided, treat it as the structural skeleton and fill it in.
-Match its tone, headings, and section count unless the prompt explicitly asks otherwise.`;
+Match its tone, headings, and section count unless the prompt explicitly asks otherwise.
+
+When reference materials are provided (PDFs, images, pasted data, CSVs), use ONLY statistics and facts present in them. Never fabricate numbers. If a stat isn't in the references, omit it or note 'data not available'.`;
 
 function buildUserMessage(input: GenerateDraftInput): string {
   const parts: string[] = [];
   parts.push(`Topic / request: ${input.prompt.trim()}`);
   parts.push(`Target length: ${WORDS_BY_LENGTH[input.length]}.`);
   parts.push(`Tone: ${TONE_TEXT[input.tone]}.`);
+  if (input.paste_data?.trim()) {
+    parts.push("");
+    parts.push("## Reference data (pasted)");
+    parts.push(input.paste_data.trim());
+  }
   if (input.template_html?.trim()) {
     parts.push("");
     parts.push("Use this HTML as the structural template. Match its sections and headings:");
@@ -102,16 +118,46 @@ function computeCostCents(inputTokens: number, outputTokens: number): number {
   return Math.max(1, Math.ceil(cents));
 }
 
+function buildAttachmentBlocks(attachments: Attachment[]): any[] {
+  const blocks: any[] = [];
+  for (const att of attachments) {
+    if (att.kind === "pdf") {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: att.data },
+      });
+    } else if (att.kind === "image") {
+      blocks.push({
+        type: "image",
+        source: { type: "base64", media_type: att.media_type ?? "image/jpeg", data: att.data },
+      });
+    } else if (att.kind === "text") {
+      blocks.push({
+        type: "text",
+        text: `## ${att.filename}\n\n${att.data}`,
+      });
+    }
+  }
+  return blocks;
+}
+
 export async function generateDraft(
   input: GenerateDraftInput,
   deps: { anthropic: AnthropicLike },
 ): Promise<GenerateDraftResult> {
   const userMsg = buildUserMessage(input);
+  const attachmentBlocks = buildAttachmentBlocks(input.attachments ?? []);
+
+  const content: any[] = [
+    { type: "text", text: userMsg },
+    ...attachmentBlocks,
+  ];
+
   const resp = await deps.anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS_BY_LENGTH[input.length],
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userMsg }],
+    messages: [{ role: "user", content }],
   });
   const text = (resp.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
   const cleaned = stripDangerousTags(stripFences(text));

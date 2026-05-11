@@ -40,8 +40,9 @@ describe("generateDraft", () => {
       tone: "professional",
     }, { anthropic } as any);
     const call = anthropic.messages.create.mock.calls[0][0];
-    const userMsg = call.messages[0].content;
-    expect(userMsg).toContain("<h2>{{title}}</h2>");
+    const content = call.messages[0].content;
+    const firstText = typeof content === "string" ? content : content[0].text;
+    expect(firstText).toContain("<h2>{{title}}</h2>");
   });
 
   it("computes cost from Sonnet 4.6 pricing", () => {
@@ -49,5 +50,45 @@ describe("generateDraft", () => {
     expect(_testing.computeCostCents(1_000_000, 1_000_000)).toBe(1800);
     // 500 in + 800 out: (500*300 + 800*1500) / 1_000_000 = (150_000 + 1_200_000) / 1_000_000 = 1.35¢ → round up to 2
     expect(_testing.computeCostCents(500, 800)).toBe(2);
+  });
+
+  it("includes attachments as content blocks", async () => {
+    const anthropic = mkAnthropic("<p>filled</p>");
+    await generateDraft({
+      prompt: "Test",
+      length: "short",
+      tone: "professional",
+      attachments: [
+        { kind: "pdf", filename: "report.pdf", data: "BASE64DATA", media_type: "application/pdf" },
+        { kind: "image", filename: "chart.png", data: "IMGDATA", media_type: "image/png" },
+        { kind: "text", filename: "stats.csv", data: "median,385000\ndom,28" },
+      ],
+    }, { anthropic } as any);
+    const call = anthropic.messages.create.mock.calls[0][0];
+    const content = call.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    // First block is the main text
+    expect(content[0].type).toBe("text");
+    // Should include document + image + text blocks for attachments
+    const types = content.map((b: any) => b.type);
+    expect(types).toContain("document");
+    expect(types).toContain("image");
+    // CSV text attachment appears as a text block with filename header
+    const lastText = content.filter((b: any) => b.type === "text").pop();
+    expect(lastText.text).toContain("stats.csv");
+    expect(lastText.text).toContain("median,385000");
+  });
+
+  it("includes paste_data in the user prompt", async () => {
+    const anthropic = mkAnthropic("<p>x</p>");
+    await generateDraft({
+      prompt: "Test",
+      length: "short",
+      tone: "professional",
+      paste_data: "Median: $385K\nDOM: 28",
+    }, { anthropic } as any);
+    const call = anthropic.messages.create.mock.calls[0][0];
+    const firstText = call.messages[0].content[0].text ?? call.messages[0].content;
+    expect(firstText).toContain("Median: $385K");
   });
 });
