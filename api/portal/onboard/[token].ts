@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: order, error: ordErr } = await supabase
     .from("portal_orders")
     .select(
-      "id, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_checkout_session_id, stripe_invoice_url"
+      "id, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_payment_intent_id"
     )
     .eq("onboarding_token", token)
     .maybeSingle();
@@ -88,24 +88,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // ─── POST: submit billing details → create Stripe Customer + Checkout Session ───
+  // ─── POST: submit billing details → create Stripe Customer + PaymentIntent ───
   if (req.method === "POST") {
     if (order.status !== "awaiting_onboarding") {
-      // If we already have an active session for this order, hand its client
-      // secret back so the embedded checkout can re-mount. (Sessions live for
-      // 24h; if expired, the frontend's onComplete won't fire and the user
-      // can re-submit the form to mint a new one — but the form is locked at
-      // this status, so we'd need to cancel + reissue. Out of scope for now.)
-      const existingSessionId = (order as { stripe_checkout_session_id?: string }).stripe_checkout_session_id;
-      if (existingSessionId) {
+      // Re-open: if we have an active PaymentIntent in `requires_payment_method`,
+      // hand its client_secret back so Payment Element can re-mount.
+      const existingPiId = (order as { stripe_payment_intent_id?: string }).stripe_payment_intent_id;
+      if (existingPiId) {
         try {
           const stripe = getStripe();
-          const existing = await stripe.checkout.sessions.retrieve(existingSessionId);
-          if (existing.client_secret) {
+          const existing = await stripe.paymentIntents.retrieve(existingPiId);
+          if (existing.status === "requires_payment_method" || existing.status === "requires_confirmation") {
             return res.json({ status: order.status, client_secret: existing.client_secret });
           }
         } catch (e) {
-          console.error("[onboard] failed to retrieve existing session", e);
+          console.error("[onboard] failed to retrieve existing PaymentIntent", e);
         }
       }
       return res.status(409).json({ error: `Order is in status '${order.status}', cannot onboard` });
@@ -124,7 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let stripe_customer_id = customer.stripe_customer_id;
-    let checkoutSession: import("stripe").Stripe.Checkout.Session | undefined;
+    let paymentIntent: import("stripe").Stripe.PaymentIntent | undefined;
     try {
       // 1. Create or reuse Stripe Customer. Idempotency key scoped to
       // portal_customer.id so retries return the same Stripe Customer
@@ -175,43 +172,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updCustErr.message });
       }
 
-      // 3. Build line_items for the Checkout Session
-      const items =
-        Array.isArray(order.line_items) && order.line_items.length > 0
-          ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
-          : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
-
-      // 4. Create an embedded Checkout Session. `ui_mode: 'embedded'` returns
-      // a `client_secret` we hand to the frontend to mount Stripe's embedded
-      // UI on portal.listingelevate.com — customer never leaves our domain.
-      // `redirect_on_completion: 'never'` keeps them on our page after
-      // payment so we can render our own success state; the onComplete
-      // callback in the frontend fires when the charge succeeds.
-      // `invoice_creation.enabled: true` makes Stripe auto-generate an
-      // invoice tied to the session for record-keeping.
-      checkoutSession = await stripe.checkout.sessions.create({
-        ui_mode: "embedded_page" as Parameters<typeof stripe.checkout.sessions.create>[0]["ui_mode"],
-        mode: "payment",
-        customer: stripe_customer_id,
-        line_items: items.map((li) => ({
-          quantity: li.quantity,
-          price_data: {
-            currency: order.currency,
-            unit_amount: li.amount_cents,
-            product_data: {
-              name: li.description,
-              description: order.description || undefined,
-            },
+      // 3. Create a PaymentIntent. Returns a client_secret we hand to the
+      // frontend to mount Stripe's Payment Element (just the card field +
+      // wallet buttons, no full-page checkout iframe). The actual Stripe
+      // invoice gets auto-created in the webhook after payment succeeds —
+      // see api/portal/stripe-webhook.ts.
+      paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount: order.amount_cents,
+          currency: order.currency,
+          customer: stripe_customer_id,
+          description: order.description || order.title,
+          automatic_payment_methods: { enabled: true },
+          metadata: {
+            portal_order_id: order.id,
+            owner_id: order.owner_id,
+            portal_customer_id: customer.id,
           },
-        })),
-        invoice_creation: { enabled: true },
-        redirect_on_completion: "never",
-        metadata: {
-          portal_order_id: order.id,
-          owner_id: order.owner_id,
-          portal_customer_id: customer.id,
         },
-      });
+        { idempotencyKey: `portal-pi-${order.id}` }
+      );
     } catch (stripeErr) {
       // Stripe SDK errors carry .type, .code, .message — surface enough to debug.
       const e = stripeErr as { type?: string; code?: string; message?: string; raw?: { message?: string } };
@@ -224,25 +204,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 5. Update order — consume token, save session ID. The hosted Stripe
-    // invoice URL is null here because the invoice is auto-created later
-    // (after payment) via session.invoice_creation. We'll backfill that on
-    // the checkout.session.completed webhook.
-    if (!checkoutSession?.client_secret) {
-      return res.status(500).json({ error: "Checkout session missing client_secret" });
+    // 5. Update order — consume token, save PaymentIntent ID.
+    if (!paymentIntent?.client_secret) {
+      return res.status(500).json({ error: "PaymentIntent missing client_secret" });
     }
     const { error: updOrdErr } = await supabase
       .from("portal_orders")
       .update({
         status: "awaiting_payment",
         onboarding_token: null,
-        stripe_checkout_session_id: checkoutSession.id,
+        stripe_payment_intent_id: paymentIntent.id,
       })
       .eq("id", order.id);
     if (updOrdErr) return res.status(500).json({ error: updOrdErr.message });
 
-    // 6. Notify owner that onboarding is done (in-app only — the actual
-    // payment notification fires from the webhook).
+    // 6. In-app notification that onboarding is done. Owner email fires on
+    // payment success (in the webhook), not here.
     await supabase.from("portal_notifications").insert({
       user_id: order.owner_id,
       kind: "onboarding_completed",
@@ -254,7 +231,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({
       status: "awaiting_payment",
-      client_secret: checkoutSession.client_secret,
+      client_secret: paymentIntent.client_secret,
     });
   }
 

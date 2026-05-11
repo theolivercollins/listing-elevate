@@ -44,23 +44,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = getSupabase();
 
-  // Resolve the portal_order_id from whichever event we get. The two
-  // event types we care about:
-  //   - checkout.session.completed → primary path (embedded checkout success)
-  //   - invoice.paid / invoice.payment_succeeded → backup for invoice-based
-  //     flows or post-payment auto-generated invoices.
+  // Resolve the portal_order_id from whichever event we get:
+  //   - payment_intent.succeeded → primary path (Payment Element charge)
+  //   - checkout.session.completed → legacy / fallback if we ever revert
+  //   - invoice.paid / invoice.payment_succeeded → if invoices are involved
   let portal_order_id: string | undefined;
   let invoice_id: string | undefined;
   let invoice_url: string | undefined;
 
-  if (event.type === "checkout.session.completed") {
+  if (event.type === "payment_intent.succeeded") {
+    const pi = event.data.object as Stripe.PaymentIntent;
+    portal_order_id = pi.metadata?.portal_order_id;
+  } else if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     portal_order_id = session.metadata?.portal_order_id;
-    // session.invoice is set when invoice_creation.enabled=true on the session.
     invoice_id = typeof session.invoice === "string" ? session.invoice : session.invoice?.id;
-    // Only mark paid if payment actually succeeded (not "open" or "expired").
     if (session.payment_status !== "paid") {
-      console.log("[stripe-webhook] session not paid, ignoring", { id: session.id, status: session.payment_status });
       return res.json({ received: true, ignored: true, reason: "not_paid" });
     }
   } else if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded") {

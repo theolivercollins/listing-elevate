@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type InputHTMLAtt
 import { useParams } from "react-router-dom";
 import { Loader2, Check, User, Phone, MapPin, Building2, Globe2, Hash, Mail } from "lucide-react";
 import { motion } from "framer-motion";
-import { loadStripe, type Stripe } from "@stripe/stripe-js";
-import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
+import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import {
   fetchOnboardingSummary,
@@ -455,9 +455,9 @@ export default function Onboard() {
 }
 
 // ─── CheckoutView ───────────────────────────────────────────────────────────
-// Renders Stripe's embedded checkout under our editorial header + order
-// summary. Customer never leaves portal.listingelevate.com — the iframe stays
-// inside this page.
+// Renders Stripe's Payment Element under our editorial header + order summary.
+// Unlike Embedded Checkout (a full-page iframe of Stripe's hosted page), this
+// is just the card field + wallet buttons — all surrounding chrome is ours.
 function CheckoutView({
   clientSecret,
   summary,
@@ -467,18 +467,75 @@ function CheckoutView({
   summary: OnboardOrderSummary;
   onComplete: () => void;
 }) {
-  // `fetchClientSecret` is the Stripe-recommended way to pass the secret —
-  // they call this once when mounting the embedded checkout. We've already
-  // fetched it from our backend; just hand it back synchronously.
-  const options = useMemo(
+  const stripePromise = useMemo(() => getStripePromise(), []);
+
+  // Appearance config that matches LE design tokens (resolved to actual color
+  // values because the values live inside Stripe's iframe, which can't read
+  // our CSS variables). Sharp corners, Inter, monochrome — same language as
+  // the Field primitive above.
+  const options: StripeElementsOptions = useMemo(
     () => ({
       clientSecret,
-      onComplete,
+      appearance: {
+        theme: "flat",
+        variables: {
+          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          fontSizeBase: "14px",
+          colorPrimary: "#171717",
+          colorBackground: "#ffffff",
+          colorText: "#171717",
+          colorTextSecondary: "#737373",
+          colorTextPlaceholder: "#a3a3a3",
+          colorDanger: "#dc2626",
+          borderRadius: "0px",
+          spacingUnit: "4px",
+          spacingGridRow: "16px",
+          spacingGridColumn: "16px",
+        },
+        rules: {
+          ".Input": {
+            backgroundColor: "#ffffff",
+            border: "1px solid #e5e5e5",
+            boxShadow: "none",
+            padding: "10px 12px",
+            transition: "border-color 150ms ease",
+          },
+          ".Input:focus": {
+            border: "1px solid #171717",
+            boxShadow: "0 0 0 2px rgba(23,23,23,0.12)",
+            outline: "none",
+          },
+          ".Input--invalid": {
+            border: "1px solid #dc2626",
+            boxShadow: "none",
+          },
+          ".Label": {
+            fontFamily: 'Inter, system-ui, sans-serif',
+            fontSize: "11px",
+            fontWeight: "500",
+            textTransform: "uppercase",
+            letterSpacing: "0.16em",
+            color: "#737373",
+            marginBottom: "8px",
+          },
+          ".Tab": {
+            border: "1px solid #e5e5e5",
+            boxShadow: "none",
+            backgroundColor: "#ffffff",
+          },
+          ".Tab--selected, .Tab--selected:hover": {
+            border: "1px solid #171717",
+            backgroundColor: "#171717",
+            color: "#ffffff",
+          },
+          ".Tab:hover": {
+            backgroundColor: "#fafafa",
+          },
+        },
+      },
     }),
-    [clientSecret, onComplete]
+    [clientSecret]
   );
-
-  const stripePromise = useMemo(() => getStripePromise(), []);
 
   return (
     <div className="min-h-screen bg-background px-6 py-12 md:py-16">
@@ -489,23 +546,88 @@ function CheckoutView({
         className="mx-auto max-w-2xl"
       >
         <div className="mb-10">
-          <span className="label text-muted-foreground">— Listing Elevate</span>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">Complete payment</h1>
+          <span className="label text-muted-foreground">— Payment</span>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">Complete your order</h1>
           <p className="mt-4 text-sm text-muted-foreground">
-            Total <strong className="text-foreground">${(summary.order.amount_cents / 100).toFixed(2)}</strong> for {summary.order.title}.
+            <strong className="text-foreground">${(summary.order.amount_cents / 100).toFixed(2)}</strong> for {summary.order.title}.
           </p>
         </div>
 
-        <div className="border border-border bg-background p-4 md:p-6">
-          <EmbeddedCheckoutProvider stripe={stripePromise} options={options}>
-            <EmbeddedCheckout />
-          </EmbeddedCheckoutProvider>
-        </div>
+        <Elements stripe={stripePromise} options={options}>
+          <PaymentForm summary={summary} onSuccess={onComplete} />
+        </Elements>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Secured by Stripe. We never see your card details.
+          Payment is processed by Stripe. We never see your card.
         </p>
       </motion.div>
     </div>
+  );
+}
+
+// ─── PaymentForm ────────────────────────────────────────────────────────────
+// Sits inside <Elements> so it can call useStripe()/useElements(). Composes
+// Stripe's <PaymentElement> with our own submit button — same Button component
+// the rest of the app uses, so visually it's seamless.
+function PaymentForm({
+  summary,
+  onSuccess,
+}: {
+  summary: OnboardOrderSummary;
+  onSuccess: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setSubmitting(true);
+    setError(null);
+    // `redirect: 'if_required'` keeps the user on our page unless Stripe
+    // needs a real redirect (e.g. 3DS challenge for some banks).
+    const { error: stripeErr, paymentIntent } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        // Stripe requires return_url even when redirect:'if_required'. Used
+        // only if a real off-page step is needed.
+        return_url: window.location.href,
+      },
+      redirect: "if_required",
+    });
+    if (stripeErr) {
+      setError(stripeErr.message ?? "Payment failed.");
+      setSubmitting(false);
+      return;
+    }
+    if (paymentIntent && paymentIntent.status === "succeeded") {
+      onSuccess();
+      return;
+    }
+    if (paymentIntent && paymentIntent.status === "processing") {
+      // ACH or similar — payment is being processed. Treat as success-soon;
+      // the webhook will confirm the final state.
+      onSuccess();
+      return;
+    }
+    setError(`Unexpected payment state: ${paymentIntent?.status ?? "unknown"}`);
+    setSubmitting(false);
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="border border-border bg-background p-6 md:p-8">
+      <PaymentElement options={{ layout: "tabs" }} />
+      {error && (
+        <div className="mt-6 border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+      <Button type="submit" disabled={!stripe || submitting} className="mt-8 w-full">
+        {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+        Pay ${(summary.order.amount_cents / 100).toFixed(2)}
+      </Button>
+    </form>
   );
 }
