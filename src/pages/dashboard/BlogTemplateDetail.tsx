@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PostEditor, type EditorMode } from "@/components/blog/PostEditor";
-import { analyzeTemplate, createTemplate, getTemplate, updateTemplate } from "@/lib/blog/api-client";
+import { analyzeTemplate, createTemplate, getTemplate, getTaxonomy, updateTemplate } from "@/lib/blog/api-client";
 import type { AnalyzeTemplateResult } from "@/lib/blog/types";
 import { toast } from "sonner";
 import { Loader2, Sparkles, Upload } from "lucide-react";
@@ -30,19 +30,41 @@ export default function BlogTemplateDetail() {
   const [body_html, setBodyHtml] = useState("");
   const [mode, setMode] = useState<EditorMode>("source");
   const [analyzeResult, setAnalyzeResult] = useState<AnalyzeTemplateResult | null>(null);
+  const [defaultAuthorLabel, setDefaultAuthorLabel] = useState("");
+  const [defaultCategoryLabel, setDefaultCategoryLabel] = useState("");
+  const [defaultMetaTitle, setDefaultMetaTitle] = useState("");
+  const [defaultMetaDescription, setDefaultMetaDescription] = useState("");
+  const [defaultMetaTags, setDefaultMetaTags] = useState("");
+
+  const { data: taxonomyData } = useQuery({ queryKey: ["blog-taxonomy"], queryFn: () => getTaxonomy() });
+  const taxonomy = taxonomyData ?? { authors: [], categories: [] };
 
   useEffect(() => {
     if (data?.template) {
       setName(data.template.name);
       setDescription(data.template.description ?? "");
       setBodyHtml(data.template.body_html);
+      setDefaultAuthorLabel(data.template.default_author_label ?? "");
+      setDefaultCategoryLabel(data.template.default_category_label ?? "");
+      setDefaultMetaTitle(data.template.default_meta_title ?? "");
+      setDefaultMetaDescription(data.template.default_meta_description ?? "");
+      setDefaultMetaTags((data.template.default_meta_tags ?? []).join(", "));
     }
   }, [data]);
 
   const save = useMutation({
     mutationFn: async () => {
-      if (isNew) return createTemplate({ name, description: description || undefined, body_html });
-      await updateTemplate(id!, { name, description: description || null, body_html });
+      const defaults = {
+        default_author_label: defaultAuthorLabel || null,
+        default_category_label: defaultCategoryLabel || null,
+        default_meta_title: defaultMetaTitle || null,
+        default_meta_description: defaultMetaDescription || null,
+        default_meta_tags: defaultMetaTags
+          ? defaultMetaTags.split(",").map(t => t.trim()).filter(Boolean)
+          : [],
+      };
+      if (isNew) return createTemplate({ name, description: description || undefined, body_html, ...defaults });
+      await updateTemplate(id!, { name, description: description || null, body_html, ...defaults });
       return { id: id! };
     },
     onSuccess: (r) => {
@@ -79,6 +101,54 @@ export default function BlogTemplateDetail() {
         <div>
           <Label>Description (optional)</Label>
           <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="When to use this template" />
+        </div>
+        <div className="space-y-3 rounded-md border bg-muted/20 p-4">
+          <div>
+            <Label className="text-base">Default fields (optional)</Label>
+            <p className="text-xs text-muted-foreground">
+              When this template is selected on a new post, these values pre-fill the sidebar.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Default author</Label>
+              <select
+                value={defaultAuthorLabel}
+                onChange={e => setDefaultAuthorLabel(e.target.value)}
+                className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              >
+                <option value="">— None —</option>
+                {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
+                  <option key={a.id} value={a.label}>{a.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Default category</Label>
+              <select
+                value={defaultCategoryLabel}
+                onChange={e => setDefaultCategoryLabel(e.target.value)}
+                className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              >
+                <option value="">— None —</option>
+                {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
+                  <option key={c.id} value={c.label}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <Label>Default meta title</Label>
+            <Input value={defaultMetaTitle} onChange={e => setDefaultMetaTitle(e.target.value)} />
+          </div>
+          <div>
+            <Label>Default meta description</Label>
+            <Textarea value={defaultMetaDescription} onChange={e => setDefaultMetaDescription(e.target.value)} rows={2} />
+          </div>
+          <div>
+            <Label>Default meta tags (comma-separated)</Label>
+            <Input value={defaultMetaTags} onChange={e => setDefaultMetaTags(e.target.value)} />
+          </div>
         </div>
         <div>
           <div className="mb-2 flex items-center justify-between">

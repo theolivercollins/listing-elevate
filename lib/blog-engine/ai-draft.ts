@@ -21,7 +21,11 @@ export interface GenerateDraftInput {
 }
 
 export interface GenerateDraftResult {
-  html: string;
+  html: string;                   // KEEP for backwards compat — same as body_html
+  body_html: string;
+  meta_title: string;
+  meta_description: string;
+  meta_tags: string[];
   cost_cents: number;
   model: string;
   usage: { input_tokens: number; output_tokens: number };
@@ -56,20 +60,27 @@ const TONE_TEXT: Record<AITone, string> = {
 
 const SYSTEM_PROMPT = `You write real-estate blog posts for The Helgemo Team in Punta Gorda, FL.
 
-Output requirements:
-- Return ONLY clean HTML, no markdown, no commentary, no <html>/<head>/<body> wrappers.
-- Use these tags only: h2, h3, p, ul, ol, li, strong, em, a, blockquote,
-  table, thead, tbody, tr, th, td, br.
+Return ONLY valid JSON in this exact shape, no markdown fences, no commentary:
+{
+  "body_html": "<the post HTML using only h2/h3/p/ul/ol/li/strong/em/a/blockquote/table/thead/tbody/tr/th/td/br>",
+  "meta_title": "<60-character SEO title>",
+  "meta_description": "<150-character SEO description>",
+  "meta_tags": ["3", "to", "8", "keywords"]
+}
+
+HTML rules:
 - NEVER include <script>, <iframe>, <style>, inline event handlers, or javascript: URLs.
 - No emojis unless asked.
 - Use The Helgemo Team's voice: warm, knowledgeable, locally-grounded.
   Speak as "we" not "I". Mention Punta Gorda / Charlotte County by name when relevant.
 - Always end with a soft CTA inviting the reader to reach out about a tour or market consult.
 
-If a template is provided, treat it as the structural skeleton and fill it in.
-Match its tone, headings, and section count unless the prompt explicitly asks otherwise.
+When reference materials are provided (PDFs, images, pasted data, CSVs), use ONLY
+statistics and facts present in them. Never fabricate numbers. If a stat isn't in
+the references, omit it or note 'data not available'.
 
-When reference materials are provided (PDFs, images, pasted data, CSVs), use ONLY statistics and facts present in them. Never fabricate numbers. If a stat isn't in the references, omit it or note 'data not available'.`;
+If a template is provided, treat it as the structural skeleton and fill it in.
+Match its tone, headings, and section count unless the prompt explicitly asks otherwise.`;
 
 function buildUserMessage(input: GenerateDraftInput): string {
   const parts: string[] = [];
@@ -89,12 +100,8 @@ function buildUserMessage(input: GenerateDraftInput): string {
     parts.push("```");
   }
   parts.push("");
-  parts.push("Return the post HTML now. No preamble.");
+  parts.push("Return the JSON now. No preamble.");
   return parts.join("\n");
-}
-
-function stripFences(text: string): string {
-  return text.replace(/^```(?:html)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
 }
 
 function stripDangerousTags(html: string): string {
@@ -141,6 +148,27 @@ function buildAttachmentBlocks(attachments: Attachment[]): any[] {
   return blocks;
 }
 
+interface ParsedDraft {
+  body_html: string;
+  meta_title: string;
+  meta_description: string;
+  meta_tags: string[];
+}
+
+function parseJsonResponse(text: string): ParsedDraft {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+  let parsed: any;
+  try { parsed = JSON.parse(cleaned); }
+  catch (e: any) { throw new Error(`generateDraft: response was not JSON: ${e.message}; raw: ${cleaned.slice(0, 200)}`); }
+  const body_html = stripDangerousTags(String(parsed.body_html ?? ""));
+  return {
+    body_html,
+    meta_title: String(parsed.meta_title ?? "").slice(0, 200),
+    meta_description: String(parsed.meta_description ?? "").slice(0, 500),
+    meta_tags: Array.isArray(parsed.meta_tags) ? parsed.meta_tags.map(String).slice(0, 20) : [],
+  };
+}
+
 export async function generateDraft(
   input: GenerateDraftInput,
   deps: { anthropic: AnthropicLike },
@@ -160,13 +188,17 @@ export async function generateDraft(
     messages: [{ role: "user", content }],
   });
   const text = (resp.content ?? []).filter((b) => b.type === "text").map((b) => b.text ?? "").join("");
-  const cleaned = stripDangerousTags(stripFences(text));
+  const parsed = parseJsonResponse(text);
   return {
-    html: cleaned,
+    html: parsed.body_html,
+    body_html: parsed.body_html,
+    meta_title: parsed.meta_title,
+    meta_description: parsed.meta_description,
+    meta_tags: parsed.meta_tags,
     cost_cents: computeCostCents(resp.usage.input_tokens, resp.usage.output_tokens),
     model: MODEL,
     usage: { input_tokens: resp.usage.input_tokens, output_tokens: resp.usage.output_tokens },
   };
 }
 
-export const _testing = { computeCostCents, stripFences, stripDangerousTags, SYSTEM_PROMPT };
+export const _testing = { computeCostCents, stripDangerousTags, SYSTEM_PROMPT };
