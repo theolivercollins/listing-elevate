@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-07
+Last updated: 2026-05-10
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,25 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-10: Blog Engine Phase 5 portal UI shipped on `feat/blog-phase-5`.** Spec at [`specs/2026-05-10-blog-engine-phase-5-design.md`](./specs/2026-05-10-blog-engine-phase-5-design.md), plan at [`plans/2026-05-10-blog-engine-phase-5-plan.md`](./plans/2026-05-10-blog-engine-phase-5-plan.md).
+
+- **Three new dashboard pages live under `/dashboard/blog/*`:** Posts list (filter by state + search + paginated table), Post Detail (compose / edit-manual / review-auto / edit-live modes — buttons swap based on state and `metadata.authored`), Image Library (grid + tag chip filter + caption search + drag-drop upload with inline Gemini vision tagging + retag dialog + soft-delete).
+- **Manual authoring is first-class.** Posts list has a "+ New Post" button → compose form → choose "Save as Draft" (state=awaiting_approval) or "Publish Now" (state=publish_due, enqueues publish job immediately). Goes to Sierra via the same Phase 1 publisher with the picked image attached.
+- **Auto-pipeline review path is ready for Phase 3+4.** Drafts that land in `awaiting_approval` with `metadata.authored='auto'` show Approve & Publish / Reject buttons in the Post Detail page.
+- **Edit-live round-trip:** changing a live post and clicking "Save & Update Sierra" diffs against `post.*`, enqueues an edit job with `fields_changed`, Phase 1's edit publisher round-trips to Sierra.
+- **APIs:** `GET/POST /api/blog/posts`, `GET/PATCH /api/blog/posts/[id]`, `POST .../publish | .../reject | .../edit-on-sierra`, `GET/POST /api/blog/images` (multipart upload via `busboy`, inline vision tag with Gemini 2.5 Flash so users see tags immediately), `PATCH/DELETE /api/blog/images/[id]`. All gated via `requireAdmin` from `lib/auth.ts`.
+- **Stack additions:** Tiptap (`@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-link`, `@tiptap/extension-image`) for the rich text editor; `busboy` for multipart parsing. Storage: Supabase Storage `blog-images` bucket (already from Phase 2).
+- **Migration 050** adds `blog_posts.metadata jsonb` + `blog_posts.active boolean` columns + a partial index on `active=true`. Required for the list page filter and the manual/auto `authored` flag.
+
+**Open follow-ups before promoting `feat/blog-phase-5 → main`:**
+1. Apply migration 050 (via Supabase MCP or dashboard SQL editor).
+2. Local smoke: `npm run dev`, sign in, walk through Compose → Publish Now and Image Library upload.
+3. PR feat/blog-phase-5 → dev → staging → main.
+
+**Next phase candidates** (pick after Phase 5 ships): Phase 3 (daily Gemini research → 3 topic suggestions), Phase 4 (Claude drafts with style-rule injection), Phase 6 (corrections + learning loop).
+
+---
 
 **2026-05-07: Blog Engine Phase 1 + Phase 2 shipped + verified end-to-end.** Full design at [`specs/2026-05-06-blog-engine-design.md`](./specs/2026-05-06-blog-engine-design.md) (master) and [`specs/2026-05-07-blog-engine-phase-2-design.md`](./specs/2026-05-07-blog-engine-phase-2-design.md) (Phase 2). Plans at [`plans/2026-05-06-blog-engine-phase-1-plan.md`](./plans/2026-05-06-blog-engine-phase-1-plan.md) and [`plans/2026-05-07-blog-engine-phase-2-plan.md`](./plans/2026-05-07-blog-engine-phase-2-plan.md).
 

@@ -37,6 +37,9 @@ import DashboardLabListings from "./pages/dashboard/LabListings";
 import DashboardLabListingNew from "./pages/dashboard/LabListingNew";
 import DashboardLabListingDetail from "./pages/dashboard/LabListingDetail";
 import DashboardRatingLedger from "./pages/dashboard/RatingLedger";
+import BlogPostsList from "./pages/dashboard/BlogPostsList";
+import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
+import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -93,6 +96,10 @@ const App = () => (
                     <Route path="development/lab/new" element={<DashboardLabListingNew />} />
                     <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
                     <Route path="rating-ledger" element={<DashboardRatingLedger />} />
+                    <Route path="blog/posts" element={<BlogPostsList />} />
+                    <Route path="blog/posts/new" element={<BlogPostDetail />} />
+                    <Route path="blog/posts/:id" element={<BlogPostDetail />} />
+                    <Route path="blog/images" element={<BlogImageLibrary />} />
                     <Route path="finances" element={<DashboardFinances />} />
                     <Route path="settings" element={<DashboardSettings />} />
                   </Route>
