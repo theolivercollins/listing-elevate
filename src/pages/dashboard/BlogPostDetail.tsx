@@ -11,14 +11,15 @@ import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
-  listTemplates, getTemplate, getTaxonomy,
+  listTemplates, getTemplate, getTaxonomy, generateAIDraft,
 } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
+import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Sparkles } from "lucide-react";
+import { Eye, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
@@ -49,6 +50,12 @@ export default function BlogPostDetailPage() {
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [aiOpen, setAIOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // AI generation state — lifted out of modal
+  const [aiInput, setAIInput] = useState<AIDraftInput | null>(null);
+  const [aiResult, setAIResult] = useState<AIDraftResult | null>(null);
+  const [aiElapsedSec, setAIElapsedSec] = useState(0);
+  const [aiPreviewOpen, setAIPreviewOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["blog-post", id],
@@ -114,6 +121,63 @@ export default function BlogPostDetailPage() {
     });
   }, [searchParams, isCompose]);
 
+  // AI generation mutation
+  const aiGen = useMutation({
+    mutationFn: (input: AIDraftInput) => generateAIDraft(input),
+    onSuccess: (r) => {
+      setAIResult(r);
+      setAIInput(null);
+      toast.success("✨ AI draft ready");
+    },
+    onError: (e: any) => {
+      setAIInput(null);
+      toast.error(`Generation failed: ${e?.message ?? e}`);
+    },
+  });
+
+  // Elapsed-seconds ticker while a job is active
+  useEffect(() => {
+    if (!aiInput) { setAIElapsedSec(0); return; }
+    const start = Date.now();
+    const id = setInterval(() => setAIElapsedSec(Math.floor((Date.now() - start) / 1000)), 250);
+    return () => clearInterval(id);
+  }, [aiInput]);
+
+  function startAIGen(input: AIDraftInput) {
+    setAIInput(input);
+    setAIResult(null);
+    setAIElapsedSec(0);
+    aiGen.mutate(input);
+  }
+
+  function cancelAIGen() {
+    aiGen.reset();
+    setAIInput(null);
+    setAIElapsedSec(0);
+    toast.info("Cancelled");
+    // Note: doesn't abort the network request server-side; we just stop surfacing the result.
+  }
+
+  function applyAIResult() {
+    if (!aiResult) return;
+    setForm(f => ({
+      ...f,
+      body_html: aiResult.body_html,
+      meta_title: aiResult.meta_title || f.meta_title,
+      meta_description: aiResult.meta_description || f.meta_description,
+      meta_tags: aiResult.meta_tags.length ? aiResult.meta_tags.join(", ") : f.meta_tags,
+    }));
+    setEditorMode("source");
+    setAIResult(null);
+    setAIPreviewOpen(false);
+    toast.success("Applied AI draft");
+  }
+
+  function discardAIResult() {
+    setAIResult(null);
+    setAIPreviewOpen(false);
+  }
+
   function patchFromForm(): UpdatePostInput {
     return {
       title: form.title,
@@ -162,7 +226,6 @@ export default function BlogPostDetailPage() {
 
   const updateSierra = useMutation({
     mutationFn: async () => {
-      // Diff against current post.* to compute fields_changed.
       if (!post) return null;
       const diffs: string[] = [];
       if (form.title !== post.title) diffs.push("title");
@@ -197,6 +260,29 @@ export default function BlogPostDetailPage() {
   return (
     <div>
       <h1 className="mb-4 text-2xl font-bold">{isCompose ? "New post" : form.title || "Post"}</h1>
+
+      {/* AI generation status banner */}
+      {(aiInput || aiResult) && (
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
+          {aiInput ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <span className="flex-1">
+                <span className="font-medium">AI draft in queue</span>
+                <span className="ml-2 text-muted-foreground">— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
+              </span>
+              <Button size="sm" variant="ghost" onClick={cancelAIGen}>Cancel</Button>
+            </>
+          ) : aiResult ? (
+            <>
+              <Sparkles className="h-4 w-4 text-primary" />
+              <span className="flex-1"><span className="font-medium">✨ AI draft ready</span></span>
+              <Button size="sm" variant="default" onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</Button>
+              <Button size="sm" variant="ghost" onClick={discardAIResult}>Discard</Button>
+            </>
+          ) : null}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-4">
@@ -314,13 +400,13 @@ export default function BlogPostDetailPage() {
         {mode === "review-auto" && (
           <>
             <Button variant="outline" onClick={() => saveEdit.mutate()}>Save changes</Button>
-            <Button onClick={() => publishIt.mutate()}>Approve & publish</Button>
+            <Button onClick={() => publishIt.mutate()}>Approve &amp; publish</Button>
             <Button variant="destructive" onClick={() => reject.mutate()}>Reject</Button>
           </>
         )}
         {mode === "edit-live" && (
           <>
-            <Button onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save & update Sierra</Button>
+            <Button onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</Button>
             {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
           </>
         )}
@@ -336,19 +422,11 @@ export default function BlogPostDetailPage() {
       <AIDraftModal
         open={aiOpen}
         onClose={() => setAIOpen(false)}
-        onAccept={(r) => {
-          setForm(f => ({
-            ...f,
-            body_html: r.body_html,
-            meta_title: r.meta_title || f.meta_title,
-            meta_description: r.meta_description || f.meta_description,
-            meta_tags: r.meta_tags.length ? r.meta_tags.join(", ") : f.meta_tags,
-          }));
-          setEditorMode("source");
-        }}
+        onSubmit={(input) => { startAIGen(input); setAIOpen(false); }}
         currentHtml={form.body_html}
       />
 
+      {/* Post body preview dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -357,6 +435,35 @@ export default function BlogPostDetailPage() {
           <div className="overflow-hidden rounded-md border">
             <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: "70vh", border: "none", display: "block" }} />
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI draft preview & apply dialog */}
+      <Dialog open={aiPreviewOpen} onOpenChange={(v) => !v && setAIPreviewOpen(false)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" /> AI draft preview
+            </DialogTitle>
+          </DialogHeader>
+          {aiResult && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">Current</div>
+                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                </div>
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">AI-generated</div>
+                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={discardAIResult}>Discard</Button>
+                <Button onClick={applyAIResult}>Use this</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
