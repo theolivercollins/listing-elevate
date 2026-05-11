@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { listPosts } from "@/lib/blog/api-client";
+import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
 import { Plus, ExternalLink } from "lucide-react";
 
@@ -61,7 +62,7 @@ export default function BlogPostsList() {
               <tr key={p.id} className="border-t hover:bg-muted/20">
                 <td className="p-3"><Link to={`/dashboard/blog/posts/${p.id}`} className="font-medium underline-offset-2 hover:underline">{p.title}</Link></td>
                 <td><StatePill state={p.state} /></td>
-                <td>{p.image ? <img src={p.image.blob_url} className="h-8 w-12 rounded object-cover" alt="" /> : "—"}</td>
+                <td>{p.image ? <img src={thumbUrl(p.image.blob_url, { width: 120, quality: 65 })} loading="lazy" decoding="async" className="h-8 w-12 rounded object-cover" alt="" /> : "—"}</td>
                 <td>{p.author_label ?? "—"}</td>
                 <td className="text-xs text-muted-foreground">{new Date(p.updated_at).toLocaleString()}</td>
                 <td className="text-xs">${(p.cost_usd_cents / 100).toFixed(2)}</td>

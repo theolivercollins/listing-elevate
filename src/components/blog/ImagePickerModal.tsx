@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { listImages } from "@/lib/blog/api-client";
+import { thumbUrl } from "@/lib/blog/image-url";
 import { ImageUploadDropzone } from "./ImageUploadDropzone";
 import type { BlogImage } from "@/lib/blog/types";
 
@@ -58,9 +59,10 @@ export function ImagePickerModal({ open, onClose, onSelect }: Props) {
                   >
                     <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
                       <img
-                        src={img.blob_url}
+                        src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
                         alt={img.vision_caption ?? ""}
                         loading="lazy"
+                        decoding="async"
                         className="h-full w-full object-cover"
                       />
                     </div>

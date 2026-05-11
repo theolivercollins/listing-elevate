@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ImageUploadDropzone } from "@/components/blog/ImageUploadDropzone";
 import { deleteImage, listImages, updateImage } from "@/lib/blog/api-client";
+import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage } from "@/lib/blog/types";
 import { Plus, Trash2, Tag } from "lucide-react";
 import { toast } from "sonner";
@@ -54,8 +55,9 @@ export default function BlogImageLibrary() {
             <div key={img.id} className="overflow-hidden rounded-md border bg-card">
               <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
                 <img
-                  src={img.blob_url}
+                  src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
                   loading="lazy"
+                  decoding="async"
                   className="h-full w-full object-cover"
                   alt={img.vision_caption ?? ""}
                 />
@@ -86,7 +88,7 @@ export default function BlogImageLibrary() {
         <Dialog open onOpenChange={() => setEditing(null)}>
           <DialogContent>
             <DialogHeader><DialogTitle>Edit tags</DialogTitle></DialogHeader>
-            <img src={editing.blob_url} className="mb-2 rounded" alt="" />
+            <img src={thumbUrl(editing.blob_url, { width: 600, quality: 75 })} className="mb-2 rounded" alt="" />
             <div className="text-sm text-muted-foreground">{editing.vision_caption}</div>
             <div className="flex flex-wrap gap-2 pt-2">
               {VOCAB.map(t => {
