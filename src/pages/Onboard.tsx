@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
 import { useParams } from "react-router-dom";
-import { Loader2, Check, ExternalLink, User, Phone, MapPin, Building2, Globe2, Hash, Mail } from "lucide-react";
+import { Loader2, Check, User, Phone, MapPin, Building2, Globe2, Hash, Mail } from "lucide-react";
 import { motion } from "framer-motion";
+import { loadStripe, type Stripe } from "@stripe/stripe-js";
+import { EmbeddedCheckoutProvider, EmbeddedCheckout } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import {
   fetchOnboardingSummary,
@@ -9,6 +11,21 @@ import {
   type OnboardOrderSummary,
 } from "@/lib/portalApi";
 import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
+
+// Singleton Stripe.js loader. Returns null if the publishable key isn't
+// configured — the embedded checkout view shows a clear error in that case.
+let stripeSingleton: Promise<Stripe | null> | null = null;
+function getStripePromise(): Promise<Stripe | null> {
+  if (stripeSingleton) return stripeSingleton;
+  const pk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
+  if (!pk) {
+    console.warn("[Onboard] VITE_STRIPE_PUBLISHABLE_KEY not set — embedded checkout disabled");
+    stripeSingleton = Promise.resolve(null);
+    return stripeSingleton;
+  }
+  stripeSingleton = loadStripe(pk);
+  return stripeSingleton;
+}
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -74,7 +91,8 @@ export default function Onboard() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [invoiceUrl, setInvoiceUrl] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [paymentComplete, setPaymentComplete] = useState(false);
 
   const addressInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -96,9 +114,10 @@ export default function Onboard() {
         setState(s.customer.address_state ?? "");
         setPostal(s.customer.address_postal_code ?? "");
         setCountry(s.customer.address_country ?? "US");
-        if (s.order.status !== "awaiting_onboarding" && s.order.stripe_invoice_url) {
-          setInvoiceUrl(s.order.stripe_invoice_url);
-        }
+        // No-op: if the order is past onboarding we'll let the user
+        // re-submit to get a fresh client_secret from the API (which retrieves
+        // the existing session). This avoids the form being permanently
+        // locked if a payment was abandoned partway.
       })
       .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -154,10 +173,7 @@ export default function Onboard() {
         address_postal_code: postal.trim(),
         address_country: country.trim().toUpperCase(),
       });
-      setInvoiceUrl(res.stripe_invoice_url);
-      setTimeout(() => {
-        window.location.href = res.stripe_invoice_url;
-      }, 1500);
+      setClientSecret(res.client_secret);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -187,7 +203,8 @@ export default function Onboard() {
     );
   }
 
-  if (invoiceUrl) {
+  // ─── Payment complete (set by EmbeddedCheckout's onComplete callback) ──
+  if (paymentComplete) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-6">
         <motion.div
@@ -199,23 +216,34 @@ export default function Onboard() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground bg-foreground text-background">
             <Check className="h-5 w-5" />
           </div>
-          <span className="label mt-6 block text-muted-foreground">— All set</span>
-          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Redirecting to your invoice…</h1>
+          <span className="label mt-6 block text-muted-foreground">— Payment received</span>
+          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Thanks {summary.customer.first_name}!</h1>
           <p className="mt-4 text-sm text-muted-foreground">
-            If nothing happens, click below.
+            Your payment for <strong className="text-foreground">{summary.order.title}</strong> went through.
+            We'll get to work and email you when the deliverable is ready.
           </p>
-          <a
-            href={invoiceUrl}
-            className="mt-8 inline-flex items-center gap-2 border border-foreground bg-foreground px-6 py-3 text-sm font-medium text-background"
-          >
-            Open invoice <ExternalLink className="h-4 w-4" />
-          </a>
+          <p className="mt-6 text-xs text-muted-foreground">A Stripe receipt will arrive at {summary.customer.email}.</p>
         </motion.div>
       </div>
     );
   }
 
   const ICON_CLS = "h-4 w-4";
+
+  // ─── Embedded Stripe Checkout view ───────────────────────────────────
+  // Mounted as soon as the API returns a client_secret. Stripe's iframe
+  // handles card / Apple Pay / Link inside our page. onComplete fires when
+  // the charge succeeds; redirect_on_completion='never' on the session keeps
+  // the user on our origin.
+  if (clientSecret) {
+    return (
+      <CheckoutView
+        clientSecret={clientSecret}
+        summary={summary}
+        onComplete={() => setPaymentComplete(true)}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background px-6 py-12 md:py-16">
@@ -417,10 +445,66 @@ export default function Onboard() {
             </p>
             <Button type="submit" disabled={submitting} className="min-w-[220px]">
               {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              Confirm + view invoice
+              Continue to payment
             </Button>
           </div>
         </form>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── CheckoutView ───────────────────────────────────────────────────────────
+// Renders Stripe's embedded checkout under our editorial header + order
+// summary. Customer never leaves portal.listingelevate.com — the iframe stays
+// inside this page.
+function CheckoutView({
+  clientSecret,
+  summary,
+  onComplete,
+}: {
+  clientSecret: string;
+  summary: OnboardOrderSummary;
+  onComplete: () => void;
+}) {
+  // `fetchClientSecret` is the Stripe-recommended way to pass the secret —
+  // they call this once when mounting the embedded checkout. We've already
+  // fetched it from our backend; just hand it back synchronously.
+  const options = useMemo(
+    () => ({
+      clientSecret,
+      onComplete,
+    }),
+    [clientSecret, onComplete]
+  );
+
+  const stripePromise = useMemo(() => getStripePromise(), []);
+
+  return (
+    <div className="min-h-screen bg-background px-6 py-12 md:py-16">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.7, ease: EASE }}
+        className="mx-auto max-w-2xl"
+      >
+        <div className="mb-10">
+          <span className="label text-muted-foreground">— Listing Elevate</span>
+          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">Complete payment</h1>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Total <strong className="text-foreground">${(summary.order.amount_cents / 100).toFixed(2)}</strong> for {summary.order.title}.
+          </p>
+        </div>
+
+        <div className="border border-border bg-background p-4 md:p-6">
+          <EmbeddedCheckoutProvider stripe={stripePromise} options={options}>
+            <EmbeddedCheckout />
+          </EmbeddedCheckoutProvider>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground">
+          Secured by Stripe. We never see your card details.
+        </p>
       </motion.div>
     </div>
   );

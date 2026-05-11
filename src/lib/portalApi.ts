@@ -85,7 +85,6 @@ export interface OnboardOrderSummary {
     currency: string;
     line_items: Array<{ description: string; amount_cents: number; quantity: number }>;
     status: OrderStatus;
-    stripe_invoice_url: string | null;
   };
   customer: {
     email: string;
@@ -121,7 +120,7 @@ export interface OnboardSubmitInput {
   address_country: string;
 }
 
-export async function submitOnboarding(token: string, input: OnboardSubmitInput): Promise<{ status: OrderStatus; stripe_invoice_url: string }> {
+export async function submitOnboarding(token: string, input: OnboardSubmitInput): Promise<{ status: OrderStatus; client_secret: string }> {
   const res = await fetch(`/api/portal/onboard/${token}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

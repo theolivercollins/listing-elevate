@@ -44,70 +44,114 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const supabase = getSupabase();
 
-  // Stripe sends invoice.paid OR invoice.payment_succeeded depending on flow.
-  // Either is sufficient — first one wins; the second is a no-op idempotently.
-  if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded") {
+  // Resolve the portal_order_id from whichever event we get. The two
+  // event types we care about:
+  //   - checkout.session.completed → primary path (embedded checkout success)
+  //   - invoice.paid / invoice.payment_succeeded → backup for invoice-based
+  //     flows or post-payment auto-generated invoices.
+  let portal_order_id: string | undefined;
+  let invoice_id: string | undefined;
+  let invoice_url: string | undefined;
+
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    portal_order_id = session.metadata?.portal_order_id;
+    // session.invoice is set when invoice_creation.enabled=true on the session.
+    invoice_id = typeof session.invoice === "string" ? session.invoice : session.invoice?.id;
+    // Only mark paid if payment actually succeeded (not "open" or "expired").
+    if (session.payment_status !== "paid") {
+      console.log("[stripe-webhook] session not paid, ignoring", { id: session.id, status: session.payment_status });
+      return res.json({ received: true, ignored: true, reason: "not_paid" });
+    }
+  } else if (event.type === "invoice.paid" || event.type === "invoice.payment_succeeded") {
     const invoice = event.data.object as Stripe.Invoice;
-    const portal_order_id = invoice.metadata?.portal_order_id;
-    if (!portal_order_id) {
-      console.warn("[stripe-webhook] invoice without portal_order_id metadata", invoice.id);
-      return res.json({ received: true, ignored: true });
+    portal_order_id = invoice.metadata?.portal_order_id;
+    invoice_id = invoice.id;
+    invoice_url = invoice.hosted_invoice_url ?? undefined;
+  } else {
+    return res.json({ received: true, ignored_type: event.type });
+  }
+
+  if (!portal_order_id) {
+    console.warn("[stripe-webhook] event without portal_order_id metadata", event.type, event.id);
+    return res.json({ received: true, ignored: true });
+  }
+
+  // ─── Shared completion logic ───────────────────────────────────────────
+  // Lookup order. Idempotent: if already paid, skip.
+  const { data: order } = await supabase
+    .from("portal_orders")
+    .select("id, owner_id, title, amount_cents, status, customer_id")
+    .eq("id", portal_order_id)
+    .maybeSingle();
+
+  if (!order) return res.json({ received: true, unknown_order: portal_order_id });
+  if (
+    order.status === "paid" ||
+    order.status === "in_progress" ||
+    order.status === "delivered" ||
+    order.status === "in_review" ||
+    order.status === "approved"
+  ) {
+    // Still backfill the invoice id/url if the checkout.session.completed event
+    // arrived after we already saw invoice.paid (or vice-versa).
+    if (invoice_id || invoice_url) {
+      await supabase
+        .from("portal_orders")
+        .update({
+          ...(invoice_id ? { stripe_invoice_id: invoice_id } : {}),
+          ...(invoice_url ? { stripe_invoice_url: invoice_url } : {}),
+        })
+        .eq("id", order.id);
     }
+    return res.json({ received: true, already_paid: true });
+  }
 
-    // Lookup order. Idempotent: if already paid, skip.
-    const { data: order } = await supabase
-      .from("portal_orders")
-      .select("id, owner_id, title, amount_cents, status, customer_id")
-      .eq("id", portal_order_id)
-      .maybeSingle();
+  await supabase
+    .from("portal_orders")
+    .update({
+      status: "paid",
+      paid_at: new Date().toISOString(),
+      ...(invoice_id ? { stripe_invoice_id: invoice_id } : {}),
+      ...(invoice_url ? { stripe_invoice_url: invoice_url } : {}),
+    })
+    .eq("id", order.id);
 
-    if (!order) return res.json({ received: true, unknown_order: portal_order_id });
-    if (order.status === "paid" || order.status === "in_progress" || order.status === "delivered" ||
-        order.status === "in_review" || order.status === "approved") {
-      return res.json({ received: true, already_paid: true });
-    }
+  // Fetch customer for email body
+  const { data: customer } = await supabase
+    .from("portal_customers")
+    .select("email, first_name, last_name")
+    .eq("id", order.customer_id)
+    .single();
 
-    await supabase
-      .from("portal_orders")
-      .update({ status: "paid", paid_at: new Date().toISOString() })
-      .eq("id", order.id);
+  // In-app notification for the owner
+  await supabase.from("portal_notifications").insert({
+    user_id: order.owner_id,
+    kind: "order_paid",
+    title: `Payment received: ${order.title}`,
+    body: customer
+      ? `${customer.first_name} ${customer.last_name} paid $${(order.amount_cents / 100).toFixed(2)}`
+      : `$${(order.amount_cents / 100).toFixed(2)} received`,
+    link_path: `/dashboard/orders/${order.id}`,
+    order_id: order.id,
+  });
 
-    // Fetch customer for email body
-    const { data: customer } = await supabase
-      .from("portal_customers")
-      .select("email, first_name, last_name")
-      .eq("id", order.customer_id)
-      .single();
-
-    // In-app notification for the owner
-    await supabase.from("portal_notifications").insert({
-      user_id: order.owner_id,
-      kind: "order_paid",
-      title: `Payment received: ${order.title}`,
-      body: customer
-        ? `${customer.first_name} ${customer.last_name} paid $${(order.amount_cents / 100).toFixed(2)}`
-        : `$${(order.amount_cents / 100).toFixed(2)} received`,
-      link_path: `/dashboard/orders/${order.id}`,
-      order_id: order.id,
-    });
-
-    // Owner email
-    const { data: ownerUser } = await supabase.auth.admin.getUserById(order.owner_id);
-    const ownerEmail = ownerUser?.user?.email;
-    if (ownerEmail) {
-      try {
-        await sendEmail({
-          to: ownerEmail,
-          subject: `Paid: ${order.title}`,
-          html: emailShell({
-            heading: `Payment received`,
-            body: `<p><strong>${order.title}</strong></p><p>${customer?.first_name ?? ""} ${customer?.last_name ?? ""} just paid <strong>$${(order.amount_cents / 100).toFixed(2)}</strong>. You can now upload deliverables.</p>`,
-            cta: { label: "Open order", url: `${process.env.PORTAL_BASE_URL ?? "https://portal.listingelevate.com"}/dashboard/orders/${order.id}` },
-          }),
-        });
-      } catch (e) {
-        console.error("[stripe-webhook] owner email failed", e);
-      }
+  // Owner email
+  const { data: ownerUser } = await supabase.auth.admin.getUserById(order.owner_id);
+  const ownerEmail = ownerUser?.user?.email;
+  if (ownerEmail) {
+    try {
+      await sendEmail({
+        to: ownerEmail,
+        subject: `Paid: ${order.title}`,
+        html: emailShell({
+          heading: `Payment received`,
+          body: `<p><strong>${order.title}</strong></p><p>${customer?.first_name ?? ""} ${customer?.last_name ?? ""} just paid <strong>$${(order.amount_cents / 100).toFixed(2)}</strong>. You can now upload deliverables.</p>`,
+          cta: { label: "Open order", url: `${process.env.PORTAL_BASE_URL ?? "https://portal.listingelevate.com"}/dashboard/orders/${order.id}` },
+        }),
+      });
+    } catch (e) {
+      console.error("[stripe-webhook] owner email failed", e);
     }
   }
 

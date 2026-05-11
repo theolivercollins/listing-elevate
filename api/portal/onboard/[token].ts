@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../../lib/db.js";
 import { getStripe } from "../../../lib/portal/stripe.js";
-import { sendEmail, emailShell } from "../../../lib/portal/email.js";
 
 // PUBLIC endpoint — no auth required. Validated via the unguessable
 // onboarding_token. After successful submit, the token is consumed (set to NULL)
@@ -42,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: order, error: ordErr } = await supabase
     .from("portal_orders")
     .select(
-      "id, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_invoice_url"
+      "id, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_checkout_session_id, stripe_invoice_url"
     )
     .eq("onboarding_token", token)
     .maybeSingle();
@@ -70,7 +69,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         currency: order.currency,
         line_items: order.line_items,
         status: order.status,
-        stripe_invoice_url: order.stripe_invoice_url,
+        // Embedded-checkout flow returns client_secret; we no longer expose
+        // the hosted invoice URL to the frontend.
       },
       customer: {
         email: customer.email,
@@ -88,12 +88,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // ─── POST: submit billing details → create Stripe Customer + Invoice ───
+  // ─── POST: submit billing details → create Stripe Customer + Checkout Session ───
   if (req.method === "POST") {
     if (order.status !== "awaiting_onboarding") {
-      // Idempotent: if invoice already exists, return its URL.
-      if (order.stripe_invoice_url) {
-        return res.json({ status: order.status, stripe_invoice_url: order.stripe_invoice_url });
+      // If we already have an active session for this order, hand its client
+      // secret back so the embedded checkout can re-mount. (Sessions live for
+      // 24h; if expired, the frontend's onComplete won't fire and the user
+      // can re-submit the form to mint a new one — but the form is locked at
+      // this status, so we'd need to cancel + reissue. Out of scope for now.)
+      const existingSessionId = (order as { stripe_checkout_session_id?: string }).stripe_checkout_session_id;
+      if (existingSessionId) {
+        try {
+          const stripe = getStripe();
+          const existing = await stripe.checkout.sessions.retrieve(existingSessionId);
+          if (existing.client_secret) {
+            return res.json({ status: order.status, client_secret: existing.client_secret });
+          }
+        } catch (e) {
+          console.error("[onboard] failed to retrieve existing session", e);
+        }
       }
       return res.status(409).json({ error: `Order is in status '${order.status}', cannot onboard` });
     }
@@ -111,8 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let stripe_customer_id = customer.stripe_customer_id;
-    let invoice: import("stripe").Stripe.Invoice | undefined;
-    let finalized: import("stripe").Stripe.Invoice | undefined;
+    let checkoutSession: import("stripe").Stripe.Checkout.Session | undefined;
     try {
       // 1. Create or reuse Stripe Customer. Idempotency key scoped to
       // portal_customer.id so retries return the same Stripe Customer
@@ -163,55 +175,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updCustErr.message });
       }
 
-      // 3. Create DRAFT invoice FIRST, so we can attach items directly to its
-      // ID. Stripe's modern API no longer auto-pulls "pending" invoice items
-      // into a new invoice (pending_invoice_items_behavior defaults differ
-      // across recent API versions), so attaching items to a specific invoice
-      // ID is the only deterministic way to get a non-$0 total.
-      // Idempotency key bumped to v2 because the request shape changed (the
-      // v1 key would clash with the old failed-attempt invoices).
-      invoice = await stripe.invoices.create(
-        {
-          customer: stripe_customer_id,
-          collection_method: "send_invoice",
-          days_until_due: 14,
-          auto_advance: true,
-          description: order.description || order.title,
-          metadata: { portal_order_id: order.id, owner_id: order.owner_id },
-        },
-        { idempotencyKey: `portal-invoice-v2-${order.id}` }
-      );
-      if (!invoice.id) {
-        return res.status(500).json({ error: "Stripe invoice missing id" });
-      }
-
-      // 4. Create invoice items, attached directly to the draft invoice above
+      // 3. Build line_items for the Checkout Session
       const items =
         Array.isArray(order.line_items) && order.line_items.length > 0
           ? (order.line_items as Array<{ description: string; amount_cents: number; quantity: number }>)
           : [{ description: order.title, amount_cents: order.amount_cents, quantity: 1 }];
-      for (let i = 0; i < items.length; i++) {
-        const li = items[i];
-        await stripe.invoiceItems.create(
-          {
-            customer: stripe_customer_id,
-            invoice: invoice.id, // ← attach to the specific draft invoice
-            amount: li.amount_cents * li.quantity,
-            currency: order.currency,
-            description: li.description,
-            metadata: { portal_order_id: order.id },
-          },
-          { idempotencyKey: `portal-invitem-v2-${order.id}-${i}` }
-        );
-      }
 
-      // 5. Finalize the invoice (locks total at sum of attached items)
-      finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-      // Note: we deliberately do NOT call stripe.invoices.sendInvoice() here.
-      // That endpoint depends on Stripe's email infrastructure being enabled
-      // for the account, which can return "This invoice cannot be sent right
-      // now" on newer / unverified accounts. Instead we email the hosted pay
-      // link ourselves via Resend below — same UX, fewer Stripe dependencies.
+      // 4. Create an embedded Checkout Session. `ui_mode: 'embedded'` returns
+      // a `client_secret` we hand to the frontend to mount Stripe's embedded
+      // UI on portal.listingelevate.com — customer never leaves our domain.
+      // `redirect_on_completion: 'never'` keeps them on our page after
+      // payment so we can render our own success state; the onComplete
+      // callback in the frontend fires when the charge succeeds.
+      // `invoice_creation.enabled: true` makes Stripe auto-generate an
+      // invoice tied to the session for record-keeping.
+      checkoutSession = await stripe.checkout.sessions.create({
+        ui_mode: "embedded",
+        mode: "payment",
+        customer: stripe_customer_id,
+        line_items: items.map((li) => ({
+          quantity: li.quantity,
+          price_data: {
+            currency: order.currency,
+            unit_amount: li.amount_cents,
+            product_data: {
+              name: li.description,
+              description: order.description || undefined,
+            },
+          },
+        })),
+        invoice_creation: { enabled: true },
+        redirect_on_completion: "never",
+        metadata: {
+          portal_order_id: order.id,
+          owner_id: order.owner_id,
+          portal_customer_id: customer.id,
+        },
+      });
     } catch (stripeErr) {
       // Stripe SDK errors carry .type, .code, .message — surface enough to debug.
       const e = stripeErr as { type?: string; code?: string; message?: string; raw?: { message?: string } };
@@ -224,53 +224,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 5. Update order, consume token
-    if (!invoice || !finalized) {
-      return res.status(500).json({ error: "Invoice not finalized" });
+    // 5. Update order — consume token, save session ID. The hosted Stripe
+    // invoice URL is null here because the invoice is auto-created later
+    // (after payment) via session.invoice_creation. We'll backfill that on
+    // the checkout.session.completed webhook.
+    if (!checkoutSession?.client_secret) {
+      return res.status(500).json({ error: "Checkout session missing client_secret" });
     }
     const { error: updOrdErr } = await supabase
       .from("portal_orders")
       .update({
         status: "awaiting_payment",
         onboarding_token: null,
-        stripe_invoice_id: invoice.id,
-        stripe_invoice_url: finalized.hosted_invoice_url,
+        stripe_checkout_session_id: checkoutSession.id,
       })
       .eq("id", order.id);
     if (updOrdErr) return res.status(500).json({ error: updOrdErr.message });
 
-    // 6. Email the invoice link to the client (replaces Stripe's sendInvoice)
-    if (finalized.hosted_invoice_url) {
-      try {
-        await sendEmail({
-          to: customer.email,
-          subject: `Invoice for ${order.title} — $${(order.amount_cents / 100).toFixed(2)}`,
-          html: emailShell({
-            heading: `Your invoice is ready`,
-            body: `<p>Hi ${customer.first_name},</p><p>Here's your invoice for <strong>${order.title}</strong>. Total: <strong>$${(order.amount_cents / 100).toFixed(2)}</strong>. Payment is due within 14 days.</p>`,
-            cta: { label: "Pay invoice", url: finalized.hosted_invoice_url },
-          }),
-        });
-      } catch (e) {
-        // Email failure is non-fatal — the customer already got auto-redirected
-        // to the hosted invoice in their browser. They can still pay.
-        console.error("[onboard] failed to email invoice link", e);
-      }
-    }
-
-    // 7. Notify owner
+    // 6. Notify owner that onboarding is done (in-app only — the actual
+    // payment notification fires from the webhook).
     await supabase.from("portal_notifications").insert({
       user_id: order.owner_id,
       kind: "onboarding_completed",
       title: `${customer.first_name} ${customer.last_name} confirmed details`,
-      body: `Stripe invoice issued for "${order.title}" — $${(order.amount_cents / 100).toFixed(2)}`,
+      body: `Awaiting payment for "${order.title}" — $${(order.amount_cents / 100).toFixed(2)}`,
       link_path: `/dashboard/orders/${order.id}`,
       order_id: order.id,
     });
 
     return res.json({
       status: "awaiting_payment",
-      stripe_invoice_url: finalized.hosted_invoice_url,
+      client_secret: checkoutSession.client_secret,
     });
   }
 
