@@ -3,8 +3,9 @@ import { getSupabase } from "../../../lib/db.js";
 import { getStripe } from "../../../lib/portal/stripe.js";
 
 // PUBLIC endpoint — no auth required. Validated via the unguessable
-// onboarding_token. After successful submit, the token is consumed (set to NULL)
-// and the order moves to status='awaiting_payment'.
+// onboarding_token. After successful submit, the order moves to
+// status='awaiting_delivery'. Payment is handled later, after the client
+// approves the deliverable on the review page.
 
 interface OnboardingPayload {
   first_name?: string;
@@ -60,27 +61,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ─── GET: return order summary so the page can render ───────────────────
   if (req.method === "GET") {
-    // If the order has an active PaymentIntent, hand its client_secret back
-    // so the page can skip the form and mount Payment Element directly. Lets
-    // the customer resume payment after refreshing / closing the tab.
-    let client_secret: string | null = null;
-    if (
-      order.status === "awaiting_payment" &&
-      (order as { stripe_payment_intent_id?: string }).stripe_payment_intent_id
-    ) {
-      try {
-        const stripe = getStripe();
-        const pi = await stripe.paymentIntents.retrieve(
-          (order as { stripe_payment_intent_id: string }).stripe_payment_intent_id
-        );
-        if (pi.status === "requires_payment_method" || pi.status === "requires_confirmation") {
-          client_secret = pi.client_secret;
-        }
-      } catch (e) {
-        console.error("[onboard GET] failed to retrieve PaymentIntent", e);
-      }
-    }
-
     return res.json({
       order: {
         id: order.id,
@@ -92,8 +72,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         line_items: order.line_items,
         status: order.status,
       },
-      // Present if the customer is mid-flow and can resume payment.
-      client_secret,
       customer: {
         email: customer.email,
         first_name: customer.first_name,
@@ -110,24 +88,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
-  // ─── POST: submit billing details → create Stripe Customer + PaymentIntent ───
+  // ─── POST: submit billing details → create Stripe Customer ──────────────
   if (req.method === "POST") {
     if (order.status !== "awaiting_onboarding") {
-      // Re-open: if we have an active PaymentIntent in `requires_payment_method`,
-      // hand its client_secret back so Payment Element can re-mount.
-      const existingPiId = (order as { stripe_payment_intent_id?: string }).stripe_payment_intent_id;
-      if (existingPiId) {
-        try {
-          const stripe = getStripe();
-          const existing = await stripe.paymentIntents.retrieve(existingPiId);
-          if (existing.status === "requires_payment_method" || existing.status === "requires_confirmation") {
-            return res.json({ status: order.status, client_secret: existing.client_secret });
-          }
-        } catch (e) {
-          console.error("[onboard] failed to retrieve existing PaymentIntent", e);
-        }
-      }
-      return res.status(409).json({ error: `Order is in status '${order.status}', cannot onboard` });
+      // Form already submitted — the customer is past onboarding. Return the
+      // current status so the page can render the appropriate confirmation.
+      return res.json({ status: order.status });
     }
 
     const body = (req.body ?? {}) as OnboardingPayload;
@@ -143,7 +109,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     let stripe_customer_id = customer.stripe_customer_id;
-    let paymentIntent: import("stripe").Stripe.PaymentIntent | undefined;
     try {
       // 1. Create or reuse Stripe Customer. Idempotency key scoped to
       // portal_customer.id so retries return the same Stripe Customer
@@ -194,29 +159,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updCustErr.message });
       }
 
-      // 3. Create a PaymentIntent. Returns a client_secret we hand to the
-      // frontend to mount Stripe's Payment Element. The `description` is
-      // prefixed with our REC-XXXX order number so the Stripe-generated
-      // receipt email + the customer's bank statement line item both show
-      // the same number the customer sees on our success page.
-      const orderRef = `REC-${String(order.order_number).padStart(4, "0")}`;
-      paymentIntent = await stripe.paymentIntents.create(
-        {
-          amount: order.amount_cents,
-          currency: order.currency,
-          customer: stripe_customer_id,
-          description: `${orderRef} — ${order.title}`,
-          automatic_payment_methods: { enabled: true },
-          metadata: {
-            portal_order_id: order.id,
-            order_number: String(order.order_number),
-            order_ref: orderRef,
-            owner_id: order.owner_id,
-            portal_customer_id: customer.id,
-          },
-        },
-        { idempotencyKey: `portal-pi-${order.id}` }
-      );
+      // After Phase 2: onboarding no longer creates a PaymentIntent. The order
+      // sits at awaiting_delivery until the owner uploads. Payment is handled
+      // on the review page after the client approves the deliverable.
+      const { error: updOrderErr } = await supabase
+        .from("portal_orders")
+        .update({ status: "awaiting_delivery" })
+        .eq("id", order.id);
+      if (updOrderErr) {
+        console.error("[onboard] order update failed", updOrderErr);
+        return res.status(500).json({ error: updOrderErr.message });
+      }
+
+      // In-app notification that onboarding is done. Owner email fires on
+      // payment success (in the webhook), not here.
+      await supabase.from("portal_notifications").insert({
+        user_id: order.owner_id,
+        kind: "onboarding_completed",
+        title: `${customer.first_name} ${customer.last_name} confirmed details`,
+        body: `Awaiting delivery for "${order.title}"`,
+        link_path: `/dashboard/orders/${order.id}`,
+        order_id: order.id,
+      });
+
+      return res.json({ status: "awaiting_delivery" });
     } catch (stripeErr) {
       // Stripe SDK errors carry .type, .code, .message — surface enough to debug.
       const e = stripeErr as { type?: string; code?: string; message?: string; raw?: { message?: string } };
@@ -229,39 +195,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // 5. Update order — consume token, save PaymentIntent ID.
-    if (!paymentIntent?.client_secret) {
-      return res.status(500).json({ error: "PaymentIntent missing client_secret" });
-    }
-    // NOTE: deliberately NOT nulling onboarding_token here. Keeping it alive
-    // lets the customer resume payment if they refresh / close the tab — the
-    // GET handler will detect the active PaymentIntent and remount Payment
-    // Element on the same link. The token is unguessable (256 bits) so this
-    // doesn't reduce security in any meaningful way.
-    const { error: updOrdErr } = await supabase
-      .from("portal_orders")
-      .update({
-        status: "awaiting_payment",
-        stripe_payment_intent_id: paymentIntent.id,
-      })
-      .eq("id", order.id);
-    if (updOrdErr) return res.status(500).json({ error: updOrdErr.message });
-
-    // 6. In-app notification that onboarding is done. Owner email fires on
-    // payment success (in the webhook), not here.
-    await supabase.from("portal_notifications").insert({
-      user_id: order.owner_id,
-      kind: "onboarding_completed",
-      title: `${customer.first_name} ${customer.last_name} confirmed details`,
-      body: `Awaiting payment for "${order.title}" — $${(order.amount_cents / 100).toFixed(2)}`,
-      link_path: `/dashboard/orders/${order.id}`,
-      order_id: order.id,
-    });
-
-    return res.json({
-      status: "awaiting_payment",
-      client_secret: paymentIntent.client_secret,
-    });
   }
 
   res.status(405).json({ error: "Method not allowed" });
