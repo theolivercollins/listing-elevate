@@ -144,13 +144,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (custRow?.email && delivRow?.review_token) {
       const base = process.env.PUBLIC_BASE_URL ?? "";
       const reviewUrl = `${base}/review/${delivRow.review_token}`;
+      // Download URL goes to the API endpoint (which 302s to a signed Supabase
+      // URL), not the frontend route — there's no /review/:token/download page.
+      const downloadUrl = `${base}/api/portal/review/${delivRow.review_token}/download`;
       try {
         await notifyClient(supabase, custRow.email, "payment_receipt", {
           order_title: order.title,
           amount: (order.amount_cents / 100).toFixed(0),
           currency: order.currency.toUpperCase(),
           review_url: reviewUrl,
-          download_url: `${reviewUrl}/download`,
+          download_url: downloadUrl,
         });
       } catch (e) {
         console.error("[stripe-webhook] approve_pay client receipt failed", e);
