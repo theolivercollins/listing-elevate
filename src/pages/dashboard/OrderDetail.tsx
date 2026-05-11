@@ -12,6 +12,7 @@ import {
 } from "@/lib/portalApi";
 import { getRelativeTime } from "@/lib/types";
 import { OrderDetailTabs } from "./OrderDetailTabs";
+import { OrderDeliverables } from "./OrderDeliverables";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -34,10 +35,6 @@ function stageIndex(status: PortalOrder["status"]): number {
 
 function OrderActivityPlaceholder() {
   return <p style={{ color: "var(--le-text-muted)", fontSize: 14 }}>Activity feed coming soon.</p>;
-}
-
-function OrderDeliverablesPlaceholder() {
-  return <p style={{ color: "var(--le-text-muted)", fontSize: 14 }}>Deliverables coming soon.</p>;
 }
 
 interface OverviewProps {
@@ -295,7 +292,7 @@ export default function OrderDetail() {
             key: "deliverables",
             label: "Deliverables",
             count: deliverables.length,
-            content: <OrderDeliverablesPlaceholder />,
+            content: <OrderDeliverables orderId={order.id} />,
           },
           {
             key: "activity",
