@@ -11,6 +11,7 @@ import type {
   BlogTemplate,
   AIDraftInput,
   AIDraftResult,
+  AnalyzeTemplateResult,
 } from "./types";
 
 async function authHeaders(): Promise<HeadersInit> {
@@ -194,6 +195,16 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+
+// Analyze template
+export async function analyzeTemplate(body_html: string): Promise<AnalyzeTemplateResult> {
+  const res = await fetch("/api/blog/ai/analyze-template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ body_html }),
   });
   return asJson(res);
 }
