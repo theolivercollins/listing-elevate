@@ -264,24 +264,32 @@ export default function OrderDetail() {
           <Link to="/dashboard/orders" className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-3 w-3" /> All orders
           </Link>
-          {deliverables.length > 0 ? (
-            <a
-              href={`/review/${deliverables[0].review_token}`}
-              target="_blank"
-              rel="noreferrer"
-              className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
-              title={deliverables.length > 1 ? `Previewing the first of ${deliverables.length} deliverables` : undefined}
-            >
-              Preview client side <ExternalLink className="h-3 w-3" />
-            </a>
-          ) : (
-            <span
-              className="label inline-flex items-center gap-2 text-muted-foreground/40 cursor-not-allowed"
-              title="Add a deliverable first to enable preview"
-            >
-              Preview client side <ExternalLink className="h-3 w-3" />
-            </span>
-          )}
+          {(() => {
+            // Prefer the newest deliverable that has at least one uploaded version.
+            // Falls back to the newest deliverable overall (may show "no versions yet"
+            // briefly during upload). If there are no deliverables at all, show disabled.
+            const previewable =
+              [...deliverables].reverse().find((d) => d.versions.some((v) => v.upload_status === "uploaded"))
+              ?? [...deliverables].reverse()[0];
+            return previewable ? (
+              <a
+                href={`/review/${previewable.review_token}`}
+                target="_blank"
+                rel="noreferrer"
+                className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground"
+                title={deliverables.length > 1 ? `Previewing "${previewable.title}" (most recent of ${deliverables.length})` : undefined}
+              >
+                Preview client side <ExternalLink className="h-3 w-3" />
+              </a>
+            ) : (
+              <span
+                className="label inline-flex items-center gap-2 text-muted-foreground/40 cursor-not-allowed"
+                title="Add a deliverable first to enable preview"
+              >
+                Preview client side <ExternalLink className="h-3 w-3" />
+              </span>
+            );
+          })()}
         </div>
         <div className="mt-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 flex-1">

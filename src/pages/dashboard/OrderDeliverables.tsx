@@ -71,7 +71,7 @@ export function OrderDeliverables({ orderId }: Props) {
         </p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {deliverables.map((d) => (
+          {[...deliverables].reverse().map((d) => (
             <DeliverableCard key={d.id} deliverable={d} orderId={orderId} onChange={reload} />
           ))}
         </ul>
@@ -129,7 +129,7 @@ function DeliverableCard({
               : "no uploaded version"}
           </div>
         </div>
-        <StatusPill status={deliverable.status} />
+        <StatusPill deliverable={deliverable} />
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
         <UploadButton orderId={orderId} deliverableId={deliverable.id} onUploaded={onChange} />
@@ -477,13 +477,15 @@ function AddDeliverableModal({
   );
 }
 
-function StatusPill({ status }: { status: PortalDeliverable["status"] }) {
+function StatusPill({ deliverable }: { deliverable: PortalDeliverable }) {
+  const hasUpload = deliverable.versions.some((v) => v.upload_status === "uploaded");
   const map: Record<PortalDeliverable["status"], { fg: string; bg: string; label: string }> = {
-    pending: {
-      fg: "var(--le-text-muted)",
-      bg: "var(--le-bg-sunken, transparent)",
-      label: "Pending",
-    },
+    // "pending" actually means "no review activity yet". If a version is uploaded,
+    // it's been delivered to the client and is waiting for them to open the link.
+    // Label differently depending on whether anything's been uploaded.
+    pending: hasUpload
+      ? { fg: "oklch(0.4 0.13 240)", bg: "oklch(0.94 0.04 240)", label: "Ready to review" }
+      : { fg: "var(--le-text-muted)", bg: "var(--le-bg-sunken, transparent)", label: "No upload yet" },
     in_review: { fg: "oklch(0.4 0.13 240)", bg: "oklch(0.94 0.04 240)", label: "In review" },
     revision_requested: {
       fg: "oklch(0.4 0.14 75)",
@@ -492,7 +494,7 @@ function StatusPill({ status }: { status: PortalDeliverable["status"] }) {
     },
     approved: { fg: "oklch(0.4 0.15 155)", bg: "oklch(0.94 0.05 155)", label: "Approved" },
   };
-  const s = map[status];
+  const s = map[deliverable.status];
   return (
     <span
       style={{
