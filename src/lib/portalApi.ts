@@ -157,3 +157,59 @@ export function formatStatus(status: OrderStatus): { label: string; tone: "neutr
     case "canceled": return { label: "Canceled", tone: "destructive" };
   }
 }
+
+export interface PortalDeliverable {
+  id: string;
+  order_id: string;
+  title: string;
+  description: string | null;
+  review_token: string;
+  status: "pending" | "in_review" | "revision_requested" | "approved";
+  created_at: string;
+  updated_at: string;
+  versions: PortalDeliverableVersion[];
+}
+
+export interface PortalDeliverableVersion {
+  id: string;
+  version: number;
+  file_name: string;
+  file_size_bytes: number | null;
+  mime_type: string | null;
+  upload_note: string | null;
+  upload_status: "pending" | "uploaded" | "failed";
+  created_at: string;
+}
+
+export async function createDeliverable(orderId: string, title: string): Promise<{ deliverable_id: string }> {
+  return authedFetch(`/api/portal/orders/${orderId}/deliverables`, {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function createVersion(
+  orderId: string,
+  deliverableId: string,
+  init: { file_name: string; mime_type: string; file_size_bytes: number; upload_note?: string },
+): Promise<{ version_id: string; signed_upload_url: string; storage_path: string }> {
+  return authedFetch(`/api/portal/orders/${orderId}/deliverables/${deliverableId}/versions`, {
+    method: "POST",
+    body: JSON.stringify(init),
+  });
+}
+
+export async function finalizeVersion(
+  orderId: string,
+  deliverableId: string,
+  versionId: string,
+): Promise<{ status: "uploaded"; order_status: OrderStatus }> {
+  return authedFetch(
+    `/api/portal/orders/${orderId}/deliverables/${deliverableId}/versions/${versionId}/finalize`,
+    { method: "POST" },
+  );
+}
+
+export async function deleteDeliverable(orderId: string, deliverableId: string): Promise<void> {
+  await authedFetch(`/api/portal/orders/${orderId}/deliverables/${deliverableId}`, { method: "DELETE" });
+}
