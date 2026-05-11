@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,10 +11,17 @@ import { HtmlPreview } from "./HtmlPreview";
 import { Loader2, Paperclip, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
+export interface AIDraftAcceptResult {
+  body_html: string;
+  meta_title: string;
+  meta_description: string;
+  meta_tags: string[];
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
-  onAccept: (html: string) => void;
+  onAccept: (result: AIDraftAcceptResult) => void;
   currentHtml: string;
 }
 
@@ -27,6 +34,8 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
   const [attachments, setAttachments] = useState<AIAttachment[]>([]);
   const [pasteData, setPasteData] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [doneSec, setDoneSec] = useState<number | null>(null);
 
   const { data: tplData } = useQuery({
     queryKey: ["blog-templates"], queryFn: () => listTemplates(), enabled: open,
@@ -42,9 +51,26 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
       attachments: attachments.length ? attachments : undefined,
       paste_data: pasteData.trim() || undefined,
     }),
-    onSuccess: (r) => setResult(r),
+    onSuccess: (r) => {
+      setDoneSec(elapsedSec);
+      if (open) {
+        setResult(r);
+      } else {
+        // Modal was closed while generating — stash for manual review, show toast
+        setResult(r);
+        toast.success("✨ AI draft ready — open Generate again to review");
+      }
+    },
     onError: (e: any) => toast.error(`Generation failed: ${e?.message ?? e}`),
   });
+
+  // Elapsed timer while pending
+  useEffect(() => {
+    if (!gen.isPending) { setElapsedSec(0); return; }
+    const start = Date.now();
+    const id = setInterval(() => setElapsedSec(Math.floor((Date.now() - start) / 1000)), 250);
+    return () => clearInterval(id);
+  }, [gen.isPending]);
 
   function reset() {
     setResult(null);
@@ -52,6 +78,8 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
     setTemplateId("");
     setAttachments([]);
     setPasteData("");
+    setDoneSec(null);
+    gen.reset();
   }
 
   function removeAttachment(idx: number) {
@@ -99,7 +127,7 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) { reset(); onClose(); } }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v && !gen.isPending) { reset(); onClose(); } }}>
       <DialogContent className="max-w-4xl">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4" /> Generate post with AI</DialogTitle></DialogHeader>
 
@@ -194,10 +222,22 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
                 </div>
               </div>
             </div>
+            {gen.isPending && (
+              <div className="rounded-md border bg-muted/30 p-3">
+                <div className="flex items-center gap-2 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="font-medium">In queue with Claude…</span>
+                  <span className="ml-auto font-mono text-xs text-muted-foreground">{elapsedSec}s</span>
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Usually 5–15s. You can close this modal — we&apos;ll keep generating in the background.
+                </p>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={onClose}>Cancel</Button>
+              <Button variant="outline" onClick={() => { gen.reset(); reset(); onClose(); }}>Cancel</Button>
               <Button onClick={() => gen.mutate()} disabled={prompt.length < 3 || gen.isPending}>
-                {gen.isPending ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> Generating…</> : "Generate"}
+                {gen.isPending ? "In queue…" : "Generate"}
               </Button>
             </div>
           </div>
@@ -213,13 +253,22 @@ export function AIDraftModal({ open, onClose, onAccept, currentHtml }: Props) {
                 <HtmlPreview html={result.html} style={{ width: "100%", height: 320, border: "1px solid #e5e7eb", borderRadius: 4 }} />
               </div>
             </div>
-            <div className="text-xs text-muted-foreground">
-              Cost: ${(result.cost_cents / 100).toFixed(2)} · Model: {result.model} · {result.usage.input_tokens} in / {result.usage.output_tokens} out tokens
-            </div>
+            {doneSec !== null && (
+              <div className="text-xs text-muted-foreground">Generated in {doneSec}s</div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setResult(null)}>Regenerate</Button>
-              <Button variant="ghost" onClick={onClose}>Discard</Button>
-              <Button onClick={() => { onAccept(result.html); reset(); onClose(); }}>Use this</Button>
+              <Button variant="ghost" onClick={() => { reset(); onClose(); }}>Discard</Button>
+              <Button onClick={() => {
+                onAccept({
+                  body_html: result.body_html ?? result.html,
+                  meta_title: result.meta_title ?? "",
+                  meta_description: result.meta_description ?? "",
+                  meta_tags: result.meta_tags ?? [],
+                });
+                reset();
+                onClose();
+              }}>Use this</Button>
             </div>
           </div>
         )}
