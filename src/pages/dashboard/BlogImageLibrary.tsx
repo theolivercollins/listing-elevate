@@ -52,7 +52,14 @@ export default function BlogImageLibrary() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {images.map(img => (
             <div key={img.id} className="overflow-hidden rounded-md border bg-card">
-              <img src={img.blob_url} className="aspect-[4/3] w-full object-cover" alt={img.vision_caption ?? ""} />
+              <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
+                <img
+                  src={img.blob_url}
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                  alt={img.vision_caption ?? ""}
+                />
+              </div>
               <div className="space-y-1 p-2">
                 <div className="text-xs">{img.vision_caption ?? "—"}</div>
                 <div className="flex flex-wrap gap-1">{img.vision_tags.map(t => (
