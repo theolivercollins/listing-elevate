@@ -190,7 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // `invoice_creation.enabled: true` makes Stripe auto-generate an
       // invoice tied to the session for record-keeping.
       checkoutSession = await stripe.checkout.sessions.create({
-        ui_mode: "embedded",
+        ui_mode: "embedded_page" as Parameters<typeof stripe.checkout.sessions.create>[0]["ui_mode"],
         mode: "payment",
         customer: stripe_customer_id,
         line_items: items.map((li) => ({
