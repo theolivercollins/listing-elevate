@@ -92,11 +92,20 @@ export interface BlogTemplate {
   updated_at: string;
 }
 
+export interface AIAttachment {
+  kind: "pdf" | "image" | "text";
+  filename: string;
+  data: string;
+  media_type?: string;
+}
+
 export interface AIDraftInput {
   prompt: string;
   template_id?: string | null;
   length: "short" | "standard" | "long";
   tone: "professional" | "casual" | "data_driven";
+  attachments?: AIAttachment[];
+  paste_data?: string | null;
 }
 
 export interface AIDraftResult {
@@ -104,4 +113,13 @@ export interface AIDraftResult {
   cost_cents: number;
   model: string;
   usage: { input_tokens: number; output_tokens: number };
+}
+
+export interface AnalyzeTemplateResult {
+  suggested_name: string;
+  suggested_description: string;
+  notes: string;
+  detected_sections: string[];
+  cost_cents: number;
+  model: string;
 }
