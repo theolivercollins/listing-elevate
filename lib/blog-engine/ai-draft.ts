@@ -1,4 +1,5 @@
 // lib/blog-engine/ai-draft.ts
+import { jsonrepair } from "jsonrepair";
 
 export type AILength = "short" | "standard" | "long";
 export type AITone = "professional" | "casual" | "data_driven";
@@ -47,7 +48,7 @@ export interface AnthropicLike {
 
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS_BY_LENGTH: Record<AILength, number> = {
-  short: 1024, standard: 2048, long: 4096,
+  short: 2048, standard: 4096, long: 8192,
 };
 const WORDS_BY_LENGTH: Record<AILength, string> = {
   short: "around 300 words", standard: "around 600 words", long: "around 1000 words",
@@ -158,8 +159,20 @@ interface ParsedDraft {
 function parseJsonResponse(text: string): ParsedDraft {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
   let parsed: any;
-  try { parsed = JSON.parse(cleaned); }
-  catch (e: any) { throw new Error(`generateDraft: response was not JSON: ${e.message}; raw: ${cleaned.slice(0, 200)}`); }
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (firstErr: any) {
+    // Truncated or otherwise broken JSON — try to repair it.
+    try {
+      parsed = JSON.parse(jsonrepair(cleaned));
+    } catch (secondErr: any) {
+      throw new Error(
+        `generateDraft: response was not JSON: ${firstErr.message}; ` +
+        `repair also failed: ${secondErr.message}; ` +
+        `raw: ${cleaned.slice(0, 200)}`,
+      );
+    }
+  }
   const body_html = stripDangerousTags(String(parsed.body_html ?? ""));
   return {
     body_html,
