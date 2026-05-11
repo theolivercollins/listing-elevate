@@ -37,8 +37,9 @@ describe("generateDraft", () => {
     expect(r.body_html).toContain("More");
   });
 
-  it("rejects non-JSON response", async () => {
-    const anthropic = mkAnthropic("just some text");
+  it("rejects truly unrepresentable response (empty string)", async () => {
+    // jsonrepair can coerce many broken inputs, but an empty string is unrepresentable.
+    const anthropic = mkAnthropic("");
     await expect(
       generateDraft({ prompt: "T", length: "short", tone: "casual" }, { anthropic } as any),
     ).rejects.toThrow(/JSON/i);
@@ -104,5 +105,14 @@ describe("generateDraft", () => {
     const call = anthropic.messages.create.mock.calls[0][0];
     const firstText = call.messages[0].content[0].text ?? call.messages[0].content;
     expect(firstText).toContain("Median: $385K");
+  });
+
+  it("repairs truncated JSON (Anthropic max_tokens cutoff scenario)", async () => {
+    const truncated = '{"body_html":"<p>498</p><p><strong>Properties Sold</strong></p><p>↓ 11.2% vs Last Month</p><p>2,575</p><p><strong>Properties For Sale</strong></p><p>↓ 3.9% vs Last';
+    const anthropic = mkAnthropic(truncated);
+    const r = await generateDraft({ prompt: "T", length: "short", tone: "casual" }, { anthropic } as any);
+    expect(r.body_html).toContain("Properties Sold");
+    // meta fields will be empty since the truncation came before them — that's OK
+    expect(r.meta_title).toBe("");
   });
 });
