@@ -8,6 +8,9 @@ import type {
   CreatePostInput,
   UpdatePostInput,
   BlogPostState,
+  BlogTemplate,
+  AIDraftInput,
+  AIDraftResult,
 } from "./types";
 
 async function authHeaders(): Promise<HeadersInit> {
@@ -151,6 +154,46 @@ export async function deleteImage(id: string): Promise<{ ok: true }> {
   const res = await fetch(`/api/blog/images/${id}`, {
     method: "DELETE",
     headers: await authHeaders(),
+  });
+  return asJson(res);
+}
+
+// Templates
+export async function listTemplates(): Promise<{ templates: BlogTemplate[] }> {
+  const res = await fetch("/api/blog/templates", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function getTemplate(id: string): Promise<{ template: BlogTemplate }> {
+  const res = await fetch(`/api/blog/templates/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function createTemplate(input: { name: string; description?: string; body_html: string }): Promise<{ id: string }> {
+  const res = await fetch("/api/blog/templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+export async function updateTemplate(id: string, patch: Partial<{ name: string; description: string | null; body_html: string }>): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/templates/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+export async function deleteTemplate(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/templates/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+
+// AI draft
+export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResult> {
+  const res = await fetch("/api/blog/ai/draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
   });
   return asJson(res);
 }

@@ -8,7 +8,8 @@ export type BlogCostStage =
   | "blog_rewrite"
   | "blog_image_tag"
   | "blog_correction_distill"
-  | "blog_publish_browser";
+  | "blog_publish_browser"
+  | "blog_ai_draft";
 
 export interface BlogCostInput {
   stage: BlogCostStage;
