@@ -44,6 +44,7 @@ import DashboardOrders from "./pages/dashboard/Orders";
 import DashboardOrderNew from "./pages/dashboard/OrderNew";
 import DashboardOrderDetail from "./pages/dashboard/OrderDetail";
 import Onboard from "./pages/Onboard";
+import Review from "./pages/Review";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -68,6 +69,7 @@ const App = () => (
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
                 <Route path="/onboard/:token" element={<Onboard />} />
+                <Route path="/review/:token" element={<Review />} />
 
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
