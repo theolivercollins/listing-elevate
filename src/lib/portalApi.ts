@@ -19,6 +19,7 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type OrderStatus =
   | "awaiting_onboarding"
+  | "awaiting_delivery"
   | "awaiting_payment"
   | "paid"
   | "in_progress"
@@ -98,11 +99,6 @@ export interface OnboardOrderSummary {
     line_items: Array<{ description: string; amount_cents: number; quantity: number }>;
     status: OrderStatus;
   };
-  // Present if the customer already submitted their details and a payment is
-  // pending — frontend can jump straight to Payment Element instead of the
-  // form. Absent on first visit (status=awaiting_onboarding) or after the
-  // PaymentIntent has been used.
-  client_secret?: string | null;
   customer: {
     email: string;
     first_name: string;
@@ -137,7 +133,7 @@ export interface OnboardSubmitInput {
   address_country: string;
 }
 
-export async function submitOnboarding(token: string, input: OnboardSubmitInput): Promise<{ status: OrderStatus; client_secret: string }> {
+export async function submitOnboarding(token: string, input: OnboardSubmitInput): Promise<{ status: OrderStatus }> {
   const res = await fetch(`/api/portal/onboard/${token}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -150,6 +146,7 @@ export async function submitOnboarding(token: string, input: OnboardSubmitInput)
 export function formatStatus(status: OrderStatus): { label: string; tone: "neutral" | "accent" | "warning" | "success" | "destructive" } {
   switch (status) {
     case "awaiting_onboarding": return { label: "Awaiting client", tone: "warning" };
+    case "awaiting_delivery": return { label: "Awaiting delivery", tone: "accent" };
     case "awaiting_payment": return { label: "Invoice sent", tone: "warning" };
     case "paid": return { label: "Paid", tone: "accent" };
     case "in_progress": return { label: "In progress", tone: "accent" };

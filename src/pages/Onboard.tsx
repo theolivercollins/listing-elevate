@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
+import { useEffect, useRef, useState, type ReactNode, type InputHTMLAttributes } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2, Check, User, Phone, MapPin, Building2, Globe2, Hash, Mail } from "lucide-react";
 import { motion } from "framer-motion";
-import { loadStripe, type Stripe, type StripeElementsOptions } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { Button } from "@/components/ui/button";
 import {
   fetchOnboardingSummary,
@@ -13,21 +11,6 @@ import {
 } from "@/lib/portalApi";
 import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
 import { PoweredByRecasi } from "@/v2/components/PoweredByRecasi";
-
-// Singleton Stripe.js loader. Returns null if the publishable key isn't
-// configured — the embedded checkout view shows a clear error in that case.
-let stripeSingleton: Promise<Stripe | null> | null = null;
-function getStripePromise(): Promise<Stripe | null> {
-  if (stripeSingleton) return stripeSingleton;
-  const pk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
-  if (!pk) {
-    console.warn("[Onboard] VITE_STRIPE_PUBLISHABLE_KEY not set — embedded checkout disabled");
-    stripeSingleton = Promise.resolve(null);
-    return stripeSingleton;
-  }
-  stripeSingleton = loadStripe(pk);
-  return stripeSingleton;
-}
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -93,7 +76,6 @@ export default function Onboard() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [paymentComplete, setPaymentComplete] = useState(false);
 
   const addressInputRef = useRef<HTMLInputElement | null>(null);
@@ -116,19 +98,11 @@ export default function Onboard() {
         setState(s.customer.address_state ?? "");
         setPostal(s.customer.address_postal_code ?? "");
         setCountry(s.customer.address_country ?? "US");
-        // Resume / success: if the order is past awaiting_onboarding, the GET
-        // response carries either a client_secret (resume payment) or a
-        // status indicating it's already paid.
-        if (
-          s.order.status === "paid" ||
-          s.order.status === "in_progress" ||
-          s.order.status === "delivered" ||
-          s.order.status === "in_review" ||
-          s.order.status === "approved"
-        ) {
+        // Resume / success: if the order is past awaiting_onboarding, render
+        // the success view directly. Payment now happens later (after the
+        // client approves the deliverable on the review page).
+        if (s.order.status !== "awaiting_onboarding") {
           setPaymentComplete(true);
-        } else if (s.client_secret) {
-          setClientSecret(s.client_secret);
         }
       })
       .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err)); })
@@ -173,7 +147,7 @@ export default function Onboard() {
 
     setSubmitting(true);
     try {
-      const res = await submitOnboarding(token, {
+      await submitOnboarding(token, {
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         business_name: businessName.trim() || undefined,
@@ -185,7 +159,10 @@ export default function Onboard() {
         address_postal_code: postal.trim(),
         address_country: country.trim().toUpperCase(),
       });
-      setClientSecret(res.client_secret);
+      // Server returns { status: "awaiting_delivery" }. Transition straight
+      // to the success view — payment now happens on the review page after
+      // the client approves the deliverable.
+      setPaymentComplete(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -285,21 +262,6 @@ export default function Onboard() {
   }
 
   const ICON_CLS = "h-4 w-4";
-
-  // ─── Embedded Stripe Checkout view ───────────────────────────────────
-  // Mounted as soon as the API returns a client_secret. Stripe's iframe
-  // handles card / Apple Pay / Link inside our page. onComplete fires when
-  // the charge succeeds; redirect_on_completion='never' on the session keeps
-  // the user on our origin.
-  if (clientSecret) {
-    return (
-      <CheckoutView
-        clientSecret={clientSecret}
-        summary={summary}
-        onComplete={() => setPaymentComplete(true)}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background px-6 py-12 md:py-16">
@@ -509,185 +471,5 @@ export default function Onboard() {
         <PoweredByRecasi />
       </motion.div>
     </div>
-  );
-}
-
-// ─── CheckoutView ───────────────────────────────────────────────────────────
-// Renders Stripe's Payment Element under our editorial header + order summary.
-// Unlike Embedded Checkout (a full-page iframe of Stripe's hosted page), this
-// is just the card field + wallet buttons — all surrounding chrome is ours.
-function CheckoutView({
-  clientSecret,
-  summary,
-  onComplete,
-}: {
-  clientSecret: string;
-  summary: OnboardOrderSummary;
-  onComplete: () => void;
-}) {
-  const stripePromise = useMemo(() => getStripePromise(), []);
-
-  // Appearance config that matches LE design tokens (resolved to actual color
-  // values because the values live inside Stripe's iframe, which can't read
-  // our CSS variables). Sharp corners, Inter, monochrome — same language as
-  // the Field primitive above.
-  const options: StripeElementsOptions = useMemo(
-    () => ({
-      clientSecret,
-      appearance: {
-        theme: "flat",
-        variables: {
-          fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          fontSizeBase: "14px",
-          colorPrimary: "#171717",
-          colorBackground: "#ffffff",
-          colorText: "#171717",
-          colorTextSecondary: "#737373",
-          colorTextPlaceholder: "#a3a3a3",
-          colorDanger: "#dc2626",
-          borderRadius: "0px",
-          spacingUnit: "4px",
-          spacingGridRow: "16px",
-          spacingGridColumn: "16px",
-        },
-        rules: {
-          ".Input": {
-            backgroundColor: "#ffffff",
-            border: "1px solid #e5e5e5",
-            boxShadow: "none",
-            padding: "10px 12px",
-            transition: "border-color 150ms ease",
-          },
-          ".Input:focus": {
-            border: "1px solid #171717",
-            boxShadow: "0 0 0 2px rgba(23,23,23,0.12)",
-            outline: "none",
-          },
-          ".Input--invalid": {
-            border: "1px solid #dc2626",
-            boxShadow: "none",
-          },
-          ".Label": {
-            fontFamily: 'Inter, system-ui, sans-serif',
-            fontSize: "11px",
-            fontWeight: "500",
-            textTransform: "uppercase",
-            letterSpacing: "0.16em",
-            color: "#737373",
-            marginBottom: "8px",
-          },
-          ".Tab": {
-            border: "1px solid #e5e5e5",
-            boxShadow: "none",
-            backgroundColor: "#ffffff",
-          },
-          ".Tab--selected, .Tab--selected:hover": {
-            border: "1px solid #171717",
-            backgroundColor: "#171717",
-            color: "#ffffff",
-          },
-          ".Tab:hover": {
-            backgroundColor: "#fafafa",
-          },
-        },
-      },
-    }),
-    [clientSecret]
-  );
-
-  return (
-    <div className="min-h-screen bg-background px-6 py-12 md:py-16">
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: EASE }}
-        className="mx-auto max-w-2xl"
-      >
-        <div className="mb-10">
-          <span className="label text-muted-foreground">— Payment</span>
-          <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] md:text-4xl">Complete your order</h1>
-          <p className="mt-4 text-sm text-muted-foreground">
-            <strong className="text-foreground">${(summary.order.amount_cents / 100).toFixed(2)}</strong> for {summary.order.title}.
-          </p>
-        </div>
-
-        <Elements stripe={stripePromise} options={options}>
-          <PaymentForm summary={summary} onSuccess={onComplete} />
-        </Elements>
-
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Payment is processed by Stripe. We never see your card.
-        </p>
-
-        <PoweredByRecasi />
-      </motion.div>
-    </div>
-  );
-}
-
-// ─── PaymentForm ────────────────────────────────────────────────────────────
-// Sits inside <Elements> so it can call useStripe()/useElements(). Composes
-// Stripe's <PaymentElement> with our own submit button — same Button component
-// the rest of the app uses, so visually it's seamless.
-function PaymentForm({
-  summary,
-  onSuccess,
-}: {
-  summary: OnboardOrderSummary;
-  onSuccess: () => void;
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!stripe || !elements) return;
-    setSubmitting(true);
-    setError(null);
-    // `redirect: 'if_required'` keeps the user on our page unless Stripe
-    // needs a real redirect (e.g. 3DS challenge for some banks).
-    const { error: stripeErr, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      confirmParams: {
-        // Stripe requires return_url even when redirect:'if_required'. Used
-        // only if a real off-page step is needed.
-        return_url: window.location.href,
-      },
-      redirect: "if_required",
-    });
-    if (stripeErr) {
-      setError(stripeErr.message ?? "Payment failed.");
-      setSubmitting(false);
-      return;
-    }
-    if (paymentIntent && paymentIntent.status === "succeeded") {
-      onSuccess();
-      return;
-    }
-    if (paymentIntent && paymentIntent.status === "processing") {
-      // ACH or similar — payment is being processed. Treat as success-soon;
-      // the webhook will confirm the final state.
-      onSuccess();
-      return;
-    }
-    setError(`Unexpected payment state: ${paymentIntent?.status ?? "unknown"}`);
-    setSubmitting(false);
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="border border-border bg-background p-6 md:p-8">
-      <PaymentElement options={{ layout: "tabs" }} />
-      {error && (
-        <div className="mt-6 border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-      <Button type="submit" disabled={!stripe || submitting} className="mt-8 w-full">
-        {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        Pay ${(summary.order.amount_cents / 100).toFixed(2)}
-      </Button>
-    </form>
   );
 }
