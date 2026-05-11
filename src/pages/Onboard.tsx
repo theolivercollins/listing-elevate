@@ -269,8 +269,8 @@ export default function Onboard() {
               </a>
             </p>
             <p className="tabular mt-1 text-sm text-muted-foreground">
-              <a href="tel:+15551234567" className="hover:text-foreground">
-                +1 (555) 123-4567
+              <a href="tel:+19415850245" className="hover:text-foreground">
+                (941) 585-0245
               </a>
             </p>
           </div>
