@@ -14,6 +14,48 @@ See also:
 
 ## Right now
 
+**2026-05-10: Portal Phase 2 implementation landed on `feat/portal-deliverables` — pay-on-approval, deliverables, review page. 24 commits, tsc clean, 229/230 vitest pass (1 preexisting flake in MarketComparison.test.tsx, unrelated). NOT yet promoted: staging smoke required before `dev → staging → main`.**
+
+Spec: [`specs/2026-05-10-portal-deliverables-phase-2-design.md`](./specs/2026-05-10-portal-deliverables-phase-2-design.md). Plan: [`plans/2026-05-10-portal-deliverables-phase-2.md`](./plans/2026-05-10-portal-deliverables-phase-2.md). Style guide: [`DESIGN_STYLE.md`](./DESIGN_STYLE.md).
+
+**What shipped (commits `0b14488` … `ef7da91`):**
+
+- **Migration 050** — added `awaiting_delivery` to `portal_orders.status` CHECK, `approved_at` timestamp, `upload_status` on versions (pending/uploaded/failed) + index. Storage bucket `deliverables` created (private).
+- **State machine** — `lib/portal/state.ts` exports `computeNextOrderStatus(current, event)` as the single source of truth. 12 vitest cases cover every legal + illegal transition.
+- **Storage helpers** — `lib/portal/storage.ts` for signed upload / stream / download URLs + object path. Direct browser → Supabase uploads via signed URL (bypasses Vercel function body limits).
+- **Phase 1 surgery** — onboarding POST no longer creates a PaymentIntent; orders now flip to `awaiting_delivery` after billing details land. Frontend stripped of Payment Element / Elements / `loadStripe`. **Existing success-view copy preserved per Oliver's instruction** (still says "A receipt from Recasi Media is on its way…" — see Known issues below).
+- **Owner-side API** — `POST .../deliverables`, `POST .../versions` (returns signed upload URL), `POST .../versions/[vid]/finalize`, `DELETE .../deliverables/[did]`. All gated by new `requireOwner(req, supabase, orderId)` helper in `lib/portal/auth.ts`.
+- **Owner-side UI** — `OrderDetail` grew three tabs (Overview / Deliverables / Activity). Deliverables tab has an Add modal + per-card upload widget (XHR progress) + copy-review-link button. Activity tab pulls `portal_notifications` for the order.
+- **Review-page API** — `GET /api/portal/review/[token]` (data + auto delivered→in_review), per-version stream URL, comments GET+POST with revision_request state transition, **POST approve** (writes approval row, creates Stripe PaymentIntent with `metadata.flow='approve_pay'`, idempotency-keyed on `portal-approve-<order_id>`), status (for polling), download (302 to signed URL), magic-link sign-in.
+- **Review-page UI** — `/review/:token` route. Responsive hybrid layout: sidebar on ≥1024 px, theater stack on mobile. ReviewPlayer with video + timeline + comment dots + version selector. CommentsRail with optional "Pin to current moment" toggle. ActionBar: Request revision (modal with required note) / Approve & pay $X / Download (post-payment). SignInPanel (password OR magic link). PaymentPanel mounts Stripe Payment Element inline.
+- **Stripe webhook** — `payment_intent.succeeded` disambiguates on `metadata.flow`. `approve_pay` → flip `awaiting_payment` → `paid`, set `paid_at`, email client receipt with download link, notify owner. Legacy onboarding-flow path untouched (drains out).
+- **Notifications** — `lib/portal/notifications.ts` writes in-app rows and fires Resend templates. New email templates: `deliverable_ready_v1`, `deliverable_ready_vn`, `comment_added`, `revision_requested`, `approval_received`, `onboarding_completed_owner`, `payment_receipt`.
+
+**Tooling fix:** vitest pinned to `^3.2.4` — vitest 4 silently broke under vite 5 (`ERR_PACKAGE_PATH_NOT_EXPORTED`). Pinning restored the suite. Commit `757823a`.
+
+**Known issues — fix before promotion to staging:**
+
+1. **Download CTA breaks under bearer-token auth.** `api/portal/review/[token]/download.ts` requires `Authorization: Bearer <token>` in the request header. The in-page Download `<a href>` and the email-receipt CTA `${reviewUrl}/download` both navigate as plain GETs without the header — 401. Fix path: either (a) drop the bearer requirement and gate by token + `paid` status alone (token is the secret; safe), OR (b) have the Download button issue a `fetch()` with the bearer, read the 302 Location, then `window.location.href = url`. Recommend (a) for the email-link case — receipt CTAs must be plain hrefs.
+
+2. **Receipt email URL uses frontend path.** Email links `${reviewUrl}/download` which would resolve to the Vite frontend router — no route exists there. After fixing (1) the link should be `${baseUrl}/api/portal/review/<token>/download`.
+
+3. **Form copy on `Onboard.tsx` is now stale.** Submit button says "Continue to payment" and the form footer says "Payment is processed by Stripe. We never see your card." Per Oliver's instruction this copy was not changed — but it now lies about what submit does (submit now just records billing details and moves to `awaiting_delivery`). Worth touching up the button label and removing the Stripe footer line; the success-view copy remains intact.
+
+4. **Receipt copy in success view is now stale.** The post-onboarding success view still says "A receipt from Recasi Media is on its way to your inbox" but no receipt is generated at onboarding any more (the receipt fires after payment on the review page). Per Oliver's instruction, this copy was preserved as-is. Worth rewriting when Oliver is ready.
+
+5. **`stripe_payment_intent_id` is dead in `api/portal/onboard/[token].ts:45` SELECT.** No longer read in the file. Trivial cleanup.
+
+6. **Preexisting test flake:** `MarketComparison.test.tsx` (v2 landing component, unrelated to portal) fails on `expect(screen.getByText(/Sell faster/i)).toBeTruthy()`. Not introduced by Phase 2.
+
+7. **Vercel CLI is outdated** (50.18.2 → 53.3.2). Session-start hook flagged it. Upgrade: `npm i -g vercel@latest` or `pnpm add -g vercel@latest`.
+
+**Promotion path (when ready):**
+1. Manual staging smoke per Task 25 of the plan: create a new order in `dev` → onboard a test customer → upload a test mp4 → review page → comment + request revision → approve & pay with Stripe test card `4242…` → verify webhook flips order to `paid` → click Download (after fixing #1/#2 above).
+2. PR `feat/portal-deliverables → dev` (`git merge --no-ff`), then `dev → staging`, then `staging → main`.
+3. Append a one-line entry to "Recent shipping log" below at each promotion.
+
+---
+
 **2026-05-06 PM: judge calibration program PAUSED after 3 failed lever attempts. Cost-fix + harness improvements promoted; product focus shifts.** Full session notes: [`sessions/2026-05-06-judge-calibration-v1.4-pro.md`](./sessions/2026-05-06-judge-calibration-v1.4-pro.md) (AM) and [`sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md`](./sessions/2026-05-06-pm-judge-calibration-v1.5-fewshot.md) (PM).
 
 **Lever scoreboard (best Pearson achieved: +0.048; threshold to ship: +0.30):**
