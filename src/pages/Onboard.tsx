@@ -11,6 +11,7 @@ import {
   type OnboardOrderSummary,
 } from "@/lib/portalApi";
 import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
+import { PoweredByRecasi } from "@/v2/components/PoweredByRecasi";
 
 // Singleton Stripe.js loader. Returns null if the publishable key isn't
 // configured — the embedded checkout view shows a clear error in that case.
@@ -201,7 +202,7 @@ export default function Onboard() {
 
   if (loadError || !summary) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16">
         <div className="max-w-md border border-border bg-background p-12 text-center">
           <span className="label text-muted-foreground">— Link expired</span>
           <h1 className="mt-4 text-2xl font-semibold tracking-[-0.02em]">This link is no longer active</h1>
@@ -209,14 +210,17 @@ export default function Onboard() {
             {loadError ?? "Please reach out to whoever sent it for a fresh link."}
           </p>
         </div>
+        <div className="w-full max-w-md">
+          <PoweredByRecasi />
+        </div>
       </div>
     );
   }
 
-  // ─── Payment complete (set by EmbeddedCheckout's onComplete callback) ──
+  // ─── Payment complete (set by Payment Element's onSuccess callback) ───
   if (paymentComplete) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-6">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
@@ -230,10 +234,15 @@ export default function Onboard() {
           <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Thanks {summary.customer.first_name}!</h1>
           <p className="mt-4 text-sm text-muted-foreground">
             Your payment for <strong className="text-foreground">{summary.order.title}</strong> went through.
-            We'll get to work and email you when the deliverable is ready.
+            We'll get started right away and email you when the deliverable is ready for review.
           </p>
-          <p className="mt-6 text-xs text-muted-foreground">A Stripe receipt will arrive at {summary.customer.email}.</p>
+          <p className="mt-6 text-xs text-muted-foreground">
+            A receipt from <span className="text-foreground">Recasi Media</span> is on its way to {summary.customer.email}.
+          </p>
         </motion.div>
+        <div className="w-full max-w-md">
+          <PoweredByRecasi />
+        </div>
       </div>
     );
   }
@@ -459,6 +468,8 @@ export default function Onboard() {
             </Button>
           </div>
         </form>
+
+        <PoweredByRecasi />
       </motion.div>
     </div>
   );
@@ -570,6 +581,8 @@ function CheckoutView({
         <p className="mt-6 text-center text-xs text-muted-foreground">
           Payment is processed by Stripe. We never see your card.
         </p>
+
+        <PoweredByRecasi />
       </motion.div>
     </div>
   );
