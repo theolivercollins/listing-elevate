@@ -1,12 +1,12 @@
 # Client Portal — Phase 2: Deliverables, Review, Pay-on-Approval
 
 Date: 2026-05-10
-Branch: `feat/portal-deliverables` (continues from Phase 1 work merged through commit `0e3b5d0`)
+Branch: `feat/portal-deliverables` (continues from Phase 1 work through commit `a11e520`)
 Status: design — implementation plan to follow
 
 ## 1. Summary
 
-Phase 1 shipped the front half of the portal: owner creates an order, client onboards (provides billing details), Stripe invoice is issued during onboarding, client pays. Phase 2 builds out the back half — owner uploads deliverables, client reviews them, comments at timestamps, requests revisions, and approves — **and inverts the payment timing**: payment now happens **after** approval, not before delivery.
+Phase 1 shipped the front half of the portal: owner creates an order, client lands on a tokenized link, fills onboarding (billing details), **pays inline via Stripe's embedded Payment Element** (PaymentIntent + `client_secret`), webhook flips the order to `paid`. Phase 2 builds out the back half — owner uploads deliverables, client reviews them, comments at timestamps, requests revisions, and approves — **and inverts the payment timing**: payment now happens **after** approval, not before delivery. The Payment Element mechanism stays the same; it just renders on the review page after Approve, not during onboarding.
 
 The phase delivers a complete client experience: from onboarding through pay-on-approval download.
 
@@ -17,7 +17,7 @@ The phase delivers a complete client experience: from onboarding through pay-on-
 - Owner uploads deliverables (v1, v2, …) to an order via a new **Deliverables** tab on `OrderDetail`.
 - Client reviews at `/review/<token>` with a responsive layout (sidebar on desktop ≥1024px, theater stack on mobile/tablet).
 - Client can **Comment** (with optional timestamp pin), **Request revision** (with required note), or **Approve**.
-- Approve = pay: clicking Approve creates a Stripe Checkout Session and opens checkout. Successful payment unlocks download.
+- Approve = pay: clicking Approve creates a Stripe PaymentIntent and reveals an inline Payment Element below the action bar (same UX pattern Phase 1 uses on the onboarding page). Successful payment unlocks download.
 - Standard Supabase session auth gates client actions (password OR magic link, returning users skip).
 - Notifications fire to owner (in-app + email) and client (email) per the matrix in §8.
 - Phase 1 rewrite: onboarding stops creating the Stripe invoice; the post-onboarding email becomes a "we'll deliver shortly" confirmation.
@@ -48,9 +48,9 @@ The phase delivers a complete client experience: from onboarding through pay-on-
 ### Client approve path
 
 1. Clicks email link → `/review/<token>`. If no Supabase session, sees the video poster but the action bar is replaced by sign-in (password OR magic link to the email on file).
-2. Signed in. Watches video. Clicks **Approve & pay $X** → Stripe Checkout opens.
-3. On Checkout success: webhook flips order `awaiting_payment` → `paid`. Client receives email receipt with a fresh download link. Action bar replaced by **Download**.
-4. Owner gets in-app + email notification of payment.
+2. Signed in. Watches video. Clicks **Approve & pay $X**. Server flips the order `in_review` → `approved` → `awaiting_payment`, creates a Stripe PaymentIntent (metadata `flow='approve_pay'`), and returns its `client_secret`.
+3. Review page mounts Stripe's Payment Element inline below the action bar (same component Phase 1 uses on onboarding). Client confirms payment.
+4. `payment_intent.succeeded` webhook fires: order flips `awaiting_payment` → `paid`, client gets email receipt with a fresh download link, owner gets in-app + email notification. Review page polls the order status and swaps the action bar for a **Download** button.
 
 ### Revision loop
 
@@ -87,12 +87,12 @@ awaiting_onboarding ─[client submits onboarding]→ awaiting_delivery
                                        ▼
                                    approved
                                        │
-                              [Checkout session created]
+                            [PaymentIntent created]
                                        │
                                        ▼
                               awaiting_payment
                                        │
-                              [Stripe webhook: paid]
+                          [payment_intent.succeeded]
                                        │
                                        ▼
                                      paid (= released, downloadable)
@@ -104,15 +104,16 @@ awaiting_onboarding ─[client submits onboarding]→ awaiting_delivery
 
 ## 5. Data model
 
-Migration 047 already defines `portal_customers`, `portal_orders`, `portal_deliverables`, `portal_deliverable_versions`, `portal_comments`, `portal_notifications` with RLS. Phase 2 needs a small follow-up:
+Migration 047 created `portal_customers`, `portal_orders`, `portal_deliverables`, `portal_deliverable_versions`, `portal_comments`, `portal_notifications` with RLS. Migration 049 added `portal_orders.stripe_payment_intent_id`. Phase 2 adds one small follow-up:
 
-### Migration 048 — state machine + payment intent
+### Migration 050 — state machine + approval timestamp + upload lifecycle
 
 ```sql
--- 048_portal_pay_on_approval.sql
+-- 050_portal_pay_on_approval.sql
 BEGIN;
 
--- 1. Extend portal_orders.status CHECK with awaiting_delivery
+-- 1. Extend portal_orders.status CHECK with awaiting_delivery (new state between
+--    onboarding completion and first upload — empty in Phase 1, populated in Phase 2).
 ALTER TABLE portal_orders DROP CONSTRAINT IF EXISTS portal_orders_status_check;
 ALTER TABLE portal_orders ADD CONSTRAINT portal_orders_status_check
   CHECK (status IN (
@@ -121,18 +122,17 @@ ALTER TABLE portal_orders ADD CONSTRAINT portal_orders_status_check
     'delivered',
     'in_review',
     'revision_requested',
-    'approved',              -- approved, checkout session not yet created
-    'awaiting_payment',      -- checkout session created, awaiting Stripe webhook
+    'approved',              -- client clicked approve; PaymentIntent created
+    'awaiting_payment',      -- PaymentIntent created, awaiting payment_intent.succeeded
     'paid',                  -- terminal: download unlocked
     'canceled',
     -- Legacy values retained for any pre-existing rows; not used by new code paths.
     'in_progress'
   ));
 
--- 2. Persist the Stripe Checkout Session for the approve-and-pay flow.
---    Distinct from stripe_invoice_id (Phase 1 will stop populating that for new orders).
+-- 2. Record when the client clicked Approve (distinct from paid_at which the
+--    webhook stamps).
 ALTER TABLE portal_orders
-  ADD COLUMN IF NOT EXISTS stripe_checkout_session_id TEXT UNIQUE,
   ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
 
 -- 3. Track upload lifecycle on versions so we can distinguish a row that has a
@@ -147,7 +147,9 @@ CREATE INDEX IF NOT EXISTS portal_versions_upload_status_idx
 COMMIT;
 ```
 
-`stripe_invoice_id` / `stripe_invoice_url` remain on `portal_orders` but are no longer populated for new orders. Existing Phase-1 orders that still reference an invoice keep working; the webhook handles both paths.
+`stripe_payment_intent_id` is reused for the Phase 2 approve-pay PaymentIntent. (Phase 1's onboarding flow currently writes a PaymentIntent to this column; under Phase 2 the onboarding endpoint stops doing that — see §7 — and the column is only populated when the client approves.)
+
+`stripe_invoice_id` / `stripe_invoice_url` are unused by current Phase 1 (the invoice path was replaced by embedded Payment Element). They stay on the table for legacy data only.
 
 ### Storage bucket
 
@@ -192,14 +194,19 @@ All endpoints under `api/portal/`. Errors return JSON `{ error: string }` with a
 | GET | `/api/portal/review/:token` | public (token) | `{ deliverable, versions, latest_version, stream_url, comments, order_status, price_cents }` |
 | GET | `/api/portal/review/:token/versions/:vid/stream` | public (token) | `{ stream_url }` (5-min TTL) |
 | POST | `/api/portal/review/:token/comments` | session required, user must match `portal_customers.user_id` or be order owner | `{ comment_id }`. Body: `{ body, video_timestamp_seconds?, kind: 'comment' \| 'revision_request' }`. `revision_request` flips order to `revision_requested`. |
-| POST | `/api/portal/review/:token/approve` | session required, must be customer user | Creates `kind='approval'` row, sets `approved_at`, flips order `→ approved`, creates Stripe Checkout Session, flips order `→ awaiting_payment`, returns `{ checkout_url }`. |
+| POST | `/api/portal/review/:token/approve` | session required, must be customer user | Creates `kind='approval'` row, sets `approved_at`, flips order `→ approved`, creates Stripe PaymentIntent (metadata `flow='approve_pay', portal_order_id=<id>`), flips order `→ awaiting_payment`, returns `{ client_secret }`. Idempotency-keyed on `portal-approve-<order_id>` so retries return the existing PaymentIntent's `client_secret`. |
+| GET | `/api/portal/review/:token/status` | session required | Returns `{ order_status }`. Used by the review page to poll after Payment Element confirms, so the UI knows when the webhook has flipped the order to `paid`. |
 | GET | `/api/portal/review/:token/download` | session required, order must be `paid` | 302 to a fresh 1-hour signed download URL. |
 | POST | `/api/portal/review/:token/sign-in/magic-link` | public (token) | Sends Supabase OTP to the email on `portal_customers`. |
 
 ### Phase 1 endpoints — required edits
 
-- **`api/portal/onboard/[token].ts`:** stop creating Stripe Invoice + invoice items. Still create Stripe Customer (saves the payment method for later Checkout). After saving billing details, flip order from `awaiting_onboarding` → `awaiting_delivery`. The follow-up email becomes "Thanks — we'll deliver shortly" (template change in `lib/portal/email.ts`).
-- **`api/portal/stripe-webhook.ts`:** add handling for `checkout.session.completed`. On match (by `stripe_checkout_session_id`), flip order to `paid`, set `paid_at`, fire `order_paid` notification, send the receipt + download-link email to the client. Existing `invoice.paid` handler stays for backward compatibility with legacy orders.
+- **`api/portal/onboard/[token].ts`:**
+  - POST handler: keep step 1 (create/reuse Stripe Customer) and step 2 (persist billing details + `onboarded_at`). **Delete step 3** (PaymentIntent creation). After billing is saved, set `portal_orders.status = 'awaiting_delivery'`. Return `{ status: 'awaiting_delivery' }` instead of `{ client_secret }`.
+  - GET handler: remove the "resume PaymentIntent" branch — there is no payment to resume during onboarding any more. The endpoint just hydrates the form. The token stays alive until terminal state, same as today.
+  - Frontend (`src/pages/Onboard.tsx`): drop the Payment Element mount branch on the onboarding page. After submit, show a "Thanks — we'll send your video for review shortly" confirmation. Returning to the link in `awaiting_delivery` shows the same confirmation (idempotent).
+- **`api/portal/stripe-webhook.ts`:** existing `payment_intent.succeeded` handler already keys off `metadata.portal_order_id` — keep it. Disambiguate by reading `metadata.flow`: `'approve_pay'` → Phase 2 path (flip to `paid`, email receipt with review-page link, owner notification). Anything else → log + ignore for new orders. (Old onboarding-flow PaymentIntents in flight at deploy time finish via the same handler since they share metadata shape.)
+- **`lib/portal/email.ts`:** add three new templates — `deliverable_ready_v1` ("Your video is ready to review"), `deliverable_ready_vn` ("New version uploaded for review"), `payment_receipt` (sent on `paid`, includes review-page link). Update the existing post-onboarding email to a "we'll deliver shortly" confirmation.
 
 ## 8. UI surface
 
@@ -232,8 +239,9 @@ Components:
 - **Version selector** — mono `v1 v2 v3` chip row, current version highlighted by an ink underline.
 - **Comments rail** — each comment renders as: mono `MM:SS` (only if pinned) → sans body 14px → mono author + relative time, faint. 1px hairline between rows. Compose box at the bottom is an underline-input textarea + `Pin to current moment` toggle (mono micro-label) + `Post`.
 - **Action bar** — `Request revision` (secondary, transparent + 1px border) and `Approve & pay $X` (primary, ink fill, square corners). Always operates on the latest `uploaded` version; a `pending` (still-uploading) version is invisible to the client.
+- **Approve-and-pay state** — after clicking `Approve & pay`, the action bar is replaced by an inline Payment Element panel (mounted with the `client_secret` returned by the approve endpoint). Cancel link below reverts to the action bar without consuming the PaymentIntent. The same Stripe component already used on the onboarding page; reuse the wrapper from `src/pages/Onboard.tsx` rather than re-implementing.
 - **Auth-gated state** — when unauthenticated, the action bar and compose box are replaced by a hairline-divided sign-in panel with `email` underline input + two buttons: `Continue with password` and `Email me a magic link`. Email is pre-filled from `portal_customers`.
-- **Post-payment state** — action bar replaced by a single `Download` button. The video keeps playing the same source (no chrome change beyond the action bar swap).
+- **Post-payment state** — action bar replaced by a single `Download` button. The video keeps playing the same source (no chrome change beyond the action bar swap). The review page polls `GET .../status` for up to 30s after Payment Element confirms, in case the webhook takes a moment.
 
 ## 9. Notifications
 
@@ -277,9 +285,9 @@ Supabase is shared across dev/staging/main. Storage writes from non-prod environ
 
 ## 12. Migrations checklist
 
-1. `048_portal_pay_on_approval.sql` — state machine + checkout session id + version upload_status (§5).
+1. `050_portal_pay_on_approval.sql` — state machine extension (`awaiting_delivery`) + `approved_at` + `upload_status` on versions (§5). (Migrations 048 + 049 already shipped in Phase 1.)
 2. Create `deliverables` storage bucket via Supabase MCP (`storage.buckets` insert + RLS-bypassed via service-role on server).
-3. No data backfill required — Phase 1 has shipped onboarding only; no orders exist past `awaiting_payment` in prod that would need state remapping.
+3. No data backfill required — Phase 1 orders are either `awaiting_onboarding`, `awaiting_payment`, or `paid`. The Phase 2 onboarding-endpoint edit means new orders never enter `awaiting_payment` via onboarding; in-flight orders at deploy time finish through the existing PaymentIntent handler.
 
 ## 13. Out-of-scope guardrails
 
@@ -296,6 +304,6 @@ The implementation plan must reject scope creep on these specific items unless e
 - `CLAUDE.md` — session-start brief, governance, cost-tracking convention.
 - `docs/HANDOFF.md` — Phase 1 completion state.
 - `supabase/migrations/047_portal_deliverables.sql` — base schema this phase extends.
-- `DESIGN_STYLE.md` (in `~/Downloads/`, to be moved into the repo at `docs/DESIGN_STYLE.md` before implementation begins) — visual language.
+- `docs/DESIGN_STYLE.md` — visual language (binding for every UI component built in this phase).
 - `api/portal/onboard/[token].ts`, `api/portal/stripe-webhook.ts` — Phase 1 endpoints to be edited.
 - `src/pages/dashboard/OrderDetail.tsx`, `src/pages/Onboard.tsx`, `src/lib/portalApi.ts` — Phase 1 surfaces this phase extends.
