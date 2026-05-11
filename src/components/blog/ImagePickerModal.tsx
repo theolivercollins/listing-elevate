@@ -48,11 +48,23 @@ export function ImagePickerModal({ open, onClose, onSelect }: Props) {
               ))}
             </div>
             {loading ? <div>Loading…</div> : (
-              <div className="grid max-h-[60vh] grid-cols-4 gap-3 overflow-y-auto">
+              <div className="grid max-h-[60vh] grid-cols-3 gap-3 overflow-y-auto p-1">
                 {images.map(img => (
-                  <button key={img.id} type="button" onClick={() => { onSelect(img); onClose(); }} className="overflow-hidden rounded-md border hover:ring-2 hover:ring-primary">
-                    <img src={img.blob_url} alt={img.vision_caption ?? ""} className="aspect-[4/3] w-full object-cover" />
-                    <div className="truncate p-1 text-left text-xs">{img.vision_caption ?? "—"}</div>
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => { onSelect(img); onClose(); }}
+                    className="group flex flex-col overflow-hidden rounded-md border bg-card text-left hover:ring-2 hover:ring-primary"
+                  >
+                    <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
+                      <img
+                        src={img.blob_url}
+                        alt={img.vision_caption ?? ""}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="truncate p-2 text-xs">{img.vision_caption ?? "—"}</div>
                   </button>
                 ))}
               </div>
