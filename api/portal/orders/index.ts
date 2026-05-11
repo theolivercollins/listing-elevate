@@ -6,7 +6,7 @@ import { getPortalBaseUrl } from "../../../lib/portal/stripe.js";
 import { sendEmail, emailShell } from "../../../lib/portal/email.js";
 
 const ORDER_SELECT =
-  "id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_invoice_id, stripe_invoice_url, paid_at, created_at, updated_at";
+  "id, order_number, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_invoice_id, stripe_invoice_url, paid_at, created_at, updated_at";
 
 interface LineItem {
   description: string;

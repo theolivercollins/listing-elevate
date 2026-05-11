@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: order, error: ordErr } = await supabase
     .from("portal_orders")
     .select(
-      "id, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_payment_intent_id"
+      "id, order_number, owner_id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_payment_intent_id"
     )
     .eq("onboarding_token", token)
     .maybeSingle();
@@ -84,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({
       order: {
         id: order.id,
+        order_number: order.order_number,
         title: order.title,
         description: order.description,
         amount_cents: order.amount_cents,
@@ -194,19 +195,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       // 3. Create a PaymentIntent. Returns a client_secret we hand to the
-      // frontend to mount Stripe's Payment Element (just the card field +
-      // wallet buttons, no full-page checkout iframe). The actual Stripe
-      // invoice gets auto-created in the webhook after payment succeeds —
-      // see api/portal/stripe-webhook.ts.
+      // frontend to mount Stripe's Payment Element. The `description` is
+      // prefixed with our REC-XXXX order number so the Stripe-generated
+      // receipt email + the customer's bank statement line item both show
+      // the same number the customer sees on our success page.
+      const orderRef = `REC-${String(order.order_number).padStart(4, "0")}`;
       paymentIntent = await stripe.paymentIntents.create(
         {
           amount: order.amount_cents,
           currency: order.currency,
           customer: stripe_customer_id,
-          description: order.description || order.title,
+          description: `${orderRef} — ${order.title}`,
           automatic_payment_methods: { enabled: true },
           metadata: {
             portal_order_id: order.id,
+            order_number: String(order.order_number),
+            order_ref: orderRef,
             owner_id: order.owner_id,
             portal_customer_id: customer.id,
           },

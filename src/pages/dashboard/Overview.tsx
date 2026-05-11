@@ -16,7 +16,7 @@ import { formatCents, formatDuration, getRelativeTime } from "@/lib/types";
 import type { Property, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
 import type { CostBreakdown, CostBreakdownRow } from "@/lib/api";
-import { listOrders, formatStatus, type PortalOrder } from "@/lib/portalApi";
+import { listOrders, formatStatus, formatOrderNumber, type PortalOrder } from "@/lib/portalApi";
 import { motion } from "framer-motion";
 import "@/v2/styles/v2.css";
 
@@ -314,7 +314,10 @@ const Overview = () => {
                     {/* Mobile: stacked card layout */}
                     <div className="md:contents">
                       <div className="flex items-start justify-between gap-3 md:contents">
-                        <span className="truncate text-sm font-medium">{o.title}</span>
+                        <span className="min-w-0 truncate text-sm font-medium">
+                          <span className="tabular mr-2 text-xs text-muted-foreground">{formatOrderNumber(o.order_number)}</span>
+                          {o.title}
+                        </span>
                         <span className="tabular shrink-0 text-sm font-semibold md:text-right">
                           ${(o.amount_cents / 100).toFixed(2)}
                         </span>

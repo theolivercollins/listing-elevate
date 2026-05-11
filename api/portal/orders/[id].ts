@@ -4,7 +4,7 @@ import { getSupabase } from "../../../lib/db.js";
 import { getPortalBaseUrl } from "../../../lib/portal/stripe.js";
 
 const ORDER_SELECT =
-  "id, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_invoice_id, stripe_invoice_url, paid_at, canceled_at, created_at, updated_at";
+  "id, order_number, customer_id, title, description, amount_cents, currency, line_items, status, onboarding_token, stripe_invoice_id, stripe_invoice_url, paid_at, canceled_at, created_at, updated_at";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAuth(req, res);

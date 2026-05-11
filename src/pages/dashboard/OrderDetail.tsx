@@ -3,7 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Copy, ExternalLink, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { getOrder, formatStatus, type PortalOrder } from "@/lib/portalApi";
+import { getOrder, formatStatus, formatOrderNumber, type PortalOrder } from "@/lib/portalApi";
 import { getRelativeTime } from "@/lib/types";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -73,7 +73,7 @@ export default function OrderDetail() {
         </Link>
         <div className="mt-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 flex-1">
-            <span className="label text-muted-foreground">— Order</span>
+            <span className="label text-muted-foreground">— Order {formatOrderNumber(order.order_number)}</span>
             <h2 className="mt-3 break-words text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{order.title}</h2>
             {order.description && <p className="mt-3 text-sm text-muted-foreground">{order.description}</p>}
           </div>

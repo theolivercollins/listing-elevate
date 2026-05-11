@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   fetchOnboardingSummary,
   submitOnboarding,
+  formatOrderNumber,
   type OnboardOrderSummary,
 } from "@/lib/portalApi";
 import { loadGoogleMaps, parsePlaceToAddress } from "@/lib/googleMaps";
@@ -219,9 +220,10 @@ export default function Onboard() {
 
   // ─── Payment complete (set by Payment Element's onSuccess callback) ───
   if (paymentComplete) {
-    // Order # = first 8 chars of UUID — short, scannable, still unique enough
-    // for the customer to reference in a support email.
-    const orderNumber = summary.order.id.slice(0, 8).toUpperCase();
+    // Order # = REC-XXXX formatted from the sequential portal_orders.order_number.
+    // Same string is in the PaymentIntent description, so the Stripe-generated
+    // receipt the customer gets in their inbox shows the same value.
+    const orderNumber = formatOrderNumber(summary.order.order_number);
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16">
         <motion.div

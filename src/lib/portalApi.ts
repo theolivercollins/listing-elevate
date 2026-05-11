@@ -28,8 +28,19 @@ export type OrderStatus =
   | "approved"
   | "canceled";
 
+/**
+ * Format a portal order number for display. Matches the string we attach
+ * to Stripe PaymentIntent descriptions so the customer sees the same value
+ * on the success page, in their Stripe receipt email, and in any support
+ * conversation.
+ */
+export function formatOrderNumber(n: number): string {
+  return `REC-${String(n).padStart(4, "0")}`;
+}
+
 export interface PortalOrder {
   id: string;
+  order_number: number;
   customer_id: string;
   title: string;
   description: string | null;
@@ -79,6 +90,7 @@ export async function getOrder(id: string): Promise<{ order: PortalOrder; onboar
 export interface OnboardOrderSummary {
   order: {
     id: string;
+    order_number: number;
     title: string;
     description: string | null;
     amount_cents: number;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, Plus, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
-import { listOrders, formatStatus, type PortalOrder } from "@/lib/portalApi";
+import { listOrders, formatStatus, formatOrderNumber, type PortalOrder } from "@/lib/portalApi";
 import { getRelativeTime } from "@/lib/types";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -88,7 +88,10 @@ export default function DashboardOrders() {
                 className="block border-b border-border py-5 transition-colors hover:bg-secondary/40 md:grid md:grid-cols-[2.5fr_1.6fr_1fr_1.4fr_1fr] md:items-center md:gap-6"
               >
                 <div className="flex items-start justify-between gap-3 md:contents">
-                  <span className="truncate text-sm font-medium">{o.title}</span>
+                  <span className="min-w-0 truncate text-sm font-medium">
+                    <span className="tabular mr-2 text-xs text-muted-foreground">{formatOrderNumber(o.order_number)}</span>
+                    {o.title}
+                  </span>
                   <span className="tabular shrink-0 text-sm font-semibold md:text-right">
                     ${(o.amount_cents / 100).toFixed(2)}
                   </span>
