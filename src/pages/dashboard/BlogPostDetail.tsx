@@ -111,14 +111,33 @@ export default function BlogPostDetailPage() {
   });
   const taxonomy = taxonomyData ?? { authors: [], categories: [] };
 
-  // Prefill from ?template=ID
+  // Prefill from ?template=ID; full sidebar fill including defaults.
   useEffect(() => {
     const tplId = searchParams.get("template");
     if (!tplId || !isCompose) return;
     getTemplate(tplId).then(({ template }) => {
-      setForm(f => ({ ...f, body_html: template.body_html, title: f.title || template.name }));
+      setForm(f => ({
+        ...f,
+        body_html: template.body_html,
+        title: f.title || template.name,
+        author_label: template.default_author_label ?? f.author_label,
+        category_label: template.default_category_label ?? f.category_label,
+        meta_title: template.default_meta_title ?? f.meta_title,
+        meta_description: template.default_meta_description ?? f.meta_description,
+        meta_tags: template.default_meta_tags && template.default_meta_tags.length
+          ? template.default_meta_tags.join(", ")
+          : f.meta_tags,
+      }));
       setEditorMode("source");
     });
+  }, [searchParams, isCompose]);
+
+  // Auto-open the AI modal when /posts/new?ai=1
+  useEffect(() => {
+    if (!isCompose) return;
+    if (searchParams.get("ai") === "1") {
+      setAIOpen(true);
+    }
   }, [searchParams, isCompose]);
 
   // AI generation mutation
