@@ -5,7 +5,7 @@
 
 export function PoweredByRecasi() {
   return (
-    <div className="mt-16 flex flex-col items-center gap-3 border-t border-border pt-8">
+    <div className="mt-16 flex items-center justify-center gap-4 border-t border-border pt-8">
       <span
         className="label text-muted-foreground"
         style={{
@@ -26,7 +26,7 @@ export function PoweredByRecasi() {
         <img
           src="/recasi-logo.png"
           alt="recasi tech & media"
-          className="h-8 w-auto md:h-10"
+          className="h-[42px] w-auto md:h-[52px]"
           style={{ display: "block" }}
         />
       </a>
