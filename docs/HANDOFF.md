@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-10
+Last updated: 2026-05-11
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,26 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-11: Blog editor fix + templates + AI generation on `feat/blog-templates-ai`.** Spec at [`specs/2026-05-11-blog-templates-ai-design.md`](./specs/2026-05-11-blog-templates-ai-design.md), plan at [`plans/2026-05-11-blog-templates-ai-plan.md`](./plans/2026-05-11-blog-templates-ai-plan.md).
+
+Three pieces shipped together:
+
+1. **PostEditor — Source-mode toggle.** New `{ }` button on the toolbar flips between Tiptap WYSIWYG and a raw HTML textarea over the same `body_html` state. Round-trippable. Also added Tiptap underline + text-align + table extensions (with toolbar buttons including a 3×3 table insert) and bumped the editor min-height to 500px. Posts created from a template or from AI default to Source mode so you see exactly the HTML that landed.
+
+2. **Templates.** New `/dashboard/blog/templates` page lists named HTML templates with sandboxed-iframe previews. "+ New template" form supports paste HTML or **Upload .html file** (≤1MB). On the compose page, a `Start from template…` dropdown appears at the top — picking one pre-fills the body and flips to Source mode. Migration 051 adds the `blog_templates` table (`id, site_id, name, description, body_html, active, metadata`) + a partial index on `(site_id, active=true)`.
+
+3. **AI generation (Claude Sonnet 4.6).** "**✨ Generate with AI**" button next to the template picker. Modal asks for an optional template + prompt + length (short/standard/long) + tone (professional/casual/data-driven) → calls `POST /api/blog/ai/draft` → Anthropic SDK with a brand-voice system prompt (Helgemo Team / Punta Gorda / soft CTA at end) → returns clean HTML with `<script>`/`<iframe>`/`<style>`/event-handlers stripped server-side. Side-by-side preview before Accept. Cost ~$0.015–0.025 per draft, written to `cost_events` (stage `blog_ai_draft`, provider `anthropic`).
+
+**TopNav "Blog" dropdown** now has 3 items: Posts · Image library · **Templates**.
+
+**Required env:** `ANTHROPIC_API_KEY` must be set in Vercel (all 3 tiers) — confirmed live by Oliver before this push.
+
+**Open follow-up before merging to main:** apply migration 051 via Supabase MCP or dashboard SQL editor. Non-breaking (additive only); UI without it shows an empty templates list and the AI flow still works since templates are optional.
+
+**Phase recap to date:** Phase 1 (Sierra publish), Phase 2 (image library + auto-match), Phase 5 (portal UI), Phase 5b (editor + templates + AI). Phase 3 (daily auto-research) and Phase 4 (cron-driven Claude drafting) deferred — the manual "Generate with AI" button covers ~80% of Phase 4's user value already.
+
+---
 
 **2026-05-10: Blog Engine Phase 5 portal UI shipped on `feat/blog-phase-5`.** Spec at [`specs/2026-05-10-blog-engine-phase-5-design.md`](./specs/2026-05-10-blog-engine-phase-5-design.md), plan at [`plans/2026-05-10-blog-engine-phase-5-plan.md`](./plans/2026-05-10-blog-engine-phase-5-plan.md).
 

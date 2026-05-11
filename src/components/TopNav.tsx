@@ -29,6 +29,7 @@ import {
   Activity,
   Image as ImageIcon,
   Newspaper,
+  LayoutTemplate,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -122,6 +123,11 @@ function BlogNav() {
         <DropdownMenuItem asChild>
           <Link to="/dashboard/blog/images" className="cursor-pointer">
             <ImageIcon className="mr-2 h-3.5 w-3.5" /> Image library
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/dashboard/blog/templates" className="cursor-pointer">
+            <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Templates
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

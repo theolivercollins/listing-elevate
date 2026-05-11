@@ -79,3 +79,29 @@ export interface UpdatePostInput {
   image_id?: string | null;
   publish_at?: string | null;
 }
+
+export interface BlogTemplate {
+  id: string;
+  site_id: string | null;
+  name: string;
+  description: string | null;
+  body_html: string;
+  active: boolean;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIDraftInput {
+  prompt: string;
+  template_id?: string | null;
+  length: "short" | "standard" | "long";
+  tone: "professional" | "casual" | "data_driven";
+}
+
+export interface AIDraftResult {
+  html: string;
+  cost_cents: number;
+  model: string;
+  usage: { input_tokens: number; output_tokens: number };
+}
