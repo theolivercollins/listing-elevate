@@ -219,26 +219,61 @@ export default function Onboard() {
 
   // ─── Payment complete (set by Payment Element's onSuccess callback) ───
   if (paymentComplete) {
+    // Order # = first 8 chars of UUID — short, scannable, still unique enough
+    // for the customer to reference in a support email.
+    const orderNumber = summary.order.id.slice(0, 8).toUpperCase();
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-6 py-16">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: EASE }}
-          className="max-w-md border border-border bg-background p-12 text-center"
+          className="w-full max-w-md border border-border bg-background p-10"
         >
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-foreground bg-foreground text-background">
             <Check className="h-5 w-5" />
           </div>
-          <span className="label mt-6 block text-muted-foreground">— Payment received</span>
-          <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Thanks {summary.customer.first_name}!</h1>
-          <p className="mt-4 text-sm text-muted-foreground">
-            Your payment for <strong className="text-foreground">{summary.order.title}</strong> went through.
-            We'll get started right away and email you when the deliverable is ready for review.
-          </p>
-          <p className="mt-6 text-xs text-muted-foreground">
+          <div className="mt-6 text-center">
+            <span className="label block text-muted-foreground">— Payment received</span>
+            <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Thanks {summary.customer.first_name}!</h1>
+          </div>
+
+          {/* Receipt-style detail block */}
+          <dl className="mt-8 space-y-3 border-t border-border pt-6 text-sm">
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="label text-muted-foreground">Order #</dt>
+              <dd className="tabular font-medium">{orderNumber}</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4">
+              <dt className="label text-muted-foreground">Item</dt>
+              <dd className="text-right font-medium">{summary.order.title}</dd>
+            </div>
+            <div className="flex items-baseline justify-between gap-4 border-t border-border pt-3">
+              <dt className="label text-muted-foreground">Total paid</dt>
+              <dd className="tabular text-lg font-semibold tracking-[-0.01em]">
+                ${(summary.order.amount_cents / 100).toFixed(2)}
+              </dd>
+            </div>
+          </dl>
+
+          <p className="mt-6 border-t border-border pt-6 text-xs text-muted-foreground">
             A receipt from <span className="text-foreground">Recasi Media</span> is on its way to {summary.customer.email}.
           </p>
+
+          {/* Support block */}
+          <div className="mt-6 border-t border-border pt-6 text-center">
+            <span className="label block text-muted-foreground">— Need help?</span>
+            <p className="mt-3 text-sm">
+              <a href="mailto:oliver@recasi.com" className="font-medium text-foreground hover:opacity-70">
+                oliver@recasi.com
+              </a>
+            </p>
+            <p className="tabular mt-1 text-sm text-muted-foreground">
+              <a href="tel:+15551234567" className="hover:text-foreground">
+                +1 (555) 123-4567
+              </a>
+            </p>
+          </div>
         </motion.div>
         <div className="w-full max-w-md">
           <PoweredByRecasi />

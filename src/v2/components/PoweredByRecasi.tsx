@@ -1,14 +1,11 @@
-// Subtle "Powered by Recasi Media" attribution that sits at the bottom of
-// customer-facing portal pages (onboarding, payment, success — and later the
-// public review page in phase 2). Matches LE's monochrome editorial language
-// so it doesn't feel bolted on.
-//
-// Right now this is a typographic wordmark. Swap the inner span for an <img>
-// or inline SVG if/when there's a Recasi logo file to drop in.
+// Recasi Media attribution rendered at the bottom of customer-facing portal
+// pages (onboarding, payment, success — and later the public review page
+// in phase 2). Bridges the brand gap between portal.listingelevate.com,
+// emails from oliver@recasi.com, and Stripe charges from Recasi Media.
 
 export function PoweredByRecasi() {
   return (
-    <div className="mt-16 flex items-center justify-center gap-3 border-t border-border pt-8">
+    <div className="mt-16 flex flex-col items-center gap-3 border-t border-border pt-8">
       <span
         className="label text-muted-foreground"
         style={{
@@ -23,15 +20,15 @@ export function PoweredByRecasi() {
         href="https://recasi.com"
         target="_blank"
         rel="noreferrer"
-        className="text-foreground transition-opacity hover:opacity-70"
-        style={{
-          fontFamily: "Inter, system-ui, sans-serif",
-          fontSize: 13,
-          fontWeight: 600,
-          letterSpacing: "-0.02em",
-        }}
+        className="block transition-opacity hover:opacity-70"
+        aria-label="recasi tech & media"
       >
-        Recasi Media
+        <img
+          src="/recasi-logo.png"
+          alt="recasi tech & media"
+          className="h-8 w-auto md:h-10"
+          style={{ display: "block" }}
+        />
       </a>
     </div>
   );
