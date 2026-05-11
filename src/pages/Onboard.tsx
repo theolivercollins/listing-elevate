@@ -114,10 +114,20 @@ export default function Onboard() {
         setState(s.customer.address_state ?? "");
         setPostal(s.customer.address_postal_code ?? "");
         setCountry(s.customer.address_country ?? "US");
-        // No-op: if the order is past onboarding we'll let the user
-        // re-submit to get a fresh client_secret from the API (which retrieves
-        // the existing session). This avoids the form being permanently
-        // locked if a payment was abandoned partway.
+        // Resume / success: if the order is past awaiting_onboarding, the GET
+        // response carries either a client_secret (resume payment) or a
+        // status indicating it's already paid.
+        if (
+          s.order.status === "paid" ||
+          s.order.status === "in_progress" ||
+          s.order.status === "delivered" ||
+          s.order.status === "in_review" ||
+          s.order.status === "approved"
+        ) {
+          setPaymentComplete(true);
+        } else if (s.client_secret) {
+          setClientSecret(s.client_secret);
+        }
       })
       .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : String(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });

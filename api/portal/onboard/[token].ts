@@ -60,6 +60,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ─── GET: return order summary so the page can render ───────────────────
   if (req.method === "GET") {
+    // If the order has an active PaymentIntent, hand its client_secret back
+    // so the page can skip the form and mount Payment Element directly. Lets
+    // the customer resume payment after refreshing / closing the tab.
+    let client_secret: string | null = null;
+    if (
+      order.status === "awaiting_payment" &&
+      (order as { stripe_payment_intent_id?: string }).stripe_payment_intent_id
+    ) {
+      try {
+        const stripe = getStripe();
+        const pi = await stripe.paymentIntents.retrieve(
+          (order as { stripe_payment_intent_id: string }).stripe_payment_intent_id
+        );
+        if (pi.status === "requires_payment_method" || pi.status === "requires_confirmation") {
+          client_secret = pi.client_secret;
+        }
+      } catch (e) {
+        console.error("[onboard GET] failed to retrieve PaymentIntent", e);
+      }
+    }
+
     return res.json({
       order: {
         id: order.id,
@@ -69,9 +90,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         currency: order.currency,
         line_items: order.line_items,
         status: order.status,
-        // Embedded-checkout flow returns client_secret; we no longer expose
-        // the hosted invoice URL to the frontend.
       },
+      // Present if the customer is mid-flow and can resume payment.
+      client_secret,
       customer: {
         email: customer.email,
         first_name: customer.first_name,
@@ -208,11 +229,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!paymentIntent?.client_secret) {
       return res.status(500).json({ error: "PaymentIntent missing client_secret" });
     }
+    // NOTE: deliberately NOT nulling onboarding_token here. Keeping it alive
+    // lets the customer resume payment if they refresh / close the tab — the
+    // GET handler will detect the active PaymentIntent and remount Payment
+    // Element on the same link. The token is unguessable (256 bits) so this
+    // doesn't reduce security in any meaningful way.
     const { error: updOrdErr } = await supabase
       .from("portal_orders")
       .update({
         status: "awaiting_payment",
-        onboarding_token: null,
         stripe_payment_intent_id: paymentIntent.id,
       })
       .eq("id", order.id);

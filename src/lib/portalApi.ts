@@ -86,6 +86,11 @@ export interface OnboardOrderSummary {
     line_items: Array<{ description: string; amount_cents: number; quantity: number }>;
     status: OrderStatus;
   };
+  // Present if the customer already submitted their details and a payment is
+  // pending — frontend can jump straight to Payment Element instead of the
+  // form. Absent on first visit (status=awaiting_onboarding) or after the
+  // PaymentIntent has been used.
+  client_secret?: string | null;
   customer: {
     email: string;
     first_name: string;
