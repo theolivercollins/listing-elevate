@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getReview, type ReviewPageData } from "@/lib/reviewApi";
+import { ReviewPlayer } from "./review/ReviewPlayer";
+import { CommentsRail } from "./review/CommentsRail";
+import { ActionBar } from "./review/ActionBar";
 
 export default function Review() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<ReviewPageData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [currentVersionId, setCurrentVersionId] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
 
   async function reload() {
     if (!token) return;
@@ -39,14 +43,35 @@ export default function Review() {
         <StatusPill status={data.order.status} />
       </div>
 
-      {/* Body — Task 20 will replace this with ReviewPlayer + CommentsRail + ActionBar */}
+      {/* Body */}
       <div style={{ display: "flex", flexDirection: isDesktop ? "row" : "column" }}>
-        <div style={{ flex: 1, padding: 24 }}>
-          <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--le-text-faint)" }}>
-            Review page scaffold — player + comments + actions land in Task 20.
-          </div>
+        <div style={{ flex: 1 }}>
+          <ReviewPlayer
+            token={token} versions={data.versions} currentVersionId={currentVersionId}
+            initialStreamUrl={data.stream_url}
+            comments={data.comments}
+            onTimeUpdate={setCurrentTime}
+            onVersionChange={setCurrentVersionId}
+          />
+          {!isDesktop && (
+            <ActionBar token={token} data={data} currentVersionId={currentVersionId ?? data.latest_version_id} onChange={reload} />
+          )}
+        </div>
+        <div style={{ width: isDesktop ? 320 : "auto", borderLeft: isDesktop ? "1px solid var(--le-border)" : "none", borderTop: !isDesktop ? "1px solid var(--le-border)" : "none" }}>
+          <CommentsRail
+            token={token} comments={data.comments}
+            currentVersionId={currentVersionId ?? data.latest_version_id}
+            currentTime={currentTime}
+            onPosted={reload}
+          />
         </div>
       </div>
+
+      {isDesktop && (
+        <div style={{ borderTop: "1px solid var(--le-border)" }}>
+          <ActionBar token={token} data={data} currentVersionId={currentVersionId ?? data.latest_version_id} onChange={reload} />
+        </div>
+      )}
     </div>
   );
 }
