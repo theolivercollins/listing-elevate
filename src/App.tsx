@@ -40,6 +40,8 @@ import DashboardRatingLedger from "./pages/dashboard/RatingLedger";
 import BlogPostsList from "./pages/dashboard/BlogPostsList";
 import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
 import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
+import BlogTemplates from "./pages/dashboard/BlogTemplates";
+import BlogTemplateDetail from "./pages/dashboard/BlogTemplateDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -100,6 +102,9 @@ const App = () => (
                     <Route path="blog/posts/new" element={<BlogPostDetail />} />
                     <Route path="blog/posts/:id" element={<BlogPostDetail />} />
                     <Route path="blog/images" element={<BlogImageLibrary />} />
+                    <Route path="blog/templates" element={<BlogTemplates />} />
+                    <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
+                    <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
                     <Route path="finances" element={<DashboardFinances />} />
                     <Route path="settings" element={<DashboardSettings />} />
                   </Route>
