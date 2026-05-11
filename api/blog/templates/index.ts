@@ -28,6 +28,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       name: b.name,
       description: b.description ?? null,
       body_html: b.body_html,
+      default_author_label: b.default_author_label ?? null,
+      default_category_label: b.default_category_label ?? null,
+      default_meta_title: b.default_meta_title ?? null,
+      default_meta_description: b.default_meta_description ?? null,
+      default_meta_tags: Array.isArray(b.default_meta_tags) ? b.default_meta_tags : [],
     }]).select("id").single();
     if (error) return res.status(500).json({ error: error.message });
     return res.status(201).json({ id: data!.id });
