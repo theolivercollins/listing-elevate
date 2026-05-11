@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 import { getSupabase } from "../../lib/db.js";
 import { getStripe } from "../../lib/portal/stripe.js";
 import { sendEmail, emailShell } from "../../lib/portal/email.js";
+import { notifyClient, notifyOwner } from "../../lib/portal/notifications.js";
 
 // Vercel serverless: opt out of body parsing so we can verify the signature
 // against the raw body. Parsing JSON would change byte-for-byte content.
@@ -51,10 +52,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let portal_order_id: string | undefined;
   let invoice_id: string | undefined;
   let invoice_url: string | undefined;
+  let flow: string = "legacy";
 
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
     portal_order_id = pi.metadata?.portal_order_id;
+    flow = pi.metadata?.flow ?? "legacy";
   } else if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     portal_order_id = session.metadata?.portal_order_id;
@@ -80,7 +83,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Lookup order. Idempotent: if already paid, skip.
   const { data: order } = await supabase
     .from("portal_orders")
-    .select("id, owner_id, title, amount_cents, status, customer_id")
+    .select("id, owner_id, title, amount_cents, currency, status, customer_id")
     .eq("id", portal_order_id)
     .maybeSingle();
 
@@ -106,6 +109,86 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.json({ received: true, already_paid: true });
   }
 
+  // ─── Phase 2: approve_pay flow ────────────────────────────────────────────
+  // Client approved + paid on the review page. Flip to `paid`, notify owner,
+  // email client a receipt with the download link. Return early — the legacy
+  // owner-notification path below is for pre-Phase-2 PaymentIntents.
+  if (flow === "approve_pay") {
+    const { error: updErr } = await supabase
+      .from("portal_orders")
+      .update({ status: "paid", paid_at: new Date().toISOString() })
+      .eq("id", order.id);
+    if (updErr) {
+      console.error("[stripe-webhook] approve_pay order update failed", updErr);
+      return res.status(500).json({ error: updErr.message });
+    }
+
+    // Customer email for the receipt
+    const { data: custRow } = await supabase
+      .from("portal_customers")
+      .select("email")
+      .eq("id", order.customer_id)
+      .single();
+
+    // Pick the most recent deliverable for the order to build the review +
+    // download links. If we can't find one, skip the client email — the owner
+    // notification is still load-bearing.
+    const { data: delivRow } = await supabase
+      .from("portal_deliverables")
+      .select("review_token")
+      .eq("order_id", order.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (custRow?.email && delivRow?.review_token) {
+      const base = process.env.PUBLIC_BASE_URL ?? "";
+      const reviewUrl = `${base}/review/${delivRow.review_token}`;
+      try {
+        await notifyClient(supabase, custRow.email, "payment_receipt", {
+          order_title: order.title,
+          amount: (order.amount_cents / 100).toFixed(0),
+          currency: order.currency.toUpperCase(),
+          review_url: reviewUrl,
+          download_url: `${reviewUrl}/download`,
+        });
+      } catch (e) {
+        console.error("[stripe-webhook] approve_pay client receipt failed", e);
+      }
+    }
+
+    try {
+      const { data: ownerProfile } = await supabase.auth.admin.getUserById(order.owner_id);
+      const ownerEmail = ownerProfile?.user?.email;
+      if (ownerEmail) {
+        await notifyOwner(
+          supabase,
+          order.owner_id,
+          "approval_received",
+          ownerEmail,
+          {
+            order_title: order.title,
+            amount: (order.amount_cents / 100).toFixed(0),
+            currency: order.currency.toUpperCase(),
+          },
+          {
+            kind: "order_paid",
+            title: "Order paid",
+            body: `${order.title} — $${(order.amount_cents / 100).toFixed(0)}`,
+            orderId: order.id,
+            linkPath: `/dashboard/orders/${order.id}`,
+          },
+        );
+      }
+    } catch (e) {
+      console.error("[stripe-webhook] approve_pay owner notify failed", e);
+    }
+
+    return res.status(200).json({ ok: true });
+  }
+
+  // ─── Legacy onboarding-flow PaymentIntent ─────────────────────────────────
+  // Orders created before Phase 2 still drain through here.
   await supabase
     .from("portal_orders")
     .update({
