@@ -1,12 +1,21 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { listPosts } from "@/lib/blog/api-client";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
-import { Plus, ExternalLink } from "lucide-react";
+import {
+  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown,
+} from "lucide-react";
 
 const STATE_FILTERS: Array<{ label: string; value: BlogPostState | "all" }> = [
   { label: "All", value: "all" },
@@ -18,6 +27,7 @@ const STATE_FILTERS: Array<{ label: string; value: BlogPostState | "all" }> = [
 export default function BlogPostsList() {
   const [state, setState] = useState<BlogPostState | "all">("all");
   const [q, setQ] = useState("");
+  const navigate = useNavigate();
 
   const { data, isLoading } = useQuery({
     queryKey: ["blog-posts-list", state, q],
@@ -28,15 +38,76 @@ export default function BlogPostsList() {
     }),
   });
 
+  // Load templates so we can offer "Start from template" as a sub-menu.
+  const { data: tplData } = useQuery({
+    queryKey: ["blog-templates"],
+    queryFn: () => listTemplates(),
+  });
+  const templates = tplData?.templates ?? [];
+
   const posts = data?.posts ?? [];
 
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Blog posts</h1>
-        <Link to="/dashboard/blog/posts/new">
-          <Button><Plus className="mr-1 h-4 w-4" /> New post</Button>
-        </Link>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>
+              <Plus className="mr-1 h-4 w-4" /> New post
+              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new")} className="cursor-pointer">
+              <Pencil className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Write manually</span>
+                <span className="text-xs text-muted-foreground">Blank editor — type or paste HTML</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new?ai=1")} className="cursor-pointer">
+              <Sparkles className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Generate with AI</span>
+                <span className="text-xs text-muted-foreground">Claude writes the first draft</span>
+              </div>
+            </DropdownMenuItem>
+            {templates.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1 text-xs text-muted-foreground">From template</div>
+                {templates.slice(0, 6).map((t) => (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onClick={() => navigate(`/dashboard/blog/posts/new?template=${t.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <LayoutTemplate className="mr-2 h-4 w-4" />
+                    <span className="truncate">{t.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                {templates.length > 6 && (
+                  <DropdownMenuItem onClick={() => navigate("/dashboard/blog/templates")} className="cursor-pointer text-xs text-muted-foreground">
+                    Manage templates →
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
+            {templates.length === 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/dashboard/blog/templates/new")} className="cursor-pointer">
+                  <LayoutTemplate className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>Create a template</span>
+                    <span className="text-xs text-muted-foreground">Save HTML to reuse later</span>
+                  </div>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
