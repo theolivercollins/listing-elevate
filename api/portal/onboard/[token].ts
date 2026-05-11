@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../../lib/db.js";
 import { getStripe } from "../../../lib/portal/stripe.js";
+import { notifyOwner } from "../../../lib/portal/notifications.js";
 
 // PUBLIC endpoint — no auth required. Validated via the unguessable
 // onboarding_token. After successful submit, the order moves to
@@ -171,16 +172,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(500).json({ error: updOrderErr.message });
       }
 
-      // In-app notification that onboarding is done. Owner email fires on
-      // payment success (in the webhook), not here.
-      await supabase.from("portal_notifications").insert({
-        user_id: order.owner_id,
-        kind: "onboarding_completed",
-        title: `${customer.first_name} ${customer.last_name} confirmed details`,
-        body: `Awaiting delivery for "${order.title}"`,
-        link_path: `/dashboard/orders/${order.id}`,
-        order_id: order.id,
-      });
+      // Notify the owner (in-app + email). Fire-and-forget — failures here
+      // must not block the onboarding response. We deliberately do not email
+      // the client a thank-you: the onboarding page already shows visual
+      // confirmation, and product intentionally has no "we'll deliver shortly"
+      // copy to send.
+      try {
+        const customerFullName = `${customer.first_name} ${customer.last_name}`.trim();
+        const { data: ownerProfile } = await supabase.auth.admin.getUserById(order.owner_id);
+        const ownerEmail = ownerProfile.user?.email;
+        if (ownerEmail) {
+          const portalBase = process.env.PORTAL_BASE_URL ?? process.env.PUBLIC_BASE_URL ?? "";
+          await notifyOwner(
+            supabase,
+            order.owner_id,
+            "onboarding_completed_owner",
+            ownerEmail,
+            {
+              customer_name: customerFullName,
+              order_title: order.title,
+              order_url: portalBase ? `${portalBase}/dashboard/orders/${order.id}` : "",
+            },
+            {
+              kind: "onboarding_completed",
+              title: `${customerFullName} confirmed details`,
+              body: `Awaiting delivery for "${order.title}"`,
+              orderId: order.id,
+              linkPath: `/dashboard/orders/${order.id}`,
+            },
+          );
+        } else {
+          // No owner email on file — still write the in-app row.
+          await supabase.from("portal_notifications").insert({
+            user_id: order.owner_id,
+            kind: "onboarding_completed",
+            title: `${customerFullName} confirmed details`,
+            body: `Awaiting delivery for "${order.title}"`,
+            link_path: `/dashboard/orders/${order.id}`,
+            order_id: order.id,
+          });
+        }
+      } catch (e) {
+        console.error("[onboard] notify owner failed", e);
+      }
 
       return res.json({ status: "awaiting_delivery" });
     } catch (stripeErr) {

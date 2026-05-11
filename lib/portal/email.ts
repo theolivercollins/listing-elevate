@@ -56,3 +56,128 @@ export function emailShell(opts: { heading: string; body: string; cta?: { label:
   </div>
 </body></html>`;
 }
+
+// ─── Templated emails (Phase 2) ───────────────────────────────────────────
+// `onboarding_thanks` is intentionally omitted — the existing onboarding flow
+// in api/portal/orders/index.ts uses its own pre-onboarding email, and there
+// is no post-onboarding "we'll deliver shortly" copy to preserve. Owner-side
+// notification is sufficient until product calls for a client thank-you.
+
+export type EmailTemplate =
+  | "deliverable_ready_v1"
+  | "deliverable_ready_vn"
+  | "comment_added"
+  | "revision_requested"
+  | "approval_received"
+  | "payment_receipt"
+  | "onboarding_completed_owner";
+
+interface RenderedEmail {
+  subject: string;
+  html: string;
+}
+
+function str(value: unknown, fallback = ""): string {
+  return typeof value === "string" ? value : fallback;
+}
+
+export function renderTemplate(template: EmailTemplate, data: Record<string, unknown>): RenderedEmail {
+  switch (template) {
+    case "deliverable_ready_v1": {
+      const orderTitle = str(data.order_title, "your video");
+      const reviewUrl = str(data.review_url);
+      return {
+        subject: `Your video is ready to review — ${orderTitle}`,
+        html: emailShell({
+          heading: "Your video is ready",
+          body: `<p>Open the review link below to watch, leave timestamped feedback, and approve when you're happy.</p>`,
+          cta: { label: "Review your video", url: reviewUrl },
+        }),
+      };
+    }
+    case "deliverable_ready_vn": {
+      const orderTitle = str(data.order_title, "your video");
+      const reviewUrl = str(data.review_url);
+      return {
+        subject: `New version ready — ${orderTitle}`,
+        html: emailShell({
+          heading: "A new version is ready",
+          body: `<p>Your latest revision is uploaded. Open the review link to compare and approve.</p>`,
+          cta: { label: "Open review", url: reviewUrl },
+        }),
+      };
+    }
+    case "comment_added": {
+      const author = str(data.author, "Someone");
+      const note = str(data.body);
+      const reviewUrl = str(data.review_url);
+      const escaped = note.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return {
+        subject: `New comment from ${author}`,
+        html: emailShell({
+          heading: "New comment",
+          body: `<p><strong>${author}</strong> left a comment:</p><blockquote style="margin:16px 0;padding:12px 16px;border-left:2px solid #171717;font-style:italic;color:#404040;">${escaped}</blockquote>`,
+          cta: { label: "Open review", url: reviewUrl },
+        }),
+      };
+    }
+    case "revision_requested": {
+      const author = str(data.author, "The client");
+      const note = str(data.note);
+      const reviewUrl = str(data.review_url);
+      const escaped = note.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return {
+        subject: `Revision requested by ${author}`,
+        html: emailShell({
+          heading: "Revision requested",
+          body: `<p><strong>${author}</strong> requested a revision:</p><blockquote style="margin:16px 0;padding:12px 16px;border-left:2px solid #171717;font-style:italic;color:#404040;">${escaped}</blockquote><p>Upload the new version when ready — the client will be emailed automatically.</p>`,
+          cta: { label: "Open review", url: reviewUrl },
+        }),
+      };
+    }
+    case "approval_received": {
+      const orderTitle = str(data.order_title, "the order");
+      const amount = str(data.amount);
+      const currency = str(data.currency, "USD");
+      return {
+        subject: `Approved & paid — ${orderTitle}`,
+        html: emailShell({
+          heading: "Approved & paid",
+          body: `<p><strong>${orderTitle}</strong> just cleared.</p>${amount ? `<p>Amount: <strong>$${amount} ${currency}</strong></p>` : ""}`,
+        }),
+      };
+    }
+    case "onboarding_completed_owner": {
+      const customerName = str(data.customer_name, "Your client");
+      const orderTitle = str(data.order_title, "the order");
+      const orderUrl = str(data.order_url);
+      return {
+        subject: `${customerName} confirmed details — ${orderTitle}`,
+        html: emailShell({
+          heading: "Customer onboarded",
+          body: `<p><strong>${customerName}</strong> finished onboarding for <strong>${orderTitle}</strong>.</p><p>The order is now awaiting delivery — you can upload the first cut whenever you're ready.</p>`,
+          ...(orderUrl ? { cta: { label: "Open order", url: orderUrl } } : {}),
+        }),
+      };
+    }
+    case "payment_receipt": {
+      const orderTitle = str(data.order_title, "your video");
+      const amount = str(data.amount);
+      const currency = str(data.currency, "USD");
+      const downloadUrl = str(data.download_url);
+      return {
+        subject: `Receipt — ${orderTitle}`,
+        html: emailShell({
+          heading: "Payment received",
+          body: `<p>Thanks — your payment for <strong>${orderTitle}</strong> is confirmed.</p>${amount ? `<p>Amount: <strong>$${amount} ${currency}</strong></p>` : ""}<p>Your final video is ready to download.</p>`,
+          cta: { label: "Download your video", url: downloadUrl },
+        }),
+      };
+    }
+  }
+}
+
+export async function sendTemplateEmail(args: { to: string; template: EmailTemplate; data: Record<string, unknown> }): Promise<void> {
+  const { subject, html } = renderTemplate(args.template, args.data);
+  await sendEmail({ to: args.to, subject, html });
+}

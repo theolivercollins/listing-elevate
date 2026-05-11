@@ -4,6 +4,7 @@ import { requireOwner } from "../../../../../../../lib/portal/auth.js";
 import { verifyObjectExists } from "../../../../../../../lib/portal/storage.js";
 import { markVersionUploaded } from "../../../../../../../lib/portal/deliverables.js";
 import { computeNextOrderStatus, type OrderStatus } from "../../../../../../../lib/portal/state.js";
+import { notifyClient } from "../../../../../../../lib/portal/notifications.js";
 
 const STATES_THAT_FLIP_ON_UPLOAD: OrderStatus[] = ["awaiting_delivery", "delivered", "in_review", "revision_requested"];
 
@@ -61,6 +62,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: refreshed } = await supabase
     .from("portal_orders").select("status").eq("id", orderId).single();
+
+  // Email the client. v1 = first upload (order was awaiting_delivery, now delivered).
+  // v2+ = subsequent upload (order was already delivered / in_review / revision_requested).
+  try {
+    if (refreshed?.status === "delivered") {
+      const wasFirst = (order.status as OrderStatus) === "awaiting_delivery";
+      const { data: delivRow } = await supabase
+        .from("portal_deliverables")
+        .select("review_token")
+        .eq("id", did)
+        .single();
+      const { data: orderRow } = await supabase
+        .from("portal_orders")
+        .select("title, customer_id")
+        .eq("id", orderId)
+        .single();
+      if (delivRow?.review_token && orderRow?.customer_id) {
+        const { data: cust } = await supabase
+          .from("portal_customers")
+          .select("email")
+          .eq("id", orderRow.customer_id)
+          .single();
+        if (cust?.email) {
+          const reviewUrl = `${process.env.PUBLIC_BASE_URL ?? ""}/review/${delivRow.review_token}`;
+          await notifyClient(
+            supabase,
+            cust.email,
+            wasFirst ? "deliverable_ready_v1" : "deliverable_ready_vn",
+            {
+              review_url: reviewUrl,
+              order_title: orderRow.title ?? "your video",
+            },
+          );
+        }
+      }
+    }
+  } catch (e) {
+    console.error("[finalize] notify client failed", e);
+  }
 
   return res.json({ status: "uploaded", order_status: refreshed?.status });
 }

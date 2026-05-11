@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../../../lib/db.js";
 import { computeNextOrderStatus, type OrderStatus } from "../../../../lib/portal/state.js";
+import { notifyOwner } from "../../../../lib/portal/notifications.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = req.query.token as string;
@@ -74,8 +75,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // (Notification wiring is added in Task 22 once lib/portal/notifications.ts lands.
-    //  The endpoint must not block on notifications — they fire-and-forget.)
+    // Notify the owner (in-app + email). Fire-and-forget — failures here must
+    // not block the comment-write response.
+    try {
+      const { data: ownerProfile } = await supabase.auth.admin.getUserById(order.owner_id);
+      const ownerEmail = ownerProfile.user?.email;
+      if (ownerEmail) {
+        const reviewUrl = `${process.env.PUBLIC_BASE_URL ?? ""}/review/${token}`;
+        const authorName = `${author_first_name} ${author_last_name}`.trim() || "Someone";
+        const noteBody = body.body.trim();
+        const preview = noteBody.slice(0, 120);
+        if (kind === "revision_request") {
+          await notifyOwner(
+            supabase,
+            order.owner_id,
+            "revision_requested",
+            ownerEmail,
+            { author: authorName, note: noteBody, review_url: reviewUrl },
+            {
+              kind: "revision_requested",
+              title: "Revision requested",
+              body: preview,
+              orderId: order.id,
+              deliverableId: deliv.id,
+              commentId: inserted.id,
+              linkPath: `/dashboard/orders/${order.id}`,
+            },
+          );
+        } else {
+          await notifyOwner(
+            supabase,
+            order.owner_id,
+            "comment_added",
+            ownerEmail,
+            { author: authorName, body: noteBody, review_url: reviewUrl },
+            {
+              kind: "comment_added",
+              title: "New comment",
+              body: preview,
+              orderId: order.id,
+              deliverableId: deliv.id,
+              commentId: inserted.id,
+              linkPath: `/dashboard/orders/${order.id}`,
+            },
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[comments POST] notify owner failed", e);
+    }
 
     return res.status(201).json({ comment_id: inserted.id });
   }
