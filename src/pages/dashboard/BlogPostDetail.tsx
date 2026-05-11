@@ -11,6 +11,7 @@ import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
 } from "@/lib/blog/api-client";
+import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import { toast } from "sonner";
 
@@ -180,7 +181,7 @@ export default function BlogPostDetailPage() {
             <Label>Featured image</Label>
             {form.image ? (
               <div className="space-y-2">
-                <img src={form.image.blob_url} className="w-full rounded-md" alt={form.image.vision_caption ?? ""} />
+                <img src={thumbUrl(form.image.blob_url, { width: 600, quality: 75 })} loading="lazy" decoding="async" className="w-full rounded-md" alt={form.image.vision_caption ?? ""} />
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>Change</Button>
                   <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, image: null })}>Remove</Button>
