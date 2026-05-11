@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PostEditor, type EditorMode } from "@/components/blog/PostEditor";
-import { createTemplate, getTemplate, updateTemplate } from "@/lib/blog/api-client";
+import { analyzeTemplate, createTemplate, getTemplate, updateTemplate } from "@/lib/blog/api-client";
+import type { AnalyzeTemplateResult } from "@/lib/blog/types";
 import { toast } from "sonner";
-import { Upload } from "lucide-react";
+import { Loader2, Sparkles, Upload } from "lucide-react";
 
 export default function BlogTemplateDetail() {
   const { id } = useParams<{ id: string }>();
@@ -27,6 +29,7 @@ export default function BlogTemplateDetail() {
   const [description, setDescription] = useState("");
   const [body_html, setBodyHtml] = useState("");
   const [mode, setMode] = useState<EditorMode>("source");
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeTemplateResult | null>(null);
 
   useEffect(() => {
     if (data?.template) {
@@ -48,6 +51,12 @@ export default function BlogTemplateDetail() {
       navigate(`/dashboard/blog/templates`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e?.message ?? e}`),
+  });
+
+  const analyze = useMutation({
+    mutationFn: () => analyzeTemplate(body_html),
+    onSuccess: (r) => setAnalyzeResult(r),
+    onError: (e: any) => toast.error(`Analyze failed: ${e?.message ?? e}`),
   });
 
   function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -74,9 +83,26 @@ export default function BlogTemplateDetail() {
         <div>
           <div className="mb-2 flex items-center justify-between">
             <Label>Body HTML</Label>
-            <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
-              <Upload className="mr-1 h-3.5 w-3.5" /> Upload .html
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+                <Upload className="mr-1 h-3.5 w-3.5" /> Upload .html
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (!body_html || body_html.trim().length < 20) {
+                    toast.error("Paste or upload HTML first (min 20 chars).");
+                    return;
+                  }
+                  analyze.mutate();
+                }}
+                disabled={analyze.isPending}
+              >
+                {analyze.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
+                Analyze with AI
+              </Button>
+            </div>
             <input ref={fileRef} type="file" accept=".html,text/html" className="hidden" onChange={onUpload} />
           </div>
           <PostEditor
@@ -93,6 +119,63 @@ export default function BlogTemplateDetail() {
           <Button variant="outline" onClick={() => navigate("/dashboard/blog/templates")}>Cancel</Button>
         </div>
       </div>
+      <Dialog open={!!analyzeResult} onOpenChange={(v) => !v && setAnalyzeResult(null)}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> Template analysis
+          </DialogTitle>
+        </DialogHeader>
+        {analyzeResult && (
+          <div className="space-y-4">
+            <div>
+              <Label>Suggested name</Label>
+              <div className="flex gap-2">
+                <Input value={analyzeResult.suggested_name} readOnly className="flex-1" />
+                <Button size="sm" variant="outline" onClick={() => setName(analyzeResult.suggested_name)}>Apply</Button>
+              </div>
+            </div>
+            <div>
+              <Label>Suggested description</Label>
+              <div className="flex gap-2">
+                <Textarea value={analyzeResult.suggested_description} readOnly className="flex-1" rows={2} />
+                <Button size="sm" variant="outline" onClick={() => setDescription(analyzeResult.suggested_description)}>Apply</Button>
+              </div>
+            </div>
+            {analyzeResult.detected_sections.length > 0 && (
+              <div>
+                <Label>Detected sections</Label>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {analyzeResult.detected_sections.map((s, i) => (
+                    <span key={i} className="rounded bg-muted px-2 py-0.5 text-xs">{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {analyzeResult.notes && (
+              <div>
+                <Label>Notes</Label>
+                <pre className="whitespace-pre-wrap rounded border bg-muted/30 p-3 text-xs">{analyzeResult.notes}</pre>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground">
+              Cost: ${(analyzeResult.cost_cents / 100).toFixed(2)} · Model: {analyzeResult.model}
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setAnalyzeResult(null)}>Close</Button>
+              <Button onClick={() => {
+                setName(analyzeResult.suggested_name);
+                setDescription(analyzeResult.suggested_description);
+                setAnalyzeResult(null);
+                toast.success("Applied suggestions");
+              }}>
+                Apply all
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }
