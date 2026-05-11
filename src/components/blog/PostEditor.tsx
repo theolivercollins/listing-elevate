@@ -4,10 +4,10 @@ import LinkExt from "@tiptap/extension-link";
 import ImageExt from "@tiptap/extension-image";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
-import Table from "@tiptap/extension-table";
-import TableRow from "@tiptap/extension-table-row";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
+// All table extensions come from @tiptap/extension-table — the sub-packages
+// (@tiptap/extension-table-row, etc.) are aliases that re-export from here.
+// Using named imports avoids "default not exported" rollup errors.
+import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
