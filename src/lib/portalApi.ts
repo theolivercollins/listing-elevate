@@ -83,7 +83,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{ order: Por
   return authedFetch("/api/portal/orders", { method: "POST", body: JSON.stringify(input) });
 }
 
-export async function getOrder(id: string): Promise<{ order: PortalOrder; onboarding_url: string | null }> {
+export async function getOrder(id: string): Promise<{ order: PortalOrder; onboarding_url: string | null; deliverables: PortalDeliverable[] }> {
   return authedFetch(`/api/portal/orders/${id}`);
 }
 

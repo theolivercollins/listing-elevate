@@ -3,8 +3,15 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Copy, ExternalLink, Mail } from "lucide-react";
 import { motion } from "framer-motion";
 import { toast } from "sonner";
-import { getOrder, formatStatus, formatOrderNumber, type PortalOrder } from "@/lib/portalApi";
+import {
+  getOrder,
+  formatStatus,
+  formatOrderNumber,
+  type PortalOrder,
+  type PortalDeliverable,
+} from "@/lib/portalApi";
 import { getRelativeTime } from "@/lib/types";
+import { OrderDetailTabs } from "./OrderDetailTabs";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -25,67 +32,30 @@ function stageIndex(status: PortalOrder["status"]): number {
   return -1;
 }
 
-export default function OrderDetail() {
-  const { id } = useParams<{ id: string }>();
-  const [order, setOrder] = useState<PortalOrder | null>(null);
-  const [onboardingUrl, setOnboardingUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+function OrderActivityPlaceholder() {
+  return <p style={{ color: "var(--le-text-muted)", fontSize: 14 }}>Activity feed coming soon.</p>;
+}
 
-  useEffect(() => {
-    if (!id) return;
-    let cancelled = false;
-    getOrder(id)
-      .then((res) => {
-        if (cancelled) return;
-        setOrder(res.order);
-        setOnboardingUrl(res.onboarding_url);
-      })
-      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [id]);
+function OrderDeliverablesPlaceholder() {
+  return <p style={{ color: "var(--le-text-muted)", fontSize: 14 }}>Deliverables coming soon.</p>;
+}
+
+interface OverviewProps {
+  order: PortalOrder;
+  onboardingUrl: string | null;
+}
+
+function OverviewContent({ order, onboardingUrl }: OverviewProps) {
+  const idx = stageIndex(order.status);
+  const customer = order.customer;
+  const fmt = formatStatus(order.status);
 
   function copy(value: string, label: string) {
     navigator.clipboard.writeText(value).then(() => toast.success(`${label} copied`));
   }
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-  if (error || !order) {
-    return <div className="border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">{error ?? "Not found"}</div>;
-  }
-
-  const idx = stageIndex(order.status);
-  const customer = order.customer;
-  const fmt = formatStatus(order.status);
-
   return (
     <div className="space-y-12">
-      <div>
-        <Link to="/dashboard/orders" className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> All orders
-        </Link>
-        <div className="mt-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-          <div className="min-w-0 flex-1">
-            <span className="label text-muted-foreground">— Order {formatOrderNumber(order.order_number)}</span>
-            <h2 className="mt-3 break-words text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{order.title}</h2>
-            {order.description && <p className="mt-3 text-sm text-muted-foreground">{order.description}</p>}
-          </div>
-          <div className="text-left md:text-right">
-            <div className="tabular text-3xl font-semibold tracking-[-0.02em]">
-              ${(order.amount_cents / 100).toFixed(2)}
-            </div>
-            <p className="label mt-2 text-muted-foreground">{order.currency.toUpperCase()}</p>
-          </div>
-        </div>
-      </div>
-
       {/* Stage timeline — horizontal on tablet+, compact dot row on mobile */}
       <section className="border border-border p-6 md:p-8">
         <span className="label text-muted-foreground">— Stage</span>
@@ -255,16 +225,85 @@ export default function OrderDetail() {
           )}
         </div>
       </section>
+    </div>
+  );
+}
 
-      {/* Deliverables placeholder — Phase 2 */}
-      <section className="border border-dashed border-border p-12 text-center">
-        <span className="label text-muted-foreground">— Deliverables</span>
-        <p className="mt-4 text-sm text-muted-foreground">
-          {order.status === "paid" || order.status === "in_progress" || order.status === "delivered"
-            ? "Upload deliverable — coming next session."
-            : "Deliverable upload unlocks once the client pays."}
-        </p>
-      </section>
+export default function OrderDetail() {
+  const { id } = useParams<{ id: string }>();
+  const [order, setOrder] = useState<PortalOrder | null>(null);
+  const [onboardingUrl, setOnboardingUrl] = useState<string | null>(null);
+  const [deliverables, setDeliverables] = useState<PortalDeliverable[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    getOrder(id)
+      .then((res) => {
+        if (cancelled) return;
+        setOrder(res.order);
+        setOnboardingUrl(res.onboarding_url);
+        setDeliverables(res.deliverables ?? []);
+      })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-32">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (error || !order) {
+    return <div className="border border-destructive/40 bg-destructive/5 p-6 text-sm text-destructive">{error ?? "Not found"}</div>;
+  }
+
+  return (
+    <div className="space-y-12">
+      <div>
+        <Link to="/dashboard/orders" className="label inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3 w-3" /> All orders
+        </Link>
+        <div className="mt-8 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 flex-1">
+            <span className="label text-muted-foreground">— Order {formatOrderNumber(order.order_number)}</span>
+            <h2 className="mt-3 break-words text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{order.title}</h2>
+            {order.description && <p className="mt-3 text-sm text-muted-foreground">{order.description}</p>}
+          </div>
+          <div className="text-left md:text-right">
+            <div className="tabular text-3xl font-semibold tracking-[-0.02em]">
+              ${(order.amount_cents / 100).toFixed(2)}
+            </div>
+            <p className="label mt-2 text-muted-foreground">{order.currency.toUpperCase()}</p>
+          </div>
+        </div>
+      </div>
+
+      <OrderDetailTabs
+        tabs={[
+          {
+            key: "overview",
+            label: "Overview",
+            content: <OverviewContent order={order} onboardingUrl={onboardingUrl} />,
+          },
+          {
+            key: "deliverables",
+            label: "Deliverables",
+            count: deliverables.length,
+            content: <OrderDeliverablesPlaceholder />,
+          },
+          {
+            key: "activity",
+            label: "Activity",
+            content: <OrderActivityPlaceholder />,
+          },
+        ]}
+      />
     </div>
   );
 }

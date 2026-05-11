@@ -27,7 +27,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const onboarding_url = data.onboarding_token
       ? `${getPortalBaseUrl()}/onboard/${data.onboarding_token}`
       : null;
-    return res.json({ order: data, onboarding_url });
+
+    const { data: deliverables } = await supabase
+      .from("portal_deliverables")
+      .select(`
+        id, order_id, title, description, status, review_token, created_at, updated_at,
+        versions:portal_deliverable_versions(id, version, file_name, file_size_bytes, mime_type, upload_note, upload_status, created_at)
+      `)
+      .eq("order_id", id)
+      .order("created_at", { ascending: true });
+
+    return res.json({ order: data, onboarding_url, deliverables: deliverables ?? [] });
   }
 
   if (req.method === "DELETE") {
