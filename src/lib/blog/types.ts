@@ -90,6 +90,17 @@ export interface BlogTemplate {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+  default_author_label?: string | null;
+  default_category_label?: string | null;
+  default_meta_title?: string | null;
+  default_meta_description?: string | null;
+  default_meta_tags?: string[];
+}
+
+export interface Taxonomy {
+  site_id: string;
+  authors: Array<{ id: string; label: string }>;
+  categories: Array<{ id: string; label: string }>;
 }
 
 export interface AIAttachment {
@@ -110,6 +121,10 @@ export interface AIDraftInput {
 
 export interface AIDraftResult {
   html: string;
+  body_html: string;
+  meta_title: string;
+  meta_description: string;
+  meta_tags: string[];
   cost_cents: number;
   model: string;
   usage: { input_tokens: number; output_tokens: number };

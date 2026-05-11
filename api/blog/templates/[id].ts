@@ -3,7 +3,16 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 
-const EDITABLE = ["name", "description", "body_html"] as const;
+const EDITABLE = [
+  "name",
+  "description",
+  "body_html",
+  "default_author_label",
+  "default_category_label",
+  "default_meta_title",
+  "default_meta_description",
+  "default_meta_tags",
+] as const;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);

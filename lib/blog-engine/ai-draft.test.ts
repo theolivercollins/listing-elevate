@@ -3,35 +3,49 @@ import { describe, it, expect, vi } from "vitest";
 import { generateDraft, _testing } from "./ai-draft";
 
 describe("generateDraft", () => {
-  const mkAnthropic = (text: string, usage = { input_tokens: 500, output_tokens: 800 }) => ({
-    messages: { create: vi.fn().mockResolvedValue({ content: [{ type: "text", text }], usage }) },
-  });
+  const mkAnthropic = (out: any, usage = { input_tokens: 500, output_tokens: 800 }) => {
+    // out can be a JSON object → stringify; or already a string for negative tests.
+    const text = typeof out === "string" ? out : JSON.stringify(out);
+    return {
+      messages: { create: vi.fn().mockResolvedValue({ content: [{ type: "text", text }], usage }) },
+    };
+  };
 
   it("returns clean HTML + computed cost on happy path", async () => {
-    const anthropic = mkAnthropic("<h2>Hello</h2><p>World</p>");
+    const anthropic = mkAnthropic({ body_html: "<h2>Hello</h2><p>World</p>", meta_title: "Hello", meta_description: "World", meta_tags: ["test"] });
     const r = await generateDraft({ prompt: "Test", length: "standard", tone: "professional" }, { anthropic } as any);
-    expect(r.html).toBe("<h2>Hello</h2><p>World</p>");
+    expect(r.body_html).toBe("<h2>Hello</h2><p>World</p>");
+    expect(r.meta_title).toBe("Hello");
+    expect(r.meta_tags).toEqual(["test"]);
+    expect(r.html).toBe(r.body_html);  // backwards compat
     expect(r.cost_cents).toBeGreaterThan(0);
     expect(r.model).toMatch(/sonnet/);
     expect(r.usage).toEqual({ input_tokens: 500, output_tokens: 800 });
   });
 
-  it("strips ```html fences", async () => {
-    const anthropic = mkAnthropic("```html\n<p>Hi</p>\n```");
-    const r = await generateDraft({ prompt: "Test", length: "short", tone: "casual" }, { anthropic } as any);
-    expect(r.html).toBe("<p>Hi</p>");
+  it("strips ```json fences", async () => {
+    const anthropic = mkAnthropic("```json\n" + JSON.stringify({ body_html: "<p>Hi</p>", meta_title: "Hi", meta_description: "Hi", meta_tags: [] }) + "\n```");
+    const r = await generateDraft({ prompt: "T", length: "short", tone: "casual" }, { anthropic } as any);
+    expect(r.body_html).toBe("<p>Hi</p>");
   });
 
-  it("strips <script> tags from output", async () => {
-    const anthropic = mkAnthropic("<p>Real content</p><script>alert(1)</script><p>More</p>");
-    const r = await generateDraft({ prompt: "Test", length: "short", tone: "casual" }, { anthropic } as any);
-    expect(r.html).not.toMatch(/<script/i);
-    expect(r.html).toContain("Real content");
-    expect(r.html).toContain("More");
+  it("strips <script> tags from body_html", async () => {
+    const anthropic = mkAnthropic({ body_html: "<p>Real</p><script>alert(1)</script><p>More</p>", meta_title: "x", meta_description: "x", meta_tags: [] });
+    const r = await generateDraft({ prompt: "T", length: "short", tone: "casual" }, { anthropic } as any);
+    expect(r.body_html).not.toMatch(/<script/i);
+    expect(r.body_html).toContain("Real");
+    expect(r.body_html).toContain("More");
+  });
+
+  it("rejects non-JSON response", async () => {
+    const anthropic = mkAnthropic("just some text");
+    await expect(
+      generateDraft({ prompt: "T", length: "short", tone: "casual" }, { anthropic } as any),
+    ).rejects.toThrow(/JSON/i);
   });
 
   it("includes template HTML in the user message when provided", async () => {
-    const anthropic = mkAnthropic("<p>filled</p>");
+    const anthropic = mkAnthropic({ body_html: "<p>filled</p>", meta_title: "t", meta_description: "d", meta_tags: [] });
     await generateDraft({
       prompt: "Test",
       template_id: "tpl-1",
@@ -53,7 +67,7 @@ describe("generateDraft", () => {
   });
 
   it("includes attachments as content blocks", async () => {
-    const anthropic = mkAnthropic("<p>filled</p>");
+    const anthropic = mkAnthropic({ body_html: "<p>filled</p>", meta_title: "t", meta_description: "d", meta_tags: [] });
     await generateDraft({
       prompt: "Test",
       length: "short",
@@ -80,7 +94,7 @@ describe("generateDraft", () => {
   });
 
   it("includes paste_data in the user prompt", async () => {
-    const anthropic = mkAnthropic("<p>x</p>");
+    const anthropic = mkAnthropic({ body_html: "<p>x</p>", meta_title: "t", meta_description: "d", meta_tags: [] });
     await generateDraft({
       prompt: "Test",
       length: "short",

@@ -12,6 +12,7 @@ import type {
   AIDraftInput,
   AIDraftResult,
   AnalyzeTemplateResult,
+  Taxonomy,
 } from "./types";
 
 async function authHeaders(): Promise<HeadersInit> {
@@ -168,7 +169,16 @@ export async function getTemplate(id: string): Promise<{ template: BlogTemplate 
   const res = await fetch(`/api/blog/templates/${id}`, { headers: await authHeaders() });
   return asJson(res);
 }
-export async function createTemplate(input: { name: string; description?: string; body_html: string }): Promise<{ id: string }> {
+export async function createTemplate(input: {
+  name: string;
+  description?: string;
+  body_html: string;
+  default_author_label?: string | null;
+  default_category_label?: string | null;
+  default_meta_title?: string | null;
+  default_meta_description?: string | null;
+  default_meta_tags?: string[];
+}): Promise<{ id: string }> {
   const res = await fetch("/api/blog/templates", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -176,7 +186,16 @@ export async function createTemplate(input: { name: string; description?: string
   });
   return asJson(res);
 }
-export async function updateTemplate(id: string, patch: Partial<{ name: string; description: string | null; body_html: string }>): Promise<{ ok: true }> {
+export async function updateTemplate(id: string, patch: Partial<{
+  name: string;
+  description: string | null;
+  body_html: string;
+  default_author_label: string | null;
+  default_category_label: string | null;
+  default_meta_title: string | null;
+  default_meta_description: string | null;
+  default_meta_tags: string[];
+}>): Promise<{ ok: true }> {
   const res = await fetch(`/api/blog/templates/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -186,6 +205,12 @@ export async function updateTemplate(id: string, patch: Partial<{ name: string; 
 }
 export async function deleteTemplate(id: string): Promise<{ ok: true }> {
   const res = await fetch(`/api/blog/templates/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+
+// Taxonomy
+export async function getTaxonomy(): Promise<Taxonomy> {
+  const res = await fetch("/api/blog/taxonomy", { headers: await authHeaders() });
   return asJson(res);
 }
 
