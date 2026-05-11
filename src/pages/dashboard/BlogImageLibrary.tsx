@@ -53,12 +53,12 @@ export default function BlogImageLibrary() {
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {images.map(img => (
             <div key={img.id} className="overflow-hidden rounded-md border bg-card">
-              <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
+              <div className="relative w-full overflow-hidden bg-muted" style={{ paddingTop: "75%" }}>
                 <img
                   src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
                   loading="lazy"
                   decoding="async"
-                  className="h-full w-full object-cover"
+                  className="absolute inset-0 h-full w-full object-cover"
                   alt={img.vision_caption ?? ""}
                 />
               </div>

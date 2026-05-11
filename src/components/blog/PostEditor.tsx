@@ -14,10 +14,11 @@ import {
   Bold, Italic, Underline as UIcon, Heading2, Heading3,
   Link2, Image as ImageIcon, List, ListOrdered, Quote,
   Undo, Redo, Code2, AlignLeft, AlignCenter, AlignRight,
-  Table as TableIcon,
+  Table as TableIcon, Eye,
 } from "lucide-react";
+import { HtmlPreview } from "./HtmlPreview";
 
-export type EditorMode = "rich" | "source";
+export type EditorMode = "rich" | "source" | "preview";
 
 interface PostEditorProps {
   value: string;
@@ -61,8 +62,6 @@ export function PostEditor({
 
   if (!editor) return null;
 
-  const flip = () => onModeChange?.(mode === "rich" ? "source" : "rich");
-
   return (
     <div className="rounded-md border bg-card">
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
@@ -92,29 +91,33 @@ export function PostEditor({
             <Sep />
             <ToolbarButton active={false} onClick={() => editor.chain().focus().undo().run()} icon={Undo} />
             <ToolbarButton active={false} onClick={() => editor.chain().focus().redo().run()} icon={Redo} />
-            <div className="ml-auto" />
-            <Button type="button" size="sm" variant="ghost" onClick={flip} className="h-7 px-2 text-xs">
-              <Code2 className="mr-1 h-3.5 w-3.5" /> Source
-            </Button>
           </>
         ) : (
-          <>
-            <span className="px-2 text-xs text-muted-foreground">HTML source</span>
-            <div className="ml-auto" />
-            <Button type="button" size="sm" variant="ghost" onClick={flip} className="h-7 px-2 text-xs">
-              ← Back to rich
-            </Button>
-          </>
+          <span className="px-2 text-xs text-muted-foreground">
+            {mode === "source" ? "HTML source" : "Preview (read-only)"}
+          </span>
         )}
+        <div className="ml-auto flex items-center gap-1">
+          <Button type="button" size="sm" variant={mode === "rich" ? "secondary" : "ghost"} onClick={() => onModeChange?.("rich")} className="h-7 px-2 text-xs">
+            Rich
+          </Button>
+          <Button type="button" size="sm" variant={mode === "source" ? "secondary" : "ghost"} onClick={() => onModeChange?.("source")} className="h-7 px-2 text-xs">
+            <Code2 className="mr-1 h-3.5 w-3.5" /> Source
+          </Button>
+          <Button type="button" size="sm" variant={mode === "preview" ? "secondary" : "ghost"} onClick={() => onModeChange?.("preview")} className="h-7 px-2 text-xs">
+            <Eye className="mr-1 h-3.5 w-3.5" /> Preview
+          </Button>
+        </div>
       </div>
 
-      {mode === "rich" ? (
+      {mode === "rich" && (
         <EditorContent
           editor={editor}
           className="p-4 prose prose-sm max-w-none focus-within:outline-none"
           style={{ minHeight }}
         />
-      ) : (
+      )}
+      {mode === "source" && (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -122,6 +125,9 @@ export function PostEditor({
           spellCheck={false}
           style={{ minHeight }}
         />
+      )}
+      {mode === "preview" && (
+        <HtmlPreview html={value} className="block w-full border-0 bg-white" style={{ minHeight, height: minHeight }} />
       )}
     </div>
   );

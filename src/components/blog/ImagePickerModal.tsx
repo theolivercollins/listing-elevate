@@ -57,13 +57,13 @@ export function ImagePickerModal({ open, onClose, onSelect }: Props) {
                     onClick={() => { onSelect(img); onClose(); }}
                     className="group flex flex-col overflow-hidden rounded-md border bg-card text-left hover:ring-2 hover:ring-primary"
                   >
-                    <div style={{ aspectRatio: "4 / 3" }} className="w-full overflow-hidden bg-muted">
+                    <div className="relative w-full overflow-hidden bg-muted" style={{ paddingTop: "75%" }}>
                       <img
                         src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
                         alt={img.vision_caption ?? ""}
                         loading="lazy"
                         decoding="async"
-                        className="h-full w-full object-cover"
+                        className="absolute inset-0 h-full w-full object-cover"
                       />
                     </div>
                     <div className="truncate p-2 text-xs">{img.vision_caption ?? "—"}</div>
