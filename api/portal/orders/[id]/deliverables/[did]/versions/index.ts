@@ -1,12 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { getSupabase } from "../../../../../../lib/db.js";
-import { requireOwner } from "../../../../../../lib/portal/auth.js";
+import { getSupabase } from "../../../../../../../lib/db.js";
+import { requireOwner } from "../../../../../../../lib/portal/auth.js";
 import {
   objectPathFor,
   createSignedUploadUrl,
   STORAGE_CONSTANTS,
-} from "../../../../../../lib/portal/storage.js";
-import { createVersionRow } from "../../../../../../lib/portal/deliverables.js";
+} from "../../../../../../../lib/portal/storage.js";
+import { createVersionRow } from "../../../../../../../lib/portal/deliverables.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "method not allowed" });

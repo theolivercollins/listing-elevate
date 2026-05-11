@@ -234,21 +234,69 @@ function AddDeliverableModal({
   onCreated: () => void;
 }) {
   const [title, setTitle] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [stage, setStage] = useState<"idle" | "creating" | "uploading" | "finalizing">("idle");
+
+  function pickFile(f: File) {
+    setFile(f);
+    // Auto-fill title from filename (without extension) if the user hasn't typed anything yet.
+    if (!title.trim()) {
+      const stem = f.name.replace(/\.[^.]+$/, "");
+      setTitle(stem);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !file) return;
     setBusy(true);
     try {
-      await createDeliverable(orderId, title.trim());
+      setStage("creating");
+      const { deliverable_id } = await createDeliverable(orderId, title.trim());
+
+      setStage("uploading");
+      setProgress(0);
+      const v = await createVersion(orderId, deliverable_id, {
+        file_name: file.name,
+        mime_type: file.type || "video/mp4",
+        file_size_bytes: file.size,
+      });
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", v.signed_upload_url);
+        xhr.setRequestHeader("Content-Type", file.type || "video/mp4");
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
+        };
+        xhr.onload = () =>
+          xhr.status < 300 ? resolve() : reject(new Error(`upload failed: ${xhr.status}`));
+        xhr.onerror = () => reject(new Error("upload network error"));
+        xhr.send(file);
+      });
+
+      setStage("finalizing");
+      await finalizeVersion(orderId, deliverable_id, v.version_id);
+
+      toast.success("Deliverable uploaded");
       onCreated();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
+      setStage("idle");
+      setProgress(0);
     }
   }
+
+  const submitLabel = stage === "creating"
+    ? "Creating…"
+    : stage === "uploading"
+      ? `Uploading ${progress}%`
+      : stage === "finalizing"
+        ? "Finalizing…"
+        : "Create + upload";
 
   return (
     <div
@@ -261,7 +309,7 @@ function AddDeliverableModal({
         justifyContent: "center",
         zIndex: 50,
       }}
-      onClick={onClose}
+      onClick={busy ? undefined : onClose}
     >
       <form
         onClick={(e) => e.stopPropagation()}
@@ -269,7 +317,8 @@ function AddDeliverableModal({
         style={{
           background: "var(--le-bg)",
           padding: 32,
-          minWidth: 420,
+          minWidth: 480,
+          maxWidth: 520,
           border: "1px solid var(--le-border)",
         }}
       >
@@ -296,9 +345,91 @@ function AddDeliverableModal({
             margin: "12px 0 24px",
           }}
         >
-          What is this?
+          Upload + name your video.
         </h3>
-        <label style={{ display: "block" }}>
+
+        {/* File drop zone */}
+        <label
+          style={{
+            display: "block",
+            position: "relative",
+            border: `1px dashed ${file ? "var(--le-text)" : "var(--le-border-strong)"}`,
+            padding: "32px 18px",
+            textAlign: "center",
+            cursor: busy ? "wait" : "pointer",
+            background: file ? "var(--le-bg-sunken, transparent)" : "transparent",
+            overflow: "hidden",
+          }}
+          onDragOver={(e) => { e.preventDefault(); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (busy) return;
+            const f = e.dataTransfer.files?.[0];
+            if (f) pickFile(f);
+          }}
+        >
+          <input
+            type="file"
+            accept="video/mp4,video/quicktime,video/webm"
+            disabled={busy}
+            onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])}
+            style={{
+              position: "absolute",
+              inset: 0,
+              opacity: 0,
+              cursor: busy ? "wait" : "pointer",
+            }}
+          />
+          {file ? (
+            <>
+              <div style={{ fontSize: 14, fontWeight: 500, letterSpacing: "-0.01em" }}>{file.name}</div>
+              <div
+                style={{
+                  fontFamily: "var(--le-font-mono)",
+                  fontSize: 11,
+                  color: "var(--le-text-faint)",
+                  marginTop: 6,
+                }}
+              >
+                {formatBytes(file.size)} · {file.type || "video/*"}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, color: "var(--le-text-muted)" }}>
+                Drop video here or <span style={{ color: "var(--le-text)", textDecoration: "underline", textUnderlineOffset: 4 }}>browse</span>
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--le-font-mono)",
+                  fontSize: 10,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  color: "var(--le-text-faint)",
+                  marginTop: 8,
+                }}
+              >
+                MP4 · MOV · WebM · up to 2 GB
+              </div>
+            </>
+          )}
+          {stage === "uploading" && (
+            <span
+              style={{
+                position: "absolute",
+                left: 0,
+                bottom: 0,
+                height: 1,
+                background: "var(--le-text)",
+                width: `${progress}%`,
+                transition: "width 0.1s linear",
+              }}
+            />
+          )}
+        </label>
+
+        {/* Title input */}
+        <label style={{ display: "block", marginTop: 22 }}>
           <div
             style={{
               fontSize: 10,
@@ -313,8 +444,8 @@ function AddDeliverableModal({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            autoFocus
             placeholder="Main 60s video"
+            disabled={busy}
             style={{
               width: "100%",
               marginTop: 10,
@@ -328,16 +459,17 @@ function AddDeliverableModal({
             }}
           />
         </label>
+
         <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 28 }}>
-          <button type="button" onClick={onClose} style={ghostBtn}>
+          <button type="button" onClick={onClose} disabled={busy} style={{ ...ghostBtn, opacity: busy ? 0.4 : 1 }}>
             Cancel
           </button>
           <button
             type="submit"
-            disabled={busy || !title.trim()}
-            style={{ ...primaryBtn, opacity: busy || !title.trim() ? 0.4 : 1 }}
+            disabled={busy || !title.trim() || !file}
+            style={{ ...primaryBtn, opacity: busy || !title.trim() || !file ? 0.4 : 1 }}
           >
-            {busy ? "Creating…" : "Create"}
+            {submitLabel}
           </button>
         </div>
       </form>
