@@ -27,6 +27,8 @@ import {
   GitPullRequest,
   ListChecks,
   Activity,
+  Image as ImageIcon,
+  Newspaper,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -87,6 +89,39 @@ function DevelopmentNav() {
         <DropdownMenuItem asChild>
           <Link to="/dashboard/development/system-status" className="cursor-pointer">
             <Activity className="mr-2 h-3.5 w-3.5" /> System status
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function BlogNav() {
+  const location = useLocation();
+  const active = location.pathname.startsWith("/dashboard/blog");
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={`relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic outline-none ${
+            active ? "text-foreground after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Newspaper className="h-3.5 w-3.5" strokeWidth={1.5} />
+          Blog
+          <ChevronDown className="h-3 w-3 opacity-70" strokeWidth={1.5} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem asChild>
+          <Link to="/dashboard/blog/posts" className="cursor-pointer">
+            <FileText className="mr-2 h-3.5 w-3.5" /> Posts
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/dashboard/blog/images" className="cursor-pointer">
+            <ImageIcon className="mr-2 h-3.5 w-3.5" /> Image library
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -165,6 +200,7 @@ export function TopNav() {
               </NavLink>
             ))}
             <DevelopmentNav />
+            <BlogNav />
             {dashboardNav.slice(-1).map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
