@@ -110,6 +110,10 @@ export interface AIDraftInput {
 
 export interface AIDraftResult {
   html: string;
+  body_html: string;
+  meta_title: string;
+  meta_description: string;
+  meta_tags: string[];
   cost_cents: number;
   model: string;
   usage: { input_tokens: number; output_tokens: number };
