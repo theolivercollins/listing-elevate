@@ -1,12 +1,8 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, RefreshCw, Map as MapIcon } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import "@/v2/styles/v2.css";
-
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
-const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 import {
   fetchCells,
   fetchCalibrationStatus,
@@ -47,10 +43,20 @@ const STATE_LABEL: Record<string, string> = {
 
 function StatBlock({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="border border-border bg-background p-4" style={{ borderRadius: 0 }}>
-      <div style={EYEBROW}>{label}</div>
-      <div className="mt-2" style={MONO_VALUE}>{value}</div>
-      {sub && <div className="mt-1 text-[11px] text-muted-foreground">{sub}</div>}
+    <div
+      className="le-card"
+      style={{ padding: "18px 20px" }}
+    >
+      <div className="le-eyebrow" style={{ marginBottom: 8 }}>{label}</div>
+      <div
+        className="le-mono"
+        style={{ fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)" }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ marginTop: 4, fontSize: 11, color: "var(--le-text-muted)" }}>{sub}</div>
+      )}
     </div>
   );
 }
@@ -96,106 +102,168 @@ export default function KnowledgeMap() {
   }, [cells]);
 
   return (
-    <div className="space-y-10">
-      <div>
-        <span style={EYEBROW}>— Knowledge Map</span>
-        <h2 className="mt-3 flex items-center gap-3" style={PAGE_H1}>
-          <MapIcon className="h-6 w-6 text-muted-foreground" />
-          Machine learning coverage at a glance
-        </h2>
-        <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-          Every {ROWS.length}×{COLS.length} = 168 scene cell (room type × camera verb) colored by its learning state.
-          Click any cell to see the iterations, recipes, overrides, and fail-tag patterns backing that cell.
-        </p>
-      </div>
+    <div className="le-root" style={{ background: "transparent", padding: 0 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <StatBlock label="Golden cells" value={String(counts.golden ?? 0)} sub="≥ 2 five-star ratings — 10/10 ready" />
-        <StatBlock label="Strong cells" value={String(counts.strong ?? 0)} sub="avg rating ≥ 4.0" />
-        <StatBlock label="Weak + losers" value={String(counts.weak ?? 0)} sub="avg ≤ 2 or half losers" />
-        <StatBlock label="Untested" value={String(counts.untested ?? 0)} sub="zero rated iterations" />
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <StatBlock
-          label="Judge calibration"
-          value={calibration ? `${Math.round((calibration.overall_within_one_star ?? 0) * 100)}%` : "—"}
-          sub={calibration ? `${calibration.cells_auto} auto / ${calibration.cells_advisory} advisory` : "Not calibrated yet"}
-        />
-        <StatBlock
-          label="Spend, last 30 days"
-          value={costTotalCents !== null ? `$${(costTotalCents / 100).toFixed(2)}` : "—"}
-          sub="All providers, all stages"
-        />
-        <StatBlock
-          label="Judge overhead, last 30 days"
-          value={judgeCostCents !== null ? `$${(judgeCostCents / 100).toFixed(2)}` : "—"}
-          sub="Claude rubric judge calls"
-        />
-      </div>
-
-      <div className="flex items-center justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          {(["untested", "weak", "okay", "strong", "golden"] as const).map((s) => (
-            <span key={s} className={`inline-flex items-center gap-2 border border-border px-2 py-1 text-[11px] ${STATE_COLOR[s]}`}>
-              <span className={`inline-block h-2 w-2 ${STATE_COLOR[s].split(" ")[0]}`} />
-              {STATE_LABEL[s]}
-            </span>
-          ))}
+        {/* Page header */}
+        <div>
+          <div className="le-eyebrow" style={{ marginBottom: 8 }}>Studio / Dev</div>
+          <h1
+            className="le-display"
+            style={{ fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 500, color: "var(--le-text)", margin: 0 }}
+          >
+            Knowledge Map
+          </h1>
+          <p style={{ marginTop: 8, fontSize: 13, color: "var(--le-text-muted)", maxWidth: 560 }}>
+            Per-cell ML coverage: untested · weak · okay · strong · golden.
+            Click any cell to see the iterations, recipes, overrides, and fail-tag patterns backing it.
+          </p>
         </div>
-        <Button size="sm" variant="outline" onClick={reload} disabled={loading}>
-          {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
-          Refresh
-        </Button>
-      </div>
 
-      {error && (
-        <div className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
-      )}
+        {/* Coverage counts */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+          <StatBlock label="Golden cells" value={String(counts.golden ?? 0)} sub="≥ 2 five-star ratings — 10/10 ready" />
+          <StatBlock label="Strong cells" value={String(counts.strong ?? 0)} sub="avg rating ≥ 4.0" />
+          <StatBlock label="Weak + losers" value={String(counts.weak ?? 0)} sub="avg ≤ 2 or half losers" />
+          <StatBlock label="Untested" value={String(counts.untested ?? 0)} sub="zero rated iterations" />
+        </div>
 
-      <div className="overflow-x-auto border border-border">
-        <table className="w-full border-collapse text-[11px]">
-          <thead>
-            <tr>
-              <th className="sticky left-0 z-10 w-40 bg-background p-2 text-left text-muted-foreground">room \ verb</th>
-              {COLS.map((verb) => (
-                <th key={verb} className="border-l border-border bg-background p-2 text-left text-muted-foreground whitespace-nowrap">
-                  {verb}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ROWS.map((room) => (
-              <tr key={room} className="border-t border-border">
-                <th className="sticky left-0 z-10 w-40 bg-background p-2 text-left font-medium whitespace-nowrap">{room}</th>
-                {COLS.map((verb) => {
-                  const key = `${room}-${verb}`;
-                  const c = cellLookup.get(key);
-                  const state = c?.state ?? "untested";
-                  const bg = STATE_COLOR[state] ?? STATE_COLOR.untested;
-                  return (
-                    <td key={key} className="border-l border-border p-0">
-                      <Link
-                        to={`/dashboard/development/knowledge-map/${encodeURIComponent(key)}`}
-                        className={`block h-14 w-full px-2 py-2 transition-opacity hover:opacity-80 ${bg}`}
-                        title={c ? `${c.sample_size} samples · avg ${c.avg_rating ?? "—"} · ${STATE_LABEL[state]}` : STATE_LABEL[state]}
-                      >
-                        <div className="flex items-center justify-between text-[10px]">
-                          <span>{c?.sample_size ?? 0}</span>
-                          {c?.five_star_count ? <span className="font-semibold">★{c.five_star_count}</span> : null}
-                        </div>
-                        {c?.avg_rating !== null && c?.avg_rating !== undefined && (
-                          <div className="mt-1 text-[10px] opacity-80">avg {Number(c.avg_rating).toFixed(1)}</div>
-                        )}
-                      </Link>
-                    </td>
-                  );
-                })}
-              </tr>
+        {/* Calibration + cost */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+          <StatBlock
+            label="Judge calibration"
+            value={calibration ? `${Math.round((calibration.overall_within_one_star ?? 0) * 100)}%` : "—"}
+            sub={calibration ? `${calibration.cells_auto} auto / ${calibration.cells_advisory} advisory` : "Not calibrated yet"}
+          />
+          <StatBlock
+            label="Spend, last 30 days"
+            value={costTotalCents !== null ? `$${(costTotalCents / 100).toFixed(2)}` : "—"}
+            sub="All providers, all stages"
+          />
+          <StatBlock
+            label="Judge overhead, last 30 days"
+            value={judgeCostCents !== null ? `$${(judgeCostCents / 100).toFixed(2)}` : "—"}
+            sub="Claude rubric judge calls"
+          />
+        </div>
+
+        {/* Legend + refresh */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            {(["untested", "weak", "okay", "strong", "golden"] as const).map((s) => (
+              <span
+                key={s}
+                className={`inline-flex items-center gap-2 border border-border px-2 py-1 text-[11px] ${STATE_COLOR[s]}`}
+              >
+                <span className={`inline-block h-2 w-2 ${STATE_COLOR[s].split(" ")[0]}`} />
+                {STATE_LABEL[s]}
+              </span>
             ))}
-          </tbody>
-        </table>
+          </div>
+          <Button size="sm" variant="outline" onClick={reload} disabled={loading}>
+            {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+            Refresh
+          </Button>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              padding: "12px 16px",
+              background: "var(--le-danger-soft)",
+              border: "1px solid var(--le-danger)",
+              borderRadius: "var(--le-r-md)",
+              color: "var(--le-danger)",
+              fontSize: 13,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* Grid */}
+        <div
+          className="le-card le-scroll"
+          style={{ overflowX: "auto", borderRadius: "var(--le-r-lg)", padding: 0 }}
+        >
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+            <thead>
+              <tr>
+                <th
+                  style={{
+                    position: "sticky", left: 0, zIndex: 10,
+                    width: 160, background: "var(--le-bg-elev)",
+                    padding: "8px 10px", textAlign: "left",
+                    color: "var(--le-text-muted)",
+                    borderBottom: "1px solid var(--le-border)",
+                  }}
+                >
+                  room \ verb
+                </th>
+                {COLS.map((verb) => (
+                  <th
+                    key={verb}
+                    style={{
+                      background: "var(--le-bg-elev)",
+                      padding: "8px 10px",
+                      textAlign: "left",
+                      color: "var(--le-text-muted)",
+                      whiteSpace: "nowrap",
+                      borderLeft: "1px solid var(--le-border)",
+                      borderBottom: "1px solid var(--le-border)",
+                    }}
+                  >
+                    {verb}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ROWS.map((room) => (
+                <tr key={room} style={{ borderTop: "1px solid var(--le-border)" }}>
+                  <th
+                    style={{
+                      position: "sticky", left: 0, zIndex: 10,
+                      width: 160, background: "var(--le-bg-elev)",
+                      padding: "8px 10px", textAlign: "left",
+                      fontWeight: 500, whiteSpace: "nowrap",
+                      color: "var(--le-text)",
+                    }}
+                  >
+                    {room}
+                  </th>
+                  {COLS.map((verb) => {
+                    const key = `${room}-${verb}`;
+                    const c = cellLookup.get(key);
+                    const state = c?.state ?? "untested";
+                    const bg = STATE_COLOR[state] ?? STATE_COLOR.untested;
+                    return (
+                      <td
+                        key={key}
+                        style={{ borderLeft: "1px solid var(--le-border)", padding: 0 }}
+                      >
+                        <Link
+                          to={`/dashboard/dev/knowledge-map/${encodeURIComponent(key)}`}
+                          className={`block h-14 w-full px-2 py-2 transition-opacity hover:opacity-80 ${bg}`}
+                          title={c ? `${c.sample_size} samples · avg ${c.avg_rating ?? "—"} · ${STATE_LABEL[state]}` : STATE_LABEL[state]}
+                        >
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span>{c?.sample_size ?? 0}</span>
+                            {c?.five_star_count ? <span className="font-semibold">★{c.five_star_count}</span> : null}
+                          </div>
+                          {c?.avg_rating !== null && c?.avg_rating !== undefined && (
+                            <div className="mt-1 text-[10px] opacity-80">avg {Number(c.avg_rating).toFixed(1)}</div>
+                          )}
+                        </Link>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
       </div>
     </div>
   );
