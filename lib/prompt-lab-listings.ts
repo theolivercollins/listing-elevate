@@ -14,6 +14,7 @@ import {
 } from "./prompt-lab.js";
 import { parseDirectorIntent, type DirectorIntent } from "./prompts/director-intent.js";
 import { DIRECTOR_SYSTEM, buildDirectorUserPrompt } from "./prompts/director.js";
+import { rewritePromptForNewMotion } from "./prompts/rewrite-on-motion-override.js";
 import { buildAnalysisText, embedTextSafe, fromPgVector, toPgVector } from "./embeddings.js";
 import {
   analyzePhotoWithGemini,
@@ -428,9 +429,21 @@ export async function directListingScenes(listingId: string): Promise<void> {
       const suggestedInHeadroom =
         suggested && (!suggestedKey || hr[suggestedKey] !== false);
       const replacement = suggestedInHeadroom && suggested ? suggested : "feature_closeup";
-      console.warn(
-        `[directListingScenes] DA.3 override: scene ${scene.scene_number} picked ${originalMovement} but photo.motion_headroom.${key}=false; overriding to ${replacement}`,
+      // Rewrite prompt text to match the replacement motion verb. The
+      // director_intent here is still raw JSON (parseDirectorIntent
+      // hasn't run yet), so extract subject defensively.
+      const intentRaw = scene.director_intent as { subject?: unknown } | null | undefined;
+      const subjectFromIntent =
+        typeof intentRaw?.subject === "string" ? intentRaw.subject : undefined;
+      const rewrittenPrompt = rewritePromptForNewMotion(
+        scene.prompt,
+        replacement,
+        subjectFromIntent,
       );
+      console.warn(
+        `[directListingScenes] DA.3 override: scene ${scene.scene_number} picked ${originalMovement} but photo.motion_headroom.${key}=false; overriding to ${replacement}; prompt rewritten`,
+      );
+      scene.prompt = rewrittenPrompt;
       scene.camera_movement = replacement;
     }
   }
