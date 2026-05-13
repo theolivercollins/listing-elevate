@@ -9,6 +9,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { PostEditor, type EditorMode } from "@/components/blog/PostEditor";
 import { analyzeTemplate, createTemplate, getTemplate, getTaxonomy, updateTemplate } from "@/lib/blog/api-client";
 import type { AnalyzeTemplateResult } from "@/lib/blog/types";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { StatusPill } from "@/v2/components/dashboard/StatusPill";
 import { toast } from "sonner";
 import { Loader2, Sparkles, Upload } from "lucide-react";
 
@@ -92,7 +95,9 @@ export default function BlogTemplateDetail() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold">{isNew ? "New template" : `Edit: ${name}`}</h1>
+      <h1 className="mb-4 le-display text-[28px] font-medium tracking-tight">
+        {isNew ? "New template" : `Edit: ${name}`}
+      </h1>
       <div className="space-y-4">
         <div>
           <Label>Name</Label>
@@ -102,64 +107,76 @@ export default function BlogTemplateDetail() {
           <Label>Description (optional)</Label>
           <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="When to use this template" />
         </div>
-        <div className="space-y-3 rounded-md border bg-muted/20 p-4">
-          <div>
-            <Label className="text-base">Default fields (optional)</Label>
-            <p className="text-xs text-muted-foreground">
-              When this template is selected on a new post, these values pre-fill the sidebar.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+
+        <DashboardCard padding="sm" style={{ background: "var(--le-bg-sunken)" }}>
+          <div className="space-y-3">
             <div>
-              <Label>Default author</Label>
-              <select
-                value={defaultAuthorLabel}
-                onChange={e => setDefaultAuthorLabel(e.target.value)}
-                className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="">— None —</option>
-                {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
-                  <option key={a.id} value={a.label}>{a.label}</option>
-                ))}
-              </select>
+              <Label className="text-base">Default fields (optional)</Label>
+              <p className="text-xs" style={{ color: "var(--le-text-muted)" }}>
+                When this template is selected on a new post, these values pre-fill the sidebar.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Default author</Label>
+                <select
+                  value={defaultAuthorLabel}
+                  onChange={e => setDefaultAuthorLabel(e.target.value)}
+                  className="block w-full rounded-[8px] border px-2 py-1.5 text-sm"
+                  style={{
+                    borderColor: "var(--le-border)",
+                    background: "var(--le-bg-elev)",
+                  }}
+                >
+                  <option value="">— None —</option>
+                  {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
+                    <option key={a.id} value={a.label}>{a.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Label>Default category</Label>
+                <select
+                  value={defaultCategoryLabel}
+                  onChange={e => setDefaultCategoryLabel(e.target.value)}
+                  className="block w-full rounded-[8px] border px-2 py-1.5 text-sm"
+                  style={{
+                    borderColor: "var(--le-border)",
+                    background: "var(--le-bg-elev)",
+                  }}
+                >
+                  <option value="">— None —</option>
+                  {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
+                    <option key={c.id} value={c.label}>{c.label}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div>
-              <Label>Default category</Label>
-              <select
-                value={defaultCategoryLabel}
-                onChange={e => setDefaultCategoryLabel(e.target.value)}
-                className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
-              >
-                <option value="">— None —</option>
-                {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
-                  <option key={c.id} value={c.label}>{c.label}</option>
-                ))}
-              </select>
+              <Label>Default meta title</Label>
+              <Input value={defaultMetaTitle} onChange={e => setDefaultMetaTitle(e.target.value)} />
+            </div>
+            <div>
+              <Label>Default meta description</Label>
+              <Textarea value={defaultMetaDescription} onChange={e => setDefaultMetaDescription(e.target.value)} rows={2} />
+            </div>
+            <div>
+              <Label>Default meta tags (comma-separated)</Label>
+              <Input value={defaultMetaTags} onChange={e => setDefaultMetaTags(e.target.value)} />
             </div>
           </div>
-          <div>
-            <Label>Default meta title</Label>
-            <Input value={defaultMetaTitle} onChange={e => setDefaultMetaTitle(e.target.value)} />
-          </div>
-          <div>
-            <Label>Default meta description</Label>
-            <Textarea value={defaultMetaDescription} onChange={e => setDefaultMetaDescription(e.target.value)} rows={2} />
-          </div>
-          <div>
-            <Label>Default meta tags (comma-separated)</Label>
-            <Input value={defaultMetaTags} onChange={e => setDefaultMetaTags(e.target.value)} />
-          </div>
-        </div>
+        </DashboardCard>
+
         <div>
           <div className="mb-2 flex items-center justify-between">
             <Label>Body HTML</Label>
             <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
-                <Upload className="mr-1 h-3.5 w-3.5" /> Upload .html
-              </Button>
-              <Button
+              <DashboardButton size="sm" variant="ghost" onClick={() => fileRef.current?.click()}>
+                <Upload className="h-3.5 w-3.5" /> Upload .html
+              </DashboardButton>
+              <DashboardButton
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 onClick={() => {
                   if (!body_html || body_html.trim().length < 20) {
                     toast.error("Paste or upload HTML first (min 20 chars).");
@@ -169,9 +186,11 @@ export default function BlogTemplateDetail() {
                 }}
                 disabled={analyze.isPending}
               >
-                {analyze.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1 h-3.5 w-3.5" />}
+                {analyze.isPending
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Sparkles className="h-3.5 w-3.5" />}
                 Analyze with AI
-              </Button>
+              </DashboardButton>
             </div>
             <input ref={fileRef} type="file" accept=".html,text/html" className="hidden" onChange={onUpload} />
           </div>
@@ -185,67 +204,70 @@ export default function BlogTemplateDetail() {
           />
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => save.mutate()} disabled={!name || !body_html || save.isPending}>Save</Button>
-          <Button variant="outline" onClick={() => navigate("/dashboard/blog/templates")}>Cancel</Button>
+          <DashboardButton variant="primary" onClick={() => save.mutate()} disabled={!name || !body_html || save.isPending}>Save</DashboardButton>
+          <DashboardButton variant="ghost" onClick={() => navigate("/dashboard/blog/templates")}>Cancel</DashboardButton>
         </div>
       </div>
+
       <Dialog open={!!analyzeResult} onOpenChange={(v) => !v && setAnalyzeResult(null)}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" /> Template analysis
-          </DialogTitle>
-        </DialogHeader>
-        {analyzeResult && (
-          <div className="space-y-4">
-            <div>
-              <Label>Suggested name</Label>
-              <div className="flex gap-2">
-                <Input value={analyzeResult.suggested_name} readOnly className="flex-1" />
-                <Button size="sm" variant="outline" onClick={() => setName(analyzeResult.suggested_name)}>Apply</Button>
-              </div>
-            </div>
-            <div>
-              <Label>Suggested description</Label>
-              <div className="flex gap-2">
-                <Textarea value={analyzeResult.suggested_description} readOnly className="flex-1" rows={2} />
-                <Button size="sm" variant="outline" onClick={() => setDescription(analyzeResult.suggested_description)}>Apply</Button>
-              </div>
-            </div>
-            {analyzeResult.detected_sections.length > 0 && (
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4" /> Template analysis
+            </DialogTitle>
+          </DialogHeader>
+          {analyzeResult && (
+            <div className="space-y-4">
               <div>
-                <Label>Detected sections</Label>
-                <div className="flex flex-wrap gap-1 pt-1">
-                  {analyzeResult.detected_sections.map((s, i) => (
-                    <span key={i} className="rounded bg-muted px-2 py-0.5 text-xs">{s}</span>
-                  ))}
+                <Label>Suggested name</Label>
+                <div className="flex gap-2">
+                  <Input value={analyzeResult.suggested_name} readOnly className="flex-1" />
+                  <DashboardButton size="sm" variant="ghost" onClick={() => setName(analyzeResult.suggested_name)}>Apply</DashboardButton>
                 </div>
               </div>
-            )}
-            {analyzeResult.notes && (
               <div>
-                <Label>Notes</Label>
-                <pre className="whitespace-pre-wrap rounded border bg-muted/30 p-3 text-xs">{analyzeResult.notes}</pre>
+                <Label>Suggested description</Label>
+                <div className="flex gap-2">
+                  <Textarea value={analyzeResult.suggested_description} readOnly className="flex-1" rows={2} />
+                  <DashboardButton size="sm" variant="ghost" onClick={() => setDescription(analyzeResult.suggested_description)}>Apply</DashboardButton>
+                </div>
               </div>
-            )}
-            <div className="text-xs text-muted-foreground">
-              Cost: ${(analyzeResult.cost_cents / 100).toFixed(2)} · Model: {analyzeResult.model}
+              {analyzeResult.detected_sections.length > 0 && (
+                <div>
+                  <Label>Detected sections</Label>
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    {analyzeResult.detected_sections.map((s, i) => (
+                      <StatusPill key={i} tone="muted">{s}</StatusPill>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {analyzeResult.notes && (
+                <div>
+                  <Label>Notes</Label>
+                  <DashboardCard padding="sm">
+                    <pre className="whitespace-pre-wrap text-xs" style={{ color: "var(--le-text-muted)" }}>{analyzeResult.notes}</pre>
+                  </DashboardCard>
+                </div>
+              )}
+              <div className="text-xs" style={{ color: "var(--le-text-muted)" }}>
+                Cost: ${(analyzeResult.cost_cents / 100).toFixed(2)} · Model: {analyzeResult.model}
+              </div>
+              <div className="flex justify-end gap-2">
+                <DashboardButton variant="ghost" onClick={() => setAnalyzeResult(null)}>Close</DashboardButton>
+                <DashboardButton variant="primary" onClick={() => {
+                  setName(analyzeResult.suggested_name);
+                  setDescription(analyzeResult.suggested_description);
+                  setAnalyzeResult(null);
+                  toast.success("Applied suggestions");
+                }}>
+                  Apply all
+                </DashboardButton>
+              </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setAnalyzeResult(null)}>Close</Button>
-              <Button onClick={() => {
-                setName(analyzeResult.suggested_name);
-                setDescription(analyzeResult.suggested_description);
-                setAnalyzeResult(null);
-                toast.success("Applied suggestions");
-              }}>
-                Apply all
-              </Button>
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ImageUploadDropzone } from "@/components/blog/ImageUploadDropzone";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { StatusPill } from "@/v2/components/dashboard/StatusPill";
+import { ChipTabs } from "@/v2/components/dashboard/ChipTabs";
 import { deleteImage, listImages, updateImage } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage } from "@/lib/blog/types";
@@ -11,6 +15,11 @@ import { Plus, Trash2, Tag } from "lucide-react";
 import { toast } from "sonner";
 
 const VOCAB = ["aerial","exterior","interior","team","area","lifestyle","event","seasonal_spring","seasonal_summer","seasonal_fall","seasonal_winter","data_chart"];
+
+const TAG_FILTER_ITEMS = [
+  { value: "__all__", label: "All" },
+  ...VOCAB.map(t => ({ value: t, label: t })),
+];
 
 export default function BlogImageLibrary() {
   const qc = useQueryClient();
@@ -37,23 +46,37 @@ export default function BlogImageLibrary() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Image library <span className="ml-2 text-sm font-normal text-muted-foreground">{images.length}</span></h1>
-        <Button onClick={() => setUploadOpen(true)}><Plus className="mr-1 h-4 w-4" /> Upload</Button>
+        <h1 className="le-display text-[28px] font-medium tracking-tight">
+          Image library{" "}
+          <span className="ml-2 text-sm font-normal" style={{ color: "var(--le-text-muted)" }}>{images.length}</span>
+        </h1>
+        <DashboardButton variant="primary" onClick={() => setUploadOpen(true)}>
+          <Plus className="h-4 w-4" /> Upload
+        </DashboardButton>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Input placeholder="Search caption…" value={q} onChange={e => setQ(e.target.value)} className="max-w-xs" />
-        <Button size="sm" variant={tag === null ? "default" : "outline"} onClick={() => setTag(null)}>All</Button>
-        {VOCAB.map(t => (
-          <Button key={t} size="sm" variant={tag === t ? "default" : "outline"} onClick={() => setTag(t)}>{t}</Button>
-        ))}
+        <div className="overflow-x-auto">
+          <ChipTabs
+            items={TAG_FILTER_ITEMS}
+            value={tag ?? "__all__"}
+            onChange={(v) => setTag(v === "__all__" ? null : v)}
+            ariaLabel="Filter images by tag"
+          />
+        </div>
       </div>
 
-      {isLoading ? <div>Loading…</div> : (
+      {isLoading ? (
+        <div className="text-sm" style={{ color: "var(--le-text-muted)" }}>Loading…</div>
+      ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
           {images.map(img => (
-            <div key={img.id} className="overflow-hidden rounded-md border bg-card">
-              <div className="relative w-full overflow-hidden bg-muted" style={{ paddingTop: "75%" }}>
+            <DashboardCard key={img.id} padding="sm" className="overflow-hidden !p-0">
+              <div
+                className="relative w-full overflow-hidden"
+                style={{ paddingTop: "75%", background: "var(--le-bg-sunken)" }}
+              >
                 <img
                   src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
                   loading="lazy"
@@ -64,15 +87,21 @@ export default function BlogImageLibrary() {
               </div>
               <div className="space-y-1 p-2">
                 <div className="text-xs">{img.vision_caption ?? "—"}</div>
-                <div className="flex flex-wrap gap-1">{img.vision_tags.map(t => (
-                  <span key={t} className="rounded bg-muted px-1 text-[10px]">{t}</span>
-                ))}</div>
+                <div className="flex flex-wrap gap-1">
+                  {img.vision_tags.map(t => (
+                    <StatusPill key={t} tone="muted">{t}</StatusPill>
+                  ))}
+                </div>
                 <div className="flex gap-1 pt-1">
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setEditing(img)}><Tag className="mr-1 h-3 w-3" /> Tags</Button>
-                  <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => softDelete.mutate(img.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <DashboardButton size="sm" variant="ghost" onClick={() => setEditing(img)}>
+                    <Tag className="h-3 w-3" /> Tags
+                  </DashboardButton>
+                  <DashboardButton size="sm" variant="ghost" onClick={() => softDelete.mutate(img.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </DashboardButton>
                 </div>
               </div>
-            </div>
+            </DashboardCard>
           ))}
         </div>
       )}
@@ -88,8 +117,8 @@ export default function BlogImageLibrary() {
         <Dialog open onOpenChange={() => setEditing(null)}>
           <DialogContent>
             <DialogHeader><DialogTitle>Edit tags</DialogTitle></DialogHeader>
-            <img src={thumbUrl(editing.blob_url, { width: 600, quality: 75 })} className="mb-2 rounded" alt="" />
-            <div className="text-sm text-muted-foreground">{editing.vision_caption}</div>
+            <img src={thumbUrl(editing.blob_url, { width: 600, quality: 75 })} className="mb-2 rounded-[8px]" alt="" />
+            <div className="text-sm" style={{ color: "var(--le-text-muted)" }}>{editing.vision_caption}</div>
             <div className="flex flex-wrap gap-2 pt-2">
               {VOCAB.map(t => {
                 const on = editing.vision_tags.includes(t);

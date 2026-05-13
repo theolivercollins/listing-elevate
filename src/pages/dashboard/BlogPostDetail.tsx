@@ -19,6 +19,8 @@ import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
 import { Eye, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
@@ -278,29 +280,40 @@ export default function BlogPostDetailPage() {
 
   return (
     <div>
-      <h1 className="mb-4 text-2xl font-bold">{isCompose ? "New post" : form.title || "Post"}</h1>
+      <h1 className="mb-4 le-display text-[28px] font-medium tracking-tight">
+        {isCompose ? "New post" : form.title || "Post"}
+      </h1>
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
-          {aiInput ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <span className="flex-1">
-                <span className="font-medium">AI draft in queue</span>
-                <span className="ml-2 text-muted-foreground">— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
-              </span>
-              <Button size="sm" variant="ghost" onClick={cancelAIGen}>Cancel</Button>
-            </>
-          ) : aiResult ? (
-            <>
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="flex-1"><span className="font-medium">✨ AI draft ready</span></span>
-              <Button size="sm" variant="default" onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</Button>
-              <Button size="sm" variant="ghost" onClick={discardAIResult}>Discard</Button>
-            </>
-          ) : null}
-        </div>
+        <DashboardCard
+          padding="sm"
+          className="mb-4 !p-0"
+          style={{
+            background: "var(--le-info-soft)",
+            borderColor: "var(--le-info)",
+          }}
+        >
+          <div className="flex items-center gap-3 px-4 py-2 text-sm">
+            {aiInput ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" style={{ color: "var(--le-accent)" }} />
+                <span className="flex-1">
+                  <span className="font-medium">AI draft in queue</span>
+                  <span className="ml-2" style={{ color: "var(--le-text-muted)" }}>— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
+                </span>
+                <DashboardButton size="sm" variant="ghost" onClick={cancelAIGen}>Cancel</DashboardButton>
+              </>
+            ) : aiResult ? (
+              <>
+                <Sparkles className="h-4 w-4" style={{ color: "var(--le-accent)" }} />
+                <span className="flex-1"><span className="font-medium">✨ AI draft ready</span></span>
+                <DashboardButton size="sm" variant="primary" onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</DashboardButton>
+                <DashboardButton size="sm" variant="ghost" onClick={discardAIResult}>Discard</DashboardButton>
+              </>
+            ) : null}
+          </div>
+        </DashboardCard>
       )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -327,14 +340,18 @@ export default function BlogPostDetailPage() {
                   }
                   e.target.value = "";
                 }}
-                className="rounded-md border bg-background px-2 py-1.5 text-sm"
+                className="rounded-[8px] border px-2 py-1.5 text-sm"
+                style={{
+                  borderColor: "var(--le-border)",
+                  background: "var(--le-bg-elev)",
+                }}
               >
                 <option value="">Start from template…</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <Button variant="outline" size="sm" onClick={() => setAIOpen(true)}>
-                <Sparkles className="mr-1 h-3.5 w-3.5" /> Generate with AI
-              </Button>
+              <DashboardButton variant="ghost" size="sm" onClick={() => setAIOpen(true)}>
+                <Sparkles className="h-3.5 w-3.5" /> Generate with AI
+              </DashboardButton>
             </div>
           )}
           <div>
@@ -358,14 +375,14 @@ export default function BlogPostDetailPage() {
             <Label>Featured image</Label>
             {form.image ? (
               <div className="space-y-2">
-                <img src={thumbUrl(form.image.blob_url, { width: 600, quality: 75 })} loading="lazy" decoding="async" className="w-full rounded-md" alt={form.image.vision_caption ?? ""} />
+                <img src={thumbUrl(form.image.blob_url, { width: 600, quality: 75 })} loading="lazy" decoding="async" className="w-full rounded-[8px]" alt={form.image.vision_caption ?? ""} />
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>Change</Button>
-                  <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, image: null })}>Remove</Button>
+                  <DashboardButton size="sm" variant="ghost" onClick={() => setPickerOpen(true)}>Change</DashboardButton>
+                  <DashboardButton size="sm" variant="ghost" onClick={() => setForm({ ...form, image: null })}>Remove</DashboardButton>
                 </div>
               </div>
             ) : (
-              <Button variant="outline" onClick={() => setPickerOpen(true)}>Pick image</Button>
+              <DashboardButton variant="ghost" onClick={() => setPickerOpen(true)}>Pick image</DashboardButton>
             )}
           </div>
           <div>
@@ -374,7 +391,11 @@ export default function BlogPostDetailPage() {
               value={form.author_label ?? ""}
               onChange={e => setForm({ ...form, author_label: e.target.value })}
               disabled={readOnly}
-              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              className="block w-full rounded-[8px] border px-2 py-1.5 text-sm"
+              style={{
+                borderColor: "var(--le-border)",
+                background: "var(--le-bg-elev)",
+              }}
             >
               <option value="">— Select author —</option>
               {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
@@ -388,7 +409,11 @@ export default function BlogPostDetailPage() {
               value={form.category_label ?? ""}
               onChange={e => setForm({ ...form, category_label: e.target.value })}
               disabled={readOnly}
-              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              className="block w-full rounded-[8px] border px-2 py-1.5 text-sm"
+              style={{
+                borderColor: "var(--le-border)",
+                background: "var(--le-bg-elev)",
+              }}
             >
               <option value="">— Select category —</option>
               {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
@@ -406,32 +431,36 @@ export default function BlogPostDetailPage() {
       <div className="mt-6 flex flex-wrap gap-2">
         {mode === "compose" && (
           <>
-            <Button onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>Save as draft</Button>
-            <Button onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>Publish now</Button>
+            <DashboardButton variant="ghost" onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>Save as draft</DashboardButton>
+            <DashboardButton variant="primary" onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>Publish now</DashboardButton>
           </>
         )}
         {mode === "edit-manual" && (
           <>
-            <Button variant="outline" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Save</Button>
-            <Button onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>Publish now</Button>
+            <DashboardButton variant="ghost" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Save</DashboardButton>
+            <DashboardButton variant="primary" onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>Publish now</DashboardButton>
           </>
         )}
         {mode === "review-auto" && (
           <>
-            <Button variant="outline" onClick={() => saveEdit.mutate()}>Save changes</Button>
-            <Button onClick={() => publishIt.mutate()}>Approve &amp; publish</Button>
-            <Button variant="destructive" onClick={() => reject.mutate()}>Reject</Button>
+            <DashboardButton variant="ghost" onClick={() => saveEdit.mutate()}>Save changes</DashboardButton>
+            <DashboardButton variant="primary" onClick={() => publishIt.mutate()}>Approve &amp; publish</DashboardButton>
+            <DashboardButton variant="destructive" onClick={() => reject.mutate()}>Reject</DashboardButton>
           </>
         )}
         {mode === "edit-live" && (
           <>
-            <Button onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</Button>
-            {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
+            <DashboardButton variant="primary" onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</DashboardButton>
+            {post?.external_post_url && (
+              <a href={post.external_post_url} target="_blank" rel="noreferrer">
+                <DashboardButton variant="ghost">View on Sierra</DashboardButton>
+              </a>
+            )}
           </>
         )}
-        <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
-          <Eye className="mr-1 h-4 w-4" /> Preview
-        </Button>
+        <DashboardButton variant="ghost" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
+          <Eye className="h-4 w-4" /> Preview
+        </DashboardButton>
       </div>
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
@@ -451,9 +480,12 @@ export default function BlogPostDetailPage() {
           <DialogHeader>
             <DialogTitle>Preview · {form.title || "Untitled"}</DialogTitle>
           </DialogHeader>
-          <div className="overflow-hidden rounded-md border">
-            <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: "70vh", border: "none", display: "block" }} />
-          </div>
+          <DashboardCard padding="none" className="overflow-hidden">
+            <HtmlPreview
+              html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"}
+              style={{ width: "100%", height: "70vh", border: "none", display: "block", borderRadius: 14 }}
+            />
+          </DashboardCard>
         </DialogContent>
       </Dialog>
 
@@ -469,17 +501,27 @@ export default function BlogPostDetailPage() {
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">Current</div>
-                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                  <div className="mb-1 text-xs" style={{ color: "var(--le-text-muted)" }}>Current</div>
+                  <DashboardCard padding="none" className="overflow-hidden">
+                    <HtmlPreview
+                      html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"}
+                      style={{ width: "100%", height: 360, border: "none", display: "block", borderRadius: 14 }}
+                    />
+                  </DashboardCard>
                 </div>
                 <div>
-                  <div className="mb-1 text-xs text-muted-foreground">AI-generated</div>
-                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                  <div className="mb-1 text-xs" style={{ color: "var(--le-text-muted)" }}>AI-generated</div>
+                  <DashboardCard padding="none" className="overflow-hidden">
+                    <HtmlPreview
+                      html={aiResult.body_html}
+                      style={{ width: "100%", height: 360, border: "none", display: "block", borderRadius: 14 }}
+                    />
+                  </DashboardCard>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={discardAIResult}>Discard</Button>
-                <Button onClick={applyAIResult}>Use this</Button>
+                <DashboardButton variant="ghost" onClick={discardAIResult}>Discard</DashboardButton>
+                <DashboardButton variant="primary" onClick={applyAIResult}>Use this</DashboardButton>
               </div>
             </div>
           )}

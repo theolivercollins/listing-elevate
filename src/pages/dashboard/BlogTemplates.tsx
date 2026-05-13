@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { EmptyState } from "@/v2/components/dashboard/EmptyState";
 import { deleteTemplate, listTemplates } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
 
 export default function BlogTemplates() {
@@ -23,32 +25,57 @@ export default function BlogTemplates() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Templates <span className="ml-2 text-sm font-normal text-muted-foreground">{templates.length}</span></h1>
-        <Link to="/dashboard/blog/templates/new"><Button><Plus className="mr-1 h-4 w-4" /> New template</Button></Link>
+        <h1 className="le-display text-[28px] font-medium tracking-tight">
+          Templates{" "}
+          <span className="ml-2 text-sm font-normal" style={{ color: "var(--le-text-muted)" }}>{templates.length}</span>
+        </h1>
+        <Link to="/dashboard/blog/templates/new">
+          <DashboardButton variant="primary">
+            <Plus className="h-4 w-4" /> New template
+          </DashboardButton>
+        </Link>
       </div>
-      {isLoading ? <div>Loading…</div> : templates.length === 0 ? (
-        <div className="rounded-md border p-8 text-center text-muted-foreground">
-          No templates yet. <Link to="/dashboard/blog/templates/new" className="underline">Create one</Link>.
-        </div>
+
+      {isLoading ? (
+        <div className="text-sm" style={{ color: "var(--le-text-muted)" }}>Loading…</div>
+      ) : templates.length === 0 ? (
+        <EmptyState
+          icon={<LayoutTemplate className="h-8 w-8" />}
+          title="No templates yet"
+          body={
+            <span>
+              <Link to="/dashboard/blog/templates/new" className="underline">Create one</Link> to save reusable HTML layouts.
+            </span>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {templates.map(t => (
-            <div key={t.id} className="overflow-hidden rounded-md border bg-card">
-              <HtmlPreview html={t.body_html} style={{ width: "100%", height: 180, border: "none", display: "block" }} />
+            <DashboardCard key={t.id} padding="none" className="overflow-hidden">
+              <HtmlPreview
+                html={t.body_html}
+                style={{ width: "100%", height: 180, border: "none", display: "block", borderRadius: 14 }}
+              />
               <div className="space-y-1 p-3">
                 <div className="font-medium">{t.name}</div>
-                {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
+                {t.description && (
+                  <div className="text-xs" style={{ color: "var(--le-text-muted)" }}>{t.description}</div>
+                )}
                 <div className="flex gap-2 pt-2">
                   <Link to={`/dashboard/blog/templates/${t.id}`}>
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs"><Pencil className="mr-1 h-3 w-3" /> Edit</Button>
+                    <DashboardButton size="sm" variant="ghost">
+                      <Pencil className="h-3 w-3" /> Edit
+                    </DashboardButton>
                   </Link>
                   <Link to={`/dashboard/blog/posts/new?template=${t.id}`}>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">Use in new post</Button>
+                    <DashboardButton size="sm" variant="ghost">Use in new post</DashboardButton>
                   </Link>
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto" onClick={() => del.mutate(t.id)}><Trash2 className="h-3 w-3" /></Button>
+                  <DashboardButton size="sm" variant="ghost" className="ml-auto" onClick={() => del.mutate(t.id)}>
+                    <Trash2 className="h-3 w-3" />
+                  </DashboardButton>
                 </div>
               </div>
-            </div>
+            </DashboardCard>
           ))}
         </div>
       )}
