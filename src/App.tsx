@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -46,6 +46,56 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// ---------------------------------------------------------------------------
+// Redirect helper for parameterised routes
+// ---------------------------------------------------------------------------
+function RedirectWithParams({ to }: { to: (params: Record<string, string>) => string }) {
+  const params = useParams();
+  return <Navigate to={to(params as Record<string, string>)} replace />;
+}
+
+// ---------------------------------------------------------------------------
+// Inline stub placeholders (replaced by real pages in later subagent dispatches)
+// ---------------------------------------------------------------------------
+function OrdersStubPlaceholder() {
+  return (
+    <div className="rounded-[14px] border p-12 text-center" style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)" }}>
+      <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Coming soon</div>
+      <h2 className="le-display mt-2 text-[24px]" style={{ color: "var(--le-text)" }}>Customer orders</h2>
+      <p className="mt-4 text-sm" style={{ color: "var(--le-text-muted)" }}>
+        Customer-grouped view of all property orders. Build coming in Stage 4 follow-up.
+      </p>
+    </div>
+  );
+}
+
+function UsersStubPlaceholder() {
+  return (
+    <div className="rounded-[14px] border p-12 text-center" style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)" }}>
+      <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Coming soon</div>
+      <h2 className="le-display mt-2 text-[24px]" style={{ color: "var(--le-text)" }}>Users</h2>
+      <p className="mt-4 text-sm" style={{ color: "var(--le-text-muted)" }}>
+        Admin view of user_profiles will land in the next subagent dispatch.
+      </p>
+    </div>
+  );
+}
+
+function ToolsBlogStubPlaceholder() {
+  return (
+    <div className="rounded-[14px] border p-12 text-center" style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)" }}>
+      <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Coming soon</div>
+      <h2 className="le-display mt-2 text-[24px]" style={{ color: "var(--le-text)" }}>Blog hub</h2>
+      <p className="mt-4 text-sm" style={{ color: "var(--le-text-muted)" }}>
+        Posts / Images / Templates tabs will mount here. Existing blog detail pages remain reachable.
+      </p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
 const App = () => (
   <ThemeProvider>
     <AuthProvider>
@@ -81,32 +131,80 @@ const App = () => (
                 {/* Admin routes */}
                 <Route element={<RequireAdmin />}>
                   <Route path="/dashboard" element={<Dashboard />}>
+                    {/* ── Overview ──────────────────────────────────────── */}
                     <Route index element={<DashboardOverview />} />
-                    <Route path="pipeline" element={<DashboardPipeline />} />
-                    <Route path="properties" element={<DashboardProperties />} />
-                    <Route path="properties/:id" element={<PropertyDetail />} />
-                    <Route path="logs" element={<DashboardLogs />} />
-                    <Route path="development" element={<DashboardDevelopment />} />
-                    <Route path="development/prompt-lab" element={<DashboardPromptLab />} />
-                    <Route path="development/prompt-lab/recipes" element={<DashboardPromptLabRecipes />} />
-                    <Route path="development/prompt-lab/:sessionId" element={<DashboardPromptLab />} />
-                    <Route path="development/proposals" element={<DashboardPromptProposals />} />
-                    <Route path="development/knowledge-map" element={<DashboardKnowledgeMap />} />
-                    <Route path="development/knowledge-map/:cellKey" element={<DashboardKnowledgeMapCell />} />
-                    <Route path="development/system-status" element={<DashboardSystemStatus />} />
-                    <Route path="development/lab" element={<DashboardLabListings />} />
-                    <Route path="development/lab/new" element={<DashboardLabListingNew />} />
-                    <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
-                    <Route path="rating-ledger" element={<DashboardRatingLedger />} />
-                    <Route path="blog/posts" element={<BlogPostsList />} />
+
+                    {/* ── Orders ────────────────────────────────────────── */}
+                    <Route path="orders" element={<OrdersStubPlaceholder />} />
+                    <Route path="orders/pipeline" element={<DashboardPipeline />} />
+
+                    {/* ── Users ─────────────────────────────────────────── */}
+                    <Route path="users" element={<UsersStubPlaceholder />} />
+
+                    {/* ── Listings ──────────────────────────────────────── */}
+                    <Route path="listings" element={<DashboardProperties />} />
+                    <Route path="listings/:id" element={<PropertyDetail />} />
+
+                    {/* ── Finances ──────────────────────────────────────── */}
+                    <Route path="finances" element={<DashboardFinances />} />
+
+                    {/* ── Tools / Blog hub ──────────────────────────────── */}
+                    <Route path="tools/blog" element={<ToolsBlogStubPlaceholder />} />
+
+                    {/* ── Dev ───────────────────────────────────────────── */}
+                    <Route path="dev" element={<DashboardDevelopment />} />
+                    <Route path="dev/prompt-lab" element={<DashboardPromptLab />} />
+                    <Route path="dev/prompt-lab/:sessionId" element={<DashboardPromptLab />} />
+                    <Route path="dev/recipes" element={<DashboardPromptLabRecipes />} />
+                    <Route path="dev/knowledge-map" element={<DashboardKnowledgeMap />} />
+                    <Route path="dev/knowledge-map/:cellKey" element={<DashboardKnowledgeMapCell />} />
+                    <Route path="dev/system-status" element={<DashboardSystemStatus />} />
+
+                    {/* ── Blog detail pages (kept as-is; hub uses tab params) */}
                     <Route path="blog/posts/new" element={<BlogPostDetail />} />
                     <Route path="blog/posts/:id" element={<BlogPostDetail />} />
-                    <Route path="blog/images" element={<BlogImageLibrary />} />
-                    <Route path="blog/templates" element={<BlogTemplates />} />
                     <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
                     <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
-                    <Route path="finances" element={<DashboardFinances />} />
-                    <Route path="settings" element={<DashboardSettings />} />
+
+                    {/* ── Redirects from legacy paths ───────────────────── */}
+
+                    {/* pipeline → orders/pipeline */}
+                    <Route path="pipeline" element={<Navigate to="/dashboard/orders/pipeline" replace />} />
+
+                    {/* properties → listings */}
+                    <Route path="properties" element={<Navigate to="/dashboard/listings" replace />} />
+                    <Route
+                      path="properties/:id"
+                      element={<RedirectWithParams to={(p) => `/dashboard/listings/${p.id}`} />}
+                    />
+
+                    {/* development → dev */}
+                    <Route path="development" element={<Navigate to="/dashboard/dev" replace />} />
+                    <Route path="development/prompt-lab" element={<Navigate to="/dashboard/dev/prompt-lab" replace />} />
+                    <Route path="development/prompt-lab/recipes" element={<Navigate to="/dashboard/dev/recipes" replace />} />
+                    <Route path="development/knowledge-map" element={<Navigate to="/dashboard/dev/knowledge-map" replace />} />
+                    <Route path="development/system-status" element={<Navigate to="/dashboard/dev/system-status" replace />} />
+                    <Route path="development/proposals" element={<Navigate to="/dashboard/dev" replace />} />
+                    <Route path="development/lab" element={<Navigate to="/dashboard/dev/prompt-lab" replace />} />
+                    <Route path="development/lab/new" element={<Navigate to="/dashboard/dev/prompt-lab" replace />} />
+                    <Route
+                      path="development/lab/:id"
+                      element={<Navigate to="/dashboard/dev/prompt-lab" replace />}
+                    />
+
+                    {/* logs → dev/system-status */}
+                    <Route path="logs" element={<Navigate to="/dashboard/dev/system-status" replace />} />
+
+                    {/* settings → overview */}
+                    <Route path="settings" element={<Navigate to="/dashboard" replace />} />
+
+                    {/* rating-ledger → dev/system-status */}
+                    <Route path="rating-ledger" element={<Navigate to="/dashboard/dev/system-status" replace />} />
+
+                    {/* blog list pages → tools/blog with tab param */}
+                    <Route path="blog/posts" element={<Navigate to="/dashboard/tools/blog?tab=posts" replace />} />
+                    <Route path="blog/images" element={<Navigate to="/dashboard/tools/blog?tab=images" replace />} />
+                    <Route path="blog/templates" element={<Navigate to="/dashboard/tools/blog?tab=templates" replace />} />
                   </Route>
                 </Route>
 
