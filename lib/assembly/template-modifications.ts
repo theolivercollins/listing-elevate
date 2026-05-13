@@ -88,19 +88,16 @@ export function buildTemplateModifications(
   const [streetLine, cityStateLine] = splitAddress(ctx.address);
   const categoryLabel = categoryLabelForPackage(ctx.selectedPackage);
 
-  // Combine agent + brokerage onto the single Listing-Agent line so they
-  // sit centered together. Brokerage's own slot is intentionally emptied
-  // to avoid duplicating the name. Per Oliver 2026-05-13.
-  const combinedAgentLine = ctx.brokerageName
-    ? `${ctx.agentName} | ${ctx.brokerageName}`
-    : ctx.agentName;
-
+  // Agent + brokerage land in their separate template slots so the
+  // template's own positioning controls the layout. Don't combine them
+  // here — Oliver wants the two-element layout as designed in the
+  // Creatomate editor (2026-05-13).
   const mods: CreatomateModifications = {
     "St#/StName.text": streetLine,
     "St#/StName-JSJ.text": cityStateLine,
     "Vid-Category/Title.text": categoryLabel,
-    "Listing-Agent.text": combinedAgentLine,
-    "Listing-Agent-NWH.text": "",
+    "Listing-Agent.text": ctx.agentName,
+    "Listing-Agent-NWH.text": ctx.brokerageName ?? "",
   };
 
   // Clip slots: write Clip-1.source, Clip-2.source, ... when the template

@@ -66,13 +66,12 @@ describe("buildTemplateModifications", () => {
       "St#/StName.text": "123 Waymay Dr",
       "St#/StName-JSJ.text": "Punta Gorda FL",
       "Vid-Category/Title.text": "Just Listed",
-      // Agent + brokerage combined into one centered line
-      "Listing-Agent.text": "Brian Helgemo | Compass",
-      "Listing-Agent-NWH.text": "",
+      "Listing-Agent.text": "Brian Helgemo",
+      "Listing-Agent-NWH.text": "Compass",
     });
   });
 
-  it("falls back to agent name only when brokerage is null", () => {
+  it("substitutes empty string when brokerage is null", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
