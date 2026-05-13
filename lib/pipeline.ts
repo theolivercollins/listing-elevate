@@ -43,6 +43,7 @@ import {
   type QCResult,
 } from "./prompts/qc-evaluator.js";
 import { resolveProductionPrompt } from "./prompts/resolve.js";
+import { rewritePromptForNewMotion } from "./prompts/rewrite-on-motion-override.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
 import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
@@ -640,9 +641,28 @@ async function runScripting(propertyId: string): Promise<void> {
       const suggestedInHeadroom =
         suggested && (!suggestedKey || hr[suggestedKey] !== false);
       const replacement = (suggestedInHeadroom && suggested ? suggested : "feature_closeup") as CameraMovement;
+      // Rewrite the prompt text to match the new motion verb so the SKU
+      // selected for `replacement` doesn't receive a prompt naming the
+      // old verb. Uses director_intent.subject as a fallback when the
+      // original prompt's subject can't be regex-extracted.
+      const subjectFromIntent =
+        (scene.director_intent as { subject?: string } | undefined)?.subject;
+      const rewrittenPrompt = rewritePromptForNewMotion(
+        scene.prompt,
+        replacement,
+        subjectFromIntent,
+      );
       await log(propertyId, "scripting", "warn",
         `DA.3 override: scene ${scene.scene_number} picked ${original} but motion_headroom.${key}=false; overriding to ${replacement}`,
-        { scene_number: scene.scene_number, original, replacement, key });
+        {
+          scene_number: scene.scene_number,
+          original,
+          replacement,
+          key,
+          original_prompt: scene.prompt,
+          rewritten_prompt: rewrittenPrompt,
+        });
+      scene.prompt = rewrittenPrompt;
       scene.camera_movement = replacement;
     }
   }
