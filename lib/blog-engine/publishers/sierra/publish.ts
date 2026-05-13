@@ -1,10 +1,10 @@
 // lib/blog-engine/publishers/sierra/publish.ts
 import type { Page } from "playwright-core";
-import type { BlogPost } from "../../types";
-import type { PublishResult } from "../types";
-import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors";
-import { ensureSignedIn, type SierraCreds } from "./auth";
-import { inputByLabelText, selectByLabelText } from "./dom-helpers";
+import type { BlogPost } from "../../types.js";
+import type { PublishResult } from "../types.js";
+import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors.js";
+import { ensureSignedIn, type SierraCreds } from "./auth.js";
+import { inputByLabelText, selectByLabelText } from "./dom-helpers.js";
 
 export interface SierraPublishInput {
   baseUrl: string;

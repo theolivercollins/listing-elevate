@@ -1,7 +1,7 @@
 // lib/blog-engine/jobs/handlers/_site-opts.ts
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BlogSite } from '../../types';
-import type { PublisherOpts } from '../../publishers/types';
+import type { BlogSite } from '../../types.js';
+import type { PublisherOpts } from '../../publishers/types.js';
 
 export async function resolveSiteOpts(
   supabase: SupabaseClient,

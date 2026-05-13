@@ -1,10 +1,10 @@
 // lib/blog-engine/jobs/handlers/index.ts
-import type { Handlers } from "../runner";
-import { fetchTaxonomyHandler } from "./fetch-taxonomy";
-import { publishHandler } from "./publish";
-import { editHandler } from "./edit";
-import { imageTagHandler } from "./image-tag";
-import { imageMatchHandler } from "./image-match";
+import type { Handlers } from "../runner.js";
+import { fetchTaxonomyHandler } from "./fetch-taxonomy.js";
+import { publishHandler } from "./publish.js";
+import { editHandler } from "./edit.js";
+import { imageTagHandler } from "./image-tag.js";
+import { imageMatchHandler } from "./image-match.js";
 
 export const handlers: Handlers = {
   fetch_taxonomy: fetchTaxonomyHandler,
