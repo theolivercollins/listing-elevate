@@ -279,8 +279,8 @@ function FileDropZone({
   const [dragOver, setDragOver] = useState(false);
   return (
     <div
-      className={`rounded-[14px] p-6 transition ${dragOver ? "ring-2 ring-inset" : ""}`}
-      style={dragOver ? { ringColor: "var(--le-accent)", background: "var(--le-accent-soft)" } : {}}
+      className={`rounded-[14px] p-6 transition`}
+      style={dragOver ? { boxShadow: "0 0 0 2px var(--le-accent) inset", background: "var(--le-accent-soft)" } : {}}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
@@ -503,13 +503,14 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
         <div className="flex items-center gap-2">
           {organizeMode && selectedIds.size > 0 && (
             <>
-              <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
+              <span className="text-xs" style={{ color: "var(--le-text-muted)" }}>{selectedIds.size} selected</span>
               <Button size="sm" variant="outline" onClick={groupSelected}>
                 Group into batch
               </Button>
               {ordered.filter(([b]) => b !== "Unbatched").length > 0 && (
                 <select
-                  className="border border-border bg-background px-2 py-1 text-xs"
+                  className="px-2 py-1 text-xs rounded-[6px]"
+                  style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
                   value=""
                   onChange={(e) => {
                     if (e.target.value) batchMoveSelected(e.target.value === "__unbatched__" ? null : e.target.value);
@@ -537,7 +538,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
               </Button>
             </>
           )}
-          <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="ml-auto inline-flex items-center gap-2 text-xs" style={{ color: "var(--le-text-muted)" }}>
             <input
               type="checkbox"
               checked={showArchived}
@@ -605,12 +606,13 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
               }}
             >
               {isExpanded ? (
-                <div className="rounded-sm border border-border p-3">
+                <div className="rounded-[8px] p-3" style={{ border: "1px solid var(--le-border)" }}>
                   <div className="mb-3 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => toggleExpand(batch)}
-                        className="p-1 text-muted-foreground hover:text-foreground transition"
+                        className="p-1 transition hover:opacity-70"
+                        style={{ color: "var(--le-text-muted)" }}
                         title="Collapse"
                       >
                         <ChevronDown className="h-4 w-4" />
@@ -619,13 +621,14 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                       {organizeMode && (
                         <button
                           onClick={() => selectAllInBatch(batch, items)}
-                          className="ml-2 text-[10px] text-muted-foreground hover:text-foreground underline"
+                          className="ml-2 text-[10px] underline hover:opacity-70"
+                          style={{ color: "var(--le-text-muted)" }}
                         >
                           {items.every((s) => selectedIds.has(s.id)) ? "Deselect all" : "Select all"}
                         </button>
                       )}
                     </div>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span className="shrink-0 text-xs" style={{ color: "var(--le-text-muted)" }}>
                       {counts.completed}/{counts.all} completed
                       {avgRating ? ` · avg ${avgRating.toFixed(1)}★` : ""}
                     </span>
@@ -643,9 +646,10 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                       <button
                         key={key}
                         onClick={() => setFilters((prev) => ({ ...prev, [batch]: key }))}
-                        className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition ${
-                          filter === key ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
-                        }`}
+                        className="rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition"
+                        style={filter === key
+                          ? { borderColor: "var(--le-text)", background: "var(--le-text)", color: "var(--le-bg)" }
+                          : { borderColor: "var(--le-border)", color: "var(--le-text-muted)" }}
                       >
                         {label}
                       </button>
@@ -655,7 +659,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                   <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} />
 
                   {visible.length === 0 ? (
-                    <div className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                    <div className="rounded-[6px] border border-dashed p-6 text-center text-xs" style={{ borderColor: "var(--le-border)", color: "var(--le-text-muted)" }}>
                       No sessions in this filter.
                     </div>
                   ) : (
@@ -682,24 +686,27 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                 <button
                   type="button"
                   onClick={() => toggleExpand(batch)}
-                  className="group flex aspect-square w-full flex-col border border-border bg-background p-3 text-left transition hover:border-foreground"
+                  className="group flex aspect-square w-full flex-col p-3 text-left transition rounded-[8px]"
+                  style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--le-text)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--le-border)")}
                   title={`Expand "${batch}"`}
                 >
                   <div className="mb-3 grid min-h-0 flex-1 grid-cols-2 gap-1">
                     {previewImages.map((src, i) => (
-                      <div key={i} className="overflow-hidden bg-muted/60">
+                      <div key={i} className="overflow-hidden" style={{ background: "var(--le-bg-sunken)" }}>
                         {src ? (
                           <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
                         ) : null}
                       </div>
                     ))}
                     {Array.from({ length: Math.max(0, 4 - previewImages.length) }).map((_, i) => (
-                      <div key={`placeholder-${i}`} className="bg-muted/30" />
+                      <div key={`placeholder-${i}`} style={{ background: "color-mix(in srgb, var(--le-bg-sunken) 60%, transparent)" }} />
                     ))}
                   </div>
                   <div className="min-w-0">
                     <div className="truncate text-sm font-semibold tracking-tight">{batch}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <div className="mt-1 text-[10px] uppercase tracking-[0.12em]" style={{ color: "var(--le-text-muted)" }}>
                       {counts.all} session{counts.all === 1 ? "" : "s"} · {counts.completed}/{counts.all} done
                       {avgRating ? ` · ${avgRating.toFixed(1)}★` : ""}
                     </div>
@@ -713,9 +720,10 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
 
       {/* Drop-here-to-create-new-batch zone */}
       <div
-        className={`rounded-sm border-2 border-dashed p-6 text-center text-xs transition ${
-          draggingId ? "border-foreground text-foreground bg-accent/20" : "border-border text-muted-foreground"
-        }`}
+        className="rounded-[6px] border-2 border-dashed p-6 text-center text-xs transition"
+        style={draggingId
+          ? { borderColor: "var(--le-text)", color: "var(--le-text)", background: "var(--le-accent-soft)" }
+          : { borderColor: "var(--le-border)", color: "var(--le-text-muted)" }}
         onDragOver={(e) => {
           if (draggingId) e.preventDefault();
         }}
@@ -768,17 +776,17 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
   }
 
   return (
-    <div className="mb-4 border border-border">
+    <div className="mb-4 rounded-[8px]" style={{ border: "1px solid var(--le-border)" }}>
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-accent/30 transition"
+        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:opacity-80"
       >
         <span className="flex items-center gap-2">
           <Sparkles className="h-3.5 w-3.5" />
           <span className="font-semibold uppercase tracking-[0.12em]">See listing selection</span>
           {data && (
-            <span className="text-muted-foreground">
+            <span style={{ color: "var(--le-text-muted)" }}>
               · {data.selected_count} picked · {data.not_selected_count} skipped · {data.discarded_count} discarded
               {data.unanalyzed.length > 0 ? ` · ${data.unanalyzed.length} unanalyzed` : ""}
             </span>
@@ -788,22 +796,22 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
       </button>
 
       {open && (
-        <div className="border-t border-border p-3 text-xs">
+        <div className="p-3 text-xs" style={{ borderTop: "1px solid var(--le-border)" }}>
           {loading ? (
-            <div className="flex items-center gap-2 py-6 text-muted-foreground">
+            <div className="flex items-center gap-2 py-6" style={{ color: "var(--le-text-muted)" }}>
               <Loader2 className="h-4 w-4 animate-spin" /> Running production selection…
             </div>
           ) : error ? (
-            <div className="flex items-start gap-2 py-3 text-destructive">
+            <div className="flex items-start gap-2 py-3" style={{ color: "var(--le-danger)" }}>
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>{error}</span>
               <button onClick={run} className="ml-auto underline">Retry</button>
             </div>
           ) : !data ? (
-            <div className="py-3 text-muted-foreground">Loading…</div>
+            <div className="py-3" style={{ color: "var(--le-text-muted)" }}>Loading…</div>
           ) : (
             <>
-              <p className="mb-3 text-muted-foreground">
+              <p className="mb-3" style={{ color: "var(--le-text-muted)" }}>
                 Target {data.target} scenes · max {data.max_per_room} per room type. Run against each session's cached vision analysis.
                 {data.unanalyzed.length > 0 && (
                   <> {data.unanalyzed.length} session{data.unanalyzed.length === 1 ? "" : "s"} still need analysis and were excluded.</>
@@ -833,7 +841,7 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                 />
               </div>
               {data.unanalyzed.length > 0 && (
-                <div className="mt-4 border-t border-border pt-3 text-muted-foreground">
+                <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--le-border)", color: "var(--le-text-muted)" }}>
                   <div className="mb-2 font-semibold uppercase tracking-[0.12em]">
                     Unanalyzed ({data.unanalyzed.length})
                   </div>
@@ -842,7 +850,8 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                       <button
                         key={u.session_id}
                         onClick={() => navigate(`/dashboard/dev/prompt-lab/${u.session_id}`)}
-                        className="h-10 w-10 overflow-hidden border border-border bg-muted hover:border-foreground"
+                        className="h-10 w-10 overflow-hidden rounded-[4px] transition hover:opacity-80"
+                        style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-sunken)" }}
                         title={u.label ?? ""}
                       >
                         {u.image_url && (
@@ -880,29 +889,32 @@ function SelectionColumn({
   tone: "positive" | "neutral" | "negative";
   onOpenSession: (sessionId: string) => void;
 }) {
-  const toneClasses =
+  const toneStyle =
     tone === "positive"
-      ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+      ? { borderColor: "rgba(16,185,129,0.4)", color: "var(--le-success)" }
       : tone === "negative"
-        ? "border-destructive/40 text-destructive"
-        : "border-border text-muted-foreground";
+        ? { borderColor: "rgba(var(--le-danger-rgb,239,68,68),0.4)", color: "var(--le-danger)" }
+        : { borderColor: "var(--le-border)", color: "var(--le-text-muted)" };
 
   return (
     <div>
-      <div className={`mb-2 border-b pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${toneClasses}`}>
+      <div className="mb-2 border-b pb-1 text-[11px] font-semibold uppercase tracking-[0.14em]" style={toneStyle}>
         {title} ({count})
       </div>
       {items.length === 0 ? (
-        <div className="py-3 text-muted-foreground/60">—</div>
+        <div className="py-3" style={{ color: "var(--le-text-muted)", opacity: 0.6 }}>—</div>
       ) : (
         <div className="space-y-2">
           {items.map((i) => (
             <button
               key={i.session_id}
               onClick={() => onOpenSession(i.session_id)}
-              className="flex w-full items-start gap-3 border border-border bg-background p-2 text-left transition hover:border-foreground"
+              className="flex w-full items-start gap-3 p-2 text-left transition rounded-[6px]"
+              style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--le-text)")}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--le-border)")}
             >
-              <div className="h-14 w-14 shrink-0 overflow-hidden bg-muted">
+              <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[4px]" style={{ background: "var(--le-bg-sunken)" }}>
                 {i.image_url && (
                   <img src={i.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
                 )}
@@ -910,20 +922,20 @@ function SelectionColumn({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {i.rank != null && (
-                    <span className="font-mono text-[10px] tabular-nums text-muted-foreground">#{i.rank}</span>
+                    <span className="font-mono text-[10px] tabular-nums" style={{ color: "var(--le-text-muted)" }}>#{i.rank}</span>
                   )}
                   <span className="truncate text-[11px] font-semibold">
                     {i.room_type ? i.room_type.replace(/_/g, " ") : "?"}
                   </span>
                   {i.aesthetic_score != null && (
-                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    <span className="ml-auto shrink-0 text-[10px]" style={{ color: "var(--le-text-muted)" }}>
                       {i.aesthetic_score.toFixed(1)}/10
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[10px] leading-snug text-muted-foreground">{i.reason}</div>
+                <div className="mt-1 text-[10px] leading-snug" style={{ color: "var(--le-text-muted)" }}>{i.reason}</div>
                 {i.label && (
-                  <div className="mt-1 truncate text-[10px] text-muted-foreground/60">{i.label}</div>
+                  <div className="mt-1 truncate text-[10px]" style={{ color: "var(--le-text-faint, var(--le-text-muted))", opacity: 0.6 }}>{i.label}</div>
                 )}
               </div>
             </button>
@@ -966,7 +978,8 @@ function SkuAffinityHint({
         <button
           type="button"
           onClick={() => onPickSuggested(hint.suggested_sku!)}
-          className="shrink-0 rounded border border-foreground/20 bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider hover:bg-foreground hover:text-background"
+          className="shrink-0 rounded-[4px] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider transition hover:opacity-80"
+          style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
           title={hint.evidence}
         >
           Use {hint.suggested_sku}
@@ -1002,7 +1015,10 @@ function BatchTitle({ label, onRename }: { label: string; onRename: (v: string) 
           }
         }}
         placeholder={label === "Unbatched" ? "Name this batch…" : ""}
-        className="bg-transparent text-lg font-semibold tracking-tight outline-none border-b border-border focus:border-foreground min-w-0"
+        className="bg-transparent text-lg font-semibold tracking-tight outline-none min-w-0"
+        style={{ borderBottom: "1px solid var(--le-border)" }}
+        onFocus={(e) => (e.currentTarget.style.borderBottomColor = "var(--le-text)")}
+        onBlur={(e) => { e.currentTarget.style.borderBottomColor = "var(--le-border)"; }}
       />
     );
   }
@@ -1045,15 +1061,18 @@ function SessionCard({
         onDragStart();
       }}
       onDragEnd={organizeMode ? undefined : onDragEnd}
-      className={`relative border bg-background transition ${
-        organizeMode
-          ? selected
-            ? "border-foreground ring-2 ring-foreground/20 cursor-pointer"
-            : "border-border cursor-pointer hover:border-foreground/50"
-          : `border-border hover:border-foreground ${isDragging ? "opacity-40" : ""}`
-      } ${session.completed ? "border-emerald-500/50" : ""}`}
+      className={`relative rounded-[8px] transition ${isDragging ? "opacity-40" : ""} ${organizeMode ? "cursor-pointer" : ""}`}
+      style={{
+        border: organizeMode && selected
+          ? "2px solid var(--le-accent)"
+          : session.completed
+            ? "1px solid rgba(16,185,129,0.5)"
+            : "1px solid var(--le-border)",
+        background: "var(--le-bg-elev)",
+        boxShadow: organizeMode && selected ? "0 0 0 3px var(--le-accent-soft)" : undefined,
+      }}
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-muted">
+      <div className="relative aspect-video w-full overflow-hidden rounded-t-[8px]" style={{ background: "var(--le-bg-sunken)" }}>
         {organizeMode && (
           <div className="absolute top-2 left-2 z-10">
             <div
@@ -1099,11 +1118,11 @@ function SessionCard({
       </div>
       <div className="p-3">
         <div className="text-xs font-medium truncate">{session.label || session.archetype || "Untitled"}</div>
-        <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+        <div className="mt-1 flex items-center justify-between text-[10px]" style={{ color: "var(--le-text-muted)" }}>
           <span>{session.iteration_count ?? 0} iter{session.iteration_count === 1 ? "" : "s"}</span>
           {typeof session.best_rating === "number" && (
             <span className="inline-flex items-center gap-1">
-              <Star className="h-3 w-3 fill-foreground text-foreground" />
+              <Star className="h-3 w-3" style={{ fill: "var(--le-text)", color: "var(--le-text)" }} />
               {session.best_rating}
             </span>
           )}
@@ -1324,7 +1343,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   if (!data) {
     return (
       <div className="py-20 text-center">
-        <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="mx-auto h-5 w-5 animate-spin" style={{ color: "var(--le-text-muted)" }} />
       </div>
     );
   }
@@ -1438,7 +1457,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
         {/* Iteration stack */}
         <div className="space-y-6">
           {iterations.length === 0 ? (
-            <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+            <div className="rounded-[8px] border border-dashed p-12 text-center text-sm" style={{ borderColor: "var(--le-border)", color: "var(--le-text-muted)" }}>
               No iterations yet. Click "Analyze + Direct" to generate the first one.
             </div>
           ) : (
@@ -1505,7 +1524,10 @@ function EditableLabel({
             setEditing(false);
           }
         }}
-        className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none border-b border-border focus:border-foreground"
+        className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none"
+        style={{ borderBottom: "1px solid var(--le-border)" }}
+        onFocus={(e) => (e.currentTarget.style.borderBottomColor = "var(--le-text)")}
+        onBlur={(e) => { e.currentTarget.style.borderBottomColor = "var(--le-border)"; }}
       />
     );
   }
@@ -1515,7 +1537,7 @@ function EditableLabel({
       className="mt-1 text-2xl font-semibold tracking-[-0.02em] cursor-text hover:opacity-70"
       title="Click to edit"
     >
-      {value || <span className="text-muted-foreground/60">{placeholder}</span>}
+      {value || <span style={{ color: "var(--le-text-muted)", opacity: 0.6 }}>{placeholder}</span>}
     </h2>
   );
 }
@@ -1666,17 +1688,18 @@ function JudgeChip({
   if (iteration.judge_error && iteration.judge_rating_json == null) {
     return (
       <div className="mt-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]" style={{ color: "var(--le-text-muted)" }}>
+          <span className="rounded-[4px] px-2 py-0.5 text-[10px] uppercase tracking-wider" style={{ background: "var(--le-bg-sunken)" }}>
             Judge failed
           </span>
-          <span className="truncate max-w-[200px] text-muted-foreground/70" title={iteration.judge_error}>
+          <span className="truncate max-w-[200px]" style={{ color: "var(--le-text-muted)", opacity: 0.7 }} title={iteration.judge_error}>
             {iteration.judge_error.slice(0, 60)}
           </span>
           <button
             type="button"
             onClick={() => setShowOverride((v) => !v)}
-            className="ml-1 rounded border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider hover:bg-muted"
+            className="ml-1 rounded-[4px] px-2 py-0.5 text-[10px] uppercase tracking-wider transition hover:opacity-80"
+            style={{ border: "1px solid var(--le-border)" }}
           >
             {showOverride ? "Cancel" : "Override"}
           </button>
@@ -1710,8 +1733,8 @@ function JudgeChip({
   return (
     <div className="mt-3 space-y-2">
       {/* Chip row — dim when a stale retry error is also present */}
-      <div className={`flex flex-wrap items-center gap-2 text-[11px] tabular-nums text-muted-foreground${hasStaleError ? " opacity-60" : ""}`}>
-        <span className="rounded bg-foreground/8 px-2 py-0.5 font-medium text-foreground">
+      <div className={`flex flex-wrap items-center gap-2 text-[11px] tabular-nums${hasStaleError ? " opacity-60" : ""}`} style={{ color: "var(--le-text-muted)" }}>
+        <span className="rounded-[4px] px-2 py-0.5 font-medium" style={{ background: "color-mix(in srgb, var(--le-text) 8%, transparent)", color: "var(--le-text)" }}>
           Judge: {iteration.judge_rating_overall}/5
         </span>
         {hasStaleError && (
@@ -1725,17 +1748,17 @@ function JudgeChip({
         {j && (
           <>
             <span title="motion faithfulness">Motion {j.motion_faithfulness}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--le-text-muted)", opacity: 0.4 }}>·</span>
             <span title="geometry coherence">Geom {j.geometry_coherence}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--le-text-muted)", opacity: 0.4 }}>·</span>
             <span title="room consistency">Room {j.room_consistency}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--le-text-muted)", opacity: 0.4 }}>·</span>
             <span title="judge confidence">conf {j.confidence}</span>
           </>
         )}
         {flags.length > 0 && (
           <>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--le-text-muted)", opacity: 0.4 }}>·</span>
             <span className="text-amber-600 dark:text-amber-400">
               {flags.map((f) => (
                 <span
@@ -1751,7 +1774,8 @@ function JudgeChip({
         <button
           type="button"
           onClick={() => setShowOverride((v) => !v)}
-          className="ml-1 rounded border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider hover:bg-muted"
+          className="ml-1 rounded-[4px] px-2 py-0.5 text-[10px] uppercase tracking-wider transition hover:opacity-80"
+          style={{ border: "1px solid var(--le-border)" }}
         >
           {showOverride ? "Cancel" : "Override"}
         </button>
@@ -1856,7 +1880,7 @@ function OverridePanel({
         ] as Array<[string, number, (v: number) => void]>
       ).map(([label, value, setter]) => (
         <div key={label} className="flex items-center gap-3">
-          <span className="w-40 shrink-0 text-muted-foreground">{label}</span>
+          <span className="w-40 shrink-0" style={{ color: "var(--le-text-muted)" }}>{label}</span>
           <input
             type="range"
             min={1}
@@ -1866,13 +1890,13 @@ function OverridePanel({
             onChange={(e) => setter(Number(e.target.value))}
             className="flex-1"
           />
-          <span className="w-5 tabular-nums text-right text-foreground">{value}</span>
+          <span className="w-5 tabular-nums text-right" style={{ color: "var(--le-text)" }}>{value}</span>
         </div>
       ))}
 
       {/* Hallucination flags */}
       <div>
-        <div className="mb-1.5 text-muted-foreground">Hallucination flags</div>
+        <div className="mb-1.5" style={{ color: "var(--le-text-muted)" }}>Hallucination flags</div>
         <div className="flex flex-wrap gap-1.5">
           {HALLUCINATION_FLAGS.map((f) => {
             const active = flags.includes(f as HallucinationFlag);
@@ -1881,11 +1905,10 @@ function OverridePanel({
                 key={f}
                 type="button"
                 onClick={() => toggleFlag(f as HallucinationFlag)}
-                className={`rounded border px-2 py-0.5 text-[10px] transition ${
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground"
-                }`}
+                className="rounded-[4px] px-2 py-0.5 text-[10px] transition"
+                style={active
+                  ? { border: "1px solid var(--le-text)", background: "var(--le-text)", color: "var(--le-bg)" }
+                  : { border: "1px solid var(--le-border)", color: "var(--le-text-muted)" }}
               >
                 {f}
               </button>
@@ -1896,8 +1919,8 @@ function OverridePanel({
 
       {/* Reasoning (required) */}
       <div>
-        <div className="mb-1 text-muted-foreground">
-          Reasoning <span className="text-destructive">*</span>
+        <div className="mb-1" style={{ color: "var(--le-text-muted)" }}>
+          Reasoning <span style={{ color: "var(--le-danger)" }}>*</span>
         </div>
         <Textarea
           value={reasoning}
@@ -1910,7 +1933,7 @@ function OverridePanel({
 
       {/* Correction reason (optional) */}
       <div>
-        <div className="mb-1 text-muted-foreground">Why you're overriding (optional)</div>
+        <div className="mb-1" style={{ color: "var(--le-text-muted)" }}>Why you're overriding (optional)</div>
         <Textarea
           value={correctionReason}
           onChange={(e) => setCorrectionReason(e.target.value)}
@@ -1920,7 +1943,7 @@ function OverridePanel({
       </div>
 
       {error && (
-        <div className="text-[11px] text-destructive">{error}</div>
+        <div className="text-[11px]" style={{ color: "var(--le-danger)" }}>{error}</div>
       )}
 
       <div className="flex items-center gap-2">
@@ -2113,13 +2136,13 @@ function IterationCard({
             </span>
           )}
           {(iteration.model_used || iteration.provider) && (
-            <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider" title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
+            <span className="rounded-[4px] px-2 py-0.5 text-[10px] uppercase tracking-wider" style={{ background: "var(--le-bg-sunken)" }} title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
               {iteration.model_used ?? iteration.provider}
             </span>
           )}
           <RetrievalChips metadata={iteration.retrieval_metadata} />
         </div>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs" style={{ color: "var(--le-text-muted)" }}>
           {new Date(iteration.created_at).toLocaleString()}
         </span>
       </div>
@@ -2128,25 +2151,25 @@ function IterationCard({
       {analysis && (
         <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
           <div>
-            <span className="text-muted-foreground">Room: </span>
+            <span style={{ color: "var(--le-text-muted)" }}>Room: </span>
             <span className="font-medium">{String(analysis.room_type)}</span>
-            <span className="ml-3 text-muted-foreground">Depth: </span>
+            <span className="ml-3" style={{ color: "var(--le-text-muted)" }}>Depth: </span>
             <span className="font-medium">{String(analysis.depth_rating)}</span>
-            <span className="ml-3 text-muted-foreground">Aesthetic: </span>
+            <span className="ml-3" style={{ color: "var(--le-text-muted)" }}>Aesthetic: </span>
             <span className="font-medium">{String(analysis.aesthetic_score)}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Suggested motion: </span>
+            <span style={{ color: "var(--le-text-muted)" }}>Suggested motion: </span>
             <span className="font-medium">{String(analysis.suggested_motion ?? "—")}</span>
           </div>
           {Array.isArray(analysis.key_features) && (
-            <div className="md:col-span-2 text-muted-foreground">
+            <div className="md:col-span-2" style={{ color: "var(--le-text-muted)" }}>
               <span>Features: </span>
-              <span className="text-foreground">{(analysis.key_features as string[]).join(" · ")}</span>
+              <span style={{ color: "var(--le-text)" }}>{(analysis.key_features as string[]).join(" · ")}</span>
             </div>
           )}
           {typeof analysis.composition === "string" && (
-            <div className="md:col-span-2 italic text-muted-foreground">{analysis.composition as string}</div>
+            <div className="md:col-span-2 italic" style={{ color: "var(--le-text-muted)" }}>{analysis.composition as string}</div>
           )}
         </div>
       )}
@@ -2158,14 +2181,14 @@ function IterationCard({
             <span className="rounded bg-foreground px-2 py-0.5 text-[10px] uppercase tracking-wider text-background">
               {director.camera_movement}
             </span>
-            <span className="text-muted-foreground">{director.duration_seconds}s</span>
+            <span style={{ color: "var(--le-text-muted)" }}>{director.duration_seconds}s</span>
           </div>
           <p className="mt-2 font-mono text-sm leading-relaxed">{director.prompt}</p>
         </div>
       )}
 
       {iteration.user_comment && iteration.user_comment.startsWith("[refiner rationale]") && (
-        <div className="mt-3 rounded bg-muted/40 p-3 text-xs italic text-muted-foreground">
+        <div className="mt-3 rounded-[6px] p-3 text-xs italic" style={{ background: "var(--le-bg-sunken)", color: "var(--le-text-muted)" }}>
           {iteration.user_comment.replace("[refiner rationale] ", "Why: ")}
         </div>
       )}
@@ -2199,9 +2222,9 @@ function IterationCard({
 
       {/* Render error */}
       {iteration.render_error && !iteration.clip_url && (
-        <div className="mt-5 rounded bg-destructive/10 p-3 text-xs text-destructive">
+        <div className="mt-5 rounded-[6px] p-3 text-xs" style={{ background: "var(--le-danger-soft)", color: "var(--le-danger)" }}>
           <div className="font-medium">Render failed</div>
-          <div className="mt-1 text-destructive/80">{iteration.render_error}</div>
+          <div className="mt-1" style={{ opacity: 0.8 }}>{iteration.render_error}</div>
         </div>
       )}
 
@@ -2214,13 +2237,15 @@ function IterationCard({
             controls
             playsInline
             preload="metadata"
-            className="w-full max-w-md border border-border"
+            className="w-full max-w-md rounded-[6px]"
+            style={{ border: "1px solid var(--le-border)" }}
           />
           <a
             href={iteration.clip_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block text-xs text-muted-foreground hover:text-foreground underline"
+            className="inline-block text-xs underline hover:opacity-80 transition"
+            style={{ color: "var(--le-text-muted)" }}
           >
             Open clip in new tab ↗
           </a>
@@ -2232,12 +2257,12 @@ function IterationCard({
         && iteration.judge_rating_overall == null
         && iteration.judge_error == null
         && (
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5 rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">
+          <div className="mt-3 flex items-center gap-2 text-[11px]" style={{ color: "var(--le-text-muted)" }}>
+            <span className="inline-flex items-center gap-1.5 rounded-[4px] px-2 py-0.5 text-[10px] uppercase tracking-wider" style={{ background: "var(--le-bg-sunken)" }}>
               <Loader2 className="h-3 w-3 animate-spin" />
               Judging…
             </span>
-            <span className="text-muted-foreground/60">Gemini auto-judge runs every minute</span>
+            <span style={{ color: "var(--le-text-muted)", opacity: 0.6 }}>Gemini auto-judge runs every minute</span>
           </div>
         )}
 
@@ -2252,7 +2277,7 @@ function IterationCard({
       {/* Try with different provider (any iteration that has a clip or director output) */}
       {director && (iteration.clip_url || iteration.render_error) && (
         <div className="mt-4 flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Try with:</span>
+          <span className="text-xs" style={{ color: "var(--le-text-muted)" }}>Try with:</span>
           {(["kling", "runway"] as const)
             .filter((p) => p !== iteration.provider)
             .map((p) => (
@@ -2279,7 +2304,7 @@ function IterationCard({
           falling back to the legacy Kling-native / Runway escape hatches. */}
       {(iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
         <div className="mt-2 flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">
+          <span style={{ color: "var(--le-text-muted)" }}>
             {iteration.render_error ? "Retry on another SKU:" : "Try another SKU:"}
           </span>
           {SKU_DROPDOWN_OPTIONS
@@ -2292,7 +2317,8 @@ function IterationCard({
                 type="button"
                 onClick={() => onRerenderWithSku(s)}
                 disabled={busy === `rerender-${iteration.id}`}
-                className="border border-border px-2 py-0.5 hover:bg-muted disabled:opacity-50"
+                className="rounded-[4px] px-2 py-0.5 transition hover:opacity-80 disabled:opacity-50"
+                style={{ border: "1px solid var(--le-border)" }}
                 title={
                   s === "kling-v2-native" ? "Native Kling v2.0 — uses pre-paid credits"
                     : s === "runway-gen4-native" ? "Runway Gen-4 turbo — strong on exteriors / drone"
@@ -2313,7 +2339,7 @@ function IterationCard({
       {/* Render controls (latest only, not currently rendering) */}
       {isLatest && !iteration.clip_url && !iteration.provider_task_id && director && (
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="inline-flex items-center gap-2 text-xs" style={{ color: "var(--le-text-muted)" }}>
             <input
               type="checkbox"
               checked={renderForReal}
@@ -2331,11 +2357,12 @@ function IterationCard({
             Render for real (~$0.36–$1.11 per clip depending on SKU)
           </label>
           <div className="flex items-center gap-2 text-xs">
-            <label className="text-muted-foreground">SKU:</label>
+            <label style={{ color: "var(--le-text-muted)" }}>SKU:</label>
             <select
               value={sku}
               onChange={(e) => setSku(e.target.value as SkuChoice)}
-              className="border border-border bg-background px-2 py-1 text-xs"
+              className="rounded-[6px] px-2 py-1 text-xs"
+              style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
               disabled={!renderForReal || rendering}
             >
               {SKU_DROPDOWN_OPTIONS.map((s) => (
@@ -2344,7 +2371,7 @@ function IterationCard({
                 </option>
               ))}
             </select>
-            <span className="rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+            <span className="rounded-[4px] font-mono px-2 py-0.5 text-[10px]" style={{ background: "var(--le-bg-sunken)", color: "var(--le-text-muted)" }}>
               {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
             </span>
           </div>
@@ -2358,7 +2385,8 @@ function IterationCard({
               <select
                 value={providerChoice}
                 onChange={(e) => setProviderChoice(e.target.value as "auto" | "kling" | "runway")}
-                className="border border-border bg-background px-2 py-1 text-xs"
+                className="rounded-[6px] px-2 py-1 text-xs"
+                style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-elev)" }}
                 disabled={!renderForReal || rendering}
                 title="Provider override. Default is Atlas (routes via your selected SKU). Kling native burns pre-paid credits instead of Atlas billing. Runway uses Gen-4 instead of Kling."
               >
@@ -2374,7 +2402,8 @@ function IterationCard({
                   setShowAdvancedProvider(false);
                 }}
                 disabled={!renderForReal || rendering}
-                className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                className="text-[10px] transition hover:opacity-80 disabled:opacity-50"
+                style={{ color: "var(--le-text-muted)" }}
                 title="Reset to Atlas (default) and collapse"
               >
                 ◂
@@ -2385,7 +2414,8 @@ function IterationCard({
               type="button"
               onClick={() => setShowAdvancedProvider(true)}
               disabled={!renderForReal || rendering}
-              className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="text-[10px] transition hover:opacity-80 disabled:opacity-50"
+              style={{ color: "var(--le-text-muted)" }}
               title="Show provider override (Kling native / Runway)"
             >
               Advanced ▸
@@ -2437,7 +2467,10 @@ function IterationCard({
                   aria-label={`${n} stars`}
                 >
                   <Star
-                    className={`h-5 w-5 ${rating != null && n <= rating ? "fill-foreground text-foreground" : "text-muted-foreground/40"}`}
+                    className="h-5 w-5"
+                    style={rating != null && n <= rating
+                      ? { fill: "var(--le-text)", color: "var(--le-text)" }
+                      : { color: "var(--le-text-muted)", opacity: 0.4 }}
                     strokeWidth={1.5}
                   />
                 </button>
@@ -2454,9 +2487,10 @@ function IterationCard({
                   <button
                     key={t}
                     onClick={() => toggleTag(t)}
-                    className={`rounded-full border px-2.5 py-1 text-[10px] transition ${
-                      active ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:border-foreground"
-                    }`}
+                    className="rounded-full px-2.5 py-1 text-[10px] transition"
+                    style={active
+                      ? { border: "1px solid var(--le-text)", background: "var(--le-text)", color: "var(--le-bg)" }
+                      : { border: "1px solid var(--le-border)", color: "var(--le-text-muted)" }}
                   >
                     {t}
                   </button>
