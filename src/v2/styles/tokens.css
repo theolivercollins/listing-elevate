@@ -30,7 +30,8 @@
   /* Type */
   --le-font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --le-font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --le-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* --le-font-mono kept as Inter w/ tabular-nums so numeric columns still align — JetBrains Mono retired 2026-05-13 per Oliver */
+  --le-font-mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   /* Radii */
   --le-r-sm: 6px;
@@ -101,7 +102,7 @@
   letter-spacing: -0.01em;
 }
 
-.le-mono { font-family: var(--le-font-mono); font-feature-settings: "ss01", "cv01"; }
+.le-mono { font-family: var(--le-font-mono); font-feature-settings: "tnum", "ss01", "cv01"; font-variant-numeric: tabular-nums; }
 .le-display { font-family: var(--le-font-sans); font-weight: 500; letter-spacing: -0.035em; }
 .le-eyebrow {
   font-family: var(--le-font-mono);
