@@ -42,6 +42,14 @@
   --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);
   --le-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04);
   --le-shadow-lg: 0 12px 40px rgba(20, 18, 15, 0.08), 0 2px 8px rgba(20, 18, 15, 0.04);
+
+  /* Dashboard redesign — gradient washes (KPI discs + chart fills only) */
+  --le-gradient-blue: linear-gradient(135deg, oklch(0.65 0.13 240), oklch(0.5 0.16 245));
+  --le-gradient-navy: linear-gradient(135deg, oklch(0.35 0.08 250), oklch(0.22 0.05 250));
+  --le-gradient-beige: linear-gradient(135deg, oklch(0.86 0.04 80), oklch(0.78 0.05 75));
+  --le-gradient-status-healthy: linear-gradient(135deg, oklch(0.7 0.15 155), oklch(0.55 0.16 155));
+  --le-gradient-status-degraded: linear-gradient(135deg, oklch(0.78 0.14 75), oklch(0.62 0.15 75));
+  --le-gradient-status-critical: linear-gradient(135deg, oklch(0.68 0.17 25), oklch(0.52 0.18 25));
 }
 
 .dark, [data-theme="dark"] {
@@ -73,6 +81,13 @@
   --le-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --le-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
   --le-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  --le-gradient-blue: linear-gradient(135deg, oklch(0.7 0.13 240), oklch(0.55 0.16 245));
+  --le-gradient-navy: linear-gradient(135deg, oklch(0.45 0.08 250), oklch(0.3 0.05 250));
+  --le-gradient-beige: linear-gradient(135deg, oklch(0.82 0.04 80), oklch(0.72 0.05 75));
+  --le-gradient-status-healthy: linear-gradient(135deg, oklch(0.78 0.16 155), oklch(0.62 0.17 155));
+  --le-gradient-status-degraded: linear-gradient(135deg, oklch(0.85 0.14 75), oklch(0.7 0.15 75));
+  --le-gradient-status-critical: linear-gradient(135deg, oklch(0.78 0.17 25), oklch(0.62 0.18 25));
 }
 
 * { box-sizing: border-box; }
