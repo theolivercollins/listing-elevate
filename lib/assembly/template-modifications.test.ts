@@ -66,18 +66,20 @@ describe("buildTemplateModifications", () => {
       "St#/StName.text": "123 Waymay Dr",
       "St#/StName-JSJ.text": "Punta Gorda FL",
       "Vid-Category/Title.text": "Just Listed",
-      "Listing-Agent.text": "Brian Helgemo",
-      "Listing-Agent-NWH.text": "Compass",
+      // Agent + brokerage combined into one centered line
+      "Listing-Agent.text": "Brian Helgemo | Compass",
+      "Listing-Agent-NWH.text": "",
     });
   });
 
-  it("substitutes empty string when brokerage is null", () => {
+  it("falls back to agent name only when brokerage is null", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
       agentName: "Brian",
       brokerageName: null,
     });
+    expect(mods["Listing-Agent.text"]).toBe("Brian");
     expect(mods["Listing-Agent-NWH.text"]).toBe("");
   });
 
