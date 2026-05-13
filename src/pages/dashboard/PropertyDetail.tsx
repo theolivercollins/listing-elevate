@@ -420,10 +420,10 @@ const PropertyDetail = () => {
             <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(5,7,14,0.4) 0%, rgba(5,7,14,0.75) 100%)", pointerEvents: "none" }} />
             <div style={{ position: "absolute", inset: 0, padding: "32px 0", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
               <Link
-                to="/dashboard/properties"
+                to="/dashboard/listings"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
               >
-                <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
+                <ArrowLeft style={{ width: 12, height: 12 }} /> Listings
               </Link>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
                 <div>
@@ -462,10 +462,10 @@ const PropertyDetail = () => {
         ) : (
           <div style={{ padding: "32px 0" }}>
             <Link
-              to="/dashboard/properties"
+              to="/dashboard/listings"
               style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
             >
-              <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
+              <ArrowLeft style={{ width: 12, height: 12 }} /> Listings
             </Link>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
               <div>

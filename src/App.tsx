@@ -21,7 +21,7 @@ import AccountProfile from "./pages/account/Profile";
 import Dashboard from "./pages/Dashboard";
 import DashboardOverview from "./pages/dashboard/Overview";
 import DashboardPipeline from "./pages/dashboard/Pipeline";
-import DashboardProperties from "./pages/dashboard/Properties";
+import DashboardListings from "./pages/dashboard/Listings";
 import PropertyDetail from "./pages/dashboard/PropertyDetail";
 import DashboardLogs from "./pages/dashboard/Logs";
 import DashboardFinances from "./pages/dashboard/Finances";
@@ -120,7 +120,7 @@ const App = () => (
                     <Route path="users" element={<DashboardUsers />} />
 
                     {/* ── Listings ──────────────────────────────────────── */}
-                    <Route path="listings" element={<DashboardProperties />} />
+                    <Route path="listings" element={<DashboardListings />} />
                     <Route path="listings/:id" element={<PropertyDetail />} />
 
                     {/* ── Finances ──────────────────────────────────────── */}
