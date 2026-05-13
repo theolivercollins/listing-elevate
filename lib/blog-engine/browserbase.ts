@@ -2,7 +2,17 @@
 import Browserbase from '@browserbasehq/sdk';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright-core';
 
-const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
+// Lazy SDK init. Constructing Browserbase at module load with apiKey: undefined
+// throws and crashes the entire cron function on cold start (FUNCTION_INVOCATION_FAILED)
+// before any auth check runs. Defer until a method actually needs it.
+let _bb: Browserbase | null = null;
+function bbClient(): Browserbase {
+  if (_bb) return _bb;
+  const apiKey = process.env.BROWSERBASE_API_KEY;
+  if (!apiKey) throw new Error('BROWSERBASE_API_KEY not set');
+  _bb = new Browserbase({ apiKey });
+  return _bb;
+}
 
 export interface RunInSessionResult<T> {
   result: T;
@@ -21,7 +31,9 @@ export async function getOrCreatePersistentContextId(
   existing: string | null,
 ): Promise<string> {
   if (existing) return existing;
-  const ctx = await bb.contexts.create({ projectId: process.env.BROWSERBASE_PROJECT_ID! });
+  const projectId = process.env.BROWSERBASE_PROJECT_ID;
+  if (!projectId) throw new Error('BROWSERBASE_PROJECT_ID not set');
+  const ctx = await bbClient().contexts.create({ projectId });
   return ctx.id;
 }
 
@@ -29,8 +41,10 @@ export async function runInSession<T>(
   contextId: string,
   fn: (args: SessionRunArgs) => Promise<T>,
 ): Promise<RunInSessionResult<T>> {
-  const session = await bb.sessions.create({
-    projectId: process.env.BROWSERBASE_PROJECT_ID!,
+  const projectId = process.env.BROWSERBASE_PROJECT_ID;
+  if (!projectId) throw new Error('BROWSERBASE_PROJECT_ID not set');
+  const session = await bbClient().sessions.create({
+    projectId,
     browserSettings: {
       context: { id: contextId, persist: true },
       viewport: { width: 1280, height: 800 },
