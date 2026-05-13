@@ -1,24 +1,28 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
-const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
-const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
   ResponsiveContainer,
   AreaChart,
   Area,
   CartesianGrid,
   XAxis,
   YAxis,
+  Tooltip,
 } from "recharts";
 import { motion } from "framer-motion";
-import { Loader2, Plus, Trash2, Pencil, TrendingUp, TrendingDown, Wallet, Coins, Receipt, Film, Info } from "lucide-react";
+import {
+  Loader2,
+  Plus,
+  Trash2,
+  Pencil,
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  Film,
+  DollarSign,
+  Info,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,6 +64,7 @@ import {
   listCostEvents,
   countDeliveredVideos,
 } from "@/lib/finances";
+import { KpiCard } from "@/v2/components/dashboard/KpiCard";
 
 // Claude runs through a Pro subscription right now, so API cost events for
 // Anthropic should not count toward finance totals. We still track unit usage
@@ -101,6 +106,31 @@ function parseMoneyToCents(value: string): number {
   return Math.round(n * 100);
 }
 
+// ─── Inline button style (matches Listings / Pipeline action buttons) ────────
+const GHOST_BTN: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 14px",
+  fontSize: 11,
+  fontWeight: 500,
+  background: "transparent",
+  color: "var(--le-text)",
+  border: "1px solid var(--le-border)",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-mono)",
+  letterSpacing: "0.08em",
+};
+
+// ─── v3 card wrapper ─────────────────────────────────────────────────────────
+const CARD_STYLE: React.CSSProperties = {
+  background: "var(--le-bg-elev)",
+  border: "1px solid var(--le-border)",
+  borderRadius: 14,
+  boxShadow: "var(--le-shadow-md)",
+};
+
 export default function Finances() {
   const [loading, setLoading] = useState(true);
   const [purchases, setPurchases] = useState<TokenPurchase[]>([]);
@@ -110,7 +140,7 @@ export default function Finances() {
   const [deliveredCount, setDeliveredCount] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
 
-  // Edit state — which record (and kind) is currently being edited
+  // Edit state
   const [editPurchase, setEditPurchase] = useState<TokenPurchase | null>(null);
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [editRevenue, setEditRevenue] = useState<RevenueEntry | null>(null);
@@ -165,9 +195,7 @@ export default function Finances() {
     };
   }, []);
 
-  // ─── Derived totals ───
-  // NOTE: all dollar totals exclude the Anthropic/Claude line because the
-  // pipeline currently runs on a Claude Pro subscription, not API billing.
+  // ─── Derived totals ───────────────────────────────────────────────────────
   const totalRevenueCents = useMemo(
     () => revenues.reduce((s, r) => s + (r.amount_cents || 0), 0),
     [revenues],
@@ -187,12 +215,12 @@ export default function Finances() {
   const netCents = totalRevenueCents - totalSpendCents;
 
   // Cost per delivered video — token spend only, averaged over all deliveries.
-  // Gives you the marginal provider cost per video.
-  const costPerVideoCents = deliveredCount > 0 ? Math.round(totalPurchasesCents / deliveredCount) : 0;
+  const costPerVideoCents =
+    deliveredCount > 0 ? Math.round(totalPurchasesCents / deliveredCount) : 0;
 
-  // Per-provider rollup — purchased vs spent (from cost_events).
+  // Per-provider rollup (purchased vs spent from cost_events).
   // Dollar totals are zeroed for excluded providers (Claude via Pro sub) but
-  // unit counts are preserved so we can still see how much we're consuming.
+  // unit counts are preserved.
   const providerSummary: ProviderSummary[] = useMemo(() => {
     const map = new Map<TokenProvider, ProviderSummary>();
     for (const prov of PROVIDERS) {
@@ -219,17 +247,13 @@ export default function Finances() {
       row.spentUnits += c.units_consumed || 0;
     }
     return Array.from(map.values()).filter(
-      (r) => r.purchasedCents > 0 || r.spentCents > 0 || r.purchasedUnits > 0 || r.spentUnits > 0,
+      (r) =>
+        r.purchasedCents > 0 ||
+        r.spentCents > 0 ||
+        r.purchasedUnits > 0 ||
+        r.spentUnits > 0,
     );
   }, [purchases, costEvents]);
-
-  const pieData = providerSummary
-    .filter((p) => p.spentCents > 0)
-    .map((p) => ({
-      name: p.label,
-      value: p.spentCents,
-      provider: p.provider,
-    }));
 
   // 30-day net series (revenue − spend)
   const netSeries = useMemo(() => {
@@ -264,7 +288,7 @@ export default function Finances() {
     }));
   }, [revenues, purchases, expenses]);
 
-  // ─── Handlers ───
+  // ─── Handlers ─────────────────────────────────────────────────────────────
   async function handleAddPurchase(e: React.FormEvent) {
     e.preventDefault();
     if (!tpAmount) return;
@@ -383,264 +407,270 @@ export default function Finances() {
   if (loading) {
     return (
       <div className="flex justify-center py-32">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--le-text-muted)" }} />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
-        <span className="label text-destructive">— Error</span>
-        <p className="mt-3 text-sm text-muted-foreground">{error}</p>
+      <div
+        className="p-10"
+        style={{
+          ...CARD_STYLE,
+          border: "1px solid var(--le-danger)",
+          background: "var(--le-danger-soft)",
+        }}
+      >
+        <span className="le-eyebrow" style={{ color: "var(--le-danger)" }}>
+          — Error
+        </span>
+        <p className="mt-3 text-sm" style={{ color: "var(--le-text-muted)" }}>
+          {error}
+        </p>
       </div>
     );
   }
 
-  const NetIcon = netCents >= 0 ? TrendingUp : TrendingDown;
-  const netTone = netCents >= 0 ? "text-accent" : "text-destructive";
+  const netGradient = netCents >= 0 ? "status-healthy" : "status-degraded";
+  const costGradient = costPerVideoCents < 500 ? "status-healthy" : "status-degraded";
 
   return (
-    <div className="space-y-16">
-      {/* Heading */}
+    <div className="flex flex-col gap-8">
+      {/* ─── Page header ──────────────────────────────────────────────────── */}
       <div>
-        <span style={EYEBROW}>— Finances</span>
-        <h2 className="mt-3" style={PAGE_H1}>
-          Money in, money out
+        <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+          Admin
+        </div>
+        <h2
+          className="le-display mt-1 font-medium tracking-tight"
+          style={{ fontSize: "clamp(28px, 4vw, 44px)", color: "var(--le-text)" }}
+        >
+          Finances
         </h2>
-        <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <p
+          className="mt-2 flex items-center gap-2 text-xs"
+          style={{ color: "var(--le-text-muted)" }}
+        >
           <Info className="h-3 w-3" strokeWidth={2} />
-          Claude usage runs on a Pro subscription and is excluded from dollar totals. Units are still tracked.
+          Claude usage runs on a Pro subscription and is excluded from dollar totals. Units are still
+          tracked.
         </p>
       </div>
 
-      {/* ─── KPI row ─── */}
-      <section className="grid gap-px border border-border bg-border md:grid-cols-2 lg:grid-cols-5" style={{ borderRadius: 0 }}>
-        {[
-          { label: "Revenue in", value: formatCents(totalRevenueCents), icon: Wallet, tone: "text-accent" },
-          { label: "Token spend", value: formatCents(totalPurchasesCents), icon: Coins, tone: "text-foreground" },
-          { label: "Other expenses", value: formatCents(totalExpensesCents), icon: Receipt, tone: "text-foreground" },
-          {
-            label: "Net",
-            value: formatCents(Math.abs(netCents)),
-            icon: NetIcon,
-            tone: netTone,
-            prefix: netCents >= 0 ? "+" : "−",
-          },
-          {
-            label: "Cost / video",
-            value: formatCents(costPerVideoCents),
-            icon: Film,
-            tone: "text-foreground",
-            sub: `${deliveredCount} delivered`,
-          },
-        ].map((k, i) => (
-          <motion.div
-            key={k.label}
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: i * 0.05, ease: EASE }}
-            className="bg-background p-8"
-            style={{ borderRadius: 0 }}
+      {/* ─── KPI row ──────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <KpiCard
+          label="Revenue (30d)"
+          value={formatCents(totalRevenueCents)}
+          gradient="blue"
+          icon={<DollarSign className="h-5 w-5" strokeWidth={1.6} />}
+        />
+        <KpiCard
+          label="Spend (30d)"
+          value={formatCents(totalSpendCents)}
+          gradient="navy"
+          icon={<Wallet className="h-5 w-5" strokeWidth={1.6} />}
+        />
+        <KpiCard
+          label="Net (30d)"
+          value={`${netCents >= 0 ? "+" : "−"}${formatCents(Math.abs(netCents))}`}
+          gradient={netGradient}
+          icon={
+            netCents >= 0 ? (
+              <TrendingUp className="h-5 w-5" strokeWidth={1.6} />
+            ) : (
+              <TrendingDown className="h-5 w-5" strokeWidth={1.6} />
+            )
+          }
+        />
+        <KpiCard
+          label="Cost / video"
+          value={deliveredCount > 0 ? formatCents(costPerVideoCents) : "—"}
+          gradient={costGradient}
+          icon={<Film className="h-5 w-5" strokeWidth={1.6} />}
+        />
+      </div>
+
+      {/* ─── 30-day cashflow chart ────────────────────────────────────────── */}
+      <div className="p-6" style={CARD_STYLE}>
+        <div className="flex items-end justify-between">
+          <div>
+            <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              — Cashflow
+            </div>
+            <h3
+              className="mt-1 text-xl font-medium tracking-tight"
+              style={{ color: "var(--le-text)" }}
+            >
+              30-day net
+            </h3>
+          </div>
+          <span
+            className="le-mono text-xs"
+            style={{
+              color: netCents >= 0 ? "var(--le-success)" : "var(--le-danger)",
+            }}
           >
-            <div className="flex items-start justify-between">
-              <span style={EYEBROW}>{k.label}</span>
-              <k.icon className={`h-4 w-4 ${k.tone}`} strokeWidth={1.5} />
-            </div>
-            <div className={`mt-6 ${k.tone}`} style={MONO_VALUE}>
-              {"prefix" in k && k.prefix ? k.prefix : ""}
-              {k.value}
-            </div>
-            {"sub" in k && k.sub && (
-              <p className="mt-3 text-xs text-muted-foreground">{k.sub}</p>
-            )}
-          </motion.div>
-        ))}
-      </section>
-
-      {/* ─── 30-day net chart + spend pie ─── */}
-      <section className="grid gap-px border border-border bg-border lg:grid-cols-[2fr_1fr]">
-        <div className="bg-background p-8">
-          <div className="flex items-end justify-between">
-            <div>
-              <span style={EYEBROW}>— Cashflow</span>
-              <h3 className="mt-3" style={SECTION_H3}>30-day net</h3>
-            </div>
-            <span className={`tabular text-xs ${netTone}`}>
-              {netCents >= 0 ? "+" : "−"}
-              {formatCents(Math.abs(netCents))} total
-            </span>
-          </div>
-          <div className="mt-8 h-[260px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={netSeries} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="revArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="0" stroke="hsl(var(--border))" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => v.slice(5)}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: 0,
-                    fontSize: 11,
-                    padding: 10,
-                  }}
-                  formatter={(v: number, name: string) => [formatCents(v), name]}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="hsl(var(--accent))" strokeWidth={1.5} fill="url(#revArea)" />
-                <Area
-                  type="monotone"
-                  dataKey="spend"
-                  stroke="hsl(var(--destructive))"
-                  strokeWidth={1.5}
-                  fill="url(#spendArea)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="mt-5 flex gap-6">
-            <span className="label inline-flex items-center gap-2 text-muted-foreground">
-              <span className="h-[2px] w-5 bg-accent" /> Revenue
-            </span>
-            <span className="label inline-flex items-center gap-2 text-muted-foreground">
-              <span className="h-[2px] w-5 bg-destructive" /> Spend
-            </span>
-          </div>
+            {netCents >= 0 ? "+" : "−"}
+            {formatCents(Math.abs(netCents))} total
+          </span>
         </div>
-
-        <div className="bg-background p-8" style={{ borderRadius: 0 }}>
-          <span style={EYEBROW}>— Real usage</span>
-          <h3 className="mt-3" style={SECTION_H3}>Token spend by provider</h3>
-          {pieData.length === 0 ? (
-            <p className="mt-16 text-center text-sm text-muted-foreground">No spend recorded yet</p>
-          ) : (
-            <>
-              <div className="mt-6 h-[180px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={50}
-                      outerRadius={80}
-                      stroke="hsl(var(--background))"
-                      strokeWidth={2}
-                      paddingAngle={2}
-                    >
-                      {pieData.map((d) => (
-                        <Cell key={d.provider} fill={PROVIDER_COLORS[d.provider as TokenProvider]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{
-                        background: "hsl(var(--card))",
-                        border: "1px solid hsl(var(--border))",
-                        borderRadius: 0,
-                        fontSize: 11,
-                        padding: 10,
-                      }}
-                      formatter={(v: number) => formatCents(v)}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <ul className="mt-6 space-y-2">
-                {pieData.map((d) => {
-                  const pct = totalSpentFromCostEvents(pieData) > 0
-                    ? (d.value / totalSpentFromCostEvents(pieData)) * 100
-                    : 0;
-                  return (
-                    <li key={d.provider} className="flex items-center justify-between text-xs">
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="h-2 w-2"
-                          style={{ backgroundColor: PROVIDER_COLORS[d.provider as TokenProvider] }}
-                        />
-                        <span className="text-foreground">{d.name}</span>
-                      </span>
-                      <span className="tabular text-muted-foreground">
-                        {formatCents(d.value)} · {pct.toFixed(0)}%
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
+        <div className="mt-6 h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={netSeries} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="revArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid
+                strokeDasharray="0"
+                stroke="var(--le-border)"
+                vertical={false}
+              />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 10, fill: "var(--le-text-muted)" }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => v.slice(5)}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: "var(--le-text-muted)" }}
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "var(--le-bg-elev)",
+                  border: "1px solid var(--le-border)",
+                  borderRadius: 8,
+                  fontSize: 11,
+                  padding: 10,
+                }}
+                formatter={(v: number, name: string) => [formatCents(v), name]}
+              />
+              <Area
+                type="monotone"
+                dataKey="revenue"
+                stroke="hsl(var(--accent))"
+                strokeWidth={1.5}
+                fill="url(#revArea)"
+              />
+              <Area
+                type="monotone"
+                dataKey="spend"
+                stroke="hsl(var(--destructive))"
+                strokeWidth={1.5}
+                fill="url(#spendArea)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
-      </section>
+        <div className="mt-5 flex gap-6">
+          <span
+            className="le-eyebrow inline-flex items-center gap-2"
+            style={{ color: "var(--le-text-muted)" }}
+          >
+            <span className="h-[2px] w-5 bg-accent" /> Revenue
+          </span>
+          <span
+            className="le-eyebrow inline-flex items-center gap-2"
+            style={{ color: "var(--le-text-muted)" }}
+          >
+            <span className="h-[2px] w-5 bg-destructive" /> Spend
+          </span>
+        </div>
+      </div>
 
-      {/* ─── Provider balances — purchased vs spent ─── */}
-      <section>
-        <span style={EYEBROW}>— Balances</span>
-        <h3 className="mt-3" style={SECTION_H3}>Token balance by provider</h3>
-
-        {providerSummary.length === 0 ? (
-          <p className="mt-10 border border-dashed border-border bg-secondary/30 p-10 text-center text-sm text-muted-foreground">
-            Log a token purchase below to start tracking balances.
-          </p>
-        ) : (
-          <div className="mt-10 grid gap-px border border-border bg-border md:grid-cols-2 xl:grid-cols-3">
+      {/* ─── Token balance by provider ────────────────────────────────────── */}
+      {providerSummary.length > 0 && (
+        <div className="p-6" style={CARD_STYLE}>
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+            — Balances
+          </div>
+          <h3
+            className="mt-1 text-xl font-medium tracking-tight"
+            style={{ color: "var(--le-text)" }}
+          >
+            Token balance by provider
+          </h3>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {providerSummary.map((row) => {
               const balanceCents = row.purchasedCents - row.spentCents;
               const usedPct =
                 row.purchasedCents > 0
                   ? Math.min(100, (row.spentCents / row.purchasedCents) * 100)
                   : 0;
-              const tone = balanceCents < 0 ? "text-destructive" : "text-foreground";
+              const balanceColor =
+                balanceCents < 0 ? "var(--le-danger)" : "var(--le-text)";
               return (
-                <div key={row.provider} className="bg-background p-6">
+                <div
+                  key={row.provider}
+                  className="rounded-[10px] p-5"
+                  style={{
+                    background: "var(--le-bg-sunken, var(--le-bg-elev))",
+                    border: "1px solid var(--le-border)",
+                  }}
+                >
                   <div className="flex items-start justify-between">
                     <div>
-                      <span className="label text-muted-foreground">{row.label}</span>
-                      <div className={`tabular mt-4 text-3xl font-semibold tracking-[-0.02em] ${tone}`}>
+                      <span
+                        className="le-eyebrow"
+                        style={{ color: "var(--le-text-muted)" }}
+                      >
+                        {row.label}
+                      </span>
+                      <div
+                        className="le-mono mt-3 text-2xl font-semibold"
+                        style={{ color: balanceColor }}
+                      >
                         {balanceCents < 0 ? "−" : ""}
                         {formatCents(Math.abs(balanceCents))}
                       </div>
-                      <p className="mt-2 text-[11px] text-muted-foreground">remaining</p>
+                      <p
+                        className="mt-1 text-[11px]"
+                        style={{ color: "var(--le-text-muted)" }}
+                      >
+                        remaining
+                      </p>
                     </div>
                     <span
-                      className="h-3 w-3"
+                      className="h-3 w-3 rounded-full"
                       style={{ backgroundColor: PROVIDER_COLORS[row.provider] }}
                     />
                   </div>
-                  <div className="mt-6 h-[3px] w-full bg-border">
+                  <div
+                    className="mt-4 h-[3px] w-full rounded-full"
+                    style={{ background: "var(--le-border)" }}
+                  >
                     <motion.div
-                      className="h-full"
+                      className="h-full rounded-full"
                       style={{ backgroundColor: PROVIDER_COLORS[row.provider] }}
                       initial={{ width: 0 }}
                       animate={{ width: `${usedPct}%` }}
                       transition={{ duration: 1, ease: EASE }}
                     />
                   </div>
-                  <div className="tabular mt-4 flex justify-between text-[11px] text-muted-foreground">
+                  <div
+                    className="le-mono mt-3 flex justify-between text-[11px]"
+                    style={{ color: "var(--le-text-muted)" }}
+                  >
                     <span>{formatCents(row.spentCents)} spent</span>
                     <span>{formatCents(row.purchasedCents)} purchased</span>
                   </div>
                   {row.purchasedUnits > 0 && (
-                    <div className="tabular mt-2 flex justify-between text-[10px] text-muted-foreground/60">
+                    <div
+                      className="le-mono mt-1 flex justify-between text-[10px]"
+                      style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+                    >
                       <span>{row.spentUnits.toFixed(0)} units used</span>
                       <span>{row.purchasedUnits.toFixed(0)} units bought</span>
                     </div>
@@ -649,19 +679,34 @@ export default function Finances() {
               );
             })}
           </div>
-        )}
-      </section>
+        </div>
+      )}
 
-      {/* ─── Forms row ─── */}
-      <section className="grid gap-px border border-border bg-border lg:grid-cols-3">
+      {/* ─── Log forms ────────────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-3">
         {/* Log token purchase */}
-        <form onSubmit={handleAddPurchase} className="bg-background p-8">
-          <span className="label text-muted-foreground">— Log</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">New token purchase</h3>
-          <div className="mt-6 space-y-4">
+        <form onSubmit={handleAddPurchase} className="p-6" style={CARD_STYLE}>
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+            — Log
+          </div>
+          <h3
+            className="mt-1 text-lg font-medium tracking-tight"
+            style={{ color: "var(--le-text)" }}
+          >
+            New token purchase
+          </h3>
+          <div className="mt-5 space-y-4">
             <div>
-              <Label className="label text-muted-foreground">Provider</Label>
-              <Select value={tpProvider} onValueChange={(v) => setTpProvider(v as TokenProvider)}>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Provider
+              </Label>
+              <Select
+                value={tpProvider}
+                onValueChange={(v) => setTpProvider(v as TokenProvider)}
+              >
                 <SelectTrigger className="mt-2">
                   <SelectValue />
                 </SelectTrigger>
@@ -676,9 +721,17 @@ export default function Finances() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="label text-muted-foreground">Amount paid</Label>
+                <Label
+                  className="le-eyebrow"
+                  style={{ color: "var(--le-text-muted)" }}
+                >
+                  Amount paid
+                </Label>
                 <div className="relative mt-2">
-                  <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                  <span
+                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                    style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+                  >
                     $
                   </span>
                   <Input
@@ -687,24 +740,34 @@ export default function Finances() {
                     value={tpAmount}
                     onChange={(e) => setTpAmount(e.target.value)}
                     placeholder="250.00"
-                    className="tabular pl-7"
+                    className="le-mono pl-7"
                     required
                   />
                 </div>
               </div>
               <div>
-                <Label className="label text-muted-foreground">Units</Label>
+                <Label
+                  className="le-eyebrow"
+                  style={{ color: "var(--le-text-muted)" }}
+                >
+                  Units
+                </Label>
                 <Input
                   type="number"
                   value={tpUnits}
                   onChange={(e) => setTpUnits(e.target.value)}
                   placeholder="25000"
-                  className="tabular mt-2"
+                  className="le-mono mt-2"
                 />
               </div>
             </div>
             <div>
-              <Label className="label text-muted-foreground">Unit type</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Unit type
+              </Label>
               <Input
                 value={tpUnitType}
                 onChange={(e) => setTpUnitType(e.target.value)}
@@ -713,7 +776,12 @@ export default function Finances() {
               />
             </div>
             <div>
-              <Label className="label text-muted-foreground">Note</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Note
+              </Label>
               <Input
                 value={tpNote}
                 onChange={(e) => setTpNote(e.target.value)}
@@ -721,20 +789,41 @@ export default function Finances() {
                 className="mt-2"
               />
             </div>
-            <Button type="submit" size="sm" disabled={tpSubmitting || !tpAmount} className="w-full">
-              {tpSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <Button
+              type="submit"
+              size="sm"
+              disabled={tpSubmitting || !tpAmount}
+              className="w-full"
+            >
+              {tpSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
               Log purchase
             </Button>
           </div>
         </form>
 
         {/* Log expense */}
-        <form onSubmit={handleAddExpense} className="bg-background p-8">
-          <span className="label text-muted-foreground">— Log</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">New expense</h3>
-          <div className="mt-6 space-y-4">
+        <form onSubmit={handleAddExpense} className="p-6" style={CARD_STYLE}>
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+            — Log
+          </div>
+          <h3
+            className="mt-1 text-lg font-medium tracking-tight"
+            style={{ color: "var(--le-text)" }}
+          >
+            New expense
+          </h3>
+          <div className="mt-5 space-y-4">
             <div>
-              <Label className="label text-muted-foreground">Category</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Category
+              </Label>
               <Input
                 value={expCategory}
                 onChange={(e) => setExpCategory(e.target.value)}
@@ -744,9 +833,17 @@ export default function Finances() {
               />
             </div>
             <div>
-              <Label className="label text-muted-foreground">Amount</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Amount
+              </Label>
               <div className="relative mt-2">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                <span
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                  style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+                >
                   $
                 </span>
                 <Input
@@ -755,13 +852,18 @@ export default function Finances() {
                   value={expAmount}
                   onChange={(e) => setExpAmount(e.target.value)}
                   placeholder="0.00"
-                  className="tabular pl-7"
+                  className="le-mono pl-7"
                   required
                 />
               </div>
             </div>
             <div>
-              <Label className="label text-muted-foreground">Description</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Description
+              </Label>
               <Input
                 value={expDesc}
                 onChange={(e) => setExpDesc(e.target.value)}
@@ -775,19 +877,35 @@ export default function Finances() {
               disabled={expSubmitting || !expCategory || !expAmount}
               className="w-full"
             >
-              {expSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {expSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
               Log expense
             </Button>
           </div>
         </form>
 
         {/* Log revenue */}
-        <form onSubmit={handleAddRevenue} className="bg-background p-8">
-          <span className="label text-muted-foreground">— Log</span>
-          <h3 className="mt-3 text-lg font-semibold tracking-[-0.01em]">New revenue</h3>
-          <div className="mt-6 space-y-4">
+        <form onSubmit={handleAddRevenue} className="p-6" style={CARD_STYLE}>
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+            — Log
+          </div>
+          <h3
+            className="mt-1 text-lg font-medium tracking-tight"
+            style={{ color: "var(--le-text)" }}
+          >
+            New revenue
+          </h3>
+          <div className="mt-5 space-y-4">
             <div>
-              <Label className="label text-muted-foreground">Source</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Source
+              </Label>
               <Input
                 value={revSource}
                 onChange={(e) => setRevSource(e.target.value)}
@@ -797,9 +915,17 @@ export default function Finances() {
               />
             </div>
             <div>
-              <Label className="label text-muted-foreground">Amount</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Amount
+              </Label>
               <div className="relative mt-2">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                <span
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                  style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+                >
                   $
                 </span>
                 <Input
@@ -808,13 +934,18 @@ export default function Finances() {
                   value={revAmount}
                   onChange={(e) => setRevAmount(e.target.value)}
                   placeholder="0.00"
-                  className="tabular pl-7"
+                  className="le-mono pl-7"
                   required
                 />
               </div>
             </div>
             <div>
-              <Label className="label text-muted-foreground">Note</Label>
+              <Label
+                className="le-eyebrow"
+                style={{ color: "var(--le-text-muted)" }}
+              >
+                Note
+              </Label>
               <Input
                 value={revNote}
                 onChange={(e) => setRevNote(e.target.value)}
@@ -828,24 +959,48 @@ export default function Finances() {
               disabled={revSubmitting || !revSource || !revAmount}
               className="w-full"
             >
-              {revSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {revSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
               Log revenue
             </Button>
           </div>
         </form>
-      </section>
+      </div>
 
-      {/* ─── Ledger tables ─── */}
+      {/* ─── Ledger tables ────────────────────────────────────────────────── */}
       <LedgerTable
         title="Token purchases"
         rows={purchases.map((p) => ({
           id: p.id,
           cols: [
-            { value: (PROVIDERS.find((x) => x.id === p.provider)?.label || p.provider), className: "label text-foreground" },
-            { value: p.units ? `${p.units} ${p.unit_type || ""}` : "—", className: "tabular text-xs text-muted-foreground" },
-            { value: p.note || "—", className: "truncate text-xs text-muted-foreground" },
-            { value: new Date(p.purchased_at).toLocaleDateString(), className: "tabular text-xs text-muted-foreground" },
-            { value: formatCents(p.amount_cents), className: "tabular text-right text-sm font-semibold" },
+            {
+              value: PROVIDERS.find((x) => x.id === p.provider)?.label || p.provider,
+              className: "le-eyebrow",
+              style: { color: "var(--le-text)" },
+            },
+            {
+              value: p.units ? `${p.units} ${p.unit_type || ""}` : "—",
+              className: "le-mono text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            {
+              value: p.note || "—",
+              className: "truncate text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            {
+              value: new Date(p.purchased_at).toLocaleDateString(),
+              className: "le-mono text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            {
+              value: formatCents(p.amount_cents),
+              className: "le-mono text-right text-sm font-semibold",
+              style: { color: "var(--le-text)" },
+            },
           ],
         }))}
         columns={["Provider", "Units", "Note", "Date", "Amount"]}
@@ -858,11 +1013,27 @@ export default function Finances() {
         rows={expenses.map((e) => ({
           id: e.id,
           cols: [
-            { value: e.category, className: "label text-foreground" },
-            { value: e.description || "—", className: "truncate text-xs text-muted-foreground" },
-            { value: "", className: "" },
-            { value: new Date(e.incurred_at).toLocaleDateString(), className: "tabular text-xs text-muted-foreground" },
-            { value: formatCents(e.amount_cents), className: "tabular text-right text-sm font-semibold" },
+            {
+              value: e.category,
+              className: "le-eyebrow",
+              style: { color: "var(--le-text)" },
+            },
+            {
+              value: e.description || "—",
+              className: "truncate text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            { value: "", className: "", style: {} },
+            {
+              value: new Date(e.incurred_at).toLocaleDateString(),
+              className: "le-mono text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            {
+              value: formatCents(e.amount_cents),
+              className: "le-mono text-right text-sm font-semibold",
+              style: { color: "var(--le-text)" },
+            },
           ],
         }))}
         columns={["Category", "Description", "", "Date", "Amount"]}
@@ -875,11 +1046,27 @@ export default function Finances() {
         rows={revenues.map((r) => ({
           id: r.id,
           cols: [
-            { value: r.source, className: "label text-foreground" },
-            { value: r.note || "—", className: "truncate text-xs text-muted-foreground" },
-            { value: "", className: "" },
-            { value: new Date(r.received_at).toLocaleDateString(), className: "tabular text-xs text-muted-foreground" },
-            { value: formatCents(r.amount_cents), className: "tabular text-right text-sm font-semibold text-accent" },
+            {
+              value: r.source,
+              className: "le-eyebrow",
+              style: { color: "var(--le-text)" },
+            },
+            {
+              value: r.note || "—",
+              className: "truncate text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            { value: "", className: "", style: {} },
+            {
+              value: new Date(r.received_at).toLocaleDateString(),
+              className: "le-mono text-xs",
+              style: { color: "var(--le-text-muted)" },
+            },
+            {
+              value: formatCents(r.amount_cents),
+              className: "le-mono text-right text-sm font-semibold",
+              style: { color: "var(--le-success)" },
+            },
           ],
         }))}
         columns={["Source", "Note", "", "Date", "Amount"]}
@@ -887,7 +1074,7 @@ export default function Finances() {
         onDelete={handleDeleteRevenue}
       />
 
-      {/* Edit dialogs */}
+      {/* ─── Edit dialogs ─────────────────────────────────────────────────── */}
       <EditPurchaseDialog
         purchase={editPurchase}
         onClose={() => setEditPurchase(null)}
@@ -907,13 +1094,11 @@ export default function Finances() {
   );
 }
 
-function totalSpentFromCostEvents(pieData: { value: number }[]) {
-  return pieData.reduce((s, d) => s + d.value, 0);
-}
+// ─── LedgerTable ─────────────────────────────────────────────────────────────
 
 interface LedgerRow {
   id: string;
-  cols: { value: string; className: string }[];
+  cols: { value: string; className: string; style: React.CSSProperties }[];
 }
 
 function LedgerTable({
@@ -930,45 +1115,87 @@ function LedgerTable({
   onDelete: (id: string) => void;
 }) {
   return (
-    <section>
+    <div className="p-6" style={CARD_STYLE}>
       <div className="flex items-end justify-between">
         <div>
-          <span className="label text-muted-foreground">— Ledger</span>
-          <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">{title}</h3>
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+            — Ledger
+          </div>
+          <h3
+            className="mt-1 text-xl font-medium tracking-tight"
+            style={{ color: "var(--le-text)" }}
+          >
+            {title}
+          </h3>
         </div>
-        <span className="tabular text-xs text-muted-foreground">{rows.length} entries</span>
+        <span
+          className="le-mono text-xs"
+          style={{ color: "var(--le-text-muted)" }}
+        >
+          {rows.length} entries
+        </span>
       </div>
-      <div className="mt-8 border-t border-border">
-        <div className="grid grid-cols-[1.2fr_2fr_1fr_1fr_1fr_64px] gap-6 border-b border-border py-4">
+
+      <div className="mt-6" style={{ borderTop: "1px solid var(--le-border)" }}>
+        {/* Column headers */}
+        <div
+          className="grid grid-cols-[1.2fr_2fr_1fr_1fr_1fr_64px] gap-6 py-3"
+          style={{ borderBottom: "1px solid var(--le-border)" }}
+        >
           {columns.map((c, i) => (
             <span
               key={`${c}-${i}`}
-              className={`label text-muted-foreground ${i === columns.length - 1 ? "text-right" : ""}`}
+              className="le-eyebrow"
+              style={{
+                color: "var(--le-text-muted)",
+                textAlign: i === columns.length - 1 ? "right" : "left",
+              }}
             >
               {c}
             </span>
           ))}
           <span />
         </div>
+
         {rows.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">No entries yet</div>
+          <div
+            className="py-12 text-center text-sm"
+            style={{ color: "var(--le-text-muted)" }}
+          >
+            No entries yet
+          </div>
         ) : (
           rows.map((row) => (
             <div
               key={row.id}
-              className="group grid grid-cols-[1.2fr_2fr_1fr_1fr_1fr_64px] items-center gap-6 border-b border-border py-4 transition-colors duration-500 hover:bg-secondary/40"
+              className="group grid grid-cols-[1.2fr_2fr_1fr_1fr_1fr_64px] items-center gap-6 py-4 transition-colors duration-300"
+              style={{
+                borderBottom: "1px solid var(--le-border)",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background =
+                  "var(--le-bg-sunken, rgba(255,255,255,0.03))";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLDivElement).style.background = "transparent";
+              }}
             >
               {row.cols.map((c, i) => (
-                <span key={i} className={c.className}>
+                <span key={i} className={c.className} style={c.style}>
                   {c.value}
                 </span>
               ))}
-              <div className="flex items-center justify-end gap-1 opacity-0 transition-all duration-300 group-hover:opacity-100">
+              <div className="flex items-center justify-end gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100">
                 <button
                   type="button"
                   onClick={() => onEdit(row.id)}
                   aria-label="Edit"
-                  className="flex h-7 w-7 items-center justify-center text-muted-foreground/60 transition-colors hover:text-foreground"
+                  style={{
+                    ...GHOST_BTN,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    color: "var(--le-text-muted)",
+                  }}
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
@@ -976,7 +1203,13 @@ function LedgerTable({
                   type="button"
                   onClick={() => onDelete(row.id)}
                   aria-label="Delete"
-                  className="flex h-7 w-7 items-center justify-center text-muted-foreground/60 transition-colors hover:text-destructive"
+                  style={{
+                    ...GHOST_BTN,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    color: "var(--le-text-muted)",
+                    borderColor: "var(--le-danger)",
+                  }}
                 >
                   <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </button>
@@ -985,11 +1218,11 @@ function LedgerTable({
           ))
         )}
       </div>
-    </section>
+    </div>
   );
 }
 
-// ─── Edit dialogs ───
+// ─── Edit dialogs ─────────────────────────────────────────────────────────────
 
 function EditPurchaseDialog({
   purchase,
@@ -1042,13 +1275,15 @@ function EditPurchaseDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">
+          <DialogTitle className="text-lg font-semibold tracking-tight">
             Edit token purchase
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label className="label text-muted-foreground">Provider</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Provider
+            </Label>
             <Select value={provider} onValueChange={(v) => setProvider(v as TokenProvider)}>
               <SelectTrigger className="mt-2">
                 <SelectValue />
@@ -1064,35 +1299,46 @@ function EditPurchaseDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label className="label text-muted-foreground">Amount paid</Label>
+              <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+                Amount paid
+              </Label>
               <div className="relative mt-2">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                <span
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                  style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+                >
                   $
                 </span>
                 <Input
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  className="tabular pl-7"
+                  className="le-mono pl-7"
                   required
                 />
               </div>
             </div>
             <div>
-              <Label className="label text-muted-foreground">Units</Label>
+              <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+                Units
+              </Label>
               <Input
                 type="number"
                 value={units}
                 onChange={(e) => setUnits(e.target.value)}
-                className="tabular mt-2"
+                className="le-mono mt-2"
               />
             </div>
           </div>
           <div>
-            <Label className="label text-muted-foreground">Unit type</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Unit type
+            </Label>
             <Input value={unitType} onChange={(e) => setUnitType(e.target.value)} className="mt-2" />
           </div>
           <div>
-            <Label className="label text-muted-foreground">Note</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Note
+            </Label>
             <Input value={note} onChange={(e) => setNote(e.target.value)} className="mt-2" />
           </div>
           <DialogFooter>
@@ -1155,11 +1401,15 @@ function EditExpenseDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">Edit expense</DialogTitle>
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            Edit expense
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label className="label text-muted-foreground">Category</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Category
+            </Label>
             <Input
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -1168,22 +1418,33 @@ function EditExpenseDialog({
             />
           </div>
           <div>
-            <Label className="label text-muted-foreground">Amount</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Amount
+            </Label>
             <div className="relative mt-2">
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+              <span
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+              >
                 $
               </span>
               <Input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="tabular pl-7"
+                className="le-mono pl-7"
                 required
               />
             </div>
           </div>
           <div>
-            <Label className="label text-muted-foreground">Description</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2" />
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Description
+            </Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="mt-2"
+            />
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
@@ -1245,29 +1506,45 @@ function EditRevenueDialog({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">Edit revenue</DialogTitle>
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            Edit revenue
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label className="label text-muted-foreground">Source</Label>
-            <Input value={source} onChange={(e) => setSource(e.target.value)} className="mt-2" required />
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Source
+            </Label>
+            <Input
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="mt-2"
+              required
+            />
           </div>
           <div>
-            <Label className="label text-muted-foreground">Amount</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Amount
+            </Label>
             <div className="relative mt-2">
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+              <span
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm"
+                style={{ color: "var(--le-text-muted)", opacity: 0.6 }}
+              >
                 $
               </span>
               <Input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                className="tabular pl-7"
+                className="le-mono pl-7"
                 required
               />
             </div>
           </div>
           <div>
-            <Label className="label text-muted-foreground">Note</Label>
+            <Label className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
+              Note
+            </Label>
             <Input value={note} onChange={(e) => setNote(e.target.value)} className="mt-2" />
           </div>
           <DialogFooter>
