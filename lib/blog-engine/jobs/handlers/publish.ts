@@ -1,9 +1,9 @@
 // lib/blog-engine/jobs/handlers/publish.ts
-import type { JobHandler } from "../runner";
-import { createSierraPublisher } from "../../publishers/sierra";
-import { getOrCreatePersistentContextId } from "../../browserbase";
-import { resolveSiteOpts } from "./_site-opts";
-import { recordBlogCost } from "../../cost";
+import type { JobHandler } from "../runner.js";
+import { createSierraPublisher } from "../../publishers/sierra.js";
+import { getOrCreatePersistentContextId } from "../../browserbase.js";
+import { resolveSiteOpts } from "./_site-opts.js";
+import { recordBlogCost } from "../../cost.js";
 
 export const publishHandler: JobHandler = async ({ supabase, job }) => {
   if (!job.post_id) throw new Error("publish job requires post_id");

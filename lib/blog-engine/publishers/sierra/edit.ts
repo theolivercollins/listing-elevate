@@ -1,10 +1,10 @@
 // lib/blog-engine/publishers/sierra/edit.ts
 import type { Page } from "playwright-core";
-import type { BlogPost } from "../../types";
-import type { EditResult } from "../types";
-import { SIERRA_SELECTORS } from "./selectors";
-import { ensureSignedIn, type SierraCreds } from "./auth";
-import { inputByLabelText, selectByLabelText } from "./dom-helpers";
+import type { BlogPost } from "../../types.js";
+import type { EditResult } from "../types.js";
+import { SIERRA_SELECTORS } from "./selectors.js";
+import { ensureSignedIn, type SierraCreds } from "./auth.js";
+import { inputByLabelText, selectByLabelText } from "./dom-helpers.js";
 
 export type EditableField =
   | "title" | "body_html"

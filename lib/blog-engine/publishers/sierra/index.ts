@@ -1,11 +1,11 @@
 // lib/blog-engine/publishers/sierra/index.ts
-import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from "../types";
-import type { BlogPost } from "../../types";
-import { runInSession } from "../../browserbase";
-import type { SierraCreds } from "./auth";
-import { fetchTaxonomy } from "./taxonomy";
-import { sierraPublish, type SierraPublishInput } from "./publish";
-import { sierraEdit, type SierraEditInput, type EditableField } from "./edit";
+import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from "../types.js";
+import type { BlogPost } from "../../types.js";
+import { runInSession } from "../../browserbase.js";
+import type { SierraCreds } from "./auth.js";
+import { fetchTaxonomy } from "./taxonomy.js";
+import { sierraPublish, type SierraPublishInput } from "./publish.js";
+import { sierraEdit, type SierraEditInput, type EditableField } from "./edit.js";
 
 export interface SierraPublisherDeps {
   loadImage: (post: BlogPost) => Promise<{ buffer: Buffer; filename: string } | null>;

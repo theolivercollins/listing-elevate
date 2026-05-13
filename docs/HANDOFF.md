@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (post-merge update)
+Last updated: 2026-05-13 (blog publish fix + post-merge update)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,37 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-13 PM: Blog "Publish now" path unbroken end-to-end — PR #39 merged, prod env vars set, deploy promoted.** The button has been silently failing since the blog engine shipped (Phase 1, 2026-05-07). User clicks → API enqueues a `blog_jobs` row → per-minute cron `/api/cron/poll-blog-jobs` returns `500 FUNCTION_INVOCATION_FAILED` → job sits `queued` forever. One real example was stuck 22h: post `0f68207f-…` "Charlotte County Housing Market Update – May 2026 B", job `8f6500b9-…`.
+
+Four stacked failures, each a separate fix:
+
+1. **Cron crashed on cold-start with `ERR_MODULE_NOT_FOUND`** — the actual immediate cause, found in Vercel runtime logs only after the first deploy still 500'd. `lib/blog-engine/jobs/handlers/index.ts` and its peers under `lib/blog-engine/` imported with bare specifiers (`from "./fetch-taxonomy"`, etc.). The rest of the repo uses explicit `.js` suffixes because Vercel's `@vercel/node` ESM bundler preserves the literal import path and Node ESM resolver requires the extension. The bundled function couldn't resolve `./fetch-taxonomy` and exited with status 1 on every invocation, surfacing as `FUNCTION_INVOCATION_FAILED` with no useful client-side detail. Fixed across 12 files (50 import sites) under `lib/blog-engine/jobs/handlers/` + `lib/blog-engine/publishers/sierra/`. Local vitest + tsx passed because both resolve extensionless TS imports — only Vercel's runtime is strict.
+
+2. **Browserbase SDK was instantiated at module load.** `lib/blog-engine/browserbase.ts` had `const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! })` at the top level. With `BROWSERBASE_API_KEY` absent in prod, the SDK constructor would throw on import — a latent bomb that the `.js`-extension fix would have surfaced next had we not also wrapped it in a lazy getter. Done in the same branch. **Anti-pattern lesson:** any new module that does `const x = new SomeSdk({ apiKey: process.env.FOO! })` at module top-level is a cold-start crash waiting to happen on Vercel.
+
+3. **Cron auth used a never-set secret.** `BLOG_CRON_SECRET` was required for every cron call but never set anywhere. Vercel cron only auto-sends `Authorization: Bearer <CRON_SECRET>` (the standard `CRON_SECRET` env). Switched the gate to an optional `CRON_SECRET` check — enforce when set, allow when not — matching the other crons in this repo which have no auth gate. Means the cron just works out of the box without paperwork.
+
+4. **TinyMCE 8 ready-check was wrong.** Once the cron actually ran the job, the Sierra publisher timed out on `page.waitForFunction(() => ... tinymce.editors?.length > 0)`. Probe (`scripts/blog/probe-sierra-editor.ts`) confirmed Sierra now ships TinyMCE 8 (`res/tinymce8/tinymce.min.js`), which dropped the `tinymce.editors` array in favor of `tinymce.activeEditor` / `tinymce.get(0)`. Updated `publish.ts` + `edit.ts` to poll the new accessors with the `initialized` flag.
+
+Plus two follow-on niceties: after Sierra's success indicator, bounce to the blog manager and look up the post by title to capture a real `external_post_url` (with `?id=`) + numeric `external_post_id` — Sierra keeps the form-with-filters URL on the publish page itself; and the job runner now clears `last_error` on retry-success so a `state=done` row doesn't carry its prior failure annotation.
+
+**Verification (in this session):**
+- Drained the 22h-stuck job locally with the fix applied. Post 60391 is **live on Sierra**, confirmed via `scripts/blog/verify-post-live.ts` against `client2.sierrainteractivedev.com/blog-manager.aspx`.
+- Patched the DB row's `external_post_url` + `external_post_id` to point at the real edit page (Sierra id 60391) so the dashboard "View on Sierra" link works.
+- tsc clean. vitest blog-engine suite 21/21.
+- 5 missing prod env vars (`BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `SIERRA_HELGEMO_USERNAME`, `SIERRA_HELGEMO_PASSWORD`, `SIERRA_HELGEMO_SITE_NAME`) set via Vercel REST API `POST /v10/projects/{id}/env?upsert=true`.
+- PR #39 merged into main; Vercel production deploy promoted (deployment `listingelevate-7xz34g59q`).
+
+**Branch summary:**
+- 2 commits on `worktree-blog-post-fix`: `e70ec1d` (lazy Browserbase init + cron auth), `fb92d14` (TinyMCE 8 wait + post-id capture + last_error clear + 2 smoke probes). Merged via PR #39 → main.
+
+**Open follow-ups:**
+- **Watch a real click on listingelevate.com.** Compose a post, click "Publish now"; within 60s the cron should pick it up and post.state should flip `publish_due → publishing → live`. If you see `live` + an `external_post_url` containing `?id=`, the round-trip works.
+- **GitHub Action `claude-review` is misconfigured.** Workflow failed on PR #39 with `Invalid API key · Fix external API key` — the `ANTHROPIC_API_KEY` in the repo's GitHub Actions secrets is expired/wrong. PR merged anyway because `main` has no branch protection, but worth fixing so future PRs get real review. Not blocking.
+- **The probes (`scripts/blog/probe-sierra-editor.ts`, `scripts/blog/verify-post-live.ts`) live in `scripts/blog/`** — they're smoke utilities and harmless to keep. Use them next time Sierra changes their admin form.
+
+---
 
 **2026-05-13: Prompt-collapse fix LIVE on main — full cascade dev → staging → main + DIRECTOR_SYSTEM patch promoted + mining re-run.** listingelevate.com running per-photo retrieval + DA.3 prompt rewrite + top-K recipe rendering as of `326991e`. Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 8 commits landed three orthogonal fixes:
 

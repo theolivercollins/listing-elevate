@@ -1,8 +1,8 @@
 // lib/blog-engine/jobs/handlers/fetch-taxonomy.ts
-import type { JobHandler } from '../runner';
-import { createSierraPublisher } from '../../publishers/sierra';
-import { getOrCreatePersistentContextId } from '../../browserbase';
-import { resolveSiteOpts } from './_site-opts';
+import type { JobHandler } from '../runner.js';
+import { createSierraPublisher } from '../../publishers/sierra.js';
+import { getOrCreatePersistentContextId } from '../../browserbase.js';
+import { resolveSiteOpts } from './_site-opts.js';
 
 export const fetchTaxonomyHandler: JobHandler = async ({ supabase, job }) => {
   const { site, opts } = await resolveSiteOpts(supabase, job.site_id);
