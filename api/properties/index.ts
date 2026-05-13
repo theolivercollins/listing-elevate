@@ -49,18 +49,38 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
 
 async function handlePost(req: VercelRequest, res: VercelResponse) {
   try {
-    const { address, price, bedrooms, bathrooms, listing_agent, brokerage, tempId, photoPaths, driveLink } = req.body;
+    const {
+      address, price, bedrooms, bathrooms, listing_agent, brokerage,
+      tempId, photoPaths, driveLink,
+      selectedPackage, selectedDuration, selectedOrientation,
+      addVoiceover, addVoiceClone, addCustomRequest, customRequestText,
+      daysOnMarket, soldPrice,
+    } = req.body;
 
     console.log('POST /api/properties body:', JSON.stringify({
       address, price, bedrooms, bathrooms, listing_agent,
       tempId, driveLink,
       photoPathsCount: Array.isArray(photoPaths) ? photoPaths.length : 'not array',
       photoPathsSample: Array.isArray(photoPaths) ? photoPaths.slice(0, 2) : photoPaths,
+      selectedPackage, selectedDuration, selectedOrientation,
+      addVoiceover, addVoiceClone, addCustomRequest,
+      hasCustomRequestText: !!customRequestText,
+      daysOnMarket, soldPrice,
     }));
 
     if (!address || !price || !bedrooms || !bathrooms || !listing_agent) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    // Normalize duration: form sends "15s" | "30s" | "60s" or already-int.
+    const durationInt = typeof selectedDuration === 'string'
+      ? parseInt(selectedDuration.replace(/s$/, ''), 10)
+      : typeof selectedDuration === 'number'
+        ? selectedDuration
+        : null;
+    const validDuration = durationInt === 15 || durationInt === 30 || durationInt === 60
+      ? durationInt
+      : null;
 
     // Create property record
     const property = await createProperty({
@@ -70,6 +90,19 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       bathrooms: parseFloat(bathrooms),
       listing_agent,
       brokerage: brokerage || undefined,
+      selected_package: selectedPackage ?? null,
+      selected_duration: validDuration,
+      selected_orientation: selectedOrientation ?? null,
+      add_voiceover: !!addVoiceover,
+      add_voice_clone: !!addVoiceClone,
+      add_custom_request: !!addCustomRequest,
+      custom_request_text: customRequestText ?? null,
+      days_on_market: typeof daysOnMarket === 'number'
+        ? daysOnMarket
+        : (daysOnMarket ? parseInt(daysOnMarket, 10) : null),
+      sold_price: typeof soldPrice === 'number'
+        ? soldPrice
+        : (soldPrice ? parseInt(soldPrice, 10) : null),
     });
 
     const supabase = getSupabase();

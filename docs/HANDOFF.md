@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (post-merge update)
+Last updated: 2026-05-13 (order-form persistence)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,19 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-13 (later): Order-form persistence wired on `feat/order-form-persistence` (off `dev`).** The Upload form was collecting 9 order-specific fields (`selectedPackage`, `selectedDuration`, `selectedOrientation`, `addVoiceover`, `addVoiceClone`, `addCustomRequest`, `customRequestText`, `daysOnMarket`, `soldPrice`) and dropping all 9 on submit. Pipeline read `selected_duration` optimistically and defaulted to 60s on every order. Migration 054 adds the columns + CHECK constraints (`duration IN (15,30,60)`, `orientation IN ('vertical','horizontal','both')`, `package IN ('just_listed','just_pended','just_closed','life_cycle')`). 5 touchpoints wired (Upload.tsx → src/lib/api.ts → api/properties/index.ts → lib/db.ts → lib/types.ts). Migration applied to prod Supabase via MCP; CHECK constraints verified rejecting bad input + valid roundtrip. tsc + eslint clean. **Local commit pending Oliver review before push to `dev`.**
+
+**Pre-launch gap audit (2026-05-13):** Beyond the persistence fix, the end-to-end order flow does NOT today produce an assembled video. `runAssembly` at `lib/pipeline.ts:148` is dead code (lives after the `return;` on line 145). Cron `poll-scenes.ts` marks property `complete` with `thumbnail_url = first clip URL` — no assembled mp4, no delivery to agent. Additionally, **neither `CREATOMATE_API_KEY` nor `SHOTSTACK_API_KEY` is set in Vercel prod** — the assembly layer would throw if it were reached. Pre-launch blockers per Oliver's 2026-05-13 brainstorm:
+1. Post-gen AI (watch clips, decide regen vs ship, decide ordering in Creatomate)
+2. Creatomate templates + auto-edit (WIP stashed locally: `git stash@{0}` includes `lib/providers/creatomate.ts`, `lib/video-editor/`, migration 053)
+3. Eleven Labs voiceover wiring
+4. Music library
+5. Owner dashboard fixes
+
+**Pre-launch infra gap (2026-05-13):** Migration files 050–052 (blog phase 5 + templates + AI) are in the repo but **not applied to remote Supabase**. Migration 053 (video_revisions, Creatomate-related) is stashed locally only. Remote DB has `portal_*` migrations + `050_portal_pay_on_approval` that don't exist as migration files in the repo — there's drift between repo migration files and applied DB state worth a dedicated audit before the next prod push.
+
+---
 
 **2026-05-13: Prompt-collapse fix LIVE on main — full cascade dev → staging → main + DIRECTOR_SYSTEM patch promoted + mining re-run.** listingelevate.com running per-photo retrieval + DA.3 prompt rewrite + top-K recipe rendering as of `326991e`. Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 8 commits landed three orthogonal fixes:
 

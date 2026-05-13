@@ -74,6 +74,15 @@ export async function createProperty(
   data: {
     address: string; price: number; bedrooms: number; bathrooms: number;
     listing_agent: string; brokerage: string; photos: File[];
+    selectedPackage?: string | null;
+    selectedDuration?: string | null;
+    selectedOrientation?: string | null;
+    addVoiceover?: boolean;
+    addVoiceClone?: boolean;
+    addCustomRequest?: boolean;
+    customRequestText?: string;
+    daysOnMarket?: string;
+    soldPrice?: string;
   },
   onProgress?: (uploaded: number, total: number) => void,
 ): Promise<{ id: string; status: string; photoCount: number }> {
@@ -151,6 +160,15 @@ export async function createProperty(
       brokerage: data.brokerage,
       tempId,
       photoPaths: uploadedPaths,
+      selectedPackage: data.selectedPackage ?? null,
+      selectedDuration: data.selectedDuration ?? null,
+      selectedOrientation: data.selectedOrientation ?? null,
+      addVoiceover: data.addVoiceover ?? false,
+      addVoiceClone: data.addVoiceClone ?? false,
+      addCustomRequest: data.addCustomRequest ?? false,
+      customRequestText: data.customRequestText ?? null,
+      daysOnMarket: data.daysOnMarket ?? null,
+      soldPrice: data.soldPrice ?? null,
     }),
   });
 

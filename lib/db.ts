@@ -49,6 +49,15 @@ export async function createProperty(data: {
   bathrooms: number;
   listing_agent: string;
   brokerage?: string;
+  selected_package?: string | null;
+  selected_duration?: number | null;
+  selected_orientation?: string | null;
+  add_voiceover?: boolean;
+  add_voice_clone?: boolean;
+  add_custom_request?: boolean;
+  custom_request_text?: string | null;
+  days_on_market?: number | null;
+  sold_price?: number | null;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")

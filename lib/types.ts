@@ -110,6 +110,15 @@ export interface Property {
   vertical_video_url: string | null;
   thumbnail_url: string | null;
   submitted_by: string | null;
+  selected_package: string | null;
+  selected_duration: number | null;
+  selected_orientation: string | null;
+  add_voiceover: boolean;
+  add_voice_clone: boolean;
+  add_custom_request: boolean;
+  custom_request_text: string | null;
+  days_on_market: number | null;
+  sold_price: number | null;
 }
 
 export interface Photo {
