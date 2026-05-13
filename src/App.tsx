@@ -34,6 +34,7 @@ import DashboardKnowledgeMap from "./pages/dashboard/KnowledgeMap";
 import DashboardKnowledgeMapCell from "./pages/dashboard/KnowledgeMapCell";
 import DashboardSystemStatus from "./pages/dashboard/SystemStatus";
 import DashboardUsers from "./pages/dashboard/Users";
+import DashboardToolsBlog from "./pages/dashboard/ToolsBlog";
 import DashboardLabListings from "./pages/dashboard/LabListings";
 import DashboardLabListingNew from "./pages/dashboard/LabListingNew";
 import DashboardLabListingDetail from "./pages/dashboard/LabListingDetail";
@@ -65,18 +66,6 @@ function OrdersStubPlaceholder() {
       <h2 className="le-display mt-2 text-[24px]" style={{ color: "var(--le-text)" }}>Customer orders</h2>
       <p className="mt-4 text-sm" style={{ color: "var(--le-text-muted)" }}>
         Customer-grouped view of all property orders. Build coming in Stage 4 follow-up.
-      </p>
-    </div>
-  );
-}
-
-function ToolsBlogStubPlaceholder() {
-  return (
-    <div className="rounded-[14px] border p-12 text-center" style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)" }}>
-      <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Coming soon</div>
-      <h2 className="le-display mt-2 text-[24px]" style={{ color: "var(--le-text)" }}>Blog hub</h2>
-      <p className="mt-4 text-sm" style={{ color: "var(--le-text-muted)" }}>
-        Posts / Images / Templates tabs will mount here. Existing blog detail pages remain reachable.
       </p>
     </div>
   );
@@ -138,7 +127,7 @@ const App = () => (
                     <Route path="finances" element={<DashboardFinances />} />
 
                     {/* ── Tools / Blog hub ──────────────────────────────── */}
-                    <Route path="tools/blog" element={<ToolsBlogStubPlaceholder />} />
+                    <Route path="tools/blog" element={<DashboardToolsBlog />} />
 
                     {/* ── Dev ───────────────────────────────────────────── */}
                     <Route path="dev" element={<DashboardDevelopment />} />
