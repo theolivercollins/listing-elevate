@@ -285,6 +285,10 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
+- 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate
+- 2026-05-13 — `a2fcaf3` — PR #38 feat/creatomate-buildout → dev: Phase 2-6 modules (scene-ordering, duration-fit, branding, music) + template-mode (template-modifications, template-resolver, getTemplate, assembleFromTemplate on /v2/renders) + Shotstack Just Listed port (buildShotstackJustListedTimeline, HTML overlays) + ASSEMBLY_PROVIDER router override. 48 vitest cases.
+- 2026-05-13 — `cada6c2` — PR #37 feat/order-form-persistence → dev: migration 054 + 5 plumbing touchpoints. Upload form's 9 order-specific fields now persist to properties.
 - 2026-05-13 — `326991e` — PR #32 staging → main: prompt-collapse fix + blog trunk to listingelevate.com (per-photo retrieval, DA.3 prompt rewrite, top-K recipe rendering)
 - 2026-05-13 — `6eae2ef` — PR #31 dev → staging: prompt-collapse fix + blog trunk
 - 2026-05-13 — `1154cb1` — PR #30 feat/prompt-collapse-fix → dev: 8 commits landing the prompt-collapse fix (root-cause spec at `docs/specs/2026-05-13-prompt-collapse-fix-design.md`)
