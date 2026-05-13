@@ -14,6 +14,23 @@ See also:
 
 ## Right now
 
+**2026-05-13 (later, post-Stage-1): Dashboard redesign Stage 2-5 — every subpage on the new sidebar.** 13 commits on `feat/dashboard-redesign-stage-1`:
+
+- `2191b5f` route overhaul (13 new paths + 16 redirects from legacy)
+- `cd93bfa` Users admin page + `GET /api/admin/users`
+- `40c62c1` Tools › Blog hub with Posts/Images/Templates tabs
+- `b59fc9e` Properties → Listings rename + v3 restyle
+- `7be15b3` Pipeline kanban drop + review queue v3 restyle
+- `151ee02` Finances v3 restyle (dropped provider pie)
+- `2f53997` Dev Overview restyle (dropped quick-link grid + stale Wan 2.7 text)
+- `06b436a` Prompt Lab v3 cosmetic restyle (daily-driver — logic untouched)
+- `b39552b` Recipes v3 cosmetic restyle
+- `84a6120` Knowledge Map + cell drilldown v3 cosmetic restyle
+- `edd2ce8` System Status v3 restyle + Pipeline logs panel merge
+- `52d0195` Archive 8 deprecated pages (Settings/Learning/Logs/Proposals/RatingLedger/LabListings*) → `src/pages/dashboard/_archive/`
+
+Every sidebar link now resolves to a real, v3-styled page. JetBrains Mono retired globally (route `--le-font-mono` → Inter w/ tabular-nums). tsc + lint clean, vitest 273/274 (1 pre-existing flake). Worktree path: `/Users/oliverhelgemo/listing-elevate-dashboard`. **Push approved by Oliver 2026-05-13.**
+
 **2026-05-13 (later): Dashboard redesign Stage 1 — shell + Overview on `feat/dashboard-redesign-stage-1` (off `dev`).** New `DashboardShell` (vertical sidebar + slim top bar) + rewritten Overview page (4 KPI cards · revenue/spend dual-area chart · cost-by-provider donut · recent listings table) + 4 new admin Overview API endpoints. Behind `VITE_LE_DASHBOARD_V3` flag — OFF by default. Spec [`specs/2026-05-13-admin-dashboard-redesign-design.md`](./specs/2026-05-13-admin-dashboard-redesign-design.md). Plan [`plans/2026-05-13-dashboard-redesign-stage-1-plan.md`](./plans/2026-05-13-dashboard-redesign-stage-1-plan.md). tsc + lint + vitest clean. **Awaiting Oliver smoke-test on dev before flag-flip + merge.**
 
 **Known gap (Stage 1):** the "Active customers" and "Videos delivered" KPI tiles will read 0 because `Property` (in `src/lib/types.ts`) doesn't expose `submitted_by` / `completed_at`, and `fetchProperties` doesn't return them. The chart, donut, system-health KPI, and recent-listings table all render correctly with real data. Follow-up: extend Property + `/api/properties` response in a Stage 2 hotfix or Stage 2 PR.
