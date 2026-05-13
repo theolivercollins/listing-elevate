@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (Creatomate buildout + cron-assembly wire)
+Last updated: 2026-05-13 (order-form persistence merged + Creatomate buildout + Shotstack parallel)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -70,6 +70,10 @@ See also:
 **Migration drift caveat (still standing):** local migrations 050/051/052 (blog phase 5 + templates + AI) remain unapplied. Remote has `portal_deliverables`/`portal_orders_checkout_session`/`050_portal_pay_on_approval`/`portal_orders_order_number_v2` with no migration files in the repo. Worth a dedicated audit before the next big push.
 
 **Pre-launch blocker list (Oliver's 5 from 2026-05-13 brainstorm):** #1 post-gen AI, #2 Creatomate ✅ (this PR bundle), #3 Eleven Labs, #4 music library, #5 owner dashboard. #2 unblocks #1 (post-gen AI needs an assembled timeline to reorder).
+
+**Shotstack parallel port (added 2026-05-13):** Same Just Listed layout rebuilt in code-defined Shotstack timeline (`lib/providers/shotstack.ts::buildShotstackJustListedTimeline`) using HTML clips for full styling control — no Shotstack Studio template required. New `ASSEMBLY_PROVIDER` env var forces Creatomate or Shotstack regardless of the default Creatomate-first priority. A/B testable in parallel.
+
+**Order-form persistence (PR #37) LANDED on `dev`** as of 2026-05-13 21:01 UTC. Migration 054 already in prod Supabase. PR #38 (this Creatomate buildout + Shotstack port) is the second half of the launch-prep work.
 
 ---
 
