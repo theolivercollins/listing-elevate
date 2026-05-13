@@ -240,3 +240,49 @@ export function getRelativeTime(dateStr: string): string {
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
 }
+
+// ─── Dashboard v3 Overview ─────────────────────────────────────────
+
+export type OverviewPeriod = "7d" | "30d" | "90d";
+
+export type SystemHealthStatus = "healthy" | "degraded" | "critical";
+
+export interface SystemHealthAlert {
+  id: string;
+  severity: "degraded" | "critical";
+  category: "kill_switch" | "provider_error_rate" | "stuck_property";
+  message: string;
+  detail?: string;
+  link?: string; // optional URL to the System Status page anchor
+}
+
+export interface OverviewSystemHealth {
+  status: SystemHealthStatus;
+  alert_count: number;
+  alerts: SystemHealthAlert[];
+  generated_at: string;
+}
+
+export interface OverviewRecentListing {
+  id: string;
+  order_id: string | null;
+  address: string;
+  customer_email: string | null;
+  customer_id: string | null;
+  status: string;
+  cost_cents: number;
+  created_at: string;
+  thumbnail_url: string | null;
+}
+
+export interface OverviewCostByProviderRow {
+  provider: string;
+  cost_cents: number;
+  pct: number; // 0-100
+}
+
+export interface OverviewRevenueSpendPoint {
+  date: string; // YYYY-MM-DD
+  revenue_cents: number;
+  spend_cents: number;
+}
