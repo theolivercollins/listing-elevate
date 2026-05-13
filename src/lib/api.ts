@@ -1,6 +1,7 @@
 import type {
   Property, Photo, Scene, PipelineLog, DailyStat, CostEvent, SceneRating, LearningData, PromptRevision,
   OverviewPeriod, OverviewSystemHealth, OverviewRecentListing, OverviewCostByProviderRow, OverviewRevenueSpendPoint,
+  AdminUserRow,
 } from './types';
 import { supabase } from './supabase';
 
@@ -312,4 +313,8 @@ export async function fetchOverviewRevenueSpendSeries(period: OverviewPeriod = "
 }> {
   const sp = new URLSearchParams({ period });
   return apiFetch(`/api/admin/overview/revenue-spend-series?${sp.toString()}`);
+}
+
+export async function fetchAdminUsers(): Promise<{ users: AdminUserRow[] }> {
+  return apiFetch(`/api/admin/users`);
 }

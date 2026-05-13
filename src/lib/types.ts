@@ -286,3 +286,13 @@ export interface OverviewRevenueSpendPoint {
   revenue_cents: number;
   spend_cents: number;
 }
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  role: string;
+  created_at: string;
+  property_count: number;
+  total_spend_cents: number;
+  last_active_at: string | null;
+}
