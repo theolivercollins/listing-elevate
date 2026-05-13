@@ -1,8 +1,8 @@
 // lib/blog-engine/jobs/handlers/image-tag.ts
 import { GoogleGenAI } from "@google/genai";
-import type { JobHandler } from "../runner";
-import { recordBlogCost } from "../../cost";
-import { tagImage } from "../../image-tagging";
+import type { JobHandler } from "../runner.js";
+import { recordBlogCost } from "../../cost.js";
+import { tagImage } from "../../image-tagging.js";
 
 let _gemini: GoogleGenAI | null = null;
 function gemini(): GoogleGenAI {
