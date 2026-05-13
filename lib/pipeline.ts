@@ -14,7 +14,6 @@ import {
   addPropertyCost,
   recordCostEvent,
   recordPromptRevisionIfChanged,
-  fetchRatedExamples,
   log,
 } from "./db.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
@@ -44,6 +43,10 @@ import {
 } from "./prompts/qc-evaluator.js";
 import { resolveProductionPrompt } from "./prompts/resolve.js";
 import { rewritePromptForNewMotion } from "./prompts/rewrite-on-motion-override.js";
+import {
+  fetchPerPhotoRetrievalBundle,
+  renderPerPhotoBlock,
+} from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
 import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
@@ -520,34 +523,47 @@ async function runScripting(propertyId: string): Promise<void> {
     };
   });
 
-  // Pull recent rated examples from past runs and inject them into the
-  // director's user message as in-context learning signal. Winners (4-5
-  // stars) teach the pattern Claude should match; losers (1-2 stars with
-  // a comment) teach failure modes to avoid. Empty pools are fine — the
-  // block is simply omitted on the first N runs before you've rated
-  // anything.
+  // Per-photo retrieval bundles — for each selected photo we fetch
+  // top-3 recipes (validated winning templates), top-5 exemplars (4-5★
+  // past prompts on visually similar photos), and top-3 losers (1-2★
+  // past prompts on visually similar photos), all scoped to the photo's
+  // room_type and embedded composition. Recipes are filtered against
+  // the photo's motion_headroom so the director never sees recipes
+  // DA.2 would later ban.
+  //
+  // Replaces the previous global "PAST GENERATIONS" block, which was
+  // date-ranked top-5 winners/losers across all properties and biased
+  // the director toward whatever recently rated highly regardless of
+  // composition fit (root cause of the 2026-05-13 motion-collapse bug —
+  // see docs/specs/2026-05-13-prompt-collapse-fix-design.md).
   let learningBlock = "";
   try {
-    const [winners, losers] = await Promise.all([
-      fetchRatedExamples({ minRating: 4, limit: 5 }),
-      fetchRatedExamples({ maxRating: 2, limit: 5 }),
-    ]);
-    if (winners.length > 0 || losers.length > 0) {
-      const fmt = (r: Awaited<ReturnType<typeof fetchRatedExamples>>[number]) =>
-        `- Room: ${r.scene.room_type} | Movement: ${r.scene.camera_movement} | Provider: ${r.scene.provider ?? "—"} | Prompt: "${r.scene.prompt}"`
-        + (r.comment ? `\n  Admin note: ${r.comment}` : "")
-        + (r.tags && r.tags.length > 0 ? `\n  Tags: ${r.tags.join(", ")}` : "");
-      const winnersBlock = winners.length > 0
-        ? `\n✅ Worked well (rated 4-5):\n${winners.map(fmt).join("\n")}`
-        : "";
-      const losersBlock = losers.length > 0
-        ? `\n❌ Failed (rated 1-2):\n${losers.map(fmt).join("\n")}`
-        : "";
-      learningBlock = `\n\nPAST GENERATIONS — examples from prior runs, rated by the admin. Match the style of the ✅ examples and avoid the specific failure modes in the ❌ examples.${winnersBlock}${losersBlock}`;
+    const bundles = await Promise.all(
+      photoData.map((p) =>
+        fetchPerPhotoRetrievalBundle({
+          photoId: p.id,
+          roomType: p.room_type,
+          motionHeadroom: p.motion_headroom ?? null,
+        }).then((bundle) => ({ photoId: p.id, bundle })),
+      ),
+    );
+    const blocks = bundles
+      .map(({ photoId, bundle }) => renderPerPhotoBlock(photoId, bundle))
+      .filter(Boolean);
+    const recipeCount = bundles.reduce((n, b) => n + b.bundle.recipes.length, 0);
+    const exemplarCount = bundles.reduce((n, b) => n + b.bundle.exemplars.length, 0);
+    const loserCount = bundles.reduce((n, b) => n + b.bundle.losers.length, 0);
+    if (blocks.length > 0) {
+      learningBlock = `\n\nPER-PHOTO RETRIEVAL — for each photo below you'll find recipes (validated winning templates), exemplars (4-5★ past prompts on visually similar photos), and losers (1-2★ past prompts on visually similar photos). Use these to PICK ONE template per photo and adapt it — do NOT blend templates. Prefer the highest-similarity recipe whose motion fits this frame. Steer clear of patterns in the loser blocks.${blocks.join("")}`;
+      await log(propertyId, "scripting", "info",
+        `Per-photo retrieval: ${blocks.length}/${photoData.length} photos got retrieval blocks (${recipeCount} recipes, ${exemplarCount} exemplars, ${loserCount} losers)`);
+    } else {
+      await log(propertyId, "scripting", "info",
+        `Per-photo retrieval: 0 blocks produced (likely missing image_embeddings on selected photos)`);
     }
   } catch (err) {
     await log(propertyId, "scripting", "warn",
-      `Learning injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+      `Per-photo retrieval failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
   }
 
   // The property style guide is intentionally NOT injected into the
