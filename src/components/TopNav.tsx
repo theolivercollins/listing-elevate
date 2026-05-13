@@ -34,6 +34,7 @@ import {
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { useTheme } from "@/lib/theme";
+import { isDashboardV3Enabled } from "@/lib/featureFlags";
 
 const dashboardNav = [
   { to: "/dashboard", label: "Overview", icon: LayoutGrid, end: true },
@@ -143,6 +144,9 @@ export function TopNav() {
 
   // v2 shell mounts its own navigation; suppress the legacy TopNav on /v2/*.
   if (location.pathname.startsWith("/v2")) return null;
+
+  // Dashboard v3 shell mounts its own sidebar+topbar; suppress the legacy TopNav.
+  if (isDashboardV3Enabled() && location.pathname.startsWith("/dashboard")) return null;
 
   // Index.tsx renders its own hero-style navigation with auth modal hookup.
   if (location.pathname === "/") return null;

@@ -1,11 +1,22 @@
 import { Outlet } from "react-router-dom";
+import { isDashboardV3Enabled } from "@/lib/featureFlags";
+import { DashboardShell } from "@/v2/components/dashboard/DashboardShell";
 import "@/v2/styles/v2.css";
 
 /**
- * Dashboard shell — the sub-nav now lives in TopNav so this is just a
- * container for the current route's <Outlet />.
+ * Dashboard shell.
+ *
+ * Behind VITE_LE_DASHBOARD_V3 flag:
+ *   - ON  → renders the new vertical-sidebar DashboardShell.
+ *   - OFF → renders the legacy max-w container (current behaviour).
+ *
+ * TopNav.tsx separately early-returns on /dashboard/* when the flag is ON,
+ * so the new shell doesn't double-mount nav.
  */
 const Dashboard = () => {
+  if (isDashboardV3Enabled()) {
+    return <DashboardShell />;
+  }
   return (
     <div
       className="le-root"
