@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13
+Last updated: 2026-05-13 (post-merge update)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,7 @@ See also:
 
 ## Right now
 
-**2026-05-13: Prompt-collapse fix on `feat/prompt-collapse-fix` (off `origin/dev`) — NOT yet pushed, awaiting Oliver's OK.** Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 5 commits land three orthogonal fixes:
+**2026-05-13: Prompt-collapse fix LIVE on main — full cascade dev → staging → main + DIRECTOR_SYSTEM patch promoted + mining re-run.** listingelevate.com running per-photo retrieval + DA.3 prompt rewrite + top-K recipe rendering as of `326991e`. Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 8 commits landed three orthogonal fixes:
 
 1. **DA.3 prompt-rewrite guard** — `lib/prompts/rewrite-on-motion-override.ts`. When the validator overrides `camera_movement`, it now also rewrites `scene.prompt` text via deterministic template-fill so the SKU and prompt agree. Applied at both DA.3 sites (`lib/pipeline.ts` prod + `lib/prompt-lab-listings.ts` listings-lab). 9 vitest cases.
 
@@ -30,14 +30,16 @@ See also:
 - Spec: [`specs/2026-05-13-prompt-collapse-fix-design.md`](./specs/2026-05-13-prompt-collapse-fix-design.md)
 - Plan: [`plans/2026-05-13-prompt-collapse-fix.md`](./plans/2026-05-13-prompt-collapse-fix.md)
 - Session: [`sessions/2026-05-13-prompt-collapse-fix.md`](./sessions/2026-05-13-prompt-collapse-fix.md)
-- Commits: `97e2dcb` (Task 1.1 spec+plan+rewrite module), `4ea64c1` (vitest pin chore), `47d05e1` (Task 1.2 prod DA.3), `8a78a64` (Task 1.3 listings DA.3), `e3cb02f` (Phase 2a top-K render), `1c2a4d3` (Phase 2b per-photo retrieval helper), `4ad07d5` (Phase 2c wire prod) — actual SHAs may differ; check `git log feat/prompt-collapse-fix --oneline`.
+- 8 commits on `feat/prompt-collapse-fix`: `97e2dcb`, `5dc4771`, `ccc2dbb`, `f7e41a0`, `72ccf81`, `10014b2`, `c0509ee`, `faae93c`. Merged via PR #30 → dev, PR #31 → staging, PR #32 → main.
 
-**Operational follow-ups (out of scope for the branch, queue for after merge):**
-- Promote the 6 pending DIRECTOR_SYSTEM patches at `/dashboard/development/proposals` (`c0708a98-…`) — never promoted since 2026-04-28. Spec covers why.
-- Flip `USE_THOMPSON_ROUTER=true` once recipe flow is observed working on staging — adds exploration so the system doesn't lock onto recipe monoculture.
-- Re-run mining after a week of new ratings to surface fresh patches.
+**Operational follow-ups COMPLETED in same session (2026-05-13 ~02:00 UTC):**
+- **DIRECTOR_SYSTEM patch `c0708a98` promoted to prod.** Lab-applied since 2026-04-30; verified compile-time `lib/prompts/director.ts` had no edits since 2026-04-28 mining run, so no regression from base-version mismatch. Inserted into `prompt_revisions` as version 4 with `source='lab_promotion'`, `source_override_id=87064053-…`, `body_hash=ac365465`. `resolveProductionPrompt` picks it up on next render. Six evidence-grounded changes: Atlas pool rise ban + curve-direction note + dolly phrasing + banned phrases ("subtle drift") + drone roofline rule + drone pull-back anchor rule. Lab override audit row updated (`promoted_to_prod_at` + `promoted_prompt_revision_id`).
+- **Mining re-run.** 245 rated iterations over last 60 days → 26 qualifying buckets → new proposal `9a0990f0-cb6e-44dd-991c-0c5cf5cf53c2` stored with `status='pending'`, 5 evidence-grounded changes: (1) Atlas push_in requires lateral curve modifier (4 iter evidence), (2) Kling kitchen dolly_left_to_right reliability warning + push_in fallback (5 iter), (3) ban Atlas pool parallax → push_in (1 iter, zero winners in bucket), (4) ban "very subtle" modifier (1 iter, parallel to "subtle drift" ban), (5) ban compound "tilt up then fly forward" drone constructions (1 iter). Cost: $0.33 (48,960 tokens). Awaiting Oliver review at `/dashboard/development/proposals` before applying.
 
-**Promotion path:** `feat/prompt-collapse-fix → dev → staging → main` via PR + `git merge --no-ff`. Manual smoke after the first dev render: render one test property, eyeball motion distribution shows variety + verify a DA.3 override case has matching prompt/SKU.
+**Still pending (gated on smoke):**
+- **`USE_THOMPSON_ROUTER=true`** — explicitly gated on Oliver eyeballing prod render with the new retrieval. Adds exploration so the system doesn't lock onto recipe monoculture. Vercel env flag flip; instant rollback.
+
+**Manual smoke when convenient:** trigger one render on listingelevate.com (any property), then look at the scene table: ≥5 different `camera_movement` values across 10-12 scenes, no single motion repeated >3 times. Vercel function logs should show "Per-photo retrieval: N/12 photos got retrieval blocks (R recipes, E exemplars, L losers)" — confirms the new code path fired. If a DA.3 override fires (warn log "DA.3 override: scene N picked X but ..."), the scene's prompt text should contain the replacement motion verb.
 
 ---
 
@@ -220,6 +222,11 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-13 — `326991e` — PR #32 staging → main: prompt-collapse fix + blog trunk to listingelevate.com (per-photo retrieval, DA.3 prompt rewrite, top-K recipe rendering)
+- 2026-05-13 — `6eae2ef` — PR #31 dev → staging: prompt-collapse fix + blog trunk
+- 2026-05-13 — `1154cb1` — PR #30 feat/prompt-collapse-fix → dev: 8 commits landing the prompt-collapse fix (root-cause spec at `docs/specs/2026-05-13-prompt-collapse-fix-design.md`)
+- 2026-05-13 — db — `prompt_revisions` v4 inserted with `source='lab_promotion'` — promotes proposal c0708a98 (Lab-active since 2026-04-30) to prod; `resolveProductionPrompt('director')` now returns the patched body (36,927 chars, hash ac365465)
+- 2026-05-13 — db — `lab_prompt_proposals` row `9a0990f0` created (status=pending, 5 evidence-grounded changes; awaiting review at /dashboard/development/proposals)
 - 2026-05-06 — `0fd591b` — judge calibration program CLOSED after 4 failed lever attempts (v1.6 minaxes also failed); next session pivots to product gaps
 - 2026-05-06 — `6c711e0` — v1.5-fewshot harness auto-loads few-shot + populate scripts
 - 2026-05-06 — `7955cda` — v1.4-pro calibration harness + standing cost_events FK fix + 249-row cost backfill
