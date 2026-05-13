@@ -205,14 +205,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const finalStatus = needsReview > 0 && passed < 6 ? 'needs_review' : 'complete';
 
       // Only flip if the property is still in a non-terminal state — don't
-      // clobber an already-completed property.
+      // clobber an already-completed property. 'assembling' is also skipped
+      // because a prior cron tick already kicked off runAssembly (which
+      // takes 60–180s for both 16:9 + 9:16 renders); next tick should not
+      // race a second assembly job.
       const { data: prop } = await supabase
         .from('properties')
         .select('status, created_at, pipeline_started_at')
         .eq('id', propertyId)
         .single();
       if (!prop) continue;
-      const terminal = prop.status === 'complete' || prop.status === 'failed';
+      const terminal = prop.status === 'complete'
+        || prop.status === 'failed'
+        || prop.status === 'assembling';
       if (terminal) continue;
 
       // Processing time measures THIS RUN, not the property's original
@@ -222,12 +227,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const startTs = (prop as { pipeline_started_at?: string | null }).pipeline_started_at
         ?? prop.created_at;
       const processingTimeMs = Date.now() - new Date(startTs).getTime();
-      await updatePropertyStatus(propertyId, finalStatus, {
-        processing_time_ms: processingTimeMs,
-        thumbnail_url: scenes.find(s => s.clip_url)?.clip_url ?? null,
-      });
-      await log(propertyId, 'delivery', 'info',
-        `Pipeline finalized by cron: ${passed}/${scenes.length} clips ready`);
+
+      if (finalStatus === 'complete') {
+        // All scenes passed QC — hand off to runAssembly. runAssembly
+        // owns the 'assembling' → 'complete' status transition, records
+        // shotstack/creatomate cost_events, sets horizontal/vertical
+        // video URLs, and falls back to clip-only delivery if no
+        // assembly provider is configured.
+        await log(propertyId, 'delivery', 'info',
+          `All ${passed}/${scenes.length} scenes settled; invoking assembly`);
+        try {
+          const { runAssembly } = await import('../../lib/pipeline.js');
+          await runAssembly(propertyId);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          await log(propertyId, 'assembly', 'error',
+            `runAssembly threw from cron: ${msg}`);
+          await updatePropertyStatus(propertyId, 'failed', { processing_time_ms: processingTimeMs });
+        }
+      } else {
+        // needs_review path — at least one scene failed QC. Don't
+        // assemble; surface for operator review.
+        await updatePropertyStatus(propertyId, finalStatus, {
+          processing_time_ms: processingTimeMs,
+          thumbnail_url: scenes.find(s => s.clip_url)?.clip_url ?? null,
+        });
+        await log(propertyId, 'delivery', 'info',
+          `Pipeline finalized by cron (needs review): ${passed}/${scenes.length} clips ready`);
+      }
     }
 
     return res.status(200).json({
