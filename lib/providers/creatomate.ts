@@ -349,6 +349,9 @@ export function buildCreatomateTimeline(
     width,
     height,
     frame_rate: 30,
+    // Explicit timeline duration — Creatomate /v2/renders defaults to 5s
+    // when this is omitted, regardless of how long the elements run.
+    duration: totalDuration,
     elements: [
       ...videoElements,
       openingGradient,
@@ -405,11 +408,11 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
     const renderScript = buildCreatomateTimeline(params);
 
-    // /v2/renders requires output_format + dimensions + render_scale at the
-    // top level for source-mode renders. Without render_scale, Creatomate
-    // defaults to 0.25 (a 5-second 480×270 draft thumbnail). We mirror the
-    // RenderScript's own dimensions and force scale=1 so the request
-    // produces a full-resolution MP4.
+    // /v2/renders expects the RenderScript fields spread at the TOP LEVEL —
+    // NOT wrapped in a `source:` object (that was the v1 convention).
+    // Wrapping causes Creatomate to silently fall back to a default 5-second
+    // 480×270 draft regardless of what's inside.  We also force render_scale
+    // explicitly so the account-default draft scale doesn't apply.
     const response = await fetch(`${this.baseUrl}/renders`, {
       method: "POST",
       headers: {
@@ -417,11 +420,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        source: renderScript,
-        output_format: renderScript.output_format ?? "mp4",
-        width: renderScript.width,
-        height: renderScript.height,
-        frame_rate: renderScript.frame_rate ?? 30,
+        ...renderScript,
         render_scale: 1,
       }),
     });
