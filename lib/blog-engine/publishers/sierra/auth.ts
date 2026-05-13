@@ -1,6 +1,6 @@
 // lib/blog-engine/publishers/sierra/auth.ts
 import type { Page } from "playwright-core";
-import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors";
+import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors.js";
 
 export interface SierraCreds {
   siteName: string;     // e.g. "thehelgemoteam.com" — Sierra's third login field
