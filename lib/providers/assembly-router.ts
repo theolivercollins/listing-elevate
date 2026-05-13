@@ -9,11 +9,14 @@
  * provider was used.
  */
 
-import type {
-  IVideoAssemblyProvider,
-  AssemblyJob,
-  AssemblyResult,
+import {
+  ShotstackProvider,
+  shotstackCostCents,
+  type IVideoAssemblyProvider,
+  type AssemblyJob,
+  type AssemblyResult,
 } from "./shotstack.js";
+import { CreatomateProvider, creatomateCostCents } from "./creatomate.js";
 
 // Re-export for convenience
 export type { IVideoAssemblyProvider, AssemblyJob, AssemblyResult };
@@ -25,11 +28,7 @@ export type AssemblyProviderName = "creatomate" | "shotstack";
  * falls back to Shotstack, throws if neither is configured.
  */
 export function selectAssemblyProvider(): IVideoAssemblyProvider {
-  // Dynamic imports avoided — both modules tree-shake fine and are
-  // only ~10KB each. Eager import keeps the call stack sync-friendly.
   if (process.env.CREATOMATE_API_KEY) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { CreatomateProvider } = require("./creatomate.js") as typeof import("./creatomate.js");
     return new CreatomateProvider();
   }
 
@@ -37,8 +36,6 @@ export function selectAssemblyProvider(): IVideoAssemblyProvider {
     process.env.SHOTSTACK_API_KEY || process.env.SHOTSTACK_API_KEY_STAGE,
   );
   if (hasShotstack) {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { ShotstackProvider } = require("./shotstack.js") as typeof import("./shotstack.js");
     return new ShotstackProvider();
   }
 
@@ -56,12 +53,8 @@ export function assemblyProviderCostCents(
   outputDurationSeconds: number,
 ): number {
   if (providerName === "creatomate") {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { creatomateCostCents } = require("./creatomate.js") as typeof import("./creatomate.js");
     return creatomateCostCents(outputDurationSeconds);
   }
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { shotstackCostCents } = require("./shotstack.js") as typeof import("./shotstack.js");
   return shotstackCostCents(outputDurationSeconds);
 }
 

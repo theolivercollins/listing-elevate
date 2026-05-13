@@ -82,18 +82,23 @@ interface CreatomateRenderResponse {
 // Timeline Builder
 // ---------------------------------------------------------------------------
 
-const OPENING_OVERLAY_DURATION = 2.5;
+// Opening title hold scales with total video duration — buyer should be
+// able to read the address comfortably. 25% of total length per Oliver
+// 2026-05-13. Floored at 4s so short test renders still look reasonable.
+const OPENING_OVERLAY_RATIO = 0.25;
+const OPENING_OVERLAY_MIN = 4.0;
 const CLOSING_OVERLAY_DURATION = 4.0;
 
 /**
  * Build a Creatomate RenderScript from the same params the Shotstack
- * builder uses. Produces a more polished result with animated overlays,
- * modern font, and smooth transitions.
+ * builder uses. Default is hard cuts between clips with simple fade
+ * in/out on overlays — no Ken-Burns zoom, no slide transitions, no
+ * scale keyframing (per Oliver's style brief 2026-05-13).
  */
 export function buildCreatomateTimeline(
   params: AssembleVideoParams,
 ): CreatomateRenderScript {
-  const { clips, overlays, aspectRatio, transition: clipTransition = "fade" } = params;
+  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music } = params;
 
   if (clips.length === 0) {
     throw new Error("buildCreatomateTimeline: clips array is empty");
@@ -102,6 +107,11 @@ export function buildCreatomateTimeline(
   const isVertical = aspectRatio === "9:16";
   const width = isVertical ? 1080 : 1920;
   const height = isVertical ? 1920 : 1080;
+
+  // Branding: brand color tints the closing accent bar; logo (if provided)
+  // becomes a corner watermark visible for the entire timeline.
+  const primaryColor = overlays.primaryColor ?? "#ffffff";
+  const logoUrl = overlays.logoUrl ?? null;
 
   // Build video clip elements
   const videoElements: CreatomateElement[] = [];
@@ -112,6 +122,8 @@ export function buildCreatomateTimeline(
     const start = i === 0 ? 0 : cursor - transitionDuration;
     const length = clip.durationSeconds;
 
+    // Hard cuts by default — no animations, no scale, no zoom. Creatomate
+    // applies no implicit Ken-Burns to video elements that don't request it.
     const element: CreatomateElement = {
       type: "video",
       source: clip.url,
@@ -120,7 +132,8 @@ export function buildCreatomateTimeline(
       duration: length,
     };
 
-    // Add transition animations on clips 2+
+    // Only attach a transition when the caller explicitly asks for one.
+    // Default in Listing Elevate is hard cuts.
     if (i > 0 && clipTransition !== "none") {
       element.animations = [
         {
@@ -139,7 +152,13 @@ export function buildCreatomateTimeline(
 
   const totalDuration = cursor;
 
-  // Opening overlay — address
+  // Opening overlay — address. Scales with total duration so the buyer
+  // gets to read it: 25% of total, floored at 4s.
+  const openingDuration = Math.max(
+    OPENING_OVERLAY_MIN,
+    totalDuration * OPENING_OVERLAY_RATIO,
+  );
+
   const priceLine = `${overlays.price} | ${overlays.details}`;
   const agentLine = overlays.brokerage
     ? `${overlays.agent} | ${overlays.brokerage}`
@@ -148,13 +167,20 @@ export function buildCreatomateTimeline(
   const titleFontSize = isVertical ? "6.5 vmin" : "4.5 vmin";
   const subtitleFontSize = isVertical ? "4 vmin" : "3 vmin";
 
+  // Lower-third anchor: text sits in the bottom band of the frame
+  // (around y=75–80%) for both opener and closer — broadcast graphic
+  // style, not a centered title card.
+  const lowerThirdPriceY = "73%";
+  const lowerThirdAgentY = "80%";
+  const lowerThirdAccentY = "67%";
+
   const openingTitle: CreatomateElement = {
     type: "text",
     text: overlays.address,
     track: 2,
     time: 0,
-    duration: OPENING_OVERLAY_DURATION,
-    y: "75%",
+    duration: openingDuration,
+    y: lowerThirdPriceY,
     width: "80%",
     x_anchor: "50%",
     y_anchor: "50%",
@@ -162,26 +188,16 @@ export function buildCreatomateTimeline(
     font_size: titleFontSize,
     font_weight: "600",
     color: "#ffffff",
-    // Text shadow for readability over video
     background_color: "rgba(0,0,0,0)",
+    // Simple fade in/out only — no text-appear scale animation, no zoom.
     animations: [
-      {
-        type: "text-appear",
-        time: "start",
-        duration: "0.8",
-        easing: "cubic-bezier(0.25, 0.1, 0.25, 1)",
-      },
-      {
-        type: "fade",
-        time: "end",
-        duration: "0.6",
-        easing: "linear",
-        fade: false,
-      },
+      { type: "fade", time: "start", duration: "0.6", fade: true },
+      { type: "fade", time: "end", duration: "0.5", fade: false },
     ],
   };
 
-  // Closing overlays — price + agent
+  // Closing overlays — price + agent stacked tight in the same lower-third
+  // band as the opener, so the visual rhythm matches.
   const closingStart = Math.max(0, totalDuration - CLOSING_OVERLAY_DURATION);
 
   const closingPrice: CreatomateElement = {
@@ -190,7 +206,7 @@ export function buildCreatomateTimeline(
     track: 2,
     time: closingStart,
     duration: CLOSING_OVERLAY_DURATION,
-    y: "45%",
+    y: lowerThirdPriceY,
     width: "80%",
     x_anchor: "50%",
     y_anchor: "50%",
@@ -199,20 +215,8 @@ export function buildCreatomateTimeline(
     font_weight: "600",
     color: "#ffffff",
     animations: [
-      {
-        type: "fade",
-        time: "start",
-        duration: "0.8",
-        easing: "cubic-bezier(0.25, 0.1, 0.25, 1)",
-        fade: true,
-      },
-      {
-        type: "fade",
-        time: "end",
-        duration: "0.6",
-        easing: "linear",
-        fade: false,
-      },
+      { type: "fade", time: "start", duration: "0.6", fade: true },
+      { type: "fade", time: "end", duration: "0.5", fade: false },
     ],
   };
 
@@ -222,7 +226,7 @@ export function buildCreatomateTimeline(
     track: 2,
     time: closingStart,
     duration: CLOSING_OVERLAY_DURATION,
-    y: "55%",
+    y: lowerThirdAgentY,
     width: "80%",
     x_anchor: "50%",
     y_anchor: "50%",
@@ -231,30 +235,26 @@ export function buildCreatomateTimeline(
     font_weight: "400",
     color: "rgba(255,255,255,0.85)",
     animations: [
-      {
-        type: "fade",
-        time: "start",
-        duration: "0.8",
-        easing: "cubic-bezier(0.25, 0.1, 0.25, 1)",
-        fade: true,
-      },
-      {
-        type: "fade",
-        time: "end",
-        duration: "0.6",
-        easing: "linear",
-        fade: false,
-      },
+      { type: "fade", time: "start", duration: "0.6", fade: true },
+      { type: "fade", time: "end", duration: "0.5", fade: false },
     ],
   };
 
-  // Semi-transparent dark gradient for text readability at opening/closing
+  // Semi-transparent dark gradient at the BOTTOM of the frame for text
+  // readability — both opener and closer overlays sit in the lower third.
+  const lowerThirdGradient = "linear-gradient(0deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.2) 50%, rgba(0,0,0,0) 100%)";
   const openingGradient: CreatomateElement = {
     type: "composition",
     track: 3,
     time: 0,
-    duration: OPENING_OVERLAY_DURATION,
-    color_overlay: "linear-gradient(0deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 60%)",
+    duration: openingDuration,
+    // Gradient covers the bottom 40% of the frame.
+    y: "80%",
+    x_anchor: "50%",
+    y_anchor: "50%",
+    width: "100%",
+    height: "40%",
+    color_overlay: lowerThirdGradient,
     animations: [
       { type: "fade", time: "start", duration: "0.5", fade: true },
       { type: "fade", time: "end", duration: "0.5", fade: false },
@@ -266,12 +266,83 @@ export function buildCreatomateTimeline(
     track: 3,
     time: closingStart,
     duration: CLOSING_OVERLAY_DURATION,
-    color_overlay: "linear-gradient(0deg, rgba(0,0,0,0) 20%, rgba(0,0,0,0.55) 100%)",
+    y: "80%",
+    x_anchor: "50%",
+    y_anchor: "50%",
+    width: "100%",
+    height: "40%",
+    color_overlay: lowerThirdGradient,
     animations: [
-      { type: "fade", time: "start", duration: "0.8", fade: true },
+      { type: "fade", time: "start", duration: "0.6", fade: true },
       { type: "fade", time: "end", duration: "0.5", fade: false },
     ],
   };
+
+  // Brand-color accent line just above the closing price text — a thin
+  // horizontal bar that subtly ties the video to the brokerage palette.
+  // Sits at the top edge of the lower-third stack.
+  const closingAccent: CreatomateElement = {
+    type: "composition",
+    track: 2,
+    time: closingStart + 0.3,
+    duration: CLOSING_OVERLAY_DURATION - 0.3,
+    y: lowerThirdAccentY,
+    x_anchor: "50%",
+    y_anchor: "50%",
+    width: "6%",
+    height: "0.35%",
+    background_color: primaryColor,
+    animations: [
+      { type: "fade", time: "start", duration: "0.5", fade: true },
+      { type: "fade", time: "end", duration: "0.4", fade: false },
+    ],
+  };
+
+  // Corner watermark logo — visible for the entire timeline at low opacity
+  // so it doesn't compete with the main overlays. Only added when a logo
+  // URL was provided.
+  const logoElements: CreatomateElement[] = logoUrl
+    ? [
+        {
+          type: "image",
+          source: logoUrl,
+          track: 4,
+          time: 0,
+          duration: totalDuration,
+          // Top-right corner, ~8% of the frame width on 16:9 (12% on 9:16
+          // so the logo doesn't get lost in the narrower frame).
+          x: isVertical ? "85%" : "92%",
+          y: "7%",
+          x_anchor: "50%",
+          y_anchor: "50%",
+          width: isVertical ? "20%" : "12%",
+          opacity: "85%",
+        },
+      ]
+    : [];
+
+  // Background music — single audio element trimmed to the timeline
+  // duration, ducked to a low volume (~18%) so it sits under overlays
+  // and any future voiceover track. Fades in/out for polish.
+  const musicElements: CreatomateElement[] = music?.url
+    ? [
+        {
+          type: "audio",
+          source: music.url,
+          track: 5,
+          time: 0,
+          duration: totalDuration,
+          // Creatomate accepts numeric `volume` 0..1 or a percentage string.
+          // We pass a percentage string for readability in the rendered
+          // RenderScript JSON.
+          volume: `${Math.round((music.volume ?? 0.18) * 100)}%`,
+          animations: [
+            { type: "fade", time: "start", duration: "1.0", fade: true },
+            { type: "fade", time: "end", duration: "1.5", fade: false },
+          ],
+        },
+      ]
+    : [];
 
   return {
     output_format: "mp4",
@@ -283,8 +354,11 @@ export function buildCreatomateTimeline(
       openingGradient,
       openingTitle,
       closingGradient,
+      closingAccent,
       closingPrice,
       closingAgent,
+      ...logoElements,
+      ...musicElements,
     ],
   };
 }
@@ -293,11 +367,30 @@ export function buildCreatomateTimeline(
 // Provider Implementation
 // ---------------------------------------------------------------------------
 
+/** Options for assembleFromTemplate. */
+export interface TemplateRenderOptions {
+  /** Modification dict keyed by template element name (e.g. "St#/StName.text"). */
+  modifications: Record<string, string | number | null>;
+  /** Override output resolution. Creatomate default is the template's canvas
+   *  scaled by render_scale. We pass explicit dimensions to force HD. */
+  width?: number;
+  height?: number;
+  /** 0..1; 1 = full template canvas. Default 1 (production quality). The
+   *  Creatomate template default of 0.375 produces a 480×270 thumbnail. */
+  renderScale?: number;
+}
+
 export class CreatomateProvider implements IVideoAssemblyProvider {
   readonly name = "creatomate" as const;
 
   private readonly apiKey: string;
-  private readonly baseUrl = "https://api.creatomate.com/v1";
+  // /v2/renders is the current API (per Creatomate docs 2026-05). The older
+  // /v1/renders still works but returns a slightly different response shape
+  // (array vs single object). We use v2 everywhere for consistency.
+  private readonly baseUrl = "https://api.creatomate.com/v2";
+  // /v1/templates is the template-metadata endpoint — Creatomate did not
+  // bump that one to v2 yet; keep it on v1.
+  private readonly templatesBaseUrl = "https://api.creatomate.com/v1";
 
   constructor() {
     const key = process.env.CREATOMATE_API_KEY;
@@ -307,16 +400,30 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
     this.apiKey = key;
   }
 
+  /** Code-generated RenderScript path — used when no template_id is configured.
+   *  Builds a timeline from clips + overlays via buildCreatomateTimeline(). */
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
     const renderScript = buildCreatomateTimeline(params);
 
+    // /v2/renders requires output_format + dimensions + render_scale at the
+    // top level for source-mode renders. Without render_scale, Creatomate
+    // defaults to 0.25 (a 5-second 480×270 draft thumbnail). We mirror the
+    // RenderScript's own dimensions and force scale=1 so the request
+    // produces a full-resolution MP4.
     const response = await fetch(`${this.baseUrl}/renders`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ source: renderScript }),
+      body: JSON.stringify({
+        source: renderScript,
+        output_format: renderScript.output_format ?? "mp4",
+        width: renderScript.width,
+        height: renderScript.height,
+        frame_rate: renderScript.frame_rate ?? 30,
+        render_scale: 1,
+      }),
     });
 
     if (!response.ok) {
@@ -326,9 +433,12 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       );
     }
 
-    const data = (await response.json()) as CreatomateRenderResponse[];
+    const data = (await response.json()) as
+      | CreatomateRenderResponse
+      | CreatomateRenderResponse[];
 
-    // Creatomate returns an array of render objects (one per output)
+    // v1 returned an array of render objects; v2 returns a single object.
+    // Handle both for safety.
     const render = Array.isArray(data) ? data[0] : data;
     if (!render?.id) {
       throw new Error("Creatomate render submit returned no ID");
@@ -338,6 +448,50 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       jobId: render.id,
       environment: "v1" as const,
     };
+  }
+
+  /**
+   * Template-driven render. Pass a Creatomate template_id + a modifications
+   * dict. Output dimensions + render_scale are forced to production-quality
+   * defaults (1920×1080 @ scale 1.0) so the response isn't a thumbnail.
+   */
+  async assembleFromTemplate(
+    templateId: string,
+    opts: TemplateRenderOptions,
+  ): Promise<AssemblyJob> {
+    const body: Record<string, unknown> = {
+      template_id: templateId,
+      modifications: opts.modifications,
+      render_scale: opts.renderScale ?? 1,
+    };
+    if (opts.width) body.width = opts.width;
+    if (opts.height) body.height = opts.height;
+
+    const response = await fetch(`${this.baseUrl}/renders`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(
+        `Creatomate template render submit failed: ${response.status} ${err}`,
+      );
+    }
+
+    const data = (await response.json()) as
+      | CreatomateRenderResponse
+      | CreatomateRenderResponse[];
+    const render = Array.isArray(data) ? data[0] : data;
+    if (!render?.id) {
+      throw new Error("Creatomate template render submit returned no ID");
+    }
+
+    return { jobId: render.id, environment: "v1" as const };
   }
 
   async checkStatus(job: AssemblyJob): Promise<AssemblyResult> {
@@ -357,8 +511,6 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       return {
         status: "complete",
         videoUrl: render.url,
-        // Creatomate doesn't return duration in the render response,
-        // but the video is the timeline duration we specified.
       };
     }
 
@@ -369,8 +521,45 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       };
     }
 
-    // Still rendering
     return { status: "processing" };
+  }
+
+  /**
+   * Fetch a template's metadata + element list. Useful for discovering
+   * which placeholder names a given template_id exposes. Templates live
+   * on /v1 (Creatomate didn't migrate that endpoint to v2).
+   */
+  async getTemplate(templateId: string): Promise<{
+    name: string;
+    width: number;
+    height: number;
+    elements: Array<{ name: string; type: string; dynamic: string[] }>;
+  }> {
+    const response = await fetch(`${this.templatesBaseUrl}/templates/${templateId}`, {
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+    if (!response.ok) {
+      throw new Error(`Creatomate template fetch failed: ${response.status}`);
+    }
+    const data = (await response.json()) as {
+      name?: string;
+      source?: {
+        width?: number;
+        height?: number;
+        elements?: Array<{ name?: string; type?: string; dynamic?: string[] }>;
+      };
+    };
+    const src = data.source ?? {};
+    return {
+      name: data.name ?? "",
+      width: src.width ?? 0,
+      height: src.height ?? 0,
+      elements: (src.elements ?? []).map((e) => ({
+        name: e.name ?? "",
+        type: e.type ?? "",
+        dynamic: e.dynamic ?? [],
+      })),
+    };
   }
 }
 

@@ -9,6 +9,14 @@ export interface AssemblyOverlays {
   details: string;
   agent: string;
   brokerage?: string | null;
+  /** Brokerage logo URL — rendered as a corner watermark when present.
+   *  Creatomate honors this; Shotstack currently ignores it. */
+  logoUrl?: string | null;
+  /** Brand primary color as a hex string (e.g. "#10b981") used to tint
+   *  the closing overlay accent line. Defaults to a neutral white. */
+  primaryColor?: string | null;
+  /** Brand secondary color, used as a softer accent. */
+  secondaryColor?: string | null;
 }
 
 export type ClipTransition =
@@ -33,6 +41,15 @@ export interface AssembleVideoParams {
   aspectRatio: "16:9" | "9:16";
   /** Transition between clips. Default: "none" (hard cuts). */
   transition?: ClipTransition;
+  /** Background music. Creatomate honors this; Shotstack currently ignores it. */
+  music?: AssemblyMusic | null;
+}
+
+export interface AssemblyMusic {
+  /** Public URL Creatomate can fetch (mp3/m4a/wav). */
+  url: string;
+  /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays. */
+  volume?: number;
 }
 
 export interface AssemblyJob {

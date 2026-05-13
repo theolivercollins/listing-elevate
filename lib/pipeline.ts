@@ -51,6 +51,12 @@ import { resolveEndFrameUrl } from "./services/end-frame.js";
 import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
+import { orderScenesForAssembly } from "./assembly/scene-ordering.js";
+import { fitScenesToDuration } from "./assembly/duration-fit.js";
+import { fetchPropertyBranding } from "./assembly/branding.js";
+import { selectMusicTrackForProperty } from "./assembly/music.js";
+import { resolveTemplateId } from "./assembly/template-resolver.js";
+import { buildTemplateModifications } from "./assembly/template-modifications.js";
 import {
   analyzePhotoWithGemini,
   type ExtendedPhotoAnalysis,
@@ -953,15 +959,41 @@ export async function runAssembly(propertyId: string): Promise<void> {
 
   const property = await getProperty(propertyId);
   const scenes = await getScenesForProperty(propertyId);
-  const passedScenes = scenes
-    .filter((s) => s.status === "qc_pass" && s.clip_url)
-    .sort((a, b) => a.scene_number - b.scene_number);
+  const qcPassed = scenes.filter((s) => s.status === "qc_pass" && s.clip_url);
 
-  if (passedScenes.length === 0) {
+  if (qcPassed.length === 0) {
     await updatePropertyStatus(propertyId, "failed");
     await log(propertyId, "assembly", "error", "No clips available for assembly");
     return;
   }
+
+  // Hydrate room_type from photos so the assembly walker can group by room.
+  // One round-trip; scoped to the qc-passed set so we don't pull every photo.
+  const photoIds = Array.from(new Set(qcPassed.map((s) => s.photo_id)));
+  const { data: photoRows, error: photoErr } = await getSupabase()
+    .from("photos")
+    .select("id, room_type")
+    .in("id", photoIds);
+  if (photoErr) {
+    await log(propertyId, "assembly", "warn",
+      `Photo room_type lookup failed (${photoErr.message}); using director scene_number order`);
+  }
+  const roomTypeByPhotoId = new Map<string, RoomType | null>(
+    (photoRows ?? []).map((p) => [p.id as string, (p.room_type as RoomType | null) ?? null]),
+  );
+
+  // Deterministic walkthrough order: aerial/exterior_front → living spaces
+  // → bedrooms → bathrooms → outdoor → exterior_back. See
+  // lib/assembly/scene-ordering.ts for the full policy.
+  const passedScenes = orderScenesForAssembly(
+    qcPassed.map((s) => ({
+      ...s,
+      room_type: roomTypeByPhotoId.get(s.photo_id) ?? null,
+    })),
+  );
+  await log(propertyId, "assembly", "info",
+    `Ordered ${passedScenes.length} scenes for walkthrough`,
+    { order: passedScenes.map((s) => ({ scene_number: s.scene_number, room_type: s.room_type })) });
 
   const totalProcessingMsBase = Date.now() - new Date(property.created_at).getTime();
 
@@ -991,32 +1023,119 @@ export async function runAssembly(propertyId: string): Promise<void> {
       const provider = selectAssemblyProvider();
       const providerName = provider.name;
 
-      const clipInputs = passedScenes.map((s) => ({
-        url: s.clip_url as string,
-        durationSeconds: s.duration_seconds,
+      // Apply the package-tier duration budget. `selected_duration` is
+      // persisted via migration 054 (15 / 30 / 60); a null on a legacy row
+      // means "use the natural sum of source clip durations".
+      const targetDuration =
+        typeof property.selected_duration === "number"
+          ? property.selected_duration
+          : null;
+      const fitted = fitScenesToDuration(
+        passedScenes.map((s) => ({
+          ...s,
+          durationSeconds: s.duration_seconds,
+        })),
+        targetDuration,
+      );
+      await log(propertyId, "assembly", "info",
+        `Duration fit: ${fitted.length} clips for ${targetDuration ?? "natural"}s target`,
+        {
+          target: targetDuration,
+          allocations: fitted.map((f) => ({
+            scene_number: f.scene.scene_number,
+            room_type: f.scene.room_type,
+            seconds: Number(f.durationSeconds.toFixed(2)),
+          })),
+        });
+
+      const clipInputs = fitted.map((f) => ({
+        url: f.scene.clip_url as string,
+        durationSeconds: f.durationSeconds,
       }));
 
+      // Pull brokerage branding (logo + colors) from user_profiles.
+      // Falls back to property.brokerage text + defaults if no profile.
+      const branding = await fetchPropertyBranding(propertyId);
       const overlays = {
         address: property.address,
         price: formatPrice(property.price),
         details: `${property.bedrooms} BD | ${formatBaths(property.bathrooms)} BA`,
         agent: property.listing_agent,
-        brokerage: property.brokerage ?? null,
+        brokerage: branding.brokerageName ?? property.brokerage ?? null,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        secondaryColor: branding.secondaryColor,
       };
+      if (branding.logoUrl) {
+        await log(propertyId, "assembly", "info",
+          `Brokerage logo + brand color (${branding.primaryColor}) applied`);
+      }
+
+      // Music track — operator-pinned wins, else auto-pick by package mood.
+      const musicTrack = await selectMusicTrackForProperty(propertyId);
+      const music = musicTrack ? { url: musicTrack.fileUrl } : null;
+      if (musicTrack) {
+        await log(propertyId, "assembly", "info",
+          `Music: ${musicTrack.name} (${musicTrack.moodTag})`,
+          { music_track_id: musicTrack.id });
+      } else {
+        await log(propertyId, "assembly", "info",
+          "No active music track in library — rendering silent video");
+      }
+
+      // Resolve which Creatomate template (if any) should drive this render.
+      // Priority: property.template_id override > CREATOMATE_TEMPLATE_ID_<PKG>
+      // env var > CREATOMATE_TEMPLATE_ID_DEFAULT > null (fall back to the
+      // code-generated RenderScript path).
+      const templateId = providerName === "creatomate"
+        ? resolveTemplateId({
+            propertyTemplateId: (property as { template_id?: string | null }).template_id ?? null,
+            selectedPackage: property.selected_package,
+          })
+        : null;
+
+      if (templateId) {
+        await log(propertyId, "assembly", "info",
+          `Using Creatomate template ${templateId}`,
+          { templateId, selected_package: property.selected_package });
+      }
 
       await log(propertyId, "assembly", "info",
         `Submitting ${providerName} render (${clipInputs.length} clips)`,
-        { clipCount: clipInputs.length, provider: providerName },
+        { clipCount: clipInputs.length, provider: providerName, templateId },
       );
 
-      const assembleParams = { clips: clipInputs, overlays };
+      // Common modifications shared across 16:9 + 9:16 renders. Template
+      // ignores any keys for placeholders it doesn't have, so we always send
+      // the full set (text + clips + logo + music).
+      const templateMods = templateId
+        ? buildTemplateModifications({
+            address: property.address,
+            selectedPackage: property.selected_package,
+            agentName: property.listing_agent,
+            brokerageName: branding.brokerageName ?? property.brokerage ?? null,
+            clips: clipInputs,
+            logoUrl: branding.logoUrl,
+            musicUrl: musicTrack?.fileUrl,
+          })
+        : null;
+
+      const assembleParams = { clips: clipInputs, overlays, music };
 
       // Render both aspect ratios sequentially. Each render typically takes
       // 30–90s. Kept sequential to stay under the 300s function budget.
-      const horizontalJob = await provider.assemble({
-        ...assembleParams,
-        aspectRatio: "16:9",
-      });
+      // Template path uses assembleFromTemplate; code-generated path uses assemble().
+      const horizontalJob = templateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+            modifications: templateMods,
+            width: 1920,
+            height: 1080,
+            renderScale: 1,
+          })
+        : await provider.assemble({
+            ...assembleParams,
+            aspectRatio: "16:9",
+          });
       await log(propertyId, "assembly", "info",
         `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
       const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
@@ -1048,10 +1167,19 @@ export async function runAssembly(propertyId: string): Promise<void> {
         },
       });
 
-      const verticalJob = await provider.assemble({
-        ...assembleParams,
-        aspectRatio: "9:16",
-      });
+      // Vertical render — same template-vs-codegen branch as horizontal.
+      // For template renders we swap width/height to force a 1080×1920 frame.
+      const verticalJob = templateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+            modifications: templateMods,
+            width: 1080,
+            height: 1920,
+            renderScale: 1,
+          })
+        : await provider.assemble({
+            ...assembleParams,
+            aspectRatio: "9:16",
+          });
       await log(propertyId, "assembly", "info",
         `${providerName} vertical job queued: ${verticalJob.jobId}`);
       const verticalResult = await pollAssemblyJob(provider, verticalJob);
@@ -1128,7 +1256,16 @@ export async function runAssembly(propertyId: string): Promise<void> {
   }
 
   const thumbnailUrl = passedScenes[0]?.clip_url ?? null;
-  const totalProcessingMs = Date.now() - new Date(property.created_at).getTime();
+  // Measure THIS RUN, not the property's original creation date.
+  // pipeline_started_at is stamped at the top of runPipeline; fall back to
+  // created_at only for legacy rows. Clamp to int4 max so weeks-old
+  // properties (e.g. smoke tests on stale data) don't overflow the column.
+  const startRef = (property as { pipeline_started_at?: string | null }).pipeline_started_at
+    ?? property.created_at;
+  const totalProcessingMs = Math.min(
+    Date.now() - new Date(startRef).getTime(),
+    2_147_483_647,
+  );
 
   await updatePropertyStatus(propertyId, "complete", {
     thumbnail_url: thumbnailUrl,
