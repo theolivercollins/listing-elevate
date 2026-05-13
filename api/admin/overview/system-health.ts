@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
+import type { SystemHealthStatus } from "../../../lib/types.js";
 
 // GET /api/admin/overview/system-health
 //
@@ -21,10 +22,8 @@ const EXPECTED_FLAGS: Record<string, string | boolean> = {
   judge_cron_paused: true,
 };
 
-type Severity = "healthy" | "degraded" | "critical";
-
-function escalate(current: Severity, next: Severity): Severity {
-  const rank = { healthy: 0, degraded: 1, critical: 2 } as const;
+function escalate(current: SystemHealthStatus, next: SystemHealthStatus): SystemHealthStatus {
+  const rank: Record<SystemHealthStatus, number> = { healthy: 0, degraded: 1, critical: 2 };
   return rank[next] > rank[current] ? next : current;
 }
 
@@ -44,23 +43,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     message: string;
     detail?: string;
   }> = [];
-  let status: Severity = "healthy";
+  let status: SystemHealthStatus = "healthy";
 
   // 1) Kill-switches
   const { data: flags, error: flagErr } = await supabase
     .from("system_flags")
-    .select("flag, value");
+    .select("name, value");
   if (flagErr) return res.status(500).json({ error: flagErr.message });
 
   for (const row of flags ?? []) {
-    const expected = EXPECTED_FLAGS[row.flag];
+    const expected = EXPECTED_FLAGS[row.name];
     if (expected === undefined) continue; // unknown flag — don't alert
     if (row.value !== expected) {
       alerts.push({
-        id: `flag:${row.flag}`,
+        id: `flag:${row.name}`,
         severity: "degraded",
         category: "kill_switch",
-        message: `Kill-switch '${row.flag}' is ${String(row.value)} (expected ${String(expected)})`,
+        message: `Kill-switch '${row.name}' is ${String(row.value)} (expected ${String(expected)})`,
       });
       status = escalate(status, "degraded");
     }
@@ -70,7 +69,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: events24h, error: eErr } = await supabase
     .from("cost_events")
     .select("provider, metadata, created_at")
-    .gte("created_at", SINCE_24H());
+    .gte("created_at", SINCE_24H())
+    .limit(2000);
   if (eErr) return res.status(500).json({ error: eErr.message });
 
   const perProvider = new Map<string, { total: number; errors: number }>();
