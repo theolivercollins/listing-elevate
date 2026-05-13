@@ -10,7 +10,11 @@ import { handlers } from "../../lib/blog-engine/jobs/handlers/index.js";
 const PER_TICK_LIMIT = 5;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.headers.authorization !== `Bearer ${process.env.BLOG_CRON_SECRET}`) {
+  // Optional auth — if CRON_SECRET is configured, require it. Otherwise allow
+  // (matches the other crons in this repo). Vercel cron auto-sends
+  // `Authorization: Bearer <CRON_SECRET>` when CRON_SECRET env is set.
+  const secret = process.env.CRON_SECRET;
+  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ ok: false });
   }
   if (process.env.VERCEL_ENV !== "production") {
