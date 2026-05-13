@@ -10,7 +10,7 @@
  *   Listing-Agent         text  agent display name
  *   Listing-Agent-NWH     text  brokerage name
  *
- * Future templates may add: Clip1.source, Clip2.source, ..., LogoImage.source,
+ * Future templates may add: Clip-1.source, Clip-2.source, ..., LogoImage.source,
  * MusicTrack.source. The mapper writes those when the AssembleVideoParams
  * carry the data; the template will ignore keys for placeholders it doesn't
  * have (Creatomate silently drops unknown modification keys).
@@ -66,8 +66,9 @@ export interface ModificationContext {
   agentName: string;
   /** Brokerage name (from user_profile.brokerage or property.brokerage). */
   brokerageName: string | null | undefined;
-  /** Ordered property clips. Maps to Clip1.source, Clip2.source, ... when the
-   *  chosen template has clip slots. Templates without those keys ignore them. */
+  /** Ordered property clips. Maps to Clip-1.source, Clip-2.source, ... when
+   *  the chosen template has clip slots. Templates without those keys ignore
+   *  them. Convention matches the Just Listed #01 template (2026-05-13). */
   clips?: AssembleVideoParams["clips"];
   /** Optional brokerage logo URL — drives LogoImage.source. */
   logoUrl?: string | null;
@@ -95,11 +96,12 @@ export function buildTemplateModifications(
     "Listing-Agent-NWH.text": ctx.brokerageName ?? "",
   };
 
-  // Clip slots: write Clip1.source, Clip2.source, ... when the template has them.
-  // Convention matches Creatomate's typical naming for repeated elements.
+  // Clip slots: write Clip-1.source, Clip-2.source, ... when the template
+  // has them. The hyphen matches the Just Listed #01 template's element
+  // naming (verified via curl 2026-05-13).
   if (ctx.clips && ctx.clips.length > 0) {
     ctx.clips.forEach((clip, i) => {
-      const slot = `Clip${i + 1}`;
+      const slot = `Clip-${i + 1}`;
       mods[`${slot}.source`] = clip.url;
       mods[`${slot}.duration`] = clip.durationSeconds;
     });

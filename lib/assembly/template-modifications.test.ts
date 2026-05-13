@@ -81,7 +81,7 @@ describe("buildTemplateModifications", () => {
     expect(mods["Listing-Agent-NWH.text"]).toBe("");
   });
 
-  it("emits ClipN.source + duration when clips are provided", () => {
+  it("emits Clip-N.source + duration when clips are provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
@@ -92,10 +92,10 @@ describe("buildTemplateModifications", () => {
         { url: "https://a/clip2.mp4", durationSeconds: 3.5 },
       ],
     });
-    expect(mods["Clip1.source"]).toBe("https://a/clip1.mp4");
-    expect(mods["Clip1.duration"]).toBe(4);
-    expect(mods["Clip2.source"]).toBe("https://a/clip2.mp4");
-    expect(mods["Clip2.duration"]).toBe(3.5);
+    expect(mods["Clip-1.source"]).toBe("https://a/clip1.mp4");
+    expect(mods["Clip-1.duration"]).toBe(4);
+    expect(mods["Clip-2.source"]).toBe("https://a/clip2.mp4");
+    expect(mods["Clip-2.duration"]).toBe(3.5);
   });
 
   it("omits Clip keys when no clips are provided", () => {
