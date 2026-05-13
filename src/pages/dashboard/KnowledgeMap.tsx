@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 import "@/v2/styles/v2.css";
 import {
   fetchCells,
@@ -25,12 +25,14 @@ const COLS: string[] = [
   "low_angle_glide", "feature_closeup",
 ];
 
-const STATE_COLOR: Record<string, string> = {
-  untested: "bg-muted/50 text-muted-foreground",
-  weak:     "bg-red-500/20 text-red-700 dark:text-red-300",
-  okay:     "bg-amber-400/20 text-amber-700 dark:text-amber-300",
-  strong:   "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300",
-  golden:   "bg-amber-300/80 text-amber-900 dark:text-amber-100 font-semibold",
+type State = "untested" | "weak" | "okay" | "strong" | "golden";
+
+const STATE_COLOR: Record<State, { bg: string; fg: string; cell: string }> = {
+  untested: { bg: "var(--le-bg-sunken)", fg: "var(--le-text-muted)", cell: "var(--le-bg-sunken)" },
+  weak:     { bg: "var(--le-danger-soft)", fg: "var(--le-danger)", cell: "var(--le-danger-soft)" },
+  okay:     { bg: "var(--le-warn-soft)", fg: "var(--le-warn)", cell: "var(--le-warn-soft)" },
+  strong:   { bg: "var(--le-success-soft)", fg: "var(--le-success)", cell: "var(--le-success-soft)" },
+  golden:   { bg: "var(--le-info-soft)", fg: "var(--le-info)", cell: "var(--le-info-soft)" },
 };
 
 const STATE_LABEL: Record<string, string> = {
@@ -153,17 +155,19 @@ export default function KnowledgeMap() {
             {(["untested", "weak", "okay", "strong", "golden"] as const).map((s) => (
               <span
                 key={s}
-                className={`inline-flex items-center gap-2 border border-border px-2 py-1 text-[11px] ${STATE_COLOR[s]}`}
+                className="inline-flex items-center gap-2 rounded-full border px-2 py-1 text-[11px]"
+                style={{ background: STATE_COLOR[s].bg, color: STATE_COLOR[s].fg, borderColor: STATE_COLOR[s].fg + "40" }}
               >
-                <span className={`inline-block h-2 w-2 ${STATE_COLOR[s].split(" ")[0]}`} />
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: STATE_COLOR[s].fg }} />
                 {STATE_LABEL[s]}
               </span>
             ))}
           </div>
-          <Button size="sm" variant="outline" onClick={reload} disabled={loading}>
-            {loading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <RefreshCw className="mr-1 h-3 w-3" />}
+          <DashboardButton variant="ghost" size="sm" onClick={reload} disabled={loading}
+            leftIcon={loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          >
             Refresh
-          </Button>
+          </DashboardButton>
         </div>
 
         {error && (
@@ -235,8 +239,8 @@ export default function KnowledgeMap() {
                   {COLS.map((verb) => {
                     const key = `${room}-${verb}`;
                     const c = cellLookup.get(key);
-                    const state = c?.state ?? "untested";
-                    const bg = STATE_COLOR[state] ?? STATE_COLOR.untested;
+                    const state = (c?.state ?? "untested") as State;
+                    const colors = STATE_COLOR[state] ?? STATE_COLOR.untested;
                     return (
                       <td
                         key={key}
@@ -244,7 +248,8 @@ export default function KnowledgeMap() {
                       >
                         <Link
                           to={`/dashboard/dev/knowledge-map/${encodeURIComponent(key)}`}
-                          className={`block h-14 w-full px-2 py-2 transition-opacity hover:opacity-80 ${bg}`}
+                          className="block h-14 w-full px-2 py-2 transition-opacity hover:opacity-80"
+                          style={{ background: colors.cell, color: colors.fg }}
                           title={c ? `${c.sample_size} samples · avg ${c.avg_rating ?? "—"} · ${STATE_LABEL[state]}` : STATE_LABEL[state]}
                         >
                           <div className="flex items-center justify-between text-[10px]">

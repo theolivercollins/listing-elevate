@@ -3,6 +3,7 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 import {
   listDevNotes,
   createDevNote,
@@ -59,7 +60,7 @@ const Development = () => {
 
   return (
     <div className="le-root" style={{ padding: "0", background: "transparent" }}>
-      <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", flexDirection: "column", gap: 48 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 48 }}>
 
         {/* Page header */}
         <div>
@@ -100,14 +101,14 @@ const Development = () => {
               </h2>
             </div>
             {!creating && (
-              <button
-                className="le-btn le-btn-ghost"
-                style={{ fontSize: 12, padding: "7px 14px" }}
+              <DashboardButton
+                variant="ghost"
+                size="sm"
                 onClick={() => setCreating(true)}
+                leftIcon={<Plus style={{ width: 13, height: 13 }} />}
               >
-                <Plus style={{ width: 13, height: 13 }} />
                 New note
-              </button>
+              </DashboardButton>
             )}
           </div>
 
@@ -363,33 +364,23 @@ function NoteRow({ note, onUpdated }: { note: DevNote; onUpdated: () => void }) 
             year: "numeric",
           })}
         </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, color: "var(--le-text-muted)" }}>
-          <button
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <DashboardButton
+            variant="ghost"
+            size="sm"
             onClick={() => setEditing(true)}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0 }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--le-text)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--le-text-muted)")}
           >
             Edit
-          </button>
-          <button
+          </DashboardButton>
+          <DashboardButton
+            variant="ghost"
+            size="sm"
             onClick={remove}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "inherit",
-              padding: 0,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--le-danger)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "var(--le-text-muted)")}
+            leftIcon={<Trash2 style={{ width: 12, height: 12 }} />}
+            style={{ color: "var(--le-danger)", borderColor: "var(--le-danger)" }}
           >
-            <Trash2 style={{ width: 12, height: 12 }} />
             Delete
-          </button>
+          </DashboardButton>
         </div>
       </div>
       {note.objective && (

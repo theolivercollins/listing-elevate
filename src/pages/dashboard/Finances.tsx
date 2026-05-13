@@ -65,6 +65,8 @@ import {
   countDeliveredVideos,
 } from "@/lib/finances";
 import { KpiCard } from "@/v2/components/dashboard/KpiCard";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 
 // Claude runs through a Pro subscription right now, so API cost events for
 // Anthropic should not count toward finance totals. We still track unit usage
@@ -106,30 +108,6 @@ function parseMoneyToCents(value: string): number {
   return Math.round(n * 100);
 }
 
-// ─── Inline button style (matches Listings / Pipeline action buttons) ────────
-const GHOST_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 14px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "var(--le-text)",
-  border: "1px solid var(--le-border)",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-mono)",
-  letterSpacing: "0.08em",
-};
-
-// ─── v3 card wrapper ─────────────────────────────────────────────────────────
-const CARD_STYLE: React.CSSProperties = {
-  background: "var(--le-bg-elev)",
-  border: "1px solid var(--le-border)",
-  borderRadius: 14,
-  boxShadow: "var(--le-shadow-md)",
-};
 
 export default function Finances() {
   const [loading, setLoading] = useState(true);
@@ -414,21 +392,21 @@ export default function Finances() {
 
   if (error) {
     return (
-      <div
+      <DashboardCard
+        padding="none"
         className="p-10"
         style={{
-          ...CARD_STYLE,
           border: "1px solid var(--le-danger)",
           background: "var(--le-danger-soft)",
         }}
       >
         <span className="le-eyebrow" style={{ color: "var(--le-danger)" }}>
-          — Error
+          Error
         </span>
         <p className="mt-3 text-sm" style={{ color: "var(--le-text-muted)" }}>
           {error}
         </p>
-      </div>
+      </DashboardCard>
     );
   }
 
@@ -493,11 +471,11 @@ export default function Finances() {
       </div>
 
       {/* ─── 30-day cashflow chart ────────────────────────────────────────── */}
-      <div className="p-6" style={CARD_STYLE}>
+      <DashboardCard>
         <div className="flex items-end justify-between">
           <div>
             <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-              — Cashflow
+              Cashflow
             </div>
             <h3
               className="mt-1 text-xl font-medium tracking-tight"
@@ -521,12 +499,12 @@ export default function Finances() {
             <AreaChart data={netSeries} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id="revArea" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--accent))" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="hsl(var(--accent))" stopOpacity={0} />
+                  <stop offset="0%" stopColor="oklch(0.5 0.16 245)" stopOpacity={0.4} />
+                  <stop offset="100%" stopColor="oklch(0.5 0.16 245)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--destructive))" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="hsl(var(--destructive))" stopOpacity={0} />
+                  <stop offset="0%" stopColor="oklch(0.78 0.05 75)" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="oklch(0.78 0.05 75)" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid
@@ -560,14 +538,14 @@ export default function Finances() {
               <Area
                 type="monotone"
                 dataKey="revenue"
-                stroke="hsl(var(--accent))"
+                stroke="oklch(0.5 0.16 245)"
                 strokeWidth={1.5}
                 fill="url(#revArea)"
               />
               <Area
                 type="monotone"
                 dataKey="spend"
-                stroke="hsl(var(--destructive))"
+                stroke="oklch(0.78 0.05 75)"
                 strokeWidth={1.5}
                 fill="url(#spendArea)"
               />
@@ -579,22 +557,22 @@ export default function Finances() {
             className="le-eyebrow inline-flex items-center gap-2"
             style={{ color: "var(--le-text-muted)" }}
           >
-            <span className="h-[2px] w-5 bg-accent" /> Revenue
+            <span className="inline-block h-[2px] w-5" style={{ background: "oklch(0.5 0.16 245)" }} /> Revenue
           </span>
           <span
             className="le-eyebrow inline-flex items-center gap-2"
             style={{ color: "var(--le-text-muted)" }}
           >
-            <span className="h-[2px] w-5 bg-destructive" /> Spend
+            <span className="inline-block h-[2px] w-5" style={{ background: "oklch(0.78 0.05 75)" }} /> Spend
           </span>
         </div>
-      </div>
+      </DashboardCard>
 
       {/* ─── Token balance by provider ────────────────────────────────────── */}
       {providerSummary.length > 0 && (
-        <div className="p-6" style={CARD_STYLE}>
+        <DashboardCard>
           <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-            — Balances
+            Balances
           </div>
           <h3
             className="mt-1 text-xl font-medium tracking-tight"
@@ -614,7 +592,7 @@ export default function Finances() {
               return (
                 <div
                   key={row.provider}
-                  className="rounded-[10px] p-5"
+                  className="rounded-[14px] p-5"
                   style={{
                     background: "var(--le-bg-sunken, var(--le-bg-elev))",
                     border: "1px solid var(--le-border)",
@@ -679,15 +657,19 @@ export default function Finances() {
               );
             })}
           </div>
-        </div>
+        </DashboardCard>
       )}
 
       {/* ─── Log forms ────────────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Log token purchase */}
-        <form onSubmit={handleAddPurchase} className="p-6" style={CARD_STYLE}>
+        <form
+          onSubmit={handleAddPurchase}
+          className="rounded-[14px] border p-6"
+          style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)", boxShadow: "var(--le-shadow-md)" }}
+        >
           <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-            — Log
+            Log
           </div>
           <h3
             className="mt-1 text-lg font-medium tracking-tight"
@@ -806,9 +788,13 @@ export default function Finances() {
         </form>
 
         {/* Log expense */}
-        <form onSubmit={handleAddExpense} className="p-6" style={CARD_STYLE}>
+        <form
+          onSubmit={handleAddExpense}
+          className="rounded-[14px] border p-6"
+          style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)", boxShadow: "var(--le-shadow-md)" }}
+        >
           <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-            — Log
+            Log
           </div>
           <h3
             className="mt-1 text-lg font-medium tracking-tight"
@@ -888,9 +874,13 @@ export default function Finances() {
         </form>
 
         {/* Log revenue */}
-        <form onSubmit={handleAddRevenue} className="p-6" style={CARD_STYLE}>
+        <form
+          onSubmit={handleAddRevenue}
+          className="rounded-[14px] border p-6"
+          style={{ background: "var(--le-bg-elev)", borderColor: "var(--le-border)", boxShadow: "var(--le-shadow-md)" }}
+        >
           <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-            — Log
+            Log
           </div>
           <h3
             className="mt-1 text-lg font-medium tracking-tight"
@@ -1115,11 +1105,11 @@ function LedgerTable({
   onDelete: (id: string) => void;
 }) {
   return (
-    <div className="p-6" style={CARD_STYLE}>
+    <DashboardCard>
       <div className="flex items-end justify-between">
         <div>
           <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>
-            — Ledger
+            Ledger
           </div>
           <h3
             className="mt-1 text-xl font-medium tracking-tight"
@@ -1186,39 +1176,32 @@ function LedgerTable({
                 </span>
               ))}
               <div className="flex items-center justify-end gap-1 opacity-0 transition-all duration-200 group-hover:opacity-100">
-                <button
+                <DashboardButton
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => onEdit(row.id)}
                   aria-label="Edit"
-                  style={{
-                    ...GHOST_BTN,
-                    padding: "4px 8px",
-                    borderRadius: 6,
-                    color: "var(--le-text-muted)",
-                  }}
+                  style={{ color: "var(--le-text-muted)" }}
                 >
                   <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
-                <button
+                </DashboardButton>
+                <DashboardButton
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => onDelete(row.id)}
                   aria-label="Delete"
-                  style={{
-                    ...GHOST_BTN,
-                    padding: "4px 8px",
-                    borderRadius: 6,
-                    color: "var(--le-text-muted)",
-                    borderColor: "var(--le-danger)",
-                  }}
+                  style={{ color: "var(--le-text-muted)", borderColor: "var(--le-danger)" }}
                 >
                   <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                </button>
+                </DashboardButton>
               </div>
             </div>
           ))
         )}
       </div>
-    </div>
+    </DashboardCard>
   );
 }
 

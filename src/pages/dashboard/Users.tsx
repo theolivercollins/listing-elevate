@@ -1,8 +1,10 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { fetchAdminUsers } from "@/lib/api";
 import type { AdminUserRow } from "@/lib/types";
+import { StatusPill } from "@/v2/components/dashboard/StatusPill";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 import "@/v2/styles/v2.css";
 
 function formatUSD(cents: number): string {
@@ -25,6 +27,7 @@ const ROLE_OPTIONS = ["all", "admin", "user"];
 export default function Users() {
   const [search, setSearch] = useState("");
   const [role, setRole] = useState<string>("all");
+  const [visible, setVisible] = useState<number>(25);
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "users"],
     queryFn: fetchAdminUsers,
@@ -38,6 +41,11 @@ export default function Users() {
       return true;
     });
   }, [data, role, search]);
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisible(25);
+  }, [search, role]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -95,12 +103,14 @@ export default function Users() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((u) => (
+              {filtered.slice(0, visible).map((u) => (
                 <tr key={u.id} className="border-t" style={{ borderColor: "var(--le-border)" }}>
                   <td className="px-6 py-3" style={{ color: "var(--le-text)" }}>
                     <Link to={`/dashboard/users/${u.id}`} className="font-medium">{u.email}</Link>
                   </td>
-                  <td className="px-6 py-3" style={{ color: "var(--le-text-muted)" }}>{u.role}</td>
+                  <td className="px-6 py-3">
+                    <StatusPill tone={u.role === "admin" ? "info" : "muted"}>{u.role}</StatusPill>
+                  </td>
                   <td className="le-mono px-6 py-3 text-right" style={{ color: "var(--le-text)" }}>{u.property_count}</td>
                   <td className="le-mono px-6 py-3 text-right" style={{ color: "var(--le-text)" }}>{formatUSD(u.total_spend_cents)}</td>
                   <td className="px-6 py-3 text-right text-xs" style={{ color: "var(--le-text-muted)" }}>{formatRelative(u.created_at)}</td>
@@ -109,6 +119,17 @@ export default function Users() {
               ))}
             </tbody>
           </table>
+          {filtered.length > visible && (
+            <div className="flex justify-center px-6 py-4" style={{ borderTop: "1px solid var(--le-border)" }}>
+              <DashboardButton
+                variant="ghost"
+                size="sm"
+                onClick={() => setVisible((n) => n + 25)}
+              >
+                View {Math.min(filtered.length - visible, 25)} more
+              </DashboardButton>
+            </div>
+          )}
         )}
       </div>
     </div>

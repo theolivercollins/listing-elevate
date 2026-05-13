@@ -3,49 +3,17 @@ import { AlertTriangle, Check, RotateCcw, SkipForward, Loader2, CheckCircle2 } f
 import type { Scene } from "@/lib/types";
 import { fetchProperties, fetchProperty, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
 import { motion } from "framer-motion";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 import "@/v2/styles/v2.css";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
-// ---------------------------------------------------------------------------
-// Button style helpers
-// ---------------------------------------------------------------------------
-const BASE_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "5px 11px",
-  fontSize: 11,
-  fontWeight: 500,
-  border: "1px solid var(--le-border)",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-mono)",
-  letterSpacing: "0.06em",
-  background: "var(--le-bg-elev)",
-  color: "var(--le-text)",
-  whiteSpace: "nowrap" as const,
-};
-
-const APPROVE_BTN: React.CSSProperties = {
-  ...BASE_BTN,
-  background: "var(--le-accent)",
-  color: "var(--le-accent-fg)",
-  border: "1px solid var(--le-accent)",
-};
-
-const SKIP_BTN: React.CSSProperties = {
-  ...BASE_BTN,
-  color: "var(--le-danger)",
-  border: "1px solid var(--le-danger)",
-  background: "var(--le-danger-soft, rgba(239,68,68,0.08))",
-};
 
 // ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 const Pipeline = () => {
   const [reviewScenes, setReviewScenes] = useState<(Scene & { propertyAddress?: string })[]>([]);
+  const [totalProperties, setTotalProperties] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -56,6 +24,7 @@ const Pipeline = () => {
       try {
         const reviewRes = await fetchProperties({ status: "needs_review", limit: 20 });
         if (cancelled) return;
+        setTotalProperties(reviewRes.total ?? reviewRes.properties.length);
         const scenesWithAddress: (Scene & { propertyAddress?: string })[] = [];
         for (const prop of reviewRes.properties) {
           try {
@@ -272,30 +241,30 @@ const Pipeline = () => {
 
                 {/* Action buttons */}
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    style={APPROVE_BTN}
+                  <DashboardButton
+                    variant="primary"
+                    size="sm"
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await approveScene(scene.id); })}
+                    leftIcon={<Check className="h-3.5 w-3.5" strokeWidth={2} />}
                   >
-                    <Check className="h-3.5 w-3.5" strokeWidth={2} />
                     Approve
-                  </button>
+                  </DashboardButton>
 
-                  <button
-                    type="button"
-                    style={BASE_BTN}
+                  <DashboardButton
+                    variant="ghost"
+                    size="sm"
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await resubmitScene(scene.id); })}
                     title="Resubmit with current prompt. Auto-fails over to another provider on permanent errors."
+                    leftIcon={<RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />}
                   >
-                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
                     Resubmit
-                  </button>
+                  </DashboardButton>
 
-                  <button
-                    type="button"
-                    style={BASE_BTN}
+                  <DashboardButton
+                    variant="ghost"
+                    size="sm"
                     disabled={actionLoading[scene.id]}
                     onClick={() =>
                       wrap(scene.id, async () => {
@@ -304,14 +273,14 @@ const Pipeline = () => {
                       })
                     }
                     title="Retry on the other provider (force failover)."
+                    leftIcon={<RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />}
                   >
-                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
                     {scene.provider === "kling" ? "Try Runway" : "Try Kling"}
-                  </button>
+                  </DashboardButton>
 
-                  <button
-                    type="button"
-                    style={BASE_BTN}
+                  <DashboardButton
+                    variant="ghost"
+                    size="sm"
                     disabled={actionLoading[scene.id]}
                     onClick={async () => {
                       const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
@@ -319,23 +288,31 @@ const Pipeline = () => {
                       await wrap(scene.id, async () => { await retryScene(scene.id, next.trim()); });
                     }}
                     title="Edit the prompt and resubmit."
+                    leftIcon={<RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />}
                   >
-                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
                     Edit prompt
-                  </button>
+                  </DashboardButton>
 
-                  <button
-                    type="button"
-                    style={SKIP_BTN}
+                  <DashboardButton
+                    variant="destructive"
+                    size="sm"
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await skipScene(scene.id); })}
+                    leftIcon={<SkipForward className="h-3.5 w-3.5" strokeWidth={2} />}
                   >
-                    <SkipForward className="h-3.5 w-3.5" strokeWidth={2} />
                     Skip
-                  </button>
+                  </DashboardButton>
                 </div>
               </motion.div>
             ))}
+            {totalProperties > 20 && (
+              <div
+                className="px-6 py-3 text-center text-xs"
+                style={{ borderTop: "1px solid var(--le-border)", color: "var(--le-text-muted)" }}
+              >
+                Showing 20 of {totalProperties} — refresh to see more
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ChevronLeft, ChevronRight, Loader2, ImageOff } from "lucide-react";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
 import { formatCents, getRelativeTime } from "@/lib/types";
 import type { Property } from "@/lib/types";
 import { fetchProperties } from "@/lib/api";
@@ -45,24 +46,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Ghost button style (pagination)
-// ---------------------------------------------------------------------------
-const GHOST_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 14px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "var(--le-text)",
-  border: "1px solid var(--le-border)",
-  borderRadius: 6,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-mono)",
-  letterSpacing: "0.08em",
-};
+const COLUMN_GRID = "grid-cols-[40px_3fr_1.4fr_0.9fr_1.2fr_0.6fr_1fr_0.9fr]";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -191,9 +175,8 @@ const Listings = () => {
       >
         {/* Table header row */}
         <div
-          className="grid items-center gap-4 px-6 py-3"
+          className={`grid items-center gap-4 px-6 py-3 ${COLUMN_GRID}`}
           style={{
-            gridTemplateColumns: "40px 3fr 1.4fr 0.9fr 1.2fr 0.6fr 1fr 0.9fr",
             borderBottom: "1px solid var(--le-border)",
           }}
         >
@@ -229,9 +212,8 @@ const Listings = () => {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.45, delay: i * 0.02, ease: EASE }}
-                className="group grid items-center gap-4 px-6 py-4"
+                className={`group grid items-center gap-4 px-6 py-4 ${COLUMN_GRID}`}
                 style={{
-                  gridTemplateColumns: "40px 3fr 1.4fr 0.9fr 1.2fr 0.6fr 1fr 0.9fr",
                   borderBottom: "1px solid var(--le-border)",
                   transition: "background 0.25s",
                 }}
@@ -245,7 +227,7 @@ const Listings = () => {
                 {/* Thumbnail */}
                 <Link
                   to={`/dashboard/listings/${p.id}`}
-                  className="relative block h-8 w-10 overflow-hidden rounded"
+                  className="relative block h-8 w-10 overflow-hidden rounded-[6px]"
                   style={{ border: "1px solid var(--le-border)", background: "var(--le-bg-sunken)", flexShrink: 0 }}
                   aria-label={`View ${p.address}`}
                   tabIndex={-1}
@@ -329,24 +311,26 @@ const Listings = () => {
               {total} listings · page {page} of {totalPages}
             </span>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                style={{ ...GHOST_BTN, opacity: page <= 1 ? 0.4 : 1 }}
+              <DashboardButton
+                variant="ghost"
+                size="sm"
+                style={{ opacity: page <= 1 ? 0.4 : 1 }}
                 disabled={page <= 1}
                 onClick={() => setPage((n) => n - 1)}
+                leftIcon={<ChevronLeft className="h-3.5 w-3.5" />}
               >
-                <ChevronLeft className="h-3.5 w-3.5" />
                 Prev
-              </button>
-              <button
-                type="button"
-                style={{ ...GHOST_BTN, opacity: page >= totalPages ? 0.4 : 1 }}
+              </DashboardButton>
+              <DashboardButton
+                variant="ghost"
+                size="sm"
+                style={{ opacity: page >= totalPages ? 0.4 : 1 }}
                 disabled={page >= totalPages}
                 onClick={() => setPage((n) => n + 1)}
+                rightIcon={<ChevronRight className="h-3.5 w-3.5" />}
               >
                 Next
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
+              </DashboardButton>
             </div>
           </div>
         )}

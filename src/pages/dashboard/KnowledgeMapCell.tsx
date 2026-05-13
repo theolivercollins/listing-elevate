@@ -5,20 +5,28 @@ import { fetchCellDrillDown } from "@/lib/knowledgeMapApi";
 import type { CellDrillDown } from "../../../lib/knowledge-map/types.js";
 import "@/v2/styles/v2.css";
 
-const STATE_COLOR: Record<string, string> = {
-  untested: "text-muted-foreground",
-  weak: "text-red-600 dark:text-red-400",
-  okay: "text-amber-600 dark:text-amber-300",
-  strong: "text-emerald-600 dark:text-emerald-300",
-  golden: "text-amber-700 dark:text-amber-100 font-semibold",
+type State = "untested" | "weak" | "okay" | "strong" | "golden";
+
+const STATE_COLOR: Record<State, { bg: string; fg: string; cell: string }> = {
+  untested: { bg: "var(--le-bg-sunken)", fg: "var(--le-text-muted)", cell: "var(--le-bg-sunken)" },
+  weak:     { bg: "var(--le-danger-soft)", fg: "var(--le-danger)", cell: "var(--le-danger-soft)" },
+  okay:     { bg: "var(--le-warn-soft)", fg: "var(--le-warn)", cell: "var(--le-warn-soft)" },
+  strong:   { bg: "var(--le-success-soft)", fg: "var(--le-success)", cell: "var(--le-success-soft)" },
+  golden:   { bg: "var(--le-info-soft)", fg: "var(--le-info)", cell: "var(--le-info-soft)" },
 };
 
 function Stars({ rating }: { rating: number | null }) {
-  if (rating === null) return <span className="text-muted-foreground">—</span>;
+  if (rating === null) return <span style={{ color: "var(--le-text-muted)" }}>—</span>;
   return (
     <span className="inline-flex items-center gap-0.5">
       {[1, 2, 3, 4, 5].map((n) => (
-        <Star key={n} className={`h-3 w-3 ${n <= rating ? "fill-foreground text-foreground" : "text-muted-foreground/30"}`} />
+        <Star
+          key={n}
+          className="h-3 w-3"
+          style={n <= rating
+            ? { fill: "var(--le-text)", color: "var(--le-text)" }
+            : { fill: "transparent", color: "var(--le-text-muted)", opacity: 0.3 }}
+        />
       ))}
     </span>
   );
@@ -75,7 +83,7 @@ export default function KnowledgeMapCell() {
           </h1>
           {data && (
             <p style={{ marginTop: 8, fontSize: 13, color: "var(--le-text-muted)" }}>
-              <span className={STATE_COLOR[data.state]}>{data.state}</span>
+              <span style={{ color: STATE_COLOR[(data.state as State)] ? STATE_COLOR[(data.state as State)].fg : "var(--le-text-muted)" }}>{data.state}</span>
               {" · "}{data.sample_size} samples
               {data.avg_rating !== null && <> · avg {Number(data.avg_rating).toFixed(2)}</>}
               {data.five_star_count > 0 && <> · ★5 × {data.five_star_count}</>}
@@ -123,7 +131,7 @@ export default function KnowledgeMapCell() {
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                         border: "1px solid var(--le-border)", borderRadius: "var(--le-r-sm)",
-                        padding: "8px 10px", fontSize: 12,
+                        padding: "8px 10px", fontSize: 11,
                       }}
                     >
                       <span className="le-mono" style={{ color: "var(--le-text)" }}>{f.tag}</span>
@@ -150,7 +158,7 @@ export default function KnowledgeMapCell() {
                     <li
                       key={r.id}
                       style={{
-                        border: "1px solid var(--le-border)", borderRadius: "var(--le-r-sm)", padding: 14, fontSize: 12,
+                        border: "1px solid var(--le-border)", borderRadius: "var(--le-r-sm)", padding: 14, fontSize: 11,
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -190,7 +198,7 @@ export default function KnowledgeMapCell() {
                       style={{
                         display: "flex", alignItems: "center", justifyContent: "space-between",
                         border: "1px solid var(--le-border)", borderRadius: "var(--le-r-sm)",
-                        padding: "8px 10px", fontSize: 12,
+                        padding: "8px 10px", fontSize: 11,
                       }}
                     >
                       <span className="le-mono" style={{ color: "var(--le-text)" }}>{o.prompt_name}</span>
@@ -220,7 +228,7 @@ export default function KnowledgeMapCell() {
                       key={`${i.source}-${i.id}`}
                       style={{
                         border: "1px solid var(--le-border)", borderRadius: "var(--le-r-sm)",
-                        padding: 12, fontSize: 12,
+                        padding: 12, fontSize: 11,
                         background: "var(--le-bg)",
                       }}
                     >
@@ -254,7 +262,7 @@ export default function KnowledgeMapCell() {
                                 border: "1px solid var(--le-border)",
                                 borderRadius: "var(--le-r-sm)",
                                 padding: "1px 5px",
-                                fontSize: 9,
+                                fontSize: 10,
                                 color: t.startsWith("fail:") ? "var(--le-danger)" : "var(--le-text-muted)",
                               }}
                             >
