@@ -82,6 +82,7 @@
   --le-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
   --le-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
 
+  /* Dashboard redesign — gradient washes (KPI discs + chart fills only) */
   --le-gradient-blue: linear-gradient(135deg, oklch(0.7 0.13 240), oklch(0.55 0.16 245));
   --le-gradient-navy: linear-gradient(135deg, oklch(0.45 0.08 250), oklch(0.3 0.05 250));
   --le-gradient-beige: linear-gradient(135deg, oklch(0.82 0.04 80), oklch(0.72 0.05 75));
