@@ -14,6 +14,14 @@ See also:
 
 ## Right now
 
+**2026-05-13 (later): Dashboard redesign Stage 1 — shell + Overview on `feat/dashboard-redesign-stage-1` (off `dev`).** New `DashboardShell` (vertical sidebar + slim top bar) + rewritten Overview page (4 KPI cards · revenue/spend dual-area chart · cost-by-provider donut · recent listings table) + 4 new admin Overview API endpoints. Behind `VITE_LE_DASHBOARD_V3` flag — OFF by default. Spec [`specs/2026-05-13-admin-dashboard-redesign-design.md`](./specs/2026-05-13-admin-dashboard-redesign-design.md). Plan [`plans/2026-05-13-dashboard-redesign-stage-1-plan.md`](./plans/2026-05-13-dashboard-redesign-stage-1-plan.md). tsc + lint + vitest clean. **Awaiting Oliver smoke-test on dev before flag-flip + merge.**
+
+**Known gap (Stage 1):** the "Active customers" and "Videos delivered" KPI tiles will read 0 because `Property` (in `src/lib/types.ts`) doesn't expose `submitted_by` / `completed_at`, and `fetchProperties` doesn't return them. The chart, donut, system-health KPI, and recent-listings table all render correctly with real data. Follow-up: extend Property + `/api/properties` response in a Stage 2 hotfix or Stage 2 PR.
+
+**Worktree setup (Stage 1 implementation):** all Stage 1 commits happened from `/Users/oliverhelgemo/listing-elevate-dashboard` — a git worktree off the main repo at `/Users/oliverhelgemo/listing-elevate`. Created on 2026-05-13 so the dashboard redesign and the in-flight `feat/creatomate-buildout` work could proceed without branch-switch interference. Remove with `git worktree remove /Users/oliverhelgemo/listing-elevate-dashboard` after merge.
+
+---
+
 **2026-05-13: Prompt-collapse fix LIVE on main — full cascade dev → staging → main + DIRECTOR_SYSTEM patch promoted + mining re-run.** listingelevate.com running per-photo retrieval + DA.3 prompt rewrite + top-K recipe rendering as of `326991e`. Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 8 commits landed three orthogonal fixes:
 
 1. **DA.3 prompt-rewrite guard** — `lib/prompts/rewrite-on-motion-override.ts`. When the validator overrides `camera_movement`, it now also rewrites `scene.prompt` text via deterministic template-fill so the SKU and prompt agree. Applied at both DA.3 sites (`lib/pipeline.ts` prod + `lib/prompt-lab-listings.ts` listings-lab). 9 vitest cases.
