@@ -5,5 +5,9 @@
  */
 
 export function isDashboardV3Enabled(): boolean {
-  return import.meta.env.VITE_LE_DASHBOARD_V3 === "true";
+  const raw = import.meta.env.VITE_LE_DASHBOARD_V3;
+  if (typeof raw !== "string") return false;
+  // Trim + lowercase: defensive against trailing newlines if the env var was
+  // ever set via `echo "true" | vercel env add ...` (which appends \n).
+  return raw.trim().toLowerCase() === "true";
 }
