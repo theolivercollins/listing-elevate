@@ -1,4 +1,7 @@
-import type { Property, Photo, Scene, PipelineLog, DailyStat, CostEvent, SceneRating, LearningData, PromptRevision } from './types';
+import type {
+  Property, Photo, Scene, PipelineLog, DailyStat, CostEvent, SceneRating, LearningData, PromptRevision,
+  OverviewPeriod, OverviewSystemHealth, OverviewRecentListing, OverviewCostByProviderRow, OverviewRevenueSpendPoint,
+} from './types';
 import { supabase } from './supabase';
 
 const API_BASE = '';
@@ -281,4 +284,32 @@ export async function skipScene(id: string): Promise<void> {
 
 export async function fetchSystemPrompts(): Promise<{ analysis: string; director: string; qc: string }> {
   return apiFetch('/api/admin/prompts');
+}
+
+// ─── Dashboard v3 Overview ─────────────────────────────────────────
+
+export async function fetchOverviewSystemHealth(): Promise<OverviewSystemHealth> {
+  return apiFetch(`/api/admin/overview/system-health`);
+}
+
+export async function fetchOverviewRecentListings(limit = 10): Promise<{ listings: OverviewRecentListing[] }> {
+  const sp = new URLSearchParams({ limit: String(limit) });
+  return apiFetch(`/api/admin/overview/recent-listings?${sp.toString()}`);
+}
+
+export async function fetchOverviewCostByProvider(period: OverviewPeriod = "30d"): Promise<{
+  rows: OverviewCostByProviderRow[];
+  total_cents: number;
+  period: OverviewPeriod;
+}> {
+  const sp = new URLSearchParams({ period });
+  return apiFetch(`/api/admin/overview/cost-by-provider?${sp.toString()}`);
+}
+
+export async function fetchOverviewRevenueSpendSeries(period: OverviewPeriod = "30d"): Promise<{
+  points: OverviewRevenueSpendPoint[];
+  period: OverviewPeriod;
+}> {
+  const sp = new URLSearchParams({ period });
+  return apiFetch(`/api/admin/overview/revenue-spend-series?${sp.toString()}`);
 }
