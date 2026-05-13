@@ -91,6 +91,7 @@ export default function Users() {
             No users match the current filter.
           </div>
         ) : (
+          <>
           <table className="w-full text-sm">
             <thead>
               <tr style={{ color: "var(--le-text-muted)" }}>
@@ -130,6 +131,7 @@ export default function Users() {
               </DashboardButton>
             </div>
           )}
+          </>
         )}
       </div>
     </div>

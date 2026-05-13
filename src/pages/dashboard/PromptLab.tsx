@@ -1003,7 +1003,8 @@ function BatchTitle({ label, onRename }: { label: string; onRename: (v: string) 
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => {
+        onBlur={(e) => {
+          e.currentTarget.style.borderBottomColor = "var(--le-border)";
           setEditing(false);
           if (draft.trim() !== (label === "Unbatched" ? "" : label)) onRename(draft);
         }}
@@ -1018,7 +1019,6 @@ function BatchTitle({ label, onRename }: { label: string; onRename: (v: string) 
         className="bg-transparent text-lg font-semibold tracking-tight outline-none min-w-0"
         style={{ borderBottom: "1px solid var(--le-border)" }}
         onFocus={(e) => (e.currentTarget.style.borderBottomColor = "var(--le-text)")}
-        onBlur={(e) => { e.currentTarget.style.borderBottomColor = "var(--le-border)"; }}
       />
     );
   }
@@ -1513,7 +1513,8 @@ function EditableLabel({
         autoFocus
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={async () => {
+        onBlur={async (e) => {
+          e.currentTarget.style.borderBottomColor = "var(--le-border)";
           setEditing(false);
           if (draft.trim() !== (value ?? "").trim()) await onSave(draft.trim());
         }}
@@ -1527,7 +1528,6 @@ function EditableLabel({
         className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none"
         style={{ borderBottom: "1px solid var(--le-border)" }}
         onFocus={(e) => (e.currentTarget.style.borderBottomColor = "var(--le-text)")}
-        onBlur={(e) => { e.currentTarget.style.borderBottomColor = "var(--le-border)"; }}
       />
     );
   }
