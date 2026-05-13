@@ -48,6 +48,9 @@ export async function runOneJob(
       browserbase_session_id: out.browserbase_session_id ?? null,
       replay_url: out.replay_url ?? null,
       finished_at: new Date().toISOString(),
+      // Clear last_error so a recovered job doesn't display its prior failure
+      // as if it were the final outcome.
+      last_error: null,
     });
   } catch (e: any) {
     const newAttempts = job.attempts + 1;
