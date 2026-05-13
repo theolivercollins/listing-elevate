@@ -373,8 +373,8 @@ export async function recordCostEvent(event: {
    */
   propertyId: string | null;
   sceneId?: string | null;
-  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "openai" | "atlas";
+  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
+  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
   unitsConsumed?: number;
   unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
   costCents: number;

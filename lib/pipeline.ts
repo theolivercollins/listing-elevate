@@ -965,23 +965,31 @@ export async function runAssembly(propertyId: string): Promise<void> {
 
   const totalProcessingMsBase = Date.now() - new Date(property.created_at).getTime();
 
-  // Attempt Shotstack assembly (stitch + text overlays). If SHOTSTACK_API_KEY
-  // is not configured, or Shotstack fails, fall back to marking the property
-  // complete with individual clip URLs only (legacy behavior).
   let horizontalUrl: string | null = null;
   let verticalUrl: string | null = null;
   let assemblyErrored = false;
 
-  const shotstackEnabled = Boolean(
-    process.env.SHOTSTACK_API_KEY || process.env.SHOTSTACK_API_KEY_STAGE
-  );
+  // Use the assembly router to select the best provider.
+  // Priority: Creatomate (if CREATOMATE_API_KEY set) > Shotstack > skip.
+  let assemblyEnabled = false;
+  try {
+    // Quick check — don't construct the provider yet, just see if any key exists.
+    assemblyEnabled = Boolean(
+      process.env.CREATOMATE_API_KEY ||
+      process.env.SHOTSTACK_API_KEY ||
+      process.env.SHOTSTACK_API_KEY_STAGE,
+    );
+  } catch {
+    // swallow
+  }
 
-  if (shotstackEnabled) {
+  if (assemblyEnabled) {
     try {
-      const { ShotstackProvider, pollAssemblyUntilComplete, shotstackCostCents } = await import(
-        "./providers/shotstack.js"
+      const { selectAssemblyProvider, pollAssemblyJob, assemblyProviderCostCents } = await import(
+        "./providers/assembly-router.js"
       );
-      const provider = new ShotstackProvider();
+      const provider = selectAssemblyProvider();
+      const providerName = provider.name;
 
       const clipInputs = passedScenes.map((s) => ({
         url: s.clip_url as string,
@@ -997,40 +1005,37 @@ export async function runAssembly(propertyId: string): Promise<void> {
       };
 
       await log(propertyId, "assembly", "info",
-        `Submitting Shotstack render (${clipInputs.length} clips)`,
-        { clipCount: clipInputs.length }
+        `Submitting ${providerName} render (${clipInputs.length} clips)`,
+        { clipCount: clipInputs.length, provider: providerName },
       );
 
+      const assembleParams = { clips: clipInputs, overlays };
+
       // Render both aspect ratios sequentially. Each render typically takes
-      // 30–90s. Kept sequential to stay under the 300s function budget when
-      // upstream generation already consumed most of the wall clock.
+      // 30–90s. Kept sequential to stay under the 300s function budget.
       const horizontalJob = await provider.assemble({
-        clips: clipInputs,
-        overlays,
+        ...assembleParams,
         aspectRatio: "16:9",
       });
       await log(propertyId, "assembly", "info",
-        `Shotstack horizontal job queued: ${horizontalJob.jobId}`);
-      const horizontalResult = await pollAssemblyUntilComplete(provider, horizontalJob);
+        `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
+      const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
       if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
         throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
       }
       horizontalUrl = horizontalResult.videoUrl;
 
-      // Shotstack bills per output-minute rounded up. Use the duration
-      // returned by the render API (ground truth); fall back to summing
-      // the input clip durations if the API didn't return a value.
       const timelineDurationSeconds = clipInputs.reduce(
         (sum, c) => sum + c.durationSeconds,
         0,
       );
       const horizontalDuration =
         horizontalResult.durationSeconds ?? timelineDurationSeconds;
-      const horizontalCents = shotstackCostCents(horizontalDuration);
+      const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
       await recordCostEvent({
         propertyId,
         stage: "assembly",
-        provider: "shotstack",
+        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
         unitsConsumed: 1,
         unitType: "renders",
         costCents: horizontalCents,
@@ -1044,13 +1049,12 @@ export async function runAssembly(propertyId: string): Promise<void> {
       });
 
       const verticalJob = await provider.assemble({
-        clips: clipInputs,
-        overlays,
+        ...assembleParams,
         aspectRatio: "9:16",
       });
       await log(propertyId, "assembly", "info",
-        `Shotstack vertical job queued: ${verticalJob.jobId}`);
-      const verticalResult = await pollAssemblyUntilComplete(provider, verticalJob);
+        `${providerName} vertical job queued: ${verticalJob.jobId}`);
+      const verticalResult = await pollAssemblyJob(provider, verticalJob);
       if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
         throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
       }
@@ -1058,11 +1062,11 @@ export async function runAssembly(propertyId: string): Promise<void> {
 
       const verticalDuration =
         verticalResult.durationSeconds ?? timelineDurationSeconds;
-      const verticalCents = shotstackCostCents(verticalDuration);
+      const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
       await recordCostEvent({
         propertyId,
         stage: "assembly",
-        provider: "shotstack",
+        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
         unitsConsumed: 1,
         unitType: "renders",
         costCents: verticalCents,
@@ -1075,25 +1079,51 @@ export async function runAssembly(propertyId: string): Promise<void> {
         },
       });
 
+      // Persist the assembly timeline JSON for future revision editing.
+      // We store the horizontal timeline since it's the primary deliverable.
+      try {
+        const timelineJson = {
+          clips: clipInputs,
+          overlays,
+          transition: "fade",
+          provider: providerName,
+          rendered_at: new Date().toISOString(),
+        };
+        await getSupabase()
+          .from("properties")
+          .update({
+            assembly_timeline: timelineJson,
+            assembly_timeline_version: 1,
+            assembly_provider: providerName,
+          })
+          .eq("id", propertyId);
+      } catch (timelineErr) {
+        // Non-fatal — timeline persistence is for the revision engine,
+        // not for the current delivery.
+        const msg = timelineErr instanceof Error ? timelineErr.message : String(timelineErr);
+        await log(propertyId, "assembly", "warn",
+          `Failed to persist assembly_timeline: ${msg}`);
+      }
+
       await log(propertyId, "assembly", "info",
-        `Shotstack renders complete`,
+        `${providerName} renders complete`,
         {
           horizontalUrl,
           verticalUrl,
           horizontalRenderMs: horizontalResult.renderTimeMs,
           verticalRenderMs: verticalResult.renderTimeMs,
-        }
+        },
       );
     } catch (err) {
       assemblyErrored = true;
       const msg = err instanceof Error ? err.message : String(err);
       await log(propertyId, "assembly", "warn",
-        `Shotstack assembly failed, falling back to clip-only delivery: ${msg}`
+        `Assembly failed, falling back to clip-only delivery: ${msg}`,
       );
     }
   } else {
     await log(propertyId, "assembly", "info",
-      "SHOTSTACK_API_KEY not set — skipping assembly, delivering clips only"
+      "No assembly provider configured — delivering clips only",
     );
   }
 
@@ -1108,10 +1138,10 @@ export async function runAssembly(propertyId: string): Promise<void> {
   });
 
   const assemblyNote = horizontalUrl && verticalUrl
-    ? "Stitched video delivered (Shotstack)"
+    ? "Stitched video delivered"
     : assemblyErrored
     ? "Assembly failed, delivered individual clips as fallback"
-    : "Delivered individual clips (Shotstack not configured)";
+    : "Delivered individual clips (no assembly provider configured)";
 
   await log(propertyId, "assembly", "info",
     `Complete! ${passedScenes.length} clips in ${(totalProcessingMs / 1000).toFixed(1)}s. Total cost: $${((property.total_cost_cents) / 100).toFixed(2)}. ${assemblyNote}`,
@@ -1121,7 +1151,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
       totalCostCents: property.total_cost_cents,
       horizontalUrl,
       verticalUrl,
-    }
+    },
   );
   // Silence unused baseline var (kept for potential future delta logging)
   void totalProcessingMsBase;

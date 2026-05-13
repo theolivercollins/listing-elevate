@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (post-merge update)
+Last updated: 2026-05-13 (Creatomate buildout + cron-assembly wire)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,23 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-13 (later): Bundled launch-prep PRs in flight.** Three independent fixes wired together to close the "orders don't actually deliver a video" gap. None pushed yet beyond PR #37.
+
+1. **`feat/order-form-persistence`** (PR #37 → `dev`) — migration 054 + 5 plumbing touchpoints. Form's 9 order-specific fields (package, duration, voiceover toggles, etc.) now persist to `properties`. Pipeline already reads `selected_duration`; 15s/30s tiers were silently rendering at 60s. Verified in prod Supabase via MCP.
+
+2. **`feat/creatomate-buildout`** (local, off `dev`; bundles dead-code fix + Creatomate provider) — three orthogonal changes:
+   - **Cron-assembly wire.** `runAssembly` at `lib/pipeline.ts:950` had been unreachable since the inline-assembly removal (sat after early `return;` in `runPipeline`); cron at `poll-scenes.ts:225` marked properties `complete` without ever calling it. Now exported + invoked from the cron's finalize block. `'assembling'` added to terminal-status skip list so adjacent cron ticks don't race.
+   - **Creatomate provider.** `lib/providers/creatomate.ts` (396 lines) + `lib/providers/assembly-router.ts` (`selectAssemblyProvider`: Creatomate > Shotstack > throw). `IVideoAssemblyProvider.name` union widened to `"shotstack" | "creatomate"`. `recordCostEvent` provider union widened. `assembly_timeline` JSON persisted on properties for the future revision engine.
+   - **Migration 053** (applied to prod via MCP) — adds `assembly_timeline`/`assembly_timeline_version`/`assembly_provider` cols + `video_revisions` table + widens `cost_events_provider_check` to include `'creatomate'`. **Fixed before apply:** original migration dropped the constraint but never re-added it — would have left `cost_events` with no provider validation.
+
+**Required env (Oliver action):** `CREATOMATE_API_KEY` is **not set in any Vercel env**. Without it the router falls through to Shotstack (also unset), then throws inside `runAssembly`, which now is caught by the cron try/catch and flips the property to `failed`. Set the key in all 3 envs (dev/staging/production) before merging.
+
+**Migration drift caveat (still standing):** local migrations 050/051/052 (blog phase 5 + templates + AI) remain unapplied. Remote has `portal_deliverables`/`portal_orders_checkout_session`/`050_portal_pay_on_approval`/`portal_orders_order_number_v2` with no migration files in the repo. Worth a dedicated audit before the next big push.
+
+**Pre-launch blocker list (Oliver's 5 from 2026-05-13 brainstorm):** #1 post-gen AI, #2 Creatomate ✅ (this PR bundle), #3 Eleven Labs, #4 music library, #5 owner dashboard. #2 unblocks #1 (post-gen AI needs an assembled timeline to reorder).
+
+---
 
 **2026-05-13: Prompt-collapse fix LIVE on main — full cascade dev → staging → main + DIRECTOR_SYSTEM patch promoted + mining re-run.** listingelevate.com running per-photo retrieval + DA.3 prompt rewrite + top-K recipe rendering as of `326991e`. Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 8 commits landed three orthogonal fixes:
 

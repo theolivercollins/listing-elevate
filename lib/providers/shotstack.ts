@@ -49,7 +49,7 @@ export interface AssemblyResult {
 }
 
 export interface IVideoAssemblyProvider {
-  name: "shotstack";
+  name: "shotstack" | "creatomate";
   assemble(params: AssembleVideoParams): Promise<AssemblyJob>;
   checkStatus(job: AssemblyJob): Promise<AssemblyResult>;
 }
