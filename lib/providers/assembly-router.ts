@@ -24,10 +24,31 @@ export type { IVideoAssemblyProvider, AssemblyJob, AssemblyResult };
 export type AssemblyProviderName = "creatomate" | "shotstack";
 
 /**
- * Construct the preferred assembly provider. Tries Creatomate first,
- * falls back to Shotstack, throws if neither is configured.
+ * Construct the preferred assembly provider.
+ *
+ * Resolution priority:
+ *   1. ASSEMBLY_PROVIDER env var ("creatomate" | "shotstack") forces a
+ *      specific provider when set — useful for A/B testing in parallel.
+ *   2. Otherwise: Creatomate first (if CREATOMATE_API_KEY set), then
+ *      Shotstack (if SHOTSTACK_API_KEY / SHOTSTACK_API_KEY_STAGE set).
+ *   3. Throws if no provider is configured.
  */
 export function selectAssemblyProvider(): IVideoAssemblyProvider {
+  const override = (process.env.ASSEMBLY_PROVIDER ?? "").toLowerCase().trim();
+
+  if (override === "shotstack") {
+    if (!process.env.SHOTSTACK_API_KEY && !process.env.SHOTSTACK_API_KEY_STAGE) {
+      throw new Error("ASSEMBLY_PROVIDER=shotstack but no SHOTSTACK_API_KEY set");
+    }
+    return new ShotstackProvider();
+  }
+  if (override === "creatomate") {
+    if (!process.env.CREATOMATE_API_KEY) {
+      throw new Error("ASSEMBLY_PROVIDER=creatomate but no CREATOMATE_API_KEY set");
+    }
+    return new CreatomateProvider();
+  }
+
   if (process.env.CREATOMATE_API_KEY) {
     return new CreatomateProvider();
   }
