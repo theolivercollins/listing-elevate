@@ -5,6 +5,9 @@ import { ArrowLeft, Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, St
 import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
 import { fetchProperty, fetchLogs, rerunProperty, fetchSystemPrompts, rateScene, resubmitScene } from "@/lib/api";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { StatusPill } from "@/v2/components/dashboard/StatusPill";
 
 const FAILURE_TAGS = [
   "hallucinated architecture",
@@ -78,7 +81,7 @@ function RatingWidget({
   const availableTags = rating >= 4 ? SUCCESS_TAGS : rating > 0 && rating <= 2 ? FAILURE_TAGS : [...SUCCESS_TAGS, ...FAILURE_TAGS];
 
   return (
-    <div className="border-t border-border/60 p-4">
+    <div className="border-t p-4" style={{ borderColor: "var(--le-border)" }}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-0.5">
           {[1, 2, 3, 4, 5].map((n) => {
@@ -94,24 +97,26 @@ function RatingWidget({
                 aria-label={`${n} star`}
               >
                 <Star
-                  className={`h-4 w-4 ${filled ? "fill-foreground text-foreground" : "text-muted-foreground/40"}`}
+                  className="h-4 w-4"
+                  style={{ fill: filled ? "var(--le-text)" : "transparent", color: filled ? "var(--le-text)" : "var(--le-text-muted)" }}
                   strokeWidth={1.5}
                 />
               </button>
             );
           })}
           {rating > 0 && (
-            <span className="tabular ml-2 text-[10px] text-muted-foreground">{rating}/5</span>
+            <span className="tabular ml-2 text-[10px]" style={{ color: "var(--le-text-muted)" }}>{rating}/5</span>
           )}
         </div>
         <div className="flex items-center gap-2">
-          {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {justSaved && <Check className="h-3 w-3 text-accent" />}
+          {saving && <Loader2 className="h-3 w-3 animate-spin" style={{ color: "var(--le-text-muted)" }} />}
+          {justSaved && <Check className="h-3 w-3" style={{ color: "var(--le-accent)" }} />}
           {rating > 0 && !expanded && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="label text-muted-foreground transition-colors hover:text-foreground"
+              className="label transition-colors"
+              style={{ color: "var(--le-text-muted)" }}
             >
               Add note
             </button>
@@ -127,7 +132,12 @@ function RatingWidget({
             onBlur={commentBlur}
             placeholder={rating <= 2 ? "What went wrong? (required for low ratings)" : "What worked? (optional)"}
             rows={2}
-            className="w-full resize-y border border-border bg-background p-2 text-xs leading-snug placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground"
+            className="w-full resize-y rounded-[8px] border p-2 text-xs leading-snug focus:outline-none focus:ring-1"
+            style={{
+              background: "var(--le-bg-sunken)",
+              borderColor: "var(--le-border)",
+              color: "var(--le-text)",
+            }}
           />
           {rating > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -139,13 +149,14 @@ function RatingWidget({
                     key={tag}
                     type="button"
                     onClick={() => toggleTag(tag)}
-                    className={`label px-2 py-1 transition-colors ${
+                    className="label rounded-[8px] px-2 py-1 transition-colors"
+                    style={
                       selected
                         ? isFail
-                          ? "bg-destructive text-destructive-foreground"
-                          : "bg-foreground text-background"
-                        : "border border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                    }`}
+                          ? { background: "var(--le-danger-soft)", color: "var(--le-danger)", border: "1px solid var(--le-danger)" }
+                          : { background: "var(--le-text)", color: "var(--le-bg)", border: "1px solid var(--le-text)" }
+                        : { background: "transparent", color: "var(--le-text-muted)", border: "1px solid var(--le-border)" }
+                    }
                   >
                     {tag}
                   </button>
@@ -190,50 +201,51 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
     }
   }
 
-  const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
-
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+    <div className="mt-5 flex flex-wrap items-center gap-2 border-t pt-4" style={{ borderColor: "var(--le-border)" }}>
       <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>Admin actions</span>
-      <button
-        type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+      <DashboardButton
+        variant="ghost"
+        size="sm"
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id), "auto")}
+        leftIcon={busy === "auto" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
       >
-        {busy === "auto" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
         Resubmit
-      </button>
-      <button
-        type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+      </DashboardButton>
+      <DashboardButton
+        variant="ghost"
+        size="sm"
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id, { provider: other }), "other")}
+        leftIcon={busy === "other" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
       >
-        {busy === "other" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
         Try {other}
-      </button>
-      <button
-        type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+      </DashboardButton>
+      <DashboardButton
+        variant="ghost"
+        size="sm"
         disabled={busy !== null}
         onClick={async () => {
           const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
           if (!next || !next.trim() || next.trim() === scene.prompt) return;
           await call(() => resubmitScene(scene.id, { prompt: next.trim() }), "edit");
         }}
+        leftIcon={<RotateCcw className="h-3.5 w-3.5" />}
       >
-        <RotateCcw className="h-3.5 w-3.5" /> Edit + resubmit
-      </button>
+        Edit + resubmit
+      </DashboardButton>
       {message && (
         <span
-          className={`text-xs ${
-            kind === "error"
-              ? "text-destructive"
-              : kind === "warn"
-              ? "text-accent"
-              : "text-muted-foreground"
-          }`}
+          className="text-xs"
+          style={{
+            color:
+              kind === "error"
+                ? "var(--le-danger)"
+                : kind === "warn"
+                ? "var(--le-warn)"
+                : "var(--le-text-muted)",
+          }}
         >
           {message}
         </span>
@@ -251,6 +263,8 @@ const ACTIVE_STATUSES = new Set([
   "assembling",
 ]);
 
+const LOG_PAGE_SIZE = 20;
+
 const PropertyDetail = () => {
   const { id } = useParams();
   const [property, setProperty] = useState<(Property & { photos: Photo[]; scenes: RatedScene[]; costEvents: CostEvent[] }) | null>(null);
@@ -261,6 +275,7 @@ const PropertyDetail = () => {
   const [prompts, setPrompts] = useState<{ analysis: string; director: string; qc: string } | null>(null);
   const [copiedScene, setCopiedScene] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"photos" | "shots" | "logs" | "prompts">("photos");
+  const [logsVisible, setLogsVisible] = useState<number>(LOG_PAGE_SIZE);
 
   const isPolling = !!property && ACTIVE_STATUSES.has(property.status);
 
@@ -375,24 +390,32 @@ const PropertyDetail = () => {
   if (loading) {
     return (
       <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--le-text-muted)" }} />
       </div>
     );
   }
 
   if (error || !property) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
-        <div className="flex items-start gap-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
+      <DashboardCard
+        style={{
+          background: "var(--le-danger-soft)",
+          borderColor: "var(--le-danger)",
+        }}
+      >
+        <div className="flex items-start gap-5 p-4">
+          <div
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[8px] border"
+            style={{ background: "var(--le-danger-soft)", borderColor: "var(--le-danger)", color: "var(--le-danger)" }}
+          >
             <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
           </div>
           <div>
-            <span className="label text-destructive">— Error</span>
-            <p className="mt-3 text-sm text-muted-foreground">{error || "Property not found"}</p>
+            <span className="label" style={{ color: "var(--le-danger)" }}>— Error</span>
+            <p className="mt-3 text-sm" style={{ color: "var(--le-text-muted)" }}>{error || "Property not found"}</p>
           </div>
         </div>
-      </div>
+      </DashboardCard>
     );
   }
 
@@ -408,7 +431,7 @@ const PropertyDetail = () => {
 
   return (
     <div className="space-y-16">
-      {/* Header — full-bleed photo with text overlay */}
+      {/* Header — full-bleed photo with text overlay — intentionally preserved per audit */}
       <div style={{ position: "relative", overflow: "hidden", marginBottom: 0 }}>
         {primaryPhoto ? (
           <div style={{ position: "relative", height: 320 }}>
@@ -493,41 +516,54 @@ const PropertyDetail = () => {
       </div>
 
       {/* Stat strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 48 }}>
-        {[
-          { label: "Total cost", value: formatCents(property.total_cost_cents) },
-          { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
-          { label: "Photos", value: `${property.selected_photo_count} / ${property.photo_count}` },
-          { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
-        ].map((s, i) => (
-          <div key={s.label} style={{ padding: "20px 24px", borderRight: i < 3 ? "1px solid rgba(220,230,255,0.09)" : "none" }}>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", display: "block" }}>{s.label}</span>
-            <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff", marginTop: 8 }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
+      <DashboardCard padding="none">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+          {[
+            { label: "Total cost", value: formatCents(property.total_cost_cents) },
+            { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
+            { label: "Photos", value: `${property.selected_photo_count} / ${property.photo_count}` },
+            { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
+          ].map((s, i) => (
+            <div
+              key={s.label}
+              style={{
+                padding: "20px 24px",
+                borderRight: i < 3 ? "1px solid var(--le-border)" : "none",
+              }}
+            >
+              <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)", display: "block" }}>{s.label}</span>
+              <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)", marginTop: 8 }}>{s.value}</div>
+            </div>
+          ))}
+        </div>
+      </DashboardCard>
 
       {/* Deliverables */}
       {deliverables.length > 0 && (
         <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Deliverables</span>
-          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
+          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)" }}>— Deliverables</span>
+          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
             {deliverables.length} {deliverables.length === 1 ? "clip" : "clips"} ready
           </h3>
-          <div className="mt-8 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {deliverables.map((scene) => (
-              <div key={scene.id} className="border border-border bg-secondary/30">
-                <video src={scene.clip_url!} controls playsInline preload="metadata" className="aspect-video w-full bg-black" />
+              <DashboardCard key={scene.id} padding="none">
+                <video src={scene.clip_url!} controls playsInline preload="metadata" className="aspect-video w-full rounded-t-[14px] bg-black" />
                 <div className="flex items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <p className="truncate text-xs font-semibold">
                       Scene {scene.scene_number} · {scene.camera_movement.replace(/_/g, " ")}
                     </p>
-                    <p className="tabular mt-1 text-[10px] text-muted-foreground">
+                    <p className="tabular mt-1 text-[10px]" style={{ color: "var(--le-text-muted)" }}>
                       {scene.provider ?? "—"} · {scene.duration_seconds}s
                     </p>
                   </div>
-                  <a href={scene.clip_url!} download={`scene_${scene.scene_number}.mp4`} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "transparent", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, color: "#fff" }}>
+                  <a
+                    href={scene.clip_url!}
+                    download={`scene_${scene.scene_number}.mp4`}
+                    className="inline-flex items-center justify-center rounded-[8px] border"
+                    style={{ width: 32, height: 32, background: "var(--le-bg-elev)", borderColor: "var(--le-border)", color: "var(--le-text)" }}
+                  >
                     <Download style={{ width: 14, height: 14 }} />
                   </a>
                 </div>
@@ -546,7 +582,7 @@ const PropertyDetail = () => {
                     );
                   }}
                 />
-              </div>
+              </DashboardCard>
             ))}
           </div>
         </section>
@@ -555,17 +591,20 @@ const PropertyDetail = () => {
       {/* Cost breakdown */}
       {costEvents.length > 0 && (
         <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Costs</span>
-          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
-            Real per-call breakdown · <span style={{ color: "rgba(255,255,255,0.62)" }}>{formatCents(costTotalCents)}</span>
+          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)" }}>— Costs</span>
+          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
+            Real per-call breakdown · <span style={{ color: "var(--le-text-muted)" }}>{formatCents(costTotalCents)}</span>
           </h3>
-          <div className="mt-8 border-t border-border">
-            <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 border-b border-border py-4">
-              <span className="label text-muted-foreground">Stage</span>
-              <span className="label text-muted-foreground">Provider</span>
-              <span className="label text-right text-muted-foreground">Scene</span>
-              <span className="label text-right text-muted-foreground">Units</span>
-              <span className="label text-right text-muted-foreground">Cost</span>
+          <DashboardCard padding="none" className="mt-8">
+            <div
+              className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 px-6 py-3"
+              style={{ borderBottom: "1px solid var(--le-border)" }}
+            >
+              <span className="le-eyebrow font-medium" style={{ color: "var(--le-text-muted)" }}>Stage</span>
+              <span className="le-eyebrow font-medium" style={{ color: "var(--le-text-muted)" }}>Provider</span>
+              <span className="le-eyebrow text-right font-medium" style={{ color: "var(--le-text-muted)" }}>Scene</span>
+              <span className="le-eyebrow text-right font-medium" style={{ color: "var(--le-text-muted)" }}>Units</span>
+              <span className="le-eyebrow text-right font-medium" style={{ color: "var(--le-text-muted)" }}>Cost</span>
             </div>
             {costEvents.map((ev) => {
               const sceneNum = ev.scene_id ? scenes.find((s) => s.id === ev.scene_id)?.scene_number ?? "—" : "—";
@@ -574,26 +613,30 @@ const PropertyDetail = () => {
                   ? `${Math.round(ev.units_consumed).toLocaleString()} ${ev.unit_type ?? ""}`.trim()
                   : "—";
               return (
-                <div key={ev.id} className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] items-center gap-6 border-b border-border py-3 text-xs">
+                <div
+                  key={ev.id}
+                  className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] items-center gap-6 px-6 py-3 text-xs"
+                  style={{ borderBottom: "1px solid var(--le-border)" }}
+                >
                   <span className="capitalize">{ev.stage}</span>
                   <span className="tabular">{ev.provider}</span>
-                  <span className="tabular text-right text-muted-foreground">{sceneNum}</span>
+                  <span className="tabular text-right" style={{ color: "var(--le-text-muted)" }}>{sceneNum}</span>
                   <span className="tabular text-right">{unitsLabel}</span>
                   <span className="tabular text-right font-semibold">{formatCents(ev.cost_cents)}</span>
                 </div>
               );
             })}
-            <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 py-5">
-              <span className="label text-foreground">Total</span>
+            <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 px-6 py-5">
+              <span className="le-eyebrow font-semibold" style={{ color: "var(--le-text)" }}>Total</span>
               <span /> <span /> <span />
               <span className="tabular text-right text-base font-semibold">{formatCents(costTotalCents)}</span>
             </div>
-          </div>
+          </DashboardCard>
         </section>
       )}
 
       {/* Section tabs */}
-      <div style={{ borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 40, display: "flex", gap: 0 }}>
+      <div style={{ borderBottom: "1px solid var(--le-border)", marginBottom: 40, display: "flex", gap: 0 }}>
         {(["photos", "shots", "logs", "prompts"] as const).map((tab) => {
           const labels: Record<string, string> = { photos: `Photos · ${photos.length}`, shots: `Shot plan · ${scenes.length}`, logs: "Timeline", prompts: "System prompts" };
           const active = activeTab === tab;
@@ -602,7 +645,7 @@ const PropertyDetail = () => {
               key={tab}
               type="button"
               onClick={() => { setActiveTab(tab); if (tab === "prompts") loadPrompts(); }}
-              style={{ padding: "12px 20px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "#fff" : "rgba(255,255,255,0.45)", background: "none", border: "none", borderBottom: active ? "1px solid #fff" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
+              style={{ padding: "12px 20px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "var(--le-text)" : "var(--le-text-muted)", background: "none", border: "none", borderBottom: active ? "1px solid var(--le-text)" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
             >
               {labels[tab]}
             </button>
@@ -613,67 +656,66 @@ const PropertyDetail = () => {
       {activeTab === "photos" && (
         <div style={{ marginTop: 40 }}>
           {photos.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">No photos</p>
+            <p className="py-16 text-center text-sm" style={{ color: "var(--le-text-muted)" }}>No photos</p>
           ) : (
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {photos.map((photo) => (
-                <div
+                <DashboardCard
                   key={photo.id}
-                  className={`border bg-secondary/30 ${photo.selected ? "border-foreground/60" : "border-border opacity-70"}`}
+                  padding="none"
+                  style={photo.selected ? undefined : { opacity: 0.7 }}
                 >
-                  <div className="relative aspect-[4/3] bg-secondary">
+                  <div className="relative aspect-[4/3] overflow-hidden rounded-t-[14px]" style={{ background: "var(--le-bg-sunken)" }}>
                     <img src={photo.file_url} alt={photo.file_name} className="h-full w-full object-cover" loading="lazy" />
-                    <span
-                      className={`label absolute left-2 top-2 px-2 py-1 ${
-                        photo.selected ? "bg-foreground text-background" : "bg-destructive text-destructive-foreground"
-                      }`}
-                    >
-                      {photo.selected ? "Selected" : "Discarded"}
+                    <span className="absolute left-2 top-2">
+                      <StatusPill tone={photo.selected ? "success" : "danger"}>
+                        {photo.selected ? "Selected" : "Discarded"}
+                      </StatusPill>
                     </span>
                   </div>
                   <div className="space-y-2 p-3">
                     <div className="flex items-center justify-between">
-                      <span className="label text-foreground">{photo.room_type?.replace(/_/g, " ") ?? "—"}</span>
-                      <span className="tabular text-[10px] text-muted-foreground">depth {photo.depth_rating ?? "—"}</span>
+                      <span className="label" style={{ color: "var(--le-text)" }}>{photo.room_type?.replace(/_/g, " ") ?? "—"}</span>
+                      <span className="tabular text-[10px]" style={{ color: "var(--le-text-muted)" }}>depth {photo.depth_rating ?? "—"}</span>
                     </div>
-                    <div className="tabular flex gap-3 text-[10px] text-muted-foreground">
+                    <div className="tabular flex gap-3 text-[10px]" style={{ color: "var(--le-text-muted)" }}>
                       <span>Q {photo.quality_score ?? "—"}</span>
                       <span>A {photo.aesthetic_score ?? "—"}</span>
                       {photo.video_viable === true && (
-                        <span className="text-foreground">✓ video</span>
+                        <span style={{ color: "var(--le-success)" }}>✓ video</span>
                       )}
                       {photo.video_viable === false && (
-                        <span className="text-destructive">✕ video</span>
+                        <span style={{ color: "var(--le-danger)" }}>✕ video</span>
                       )}
                     </div>
                     {photo.video_viable && photo.suggested_motion && (
-                      <p className="text-[10px] leading-tight text-muted-foreground">
-                        <span className="tabular text-foreground">{photo.suggested_motion.replace(/_/g, " ")}</span>
+                      <p className="text-[10px] leading-tight" style={{ color: "var(--le-text-muted)" }}>
+                        <span className="tabular" style={{ color: "var(--le-text)" }}>{photo.suggested_motion.replace(/_/g, " ")}</span>
                         {photo.motion_rationale && <span> · {photo.motion_rationale}</span>}
                       </p>
                     )}
                     {photo.key_features && photo.key_features.length > 0 && (
-                      <ul className="space-y-0.5 text-[10px] leading-tight text-muted-foreground">
+                      <ul className="space-y-0.5 text-[10px] leading-tight" style={{ color: "var(--le-text-muted)" }}>
                         {photo.key_features.map((f, i) => (
                           <li key={i} className="flex gap-1">
-                            <span className="text-foreground/40">·</span>
+                            <span style={{ color: "var(--le-text-muted)", opacity: 0.4 }}>·</span>
                             <span>{f}</span>
                           </li>
                         ))}
                       </ul>
                     )}
                     {photo.composition && (
-                      <p className="border-t border-border/50 pt-2 text-[10px] italic leading-snug text-muted-foreground">
+                      <p className="border-t pt-2 text-[10px] italic leading-snug" style={{ borderColor: "var(--le-border)", color: "var(--le-text-muted)" }}>
                         {photo.composition}
                       </p>
                     )}
                     {!photo.selected && photo.discard_reason && (
-                      <p className="border-t border-border/50 pt-2 text-[11px] leading-snug text-destructive">
+                      <p className="border-t pt-2 text-[11px] leading-snug" style={{ borderColor: "var(--le-border)", color: "var(--le-danger)" }}>
                         {photo.discard_reason}
                       </p>
                     )}
                   </div>
-                </div>
+                </DashboardCard>
               ))}
             </div>
           )}
@@ -683,27 +725,29 @@ const PropertyDetail = () => {
       {activeTab === "shots" && (
         <div style={{ marginTop: 40 }}>
           {scenes.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">No scenes yet</p>
+            <p className="py-16 text-center text-sm" style={{ color: "var(--le-text-muted)" }}>No scenes yet</p>
           ) : (
-            <div className="grid gap-px bg-border">
+            <div className="grid gap-4">
               {scenes.map((scene) => {
                 const sourcePhoto = photoById.get(scene.photo_id);
                 return (
-                  <div key={scene.id} className="bg-background p-6">
+                  <DashboardCard key={scene.id}>
                     <div className="flex items-start gap-4">
                       {sourcePhoto ? (
-                        <img src={sourcePhoto.file_url} alt={sourcePhoto.file_name} className="h-16 w-24 shrink-0 object-cover" />
+                        <img src={sourcePhoto.file_url} alt={sourcePhoto.file_name} className="h-16 w-24 shrink-0 rounded-[8px] object-cover" />
                       ) : (
-                        <div className="h-16 w-24 shrink-0 bg-secondary" />
+                        <div className="h-16 w-24 shrink-0 rounded-[8px]" style={{ background: "var(--le-bg-sunken)" }} />
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="tabular text-sm font-semibold">#{scene.scene_number}</span>
                           <span className="text-xs font-medium capitalize">{scene.camera_movement?.replace(/_/g, " ")}</span>
-                          <span className="label text-muted-foreground">{scene.status?.replace(/_/g, " ")}</span>
-                          {scene.provider && <span className="label text-muted-foreground">{scene.provider}</span>}
+                          <StatusPill status={scene.status?.replace(/ /g, "_")} />
+                          {scene.provider && (
+                            <span className="label" style={{ color: "var(--le-text-muted)" }}>{scene.provider}</span>
+                          )}
                         </div>
-                        <p className="tabular mt-1 text-[10px] text-muted-foreground">
+                        <p className="tabular mt-1 text-[10px]" style={{ color: "var(--le-text-muted)" }}>
                           source: {sourcePhoto?.file_name ?? "—"} · {sourcePhoto?.room_type?.replace(/_/g, " ") ?? "—"}
                         </p>
                       </div>
@@ -712,23 +756,27 @@ const PropertyDetail = () => {
                     {/* Prompt */}
                     <div className="mt-5">
                       <div className="mb-2 flex items-center justify-between">
-                        <span className="label text-muted-foreground">Prompt sent to {scene.provider ?? "provider"}</span>
+                        <span className="label" style={{ color: "var(--le-text-muted)" }}>Prompt sent to {scene.provider ?? "provider"}</span>
                         <button
                           type="button"
                           onClick={() => handleCopyPrompt(scene.id, scene.prompt)}
-                          className="label inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
+                          className="label inline-flex items-center gap-1 transition-colors"
+                          style={{ color: "var(--le-text-muted)" }}
                         >
                           {copiedScene === scene.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                           {copiedScene === scene.id ? "Copied" : "Copy"}
                         </button>
                       </div>
-                      <pre className="whitespace-pre-wrap p-4 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
+                      <pre
+                        className="whitespace-pre-wrap rounded-[8px] p-4 text-[11px] leading-relaxed"
+                        style={{ background: "var(--le-bg-sunken)", border: "1px solid var(--le-border)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}
+                      >
                         {scene.prompt}
                       </pre>
                     </div>
 
                     {/* Metadata */}
-                    <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border pt-5 md:grid-cols-3 lg:grid-cols-6">
+                    <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t pt-5 md:grid-cols-3 lg:grid-cols-6" style={{ borderColor: "var(--le-border)" }}>
                       {[
                         { l: "Duration", v: `${scene.duration_seconds}s` },
                         { l: "Attempts", v: scene.attempt_count ?? 0 },
@@ -738,7 +786,7 @@ const PropertyDetail = () => {
                         { l: "QC confidence", v: scene.qc_confidence != null ? `${Math.round(scene.qc_confidence * 100)}%` : "—" },
                       ].map((m) => (
                         <div key={m.l}>
-                          <p className="label text-muted-foreground">{m.l}</p>
+                          <p className="label" style={{ color: "var(--le-text-muted)" }}>{m.l}</p>
                           <p className="tabular mt-1.5 text-xs">{m.v}</p>
                         </div>
                       ))}
@@ -747,13 +795,13 @@ const PropertyDetail = () => {
                     {/* Output clip */}
                     {scene.clip_url && (
                       <div className="mt-5">
-                        <span className="label text-muted-foreground">Output clip</span>
+                        <span className="label" style={{ color: "var(--le-text-muted)" }}>Output clip</span>
                         <video
                           src={scene.clip_url}
                           controls
                           playsInline
                           preload="metadata"
-                          className="mt-3 aspect-video w-full max-w-md bg-black"
+                          className="mt-3 aspect-video w-full max-w-md rounded-[8px] bg-black"
                         />
                       </div>
                     )}
@@ -765,7 +813,7 @@ const PropertyDetail = () => {
                       scene.status === "pending") && (
                       <ResubmitControls scene={scene} />
                     )}
-                  </div>
+                  </DashboardCard>
                 );
               })}
             </div>
@@ -775,63 +823,79 @@ const PropertyDetail = () => {
 
       {activeTab === "logs" && (
         <div style={{ marginTop: 40 }}>
-          <div className="max-h-[640px] overflow-y-auto border border-border bg-secondary/20">
+          <DashboardCard padding="none">
             {logs.length === 0 ? (
-              <p className="py-16 text-center text-sm text-muted-foreground">No logs for this property</p>
+              <p className="py-16 text-center text-sm" style={{ color: "var(--le-text-muted)" }}>No logs for this property</p>
             ) : (
-              <div className="divide-y divide-border/60">
-                {logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="grid grid-cols-[80px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed"
-                    style={{ fontFamily: "var(--le-font-mono)" }}
-                  >
-                    <span className="tabular text-muted-foreground/60">
-                      {new Date(log.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                      })}
-                    </span>
-                    <span className="label text-muted-foreground">{log.stage}</span>
-                    <span
-                      className={`label ${
-                        log.level === "error"
-                          ? "text-destructive"
-                          : log.level === "warn"
-                          ? "text-accent"
-                          : "text-muted-foreground"
-                      }`}
+              <>
+                <div className="divide-y" style={{ borderColor: "var(--le-border)" }}>
+                  {logs.slice(0, logsVisible).map((log) => (
+                    <div
+                      key={log.id}
+                      className="grid grid-cols-[80px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed"
+                      style={{ fontFamily: "var(--le-font-mono)", borderColor: "var(--le-border)" }}
                     >
-                      {log.level}
-                    </span>
-                    <span
-                      className={
-                        log.level === "error"
-                          ? "text-destructive"
-                          : log.level === "warn"
-                          ? "text-accent"
-                          : "text-foreground"
-                      }
+                      <span className="tabular" style={{ color: "var(--le-text-muted)", opacity: 0.6 }}>
+                        {new Date(log.created_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                        })}
+                      </span>
+                      <span className="label" style={{ color: "var(--le-text-muted)" }}>{log.stage}</span>
+                      <span
+                        className="label"
+                        style={{
+                          color:
+                            log.level === "error"
+                              ? "var(--le-danger)"
+                              : log.level === "warn"
+                              ? "var(--le-warn)"
+                              : "var(--le-text-muted)",
+                        }}
+                      >
+                        {log.level}
+                      </span>
+                      <span
+                        style={{
+                          color:
+                            log.level === "error"
+                              ? "var(--le-danger)"
+                              : log.level === "warn"
+                              ? "var(--le-warn)"
+                              : "var(--le-text)",
+                        }}
+                      >
+                        {log.message}
+                        {log.metadata && Object.keys(log.metadata).length > 0 && (
+                          <span className="ml-2" style={{ color: "var(--le-text-muted)" }}>{JSON.stringify(log.metadata)}</span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {logsVisible < logs.length && (
+                  <div className="border-t px-5 py-3" style={{ borderColor: "var(--le-border)" }}>
+                    <DashboardButton
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setLogsVisible((v) => v + LOG_PAGE_SIZE)}
                     >
-                      {log.message}
-                      {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <span className="ml-2 text-muted-foreground">{JSON.stringify(log.metadata)}</span>
-                      )}
-                    </span>
+                      View {Math.min(LOG_PAGE_SIZE, logs.length - logsVisible)} more ({logs.length - logsVisible} remaining)
+                    </DashboardButton>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
-          </div>
+          </DashboardCard>
         </div>
       )}
 
       {activeTab === "prompts" && (
-        <div style={{ marginTop: 40 }} className="space-y-12">
+        <div style={{ marginTop: 40 }} className="space-y-6">
           {!prompts ? (
             <div className="flex justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <Loader2 className="h-5 w-5 animate-spin" style={{ color: "var(--le-text-muted)" }} />
             </div>
           ) : (
             [
@@ -839,14 +903,17 @@ const PropertyDetail = () => {
               { label: "Director (shot planning)", desc: "Used to turn selected photos into an ordered shot list.", body: prompts.director },
               { label: "QC evaluator", desc: "Used to judge generated clips. Currently auto-passing pending frame-extraction infra.", body: prompts.qc },
             ].map((p) => (
-              <section key={p.label}>
-                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— {p.label}</span>
-                <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>{p.label}</h3>
-                <p className="mt-2 text-xs text-muted-foreground">{p.desc}</p>
-                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap p-5 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
+              <DashboardCard key={p.label}>
+                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)" }}>— {p.label}</span>
+                <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>{p.label}</h3>
+                <p className="mt-2 text-xs" style={{ color: "var(--le-text-muted)" }}>{p.desc}</p>
+                <pre
+                  className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap rounded-[8px] p-5 text-[11px] leading-relaxed"
+                  style={{ background: "var(--le-bg-sunken)", border: "1px solid var(--le-border)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}
+                >
                   {p.body}
                 </pre>
-              </section>
+              </DashboardCard>
             ))
           )}
         </div>
