@@ -136,22 +136,14 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // adding more bugs than it prevented.
 
     // Stage 4: Generate — fire-and-forget submission only. The cron
-    // backstop at api/cron/poll-scenes.ts handles ALL polling and
-    // clip collection, so this function can exit in ~60s instead of
-    // hitting the 300s maxDuration with half the scenes never submitted.
+    // backstop at api/cron/poll-scenes.ts handles ALL polling, clip
+    // collection, AND assembly invocation, so this function can exit
+    // in ~60s instead of hitting the 300s maxDuration with half the
+    // scenes never submitted. See poll-scenes.ts finalize block — when
+    // all scenes have settled it calls runAssembly(propertyId).
     await runGenerationSubmit(propertyId);
-
-    // Assembly used to run inline here. It now runs in the cron once
-    // all scenes have settled — see api/cron/poll-scenes.ts finalize
-    // block. Exiting immediately lets the main function budget survive.
     await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron backstop will collect clips + finalize.");
-    return;
-
-    // Stage 6: Assembly
-    await runAssembly(propertyId);
-
-    await log(propertyId, "delivery", "info", "Pipeline complete!");
+      "All scenes submitted to providers. Cron will collect clips + assemble.");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
@@ -955,7 +947,7 @@ async function runQCForScene(
 
 // ─── STAGE 6: ASSEMBLY ─────────────────────────────────────────
 
-async function runAssembly(propertyId: string): Promise<void> {
+export async function runAssembly(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "assembling");
   await log(propertyId, "assembly", "info", "Starting assembly");
 
