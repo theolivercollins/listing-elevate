@@ -14,3 +14,7 @@ credentials.env
 docs/CREDENTIALS.md
 .DS_Store
 .worktrees/
+
+# Local brainstorming + worktree fragments — not part of repo state
+.superpowers/
+le-1/

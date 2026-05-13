@@ -51,6 +51,12 @@ import { resolveEndFrameUrl } from "./services/end-frame.js";
 import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
+import { orderScenesForAssembly } from "./assembly/scene-ordering.js";
+import { fitScenesToDuration } from "./assembly/duration-fit.js";
+import { fetchPropertyBranding } from "./assembly/branding.js";
+import { selectMusicTrackForProperty } from "./assembly/music.js";
+import { resolveTemplateId } from "./assembly/template-resolver.js";
+import { buildTemplateModifications } from "./assembly/template-modifications.js";
 import {
   analyzePhotoWithGemini,
   type ExtendedPhotoAnalysis,
@@ -136,22 +142,14 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // adding more bugs than it prevented.
 
     // Stage 4: Generate — fire-and-forget submission only. The cron
-    // backstop at api/cron/poll-scenes.ts handles ALL polling and
-    // clip collection, so this function can exit in ~60s instead of
-    // hitting the 300s maxDuration with half the scenes never submitted.
+    // backstop at api/cron/poll-scenes.ts handles ALL polling, clip
+    // collection, AND assembly invocation, so this function can exit
+    // in ~60s instead of hitting the 300s maxDuration with half the
+    // scenes never submitted. See poll-scenes.ts finalize block — when
+    // all scenes have settled it calls runAssembly(propertyId).
     await runGenerationSubmit(propertyId);
-
-    // Assembly used to run inline here. It now runs in the cron once
-    // all scenes have settled — see api/cron/poll-scenes.ts finalize
-    // block. Exiting immediately lets the main function budget survive.
     await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron backstop will collect clips + finalize.");
-    return;
-
-    // Stage 6: Assembly
-    await runAssembly(propertyId);
-
-    await log(propertyId, "delivery", "info", "Pipeline complete!");
+      "All scenes submitted to providers. Cron will collect clips + assemble.");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
@@ -955,90 +953,208 @@ async function runQCForScene(
 
 // ─── STAGE 6: ASSEMBLY ─────────────────────────────────────────
 
-async function runAssembly(propertyId: string): Promise<void> {
+export async function runAssembly(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "assembling");
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
   const scenes = await getScenesForProperty(propertyId);
-  const passedScenes = scenes
-    .filter((s) => s.status === "qc_pass" && s.clip_url)
-    .sort((a, b) => a.scene_number - b.scene_number);
+  const qcPassed = scenes.filter((s) => s.status === "qc_pass" && s.clip_url);
 
-  if (passedScenes.length === 0) {
+  if (qcPassed.length === 0) {
     await updatePropertyStatus(propertyId, "failed");
     await log(propertyId, "assembly", "error", "No clips available for assembly");
     return;
   }
 
+  // Hydrate room_type from photos so the assembly walker can group by room.
+  // One round-trip; scoped to the qc-passed set so we don't pull every photo.
+  const photoIds = Array.from(new Set(qcPassed.map((s) => s.photo_id)));
+  const { data: photoRows, error: photoErr } = await getSupabase()
+    .from("photos")
+    .select("id, room_type")
+    .in("id", photoIds);
+  if (photoErr) {
+    await log(propertyId, "assembly", "warn",
+      `Photo room_type lookup failed (${photoErr.message}); using director scene_number order`);
+  }
+  const roomTypeByPhotoId = new Map<string, RoomType | null>(
+    (photoRows ?? []).map((p) => [p.id as string, (p.room_type as RoomType | null) ?? null]),
+  );
+
+  // Deterministic walkthrough order: aerial/exterior_front → living spaces
+  // → bedrooms → bathrooms → outdoor → exterior_back. See
+  // lib/assembly/scene-ordering.ts for the full policy.
+  const passedScenes = orderScenesForAssembly(
+    qcPassed.map((s) => ({
+      ...s,
+      room_type: roomTypeByPhotoId.get(s.photo_id) ?? null,
+    })),
+  );
+  await log(propertyId, "assembly", "info",
+    `Ordered ${passedScenes.length} scenes for walkthrough`,
+    { order: passedScenes.map((s) => ({ scene_number: s.scene_number, room_type: s.room_type })) });
+
   const totalProcessingMsBase = Date.now() - new Date(property.created_at).getTime();
 
-  // Attempt Shotstack assembly (stitch + text overlays). If SHOTSTACK_API_KEY
-  // is not configured, or Shotstack fails, fall back to marking the property
-  // complete with individual clip URLs only (legacy behavior).
   let horizontalUrl: string | null = null;
   let verticalUrl: string | null = null;
   let assemblyErrored = false;
 
-  const shotstackEnabled = Boolean(
-    process.env.SHOTSTACK_API_KEY || process.env.SHOTSTACK_API_KEY_STAGE
-  );
+  // Use the assembly router to select the best provider.
+  // Priority: Creatomate (if CREATOMATE_API_KEY set) > Shotstack > skip.
+  let assemblyEnabled = false;
+  try {
+    // Quick check — don't construct the provider yet, just see if any key exists.
+    assemblyEnabled = Boolean(
+      process.env.CREATOMATE_API_KEY ||
+      process.env.SHOTSTACK_API_KEY ||
+      process.env.SHOTSTACK_API_KEY_STAGE,
+    );
+  } catch {
+    // swallow
+  }
 
-  if (shotstackEnabled) {
+  if (assemblyEnabled) {
     try {
-      const { ShotstackProvider, pollAssemblyUntilComplete, shotstackCostCents } = await import(
-        "./providers/shotstack.js"
+      const { selectAssemblyProvider, pollAssemblyJob, assemblyProviderCostCents } = await import(
+        "./providers/assembly-router.js"
       );
-      const provider = new ShotstackProvider();
+      const provider = selectAssemblyProvider();
+      const providerName = provider.name;
 
-      const clipInputs = passedScenes.map((s) => ({
-        url: s.clip_url as string,
-        durationSeconds: s.duration_seconds,
+      // Apply the package-tier duration budget. `selected_duration` is
+      // persisted via migration 054 (15 / 30 / 60); a null on a legacy row
+      // means "use the natural sum of source clip durations".
+      const targetDuration =
+        typeof property.selected_duration === "number"
+          ? property.selected_duration
+          : null;
+      const fitted = fitScenesToDuration(
+        passedScenes.map((s) => ({
+          ...s,
+          durationSeconds: s.duration_seconds,
+        })),
+        targetDuration,
+      );
+      await log(propertyId, "assembly", "info",
+        `Duration fit: ${fitted.length} clips for ${targetDuration ?? "natural"}s target`,
+        {
+          target: targetDuration,
+          allocations: fitted.map((f) => ({
+            scene_number: f.scene.scene_number,
+            room_type: f.scene.room_type,
+            seconds: Number(f.durationSeconds.toFixed(2)),
+          })),
+        });
+
+      const clipInputs = fitted.map((f) => ({
+        url: f.scene.clip_url as string,
+        durationSeconds: f.durationSeconds,
       }));
 
+      // Pull brokerage branding (logo + colors) from user_profiles.
+      // Falls back to property.brokerage text + defaults if no profile.
+      const branding = await fetchPropertyBranding(propertyId);
       const overlays = {
         address: property.address,
         price: formatPrice(property.price),
         details: `${property.bedrooms} BD | ${formatBaths(property.bathrooms)} BA`,
         agent: property.listing_agent,
-        brokerage: property.brokerage ?? null,
+        brokerage: branding.brokerageName ?? property.brokerage ?? null,
+        logoUrl: branding.logoUrl,
+        primaryColor: branding.primaryColor,
+        secondaryColor: branding.secondaryColor,
       };
+      if (branding.logoUrl) {
+        await log(propertyId, "assembly", "info",
+          `Brokerage logo + brand color (${branding.primaryColor}) applied`);
+      }
+
+      // Music track — operator-pinned wins, else auto-pick by package mood.
+      const musicTrack = await selectMusicTrackForProperty(propertyId);
+      const music = musicTrack ? { url: musicTrack.fileUrl } : null;
+      if (musicTrack) {
+        await log(propertyId, "assembly", "info",
+          `Music: ${musicTrack.name} (${musicTrack.moodTag})`,
+          { music_track_id: musicTrack.id });
+      } else {
+        await log(propertyId, "assembly", "info",
+          "No active music track in library — rendering silent video");
+      }
+
+      // Resolve which Creatomate template (if any) should drive this render.
+      // Priority: property.template_id override > CREATOMATE_TEMPLATE_ID_<PKG>
+      // env var > CREATOMATE_TEMPLATE_ID_DEFAULT > null (fall back to the
+      // code-generated RenderScript path).
+      const templateId = providerName === "creatomate"
+        ? resolveTemplateId({
+            propertyTemplateId: (property as { template_id?: string | null }).template_id ?? null,
+            selectedPackage: property.selected_package,
+          })
+        : null;
+
+      if (templateId) {
+        await log(propertyId, "assembly", "info",
+          `Using Creatomate template ${templateId}`,
+          { templateId, selected_package: property.selected_package });
+      }
 
       await log(propertyId, "assembly", "info",
-        `Submitting Shotstack render (${clipInputs.length} clips)`,
-        { clipCount: clipInputs.length }
+        `Submitting ${providerName} render (${clipInputs.length} clips)`,
+        { clipCount: clipInputs.length, provider: providerName, templateId },
       );
 
+      // Common modifications shared across 16:9 + 9:16 renders. Template
+      // ignores any keys for placeholders it doesn't have, so we always send
+      // the full set (text + clips + logo + music).
+      const templateMods = templateId
+        ? buildTemplateModifications({
+            address: property.address,
+            selectedPackage: property.selected_package,
+            agentName: property.listing_agent,
+            brokerageName: branding.brokerageName ?? property.brokerage ?? null,
+            clips: clipInputs,
+            logoUrl: branding.logoUrl,
+            musicUrl: musicTrack?.fileUrl,
+          })
+        : null;
+
+      const assembleParams = { clips: clipInputs, overlays, music };
+
       // Render both aspect ratios sequentially. Each render typically takes
-      // 30–90s. Kept sequential to stay under the 300s function budget when
-      // upstream generation already consumed most of the wall clock.
-      const horizontalJob = await provider.assemble({
-        clips: clipInputs,
-        overlays,
-        aspectRatio: "16:9",
-      });
+      // 30–90s. Kept sequential to stay under the 300s function budget.
+      // Template path uses assembleFromTemplate; code-generated path uses assemble().
+      const horizontalJob = templateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+            modifications: templateMods,
+            width: 1920,
+            height: 1080,
+            renderScale: 1,
+          })
+        : await provider.assemble({
+            ...assembleParams,
+            aspectRatio: "16:9",
+          });
       await log(propertyId, "assembly", "info",
-        `Shotstack horizontal job queued: ${horizontalJob.jobId}`);
-      const horizontalResult = await pollAssemblyUntilComplete(provider, horizontalJob);
+        `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
+      const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
       if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
         throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
       }
       horizontalUrl = horizontalResult.videoUrl;
 
-      // Shotstack bills per output-minute rounded up. Use the duration
-      // returned by the render API (ground truth); fall back to summing
-      // the input clip durations if the API didn't return a value.
       const timelineDurationSeconds = clipInputs.reduce(
         (sum, c) => sum + c.durationSeconds,
         0,
       );
       const horizontalDuration =
         horizontalResult.durationSeconds ?? timelineDurationSeconds;
-      const horizontalCents = shotstackCostCents(horizontalDuration);
+      const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
       await recordCostEvent({
         propertyId,
         stage: "assembly",
-        provider: "shotstack",
+        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
         unitsConsumed: 1,
         unitType: "renders",
         costCents: horizontalCents,
@@ -1051,14 +1167,22 @@ async function runAssembly(propertyId: string): Promise<void> {
         },
       });
 
-      const verticalJob = await provider.assemble({
-        clips: clipInputs,
-        overlays,
-        aspectRatio: "9:16",
-      });
+      // Vertical render — same template-vs-codegen branch as horizontal.
+      // For template renders we swap width/height to force a 1080×1920 frame.
+      const verticalJob = templateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+            modifications: templateMods,
+            width: 1080,
+            height: 1920,
+            renderScale: 1,
+          })
+        : await provider.assemble({
+            ...assembleParams,
+            aspectRatio: "9:16",
+          });
       await log(propertyId, "assembly", "info",
-        `Shotstack vertical job queued: ${verticalJob.jobId}`);
-      const verticalResult = await pollAssemblyUntilComplete(provider, verticalJob);
+        `${providerName} vertical job queued: ${verticalJob.jobId}`);
+      const verticalResult = await pollAssemblyJob(provider, verticalJob);
       if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
         throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
       }
@@ -1066,11 +1190,11 @@ async function runAssembly(propertyId: string): Promise<void> {
 
       const verticalDuration =
         verticalResult.durationSeconds ?? timelineDurationSeconds;
-      const verticalCents = shotstackCostCents(verticalDuration);
+      const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
       await recordCostEvent({
         propertyId,
         stage: "assembly",
-        provider: "shotstack",
+        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
         unitsConsumed: 1,
         unitType: "renders",
         costCents: verticalCents,
@@ -1083,30 +1207,65 @@ async function runAssembly(propertyId: string): Promise<void> {
         },
       });
 
+      // Persist the assembly timeline JSON for future revision editing.
+      // We store the horizontal timeline since it's the primary deliverable.
+      try {
+        const timelineJson = {
+          clips: clipInputs,
+          overlays,
+          transition: "fade",
+          provider: providerName,
+          rendered_at: new Date().toISOString(),
+        };
+        await getSupabase()
+          .from("properties")
+          .update({
+            assembly_timeline: timelineJson,
+            assembly_timeline_version: 1,
+            assembly_provider: providerName,
+          })
+          .eq("id", propertyId);
+      } catch (timelineErr) {
+        // Non-fatal — timeline persistence is for the revision engine,
+        // not for the current delivery.
+        const msg = timelineErr instanceof Error ? timelineErr.message : String(timelineErr);
+        await log(propertyId, "assembly", "warn",
+          `Failed to persist assembly_timeline: ${msg}`);
+      }
+
       await log(propertyId, "assembly", "info",
-        `Shotstack renders complete`,
+        `${providerName} renders complete`,
         {
           horizontalUrl,
           verticalUrl,
           horizontalRenderMs: horizontalResult.renderTimeMs,
           verticalRenderMs: verticalResult.renderTimeMs,
-        }
+        },
       );
     } catch (err) {
       assemblyErrored = true;
       const msg = err instanceof Error ? err.message : String(err);
       await log(propertyId, "assembly", "warn",
-        `Shotstack assembly failed, falling back to clip-only delivery: ${msg}`
+        `Assembly failed, falling back to clip-only delivery: ${msg}`,
       );
     }
   } else {
     await log(propertyId, "assembly", "info",
-      "SHOTSTACK_API_KEY not set — skipping assembly, delivering clips only"
+      "No assembly provider configured — delivering clips only",
     );
   }
 
   const thumbnailUrl = passedScenes[0]?.clip_url ?? null;
-  const totalProcessingMs = Date.now() - new Date(property.created_at).getTime();
+  // Measure THIS RUN, not the property's original creation date.
+  // pipeline_started_at is stamped at the top of runPipeline; fall back to
+  // created_at only for legacy rows. Clamp to int4 max so weeks-old
+  // properties (e.g. smoke tests on stale data) don't overflow the column.
+  const startRef = (property as { pipeline_started_at?: string | null }).pipeline_started_at
+    ?? property.created_at;
+  const totalProcessingMs = Math.min(
+    Date.now() - new Date(startRef).getTime(),
+    2_147_483_647,
+  );
 
   await updatePropertyStatus(propertyId, "complete", {
     thumbnail_url: thumbnailUrl,
@@ -1116,10 +1275,10 @@ async function runAssembly(propertyId: string): Promise<void> {
   });
 
   const assemblyNote = horizontalUrl && verticalUrl
-    ? "Stitched video delivered (Shotstack)"
+    ? "Stitched video delivered"
     : assemblyErrored
     ? "Assembly failed, delivered individual clips as fallback"
-    : "Delivered individual clips (Shotstack not configured)";
+    : "Delivered individual clips (no assembly provider configured)";
 
   await log(propertyId, "assembly", "info",
     `Complete! ${passedScenes.length} clips in ${(totalProcessingMs / 1000).toFixed(1)}s. Total cost: $${((property.total_cost_cents) / 100).toFixed(2)}. ${assemblyNote}`,
@@ -1129,7 +1288,7 @@ async function runAssembly(propertyId: string): Promise<void> {
       totalCostCents: property.total_cost_cents,
       horizontalUrl,
       verticalUrl,
-    }
+    },
   );
   // Silence unused baseline var (kept for potential future delta logging)
   void totalProcessingMsBase;

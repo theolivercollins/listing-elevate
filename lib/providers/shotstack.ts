@@ -9,6 +9,14 @@ export interface AssemblyOverlays {
   details: string;
   agent: string;
   brokerage?: string | null;
+  /** Brokerage logo URL — rendered as a corner watermark when present.
+   *  Creatomate honors this; Shotstack currently ignores it. */
+  logoUrl?: string | null;
+  /** Brand primary color as a hex string (e.g. "#10b981") used to tint
+   *  the closing overlay accent line. Defaults to a neutral white. */
+  primaryColor?: string | null;
+  /** Brand secondary color, used as a softer accent. */
+  secondaryColor?: string | null;
 }
 
 export type ClipTransition =
@@ -33,6 +41,15 @@ export interface AssembleVideoParams {
   aspectRatio: "16:9" | "9:16";
   /** Transition between clips. Default: "none" (hard cuts). */
   transition?: ClipTransition;
+  /** Background music. Creatomate honors this; Shotstack currently ignores it. */
+  music?: AssemblyMusic | null;
+}
+
+export interface AssemblyMusic {
+  /** Public URL Creatomate can fetch (mp3/m4a/wav). */
+  url: string;
+  /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays. */
+  volume?: number;
 }
 
 export interface AssemblyJob {
@@ -49,7 +66,7 @@ export interface AssemblyResult {
 }
 
 export interface IVideoAssemblyProvider {
-  name: "shotstack";
+  name: "shotstack" | "creatomate";
   assemble(params: AssembleVideoParams): Promise<AssemblyJob>;
   checkStatus(job: AssemblyJob): Promise<AssemblyResult>;
 }
@@ -75,6 +92,23 @@ interface ShotstackTitleClip {
   };
   start: number;
   length: number;
+  transition?: ShotstackTransition;
+}
+
+/** Shotstack HTML clip — used for rich text overlays with full CSS control. */
+interface ShotstackHtmlClip {
+  asset: {
+    type: "html";
+    html: string;
+    css?: string;
+    width?: number;
+    height?: number;
+    background?: string;
+    position?: string;
+  };
+  start: number;
+  length: number;
+  offset?: { x?: number; y?: number };
   transition?: ShotstackTransition;
 }
 
@@ -206,6 +240,229 @@ export function buildShotstackTimeline(
       aspectRatio,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Just Listed layout — Shotstack port of the Creatomate Just Listed #01
+// template. Code-defined timeline (no Shotstack-side template required) so the
+// layout is version-controlled + LLM-editable. Mirrors the Creatomate
+// layout: 8 clips back-to-back, opening overlay with category title + street
+// + city/state, closing overlay with agent + brokerage, two thin line
+// graphics. All overlays use Shotstack HTML clips for full styling control.
+// ---------------------------------------------------------------------------
+
+export interface JustListedOverlays {
+  street: string;
+  cityState: string;
+  category: string;        // "Just Listed" / "Just Pended" / "Just Closed"
+  agent: string;
+  brokerage: string | null;
+}
+
+export interface JustListedParams {
+  clips: AssemblyClip[];
+  overlays: JustListedOverlays;
+  aspectRatio: "16:9" | "9:16";
+}
+
+const JL_OPENING_DURATION = 3.5;
+const JL_CLOSING_DURATION = 3.5;
+
+function htmlOverlay(
+  start: number,
+  length: number,
+  html: string,
+  css: string,
+  width: number,
+  height: number,
+  yOffset = 0,
+): ShotstackHtmlClip {
+  return {
+    asset: {
+      type: "html",
+      html,
+      css,
+      width,
+      height,
+      background: "transparent",
+      position: "center",
+    },
+    start,
+    length,
+    offset: yOffset !== 0 ? { y: yOffset } : undefined,
+    transition: { in: "fade", out: "fade" },
+  };
+}
+
+/**
+ * Build a Shotstack Edit-API payload that matches the Creatomate
+ * Just Listed #01 layout. Render at 1920×1080 by default; pass
+ * aspectRatio "9:16" for vertical 1080×1920.
+ */
+export function buildShotstackJustListedTimeline(
+  params: JustListedParams,
+): ShotstackRenderPayload {
+  const { clips, overlays, aspectRatio } = params;
+  if (clips.length === 0) {
+    throw new Error("buildShotstackJustListedTimeline: clips array is empty");
+  }
+
+  const isVertical = aspectRatio === "9:16";
+  const W = isVertical ? 1080 : 1920;
+  const H = isVertical ? 1920 : 1080;
+
+  // Video clips — hard cuts back-to-back, no transitions.
+  const videoClips: ShotstackVideoClip[] = [];
+  let cursor = 0;
+  for (const clip of clips) {
+    videoClips.push({
+      asset: { type: "video", src: clip.url },
+      start: cursor,
+      length: clip.durationSeconds,
+    });
+    cursor += clip.durationSeconds;
+  }
+  const totalLength = cursor;
+  const closingStart = Math.max(0, totalLength - JL_CLOSING_DURATION);
+
+  // ── Opening overlay block ────────────────────────────────────────────
+  // Big category title (e.g. "Just Listed"), then street address, then
+  // city/state below. Layout mirrors Creatomate Just Listed #01.
+  const sharedFontImport =
+    "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');";
+
+  const categoryOverlay = htmlOverlay(
+    0,
+    JL_OPENING_DURATION,
+    `<div class="cat">${escapeHtml(overlays.category)}</div>`,
+    `${sharedFontImport}
+     .cat { font-family: 'Inter', sans-serif; font-weight: 700;
+            font-size: ${isVertical ? 140 : 120}px; color: #ffffff;
+            text-align: center; line-height: 1; letter-spacing: -0.02em;
+            text-shadow: 0 2px 12px rgba(0,0,0,0.4); }`,
+    Math.round(W * 0.9),
+    Math.round(H * 0.25),
+    isVertical ? -0.15 : -0.1,
+  );
+
+  const streetOverlay = htmlOverlay(
+    0,
+    JL_OPENING_DURATION,
+    `<div class="street">${escapeHtml(overlays.street)}</div>`,
+    `${sharedFontImport}
+     .street { font-family: 'Inter', sans-serif; font-weight: 600;
+               font-size: ${isVertical ? 56 : 48}px; color: #ffffff;
+               text-align: center; line-height: 1.2;
+               text-shadow: 0 2px 8px rgba(0,0,0,0.5); }`,
+    Math.round(W * 0.9),
+    100,
+    isVertical ? 0.1 : 0.08,
+  );
+
+  const cityStateOverlay = htmlOverlay(
+    0,
+    JL_OPENING_DURATION,
+    `<div class="city">${escapeHtml(overlays.cityState)}</div>`,
+    `${sharedFontImport}
+     .city { font-family: 'Inter', sans-serif; font-weight: 400;
+             font-size: ${isVertical ? 40 : 32}px; color: rgba(255,255,255,0.9);
+             text-align: center; line-height: 1.2; letter-spacing: 0.05em;
+             text-shadow: 0 2px 8px rgba(0,0,0,0.5); }`,
+    Math.round(W * 0.9),
+    80,
+    isVertical ? 0.18 : 0.16,
+  );
+
+  // Thin white accent line between street and city/state — mirrors the
+  // Creatomate "Line" shape element.
+  const accentLine = htmlOverlay(
+    0,
+    JL_OPENING_DURATION,
+    `<div class="line"></div>`,
+    `.line { width: 60px; height: 2px; background: #ffffff; margin: 0 auto; }`,
+    80,
+    10,
+    isVertical ? 0.14 : 0.12,
+  );
+
+  // ── Closing overlay block ────────────────────────────────────────────
+  const agentOverlay = htmlOverlay(
+    closingStart,
+    JL_CLOSING_DURATION,
+    `<div class="agent">${escapeHtml(overlays.agent)}</div>`,
+    `${sharedFontImport}
+     .agent { font-family: 'Inter', sans-serif; font-weight: 600;
+              font-size: ${isVertical ? 60 : 52}px; color: #ffffff;
+              text-align: center; line-height: 1.1;
+              text-shadow: 0 2px 8px rgba(0,0,0,0.5); }`,
+    Math.round(W * 0.9),
+    100,
+    isVertical ? -0.05 : -0.03,
+  );
+
+  const brokerageOverlay = overlays.brokerage
+    ? htmlOverlay(
+        closingStart,
+        JL_CLOSING_DURATION,
+        `<div class="brkr">${escapeHtml(overlays.brokerage)}</div>`,
+        `${sharedFontImport}
+         .brkr { font-family: 'Inter', sans-serif; font-weight: 400;
+                 font-size: ${isVertical ? 40 : 32}px;
+                 color: rgba(255,255,255,0.85); text-align: center;
+                 line-height: 1.2; letter-spacing: 0.05em;
+                 text-shadow: 0 2px 8px rgba(0,0,0,0.5); }`,
+        Math.round(W * 0.9),
+        80,
+        isVertical ? 0.06 : 0.05,
+      )
+    : null;
+
+  const closingLine = htmlOverlay(
+    closingStart,
+    JL_CLOSING_DURATION,
+    `<div class="line"></div>`,
+    `.line { width: 60px; height: 2px; background: #ffffff; margin: 0 auto; }`,
+    80,
+    10,
+    isVertical ? 0.02 : 0.01,
+  );
+
+  const overlayClips: Array<ShotstackVideoClip | ShotstackTitleClip | ShotstackHtmlClip> = [
+    categoryOverlay,
+    streetOverlay,
+    accentLine,
+    cityStateOverlay,
+    agentOverlay,
+    closingLine,
+  ];
+  if (brokerageOverlay) overlayClips.push(brokerageOverlay);
+
+  return {
+    timeline: {
+      background: "#000000",
+      tracks: [
+        // Top track: overlays
+        { clips: overlayClips as Array<ShotstackVideoClip | ShotstackTitleClip> },
+        // Bottom track: video clips
+        { clips: videoClips },
+      ],
+    },
+    output: {
+      format: "mp4",
+      resolution: "1080",
+      aspectRatio,
+    },
+  };
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;"
+      : c === "<" ? "&lt;"
+      : c === ">" ? "&gt;"
+      : c === "\"" ? "&quot;"
+      : "&#39;",
+  );
 }
 
 export class ShotstackProvider implements IVideoAssemblyProvider {
