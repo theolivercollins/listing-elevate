@@ -27,28 +27,18 @@ import { fetchLogs } from "@/lib/api";
 import type { PipelineLog, PipelineStage, LogLevel } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DashboardButton } from "@/v2/components/dashboard/DashboardButton";
+import { DashboardCard } from "@/v2/components/dashboard/DashboardCard";
+import { StatusPill as SharedStatusPill } from "@/v2/components/dashboard/StatusPill";
+import { ChipTabs } from "@/v2/components/dashboard/ChipTabs";
 import "@/v2/styles/v2.css";
 
 // Auto-refresh every 30s while the tab is visible. Cheap — one endpoint.
 const REFRESH_MS = 30_000;
 
-// ── Card wrapper ──────────────────────────────────────────────────────────────
-
+// LeCard — thin alias so existing JSX compiles unchanged
 function LeCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div
-      className={className}
-      style={{
-        background: "var(--le-bg-elev)",
-        border: "1px solid var(--le-border)",
-        borderRadius: "var(--le-r-lg)",
-        boxShadow: "var(--le-shadow-md)",
-        padding: "20px 24px",
-      }}
-    >
-      {children}
-    </div>
-  );
+  return <DashboardCard className={className}>{children}</DashboardCard>;
 }
 
 // ── Section eyebrow + header ──────────────────────────────────────────────────
@@ -64,8 +54,7 @@ function SectionLabel({ label, aside }: { label: string; aside?: React.ReactNode
   );
 }
 
-// ── Ghost button ──────────────────────────────────────────────────────────────
-
+// GhostBtn — thin alias that maps local props to DashboardButton variants
 function GhostBtn({
   children,
   onClick,
@@ -81,70 +70,18 @@ function GhostBtn({
   accent?: boolean;
   small?: boolean;
 }) {
-  const base: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 6,
-    padding: small ? "4px 10px" : "6px 14px",
-    fontSize: small ? 11 : 12,
-    fontWeight: 500,
-    fontFamily: "var(--le-font-sans)",
-    cursor: disabled ? "default" : "pointer",
-    border: "1px solid",
-    borderRadius: "var(--le-r-sm)",
-    transition: "all 0.12s ease",
-    opacity: disabled ? 0.5 : 1,
-    background: accent ? "var(--le-accent)" : "var(--le-bg-elev)",
-    color: accent
-      ? "var(--le-accent-fg)"
-      : danger
-      ? "var(--le-danger)"
-      : "var(--le-text)",
-    borderColor: accent
-      ? "var(--le-accent)"
-      : danger
-      ? "var(--le-danger)"
-      : "var(--le-border-strong)",
-  };
+  const variant = accent ? "primary" : danger ? "destructive" : "ghost";
+  const size = small ? "sm" : "md";
   return (
-    <button type="button" style={base} onClick={onClick} disabled={disabled}>
+    <DashboardButton variant={variant} size={size} onClick={onClick} disabled={disabled}>
       {children}
-    </button>
+    </DashboardButton>
   );
 }
 
-// ── Status pill ───────────────────────────────────────────────────────────────
-
+// StatusPill — local alias for the shared SharedStatusPill (tone-based API)
 function StatusPill({ tone, children }: { tone: "success" | "warn" | "danger" | "muted"; children: React.ReactNode }) {
-  const bg =
-    tone === "success" ? "var(--le-success-soft)"
-    : tone === "warn" ? "var(--le-warn-soft)"
-    : tone === "danger" ? "var(--le-danger-soft)"
-    : "var(--le-bg-sunken)";
-  const color =
-    tone === "success" ? "var(--le-success)"
-    : tone === "warn" ? "var(--le-warn)"
-    : tone === "danger" ? "var(--le-danger)"
-    : "var(--le-text-muted)";
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "2px 8px",
-        borderRadius: 999,
-        fontSize: 10,
-        fontWeight: 500,
-        fontFamily: "var(--le-font-mono)",
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        background: bg,
-        color,
-      }}
-    >
-      {children}
-    </span>
-  );
+  return <SharedStatusPill tone={tone}>{children}</SharedStatusPill>;
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
@@ -626,8 +563,21 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
 
 // ── Feedback log ──────────────────────────────────────────────────────────────
 
+const FEEDBACK_FILTER_ITEMS = [
+  { value: "all" as const, label: "all" },
+  { value: "rated" as const, label: "rated" },
+  { value: "tagged" as const, label: "tagged" },
+  { value: "commented" as const, label: "commented" },
+  { value: "refined" as const, label: "refined" },
+];
+
 function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
   const [filter, setFilter] = useState<"all" | "rated" | "tagged" | "commented" | "refined">("all");
+  const [visible, setVisible] = useState(20);
+
+  useEffect(() => {
+    setVisible(20);
+  }, [filter]);
 
   const filtered = rows.filter((r) => {
     if (filter === "rated") return r.rating != null;
@@ -637,35 +587,13 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
     return true;
   });
 
+  const shown = filtered.slice(0, visible);
+
   return (
     <LeCard>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
         <span className="le-eyebrow">Feedback log — last 100 iterations</span>
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["all", "rated", "tagged", "commented", "refined"] as const).map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setFilter(k)}
-              style={{
-                padding: "2px 10px",
-                fontSize: 10,
-                fontFamily: "var(--le-font-mono)",
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-                border: "1px solid",
-                borderRadius: 999,
-                transition: "all 0.12s",
-                background: filter === k ? "var(--le-accent)" : "transparent",
-                color: filter === k ? "var(--le-accent-fg)" : "var(--le-text-muted)",
-                borderColor: filter === k ? "var(--le-accent)" : "var(--le-border-strong)",
-              }}
-            >
-              {k}
-            </button>
-          ))}
-        </div>
+        <ChipTabs items={FEEDBACK_FILTER_ITEMS} value={filter} onChange={setFilter} ariaLabel="Feedback filter" />
       </div>
       {filtered.length === 0 ? (
         <div
@@ -682,7 +610,7 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {filtered.map((r) => (
+          {shown.map((r) => (
             <div
               key={r.iteration_id}
               style={{
@@ -763,6 +691,17 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
               )}
             </div>
           ))}
+          {filtered.length > visible && (
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+              <DashboardButton
+                variant="ghost"
+                size="sm"
+                onClick={() => setVisible((v) => v + 20)}
+              >
+                View {Math.min(20, filtered.length - visible)} more · {filtered.length - visible} remaining
+              </DashboardButton>
+            </div>
+          )}
         </div>
       )}
     </LeCard>
@@ -773,6 +712,8 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
 
 function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // visible is intentionally NOT reset on new events (auto-refresh keeps stable scroll)
+  const [visible, setVisible] = useState(20);
 
   function toggle(id: number) {
     setExpanded((prev) => {
@@ -782,6 +723,8 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
       return next;
     });
   }
+
+  const shown = events.slice(0, visible);
 
   return (
     <LeCard>
@@ -801,7 +744,7 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-          {events.map((e) => {
+          {shown.map((e) => {
             const isOpen = expanded.has(e.id);
             const iterationId = (e.metadata?.iteration_id ?? e.metadata?.session_id ?? null) as string | null;
             return (
@@ -910,6 +853,17 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
               </div>
             );
           })}
+          {events.length > visible && (
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: 8 }}>
+              <DashboardButton
+                variant="ghost"
+                size="sm"
+                onClick={() => setVisible((v) => v + 20)}
+              >
+                View {Math.min(20, events.length - visible)} more · {events.length - visible} remaining
+              </DashboardButton>
+            </div>
+          )}
         </div>
       )}
     </LeCard>
