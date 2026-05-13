@@ -387,10 +387,23 @@ function renderPreviousAttemptsBlock(attempts: Array<{ camera_movement: string; 
   return `\n\n━━━ ALREADY TRIED ON THIS PHOTO — DO NOT REPEAT ━━━\nThe following prompts were already generated for this exact photo in previous iterations. They were NOT rated 5★. You MUST produce a meaningfully different camera_movement + prompt combination. Do not rephrase — pick a different verb or a different compositional target.\n\n${lines.join("\n")}\n━━━ END ALREADY TRIED ━━━`;
 }
 
-export function renderRecipeBlock(recipes: RetrievedRecipe[]): string {
+export function renderRecipeBlock(
+  recipes: RetrievedRecipe[],
+  opts: { maxK?: number } = {},
+): string {
   if (recipes.length === 0) return "";
-  const top = recipes[0];
-  return `\n\n━━━ VALIDATED RECIPE MATCH ━━━\nArchetype "${top.archetype}" (room=${top.room_type}, movement=${top.camera_movement}, model=${top.model_used ?? top.provider ?? "auto"}, applied ${top.times_applied}× before, distance ${top.distance.toFixed(3)}).\n\nRecipe template:\n  ${top.prompt_template}\n\nIf this photo fits the archetype, adapt the template by substituting the actual named feature from this photo's key_features. Keep the verb and structure. Deviate only if a specific key_feature makes the template awkward.\n━━━ END RECIPE MATCH ━━━`;
+  const maxK = opts.maxK ?? 3;
+  const top = recipes.slice(0, maxK);
+  const lines = top.map((r, idx) => {
+    const similarity = Math.round((1 - r.distance) * 100);
+    const model = r.model_used ?? r.provider ?? "auto";
+    return [
+      `  ${idx + 1}. [${similarity}% match · ${r.room_type} · ${r.camera_movement} · ${model} · applied ${r.times_applied}×]`,
+      `     archetype: ${r.archetype}`,
+      `     template:  ${r.prompt_template}`,
+    ].join("\n");
+  });
+  return `\n\n━━━ VALIDATED RECIPE MATCHES ━━━\nThese are ${top.length} prior winning prompt templates whose photo embedded close to this one. Each was rated 4-5★ multiple times. Adapt the template that best matches THIS photo's composition by substituting a named feature from key_features. Prefer the highest-similarity match unless its motion clearly doesn't fit this frame.\n\n${lines.join("\n\n")}\n━━━ END RECIPE MATCHES ━━━`;
 }
 
 // ---- Run director on a single-photo input ----

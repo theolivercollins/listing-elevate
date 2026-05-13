@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-11
+Last updated: 2026-05-13
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,33 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-13: Prompt-collapse fix on `feat/prompt-collapse-fix` (off `origin/dev`) — NOT yet pushed, awaiting Oliver's OK.** Investigation: prod was producing the same motion ("low angle glide") in 4-6 of 12 scenes per listing. Multi-factor root cause; 5 commits land three orthogonal fixes:
+
+1. **DA.3 prompt-rewrite guard** — `lib/prompts/rewrite-on-motion-override.ts`. When the validator overrides `camera_movement`, it now also rewrites `scene.prompt` text via deterministic template-fill so the SKU and prompt agree. Applied at both DA.3 sites (`lib/pipeline.ts` prod + `lib/prompt-lab-listings.ts` listings-lab). 9 vitest cases.
+
+2. **`renderRecipeBlock` top-K bug** — was rendering only `recipes[0]`, silently discarding matches 2 and 3. Now renders top-3 (configurable via `opts.maxK`) with explicit similarity scores (`1 - distance`). 6 vitest cases. `lib/prompt-lab.ts`.
+
+3. **Per-photo retrieval into prod** — `lib/prompts/per-photo-retrieval.ts`. `runScripting` now fetches recipes + exemplars + losers PER PHOTO (scoped to room_type + image_embedding), with recipes compatibility-filtered against `motion_headroom`. Replaces the previous global top-5 PAST GENERATIONS block in `lib/pipeline.ts`. 8 vitest cases for the filter.
+
+**Verification:** tsc clean, vitest 254/255 (1 fail = pre-existing `MarketComparison.test.tsx` flake), doctor clean for this branch.
+
+**Bundled hygiene:** forward-port of `757823a` (vitest pin to ^3) — dev branch had vitest ^4.1.4 which breaks under vite 5 with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Without this, the test suite couldn't run.
+
+**Branch summary:**
+- Spec: [`specs/2026-05-13-prompt-collapse-fix-design.md`](./specs/2026-05-13-prompt-collapse-fix-design.md)
+- Plan: [`plans/2026-05-13-prompt-collapse-fix.md`](./plans/2026-05-13-prompt-collapse-fix.md)
+- Session: [`sessions/2026-05-13-prompt-collapse-fix.md`](./sessions/2026-05-13-prompt-collapse-fix.md)
+- Commits: `97e2dcb` (Task 1.1 spec+plan+rewrite module), `4ea64c1` (vitest pin chore), `47d05e1` (Task 1.2 prod DA.3), `8a78a64` (Task 1.3 listings DA.3), `e3cb02f` (Phase 2a top-K render), `1c2a4d3` (Phase 2b per-photo retrieval helper), `4ad07d5` (Phase 2c wire prod) — actual SHAs may differ; check `git log feat/prompt-collapse-fix --oneline`.
+
+**Operational follow-ups (out of scope for the branch, queue for after merge):**
+- Promote the 6 pending DIRECTOR_SYSTEM patches at `/dashboard/development/proposals` (`c0708a98-…`) — never promoted since 2026-04-28. Spec covers why.
+- Flip `USE_THOMPSON_ROUTER=true` once recipe flow is observed working on staging — adds exploration so the system doesn't lock onto recipe monoculture.
+- Re-run mining after a week of new ratings to surface fresh patches.
+
+**Promotion path:** `feat/prompt-collapse-fix → dev → staging → main` via PR + `git merge --no-ff`. Manual smoke after the first dev render: render one test property, eyeball motion distribution shows variety + verify a DA.3 override case has matching prompt/SKU.
+
+---
 
 **2026-05-11: Blog editor fix + templates + AI generation on `feat/blog-templates-ai`.** Spec at [`specs/2026-05-11-blog-templates-ai-design.md`](./specs/2026-05-11-blog-templates-ai-design.md), plan at [`plans/2026-05-11-blog-templates-ai-plan.md`](./plans/2026-05-11-blog-templates-ai-plan.md).
 
