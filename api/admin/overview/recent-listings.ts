@@ -99,6 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const listings = properties.map((p) => ({
     id: p.id as string,
+    // properties table has no human-friendly order id (order_id lives on iteration
+    // tables per migration 041). Always null here; UI falls back to id.slice(0,8).
+    order_id: null as string | null,
     address: p.address as string,
     customer_id: (p.submitted_by as string | null) ?? null,
     customer_email: emailMap.get((p.submitted_by as string) ?? "") ?? null,
