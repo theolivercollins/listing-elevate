@@ -1,68 +1,50 @@
-import { useState, useEffect, type CSSProperties } from "react";
-import { AlertTriangle, Check, RotateCcw, SkipForward, Loader2, Clock } from "lucide-react";
-import { statusStages, getRelativeTime } from "@/lib/types";
-import type { Property, Scene } from "@/lib/types";
+import { useState, useEffect } from "react";
+import { AlertTriangle, Check, RotateCcw, SkipForward, Loader2, CheckCircle2 } from "lucide-react";
+import type { Scene } from "@/lib/types";
 import { fetchProperties, fetchProperty, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
 import { motion } from "framer-motion";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
-  fontSize: 10,
-  letterSpacing: "0.22em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.45)",
-};
-const PAGE_H1: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: "clamp(28px, 4vw, 44px)",
-  fontWeight: 500,
-  letterSpacing: "-0.035em",
-  lineHeight: 0.98,
-  color: "#fff",
-  margin: 0,
-};
-const SECTION_H3: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: 20,
-  fontWeight: 500,
-  letterSpacing: "-0.025em",
-  color: "#fff",
-  margin: 0,
-};
-const GHOST_BTN: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 12px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "#fff",
-  border: "1px solid rgba(220,230,255,0.18)",
-  borderRadius: 2,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-const GHOST_LIGHT_BTN: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 12px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "rgba(255,255,255,0.62)",
-  border: "none",
-  borderRadius: 2,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
+// ---------------------------------------------------------------------------
+// Button style helpers
+// ---------------------------------------------------------------------------
+const BASE_BTN: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "5px 11px",
+  fontSize: 11,
+  fontWeight: 500,
+  border: "1px solid var(--le-border)",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-mono)",
+  letterSpacing: "0.06em",
+  background: "var(--le-bg-elev)",
+  color: "var(--le-text)",
+  whiteSpace: "nowrap" as const,
+};
+
+const APPROVE_BTN: React.CSSProperties = {
+  ...BASE_BTN,
+  background: "var(--le-accent)",
+  color: "var(--le-accent-fg)",
+  border: "1px solid var(--le-accent)",
+};
+
+const SKIP_BTN: React.CSSProperties = {
+  ...BASE_BTN,
+  color: "var(--le-danger)",
+  border: "1px solid var(--le-danger)",
+  background: "var(--le-danger-soft, rgba(239,68,68,0.08))",
+};
+
+// ---------------------------------------------------------------------------
+// Page component
+// ---------------------------------------------------------------------------
 const Pipeline = () => {
-  const [propertiesByStatus, setPropertiesByStatus] = useState<Record<string, Property[]>>({});
   const [reviewScenes, setReviewScenes] = useState<(Scene & { propertyAddress?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,15 +54,6 @@ const Pipeline = () => {
     let cancelled = false;
     const load = async () => {
       try {
-        const stagePromises = statusStages.map((stage) => fetchProperties({ status: stage.key, limit: 50 }));
-        const stageResults = await Promise.all(stagePromises);
-        if (cancelled) return;
-        const byStatus: Record<string, Property[]> = {};
-        statusStages.forEach((stage, i) => {
-          byStatus[stage.key] = stageResults[i].properties;
-        });
-        setPropertiesByStatus(byStatus);
-
         const reviewRes = await fetchProperties({ status: "needs_review", limit: 20 });
         if (cancelled) return;
         const scenesWithAddress: (Scene & { propertyAddress?: string })[] = [];
@@ -123,126 +96,172 @@ const Pipeline = () => {
     }
   };
 
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--le-text-muted)" }} />
       </div>
     );
   }
 
+  // ── Error ────────────────────────────────────────────────────────────────
   if (error) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
+      <div
+        className="rounded-[14px] border p-10"
+        style={{
+          background: "var(--le-bg-elev)",
+          borderColor: "var(--le-border)",
+          boxShadow: "var(--le-shadow-md)",
+        }}
+      >
         <div className="flex items-start gap-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full"
+            style={{ background: "var(--le-danger-soft, rgba(239,68,68,0.08))", color: "var(--le-danger)" }}
+          >
+            <AlertTriangle className="h-4 w-4" strokeWidth={1.5} />
           </div>
           <div>
-            <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>— Error</span>
-            <p className="mt-3 text-sm text-muted-foreground">{error}</p>
+            <div className="le-eyebrow" style={{ color: "var(--le-danger)" }}>Error</div>
+            <p className="mt-2 text-sm" style={{ color: "var(--le-text-muted)" }}>{error}</p>
           </div>
         </div>
       </div>
     );
   }
 
+  // ── Page ─────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-20">
-      {/* Stage columns */}
-      <section>
-        <span style={EYEBROW}>— Pipeline</span>
-        <h2 className="mt-3" style={PAGE_H1}>By stage.</h2>
+    <div className="flex flex-col gap-6">
+      {/* Page header */}
+      <div>
+        <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Orders</div>
+        <h2
+          className="le-display mt-1 text-[28px] font-medium tracking-tight"
+          style={{ color: "var(--le-text)" }}
+        >
+          Pipeline
+        </h2>
+        <p className="mt-1.5 text-sm" style={{ color: "var(--le-text-muted)", maxWidth: 560 }}>
+          Failing scenes requiring manual review. Approve to deliver as-is, resubmit with a new prompt, try a different provider, or skip.
+        </p>
+      </div>
 
-        <div className="mt-12 grid gap-px bg-border md:grid-cols-3 xl:grid-cols-6">
-          {statusStages.map((stage, idx) => {
-            const props = propertiesByStatus[stage.key] || [];
-            return (
-              <div key={stage.key} className="flex min-h-[260px] flex-col bg-background p-5">
-                <div className="mb-5 flex items-center justify-between">
-                  <span style={{ ...EYEBROW, color: "#fff" }}>
-                    <span style={{ color: "rgba(255,255,255,0.45)" }}>0{idx + 1}</span> {stage.label}
-                  </span>
-                  <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>{props.length}</span>
-                </div>
-                <div className="flex-1 space-y-2">
-                  {props.length === 0 ? (
-                    <div className="border border-dashed border-border py-6 text-center">
-                      <p className="text-[11px] text-muted-foreground/60">Empty</p>
-                    </div>
-                  ) : (
-                    props.map((p, i) => (
-                      <motion.div
-                        key={p.id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: i * 0.03, ease: EASE }}
-                        className="group cursor-pointer border border-border bg-secondary/30 p-3 transition-colors duration-500 hover:border-foreground/40 hover:bg-secondary"
-                      >
-                        <p className="truncate text-xs font-semibold tracking-[-0.005em]">{p.address}</p>
-                        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {getRelativeTime(p.created_at)}
-                        </div>
-                        {stage.key === "generating" && p.selected_photo_count > 0 && (
-                          <p className="tabular mt-2 text-[10px] text-accent">
-                            {Math.floor(p.selected_photo_count * 0.4)} / {p.selected_photo_count} clips
-                          </p>
-                        )}
-                      </motion.div>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Needs review */}
-      <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <span style={EYEBROW}>— Manual review</span>
-            <h3 className="mt-3" style={SECTION_H3}>
-              {reviewScenes.length === 0 ? "All clear" : `${reviewScenes.length} scenes need a decision`}
-            </h3>
-          </div>
+      {/* Review queue card */}
+      <div
+        className="rounded-[14px] border"
+        style={{
+          background: "var(--le-bg-elev)",
+          borderColor: "var(--le-border)",
+          boxShadow: "var(--le-shadow-md)",
+        }}
+      >
+        {/* Card header */}
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: "1px solid var(--le-border)" }}
+        >
+          <div className="le-eyebrow" style={{ color: "var(--le-text-muted)" }}>Manual review</div>
+          {reviewScenes.length > 0 && (
+            <span
+              className="le-mono rounded-full px-2.5 py-0.5 text-[10px] font-semibold"
+              style={{
+                background: "var(--le-warn-soft, rgba(245,158,11,0.1))",
+                color: "var(--le-warn, rgb(245,158,11))",
+              }}
+            >
+              {reviewScenes.length}
+            </span>
+          )}
         </div>
 
+        {/* Empty state */}
         {reviewScenes.length === 0 ? (
-          <div className="mt-10 border border-dashed border-border bg-secondary/30 py-16 text-center text-sm text-muted-foreground">
-            Every clip passed automated QC.
+          <div className="flex flex-col items-center gap-3 py-20">
+            <CheckCircle2
+              className="h-10 w-10"
+              strokeWidth={1.25}
+              style={{ color: "var(--le-success, rgb(34,197,94))" }}
+            />
+            <p className="text-sm font-medium" style={{ color: "var(--le-text-muted)" }}>
+              No scenes need review. Pipeline is clean.
+            </p>
           </div>
         ) : (
-          <div className="mt-10 grid gap-px bg-border">
+          /* Scene rows */
+          <div>
             {reviewScenes.map((scene, i) => (
               <motion.div
                 key={scene.id}
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.04, ease: EASE }}
-                className="grid gap-6 bg-background p-6 md:grid-cols-[200px_1fr_auto]"
+                transition={{ duration: 0.45, delay: i * 0.04, ease: EASE }}
+                className="flex items-start gap-5 px-6 py-5"
+                style={{
+                  borderBottom: i < reviewScenes.length - 1 ? "1px solid var(--le-border)" : undefined,
+                  opacity: actionLoading[scene.id] ? 0.5 : 1,
+                  transition: "opacity 0.2s",
+                }}
               >
-                <div className="flex aspect-video items-center justify-center border border-border bg-secondary text-[10px] text-muted-foreground">
-                  Clip preview
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-xs font-semibold" style={{ fontFamily: "var(--le-font-mono)", color: "#fff" }}>Scene {scene.scene_number}</span>
-                    <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>{scene.status.replace(/_/g, " ")}</span>
-                    <span className="text-[11px]" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
-                      Confidence {(scene.qc_confidence * 100).toFixed(0)}%
+                {/* Thumbnail placeholder */}
+                <div
+                  className="h-8 w-8 shrink-0 rounded overflow-hidden"
+                  style={{ background: "var(--le-bg-sunken, rgba(255,255,255,0.04))", flexShrink: 0 }}
+                />
+
+                {/* Scene info */}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span
+                      className="le-mono text-xs font-semibold"
+                      style={{ color: "var(--le-text)" }}
+                    >
+                      Scene {scene.scene_number}
                     </span>
+                    <span
+                      className="le-mono rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                      style={{
+                        background: "var(--le-danger-soft, rgba(239,68,68,0.08))",
+                        color: "var(--le-danger)",
+                      }}
+                    >
+                      {scene.status.replace(/_/g, " ")}
+                    </span>
+                    {scene.qc_confidence != null && (
+                      <span
+                        className="le-mono text-[10px]"
+                        style={{ color: "var(--le-text-muted)" }}
+                      >
+                        {(scene.qc_confidence * 100).toFixed(0)}% confidence
+                      </span>
+                    )}
                   </div>
+
                   {scene.propertyAddress && (
-                    <p className="mt-1 text-xs text-muted-foreground">{scene.propertyAddress}</p>
+                    <p className="mt-0.5 truncate text-xs" style={{ color: "var(--le-text-muted)" }}>
+                      {scene.propertyAddress}
+                    </p>
                   )}
-                  <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{scene.prompt}</p>
+
+                  {scene.prompt && (
+                    <p
+                      className="mt-2 line-clamp-2 text-xs leading-relaxed"
+                      style={{ color: "var(--le-text-muted)" }}
+                    >
+                      {scene.prompt}
+                    </p>
+                  )}
+
                   {scene.qc_issues?.issues && (
-                    <ul className="mt-3 space-y-1.5">
+                    <ul className="mt-2 space-y-1">
                       {scene.qc_issues.issues.slice(0, 3).map((issue: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-2 text-[11px] text-destructive">
+                        <li
+                          key={idx}
+                          className="flex items-start gap-1.5 text-[11px]"
+                          style={{ color: "var(--le-danger)" }}
+                        >
                           <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={1.5} />
                           {issue}
                         </li>
@@ -250,27 +269,33 @@ const Pipeline = () => {
                     </ul>
                   )}
                 </div>
-                <div className="flex flex-row gap-2 md:flex-col">
+
+                {/* Action buttons */}
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
+                    style={APPROVE_BTN}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await approveScene(scene.id); })}
                   >
-                    <Check className="h-3.5 w-3.5" /> Approve
+                    <Check className="h-3.5 w-3.5" strokeWidth={2} />
+                    Approve
                   </button>
+
                   <button
                     type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
+                    style={BASE_BTN}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await resubmitScene(scene.id); })}
                     title="Resubmit with current prompt. Auto-fails over to another provider on permanent errors."
                   >
-                    <RotateCcw className="h-3.5 w-3.5" /> Resubmit
+                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
+                    Resubmit
                   </button>
+
                   <button
                     type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
+                    style={BASE_BTN}
                     disabled={actionLoading[scene.id]}
                     onClick={() =>
                       wrap(scene.id, async () => {
@@ -280,12 +305,13 @@ const Pipeline = () => {
                     }
                     title="Retry on the other provider (force failover)."
                   >
-                    <RotateCcw className="h-3.5 w-3.5" />
+                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
                     {scene.provider === "kling" ? "Try Runway" : "Try Kling"}
                   </button>
+
                   <button
                     type="button"
-                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
+                    style={BASE_BTN}
                     disabled={actionLoading[scene.id]}
                     onClick={async () => {
                       const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
@@ -294,22 +320,25 @@ const Pipeline = () => {
                     }}
                     title="Edit the prompt and resubmit."
                   >
-                    <RotateCcw className="h-3.5 w-3.5" /> Edit prompt
+                    <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
+                    Edit prompt
                   </button>
+
                   <button
                     type="button"
-                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
+                    style={SKIP_BTN}
                     disabled={actionLoading[scene.id]}
                     onClick={() => wrap(scene.id, async () => { await skipScene(scene.id); })}
                   >
-                    <SkipForward className="h-3.5 w-3.5" /> Skip
+                    <SkipForward className="h-3.5 w-3.5" strokeWidth={2} />
+                    Skip
                   </button>
                 </div>
               </motion.div>
             ))}
           </div>
         )}
-      </section>
+      </div>
     </div>
   );
 };
