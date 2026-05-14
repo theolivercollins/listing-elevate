@@ -1,6 +1,6 @@
 // lib/blog-engine/jobs/handlers/fetch-taxonomy.ts
 import type { JobHandler } from '../runner.js';
-import { createSierraPublisher } from '../../publishers/sierra.js';
+import { createSierraPublisher } from '../../publishers/sierra/index.js';
 import { getOrCreatePersistentContextId } from '../../browserbase.js';
 import { resolveSiteOpts } from './_site-opts.js';
 
