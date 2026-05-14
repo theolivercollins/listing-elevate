@@ -1083,22 +1083,48 @@ export async function runAssembly(propertyId: string): Promise<void> {
           "No active music track in library — rendering silent video");
       }
 
-      // Resolve which Creatomate template (if any) should drive this render.
-      // Priority: property.template_id override > CREATOMATE_TEMPLATE_ID_<PKG>
-      // env var > CREATOMATE_TEMPLATE_ID_DEFAULT > null (fall back to the
-      // code-generated RenderScript path).
-      const templateId = providerName === "creatomate"
+      // Resolve which Creatomate template(s) should drive this render.
+      // We look up horizontal and vertical separately because each aspect
+      // ratio needs its own template (Creatomate ignores width/height when
+      // rendering from a template). When no vertical template exists, the
+      // pipeline skips the 9:16 render entirely rather than producing a
+      // wrong-aspect file. Priority chain: see lib/assembly/template-resolver.
+      const overrideTemplateId =
+        (property as { template_id?: string | null }).template_id ?? null;
+      const horizontalTemplateId = providerName === "creatomate"
         ? resolveTemplateId({
-            propertyTemplateId: (property as { template_id?: string | null }).template_id ?? null,
+            propertyTemplateId: overrideTemplateId,
             selectedPackage: property.selected_package,
+            selectedDuration: property.selected_duration ?? null,
+            aspectRatio: "16:9",
+          })
+        : null;
+      const verticalTemplateId = providerName === "creatomate"
+        ? resolveTemplateId({
+            propertyTemplateId: overrideTemplateId,
+            selectedPackage: property.selected_package,
+            selectedDuration: property.selected_duration ?? null,
+            aspectRatio: "9:16",
           })
         : null;
 
-      if (templateId) {
+      if (horizontalTemplateId) {
         await log(propertyId, "assembly", "info",
-          `Using Creatomate template ${templateId}`,
-          { templateId, selected_package: property.selected_package });
+          `Using Creatomate template ${horizontalTemplateId} (16:9)`,
+          { templateId: horizontalTemplateId, aspect: "16:9", selected_package: property.selected_package });
       }
+      if (verticalTemplateId) {
+        await log(propertyId, "assembly", "info",
+          `Using Creatomate template ${verticalTemplateId} (9:16)`,
+          { templateId: verticalTemplateId, aspect: "9:16", selected_package: property.selected_package });
+      } else if (horizontalTemplateId) {
+        await log(propertyId, "assembly", "info",
+          "No vertical Creatomate template configured — skipping 9:16 render",
+          { selected_package: property.selected_package });
+      }
+
+      // Template-path flag: any template render uses the modifications dict.
+      const templateId = horizontalTemplateId;
 
       await log(propertyId, "assembly", "info",
         `Submitting ${providerName} render (${clipInputs.length} clips)`,
@@ -1108,14 +1134,18 @@ export async function runAssembly(propertyId: string): Promise<void> {
       // Common modifications shared across 16:9 + 9:16 renders. Template
       // ignores any keys for placeholders it doesn't have, so we always send
       // the full set (text + clips + logo + music).
+      // Just Listed #01 (2026-05-14 rev) has 8 clip slots. Cap inputs so
+      // we never silently drop modifications for slots that don't exist.
+      // The duration-fit pass usually already keeps us at ≤8; this is
+      // defense-in-depth.
+      const templateClipInputs = clipInputs.slice(0, 8);
       const templateMods = templateId
         ? buildTemplateModifications({
             address: property.address,
             selectedPackage: property.selected_package,
             agentName: property.listing_agent,
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
-            clips: clipInputs,
-            logoUrl: branding.logoUrl,
+            clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
           })
         : null;
@@ -1125,11 +1155,9 @@ export async function runAssembly(propertyId: string): Promise<void> {
       // Render both aspect ratios sequentially. Each render typically takes
       // 30–90s. Kept sequential to stay under the 300s function budget.
       // Template path uses assembleFromTemplate; code-generated path uses assemble().
-      const horizontalJob = templateId && templateMods && provider.name === "creatomate"
-        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+      const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
             modifications: templateMods,
-            width: 1920,
-            height: 1080,
             renderScale: 1,
           })
         : await provider.assemble({
@@ -1168,44 +1196,52 @@ export async function runAssembly(propertyId: string): Promise<void> {
       });
 
       // Vertical render — same template-vs-codegen branch as horizontal.
-      // For template renders we swap width/height to force a 1080×1920 frame.
-      const verticalJob = templateId && templateMods && provider.name === "creatomate"
-        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
-            modifications: templateMods,
-            width: 1080,
-            height: 1920,
-            renderScale: 1,
-          })
-        : await provider.assemble({
-            ...assembleParams,
-            aspectRatio: "9:16",
-          });
-      await log(propertyId, "assembly", "info",
-        `${providerName} vertical job queued: ${verticalJob.jobId}`);
-      const verticalResult = await pollAssemblyJob(provider, verticalJob);
-      if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
-        throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
-      }
-      verticalUrl = verticalResult.videoUrl;
+      // When the template path is active but no vertical template is
+      // configured (current state: we aren't offering vertical yet), skip
+      // the 9:16 render entirely. The DB column `vertical_video_url` will
+      // stay null and the UI's `&&` guard handles that gracefully.
+      const skipVertical =
+        horizontalTemplateId !== null &&
+        verticalTemplateId === null &&
+        provider.name === "creatomate";
 
-      const verticalDuration =
-        verticalResult.durationSeconds ?? timelineDurationSeconds;
-      const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
-      await recordCostEvent({
-        propertyId,
-        stage: "assembly",
-        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
-        unitsConsumed: 1,
-        unitType: "renders",
-        costCents: verticalCents,
-        metadata: {
-          aspect_ratio: "9:16",
-          clip_count: clipInputs.length,
-          output_duration_seconds: verticalDuration,
-          render_time_ms: verticalResult.renderTimeMs ?? null,
-          job_id: verticalJob.jobId,
-        },
-      });
+      if (!skipVertical) {
+        const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
+          ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
+              modifications: templateMods,
+              renderScale: 1,
+            })
+          : await provider.assemble({
+              ...assembleParams,
+              aspectRatio: "9:16",
+            });
+        await log(propertyId, "assembly", "info",
+          `${providerName} vertical job queued: ${verticalJob.jobId}`);
+        const verticalResult = await pollAssemblyJob(provider, verticalJob);
+        if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
+          throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
+        }
+        verticalUrl = verticalResult.videoUrl;
+
+        const verticalDuration =
+          verticalResult.durationSeconds ?? timelineDurationSeconds;
+        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
+        await recordCostEvent({
+          propertyId,
+          stage: "assembly",
+          provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
+          unitsConsumed: 1,
+          unitType: "renders",
+          costCents: verticalCents,
+          metadata: {
+            aspect_ratio: "9:16",
+            clip_count: clipInputs.length,
+            output_duration_seconds: verticalDuration,
+            render_time_ms: verticalResult.renderTimeMs ?? null,
+            job_id: verticalJob.jobId,
+          },
+        });
+      }
 
       // Persist the assembly timeline JSON for future revision editing.
       // We store the horizontal timeline since it's the primary deliverable.

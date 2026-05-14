@@ -1,10 +1,10 @@
 // lib/blog-engine/publishers/sierra/edit.ts
 import type { Page } from "playwright-core";
-import type { BlogPost } from "../../types";
-import type { EditResult } from "../types";
-import { SIERRA_SELECTORS } from "./selectors";
-import { ensureSignedIn, type SierraCreds } from "./auth";
-import { inputByLabelText, selectByLabelText } from "./dom-helpers";
+import type { BlogPost } from "../../types.js";
+import type { EditResult } from "../types.js";
+import { SIERRA_SELECTORS } from "./selectors.js";
+import { ensureSignedIn, type SierraCreds } from "./auth.js";
+import { inputByLabelText, selectByLabelText } from "./dom-helpers.js";
 
 export type EditableField =
   | "title" | "body_html"
@@ -37,8 +37,15 @@ export async function sierraEdit(
   }
   if (fieldsChanged.has("body_html")) {
     // TinyMCE: set content via API rather than poking the underlying textarea.
+    // See publish.ts for the TinyMCE-8 accessor explanation — `tinymce.editors`
+    // is no longer populated; use `tinymce.get(0)` / `tinymce.activeEditor`.
     await page.waitForFunction(
-      () => typeof (window as any).tinymce !== "undefined" && (window as any).tinymce.editors?.length > 0,
+      () => {
+        const tm = (window as any).tinymce;
+        if (!tm) return false;
+        const ed = (typeof tm.get === "function" ? tm.get(0) : null) ?? tm.activeEditor;
+        return !!ed && ed.initialized === true;
+      },
       { timeout: 30_000 },
     );
     await page.evaluate((html: string) => {

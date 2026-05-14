@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (order-form persistence merged + Creatomate buildout + Shotstack parallel)
+Last updated: 2026-05-14 (Creatomate Just Listed #01 rev-2: 1080p/30fps template + per-duration env scheme + vertical-aware resolver)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,66 +14,117 @@ See also:
 
 ## Right now
 
-**2026-05-13 (later, second push): Phase 2–6 assembly upgrades + Creatomate template-mode on `feat/creatomate-buildout` (PR #38).** Six new modules + 2 migrations + template-driven rendering. Pipeline can now produce a real assembled video; runtime quality blocked only by Creatomate plan upgrade.
+**2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
 
-**What composes inside `runAssembly` now:**
-- **Phase 2** `lib/assembly/scene-ordering.ts` (11 tests) — deterministic walkthrough order (aerial → exterior_front → foyer → living → dining → kitchen → master_bed → bedroom → bathroom → … → exterior_back → uncategorized). Within a slot, director scene_number ascending.
-- **Phase 3** `lib/assembly/duration-fit.ts` (10 tests) — reads `properties.selected_duration` (15/30/60). Allocates `target / N` per clip floored at 2.5s. If too tight, drops scenes by highlight tier (T1 always-keep: aerial/exterior_front/living/kitchen/master/exterior_back; T2: dining/bedroom/bathroom/pool/deck; T3 filler; T4 uncategorized). Walkthrough order preserved within survivors.
-- **Phase 4** `lib/assembly/branding.ts` — pulls `user_profiles.brokerage / logo_url / colors` via `properties.submitted_by`. Falls back to `properties.brokerage` text + emerald defaults. Logo becomes top-right corner watermark; primary color tints the closing accent bar.
-- **Phase 5** `lib/assembly/music.ts` (6 tests) — operator-pinned wins, else auto-pick by package mood (just_listed → upbeat, just_pended → cinematic, just_closed → celebratory, life_cycle → warm). Library populated by migration 055.
-- **Phase 6 / Template-mode** `lib/assembly/template-modifications.ts` (13 tests) + `lib/assembly/template-resolver.ts` (8 tests). Resolution priority: `properties.template_id` override > `CREATOMATE_TEMPLATE_ID_<PKG>` env > `_DEFAULT` env > null (falls back to code-generated `buildCreatomateTimeline`). Modifications mapper splits address on last comma, maps package → "Just Listed"/"Just Pended"/"Just Closed", writes optional Clip1.source/Clip2.source/LogoImage.source/MusicTrack.source slots when present in `AssembleVideoParams`.
-- **CreatomateProvider extensions:** `assembleFromTemplate(templateId, { modifications, width, height, renderScale })`, `getTemplate(id)` for placeholder introspection. Endpoint bumped to `/v2/renders` (template + source). `/v1/templates/:id` retained for metadata fetches.
+**Diagnosis (the actual user-facing problem before the fix):** every Creatomate template render was coming out 1280×720 at 24fps with no text overlays. Three root causes, all empirically verified with three live `/v2/renders` API calls:
 
-**Migrations applied to prod via MCP:**
-- **055** `music_tracks` table + 5 seed rows (SoundHelix placeholders — REPLACE before launch) + `properties.music_track_id` FK.
-- **056** `properties.template_id text` — per-property template override.
+1. **`width`/`height` in the request body are silently ignored for template renders.** Output dimensions come from the template canvas; `render_scale` is the only knob. Provider's `assembleFromTemplate` was passing `width: 1920, height: 1080` thinking it would force HD — Creatomate just used the template's 1280×720 canvas. Same root cause produced wrong-aspect "vertical" renders (the 9:16 path swapped `width: 1080, height: 1920` → got 16:9 anyway).
+2. **All template placeholder names had been renamed in the editor.** Old mapper wrote `St#/StName.text`, `Vid-Category/Title.text`, etc.; rev-2 template's elements are `St#/StName-Intro`, `Vid-Category-Intro`, `Listing-Agent-Mid` + `-Final`, `Listing-Brokerage-Mid` + `-Final`, `Full-Address-Final`, `Audio-Music`. Creatomate silently drops modification keys for placeholders it doesn't have, so every text field rendered as the template's default ("123 Waymay Dr", "Brian Helgemo", etc.). Discovered via `GET /v1/templates/:id` inspection.
+3. **Template was designed for one duration (15s) but the resolver had no concept of duration.** A 30s or 60s order would have rendered against the 15s template anyway — wrong-length video.
 
-**Mid-smoke bugs found + fixed:**
-- `lib/pipeline.ts` `processing_time_ms` int4 overflow on weeks-old properties — now reads `pipeline_started_at` first, clamps to `2^31-1`.
-- `lib/providers/assembly-router.ts` `require()` style imports broke ESM/tsx runtime — converted to static imports.
-- `lib/providers/creatomate.ts` source-mode rendered as JPG thumbnail under `/v2/renders` — now mirrors `output_format` + `width` + `height` + `frame_rate` + `render_scale` to the top level of the request alongside `source`.
+**Fix shipped (7 files, +364/-156 across `lib/assembly/` + `lib/providers/creatomate.ts` + `lib/pipeline.ts` + `.env.example`):**
 
-**KNOWN OPEN: Creatomate plan/account scale cap.** Under `/v2/renders`, the account default `render_scale` is `0.25` (locked by free/starter tier). Setting `render_scale: 1` in the request body is silently ignored — Creatomate uses the account default. Two effects:
-- All source-mode renders come back at 480×270 (not 1080p).
-- v2 source-mode at scale 0.25 truncates output to **5 seconds** (draft preview mode). v1 source-mode doesn't truncate (full duration at low res) — but project chose to stay on v2.
-- Templates use their own configured scale (Just Listed #01 = 0.375) so template renders are full duration but still 480×270.
+- `lib/assembly/template-modifications.ts` — rewritten for rev-2 slot names. Writes `St#/StName-Intro.text`, `City/State-Intro.text`, `Vid-Category-Intro.text`, `Listing-Agent-Mid.text` + `-Final.text`, `Listing-Brokerage-Mid.text` + `-Final.text`, `Full-Address-Final.text`, `Audio-Music.source`, optional `Agent-Headshot-Final.source` (skipped until `user_profiles.headshot_url` exists), `Clip-1.source` … `Clip-8.source`. 14 vitest cases.
+- `lib/assembly/template-resolver.ts` — adds `selectedDuration` + `aspectRatio` to context. Resolution priority: per-order `template_id` override → `CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]` → legacy `CREATOMATE_TEMPLATE_ID_<PKG>` (only when duration is null AND aspect is 16:9) → `CREATOMATE_TEMPLATE_ID_DEFAULT` (same caveat) → null. **Safety rule:** when `selectedDuration` is set but no matching `_<DURATION>` template exists, returns null — pipeline falls back to code-gen instead of shipping a wrong-length template render. **Vertical safety:** 9:16 never falls back to legacy un-suffixed vars; without a `_VERTICAL` template, the pipeline skips the 9:16 render entirely (half the Creatomate credits per order until vertical templates exist). 14 vitest cases.
+- `lib/pipeline.ts:1090-1110` — resolves horizontal + vertical template IDs separately. Caps `clipInputs.slice(0, 8)` before building modifications (defense-in-depth; duration-fit usually keeps us at ≤8 anyway). Wraps vertical render in `if (!skipVertical)` guard — `vertical_video_url` stays null when no vertical template, UI's existing `&&` handles it.
+- `lib/providers/creatomate.ts` — dropped the dead `width`/`height` fields on `TemplateRenderOptions`. `renderScale` is the only knob now; doc comment explains why.
+- `.env.example` — documents `_15`/`_30`/`_60` suffix scheme + `_VERTICAL` suffix + the "no vertical fallback" rule.
 
-**Action to unblock production quality:** upgrade Creatomate plan or set account-default `render_scale` to `1.0` in the Creatomate dashboard. No code change needed — request body already sends `render_scale: 1`.
+**Vercel env changes:** added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15=2f634180-1e85-4f11-b500-2bb57b277581` to prod/preview/dev. Removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED` after main deploy landed. `_JUST_LISTED_30` + `_JUST_LISTED_60` slots created (empty) — fill when those templates exist.
 
-**Smoke artifacts (low-res draft due to plan cap above):**
-- Real-property smoke `scripts/test-real-property.ts` — fetches 7 real Kling clips from prop `6f508e16`, runs Phase 2 + Phase 3, renders 15s + 30s tiers via code-generated source-mode.
-- Template-mode smoke `scripts/test-creatomate-template.ts` — exercises `assembleFromTemplate` against Just Listed #01 (template `2f634180-1e85-4f11-b500-2bb57b277581`). Renders the intro card.
-- End-to-end smoke `scripts/smoke-runassembly.ts` — invokes `runAssembly` against the prop directly; flips status `qc → assembling → complete`, persists `assembly_timeline`, writes cost_events with `provider='creatomate'`.
+**Verification:**
+- 119/119 vitest, `tsc --noEmit` clean.
+- Three live `/v2/renders` smokes against the template through three iterations: first run came back 1280×720 / 24fps with no overlays (broken state); second after Oliver's template edits came back 1920×1080 / 24fps; third after fps fix + code rewrite came back **1920×1080 / 15s / 30fps with all overlays present**: <https://f002.backblazeb2.com/file/creatomate-c8xg3hsxdu/b068ba28-a82f-4c30-a2eb-289391d711f7.mp4>
+- End-to-end TS smoke `scripts/smoke-rev2-template.ts` exercises resolver → mapper → provider with the rev-2 env scheme; vertical correctly returns null + is skipped.
 
-**Test count:** 48 vitest cases across `lib/assembly/*.test.ts`. tsc + eslint clean on all touched files.
-
-**Oliver action items before merging PR #38:**
-1. Upgrade Creatomate plan (or change account default `render_scale` → 1.0) — otherwise all production deliveries are 5-second draft thumbnails.
-2. Set `CREATOMATE_API_KEY` in Vercel (all 3 envs).
-3. Optional per-package `CREATOMATE_TEMPLATE_ID_*` env vars when more templates ship from Creatomate dashboard.
-4. Just Listed #01 template has NO clip slots — modifications mapper sends them but template ignores. Add `Clip1.source` … `ClipN.source` placeholders in the Creatomate editor to surface property footage through the template path. The mapper is ready.
-5. Replace `music_tracks` seed rows (SoundHelix placeholders) with real royalty-free MP3s in Supabase Storage.
+**Open follow-ups:**
+- Build `CREATOMATE_TEMPLATE_ID_JUST_LISTED_30` + `_60` templates (Creatomate editor) and fill the corresponding Vercel env vars. Until then, 30s/60s orders fall through to the code-gen path.
+- Vertical (9:16) templates remain unbuilt. Per Oliver: not offering vertical yet. When that changes, design a 1080×1920 sister template and set `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15_VERTICAL`.
+- `Agent-Headshot-Final.source` is wired in the mapper but never sent because `user_profiles` has no `headshot_url` column. Template's default headshot plays. Add the column + UI when ready.
+- `just_pended` / `just_closed` / `life_cycle` templates: none configured; those orders fall back to code-gen.
 
 ---
 
-**2026-05-13 (later, first push): Bundled launch-prep PRs in flight.** Three independent fixes wired together to close the "orders don't actually deliver a video" gap. None pushed yet beyond PR #37.
+**2026-05-13 PM: Blog "Publish now" path unbroken end-to-end — PR #39 + follow-up landed, prod env vars set, deploy promoted.** The button has been silently failing since the blog engine shipped (Phase 1, 2026-05-07). User clicks → API enqueues a `blog_jobs` row → per-minute cron `/api/cron/poll-blog-jobs` returns `500 FUNCTION_INVOCATION_FAILED` → job sits `queued` forever. One real example was stuck 22h: post `0f68207f-…` "Charlotte County Housing Market Update – May 2026 B", job `8f6500b9-…`.
 
-1. **`feat/order-form-persistence`** (PR #37 → `dev`) — migration 054 + 5 plumbing touchpoints. Form's 9 order-specific fields (package, duration, voiceover toggles, etc.) now persist to `properties`. Pipeline already reads `selected_duration`; 15s/30s tiers were silently rendering at 60s. Verified in prod Supabase via MCP.
+Four stacked failures, each a separate fix:
 
-2. **`feat/creatomate-buildout`** (local, off `dev`; bundles dead-code fix + Creatomate provider) — three orthogonal changes:
-   - **Cron-assembly wire.** `runAssembly` at `lib/pipeline.ts:950` had been unreachable since the inline-assembly removal (sat after early `return;` in `runPipeline`); cron at `poll-scenes.ts:225` marked properties `complete` without ever calling it. Now exported + invoked from the cron's finalize block. `'assembling'` added to terminal-status skip list so adjacent cron ticks don't race.
-   - **Creatomate provider.** `lib/providers/creatomate.ts` (396 lines) + `lib/providers/assembly-router.ts` (`selectAssemblyProvider`: Creatomate > Shotstack > throw). `IVideoAssemblyProvider.name` union widened to `"shotstack" | "creatomate"`. `recordCostEvent` provider union widened. `assembly_timeline` JSON persisted on properties for the future revision engine.
-   - **Migration 053** (applied to prod via MCP) — adds `assembly_timeline`/`assembly_timeline_version`/`assembly_provider` cols + `video_revisions` table + widens `cost_events_provider_check` to include `'creatomate'`. **Fixed before apply:** original migration dropped the constraint but never re-added it — would have left `cost_events` with no provider validation.
+1. **Cron crashed on cold-start with `ERR_MODULE_NOT_FOUND` — the actual immediate cause.** `lib/blog-engine/jobs/handlers/index.ts` and 11 peers imported with bare specifiers (`from "./fetch-taxonomy"`). The rest of the repo uses explicit `.js` suffixes because Vercel's `@vercel/node` ESM bundler preserves the literal import path and Node ESM resolver in `/var/task` requires the extension. The bundled cron exited status 1 on every invocation; the HTTP response gave no detail — only `vercel logs <prod-url>` exposed it. Fixed across 12 files (50 import sites) under `lib/blog-engine/jobs/handlers/` + `lib/blog-engine/publishers/sierra/`. Local vitest + tsx passed because both resolve extensionless TS imports — only Vercel's runtime is strict. PR #43 ships this. PR #39 (lazy Browserbase + cron auth + TinyMCE 8) merged earlier today but did not on its own flip the endpoint to 200 because this resolver crash fires first.
 
-**Required env (Oliver action):** `CREATOMATE_API_KEY` is **not set in any Vercel env**. Without it the router falls through to Shotstack (also unset), then throws inside `runAssembly`, which now is caught by the cron try/catch and flips the property to `failed`. Set the key in all 3 envs (dev/staging/production) before merging.
+2. **Browserbase SDK was instantiated at module load** (PR #39). `lib/blog-engine/browserbase.ts` had `const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! })` at module top with `BROWSERBASE_API_KEY` absent in prod — a latent bomb that would have surfaced next once the `.js`-extension fix unblocked the import. Wrapped in a lazy getter. **Anti-pattern lesson:** any new module that does `const x = new SomeSdk({ apiKey: process.env.FOO! })` at module top-level is a cold-start crash waiting to happen on Vercel.
 
-**Migration drift caveat (still standing):** local migrations 050/051/052 (blog phase 5 + templates + AI) remain unapplied. Remote has `portal_deliverables`/`portal_orders_checkout_session`/`050_portal_pay_on_approval`/`portal_orders_order_number_v2` with no migration files in the repo. Worth a dedicated audit before the next big push.
+3. **Cron auth used a never-set secret** (PR #39). `BLOG_CRON_SECRET` was required for every cron call but never set anywhere. Vercel cron auto-sends `Authorization: Bearer <CRON_SECRET>` (the standard `CRON_SECRET` env). Switched the gate to an optional `CRON_SECRET` check — enforce when set, allow when not — matching the other crons in this repo which have no auth gate.
 
-**Pre-launch blocker list (Oliver's 5 from 2026-05-13 brainstorm):** #1 post-gen AI, #2 Creatomate ✅ (this PR bundle), #3 Eleven Labs, #4 music library, #5 owner dashboard. #2 unblocks #1 (post-gen AI needs an assembled timeline to reorder).
+4. **TinyMCE 8 ready-check was wrong** (PR #39). Once the cron actually ran the job, the Sierra publisher timed out on `page.waitForFunction(() => ... tinymce.editors?.length > 0)`. Probe (`scripts/blog/probe-sierra-editor.ts`) confirmed Sierra now ships TinyMCE 8 (`res/tinymce8/tinymce.min.js`), which dropped the `tinymce.editors` array in favor of `tinymce.activeEditor` / `tinymce.get(0)`. Updated `publish.ts` + `edit.ts` to poll the new accessors with the `initialized` flag.
 
-**Shotstack parallel port (added 2026-05-13):** Same Just Listed layout rebuilt in code-defined Shotstack timeline (`lib/providers/shotstack.ts::buildShotstackJustListedTimeline`) using HTML clips for full styling control — no Shotstack Studio template required. New `ASSEMBLY_PROVIDER` env var forces Creatomate or Shotstack regardless of the default Creatomate-first priority. A/B testable in parallel.
+Plus two follow-on niceties: after Sierra's success indicator, bounce to the blog manager and look up the post by title to capture a real `external_post_url` (with `?id=`) + numeric `external_post_id` — Sierra keeps the form-with-filters URL on the publish page itself; and the job runner now clears `last_error` on retry-success so a `state=done` row doesn't carry its prior failure annotation.
 
-**Order-form persistence (PR #37) LANDED on `dev`** as of 2026-05-13 21:01 UTC. Migration 054 already in prod Supabase. PR #38 (this Creatomate buildout + Shotstack port) is the second half of the launch-prep work.
+**Verification (in this session):**
+- Drained the 22h-stuck job locally with the fix applied. Post 60391 is **live on Sierra**, confirmed via `scripts/blog/verify-post-live.ts` against `client2.sierrainteractivedev.com/blog-manager.aspx`.
+- Patched the DB row's `external_post_url` + `external_post_id` to point at the real edit page (Sierra id 60391) so the dashboard "View on Sierra" link works.
+- tsc clean. vitest blog-engine suite 21/21.
+- 5 missing prod env vars (`BROWSERBASE_API_KEY`, `BROWSERBASE_PROJECT_ID`, `SIERRA_HELGEMO_USERNAME`, `SIERRA_HELGEMO_PASSWORD`, `SIERRA_HELGEMO_SITE_NAME`) set via Vercel REST API `POST /v10/projects/{id}/env?upsert=true`.
+- PR #39 + PR #43 merged into main; Vercel production deploy promoted (post-PR-#43 build pending at time of writing).
+
+**Branch + PR summary:**
+- 3 commits across two branches/PRs:
+  - PR #39 (`worktree-blog-post-fix`): `e70ec1d` (lazy Browserbase + cron auth), `fb92d14` (TinyMCE 8 + post-id capture + last_error clear + 2 smoke probes). Merged via PR #39 → main.
+  - PR #43 (`worktree-blog-post-fix-2`): the `.js`-extension fix on top of the latest main. Cherry-pick of `e8bc576`.
+
+**Open follow-ups:**
+- **Watch a real click on listingelevate.com once PR #43 deploy is Ready.** Compose a post, click "Publish now"; within 60s the cron should pick it up and post.state should flip `publish_due → publishing → live`. If you see `live` + an `external_post_url` containing `?id=`, the round-trip works.
+- **GitHub Action `claude-review` is misconfigured.** Workflow failed on PR #39 + #43 with `Invalid API key · Fix external API key` — the `ANTHROPIC_API_KEY` in the repo's GitHub Actions secrets is expired/wrong. PRs merged anyway because `main` has no branch protection, but worth fixing so future PRs get real review. Not blocking.
+- **Probes in `scripts/blog/`** — `probe-sierra-editor.ts`, `verify-post-live.ts` are smoke utilities, harmless to keep. Use them next time Sierra changes their admin form.
+- **Lesson worth codifying in CI:** add an ESLint rule (`import/extensions: ['error', 'always', { ts: 'never' }]` or similar) that flags relative TS imports missing `.js` — Vercel runtime is the only place that catches this and it's too late.
+
+---
+
+**2026-05-13 (LIVE on listingelevate.com): launch-prep cascade complete.** Order → assembled MP4 pipeline is functional in production. Five PRs merged today (#37, #38, #40, #41, #42). Full session report at [`sessions/2026-05-13-launch-prep-creatomate-shotstack.md`](./sessions/2026-05-13-launch-prep-creatomate-shotstack.md).
+
+**What shipped (one paragraph each):**
+
+- **Order-form persistence** (PR #37). Migration 054 + 5 plumbing touchpoints. Upload form's 9 order-specific fields (`selectedPackage`, `selectedDuration`, `selectedOrientation`, `addVoiceover`, `addVoiceClone`, `addCustomRequest`, `customRequestText`, `daysOnMarket`, `soldPrice`) now persist to `properties`. Pipeline already reads `selected_duration`; 15s/30s tiers were silently rendering at 60s — fixed.
+
+- **Cron-assembly wire** (PR #38). `runAssembly` had been dead code (sat after an early `return;` in `runPipeline`); cron `poll-scenes.ts` marked properties `complete` without ever calling it. Now exported + invoked from the cron's finalize block. `'assembling'` added to terminal-status skip list. `try/catch` flips to `failed` on throw rather than getting stuck.
+
+- **Phase 2–6 assembly modules** (PR #38, all under `lib/assembly/`).
+  - `scene-ordering.ts` (11 tests) — deterministic walkthrough order (aerial → exterior_front → foyer → living → dining → kitchen → master_bed → bedroom → bathroom → … → exterior_back).
+  - `duration-fit.ts` (10 tests) — reads `properties.selected_duration` (15/30/60). Allocates `target/N` per clip floored at 2.5s. Drops scenes by highlight tier when over budget; walkthrough order preserved within survivors.
+  - `branding.ts` — pulls `user_profiles.brokerage / logo_url / colors` via `properties.submitted_by`. Falls back to `properties.brokerage` + emerald defaults.
+  - `music.ts` (6 tests) — operator-pinned wins, else auto-pick by package mood. Library: migration 055 + 5 seed rows (SoundHelix placeholders, **replace before launch**).
+
+- **Creatomate template-mode** (PR #38). `CreatomateProvider.assembleFromTemplate(templateId, { modifications, width, height, renderScale })` + `getTemplate(id)` for introspection. Endpoint `/v2/renders`. `template-modifications.ts` (13 tests) maps `AssembleVideoParams + branding + package` → modification dict (`St#/StName.text`, `Vid-Category/Title.text`, `Clip-1.source`…`Clip-N.source`). `template-resolver.ts` (8 tests) resolves `properties.template_id` > `CREATOMATE_TEMPLATE_ID_<PKG>` env > `_DEFAULT` > null. Template `2f634180-…` (Just Listed #01) wired for `just_listed` package.
+
+- **Shotstack parallel port** (PR #38). Same Just Listed layout rebuilt in code via `buildShotstackJustListedTimeline` using Shotstack HTML clips for full Inter+CSS styling. No Shotstack Studio template required. `ASSEMBLY_PROVIDER` env var (`creatomate` | `shotstack`) overrides the router's default Creatomate-first priority. A/B testable in parallel without code changes.
+
+- **Migrations applied to prod Supabase via MCP:** 053 (`assembly_timeline` jsonb + `video_revisions` table + `cost_events.provider` widened to include `creatomate`), 054 (9 order-form columns + CHECK constraints), 055 (`music_tracks` + `properties.music_track_id` FK), 056 (`properties.template_id` text).
+
+- **Vercel env vars set across production / preview / development:** `CREATOMATE_API_KEY`, `CREATOMATE_TEMPLATE_ID_JUST_LISTED=2f634180-…`, `SHOTSTACK_API_KEY`, `SHOTSTACK_ENV=production`.
+
+**Mid-session bugs found + fixed:**
+- `processing_time_ms` int4 overflow on weeks-old properties (`pipeline.ts`) — now reads `pipeline_started_at`, clamps to `2^31-1`.
+- `assembly-router.ts` `require()` imports broke ESM/tsx runtime — converted to static imports.
+- Creatomate `/v2/renders` source-mode returned JPG thumbnails — root cause was the `source:` wrapper (v1 convention); spreading the RenderScript at top level + explicit `render_scale: 1` + `duration: totalDuration` fixed it.
+- Creatomate v2 source-mode silently truncating to 5s — same fix (spreading at top level).
+- Template clip slot naming mismatch — Just Listed #01 uses `Clip-1`…`Clip-8` (hyphenated); mapper was writing `Clip1`…`ClipN`. Fixed.
+
+**Test count:** 48 vitest cases across `lib/assembly/*.test.ts`. tsc + eslint clean.
+
+**Post-launch action items (your side, none blocking functionality):**
+1. **Bump Just Listed #01 template canvas to 1920×1080** in the Creatomate editor. Currently 1280×720 → output is 720p not full HD.
+2. **Add `Clip-9`…`Clip-12` slots** to the template. Pipeline targets 12 scenes; template has 8 — extra clips drop silently.
+3. **Build template variants for the other packages** (Just Pended, Just Closed, Life Cycle). Then add their IDs as Vercel env vars (`CREATOMATE_TEMPLATE_ID_JUST_PENDED`, etc.). Without these, non-`just_listed` orders fall back to the code-generated `buildCreatomateTimeline` layout.
+4. **Replace `music_tracks` seed rows** (SoundHelix placeholders) with real royalty-free MP3s in Supabase Storage.
+5. **Rotate the Shotstack API key** — was visible in chat history this session.
+
+**Remaining pre-launch blockers from Oliver's 2026-05-13 brainstorm:**
+- ✅ #2 Creatomate / template-driven assembly — shipped
+- ⏳ #1 post-gen QC AI — unblocked (we have `assembly_timeline` JSON to reason over)
+- ⏳ #3 Eleven Labs voiceover
+- ⏳ #4 Music library (placeholders in place; real tracks TBD)
+- ⏳ #5 Owner dashboard
+
+**Migration drift (still standing):** repo migrations 050–052 (blog phase 5 + templates + AI) remain unapplied to prod. Remote has `portal_deliverables`/`portal_orders_checkout_session`/`050_portal_pay_on_approval`/`portal_orders_order_number_v2` with no migration files in the repo. Worth a dedicated audit before the next big push.
 
 ---
 
@@ -285,6 +336,11 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-14 — `<SHA-TBD>` — PR #46 staging → main: Creatomate Just Listed #01 rev-2 template wired end-to-end — new mapper slot names (`*-Intro` / `*-Mid` / `*-Final`), duration-suffixed env vars (`CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]`), vertical-aware resolver that skips 9:16 when no vertical template exists. Live smoke produced 1920×1080 / 15s / 30fps with all overlays. Vercel envs: added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15`, removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED`. 119/119 tests + `tsc` clean.
+- 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
+- 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate
+- 2026-05-13 — `a2fcaf3` — PR #38 feat/creatomate-buildout → dev: Phase 2-6 modules (scene-ordering, duration-fit, branding, music) + template-mode (template-modifications, template-resolver, getTemplate, assembleFromTemplate on /v2/renders) + Shotstack Just Listed port (buildShotstackJustListedTimeline, HTML overlays) + ASSEMBLY_PROVIDER router override. 48 vitest cases.
+- 2026-05-13 — `cada6c2` — PR #37 feat/order-form-persistence → dev: migration 054 + 5 plumbing touchpoints. Upload form's 9 order-specific fields now persist to properties.
 - 2026-05-13 — `326991e` — PR #32 staging → main: prompt-collapse fix + blog trunk to listingelevate.com (per-photo retrieval, DA.3 prompt rewrite, top-K recipe rendering)
 - 2026-05-13 — `6eae2ef` — PR #31 dev → staging: prompt-collapse fix + blog trunk
 - 2026-05-13 — `1154cb1` — PR #30 feat/prompt-collapse-fix → dev: 8 commits landing the prompt-collapse fix (root-cause spec at `docs/specs/2026-05-13-prompt-collapse-fix-design.md`)
