@@ -1,6 +1,6 @@
 // lib/blog-engine/jobs/handlers/image-match.ts
 import { GoogleGenAI } from "@google/genai";
-import type { JobHandler } from "../runner";
+import type { JobHandler } from "../runner.js";
 
 let _gemini: GoogleGenAI | null = null;
 function gemini(): GoogleGenAI {

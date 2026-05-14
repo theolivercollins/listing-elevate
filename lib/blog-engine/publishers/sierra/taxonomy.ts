@@ -1,10 +1,10 @@
 // lib/blog-engine/publishers/sierra/taxonomy.ts
 import type { Locator, Page } from "playwright-core";
-import type { TaxonomyOption } from "../../types";
-import type { TaxonomyResult } from "../types";
-import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors";
-import { ensureSignedIn, type SierraCreds } from "./auth";
-import { inputByLabelText, selectByLabelText } from "./dom-helpers";
+import type { TaxonomyOption } from "../../types.js";
+import type { TaxonomyResult } from "../types.js";
+import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors.js";
+import { ensureSignedIn, type SierraCreds } from "./auth.js";
+import { inputByLabelText, selectByLabelText } from "./dom-helpers.js";
 
 export async function fetchTaxonomy(
   page: Page,

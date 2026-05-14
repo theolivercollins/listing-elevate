@@ -55,7 +55,7 @@ describe("categoryLabelForPackage", () => {
 });
 
 describe("buildTemplateModifications", () => {
-  it("writes the 5 known text fields with split address + mapped category", () => {
+  it("writes intro/mid/final text fields matching the Just Listed #01 rev-2 names", () => {
     const mods = buildTemplateModifications({
       address: "123 Waymay Dr, Punta Gorda FL",
       selectedPackage: "just_listed",
@@ -63,11 +63,14 @@ describe("buildTemplateModifications", () => {
       brokerageName: "Compass",
     });
     expect(mods).toMatchObject({
-      "St#/StName.text": "123 Waymay Dr",
-      "St#/StName-JSJ.text": "Punta Gorda FL",
-      "Vid-Category/Title.text": "Just Listed",
-      "Listing-Agent.text": "Brian Helgemo",
-      "Listing-Agent-NWH.text": "Compass",
+      "St#/StName-Intro.text": "123 Waymay Dr",
+      "City/State-Intro.text": "Punta Gorda FL",
+      "Vid-Category-Intro.text": "Just Listed",
+      "Listing-Agent-Mid.text": "Brian Helgemo",
+      "Listing-Agent-Final.text": "Brian Helgemo",
+      "Listing-Brokerage-Mid.text": "Compass",
+      "Listing-Brokerage-Final.text": "Compass",
+      "Full-Address-Final.text": "123 Waymay Dr, Punta Gorda FL",
     });
   });
 
@@ -78,8 +81,9 @@ describe("buildTemplateModifications", () => {
       agentName: "Brian",
       brokerageName: null,
     });
-    expect(mods["Listing-Agent.text"]).toBe("Brian");
-    expect(mods["Listing-Agent-NWH.text"]).toBe("");
+    expect(mods["Listing-Agent-Mid.text"]).toBe("Brian");
+    expect(mods["Listing-Brokerage-Mid.text"]).toBe("");
+    expect(mods["Listing-Brokerage-Final.text"]).toBe("");
   });
 
   it("emits Clip-N.source + duration when clips are provided", () => {
@@ -109,27 +113,40 @@ describe("buildTemplateModifications", () => {
     expect(Object.keys(mods).some((k) => k.startsWith("Clip"))).toBe(false);
   });
 
-  it("writes LogoImage.source + MusicTrack.source when provided", () => {
+  it("writes Audio-Music.source + Agent-Headshot-Final.source when provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
       agentName: "Brian",
       brokerageName: "Compass",
-      logoUrl: "https://logos/co.png",
       musicUrl: "https://audio/track.mp3",
+      agentHeadshotUrl: "https://headshots/brian.png",
     });
-    expect(mods["LogoImage.source"]).toBe("https://logos/co.png");
-    expect(mods["MusicTrack.source"]).toBe("https://audio/track.mp3");
+    expect(mods["Audio-Music.source"]).toBe("https://audio/track.mp3");
+    expect(mods["Agent-Headshot-Final.source"]).toBe("https://headshots/brian.png");
   });
 
-  it("does not pollute output with logo/music keys when not provided", () => {
+  it("does not pollute output with music/headshot keys when not provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
       agentName: "Brian",
       brokerageName: "Compass",
     });
-    expect(mods).not.toHaveProperty("LogoImage.source");
-    expect(mods).not.toHaveProperty("MusicTrack.source");
+    expect(mods).not.toHaveProperty("Audio-Music.source");
+    expect(mods).not.toHaveProperty("Agent-Headshot-Final.source");
+  });
+
+  it("Full-Address-Final keeps the full original string", () => {
+    const mods = buildTemplateModifications({
+      address: "456 Oak Ave, Apt B, Tampa FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+    });
+    expect(mods["Full-Address-Final.text"]).toBe("456 Oak Ave, Apt B, Tampa FL");
+    // And the intro split keeps street vs city/state distinct
+    expect(mods["St#/StName-Intro.text"]).toBe("456 Oak Ave, Apt B");
+    expect(mods["City/State-Intro.text"]).toBe("Tampa FL");
   });
 });

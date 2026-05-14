@@ -1,10 +1,10 @@
 // lib/blog-engine/publishers/sierra/publish.ts
 import type { Page } from "playwright-core";
-import type { BlogPost } from "../../types";
-import type { PublishResult } from "../types";
-import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors";
-import { ensureSignedIn, type SierraCreds } from "./auth";
-import { inputByLabelText, selectByLabelText } from "./dom-helpers";
+import type { BlogPost } from "../../types.js";
+import type { PublishResult } from "../types.js";
+import { SIERRA_PATHS, SIERRA_SELECTORS } from "./selectors.js";
+import { ensureSignedIn, type SierraCreds } from "./auth.js";
+import { inputByLabelText, selectByLabelText } from "./dom-helpers.js";
 
 export interface SierraPublishInput {
   baseUrl: string;
@@ -51,10 +51,21 @@ export async function sierraPublish(
     });
   }
 
-  // Sierra uses TinyMCE for the body. Easiest path: call its setContent API
+  // Sierra uses TinyMCE 8 for the body. Easiest path: call its setContent API
   // directly. This bypasses the iframe-and-toolbar dance entirely.
+  //
+  // TinyMCE 8 dropped the public `tinymce.editors` collection in favor of
+  // `tinymce.activeEditor` and `tinymce.get(idx)`. Probing on the live form
+  // (2026-05-13) shows `tinymce.editors` is undefined even after the editor
+  // iframe is fully rendered, so the old `editors?.length > 0` guard never
+  // resolves and the publish times out. Poll the accessors instead.
   await page.waitForFunction(
-    () => typeof (window as any).tinymce !== "undefined" && (window as any).tinymce.editors?.length > 0,
+    () => {
+      const tm = (window as any).tinymce;
+      if (!tm) return false;
+      const ed = (typeof tm.get === "function" ? tm.get(0) : null) ?? tm.activeEditor;
+      return !!ed && ed.initialized === true;
+    },
     { timeout: 30_000 },
   );
   await page.evaluate((html: string) => {
@@ -99,11 +110,36 @@ export async function sierraPublish(
 
   await page.waitForSelector(SIERRA_SELECTORS.publishSuccessIndicator, { timeout: 30_000 });
 
-  const finalUrl = page.url();
-  const idMatch = finalUrl.match(/[?&](?:id|postId)=(\d+)/i);
+  // Sierra keeps the form-with-filters URL after publish (no redirect to the
+  // newly-created post). The new id only surfaces in the blog manager list.
+  // Bounce there and look up the row by title to capture a stable
+  // external_post_url + external_post_id. Title uniqueness within the most
+  // recent post window is good enough — Sierra orders newest-first, and we
+  // grab the first hit.
+  const lookup = await findPostInBlogManager(page, baseUrl, post.title);
 
   return {
-    external_post_url: finalUrl,
-    external_post_id: idMatch?.[1] ?? null,
+    external_post_url: lookup?.editUrl ?? page.url(),
+    external_post_id: lookup?.postId ?? null,
   };
+}
+
+async function findPostInBlogManager(
+  page: Page,
+  baseUrl: string,
+  title: string,
+): Promise<{ editUrl: string; postId: string } | null> {
+  try {
+    await page.goto(`${baseUrl}${SIERRA_PATHS.blogManager}`, { waitUntil: "domcontentloaded" });
+    const href = await page
+      .locator(`a:has-text(${JSON.stringify(title)})`)
+      .first()
+      .evaluate((el) => (el as HTMLAnchorElement).href)
+      .catch(() => null);
+    if (!href) return null;
+    const m = href.match(/[?&](?:id|postId)=(\d+)/i);
+    return { editUrl: href, postId: m?.[1] ?? "" };
+  } catch {
+    return null;
+  }
 }
