@@ -1,4 +1,4 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useEffect, type CSSProperties, type ReactNode } from "react";
 import {
   BarChart,
   Bar,
@@ -10,7 +10,22 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { AlertTriangle, Loader2, ArrowRight, TrendingUp, TrendingDown, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  ArrowRight,
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  ChevronUp,
+  Film,
+  Activity,
+  Clock,
+  DollarSign,
+  Trophy,
+  Sparkles,
+  Building2,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { formatCents, formatDuration, getRelativeTime } from "@/lib/types";
 import type { Property, DailyStat } from "@/lib/types";
@@ -24,46 +39,97 @@ const EYEBROW: CSSProperties = {
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
-  color: "rgba(255,255,255,0.45)",
+  color: "hsl(var(--muted-foreground))",
 };
+
 const PAGE_H1: CSSProperties = {
   fontFamily: "var(--le-font-sans)",
-  fontSize: "clamp(28px, 4vw, 44px)",
-  fontWeight: 500,
-  letterSpacing: "-0.035em",
-  lineHeight: 0.98,
-  color: "#fff",
+  fontSize: "clamp(26px, 3.4vw, 36px)",
+  fontWeight: 600,
+  letterSpacing: "-0.03em",
+  lineHeight: 1.05,
+  color: "hsl(var(--foreground))",
   margin: 0,
 };
+
 const SECTION_H3: CSSProperties = {
   fontFamily: "var(--le-font-sans)",
-  fontSize: 20,
-  fontWeight: 500,
-  letterSpacing: "-0.025em",
-  color: "#fff",
-  margin: 0,
-};
-const MONO_VALUE: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
-  fontSize: 24,
+  fontSize: 18,
   fontWeight: 600,
   letterSpacing: "-0.02em",
-  color: "#fff",
+  color: "hsl(var(--foreground))",
+  margin: 0,
+};
+
+const BIG_VALUE: CSSProperties = {
+  fontFamily: "var(--le-font-sans)",
+  fontSize: 30,
+  fontWeight: 700,
+  letterSpacing: "-0.03em",
+  color: "hsl(var(--foreground))",
+  fontVariantNumeric: "tabular-nums",
 };
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
+const CARD_STYLE: CSSProperties = {
+  background: "var(--le-surface-card)",
+  border: "1px solid hsl(var(--border))",
+  borderRadius: "var(--le-card-radius)",
+  boxShadow: "var(--le-card-shadow)",
+};
+
+type TileTone = "sky" | "peach" | "mint" | "lavender" | "rose";
+
+const TILE_TONES: Record<TileTone, { bg: string; ink: string }> = {
+  sky: { bg: "var(--le-tile-sky-bg)", ink: "var(--le-tile-sky-ink)" },
+  peach: { bg: "var(--le-tile-peach-bg)", ink: "var(--le-tile-peach-ink)" },
+  mint: { bg: "var(--le-tile-mint-bg)", ink: "var(--le-tile-mint-ink)" },
+  lavender: { bg: "var(--le-tile-lavender-bg)", ink: "var(--le-tile-lavender-ink)" },
+  rose: { bg: "var(--le-tile-rose-bg)", ink: "var(--le-tile-rose-ink)" },
+};
+
+function IconBadge({ tone, children }: { tone: TileTone; children: ReactNode }) {
+  const t = TILE_TONES[tone];
+  return (
+    <span
+      aria-hidden
+      style={{
+        background: t.bg,
+        color: t.ink,
+        width: 44,
+        height: 44,
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 function Delta({ value, positiveIsGood = true }: { value: number; positiveIsGood?: boolean }) {
   if (!Number.isFinite(value) || value === 0) {
-    return <span className="label text-muted-foreground/50">— 0%</span>;
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        —
+      </span>
+    );
   }
   const up = value > 0;
   const good = up === positiveIsGood;
-  const color = good ? "text-accent" : "text-destructive";
   const Icon = up ? TrendingUp : TrendingDown;
+  const fg = good ? "var(--le-tile-mint-ink)" : "var(--le-tile-rose-ink)";
+  const bg = good ? "var(--le-tile-mint-bg)" : "var(--le-tile-rose-bg)";
   return (
-    <span className={`label inline-flex items-center gap-1 ${color}`}>
-      <Icon className="h-3 w-3" strokeWidth={2} />
+    <span
+      className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums"
+      style={{ background: bg, color: fg }}
+    >
+      <Icon className="h-3 w-3" strokeWidth={2.5} />
       {up ? "+" : ""}
       {value.toFixed(1)}%
     </span>
@@ -136,14 +202,21 @@ const Overview = () => {
 
   if (error) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
+      <div
+        style={{
+          ...CARD_STYLE,
+          padding: 40,
+          background: "var(--le-tile-rose-bg)",
+          borderColor: "var(--le-tile-rose-ink)",
+        }}
+      >
         <div className="flex items-start gap-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
-          </div>
+          <IconBadge tone="rose">
+            <AlertTriangle className="h-5 w-5" strokeWidth={1.75} />
+          </IconBadge>
           <div>
-            <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>— Error</span>
-            <p className="mt-3 text-sm text-muted-foreground">{error}</p>
+            <span style={{ ...EYEBROW, color: "var(--le-tile-rose-ink)" }}>— Error</span>
+            <p className="mt-3 text-sm text-foreground">{error}</p>
           </div>
         </div>
       </div>
@@ -162,7 +235,6 @@ const Overview = () => {
     complete: 100,
   };
 
-  // Split daily stats into "previous 7" vs "latest 7" for delta
   const last7 = dailyStatsData.slice(-7);
   const prev7 = dailyStatsData.slice(-14, -7);
   const last7Cost = last7.reduce((s, d) => s + (d.total_cost_cents ?? 0), 0);
@@ -173,7 +245,6 @@ const Overview = () => {
   const prev7Videos = prev7.reduce((s, d) => s + (d.properties_completed ?? 0), 0);
   const videoDelta = prev7Videos > 0 ? ((last7Videos - prev7Videos) / prev7Videos) * 100 : 0;
 
-  // Status distribution across all properties
   const statusBuckets = { queued: 0, inFlight: 0, delivered: 0, failed: 0 };
   for (const p of allProps) {
     if (p.status === "complete") statusBuckets.delivered++;
@@ -184,15 +255,13 @@ const Overview = () => {
   const totalProps = allProps.length || 1;
   const deliveredPct = (statusBuckets.delivered / totalProps) * 100;
 
-  // Delivery SLA — fraction of completed videos delivered within 72h
   const onTime = completedProps.filter(
     (p) => p.processing_time_ms != null && p.processing_time_ms < 72 * 60 * 60 * 1000,
   ).length;
   const slaRate = completedProps.length > 0 ? (onTime / completedProps.length) * 100 : 0;
-  const slaDash = 2 * Math.PI * 54; // circumference
+  const slaDash = 2 * Math.PI * 54;
   const slaOffset = slaDash * (1 - slaRate / 100);
 
-  // Top agents leaderboard
   const agentMap = new Map<string, { count: number; cost: number }>();
   for (const p of allProps) {
     const key = p.listing_agent || "—";
@@ -205,117 +274,165 @@ const Overview = () => {
     .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 5);
 
-  // KPI tiles (4 big + 2 accent)
-  const kpis = [
+  const kpis: Array<{
+    label: string;
+    value: string;
+    sub: string;
+    delta: number;
+    deltaPositiveIsGood: boolean;
+    tone: TileTone;
+    icon: ReactNode;
+  }> = [
     {
       label: "Videos today",
       value: String(stats?.completedToday ?? 0).padStart(2, "0"),
       sub: `${stats?.submittedToday ?? 0} submitted`,
       delta: videoDelta,
+      deltaPositiveIsGood: true,
+      tone: "sky",
+      icon: <Film className="h-5 w-5" strokeWidth={1.75} />,
     },
     {
       label: "In production",
       value: String(stats?.inPipeline ?? 0).padStart(2, "0"),
       sub: "across all stages",
       delta: 0,
+      deltaPositiveIsGood: true,
+      tone: "peach",
+      icon: <Activity className="h-5 w-5" strokeWidth={1.75} />,
     },
     {
       label: "Avg turnaround",
       value: formatDuration(stats?.avgProcessingMs ?? 0),
       sub: "per video",
       delta: 0,
+      deltaPositiveIsGood: false,
+      tone: "mint",
+      icon: <Clock className="h-5 w-5" strokeWidth={1.75} />,
     },
     {
       label: "Spend · 7d",
       value: formatCents(last7Cost),
       sub: "all providers",
       delta: costDelta,
+      deltaPositiveIsGood: false,
+      tone: "lavender",
+      icon: <DollarSign className="h-5 w-5" strokeWidth={1.75} />,
     },
   ];
 
+  const slaRing: TileTone = slaRate >= 80 ? "mint" : slaRate >= 50 ? "peach" : "rose";
+  const slaRingInk =
+    slaRing === "mint"
+      ? "var(--le-tile-mint-ink)"
+      : slaRing === "peach"
+      ? "var(--le-tile-peach-ink)"
+      : "var(--le-tile-rose-ink)";
+
   return (
-    <div className="space-y-16">
-      {/* Page heading — compact so the dashboard feels dense like a control room */}
+    <div className="space-y-10">
+      {/* ─── Page heading ─── */}
       <div className="flex items-end justify-between gap-6">
         <div>
           <span style={EYEBROW}>— Today</span>
-          <h2 className="mt-3" style={PAGE_H1}>Studio overview</h2>
+          <h2 className="mt-3" style={PAGE_H1}>
+            Studio overview
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Listing Elevate · live activity across the render pipeline
+          </p>
         </div>
       </div>
 
-      {/* ─── KPI row ─── */}
-      <section className="grid gap-px border border-border bg-border md:grid-cols-2 lg:grid-cols-4">
+      {/* ─── KPI row — soft pastel icon cards ─── */}
+      <section className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
         {kpis.map((k, i) => (
           <motion.div
             key={k.label}
-            initial={{ opacity: 0, y: 16 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: i * 0.05, ease: EASE }}
-            className="bg-background p-8"
+            transition={{ duration: 0.55, delay: i * 0.05, ease: EASE }}
+            style={{ ...CARD_STYLE, padding: 22 }}
           >
-            <div className="flex items-start justify-between gap-3">
-              <span style={EYEBROW}>{k.label}</span>
-              <Delta value={k.delta} positiveIsGood={k.label !== "Spend · 7d"} />
+            <div className="flex items-start gap-4">
+              <IconBadge tone={k.tone}>{k.icon}</IconBadge>
+              <div className="min-w-0 flex-1">
+                <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  {k.label}
+                </span>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span style={BIG_VALUE}>{k.value}</span>
+                  <Delta value={k.delta} positiveIsGood={k.deltaPositiveIsGood} />
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">{k.sub}</p>
+              </div>
             </div>
-            <div className="mt-6" style={{ ...MONO_VALUE, fontSize: 36 }}>{k.value}</div>
-            <p className="mt-3 text-xs text-muted-foreground">{k.sub}</p>
           </motion.div>
         ))}
       </section>
 
-      {/* ─── Trend + SLA ring + Status donut — 3-column info-dense row ─── */}
-      <section className="grid gap-px border border-border bg-border lg:grid-cols-[2fr_1fr_1fr]">
-        {/* Spend trend — area chart */}
-        <div className="bg-background p-8">
-          <div className="flex items-end justify-between">
+      {/* ─── Spend trend + SLA ring + Status distribution ─── */}
+      <section className="grid gap-5 lg:grid-cols-[2fr_1fr_1fr]">
+        {/* Spend trend */}
+        <div style={{ ...CARD_STYLE, padding: 24 }}>
+          <div className="flex items-start justify-between gap-4">
             <div>
               <span style={EYEBROW}>— Spend</span>
-              <h3 className="mt-3" style={SECTION_H3}>14-day trend</h3>
+              <h3 className="mt-2" style={SECTION_H3}>
+                14-day trend
+              </h3>
             </div>
-            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
+            <div
+              className="rounded-full px-3 py-1 text-[11px] font-medium tabular-nums"
+              style={{
+                background: "var(--le-tile-sky-bg)",
+                color: "var(--le-tile-sky-ink)",
+              }}
+            >
               {formatCents(last7Cost + prev7Cost)} total
-            </span>
+            </div>
           </div>
-          <div className="mt-8 h-[260px]">
+          <div className="mt-6 h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyStatsData} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
+              <AreaChart data={dailyStatsData} margin={{ top: 10, right: 0, bottom: 0, left: -8 }}>
                 <defs>
                   <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#fff" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#fff" stopOpacity={0} />
+                    <stop offset="0%" stopColor="var(--le-chart-1)" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="var(--le-chart-1)" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
                 />
                 <Tooltip
-                  cursor={{ stroke: "#fff", strokeWidth: 1 }}
+                  cursor={{ stroke: "var(--le-chart-1)", strokeWidth: 1, strokeDasharray: "3 3" }}
                   contentStyle={{
-                    background: "#0b0d12",
-                    border: "1px solid rgba(220,230,255,0.18)",
-                    borderRadius: 0,
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 10,
                     fontSize: 11,
                     padding: 10,
-                    color: "#fff",
+                    color: "hsl(var(--popover-foreground))",
+                    boxShadow: "var(--le-card-shadow)",
                   }}
                   formatter={(v: number) => formatCents(v)}
                 />
                 <Area
                   type="monotone"
                   dataKey="total_cost_cents"
-                  stroke="#fff"
-                  strokeWidth={1.5}
+                  stroke="var(--le-chart-1)"
+                  strokeWidth={2.5}
                   fill="url(#spendArea)"
                 />
               </AreaChart>
@@ -323,181 +440,259 @@ const Overview = () => {
           </div>
         </div>
 
-        {/* Delivery SLA ring */}
-        <div className="bg-background p-8">
-          <span style={EYEBROW}>— Delivery SLA</span>
-          <h3 className="mt-3" style={SECTION_H3}>Under 72h</h3>
-          <div className="mt-8 flex flex-col items-center">
-            <div className="relative h-[180px] w-[180px]">
+        {/* SLA ring */}
+        <div style={{ ...CARD_STYLE, padding: 24 }}>
+          <div className="flex items-center gap-3">
+            <IconBadge tone={slaRing}>
+              <Clock className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Delivery SLA</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                Under 72h
+              </h3>
+            </div>
+          </div>
+          <div className="mt-6 flex flex-col items-center">
+            <div className="relative h-[170px] w-[170px]">
               <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-                <circle cx="60" cy="60" r="54" stroke="hsl(var(--border))" strokeWidth="6" fill="none" />
+                <circle cx="60" cy="60" r="54" stroke="hsl(var(--border))" strokeWidth="7" fill="none" />
                 <motion.circle
                   cx="60"
                   cy="60"
                   r="54"
-                  stroke="hsl(var(--accent))"
-                  strokeWidth="6"
+                  stroke={slaRingInk}
+                  strokeWidth="7"
                   fill="none"
                   strokeLinecap="round"
                   strokeDasharray={slaDash}
                   initial={{ strokeDashoffset: slaDash }}
                   animate={{ strokeDashoffset: slaOffset }}
-                  transition={{ duration: 1.6, ease: EASE }}
+                  transition={{ duration: 1.4, ease: EASE }}
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span style={{ ...MONO_VALUE, fontSize: 30 }}>
-                  {slaRate.toFixed(0)}%
+                <span style={{ ...BIG_VALUE, fontSize: 30 }}>{slaRate.toFixed(0)}%</span>
+                <span
+                  className="mt-1 text-[10px] font-medium uppercase tracking-[0.18em]"
+                  style={{ color: "hsl(var(--muted-foreground))" }}
+                >
+                  on time
                 </span>
-                <span className="mt-1" style={EYEBROW}>on time</span>
               </div>
             </div>
-            <p className="tabular mt-6 text-[11px] text-muted-foreground">
+            <p className="mt-5 text-[11px] tabular-nums text-muted-foreground">
               {onTime} of {completedProps.length} delivered
             </p>
           </div>
         </div>
 
         {/* Status distribution */}
-        <div className="bg-background p-8">
-          <span style={EYEBROW}>— Distribution</span>
-          <h3 className="mt-3" style={SECTION_H3}>All listings</h3>
-          <div className="mt-8 space-y-5">
+        <div style={{ ...CARD_STYLE, padding: 24 }}>
+          <div className="flex items-center gap-3">
+            <IconBadge tone="peach">
+              <Building2 className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Distribution</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                All listings
+              </h3>
+            </div>
+          </div>
+          <div className="mt-6 space-y-4">
             {[
-              { key: "delivered", label: "Delivered", tone: "bg-accent", count: statusBuckets.delivered },
-              { key: "inFlight", label: "In flight", tone: "bg-foreground", count: statusBuckets.inFlight },
-              { key: "queued", label: "Queued", tone: "bg-muted-foreground", count: statusBuckets.queued },
-              { key: "failed", label: "Failed", tone: "bg-destructive", count: statusBuckets.failed },
+              { key: "delivered", label: "Delivered", color: "var(--le-tile-mint-ink)", count: statusBuckets.delivered },
+              { key: "inFlight", label: "In flight", color: "var(--le-tile-sky-ink)", count: statusBuckets.inFlight },
+              { key: "queued", label: "Queued", color: "var(--le-tile-peach-ink)", count: statusBuckets.queued },
+              { key: "failed", label: "Failed", color: "var(--le-tile-rose-ink)", count: statusBuckets.failed },
             ].map((row) => {
               const pct = totalProps > 0 ? (row.count / totalProps) * 100 : 0;
               return (
                 <div key={row.key}>
                   <div className="flex items-baseline justify-between">
-                    <span style={{ ...EYEBROW, color: "#fff" }}>{row.label}</span>
-                    <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
+                    <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.14em] text-foreground">
+                      <span
+                        className="inline-block h-2 w-2 rounded-full"
+                        style={{ background: row.color }}
+                      />
+                      {row.label}
+                    </span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">
                       {row.count} · {pct.toFixed(0)}%
                     </span>
                   </div>
-                  <div className="mt-2 h-[3px] w-full bg-border">
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
                     <motion.div
-                      className={`h-full ${row.tone}`}
+                      className="h-full rounded-full"
+                      style={{ background: row.color }}
                       initial={{ width: 0 }}
                       animate={{ width: `${pct}%` }}
-                      transition={{ duration: 1.1, ease: EASE }}
+                      transition={{ duration: 1, ease: EASE }}
                     />
                   </div>
                 </div>
               );
             })}
           </div>
-          <p className="tabular mt-10 text-[11px] text-muted-foreground">
+          <p className="mt-6 text-[11px] tabular-nums text-muted-foreground">
             {deliveredPct.toFixed(0)}% delivered lifetime
           </p>
         </div>
       </section>
 
-      {/* ─── Video throughput + Top agents — 2-column row ─── */}
-      <section className="grid gap-px border border-border bg-border lg:grid-cols-[2fr_1fr]">
-        {/* Videos delivered per day — bar chart */}
-        <div className="bg-background p-8">
-          <div className="flex items-end justify-between">
-            <div>
-              <span style={EYEBROW}>— Throughput</span>
-              <h3 className="mt-3" style={SECTION_H3}>Videos delivered</h3>
+      {/* ─── Throughput + leaderboard ─── */}
+      <section className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+        {/* Throughput */}
+        <div style={{ ...CARD_STYLE, padding: 24 }}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <IconBadge tone="sky">
+                <Sparkles className="h-5 w-5" strokeWidth={1.75} />
+              </IconBadge>
+              <div>
+                <span style={EYEBROW}>— Throughput</span>
+                <h3 className="mt-1" style={SECTION_H3}>
+                  Videos delivered
+                </h3>
+              </div>
             </div>
-            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
+            <div
+              className="rounded-full px-3 py-1 text-[11px] font-medium tabular-nums"
+              style={{
+                background: "var(--le-tile-mint-bg)",
+                color: "var(--le-tile-mint-ink)",
+              }}
+            >
               {last7Videos} this week
-            </span>
+            </div>
           </div>
-          <div className="mt-8 h-[200px]">
+          <div className="mt-6 h-[210px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyStatsData.slice(-14)} margin={{ top: 10, right: 0, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
+              <BarChart data={dailyStatsData.slice(-14)} margin={{ top: 10, right: 0, bottom: 0, left: -8 }}>
+                <defs>
+                  <linearGradient id="throughputBar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--le-chart-3)" stopOpacity={1} />
+                    <stop offset="100%" stopColor="var(--le-chart-3)" stopOpacity={0.55} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
                 />
                 <Tooltip
-                  cursor={{ fill: "rgba(255,255,255,0.06)" }}
+                  cursor={{ fill: "var(--le-tile-mint-bg)" }}
                   contentStyle={{
-                    background: "#0b0d12",
-                    border: "1px solid rgba(220,230,255,0.18)",
-                    borderRadius: 0,
+                    background: "hsl(var(--popover))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: 10,
                     fontSize: 11,
                     padding: 10,
-                    color: "#fff",
+                    color: "hsl(var(--popover-foreground))",
+                    boxShadow: "var(--le-card-shadow)",
                   }}
                 />
-                <Bar dataKey="properties_completed" fill="#fff" />
+                <Bar dataKey="properties_completed" fill="url(#throughputBar)" radius={[6, 6, 2, 2]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         {/* Top agents */}
-        <div className="bg-background p-8">
-          <span style={EYEBROW}>— Leaderboard</span>
-          <h3 className="mt-3" style={SECTION_H3}>Top agents</h3>
-          <ul className="mt-8 space-y-5">
+        <div style={{ ...CARD_STYLE, padding: 24 }}>
+          <div className="flex items-center gap-3">
+            <IconBadge tone="lavender">
+              <Trophy className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Leaderboard</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                Top agents
+              </h3>
+            </div>
+          </div>
+          <ul className="mt-6 space-y-4">
             {topAgents.length === 0 && (
               <li className="text-xs text-muted-foreground">No agent data yet</li>
             )}
-            {topAgents.map(([name, entry], i) => (
-              <li key={name} className="flex items-center gap-4">
-                <span className="tabular w-6 text-xs font-medium text-muted-foreground/60">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{name}</p>
-                  <p className="tabular mt-1 text-[10px] text-muted-foreground">
-                    {entry.count} videos · {formatCents(entry.cost)}
-                  </p>
-                </div>
-              </li>
-            ))}
+            {topAgents.map(([name, entry], i) => {
+              const rank = i + 1;
+              const rankTone: TileTone =
+                rank === 1 ? "peach" : rank === 2 ? "sky" : rank === 3 ? "mint" : "lavender";
+              const rankColors = TILE_TONES[rankTone];
+              return (
+                <li key={name} className="flex items-center gap-3">
+                  <span
+                    className="flex h-9 w-9 items-center justify-center rounded-full text-[12px] font-semibold tabular-nums"
+                    style={{ background: rankColors.bg, color: rankColors.ink }}
+                  >
+                    {rank}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-foreground">{name}</p>
+                    <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                      {entry.count} videos · {formatCents(entry.cost)}
+                    </p>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       </section>
 
       {/* ─── Cost breakdown ─── */}
-      <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <span className="label text-muted-foreground">— Cost drill-down</span>
-            <h3 className="mt-3 text-xl font-semibold tracking-[-0.01em]">Spend by provider / model / scope</h3>
+      <section style={{ ...CARD_STYLE, padding: 0, overflow: "hidden" }}>
+        <div className="flex items-center justify-between px-6 py-5">
+          <div className="flex items-center gap-3">
+            <IconBadge tone="rose">
+              <DollarSign className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Cost drill-down</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                Spend by provider · model · scope
+              </h3>
+            </div>
           </div>
           <button
+            type="button"
             onClick={() => setCostExpanded((v) => !v)}
-            className="label inline-flex items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             {costExpanded ? (
-              <><ChevronUp className="h-3 w-3" /> Collapse</>
+              <>
+                <ChevronUp className="h-3 w-3" /> Collapse
+              </>
             ) : (
-              <><ChevronDown className="h-3 w-3" /> Expand</>
+              <>
+                <ChevronDown className="h-3 w-3" /> Expand
+              </>
             )}
           </button>
         </div>
 
         {costExpanded && (
-          <div className="mt-10 border border-border">
-            {/* Tab bar */}
-            <div className="flex border-b border-border">
+          <div>
+            <div className="flex gap-1 border-b border-border bg-muted/40 px-4 py-2">
               {(["provider", "scope", "stage", "model"] as CostTab[]).map((tab) => (
                 <button
                   key={tab}
+                  type="button"
                   onClick={() => setCostTab(tab)}
-                  className={`label px-6 py-4 capitalize transition-colors ${
+                  className={`rounded-full px-4 py-1.5 text-[11px] font-medium capitalize transition-colors ${
                     costTab === tab
-                      ? "border-b-2 border-foreground text-foreground"
+                      ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -506,30 +701,43 @@ const Overview = () => {
               ))}
             </div>
 
-            {/* Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border bg-secondary/30">
-                    <th className="label px-6 py-3 text-left text-muted-foreground font-normal">
-                      {costTab === "provider" ? "Provider" : costTab === "scope" ? "Scope" : costTab === "stage" ? "Stage" : "Model"}
+                  <tr className="border-b border-border">
+                    <th className="px-6 py-3 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      {costTab === "provider"
+                        ? "Provider"
+                        : costTab === "scope"
+                        ? "Scope"
+                        : costTab === "stage"
+                        ? "Stage"
+                        : "Model"}
                     </th>
-                    <th className="label px-4 py-3 text-right text-muted-foreground font-normal">Today</th>
-                    <th className="label px-4 py-3 text-right text-muted-foreground font-normal">7d</th>
-                    <th className="label px-4 py-3 text-right text-muted-foreground font-normal">30d</th>
-                    <th className="label px-4 py-3 text-right text-muted-foreground font-normal">Events (30d)</th>
+                    <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Today
+                    </th>
+                    <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      7d
+                    </th>
+                    <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      30d
+                    </th>
+                    <th className="px-4 py-3 text-right text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Events (30d)
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {(() => {
                     const rows: CostBreakdownRow[] =
                       costTab === "provider"
-                        ? (costBreakdown?.byProvider ?? [])
+                        ? costBreakdown?.byProvider ?? []
                         : costTab === "scope"
-                        ? (costBreakdown?.byScope ?? [])
+                        ? costBreakdown?.byScope ?? []
                         : costTab === "stage"
-                        ? (costBreakdown?.byStage ?? [])
-                        : (costBreakdown?.byModel ?? []);
+                        ? costBreakdown?.byStage ?? []
+                        : costBreakdown?.byModel ?? [];
                     if (!costBreakdown) {
                       return (
                         <tr>
@@ -548,24 +756,30 @@ const Overview = () => {
                         </tr>
                       );
                     }
-                    return rows.map((row, i) => (
+                    return rows.map((row) => (
                       <tr
                         key={row.key}
-                        className={`border-b border-border transition-colors hover:bg-secondary/40 ${
-                          i % 2 === 0 ? "" : "bg-secondary/10"
-                        }`}
+                        className="border-b border-border/60 transition-colors hover:bg-muted/40"
                       >
-                        <td className="px-6 py-4 font-medium">{row.key}</td>
-                        <td className="tabular px-4 py-4 text-right text-xs">
-                          {row.today.cents > 0 ? formatCents(row.today.cents) : <span className="text-muted-foreground/40">—</span>}
+                        <td className="px-6 py-3.5 text-sm font-medium text-foreground">{row.key}</td>
+                        <td className="px-4 py-3.5 text-right text-xs tabular-nums">
+                          {row.today.cents > 0 ? (
+                            formatCents(row.today.cents)
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
                         </td>
-                        <td className="tabular px-4 py-4 text-right text-xs">
-                          {row.week.cents > 0 ? formatCents(row.week.cents) : <span className="text-muted-foreground/40">—</span>}
+                        <td className="px-4 py-3.5 text-right text-xs tabular-nums">
+                          {row.week.cents > 0 ? (
+                            formatCents(row.week.cents)
+                          ) : (
+                            <span className="text-muted-foreground/40">—</span>
+                          )}
                         </td>
-                        <td className="tabular px-4 py-4 text-right text-sm font-semibold">
+                        <td className="px-4 py-3.5 text-right text-sm font-semibold tabular-nums">
                           {formatCents(row.month.cents)}
                         </td>
-                        <td className="tabular px-4 py-4 text-right text-xs text-muted-foreground">
+                        <td className="px-4 py-3.5 text-right text-xs tabular-nums text-muted-foreground">
                           {row.month.events.toLocaleString()}
                         </td>
                       </tr>
@@ -575,119 +789,163 @@ const Overview = () => {
               </table>
             </div>
 
-            {/* Footer nudge */}
-            <p className="border-t border-border px-6 py-4 text-[11px] text-muted-foreground/60">
+            <p className="border-t border-border bg-muted/30 px-6 py-3 text-[11px] text-muted-foreground">
               Numbers look off? Run{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px]">
+              <code className="rounded bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground">
                 npx tsx scripts/cost-reconcile.ts --since &lt;date&gt;
               </code>{" "}
-              and cross-check against your provider invoices. Drift &gt;5% should be investigated before high-volume work.
+              and cross-check against provider invoices. Drift &gt;5% should be investigated before high-volume work.
             </p>
           </div>
         )}
       </section>
 
       {/* ─── Active pipeline ─── */}
-      <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <span style={EYEBROW}>— Active</span>
-            <h3 className="mt-3" style={SECTION_H3}>In production</h3>
+      <section style={{ ...CARD_STYLE, padding: 0, overflow: "hidden" }}>
+        <div className="flex items-center justify-between px-6 py-5">
+          <div className="flex items-center gap-3">
+            <IconBadge tone="peach">
+              <Activity className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Active</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                In production
+              </h3>
+            </div>
           </div>
           <Link
             to="/dashboard/pipeline"
-            className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
-            style={EYEBROW}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             View pipeline <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
-        <div className="mt-10 border-t border-border">
-          <div className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+        <div>
+          <div
+            className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] gap-6 border-y border-border px-6 py-3"
+            style={{ background: "hsl(var(--muted) / 0.4)" }}
+          >
             <span style={EYEBROW}>Property</span>
             <span style={EYEBROW}>Stage</span>
             <span style={EYEBROW}>Progress</span>
-            <span className="text-right" style={EYEBROW}>Started</span>
+            <span className="text-right" style={EYEBROW}>
+              Started
+            </span>
           </div>
           {inProgressProps.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">No properties in pipeline</div>
+            <div className="py-12 text-center text-sm text-muted-foreground">No properties in pipeline</div>
           ) : (
-            inProgressProps.slice(0, 8).map((p, i) => (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.03, ease: EASE }}
-                className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] items-center gap-6 border-b border-border py-5 transition-colors duration-500 hover:bg-secondary/40"
-              >
-                <Link
-                  to={`/dashboard/properties/${p.id}`}
-                  className="truncate text-sm font-medium hover:underline"
+            inProgressProps.slice(0, 8).map((p, i) => {
+              const progress = statusToProgress[p.status] ?? 0;
+              const tone: TileTone =
+                progress >= 80 ? "mint" : progress >= 40 ? "sky" : "peach";
+              const toneInk = TILE_TONES[tone].ink;
+              const toneBg = TILE_TONES[tone].bg;
+              return (
+                <motion.div
+                  key={p.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: i * 0.03, ease: EASE }}
+                  className="grid grid-cols-[3fr_1.2fr_1.5fr_1fr] items-center gap-6 border-b border-border/60 px-6 py-4 transition-colors hover:bg-muted/30"
                 >
-                  {p.address}
-                </Link>
-                <span className="capitalize" style={{ ...EYEBROW, color: "#fff" }}>{p.status.replace("_", " ")}</span>
-                <div className="h-px w-full bg-border">
-                  <motion.div
-                    className="h-full bg-foreground"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${statusToProgress[p.status] || 0}%` }}
-                    transition={{ duration: 1, ease: EASE }}
-                  />
-                </div>
-                <span className="tabular text-right text-xs text-muted-foreground">
-                  {getRelativeTime(p.created_at)}
-                </span>
-              </motion.div>
-            ))
+                  <Link
+                    to={`/dashboard/properties/${p.id}`}
+                    className="truncate text-sm font-medium text-foreground hover:underline"
+                  >
+                    {p.address}
+                  </Link>
+                  <span
+                    className="inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] capitalize"
+                    style={{ background: toneBg, color: toneInk }}
+                  >
+                    <span
+                      className="inline-block h-1.5 w-1.5 rounded-full"
+                      style={{ background: toneInk }}
+                    />
+                    {p.status.replace("_", " ")}
+                  </span>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <motion.div
+                      className="h-full rounded-full"
+                      style={{ background: toneInk }}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ duration: 1, ease: EASE }}
+                    />
+                  </div>
+                  <span className="text-right text-xs tabular-nums text-muted-foreground">
+                    {getRelativeTime(p.created_at)}
+                  </span>
+                </motion.div>
+              );
+            })
           )}
         </div>
       </section>
 
       {/* ─── Recent deliveries ─── */}
-      <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <span style={EYEBROW}>— Recent</span>
-            <h3 className="mt-3" style={SECTION_H3}>Delivered</h3>
+      <section style={{ ...CARD_STYLE, padding: 0, overflow: "hidden" }}>
+        <div className="flex items-center justify-between px-6 py-5">
+          <div className="flex items-center gap-3">
+            <IconBadge tone="mint">
+              <Film className="h-5 w-5" strokeWidth={1.75} />
+            </IconBadge>
+            <div>
+              <span style={EYEBROW}>— Recent</span>
+              <h3 className="mt-1" style={SECTION_H3}>
+                Delivered
+              </h3>
+            </div>
           </div>
           <Link
             to="/dashboard/properties"
-            className="inline-flex items-center gap-2 transition-colors hover:text-foreground"
-            style={EYEBROW}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             All listings <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
 
-        <div className="mt-10 border-t border-border">
-          <div className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
+        <div>
+          <div
+            className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-y border-border px-6 py-3"
+            style={{ background: "hsl(var(--muted) / 0.4)" }}
+          >
             <span style={EYEBROW}>Property</span>
             <span style={EYEBROW}>Completed</span>
             <span style={EYEBROW}>Duration</span>
-            <span className="text-right" style={EYEBROW}>Cost</span>
+            <span className="text-right" style={EYEBROW}>
+              Cost
+            </span>
           </div>
           {completedProps.length === 0 ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">No completed properties yet</div>
+            <div className="py-12 text-center text-sm text-muted-foreground">No completed properties yet</div>
           ) : (
             completedProps.slice(0, 10).map((p, i) => (
               <motion.div
                 key={p.id}
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.03, ease: EASE }}
-                className="grid grid-cols-[3fr_1fr_1fr_1fr] items-center gap-6 border-b border-border py-5 transition-colors duration-500 hover:bg-secondary/40"
+                transition={{ duration: 0.4, delay: i * 0.03, ease: EASE }}
+                className="grid grid-cols-[3fr_1fr_1fr_1fr] items-center gap-6 border-b border-border/60 px-6 py-4 transition-colors hover:bg-muted/30"
               >
                 <Link
                   to={`/dashboard/properties/${p.id}`}
-                  className="truncate text-sm font-medium hover:underline"
+                  className="truncate text-sm font-medium text-foreground hover:underline"
                 >
                   {p.address}
                 </Link>
-                <span className="tabular text-xs text-muted-foreground">{getRelativeTime(p.updated_at)}</span>
-                <span className="tabular text-xs">{formatDuration(p.processing_time_ms)}</span>
-                <span className="tabular text-right text-sm font-semibold">{formatCents(p.total_cost_cents)}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {getRelativeTime(p.updated_at)}
+                </span>
+                <span className="text-xs tabular-nums text-foreground">
+                  {formatDuration(p.processing_time_ms)}
+                </span>
+                <span className="text-right text-sm font-semibold tabular-nums text-foreground">
+                  {formatCents(p.total_cost_cents)}
+                </span>
               </motion.div>
             ))
           )}

@@ -9,9 +9,14 @@ const Dashboard = () => {
   return (
     <div
       className="le-root"
-      style={{ minHeight: "100vh", background: "var(--le-bg)", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}
+      style={{
+        minHeight: "100vh",
+        background: "var(--le-surface-page)",
+        color: "var(--le-text)",
+        fontFamily: "var(--le-font-sans)",
+      }}
     >
-      <main className="mx-auto w-full max-w-[1440px] px-8 py-12 md:px-12 md:py-16">
+      <main className="mx-auto w-full max-w-[1440px] px-6 py-10 md:px-10 md:py-12">
         <Outlet />
       </main>
     </div>

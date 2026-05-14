@@ -42,6 +42,32 @@
   --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);
   --le-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04);
   --le-shadow-lg: 0 12px 40px rgba(20, 18, 15, 0.08), 0 2px 8px rgba(20, 18, 15, 0.04);
+
+  /* Dashboard KPI accents — soft pastel tile + matching icon ink */
+  --le-tile-sky-bg:        #e8f1ff;
+  --le-tile-sky-ink:       #2f6df0;
+  --le-tile-peach-bg:      #fff0e1;
+  --le-tile-peach-ink:     #e07a1a;
+  --le-tile-mint-bg:       #e1f6ec;
+  --le-tile-mint-ink:      #1f9d61;
+  --le-tile-lavender-bg:   #f1ebff;
+  --le-tile-lavender-ink:  #8154e8;
+  --le-tile-rose-bg:       #ffe7ed;
+  --le-tile-rose-ink:      #e1457a;
+
+  /* Soft chart palette — used for area fills, donut + bar slices */
+  --le-chart-1: #6f8df5;
+  --le-chart-2: #f7a366;
+  --le-chart-3: #54c08d;
+  --le-chart-4: #b893ff;
+  --le-chart-5: #f08aae;
+
+  /* Soft dashboard surfaces */
+  --le-surface-page: #f4f6fb;
+  --le-surface-card: #ffffff;
+  --le-surface-card-soft: #fbfcfe;
+  --le-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 30px rgba(15, 23, 42, 0.05);
+  --le-card-radius: 18px;
 }
 
 .dark, [data-theme="dark"] {
@@ -73,6 +99,29 @@
   --le-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --le-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
   --le-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+  /* Dashboard KPI accents — deeper pastels on dark navy */
+  --le-tile-sky-bg:        rgba(111, 141, 245, 0.16);
+  --le-tile-sky-ink:       #9bb6ff;
+  --le-tile-peach-bg:      rgba(247, 163, 102, 0.15);
+  --le-tile-peach-ink:     #ffba85;
+  --le-tile-mint-bg:       rgba(84, 192, 141, 0.16);
+  --le-tile-mint-ink:      #7fdcab;
+  --le-tile-lavender-bg:   rgba(184, 147, 255, 0.16);
+  --le-tile-lavender-ink:  #d0b4ff;
+  --le-tile-rose-bg:       rgba(240, 138, 174, 0.16);
+  --le-tile-rose-ink:      #ffacc4;
+
+  --le-chart-1: #8fa6ff;
+  --le-chart-2: #ffb277;
+  --le-chart-3: #74d3a4;
+  --le-chart-4: #c8a7ff;
+  --le-chart-5: #ff9fbf;
+
+  --le-surface-page: #050710;
+  --le-surface-card: #0b0f1c;
+  --le-surface-card-soft: #0d1322;
+  --le-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 30px rgba(0, 0, 0, 0.45);
 }
 
 * { box-sizing: border-box; }
