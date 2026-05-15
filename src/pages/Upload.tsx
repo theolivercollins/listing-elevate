@@ -27,6 +27,7 @@ import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { SiteNav } from "@/v2/components/SiteNav";
 import "@/v2/styles/v2.css";
 
@@ -48,6 +49,8 @@ const STEPS = ["Style", "Add-ons", "Property", "Photos"] as const;
 type StepId = 0 | 1 | 2 | 3;
 
 const Upload = () => {
+  const { profile } = useAuth();
+
   // ─── form state ───
   const [step, setStep] = useState<StepId>(0);
   const [address, setAddress] = useState("");
@@ -55,6 +58,7 @@ const Upload = () => {
   const [bedrooms, setBedrooms] = useState("");
   const [bathrooms, setBathrooms] = useState("");
   const [agent, setAgent] = useState("");
+  const [brokerage, setBrokerage] = useState("");
   const [daysOnMarket, setDaysOnMarket] = useState("");
   const [soldPrice, setSoldPrice] = useState("");
   const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
@@ -106,6 +110,21 @@ const Upload = () => {
     getPresets().then((presets) => setHasPresets(presets.length > 0));
   }, [searchParams]);
 
+  // Prefill brokerage from the signed-in user's profile (editable by the agent)
+  useEffect(() => {
+    if (profile?.brokerage && !brokerage) {
+      setBrokerage(profile.brokerage);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.brokerage]);
+
+  // Coerce any preset-loaded orientation away from "vertical"/"both" (not yet available)
+  useEffect(() => {
+    if (selectedOrientation === "vertical" || selectedOrientation === "both") {
+      setSelectedOrientation("horizontal");
+    }
+  }, [selectedOrientation]);
+
   const handleUseLastPreset = async () => {
     const presets = await getPresets();
     if (presets.length > 0) applyPreset(presets[presets.length - 1]);
@@ -146,9 +165,9 @@ const Upload = () => {
   ];
 
   const orientations = [
-    { id: "vertical", label: "Vertical", ratio: "9:16", icon: RectangleVertical, extra: 0 },
-    { id: "horizontal", label: "Horizontal", ratio: "16:9", icon: RectangleHorizontal, extra: 0 },
-    { id: "both", label: "Both", ratio: "9:16 + 16:9", icon: Square, extra: 10 },
+    { id: "vertical", label: "Vertical", ratio: "9:16", icon: RectangleVertical, extra: 0, comingSoon: true },
+    { id: "horizontal", label: "Horizontal", ratio: "16:9", icon: RectangleHorizontal, extra: 0, comingSoon: false },
+    { id: "both", label: "Both", ratio: "9:16 + 16:9", icon: Square, extra: 10, comingSoon: true },
   ];
 
   const selectedDur = durations.find((d) => d.id === selectedDuration);
@@ -172,6 +191,7 @@ const Upload = () => {
     bedrooms &&
     bathrooms &&
     agent &&
+    brokerage &&
     (!needsDaysOnMarket || daysOnMarket) &&
     (!needsSoldPrice || soldPrice)
   );
@@ -217,7 +237,7 @@ const Upload = () => {
           bedrooms: Number(bedrooms),
           bathrooms: Number(bathrooms),
           listing_agent: agent,
-          brokerage: "",
+          brokerage,
           photos: files.map((f) => f.file),
           selectedPackage,
           selectedDuration,
@@ -463,13 +483,19 @@ const Upload = () => {
                     {orientations.map((o) => {
                       const Icon = o.icon;
                       const sel = selectedOrientation === o.id;
+                      const disabled = o.comingSoon;
                       return (
                         <button
                           key={o.id}
                           type="button"
-                          onClick={() => setSelectedOrientation(o.id)}
+                          onClick={disabled ? undefined : () => setSelectedOrientation(o.id)}
+                          disabled={disabled}
                           className="group flex items-center justify-between p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
+                          style={{
+                            background: sel ? "var(--le-bg-elev)" : "var(--le-bg)",
+                            opacity: disabled ? 0.5 : 1,
+                            cursor: disabled ? "not-allowed" : "pointer",
+                          }}
                         >
                           <div className="flex items-center gap-5">
                             <span
@@ -484,12 +510,17 @@ const Upload = () => {
                               <div className="tabular text-[11px] text-muted-foreground">{o.ratio}</div>
                             </div>
                           </div>
-                          {o.extra > 0 && !isLifeCycle && (
-                            <span className="tabular text-xs text-muted-foreground">+${o.extra}</span>
-                          )}
-                          {o.extra > 0 && isLifeCycle && (
-                            <span className="label text-accent">— Included</span>
-                          )}
+                          <div className="flex flex-col items-end gap-1">
+                            {disabled && (
+                              <span className="label text-accent">— Coming soon</span>
+                            )}
+                            {!disabled && o.extra > 0 && !isLifeCycle && (
+                              <span className="tabular text-xs text-muted-foreground">+${o.extra}</span>
+                            )}
+                            {!disabled && o.extra > 0 && isLifeCycle && (
+                              <span className="label text-accent">— Included</span>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -659,6 +690,16 @@ const Upload = () => {
                         value={agent}
                         onChange={(e) => setAgent(e.target.value)}
                         placeholder="Jane Smith"
+                        className="mt-3"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="label text-muted-foreground">Brokerage</Label>
+                      <Input
+                        value={brokerage}
+                        onChange={(e) => setBrokerage(e.target.value)}
+                        placeholder="Compass"
                         className="mt-3"
                       />
                     </div>

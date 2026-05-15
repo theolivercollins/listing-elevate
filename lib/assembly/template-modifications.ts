@@ -43,15 +43,19 @@ export function categoryLabelForPackage(pkg: string | null | undefined): string 
 
 /**
  * Split a free-text address into street line + city/state line.
- * Convention: split on the LAST comma.
+ * Convention: split on the FIRST comma.
+ *
+ * "208 Berry Street, Brooklyn, NY" → ["208 Berry Street", "Brooklyn, NY"]
+ * "2324 Smoketest Lane, Punta Gorda FL" → ["2324 Smoketest Lane", "Punta Gorda FL"]
+ * "123 Main" (no comma) → ["123 Main", ""]
  */
 export function splitAddress(address: string | null | undefined): [string, string] {
   const trimmed = (address ?? "").trim();
   if (!trimmed) return ["", ""];
-  const lastCommaIdx = trimmed.lastIndexOf(",");
-  if (lastCommaIdx < 0) return [trimmed, ""];
-  const street = trimmed.slice(0, lastCommaIdx).trim();
-  const cityState = trimmed.slice(lastCommaIdx + 1).trim();
+  const firstCommaIdx = trimmed.indexOf(",");
+  if (firstCommaIdx < 0) return [trimmed, ""];
+  const street = trimmed.slice(0, firstCommaIdx).trim();
+  const cityState = trimmed.slice(firstCommaIdx + 1).trim();
   return [street, cityState];
 }
 

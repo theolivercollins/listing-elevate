@@ -14,6 +14,10 @@ See also:
 
 ## Right now
 
+**2026-05-14 (order-form-overlays): `feat/order-form-overlays` off `3cb4981` — 4 fixes to make Creatomate overlays render correctly for real customer orders.** (A) `submitted_by` now threaded through `POST /api/properties` via `verifyAuth()`; 401 returned for unauthenticated orders. (B) Brokerage form field added to Step 2, prefilled from `profile.brokerage`, required. (C) `splitAddress` switched from `lastIndexOf` to `indexOf` so `"208 Berry Street, Brooklyn, NY"` → `["208 Berry Street", "Brooklyn, NY"]` — TDD red→green. (D) Vertical + Both orientations marked `comingSoon: true`; disabled + muted + "Coming soon" pill in UI; preset-loaded vertical/both coerced to horizontal. Next: push cascade → `dev → staging → main` via PRs.
+
+---
+
 **2026-05-14 PM (latest): Blog dashboard list was stuck on "Loading…" + no Delete button + Publish click looked silent.** Three fixes:
 
 1. **Blog posts list page hung at "Loading…".** `app/blog/posts` list (and the detail GET) embed `image:image_id (id, blob_url, vision_caption)` via PostgREST. `blog_posts.image_id` had **no foreign-key constraint** to `blog_images(id)` — only `site_id` was an FK — so PostgREST returned `400 Could not find a relationship`. React Query retried, then sat in a fetching state and the user-facing fallback only checks `isLoading`/`posts.length`, so the "Loading…" stayed up. Fixed by migration `056_blog_posts_image_id_fk.sql`: `alter table blog_posts add constraint blog_posts_image_id_fkey foreign key (image_id) references blog_images(id) on delete set null;` + `NOTIFY pgrst, 'reload schema'`. Confirmed 0 orphans before applying. Already applied to shared prod Supabase via MCP — refresh the page and the list loads.

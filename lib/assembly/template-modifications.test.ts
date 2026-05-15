@@ -20,10 +20,17 @@ describe("splitAddress", () => {
     ]);
   });
 
-  it("splits on the LAST comma when there are multiple", () => {
+  it("splits on the FIRST comma when there are multiple (street / city-state)", () => {
+    // Typical 3-part address: "208 Berry Street, Brooklyn, NY"
+    // FIRST comma → street | city, state
+    expect(splitAddress("208 Berry Street, Brooklyn, NY")).toEqual([
+      "208 Berry Street",
+      "Brooklyn, NY",
+    ]);
+    // Same logic for smoketest address format
     expect(splitAddress("123 Main St, Apt 4, Punta Gorda FL")).toEqual([
-      "123 Main St, Apt 4",
-      "Punta Gorda FL",
+      "123 Main St",
+      "Apt 4, Punta Gorda FL",
     ]);
   });
 
@@ -145,8 +152,8 @@ describe("buildTemplateModifications", () => {
       brokerageName: "Compass",
     });
     expect(mods["Full-Address-Final.text"]).toBe("456 Oak Ave, Apt B, Tampa FL");
-    // And the intro split keeps street vs city/state distinct
-    expect(mods["St#/StName-Intro.text"]).toBe("456 Oak Ave, Apt B");
-    expect(mods["City/State-Intro.text"]).toBe("Tampa FL");
+    // First-comma split: street line gets only the street number + name
+    expect(mods["St#/StName-Intro.text"]).toBe("456 Oak Ave");
+    expect(mods["City/State-Intro.text"]).toBe("Apt B, Tampa FL");
   });
 });

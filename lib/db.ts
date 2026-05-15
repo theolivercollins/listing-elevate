@@ -49,6 +49,7 @@ export async function createProperty(data: {
   bathrooms: number;
   listing_agent: string;
   brokerage?: string;
+  submitted_by?: string | null;
   selected_package?: string | null;
   selected_duration?: number | null;
   selected_orientation?: string | null;

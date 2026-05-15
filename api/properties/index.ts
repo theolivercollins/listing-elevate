@@ -4,6 +4,7 @@ import {
   getSupabase,
   insertPhotos,
 } from '../../lib/db.js';
+import { verifyAuth } from '../../lib/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') {
@@ -48,6 +49,12 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handlePost(req: VercelRequest, res: VercelResponse) {
+  // Require authentication — the landing page already gates submission behind sign-in.
+  const auth = await verifyAuth(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Sign in required' });
+  }
+
   try {
     const {
       address, price, bedrooms, bathrooms, listing_agent, brokerage,
@@ -90,6 +97,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       bathrooms: parseFloat(bathrooms),
       listing_agent,
       brokerage: brokerage || undefined,
+      submitted_by: auth.user.id,
       selected_package: selectedPackage ?? null,
       selected_duration: validDuration,
       selected_orientation: selectedOrientation ?? null,
