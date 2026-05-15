@@ -657,7 +657,7 @@ const Upload = () => {
   return (
     <div
       className="glass-page"
-      style={{ display: "flex", flexDirection: "column", minHeight: "100vh", paddingTop: 80 }}
+      style={{ display: "flex", flexDirection: "column", minHeight: "100vh", paddingTop: 92 }}
     >
       {/* Fixed background layers */}
       <div className="glass-bg-base" aria-hidden />
@@ -667,7 +667,7 @@ const Upload = () => {
       {/* Content wrapper above background */}
       <div style={{ position: "relative", zIndex: 2, flex: 1 }}>
         {/* Page heading */}
-        <div style={{ padding: "32px 36px 0" }}>
+        <div style={{ padding: "12px 36px 0" }}>
           <div className="g-page-heading">
             <div>
               <span className="g-page-eyebrow">
