@@ -166,7 +166,7 @@ export function AIChatModal({ open, onClose, initialHtml, onApply }: Props) {
       >
         <DialogHeader className="border-b bg-background/95 px-5 py-3 backdrop-blur">
           <DialogTitle className="flex items-center gap-2 text-base">
-            <MessageSquare className="h-4 w-4 text-primary" /> Chat with AI
+            <MessageSquare className="h-4 w-4 text-primary" /> Chat with Ally
             <span className="ml-3 hidden text-xs font-normal text-muted-foreground sm:inline">
               {selectedTemplate ? (
                 <>using template <span className="font-medium">{selectedTemplate.name}</span></>
@@ -260,7 +260,7 @@ export function AIChatModal({ open, onClose, initialHtml, onApply }: Props) {
                         animate={{ opacity: 1 }}
                         className="flex items-center gap-2 text-xs text-muted-foreground"
                       >
-                        <Loader2 className="h-3 w-3 animate-spin" /> Claude is thinking…
+                        <Loader2 className="h-3 w-3 animate-spin" /> Ally is thinking…
                       </motion.div>
                     )}
                   </div>
