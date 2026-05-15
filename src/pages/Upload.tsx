@@ -27,26 +27,12 @@ import {
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
-import { createProperty, generateVoiceoverPreview } from "@/lib/api";
+import { createProperty, generateVoiceoverPreview, lookupMls } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import "@/v2/styles/v2.css";
-
-// TEMP: declared here until merge with backend branch. Same shape as the real
-// helper in src/lib/api.ts. Remove this stub and add `import { lookupMls } from '@/lib/api'` when merging.
-declare const lookupMls: (address: string) => Promise<{
-  source: "redfin" | "realtor";
-  address: string;
-  price: number | null;
-  bedrooms: number | null;
-  bathrooms: number | null;
-  sqft: number | null;
-  agent: string | null;
-  description: string | null;
-  listingUrl: string;
-}>;
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
