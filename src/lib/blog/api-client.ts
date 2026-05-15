@@ -267,6 +267,7 @@ export interface AIChatResponse {
   author: string | null;
   category: string | null;
   action: "publish" | "save_draft" | null;
+  suggest_research: boolean;
   research_sources: AIResearchSource[];
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
