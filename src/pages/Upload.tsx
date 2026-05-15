@@ -33,7 +33,7 @@ import "@/v2/styles/v2.css";
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
   { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",  gender: "male" as const, description: "Natural, conversational" },
-  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Titan", gender: "male" as const, description: "Deep, commanding narrator" },
+  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Jack", gender: "male" as const, description: "Deep, commanding narrator" },
 ];
 
 interface UploadedFile {

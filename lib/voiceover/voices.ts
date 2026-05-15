@@ -19,7 +19,7 @@ export interface Voice {
 
 export const VOICES: Voice[] = [
   { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",  gender: "male", description: "Natural, conversational" },
-  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Titan", gender: "male", description: "Deep, commanding narrator" },
+  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Jack", gender: "male", description: "Deep, commanding narrator" },
 ];
 
 /** Valid voice IDs — used for fast validation without iterating. */
