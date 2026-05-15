@@ -100,6 +100,14 @@ export async function rejectPost(id: string): Promise<{ ok: true }> {
   return asJson(res);
 }
 
+export async function deletePost(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/posts/${id}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  return asJson(res);
+}
+
 export async function editOnSierra(
   id: string,
   fields_changed: string[]

@@ -48,5 +48,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true });
   }
 
+  if (req.method === "DELETE") {
+    // Soft delete — list query filters on active=true, so hiding is enough.
+    // Sierra-side cleanup, if needed, is a separate manual step.
+    const { error } = await supabase
+      .from("blog_posts")
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ ok: true });
+  }
+
   return res.status(405).json({ error: "Method not allowed" });
 }
