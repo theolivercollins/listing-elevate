@@ -52,46 +52,50 @@ interface ChatResponse {
 
 const BASE_SYSTEM_PROMPT = `You are a senior real-estate blog editor working with The Helgemo Team in Punta Gorda, Florida. You manage every part of the post (title, body, meta, author, category) on behalf of the user — they may also edit fields directly, in which case respect what's there.
 
-Each turn you produce sections in this exact format. Include only the sections that changed or are new on this turn — except <reply> and <html> which are ALWAYS present.
+OUTPUT FORMAT — STRICT.
+
+Wrap each piece of structured output in the exact section tag below. Section tags are deliberately prefixed (post_*, seo_*) so they never collide with real HTML elements inside the post body. NEVER use <html>, <body>, <head>, <article> as section tags — use the exact names below.
+
+Always emit <reply> and <post_body>. Omit other sections only if they haven't changed since the previous turn AND the user didn't ask for them.
 
 <reply>
-1-3 sentences of plain prose acknowledging the request or asking back. No HTML here.
+1-3 sentences of plain prose acknowledging the request or asking back. No HTML.
 </reply>
 
-<title>
-A single line — the proposed post title. Informative, specific (e.g. "Punta Gorda Median Price Up 4.2% in May"). Omit this section if the title hasn't changed since last turn.
-</title>
+<post_title>
+The proposed post title. Single line, informative, specific (e.g. "Punta Gorda Median Price Up 4.2% in May").
+</post_title>
 
-<html>
-Full post HTML using <h2>, <h3>, <p>, <ul>, <ol>, <table>, <strong>, <em>, <blockquote>. No <html>, <body>, <head>, <script>, <style>, <iframe>. No markdown — actual tags.
-</html>
+<post_body>
+The COMPLETE current post HTML using <h2>, <h3>, <p>, <ul>, <ol>, <table>, <strong>, <em>, <blockquote>. No outer <html>, <body>, <head>, <article>. No <script>, <style>, <iframe>. No markdown fences. No code blocks. Actual HTML tags. This block is required on every turn.
+</post_body>
 
-<meta_title>
-Single line, ≤60 chars. SEO title. Omit if unchanged.
-</meta_title>
+<seo_title>
+Single line, ≤60 chars.
+</seo_title>
 
-<meta_description>
-Single line, ≤155 chars. SEO description. Omit if unchanged.
-</meta_description>
+<seo_description>
+Single line, ≤155 chars.
+</seo_description>
 
-<meta_tags>
-Comma-separated, 3-8 keywords. Omit if unchanged.
-</meta_tags>
+<seo_tags>
+Comma-separated, 3-8 keywords.
+</seo_tags>
 
-<author>
-Single line — proposed author label, e.g. "The Helgemo Team". Omit if unchanged.
-</author>
+<post_author>
+Single line, e.g. "The Helgemo Team".
+</post_author>
 
-<category>
-Single line — proposed category label, e.g. "Market Reports". Omit if unchanged.
-</category>
+<post_category>
+Single line, e.g. "Market Reports".
+</post_category>
 
-<action>
-One word: publish | save_draft. ONLY emit this when the user has clearly asked to publish or save (e.g. "publish it", "save this draft", "go live"). Otherwise omit. Never publish or save without an explicit user request.
-</action>
+<post_action>
+One word: publish | save_draft. Emit ONLY when the user has clearly asked to publish or save (e.g. "publish it", "save this draft", "go live"). Otherwise omit. Never publish or save without an explicit user request.
+</post_action>
 
 Rules:
-- The <html> block always contains the COMPLETE current post, never a diff. If the user said hi or is still scoping, return a short placeholder like "<p>Tell me more about what this post should cover.</p>".
+- <post_body> is REQUIRED on every turn and must be the full current draft, never a diff. If the user said hi or is still scoping, put a placeholder like "<p>Tell me more about what this post should cover.</p>" inside <post_body>.
 - Voice: warm, knowledgeable, locally grounded. Speak as "we" not "I". Reference Punta Gorda / Charlotte County / Burnt Store Isles / The Isles by name when relevant.
 - Use ONLY numbers present in the references the user provides. Never fabricate stats. If a stat isn't in the references, omit it or write "data not available".
 - Informative headings, not generic ones. End with a soft CTA inviting the reader to reach out for a tour or market consult.`;
@@ -116,29 +120,75 @@ function validateAttachments(raw: unknown): { ok: true; attachments: Attachment[
   return { ok: true, attachments: out };
 }
 
-function extractTag(text: string, tag: string): string | null {
-  const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i");
-  const m = text.match(re);
+function extractTag(text: string, ...tags: string[]): string | null {
+  // Tolerant: matches <tag> or <tag attr="...">, case-insensitive, takes first.
+  for (const tag of tags) {
+    const re = new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)<\\/${tag}>`, "i");
+    const m = text.match(re);
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+function stripCodeFences(s: string): string {
+  // Sometimes the model wraps HTML in ```html ... ``` even when told not to.
+  const m = s.match(/^```(?:html|HTML)?\s*\n?([\s\S]*?)\n?```$/);
+  return m ? m[1].trim() : s;
+}
+
+function extractFromFences(text: string): string | null {
+  // Last-resort: pull any ```html ... ``` block.
+  const m = text.match(/```(?:html|HTML)\s*\n([\s\S]*?)\n?```/);
   return m ? m[1].trim() : null;
+}
+
+function looksLikeHtml(s: string): boolean {
+  if (!s) return false;
+  const t = s.trim();
+  if (!t.startsWith("<")) return false;
+  // Has at least one of these block-level tags
+  return /<\s*(h[1-6]|p|ul|ol|table|blockquote|div|section)\b/i.test(t);
 }
 
 function parseSections(text: string) {
   const reply = extractTag(text, "reply") ?? "";
-  const body_html = extractTag(text, "html") ?? "";
-  const title = extractTag(text, "title");
-  const meta_title = extractTag(text, "meta_title");
-  const meta_description = extractTag(text, "meta_description");
-  const tagsRaw = extractTag(text, "meta_tags");
+
+  // post_body is the canonical name; fall back to <html> (legacy) or
+  // a fenced ```html ... ``` block if the model regresses.
+  let body_html = extractTag(text, "post_body", "html", "body", "article");
+  if (body_html) body_html = stripCodeFences(body_html);
+  if (!body_html) body_html = extractFromFences(text);
+
+  // Field tags — accept both new (post_*/seo_*) and legacy names for now so
+  // a deploy gap can't silently lose data.
+  const title = extractTag(text, "post_title", "title");
+  const meta_title = extractTag(text, "seo_title", "meta_title");
+  const meta_description = extractTag(text, "seo_description", "meta_description");
+  const tagsRaw = extractTag(text, "seo_tags", "meta_tags");
   const meta_tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : null;
-  const author = extractTag(text, "author");
-  const category = extractTag(text, "category");
-  const actionRaw = extractTag(text, "action");
+  const author = extractTag(text, "post_author", "author");
+  const category = extractTag(text, "post_category", "category");
+  const actionRaw = extractTag(text, "post_action", "action");
   const action: "publish" | "save_draft" | null =
     actionRaw === "publish" || actionRaw === "save_draft" ? actionRaw : null;
 
-  // Fallback: if no tags at all, treat the whole text as the reply.
-  const looksUnstructured = !body_html && !title && !meta_title && !reply;
-  if (looksUnstructured) {
+  // Last resort — if we still have no body but the message contains an
+  // HTML-looking blob (e.g. the model emitted raw HTML next to the prose
+  // and forgot the wrapper), promote whatever's in the text that looks
+  // like a post.
+  if (!body_html) {
+    // Strip any tag pairs we recognise, then see if the remainder is HTML.
+    const stripped = text
+      .replace(/<reply>[\s\S]*?<\/reply>/i, "")
+      .replace(/<post_title>[\s\S]*?<\/post_title>/i, "")
+      .replace(/<seo_[a-z_]+>[\s\S]*?<\/seo_[a-z_]+>/gi, "")
+      .replace(/<post_[a-z_]+>[\s\S]*?<\/post_[a-z_]+>/gi, "")
+      .trim();
+    if (looksLikeHtml(stripped)) body_html = stripped;
+  }
+
+  // If we got everything blank, dump the whole text into reply.
+  if (!body_html && !title && !meta_title && !reply) {
     return {
       reply: text.trim(), body_html: "",
       title: null, meta_title: null, meta_description: null, meta_tags: null,
@@ -146,7 +196,10 @@ function parseSections(text: string) {
     };
   }
 
-  return { reply, body_html, title, meta_title, meta_description, meta_tags, author, category, action };
+  return {
+    reply, body_html: body_html ?? "",
+    title, meta_title, meta_description, meta_tags, author, category, action,
+  };
 }
 
 async function buildSystemPrompt(opts: {
@@ -233,7 +286,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isLast = i === lastIndex;
     let text = m.content;
     if (isLast && m.role === "user" && currentHtml) {
-      text = `CURRENT DRAFT (rewrite as needed):\n<html>\n${currentHtml}\n</html>\n\nUSER MESSAGE:\n${m.content}`;
+      text = `CURRENT DRAFT (rewrite as needed):\n<current_draft>\n${currentHtml}\n</current_draft>\n\nUSER MESSAGE:\n${m.content}`;
     }
     if (!isLast || m.role !== "user" || attachments.length === 0) {
       return { role: m.role, content: text };
