@@ -481,19 +481,21 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
     }
   }
 
-  const groups = new Map<string, LabSession[]>();
-  for (const s of sessions) {
-    const key = s.batch_label?.trim() || "Unbatched";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(s);
-  }
-  const ordered = Array.from(groups.entries()).sort((a, b) => {
-    if (a[0] === "Unbatched") return -1;
-    if (b[0] === "Unbatched") return 1;
-    const aNewest = Math.max(...a[1].map((s) => new Date(s.created_at).getTime()));
-    const bNewest = Math.max(...b[1].map((s) => new Date(s.created_at).getTime()));
-    return bNewest - aNewest;
-  });
+  const ordered = useMemo(() => {
+    const groups = new Map<string, LabSession[]>();
+    for (const s of sessions) {
+      const key = s.batch_label?.trim() || "Unbatched";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(s);
+    }
+    return Array.from(groups.entries()).sort((a, b) => {
+      if (a[0] === "Unbatched") return -1;
+      if (b[0] === "Unbatched") return 1;
+      const aNewest = Math.max(...a[1].map((s) => new Date(s.created_at).getTime()));
+      const bNewest = Math.max(...b[1].map((s) => new Date(s.created_at).getTime()));
+      return bNewest - aNewest;
+    });
+  }, [sessions]);
 
   async function moveSession(sessionId: string, newLabel: string | null) {
     try {
@@ -1180,7 +1182,7 @@ function SessionCard({
             </div>
           </div>
         )}
-        <img src={session.image_url} alt={session.label ?? "session"} style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", display: "block" }} />
+        <img src={session.image_url} alt={session.label ?? "session"} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", display: "block" }} />
         {session.pending_render && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, background: "rgba(182,128,44,0.9)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
@@ -2371,7 +2373,7 @@ function IterationCard({
               src={iteration.clip_url}
               controls
               playsInline
-              preload="metadata"
+              preload="none"
               style={{ width: "100%", maxWidth: 480, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", display: "block" }}
             />
             <a
