@@ -14,6 +14,8 @@ See also:
 
 ## Right now
 
+- **Homepage Ally — `feat/homepage-ally` worktree.** Public concierge chat lifted from in-app blog Ally; feature-flagged off by default (`VITE_HOMEPAGE_ALLY_ENABLED`). Backend at `api/marketing/ally-chat.ts` (Sonnet 4.6 + prompt caching), widget at `src/components/marketing/MarketingAllyChat.tsx`, mounted in `src/v2/pages/Landing.tsx`. Migration `057_marketing_ally.sql` ON DISK ONLY — not yet applied to prod Supabase. Daily cleanup cron at `0 4 * * *`. Spec: `docs/specs/2026-05-15-homepage-ally-design.md`. Plan: `docs/plans/2026-05-15-homepage-ally-plan.md`. Next: (1) controller applies migration with Oliver's go-ahead via Supabase MCP; (2) controller runs `scripts/marketing/test-ally-chat.ts` against local dev; (3) merge to `dev` → `staging` → `main` per LE branch model; (4) production env-var enable requires explicit Oliver go-ahead.
+
 **2026-05-14 evening (latest, PR #51): Smoke test surfaced four follow-on gaps; all fixed.**
 
 1. **DELETE returned 404** — and so did every other `/api/blog/posts/[id]/...` path. `vercel.json` defines explicit `routes` (not filesystem-based dynamic resolution); all other dynamic API paths in this repo had explicit rewrites, but the blog ones did not. Added 7 new rewrites for `posts/[id]`, `posts/[id]/{publish,reject,edit-on-sierra,hold}`, `images/[id]`, `templates/[id]`. This was the root cause of "Delete failed: 404" and probably affected other blog detail flows nobody had exercised since the engine shipped.
