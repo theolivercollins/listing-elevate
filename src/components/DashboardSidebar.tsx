@@ -1,121 +1,194 @@
-import { NavLink, useLocation, Link } from "react-router-dom";
-import type { LucideIcon } from "lucide-react";
-import {
-  LayoutGrid,
-  GitBranch,
-  Building2,
-  FileText,
-  DollarSign,
-  Code2,
-  Newspaper,
-  Settings as SettingsIcon,
-  Upload as UploadIcon,
-  LogOut,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
+import { Icon, type IconName } from "@/components/dashboard/icons";
 
-type Item = {
+const COLLAPSED_KEY = "le-dashboard-sidebar-collapsed";
+
+interface SidebarItem {
   to: string;
   label: string;
-  icon: LucideIcon;
+  icon: IconName;
   end?: boolean;
+  badge?: number;
   match?: (pathname: string) => boolean;
-};
+}
 
-const NAV: Item[] = [
-  { to: "/dashboard", label: "Overview", icon: LayoutGrid, end: true },
-  { to: "/dashboard/pipeline", label: "Pipeline", icon: GitBranch },
-  { to: "/dashboard/properties", label: "Listings", icon: Building2 },
-  { to: "/dashboard/logs", label: "Logs", icon: FileText },
-  { to: "/dashboard/finances", label: "Finances", icon: DollarSign },
+interface SidebarSection {
+  label: string;
+  items: SidebarItem[];
+}
+
+const SECTIONS: SidebarSection[] = [
   {
-    to: "/dashboard/development",
-    label: "Development",
-    icon: Code2,
-    match: (p) => p.startsWith("/dashboard/development") || p.startsWith("/dashboard/rating-ledger"),
+    label: "Studio",
+    items: [
+      { to: "/dashboard", label: "Overview", icon: "grid", end: true },
+      { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
+      { to: "/dashboard/properties", label: "Listings", icon: "home" },
+      { to: "/dashboard/users", label: "Users", icon: "users" },
+    ],
   },
   {
-    to: "/dashboard/blog/posts",
-    label: "Blog",
-    icon: Newspaper,
-    match: (p) => p.startsWith("/dashboard/blog"),
+    label: "Lab",
+    items: [
+      { to: "/dashboard/development/prompt-lab", label: "Prompt lab", icon: "beaker" },
+      { to: "/dashboard/development/prompt-lab/recipes", label: "Recipes", icon: "book" },
+      { to: "/dashboard/development/proposals", label: "Proposals", icon: "branch" },
+      { to: "/dashboard/rating-ledger", label: "Rating ledger", icon: "sliders" },
+    ],
   },
-  { to: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
+  {
+    label: "Ops",
+    items: [
+      { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
+      { to: "/dashboard/logs", label: "Logs", icon: "logs" },
+      { to: "/dashboard/development/system-status", label: "System status", icon: "activity" },
+      {
+        to: "/dashboard/blog/posts",
+        label: "Blog studio",
+        icon: "image",
+        match: (p) => p.startsWith("/dashboard/blog"),
+      },
+      { to: "/dashboard/settings", label: "Settings", icon: "settings" },
+    ],
+  },
 ];
 
-export function DashboardSidebar() {
+function useCollapsedState() {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(COLLAPSED_KEY) === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    document.documentElement.dataset.leSidebarCollapsed = collapsed ? "1" : "0";
+  }, [collapsed]);
+  return [collapsed, setCollapsed] as const;
+}
+
+export function useDashboardSidebar() {
+  return useCollapsedState();
+}
+
+export interface DashboardSidebarProps {
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+}
+
+export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
+  const { user } = useAuth();
   const location = useLocation();
-  const { signOut } = useAuth();
+  const initials = (user?.email ?? "Listing Elevate")
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? "")
+    .join("") || "LE";
+  const displayName = user?.email?.split("@")[0]?.replace(/\./g, " ") ?? "Listing Elevate";
+  const email = user?.email ?? "studio@listingelevate.com";
 
   return (
-    <aside
-      className="le-dash-sidebar"
-      aria-label="Dashboard navigation"
-    >
-      <div className="le-dash-sidebar__inner">
-        {/* Brand */}
-        <Link
-          to="/dashboard"
-          className="le-dash-sidebar__brand"
-          aria-label="Listing Elevate — dashboard home"
-        >
-          <span className="le-dash-sidebar__brand-mark">
-            <LELogoMark size={22} variant="light" />
+    <aside className="le-dash-sidebar">
+      <Link to="/dashboard" className="le-sidebar-brand">
+        <span className="le-sidebar-logo">
+          <Icon name="logo" size={28} />
+        </span>
+        {!collapsed && (
+          <span className="le-sidebar-brand-text">
+            <span className="le-sidebar-brand-name">Listing Elevate</span>
+            <span className="le-sidebar-brand-sub">Studio · v2.4</span>
           </span>
-        </Link>
+        )}
+      </Link>
 
-        {/* Nav rail */}
-        <nav className="le-dash-sidebar__nav">
-          {NAV.map((item) => {
-            const active = item.match
-              ? item.match(location.pathname)
-              : item.end
-              ? location.pathname === item.to
-              : location.pathname.startsWith(item.to);
-            const Icon = item.icon;
-            return (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={() =>
-                  `le-dash-sidebar__item${active ? " le-dash-sidebar__item--active" : ""}`
-                }
-                aria-label={item.label}
-                title={item.label}
-              >
-                <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                <span className="le-dash-sidebar__label">{item.label}</span>
-              </NavLink>
-            );
-          })}
-        </nav>
+      {!collapsed && (
+        <button type="button" className="le-workspace-switch">
+          <span className="le-ws-avatar">R</span>
+          <span className="le-ws-info">
+            <span className="le-ws-name">Recasi</span>
+            <span className="le-ws-sub">Production</span>
+          </span>
+          <Icon name="chevron-down" size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
+        </button>
+      )}
 
-        {/* Footer — upload + sign-out */}
-        <div className="le-dash-sidebar__footer">
-          <Link
-            to="/upload"
-            className="le-dash-sidebar__item"
-            aria-label="New video"
-            title="New video"
-          >
-            <UploadIcon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-            <span className="le-dash-sidebar__label">New video</span>
+      <nav className="le-sidebar-nav" aria-label="Dashboard navigation">
+        {SECTIONS.map((section) => (
+          <div className="le-sidebar-section" key={section.label}>
+            {!collapsed && <div className="le-sidebar-section-label">{section.label}</div>}
+            {section.items.map((item) => {
+              const matched = item.match
+                ? item.match(location.pathname)
+                : item.end
+                ? location.pathname === item.to
+                : location.pathname === item.to ||
+                  location.pathname.startsWith(item.to + "/");
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={() =>
+                    [
+                      "le-nav-item",
+                      matched ? "is-active" : "",
+                      collapsed ? "is-collapsed" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")
+                  }
+                  title={collapsed ? item.label : undefined}
+                >
+                  <span className="le-nav-item-icon">
+                    <Icon name={item.icon} size={17} strokeWidth={matched ? 1.9 : 1.6} />
+                  </span>
+                  {!collapsed && <span className="le-nav-item-label">{item.label}</span>}
+                  {!collapsed && item.badge != null && (
+                    <span className="le-nav-item-badge">{item.badge}</span>
+                  )}
+                  {collapsed && item.badge != null && <span className="le-nav-item-dot" />}
+                  {collapsed && <span className="le-nav-tooltip">{item.label}</span>}
+                </NavLink>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+
+      <div className="le-sidebar-foot">
+        {!collapsed ? (
+          <Link to="/account" className="le-sidebar-user">
+            <span className="le-sidebar-user-avatar">{initials}</span>
+            <span className="le-sidebar-user-info">
+              <span className="le-sidebar-user-name" style={{ textTransform: "capitalize" }}>
+                {displayName}
+              </span>
+              <span className="le-sidebar-user-email">{email}</span>
+            </span>
+            <span className="le-sidebar-user-more" aria-hidden>
+              <Icon name="dots" size={14} />
+            </span>
           </Link>
-          <button
-            type="button"
-            onClick={() => {
-              void signOut();
-            }}
-            className="le-dash-sidebar__item le-dash-sidebar__item--button"
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
-            <span className="le-dash-sidebar__label">Sign out</span>
-          </button>
-        </div>
+        ) : (
+          <Link to="/account" className="le-rail-avatar" title={email}>
+            {initials}
+          </Link>
+        )}
+        <button
+          type="button"
+          className="le-sidebar-collapse"
+          onClick={onToggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <Icon
+            name={collapsed ? "chevron-right" : "chevron-down"}
+            size={14}
+            style={{ transform: collapsed ? "none" : "rotate(90deg)" }}
+          />
+          {!collapsed && <span>Collapse</span>}
+        </button>
       </div>
     </aside>
   );

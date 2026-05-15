@@ -26,6 +26,7 @@ import PropertyDetail from "./pages/dashboard/PropertyDetail";
 import DashboardLogs from "./pages/dashboard/Logs";
 import DashboardFinances from "./pages/dashboard/Finances";
 import DashboardSettings from "./pages/dashboard/Settings";
+import DashboardUsers from "./pages/dashboard/Users";
 import DashboardDevelopment from "./pages/dashboard/Development";
 import DashboardPromptLab from "./pages/dashboard/PromptLab";
 import DashboardPromptLabRecipes from "./pages/dashboard/PromptLabRecipes";
@@ -106,6 +107,7 @@ const App = () => (
                     <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
                     <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
                     <Route path="finances" element={<DashboardFinances />} />
+                    <Route path="users" element={<DashboardUsers />} />
                     <Route path="settings" element={<DashboardSettings />} />
                   </Route>
                 </Route>
