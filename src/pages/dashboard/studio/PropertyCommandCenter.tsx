@@ -7,6 +7,7 @@ import {
   Plus,
   AlertTriangle,
   ExternalLink,
+  ArrowLeft,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -307,7 +308,34 @@ const PropertyCommandCenter = () => {
       {/* ─── Page heading ─── */}
       <div className="studio-page-heading">
         <div>
-          <span className="studio-page-eyebrow">Studio · listing</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <Link to="/dashboard/studio" className="studio-btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}>
+              <ArrowLeft size={11} strokeWidth={1.8} />
+              Queue
+            </Link>
+            {client && (
+              <>
+                <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)' }}>/</span>
+                <Link
+                  to={`/dashboard/studio/clients/${property.client_id}`}
+                  className="studio-btn-ghost"
+                  style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}
+                >
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      background: client.brand_primary_hex ?? 'var(--le-muted-2)',
+                      flexShrink: 0,
+                      display: 'inline-block',
+                    }}
+                  />
+                  {client.name}
+                </Link>
+              </>
+            )}
+          </div>
           <h1
             className="studio-page-h1"
             style={{
@@ -320,30 +348,7 @@ const PropertyCommandCenter = () => {
           >
             {property.address}
           </h1>
-          <div
-            style={{
-              marginTop: 10,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-            }}
-          >
-            {client && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: '50%',
-                    background: client.brand_primary_hex ?? 'var(--le-muted-2)',
-                    flexShrink: 0,
-                    display: 'inline-block',
-                  }}
-                />
-                <span style={{ fontSize: 13, color: 'var(--le-muted)' }}>{client.name}</span>
-              </div>
-            )}
+          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
             <StatusPill status={property.status} />
           </div>
         </div>
@@ -356,7 +361,7 @@ const PropertyCommandCenter = () => {
               className="studio-btn-ghost"
             >
               <ExternalLink size={13} strokeWidth={1.6} />
-              Open preview
+              Open video
             </a>
           )}
           <button
@@ -382,7 +387,7 @@ const PropertyCommandCenter = () => {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
         {/* ── Final video ── */}
-        <SectionCard eyebrow="Studio · listing" title="Final video">
+        <SectionCard eyebrow="Output" title="Final video">
           {property.status === 'complete' && (property.horizontal_video_url || property.vertical_video_url) ? (
             <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {property.horizontal_video_url && (
@@ -430,12 +435,12 @@ const PropertyCommandCenter = () => {
         </SectionCard>
 
         {/* ── Scenes ── */}
-        <SectionCard eyebrow="Studio · listing" title={`Scenes (${scenes.length})`}>
+        <SectionCard eyebrow="Pipeline" title={`Scenes (${scenes.length})`}>
           <SceneStrip scenes={scenes} propertyId={property.id} onSwapped={fetchBundle} />
         </SectionCard>
 
         {/* ── Director's notes ── */}
-        <SectionCard eyebrow="Studio · listing" title="Director's notes">
+        <SectionCard eyebrow="Direction" title="Director's notes">
           {revision_notes.length === 0 ? (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)', marginBottom: 16 }}>
               No notes yet.
@@ -528,7 +533,7 @@ const PropertyCommandCenter = () => {
         </SectionCard>
 
         {/* ── Preview links ── */}
-        <SectionCard eyebrow="Studio · listing" title="Preview links">
+        <SectionCard eyebrow="Client delivery" title="Preview links">
           {linkError && (
             <div className="studio-error-strip" style={{ marginBottom: 12 }}>{linkError}</div>
           )}
@@ -617,7 +622,7 @@ const PropertyCommandCenter = () => {
         </SectionCard>
 
         {/* ── Brand kit summary ── */}
-        <SectionCard eyebrow="Studio · listing" title="Brand kit">
+        <SectionCard eyebrow="Client" title="Brand kit">
           {!property.client_id ? (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No client linked.</p>
           ) : !client ? (
@@ -725,7 +730,7 @@ const PropertyCommandCenter = () => {
         </SectionCard>
 
         {/* ── Cost panel ── */}
-        <SectionCard eyebrow="Studio · listing" title="Cost">
+        <SectionCard eyebrow="Accounting" title="Cost">
           <div style={{ marginBottom: 16 }}>
             <span
               style={{
@@ -804,7 +809,7 @@ const PropertyCommandCenter = () => {
         </SectionCard>
 
         {/* ── Metadata ── */}
-        <SectionCard eyebrow="Studio · listing" title="Metadata">
+        <SectionCard eyebrow="Listing details" title="Metadata">
           <div
             style={{
               display: 'grid',

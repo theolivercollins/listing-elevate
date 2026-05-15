@@ -75,19 +75,16 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 // ─── Section heading ───────────────────────────────────────────────────────────
 
-function SectionHeading({ children }: { children: React.ReactNode }) {
+function SectionHeading({ eyebrow, children }: { eyebrow?: string; children: React.ReactNode }) {
   return (
-    <h3
-      style={{
-        margin: '0 0 16px 0',
-        fontSize: 16,
-        fontWeight: 600,
-        letterSpacing: '-0.015em',
-        color: 'var(--le-ink)',
-      }}
-    >
-      {children}
-    </h3>
+    <div style={{ marginBottom: 20 }}>
+      {eyebrow && (
+        <span className="studio-section-eyebrow">{eyebrow}</span>
+      )}
+      <h3 className="studio-section-h3" style={{ margin: 0 }}>
+        {children}
+      </h3>
+    </div>
   );
 }
 
@@ -345,9 +342,9 @@ const ClientEdit = () => {
         onSubmit={handleSubmit}
         style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 16 }}
       >
-        {/* ── Section 1: Basics ── */}
+        {/* ── Section 1: Identity ── */}
         <div className="studio-card" style={{ padding: 24 }}>
-          <SectionHeading>Basics</SectionHeading>
+          <SectionHeading eyebrow="1 of 3">Identity</SectionHeading>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <FieldLabel required>Name</FieldLabel>
@@ -436,7 +433,7 @@ const ClientEdit = () => {
 
         {/* ── Section 2: Brand kit ── */}
         <div className="studio-card" style={{ padding: 24 }}>
-          <SectionHeading>Brand kit</SectionHeading>
+          <SectionHeading eyebrow="2 of 3">Brand kit</SectionHeading>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* Logo upload */}
             <div>
@@ -591,7 +588,7 @@ const ClientEdit = () => {
 
         {/* ── Section 3: Voice (Phase 3) ── */}
         <div className="studio-card" style={{ padding: 24 }}>
-          <SectionHeading>Voice</SectionHeading>
+          <SectionHeading eyebrow="3 of 3">Voice</SectionHeading>
           <div>
             <FieldLabel>ElevenLabs voice ID</FieldLabel>
             <input
@@ -611,40 +608,8 @@ const ClientEdit = () => {
           <div className="studio-error-strip">{submitError}</div>
         )}
 
-        {/* ── Form actions (bottom inline) ── */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '16px 0',
-          }}
-        >
-          <button
-            type="button"
-            className="studio-btn-ghost"
-            onClick={() => navigate('/dashboard/studio/clients')}
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="studio-cta-primary"
-            disabled={isBusy || !form.name.trim()}
-          >
-            {isBusy ? (
-              <>
-                <Loader2 size={13} className="studio-spinner" />
-                {uploadingFiles ? 'Uploading…' : 'Saving…'}
-              </>
-            ) : isNew ? (
-              'Create client'
-            ) : (
-              'Save changes'
-            )}
-          </button>
-        </div>
+        {/* Spacer so the last card doesn't clip against the viewport edge */}
+        <div style={{ height: 8 }} />
       </form>
     </StudioShell>
   );
