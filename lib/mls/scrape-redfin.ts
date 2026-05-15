@@ -40,38 +40,13 @@ function toStr(val: unknown): string | null {
 // page and extracts structured data via data-rf-test-id selectors.
 const REDFIN_PAGE_FUNCTION = /* js */ `
 async function pageFunction(context) {
-  const { page, request, log } = context;
-  log.info('Loaded: ' + request.loadedUrl);
+  const { request, log, enqueueRequest } = context;
+  const loadedUrl = request.loadedUrl || request.url || location.href;
+  log.info('Loaded: ' + loadedUrl);
 
-  // Step 1: if we landed on a search results page, jump to the first listing.
-  const isAlreadyDetail = (request.loadedUrl || '').includes('/home/');
-
-  if (!isAlreadyDetail) {
-    await new Promise(r => setTimeout(r, 1500));
-
-    const detailHref = await page.evaluate(() => {
-      const candidates = [
-        'a.HomeCardContainer__link',
-        'a[data-rf-test-id="basicNode-homeCard"]',
-        'a[href*="/home/"]',
-        'a.bp-Homecard',
-      ];
-      for (const sel of candidates) {
-        const a = document.querySelector(sel);
-        if (a && a.href) return a.href;
-      }
-      return null;
-    });
-
-    if (detailHref) {
-      await page.goto(detailHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    }
-  }
-
-  // Step 2: extract from detail page.
-  await page.waitForSelector('[data-rf-test-id="abp-price"], .statsValue, h1', { timeout: 15000 }).catch(() => {});
-
-  const data = await page.evaluate(() => {
+  // Detail page → extract and return.
+  if (loadedUrl.includes('/home/')) {
+    await new Promise(r => setTimeout(r, 800));
     const grab = (selectors) => {
       for (const s of selectors) {
         const el = document.querySelector(s);
@@ -80,44 +55,37 @@ async function pageFunction(context) {
       return null;
     };
     return {
-      addressText: grab([
-        '[data-rf-test-id="abp-streetLine"]',
-        'h1[data-rf-test-id="address"]',
-        'h1',
-      ]),
-      priceText: grab([
-        '[data-rf-test-id="abp-price"] .statsValue',
-        '[data-rf-test-id="abp-price"]',
-        'div[class*="Price"]',
-      ]),
-      bedsText: grab([
-        '[data-rf-test-id="abp-beds"] .statsValue',
-        '[data-rf-test-id="abp-beds"]',
-      ]),
-      bathsText: grab([
-        '[data-rf-test-id="abp-baths"] .statsValue',
-        '[data-rf-test-id="abp-baths"]',
-      ]),
-      sqftText: grab([
-        '[data-rf-test-id="abp-sqFt"] .statsValue',
-        '[data-rf-test-id="abp-sqFt"]',
-      ]),
-      descriptionText: grab([
-        '[data-rf-test-id="listingRemarks"]',
-        '[data-rf-test-id="listing-description"]',
-        '#marketing-remarks',
-        '.remarks',
-      ]),
-      agentText: grab([
-        '[data-rf-test-id="agent-info-name"]',
-        '[data-rf-test-id="listingAgent-name"]',
-        '.agent-name',
-      ]),
-      url: location.href,
+      url: loadedUrl,
+      addressText: grab(['[data-rf-test-id="abp-streetLine"]', 'h1[data-rf-test-id="address"]', 'h1']),
+      priceText: grab(['[data-rf-test-id="abp-price"] .statsValue', '[data-rf-test-id="abp-price"]', 'div[class*="Price"]']),
+      bedsText: grab(['[data-rf-test-id="abp-beds"] .statsValue', '[data-rf-test-id="abp-beds"]']),
+      bathsText: grab(['[data-rf-test-id="abp-baths"] .statsValue', '[data-rf-test-id="abp-baths"]']),
+      sqftText: grab(['[data-rf-test-id="abp-sqFt"] .statsValue', '[data-rf-test-id="abp-sqFt"]']),
+      descriptionText: grab(['[data-rf-test-id="listingRemarks"]', '[data-rf-test-id="listing-description"]', '#marketing-remarks', '.remarks']),
+      agentText: grab(['[data-rf-test-id="agent-info-name"]', '[data-rf-test-id="listingAgent-name"]', '.agent-name']),
     };
-  });
+  }
 
-  return data;
+  // Search/landing page → find first listing card, enqueue it.
+  await new Promise(r => setTimeout(r, 2500)); // let React hydrate
+  const candidates = [
+    'a.HomeCardContainer__link',
+    'a[data-rf-test-id="basicNode-homeCard"]',
+    'a[href*="/home/"]',
+    'a.bp-Homecard',
+  ];
+  let href = null;
+  for (const sel of candidates) {
+    const a = document.querySelector(sel);
+    if (a && a.href) { href = a.href; break; }
+  }
+  if (href) {
+    log.info('Enqueueing detail: ' + href);
+    await enqueueRequest({ url: href });
+  } else {
+    log.warning('No listing link found on search page');
+  }
+  return null; // don't emit the search page as a dataset item
 }
 `;
 
@@ -152,7 +120,7 @@ export async function scrapeRedfinByAddress(
           useApifyProxy: true,
           apifyProxyGroups: ["RESIDENTIAL"],
         },
-        maxRequestsPerCrawl: 2,
+        maxRequestsPerCrawl: 2, maxPagesPerCrawl: 2,
         maxPagesPerCrawl: 2,
         pageLoadTimeoutSecs: 60,
         maxScrollHeightPixels: 0,

@@ -41,88 +41,41 @@ function toStr(val: unknown): string | null {
 // detail page and extracts structured data via data-testid selectors.
 const REALTOR_PAGE_FUNCTION = /* js */ `
 async function pageFunction(context) {
-  const { page, request, log } = context;
-  log.info('Loaded: ' + request.loadedUrl);
+  const { request, log, enqueueRequest } = context;
+  const loadedUrl = request.loadedUrl || request.url || location.href;
+  log.info('Loaded: ' + loadedUrl);
 
-  // Step 1: if we landed on a search results page, jump to the first listing.
-  const isAlreadyDetail = (request.loadedUrl || '').includes('/realestateandhomes-detail/');
-
-  if (!isAlreadyDetail) {
-    await new Promise(r => setTimeout(r, 1500));
-
-    const detailHref = await page.evaluate(() => {
-      const candidates = [
-        'a[href*="/realestateandhomes-detail/"]',
-        'a[data-testid="card-anchor"]',
-        'a.property-anchor',
-      ];
-      for (const sel of candidates) {
-        const a = document.querySelector(sel);
-        if (a && a.href) return a.href;
-      }
-      return null;
-    });
-
-    if (detailHref) {
-      await page.goto(detailHref, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    }
-  }
-
-  // Step 2: extract from detail page.
-  await page.waitForSelector('[data-testid="price"], [data-label="property-price"], h1', { timeout: 15000 }).catch(() => {});
-
-  const data = await page.evaluate(() => {
+  if (loadedUrl.includes('/realestateandhomes-detail/')) {
+    await new Promise(r => setTimeout(r, 800));
     const grab = (selectors) => {
       for (const s of selectors) {
-        let el;
-        try { el = document.querySelector(s); } catch (e) { continue; }
+        const el = document.querySelector(s);
         if (el && el.textContent && el.textContent.trim()) return el.textContent.trim();
       }
       return null;
     };
     return {
-      addressText: grab([
-        '[data-testid="address"]',
-        'h1[data-testid="pdp-main-header"]',
-        'h1',
-      ]),
-      priceText: grab([
-        '[data-testid="price"]',
-        '[data-label="property-price"]',
-        '.price',
-        '[class*="Price"]',
-      ]),
-      bedsText: grab([
-        '[data-testid="property-meta-beds"]',
-        '[data-label="property-meta-beds"]',
-        'li[data-testid="beds"]',
-      ]),
-      bathsText: grab([
-        '[data-testid="property-meta-baths"]',
-        '[data-label="property-meta-baths"]',
-        'li[data-testid="baths"]',
-      ]),
-      sqftText: grab([
-        '[data-testid="property-meta-sqft"]',
-        '[data-label="property-meta-sqft"]',
-        'li[data-testid="sqft"]',
-      ]),
-      descriptionText: grab([
-        '[data-testid="description"]',
-        '#ldp-detail-overview',
-        '[data-label="property-description"]',
-        '.description',
-      ]),
-      agentText: grab([
-        '[data-testid="agent-name"]',
-        '.agent-name',
-        '[data-label="agent-name"]',
-      ]),
-      url: location.href,
+      url: loadedUrl,
+      addressText: grab(['[data-testid="address"]', '[data-label="property-address"]', 'h1']),
+      priceText: grab(['[data-testid="price"]', '[data-label="property-price"]', '.price']),
+      bedsText: grab(['[data-testid="property-meta-beds"]', '[data-label="property-meta-beds"]']),
+      bathsText: grab(['[data-testid="property-meta-baths"]', '[data-label="property-meta-baths"]']),
+      sqftText: grab(['[data-testid="property-meta-sqft"]', '[data-label="property-meta-sqft"]']),
+      descriptionText: grab(['[data-testid="description"]', '#ldp-detail-overview', '[data-label="property-description"]']),
+      agentText: grab(['[data-testid="agent-name"]', '.agent-name']),
     };
-  });
+  }
 
-  return data;
+  // Search results → find first detail link
+  await new Promise(r => setTimeout(r, 2500));
+  const a = document.querySelector('a[href*="/realestateandhomes-detail/"]');
+  if (a && a.href) {
+    log.info('Enqueueing: ' + a.href);
+    await enqueueRequest({ url: a.href });
+  } else {
+    log.warning('No realtor.com listing link found');
+  }
+  return null;
 }
 `;
 
@@ -157,7 +110,7 @@ export async function scrapeRealtorByAddress(
           useApifyProxy: true,
           apifyProxyGroups: ["RESIDENTIAL"],
         },
-        maxRequestsPerCrawl: 2,
+        maxRequestsPerCrawl: 2, maxPagesPerCrawl: 2,
         maxPagesPerCrawl: 2,
         pageLoadTimeoutSecs: 60,
         maxScrollHeightPixels: 0,
