@@ -57,6 +57,8 @@ import { fetchPropertyBranding } from "./assembly/branding.js";
 import { selectMusicTrackForProperty } from "./assembly/music.js";
 import { resolveTemplateId } from "./assembly/template-resolver.js";
 import { buildTemplateModifications } from "./assembly/template-modifications.js";
+import { brandKitFromClient, mergeBrandVars } from "./operator-studio/brand-kit.js";
+import type { ClientRow } from "./types/operator-studio.js";
 import {
   analyzePhotoWithGemini,
   type ExtendedPhotoAnalysis,
@@ -1139,7 +1141,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
       // The duration-fit pass usually already keeps us at ≤8; this is
       // defense-in-depth.
       const templateClipInputs = clipInputs.slice(0, 8);
-      const templateMods = templateId
+      let templateMods = templateId
         ? buildTemplateModifications({
             address: property.address,
             selectedPackage: property.selected_package,
@@ -1149,6 +1151,36 @@ export async function runAssembly(propertyId: string): Promise<void> {
             musicUrl: musicTrack?.fileUrl,
           })
         : null;
+
+      // Operator-flow brand injection: when a property belongs to a client,
+      // fetch the client's brand kit and merge Brand.* keys into the
+      // modifications payload. No-op when client_id is null (customer flow)
+      // or when brand fields are unpopulated. Creatomate silently ignores
+      // keys for placeholders that don't exist in the template — the template
+      // must have Brand.* variables added in the Creatomate dashboard for the
+      // values to render visibly. See docs/specs/2026-05-15-operator-studio-design.md.
+      if (templateMods && property.client_id) {
+        const { data: clientRow } = await getSupabase()
+          .from('clients')
+          .select('*')
+          .eq('id', property.client_id)
+          .maybeSingle();
+        if (clientRow) {
+          const brand = brandKitFromClient(
+            clientRow as ClientRow,
+            { brokerage: property.brokerage ?? null },
+          );
+          templateMods = mergeBrandVars(templateMods, brand);
+          await log(propertyId, "assembly", "info",
+            `Brand kit injected for client ${property.client_id}`,
+            {
+              client_id: property.client_id,
+              has_logo: brand.logo_url != null,
+              has_primary: brand.primary_hex != null,
+              has_agent_headshot: brand.agent_headshot_url != null,
+            });
+        }
+      }
 
       const assembleParams = { clips: clipInputs, overlays, music };
 
