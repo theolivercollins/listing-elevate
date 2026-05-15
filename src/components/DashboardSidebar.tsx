@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Icon, type IconName } from "@/components/dashboard/icons";
 
@@ -84,6 +84,152 @@ export interface DashboardSidebarProps {
   onToggleCollapsed: () => void;
 }
 
+function UserMenu({
+  collapsed,
+  initials,
+  displayName,
+  email,
+}: {
+  collapsed: boolean;
+  initials: string;
+  displayName: string;
+  email: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const navigate = useNavigate();
+  const { signOut } = useAuth();
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const handleSignOut = async () => {
+    setOpen(false);
+    await signOut();
+    navigate("/");
+  };
+
+  const handleAccount = () => {
+    setOpen(false);
+    navigate("/account/profile");
+  };
+
+  const menu = open && (
+    <div
+      role="menu"
+      style={{
+        position: "absolute",
+        bottom: "calc(100% + 8px)",
+        left: 0,
+        right: 0,
+        background: "var(--surface)",
+        borderRadius: 12,
+        boxShadow: "var(--shadow-lg)",
+        border: "1px solid var(--line)",
+        padding: 6,
+        zIndex: 1100,
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={handleAccount}
+        style={menuItemStyle}
+      >
+        <Icon name="user" size={14} />
+        Account &amp; profile
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        onClick={handleSignOut}
+        style={{ ...menuItemStyle, color: "var(--bad)" }}
+      >
+        <Icon name="external" size={14} />
+        Sign out
+      </button>
+    </div>
+  );
+
+  if (collapsed) {
+    return (
+      <div ref={ref} style={{ position: "relative" }}>
+        <button
+          type="button"
+          className="le-rail-avatar"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          title={email}
+        >
+          {initials}
+        </button>
+        {menu}
+      </div>
+    );
+  }
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div className="le-sidebar-user">
+        <Link
+          to="/account/profile"
+          className="le-sidebar-user-avatar"
+          style={{ textDecoration: "none", color: "inherit" }}
+          aria-label="Account & profile"
+        >
+          {initials}
+        </Link>
+        <Link
+          to="/account/profile"
+          className="le-sidebar-user-info"
+          style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}
+        >
+          <span className="le-sidebar-user-name" style={{ textTransform: "capitalize" }}>
+            {displayName}
+          </span>
+          <span className="le-sidebar-user-email">{email}</span>
+        </Link>
+        <button
+          type="button"
+          className="le-sidebar-user-more"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="Account menu"
+        >
+          <Icon name="dots" size={14} />
+        </button>
+      </div>
+      {menu}
+    </div>
+  );
+}
+
+const menuItemStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 10,
+  width: "100%",
+  padding: "9px 12px",
+  borderRadius: 8,
+  border: "none",
+  background: "transparent",
+  color: "var(--ink)",
+  fontFamily: "inherit",
+  fontSize: 13,
+  fontWeight: 500,
+  cursor: "pointer",
+  textAlign: "left" as const,
+  transition: "background .12s",
+};
+
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
   const { user } = useAuth();
   const location = useLocation();
@@ -154,24 +300,12 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
       </nav>
 
       <div className="le-sidebar-foot">
-        {!collapsed ? (
-          <Link to="/account" className="le-sidebar-user">
-            <span className="le-sidebar-user-avatar">{initials}</span>
-            <span className="le-sidebar-user-info">
-              <span className="le-sidebar-user-name" style={{ textTransform: "capitalize" }}>
-                {displayName}
-              </span>
-              <span className="le-sidebar-user-email">{email}</span>
-            </span>
-            <span className="le-sidebar-user-more" aria-hidden>
-              <Icon name="dots" size={14} />
-            </span>
-          </Link>
-        ) : (
-          <Link to="/account" className="le-rail-avatar" title={email}>
-            {initials}
-          </Link>
-        )}
+        <UserMenu
+          collapsed={collapsed}
+          initials={initials}
+          displayName={displayName}
+          email={email}
+        />
         <button
           type="button"
           className="le-sidebar-collapse"
