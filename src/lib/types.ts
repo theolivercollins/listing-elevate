@@ -170,6 +170,22 @@ export interface RevenueEntry {
   note: string | null;
 }
 
+export type BillingPeriod = "monthly" | "yearly";
+export type SubscriptionStatus = "active" | "paused" | "cancelled";
+
+export interface Subscription {
+  id: string;
+  provider: string;
+  amount_cents: number;
+  billing_period: BillingPeriod;
+  started_at: string;
+  next_charge_at: string;
+  status: SubscriptionStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface DailyStat {
   id: string;
   date: string;

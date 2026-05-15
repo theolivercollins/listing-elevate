@@ -15,17 +15,9 @@ import {
   Trash2,
   Pencil,
   Info,
+  X,
+  RefreshCw,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -59,6 +51,10 @@ import {
   deleteRevenueEntry,
   listCostEvents,
   countDeliveredVideos,
+  listSubscriptions,
+  createSubscription,
+  updateSubscription,
+  deleteSubscription,
 } from "@/lib/finances";
 import type {
   TokenPurchase,
@@ -66,6 +62,9 @@ import type {
   RevenueEntry,
   TokenProvider,
   CostEvent,
+  Subscription,
+  BillingPeriod,
+  SubscriptionStatus,
 } from "@/lib/types";
 
 // Cost-breakdown API (provider / model / scope / stage buckets from cost_events)
@@ -103,6 +102,55 @@ const PROVIDER_COLORS: Record<TokenProvider, string> = {
   openai: "#10b981",
   other: "#64748b",
 };
+
+// Extended provider list for Log Purchase and Subscriptions
+const ALL_PROVIDERS = [
+  "anthropic",
+  "atlas",
+  "apify",
+  "browserbase",
+  "creatomate",
+  "elevenlabs",
+  "gemini",
+  "google",
+  "higgsfield",
+  "kling",
+  "luma",
+  "openai",
+  "openrouter",
+  "runway",
+  "shotstack",
+  "supabase",
+  "other",
+] as const;
+
+type AllProvider = (typeof ALL_PROVIDERS)[number];
+
+const ALL_PROVIDER_LABELS: Record<AllProvider, string> = {
+  anthropic: "Anthropic / Claude",
+  atlas: "Atlas (MongoDB)",
+  apify: "Apify",
+  browserbase: "Browserbase",
+  creatomate: "Creatomate",
+  elevenlabs: "ElevenLabs",
+  gemini: "Gemini",
+  google: "Google",
+  higgsfield: "Higgsfield",
+  kling: "Kling",
+  luma: "Luma",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  runway: "Runway",
+  shotstack: "Shotstack",
+  supabase: "Supabase",
+  other: "Other",
+};
+
+const PURCHASE_TYPES = [
+  { id: "credits", label: "API credits" },
+  { id: "tokens", label: "Token credits" },
+  { id: "one_time", label: "One-time charge" },
+];
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -149,6 +197,97 @@ function pctDelta(current: number, previous: number): number | undefined {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ─── Native form input (v3 token-aligned) ────────────────────────────────────
+
+const INPUT_STYLE: React.CSSProperties = {
+  width: "100%",
+  padding: "9px 12px",
+  borderRadius: 8,
+  border: "1px solid var(--line)",
+  background: "var(--surface)",
+  color: "var(--ink)",
+  fontSize: 13,
+  fontFamily: "inherit",
+  outline: "none",
+  transition: "border-color .15s",
+  boxSizing: "border-box",
+};
+
+const SELECT_STYLE: React.CSSProperties = {
+  ...INPUT_STYLE,
+  cursor: "pointer",
+  appearance: "none",
+  WebkitAppearance: "none",
+  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`,
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 10px center",
+  paddingRight: 32,
+};
+
+const LABEL_STYLE: React.CSSProperties = {
+  display: "block",
+  fontSize: 11,
+  fontWeight: 600,
+  color: "var(--muted)",
+  textTransform: "uppercase",
+  letterSpacing: "0.07em",
+  marginBottom: 6,
+};
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span style={LABEL_STYLE}>{children}</span>;
+}
+
+function NativeInput(props: React.InputHTMLAttributes<HTMLInputElement> & { style?: React.CSSProperties }) {
+  const { style, ...rest } = props;
+  return (
+    <input
+      style={{ ...INPUT_STYLE, ...style }}
+      onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--accent)"; }}
+      onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--line)"; }}
+      {...rest}
+    />
+  );
+}
+
+function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement> & { style?: React.CSSProperties }) {
+  const { style, ...rest } = props;
+  return (
+    <select
+      style={{ ...SELECT_STYLE, ...style }}
+      onFocus={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--accent)"; }}
+      onBlur={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--line)"; }}
+      {...rest}
+    />
+  );
+}
+
+function MoneyInput({ value, onChange, placeholder = "0.00", required }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  required?: boolean;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>$</span>
+      <NativeInput
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        required={required}
+        style={{ paddingLeft: 24, fontVariantNumeric: "tabular-nums" }}
+      />
+    </div>
+  );
+}
+
 // ─── Legend helper ────────────────────────────────────────────────────────────
 
 function LegendDot({ color, label }: { color: string; label: string }) {
@@ -182,6 +321,36 @@ const CARD_STYLE: React.CSSProperties = {
   boxShadow: "var(--shadow-sm, 0 1px 4px rgba(11,11,16,0.06))",
 };
 
+// ─── Submit button ────────────────────────────────────────────────────────────
+
+function SubmitBtn({ loading, disabled, children }: { loading: boolean; disabled?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      type="submit"
+      disabled={loading || disabled}
+      style={{
+        width: "100%",
+        padding: "10px 16px",
+        borderRadius: 8,
+        border: "none",
+        background: disabled || loading ? "rgba(15,24,60,0.08)" : "var(--ink)",
+        color: disabled || loading ? "var(--muted)" : "#fff",
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: disabled || loading ? "not-allowed" : "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        transition: "background .15s, color .15s",
+        fontFamily: "inherit",
+      }}
+    >
+      {loading ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> : children}
+    </button>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Finances() {
@@ -191,6 +360,7 @@ export default function Finances() {
   const [revenues, setRevenues] = useState<RevenueEntry[]>([]);
   const [costEvents, setCostEvents] = useState<CostEvent[]>([]);
   const [deliveredCount, setDeliveredCount] = useState<number>(0);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
 
   // ── Cost-breakdown API state ─────────────────────────────────────────────
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
@@ -205,12 +375,13 @@ export default function Finances() {
   const [editPurchase, setEditPurchase] = useState<TokenPurchase | null>(null);
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [editRevenue, setEditRevenue] = useState<RevenueEntry | null>(null);
+  const [editSubscription, setEditSubscription] = useState<Subscription | null>(null);
 
-  // ── Token purchase form ──────────────────────────────────────────────────
-  const [tpProvider, setTpProvider] = useState<TokenProvider>("runway");
+  // ── Log Purchase form (v3 reskin) ────────────────────────────────────────
+  const [tpProvider, setTpProvider] = useState<AllProvider>("runway");
   const [tpAmount, setTpAmount] = useState("");
-  const [tpUnits, setTpUnits] = useState("");
-  const [tpUnitType, setTpUnitType] = useState("credits");
+  const [tpType, setTpType] = useState("credits");
+  const [tpDate, setTpDate] = useState(todayIso());
   const [tpNote, setTpNote] = useState("");
   const [tpSubmitting, setTpSubmitting] = useState(false);
 
@@ -226,12 +397,21 @@ export default function Finances() {
   const [revNote, setRevNote] = useState("");
   const [revSubmitting, setRevSubmitting] = useState(false);
 
+  // ── Add Subscription modal ───────────────────────────────────────────────
+  const [showAddSub, setShowAddSub] = useState(false);
+  const [subProvider, setSubProvider] = useState<AllProvider>("openrouter");
+  const [subAmount, setSubAmount] = useState("");
+  const [subPeriod, setSubPeriod] = useState<BillingPeriod>("monthly");
+  const [subStartDate, setSubStartDate] = useState(todayIso());
+  const [subNote, setSubNote] = useState("");
+  const [subSubmitting, setSubSubmitting] = useState(false);
+
   // ── Data loading ─────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [p, e, r, c, dc, dailyRes, cbRes, overviewRes] = await Promise.all([
+        const [p, e, r, c, dc, dailyRes, cbRes, overviewRes, subs] = await Promise.all([
           listTokenPurchases(),
           listExpenses(),
           listRevenueEntries(),
@@ -240,6 +420,7 @@ export default function Finances() {
           fetchDailyStats(30).catch(() => null),
           fetchCostBreakdown().catch(() => null),
           fetchStatsOverview().catch(() => null),
+          listSubscriptions().catch(() => [] as Subscription[]),
         ]);
         if (cancelled) return;
         setPurchases(p);
@@ -250,6 +431,7 @@ export default function Finances() {
         if (dailyRes?.stats) setDailyStats(dailyRes.stats);
         if (cbRes) setCostBreakdown(cbRes);
         if (overviewRes?.avgCostPerVideoCents != null) setOverviewAvgCents(overviewRes.avgCostPerVideoCents);
+        setSubscriptions(subs);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -282,6 +464,20 @@ export default function Finances() {
 
   const costPerVideoCents =
     deliveredCount > 0 ? Math.round(totalPurchasesCents / deliveredCount) : 0;
+
+  // ── Derived: subscriptions KPIs ──────────────────────────────────────────
+  const activeSubs = useMemo(
+    () => subscriptions.filter((s) => s.status === "active"),
+    [subscriptions],
+  );
+
+  const estimatedMonthlyCents = useMemo(() => {
+    return activeSubs.reduce((sum, sub) => {
+      if (sub.billing_period === "monthly") return sum + sub.amount_cents;
+      if (sub.billing_period === "yearly") return sum + Math.round(sub.amount_cents / 12);
+      return sum;
+    }, 0);
+  }, [activeSubs]);
 
   // ── Derived: provider balance summary ────────────────────────────────────
   const providerSummary: ProviderSummary[] = useMemo(() => {
@@ -430,21 +626,24 @@ export default function Finances() {
   }
   const breakdownRows = getBreakdownRows();
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // ── Handlers: Log Purchase ────────────────────────────────────────────────
   async function handleAddPurchase(e: React.FormEvent) {
     e.preventDefault();
     if (!tpAmount) return;
     setTpSubmitting(true);
     try {
+      // Map AllProvider → TokenProvider (coerce unknowns to "other")
+      const tokenProvider: TokenProvider = (PROVIDERS.find((p) => p.id === tpProvider)?.id ?? "other") as TokenProvider;
       const p = await createTokenPurchase({
-        provider: tpProvider,
+        provider: tokenProvider,
         amount_cents: parseMoneyToCents(tpAmount),
-        units: Number(tpUnits) || 0,
-        unit_type: tpUnitType || undefined,
+        units: 0,
+        unit_type: tpType || undefined,
         note: tpNote || undefined,
+        purchased_at: tpDate ? new Date(tpDate).toISOString() : undefined,
       });
       setPurchases((prev) => [p, ...prev]);
-      setTpAmount(""); setTpUnits(""); setTpNote("");
+      setTpAmount(""); setTpNote(""); setTpDate(todayIso());
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed");
     } finally {
@@ -530,6 +729,55 @@ export default function Finances() {
     });
     setRevenues((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
     setEditRevenue(null);
+  }
+
+  // ── Handlers: Subscriptions ──────────────────────────────────────────────
+  async function handleAddSubscription(e: React.FormEvent) {
+    e.preventDefault();
+    if (!subAmount || !subStartDate) return;
+    setSubSubmitting(true);
+    try {
+      const sub = await createSubscription({
+        provider: subProvider,
+        amount_cents: parseMoneyToCents(subAmount),
+        billing_period: subPeriod,
+        started_at: subStartDate,
+        next_charge_at: subStartDate,
+        note: subNote || undefined,
+      });
+      setSubscriptions((prev) => [sub, ...prev]);
+      setSubAmount(""); setSubNote(""); setSubStartDate(todayIso());
+      setShowAddSub(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSubSubmitting(false);
+    }
+  }
+
+  async function handleToggleSubPause(sub: Subscription) {
+    const next: SubscriptionStatus = sub.status === "paused" ? "active" : "paused";
+    const updated = await updateSubscription(sub.id, { status: next });
+    setSubscriptions((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+  }
+
+  async function handleCancelSub(sub: Subscription) {
+    if (!confirm(`Cancel ${ALL_PROVIDER_LABELS[sub.provider as AllProvider] || sub.provider} subscription?`)) return;
+    const updated = await deleteSubscription(sub.id);
+    setSubscriptions((prev) => prev.map((s) => (s.id === (updated as Subscription).id ? (updated as Subscription) : s)));
+  }
+
+  async function handleSaveSubscription(updated: Subscription) {
+    const saved = await updateSubscription(updated.id, {
+      provider: updated.provider,
+      amount_cents: updated.amount_cents,
+      billing_period: updated.billing_period,
+      next_charge_at: updated.next_charge_at,
+      status: updated.status,
+      note: updated.note ?? undefined,
+    });
+    setSubscriptions((prev) => prev.map((s) => (s.id === saved.id ? saved : s)));
+    setEditSubscription(null);
   }
 
   function handleReconcile() {
@@ -865,99 +1113,267 @@ export default function Finances() {
       {/* ── Log forms ─────────────────────────────────────────────────────────── */}
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(3, 1fr)" }}>
 
-        {/* Log token purchase */}
+        {/* ── Log token purchase (v3 reskin) ───────────────────────────────────── */}
         <form onSubmit={handleAddPurchase} style={{ ...CARD_STYLE, padding: 22 }}>
-          <span className="le-d-label">Log token purchase</span>
+          <span className="le-d-label">Log purchase</span>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+
+            {/* 1. Provider */}
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Provider</Label>
-              <Select value={tpProvider} onValueChange={(v) => setTpProvider(v as TokenProvider)}>
-                <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map((p) => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <FieldLabel>Provider</FieldLabel>
+              <NativeSelect value={tpProvider} onChange={(e) => setTpProvider(e.target.value as AllProvider)}>
+                {ALL_PROVIDERS.map((id) => (
+                  <option key={id} value={id}>{ALL_PROVIDER_LABELS[id]}</option>
+                ))}
+              </NativeSelect>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              <div>
-                <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount paid</Label>
-                <div style={{ position: "relative", marginTop: 8 }}>
-                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>$</span>
-                  <Input type="text" inputMode="decimal" value={tpAmount} onChange={(e) => setTpAmount(e.target.value)} placeholder="250.00" className="le-mono pl-7" required />
-                </div>
-              </div>
-              <div>
-                <Label className="le-d-label" style={{ color: "var(--muted)" }}>Units</Label>
-                <Input type="number" value={tpUnits} onChange={(e) => setTpUnits(e.target.value)} placeholder="25000" className="le-mono mt-2" />
-              </div>
-            </div>
+
+            {/* 2. Amount */}
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Unit type</Label>
-              <Input value={tpUnitType} onChange={(e) => setTpUnitType(e.target.value)} placeholder="credits / tokens / kling_units" className="mt-2" />
+              <FieldLabel>Amount</FieldLabel>
+              <MoneyInput value={tpAmount} onChange={setTpAmount} placeholder="250.00" required />
             </div>
+
+            {/* 3. Type */}
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Note</Label>
-              <Input value={tpNote} onChange={(e) => setTpNote(e.target.value)} placeholder="Receipt #, reference…" className="mt-2" />
+              <FieldLabel>Type</FieldLabel>
+              <NativeSelect value={tpType} onChange={(e) => setTpType(e.target.value)}>
+                {PURCHASE_TYPES.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </NativeSelect>
             </div>
-            <Button type="submit" size="sm" disabled={tpSubmitting || !tpAmount} className="w-full">
-              {tpSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+
+            {/* 4. Date */}
+            <div>
+              <FieldLabel>Date</FieldLabel>
+              <NativeInput
+                type="date"
+                value={tpDate}
+                onChange={(e) => setTpDate(e.target.value)}
+                required
+              />
+            </div>
+
+            {/* 5. Note */}
+            <div>
+              <FieldLabel>Note <span style={{ textTransform: "none", fontWeight: 400, opacity: 0.6 }}>(optional)</span></FieldLabel>
+              <NativeInput
+                type="text"
+                value={tpNote}
+                onChange={(e) => setTpNote(e.target.value)}
+                placeholder="e.g. topped up Anthropic console"
+              />
+            </div>
+
+            <SubmitBtn loading={tpSubmitting} disabled={!tpAmount}>
+              <Plus style={{ width: 14, height: 14 }} />
               Log purchase
-            </Button>
+            </SubmitBtn>
           </div>
         </form>
 
-        {/* Log expense */}
+        {/* ── Log expense ──────────────────────────────────────────────────────── */}
         <form onSubmit={handleAddExpense} style={{ ...CARD_STYLE, padding: 22 }}>
           <span className="le-d-label">Log expense</span>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Category</Label>
-              <Input value={expCategory} onChange={(e) => setExpCategory(e.target.value)} placeholder="Hosting, tools, marketing…" className="mt-2" required />
+              <FieldLabel>Category</FieldLabel>
+              <NativeInput
+                type="text"
+                value={expCategory}
+                onChange={(e) => setExpCategory(e.target.value)}
+                placeholder="Hosting, tools, marketing…"
+                required
+              />
             </div>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount</Label>
-              <div style={{ position: "relative", marginTop: 8 }}>
-                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>$</span>
-                <Input type="text" inputMode="decimal" value={expAmount} onChange={(e) => setExpAmount(e.target.value)} placeholder="0.00" className="le-mono pl-7" required />
-              </div>
+              <FieldLabel>Amount</FieldLabel>
+              <MoneyInput value={expAmount} onChange={setExpAmount} required />
             </div>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Description</Label>
-              <Input value={expDesc} onChange={(e) => setExpDesc(e.target.value)} placeholder="What was it for?" className="mt-2" />
+              <FieldLabel>Description <span style={{ textTransform: "none", fontWeight: 400, opacity: 0.6 }}>(optional)</span></FieldLabel>
+              <NativeInput
+                type="text"
+                value={expDesc}
+                onChange={(e) => setExpDesc(e.target.value)}
+                placeholder="What was it for?"
+              />
             </div>
-            <Button type="submit" size="sm" disabled={expSubmitting || !expCategory || !expAmount} className="w-full">
-              {expSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <SubmitBtn loading={expSubmitting} disabled={!expCategory || !expAmount}>
+              <Plus style={{ width: 14, height: 14 }} />
               Log expense
-            </Button>
+            </SubmitBtn>
           </div>
         </form>
 
-        {/* Log revenue */}
+        {/* ── Log revenue ──────────────────────────────────────────────────────── */}
         <form onSubmit={handleAddRevenue} style={{ ...CARD_STYLE, padding: 22 }}>
           <span className="le-d-label">Log revenue</span>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Source</Label>
-              <Input value={revSource} onChange={(e) => setRevSource(e.target.value)} placeholder="Customer name, invoice, etc" className="mt-2" required />
+              <FieldLabel>Source</FieldLabel>
+              <NativeInput
+                type="text"
+                value={revSource}
+                onChange={(e) => setRevSource(e.target.value)}
+                placeholder="Customer name, invoice…"
+                required
+              />
             </div>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount</Label>
-              <div style={{ position: "relative", marginTop: 8 }}>
-                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>$</span>
-                <Input type="text" inputMode="decimal" value={revAmount} onChange={(e) => setRevAmount(e.target.value)} placeholder="0.00" className="le-mono pl-7" required />
-              </div>
+              <FieldLabel>Amount</FieldLabel>
+              <MoneyInput value={revAmount} onChange={setRevAmount} required />
             </div>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Note</Label>
-              <Input value={revNote} onChange={(e) => setRevNote(e.target.value)} placeholder="Stripe, manual, subscription…" className="mt-2" />
+              <FieldLabel>Note <span style={{ textTransform: "none", fontWeight: 400, opacity: 0.6 }}>(optional)</span></FieldLabel>
+              <NativeInput
+                type="text"
+                value={revNote}
+                onChange={(e) => setRevNote(e.target.value)}
+                placeholder="Stripe, manual, subscription…"
+              />
             </div>
-            <Button type="submit" size="sm" disabled={revSubmitting || !revSource || !revAmount} className="w-full">
-              {revSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            <SubmitBtn loading={revSubmitting} disabled={!revSource || !revAmount}>
+              <Plus style={{ width: 14, height: 14 }} />
               Log revenue
-            </Button>
+            </SubmitBtn>
           </div>
         </form>
       </div>
+
+      {/* ── Subscriptions ─────────────────────────────────────────────────────── */}
+      <Card padding={24}>
+        {/* Header row with KPI + button */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 16 }}>
+          <div>
+            <span className="le-d-label">Recurring subscriptions</span>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 20, marginTop: 8 }}>
+              <div>
+                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+                  {fmtCentsPrim(estimatedMonthlyCents)}
+                </span>
+                <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: 6 }}>/ mo estimated</span>
+              </div>
+              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                {activeSubs.length} active · {subscriptions.filter((s) => s.status === "paused").length} paused
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddSub(true)}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 7,
+              padding: "9px 16px", borderRadius: 8,
+              border: "none", background: "var(--ink)",
+              fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <Plus style={{ width: 14, height: 14 }} />
+            Add subscription
+          </button>
+        </div>
+
+        {/* Subscriptions table */}
+        {subscriptions.length === 0 ? (
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12 }}>
+            No subscriptions yet. Add your first recurring charge above.
+          </div>
+        ) : (
+          <div style={{ borderTop: "1px solid var(--line)" }}>
+            {/* Column headers */}
+            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr 80px", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+              {["Provider", "Amount", "Frequency", "Next charge", "Status", ""].map((c, i) => (
+                <span
+                  key={`${c}-${i}`}
+                  className="le-d-label"
+                  style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textAlign: i === 5 ? "right" : "left" }}
+                >
+                  {c}
+                </span>
+              ))}
+            </div>
+
+            {subscriptions.map((sub) => {
+              const isCancelled = sub.status === "cancelled";
+              const isPaused = sub.status === "paused";
+              const providerLabel = ALL_PROVIDER_LABELS[sub.provider as AllProvider] || sub.provider;
+              const statusColor = isCancelled ? "var(--bad)" : isPaused ? "var(--warn)" : "var(--good)";
+              const statusBg = isCancelled ? "rgba(196,74,74,0.08)" : isPaused ? "rgba(182,128,44,0.08)" : "rgba(47,138,85,0.08)";
+              return (
+                <div
+                  key={sub.id}
+                  style={{
+                    display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr 80px",
+                    gap: 12, alignItems: "center", padding: "14px 0",
+                    borderBottom: "1px solid rgba(15,24,60,0.04)",
+                    opacity: isCancelled ? 0.45 : 1,
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(15,24,60,0.015)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                >
+                  <div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{providerLabel}</span>
+                    {sub.note && (
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.note}</div>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+                    {fmtCentsPrim(sub.amount_cents)}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--muted)", textTransform: "capitalize" }}>
+                    {sub.billing_period}
+                  </span>
+                  <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                    {new Date(sub.next_charge_at).toLocaleDateString()}
+                  </span>
+                  <span style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    fontSize: 11, fontWeight: 600, color: statusColor,
+                    background: statusBg, padding: "3px 8px", borderRadius: 999,
+                    textTransform: "capitalize", width: "fit-content",
+                  }}>
+                    <span style={{ width: 5, height: 5, borderRadius: 99, background: statusColor, flexShrink: 0 }} />
+                    {sub.status}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
+                    {!isCancelled && (
+                      <button
+                        type="button"
+                        title={isPaused ? "Resume" : "Pause"}
+                        onClick={() => handleToggleSubPause(sub)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex", alignItems: "center" }}
+                      >
+                        <RefreshCw style={{ width: 13, height: 13 }} strokeWidth={1.5} />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      title="Edit"
+                      onClick={() => setEditSubscription(sub)}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex", alignItems: "center" }}
+                    >
+                      <Pencil style={{ width: 13, height: 13 }} strokeWidth={1.5} />
+                    </button>
+                    {!isCancelled && (
+                      <button
+                        type="button"
+                        title="Cancel"
+                        onClick={() => handleCancelSub(sub)}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bad)", padding: 4, display: "flex", alignItems: "center" }}
+                      >
+                        <X style={{ width: 13, height: 13 }} strokeWidth={1.5} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       {/* ── Ledger tables ─────────────────────────────────────────────────────── */}
       <LedgerTable
@@ -1015,6 +1431,65 @@ export default function Finances() {
       <EditPurchaseDialog purchase={editPurchase} onClose={() => setEditPurchase(null)} onSave={handleSavePurchase} />
       <EditExpenseDialog expense={editExpense} onClose={() => setEditExpense(null)} onSave={handleSaveExpense} />
       <EditRevenueDialog revenue={editRevenue} onClose={() => setEditRevenue(null)} onSave={handleSaveRevenue} />
+      <EditSubscriptionDialog subscription={editSubscription} onClose={() => setEditSubscription(null)} onSave={handleSaveSubscription} />
+
+      {/* ── Add Subscription modal ────────────────────────────────────────────── */}
+      <Dialog open={showAddSub} onOpenChange={(open) => !open && setShowAddSub(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold tracking-tight">Add subscription</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleAddSubscription}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+              <div>
+                <FieldLabel>Provider</FieldLabel>
+                <NativeSelect value={subProvider} onChange={(e) => setSubProvider(e.target.value as AllProvider)}>
+                  {ALL_PROVIDERS.map((id) => (
+                    <option key={id} value={id}>{ALL_PROVIDER_LABELS[id]}</option>
+                  ))}
+                </NativeSelect>
+              </div>
+              <div>
+                <FieldLabel>Amount</FieldLabel>
+                <MoneyInput value={subAmount} onChange={setSubAmount} placeholder="0.00" required />
+              </div>
+              <div>
+                <FieldLabel>Billing period</FieldLabel>
+                <NativeSelect value={subPeriod} onChange={(e) => setSubPeriod(e.target.value as BillingPeriod)}>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </NativeSelect>
+              </div>
+              <div>
+                <FieldLabel>Start / next charge date</FieldLabel>
+                <NativeInput type="date" value={subStartDate} onChange={(e) => setSubStartDate(e.target.value)} required />
+              </div>
+              <div>
+                <FieldLabel>Note <span style={{ textTransform: "none", fontWeight: 400, opacity: 0.6 }}>(optional)</span></FieldLabel>
+                <NativeInput
+                  type="text"
+                  value={subNote}
+                  onChange={(e) => setSubNote(e.target.value)}
+                  placeholder="e.g. Apify Pro plan"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setShowAddSub(false)}
+                style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Cancel
+              </button>
+              <SubmitBtn loading={subSubmitting} disabled={!subAmount || !subStartDate}>
+                <Plus style={{ width: 14, height: 14 }} />
+                Add subscription
+              </SubmitBtn>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1161,38 +1636,36 @@ function EditPurchaseDialog({ purchase, onClose, onSave }: { purchase: TokenPurc
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-lg font-semibold tracking-tight">Edit token purchase</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Provider</Label>
-            <Select value={provider} onValueChange={(v) => setProvider(v as TokenProvider)}>
-              <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
-              <SelectContent>{PROVIDERS.map((p) => <SelectItem key={p.id} value={p.id}>{p.label}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount paid</Label>
-              <div className="relative mt-2">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--muted)" }}>$</span>
-                <Input value={amount} onChange={(e) => setAmount(e.target.value)} className="le-mono pl-7" required />
+              <FieldLabel>Provider</FieldLabel>
+              <NativeSelect value={provider} onChange={(e) => setProvider(e.target.value as TokenProvider)}>
+                {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </NativeSelect>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <FieldLabel>Amount paid</FieldLabel>
+                <MoneyInput value={amount} onChange={setAmount} required />
+              </div>
+              <div>
+                <FieldLabel>Units</FieldLabel>
+                <NativeInput type="number" value={units} onChange={(e) => setUnits(e.target.value)} placeholder="0" />
               </div>
             </div>
             <div>
-              <Label className="le-d-label" style={{ color: "var(--muted)" }}>Units</Label>
-              <Input type="number" value={units} onChange={(e) => setUnits(e.target.value)} className="le-mono mt-2" />
+              <FieldLabel>Unit type</FieldLabel>
+              <NativeInput value={unitType} onChange={(e) => setUnitType(e.target.value)} placeholder="credits / tokens" />
+            </div>
+            <div>
+              <FieldLabel>Note</FieldLabel>
+              <NativeInput value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
           </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Unit type</Label>
-            <Input value={unitType} onChange={(e) => setUnitType(e.target.value)} className="mt-2" />
-          </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Note</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} className="mt-2" />
-          </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save</Button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1224,25 +1697,24 @@ function EditExpenseDialog({ expense, onClose, onSave }: { expense: Expense | nu
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-lg font-semibold tracking-tight">Edit expense</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Category</Label>
-            <Input value={category} onChange={(e) => setCategory(e.target.value)} className="mt-2" required />
-          </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount</Label>
-            <div className="relative mt-2">
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--muted)" }}>$</span>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value)} className="le-mono pl-7" required />
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+            <div>
+              <FieldLabel>Category</FieldLabel>
+              <NativeInput value={category} onChange={(e) => setCategory(e.target.value)} required />
+            </div>
+            <div>
+              <FieldLabel>Amount</FieldLabel>
+              <MoneyInput value={amount} onChange={setAmount} required />
+            </div>
+            <div>
+              <FieldLabel>Description</FieldLabel>
+              <NativeInput value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
           </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Description</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-2" />
-          </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save</Button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -1274,25 +1746,117 @@ function EditRevenueDialog({ revenue, onClose, onSave }: { revenue: RevenueEntry
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader><DialogTitle className="text-lg font-semibold tracking-tight">Edit revenue</DialogTitle></DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Source</Label>
-            <Input value={source} onChange={(e) => setSource(e.target.value)} className="mt-2" required />
-          </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Amount</Label>
-            <div className="relative mt-2">
-              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm" style={{ color: "var(--muted)" }}>$</span>
-              <Input value={amount} onChange={(e) => setAmount(e.target.value)} className="le-mono pl-7" required />
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+            <div>
+              <FieldLabel>Source</FieldLabel>
+              <NativeInput value={source} onChange={(e) => setSource(e.target.value)} required />
+            </div>
+            <div>
+              <FieldLabel>Amount</FieldLabel>
+              <MoneyInput value={amount} onChange={setAmount} required />
+            </div>
+            <div>
+              <FieldLabel>Note</FieldLabel>
+              <NativeInput value={note} onChange={(e) => setNote(e.target.value)} />
             </div>
           </div>
-          <div>
-            <Label className="le-d-label" style={{ color: "var(--muted)" }}>Note</Label>
-            <Input value={note} onChange={(e) => setNote(e.target.value)} className="mt-2" />
+          <DialogFooter>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <SubmitBtn loading={saving}>Save</SubmitBtn>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditSubscriptionDialog({ subscription, onClose, onSave }: { subscription: Subscription | null; onClose: () => void; onSave: (updated: Subscription) => Promise<void>; }) {
+  const [provider, setProvider] = useState<AllProvider>("openrouter");
+  const [amount, setAmount] = useState("");
+  const [period, setPeriod] = useState<BillingPeriod>("monthly");
+  const [nextCharge, setNextCharge] = useState("");
+  const [status, setStatus] = useState<SubscriptionStatus>("active");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (subscription) {
+      setProvider((subscription.provider as AllProvider) || "other");
+      setAmount((subscription.amount_cents / 100).toFixed(2));
+      setPeriod(subscription.billing_period);
+      setNextCharge(subscription.next_charge_at);
+      setStatus(subscription.status);
+      setNote(subscription.note ?? "");
+    }
+  }, [subscription]);
+
+  if (!subscription) return null;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      await onSave({
+        ...subscription,
+        provider,
+        amount_cents: parseMoneyToCents(amount),
+        billing_period: period,
+        next_charge_at: nextCharge,
+        status,
+        note: note || null,
+      });
+    } catch (err) { alert(err instanceof Error ? err.message : "Failed to save"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="text-lg font-semibold tracking-tight">Edit subscription</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+            <div>
+              <FieldLabel>Provider</FieldLabel>
+              <NativeSelect value={provider} onChange={(e) => setProvider(e.target.value as AllProvider)}>
+                {ALL_PROVIDERS.map((id) => (
+                  <option key={id} value={id}>{ALL_PROVIDER_LABELS[id]}</option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <FieldLabel>Amount</FieldLabel>
+                <MoneyInput value={amount} onChange={setAmount} required />
+              </div>
+              <div>
+                <FieldLabel>Period</FieldLabel>
+                <NativeSelect value={period} onChange={(e) => setPeriod(e.target.value as BillingPeriod)}>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </NativeSelect>
+              </div>
+            </div>
+            <div>
+              <FieldLabel>Next charge date</FieldLabel>
+              <NativeInput type="date" value={nextCharge} onChange={(e) => setNextCharge(e.target.value)} required />
+            </div>
+            <div>
+              <FieldLabel>Status</FieldLabel>
+              <NativeSelect value={status} onChange={(e) => setStatus(e.target.value as SubscriptionStatus)}>
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="cancelled">Cancelled</option>
+              </NativeSelect>
+            </div>
+            <div>
+              <FieldLabel>Note</FieldLabel>
+              <NativeInput value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save</Button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
       </DialogContent>
