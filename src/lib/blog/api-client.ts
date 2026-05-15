@@ -258,6 +258,13 @@ export interface AIChatOptions {
 export interface AIChatResponse {
   reply: string;
   body_html: string;
+  title: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  meta_tags: string[] | null;
+  author: string | null;
+  category: string | null;
+  action: "publish" | "save_draft" | null;
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;

@@ -38,22 +38,57 @@ interface Attachment {
 interface ChatResponse {
   reply: string;
   body_html: string;
+  title: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  meta_tags: string[] | null;
+  author: string | null;
+  category: string | null;
+  action: "publish" | "save_draft" | null;
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
 }
 
-const BASE_SYSTEM_PROMPT = `You are a senior real-estate blog editor working with The Helgemo Team in Punta Gorda, Florida.
+const BASE_SYSTEM_PROMPT = `You are a senior real-estate blog editor working with The Helgemo Team in Punta Gorda, Florida. You manage every part of the post (title, body, meta, author, category) on behalf of the user — they may also edit fields directly, in which case respect what's there.
 
-Each turn you produce two parts in this exact format:
+Each turn you produce sections in this exact format. Include only the sections that changed or are new on this turn — except <reply> and <html> which are ALWAYS present.
 
 <reply>
 1-3 sentences of plain prose acknowledging the request or asking back. No HTML here.
 </reply>
 
+<title>
+A single line — the proposed post title. Informative, specific (e.g. "Punta Gorda Median Price Up 4.2% in May"). Omit this section if the title hasn't changed since last turn.
+</title>
+
 <html>
 Full post HTML using <h2>, <h3>, <p>, <ul>, <ol>, <table>, <strong>, <em>, <blockquote>. No <html>, <body>, <head>, <script>, <style>, <iframe>. No markdown — actual tags.
 </html>
+
+<meta_title>
+Single line, ≤60 chars. SEO title. Omit if unchanged.
+</meta_title>
+
+<meta_description>
+Single line, ≤155 chars. SEO description. Omit if unchanged.
+</meta_description>
+
+<meta_tags>
+Comma-separated, 3-8 keywords. Omit if unchanged.
+</meta_tags>
+
+<author>
+Single line — proposed author label, e.g. "The Helgemo Team". Omit if unchanged.
+</author>
+
+<category>
+Single line — proposed category label, e.g. "Market Reports". Omit if unchanged.
+</category>
+
+<action>
+One word: publish | save_draft. ONLY emit this when the user has clearly asked to publish or save (e.g. "publish it", "save this draft", "go live"). Otherwise omit. Never publish or save without an explicit user request.
+</action>
 
 Rules:
 - The <html> block always contains the COMPLETE current post, never a diff. If the user said hi or is still scoping, return a short placeholder like "<p>Tell me more about what this post should cover.</p>".
@@ -81,13 +116,37 @@ function validateAttachments(raw: unknown): { ok: true; attachments: Attachment[
   return { ok: true, attachments: out };
 }
 
-function parseSections(text: string): { reply: string; body_html: string } {
-  const replyMatch = text.match(/<reply>([\s\S]*?)<\/reply>/i);
-  const htmlMatch = text.match(/<html>([\s\S]*?)<\/html>/i);
-  const reply = replyMatch?.[1]?.trim() ?? "";
-  const body_html = htmlMatch?.[1]?.trim() ?? "";
-  if (!htmlMatch && !replyMatch) return { reply: text.trim(), body_html: "" };
-  return { reply, body_html };
+function extractTag(text: string, tag: string): string | null {
+  const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, "i");
+  const m = text.match(re);
+  return m ? m[1].trim() : null;
+}
+
+function parseSections(text: string) {
+  const reply = extractTag(text, "reply") ?? "";
+  const body_html = extractTag(text, "html") ?? "";
+  const title = extractTag(text, "title");
+  const meta_title = extractTag(text, "meta_title");
+  const meta_description = extractTag(text, "meta_description");
+  const tagsRaw = extractTag(text, "meta_tags");
+  const meta_tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean) : null;
+  const author = extractTag(text, "author");
+  const category = extractTag(text, "category");
+  const actionRaw = extractTag(text, "action");
+  const action: "publish" | "save_draft" | null =
+    actionRaw === "publish" || actionRaw === "save_draft" ? actionRaw : null;
+
+  // Fallback: if no tags at all, treat the whole text as the reply.
+  const looksUnstructured = !body_html && !title && !meta_title && !reply;
+  if (looksUnstructured) {
+    return {
+      reply: text.trim(), body_html: "",
+      title: null, meta_title: null, meta_description: null, meta_tags: null,
+      author: null, category: null, action: null,
+    };
+  }
+
+  return { reply, body_html, title, meta_title, meta_description, meta_tags, author, category, action };
 }
 
 async function buildSystemPrompt(opts: {
@@ -247,6 +306,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const response: ChatResponse = {
     reply: parsed.reply || "Updated draft below.",
     body_html: parsed.body_html || currentHtml,
+    title: parsed.title,
+    meta_title: parsed.meta_title,
+    meta_description: parsed.meta_description,
+    meta_tags: parsed.meta_tags,
+    author: parsed.author,
+    category: parsed.category,
+    action: parsed.action,
     cost_cents: costCents,
     usage: { input_tokens: inTok, output_tokens: outTok },
     model: MODEL,
