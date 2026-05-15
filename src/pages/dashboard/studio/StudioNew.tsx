@@ -5,6 +5,7 @@ import {
   type ChangeEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { authedFetch } from "@/lib/api";
 import { Loader2, Image, X, ArrowRight } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -184,7 +185,7 @@ const StudioNew = () => {
 
       setUploadProgress(null);
 
-      const res = await fetch('/api/admin/studio/ingest', {
+      const res = await authedFetch('/api/admin/studio/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

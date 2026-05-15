@@ -17,8 +17,8 @@
  *       .select('id, clip_url, prompt_lab_listing_scenes(room_type)')
  */
 
-import { getSupabase } from '../client';
-import { rerunAssembly } from '../pipeline';
+import { getSupabase } from '../client.js';
+import { rerunAssembly } from '../pipeline.js';
 
 export async function swapClip(
   propertyId: string,

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { authedFetch } from "@/lib/api";
 import {
   Loader2,
   Copy,
@@ -210,7 +211,7 @@ const PropertyCommandCenter = () => {
 
   const fetchBundle = useCallback(async () => {
     try {
-      const res = await fetch(`/api/admin/studio/properties/${id}`);
+      const res = await authedFetch(`/api/admin/studio/properties/${id}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
@@ -240,7 +241,7 @@ const PropertyCommandCenter = () => {
     setSavingNote(true);
     setNoteError(null);
     try {
-      const res = await fetch(`/api/admin/studio/properties/${id}/notes`, {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: noteBody.trim() }),
@@ -262,7 +263,7 @@ const PropertyCommandCenter = () => {
     setGeneratingLink(true);
     setLinkError(null);
     try {
-      const res = await fetch(`/api/admin/studio/properties/${id}/preview-link`, {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),

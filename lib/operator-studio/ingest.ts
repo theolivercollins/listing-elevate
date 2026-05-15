@@ -13,8 +13,8 @@
 // Pipeline trigger is intentionally absent — the React page (StudioNew.tsx)
 // POSTs /api/pipeline/:id client-side, matching src/lib/api.ts:206.
 
-import { getSupabase } from '../client';
-import type { ManualIngestInput } from '../types/operator-studio';
+import { getSupabase } from '../client.js';
+import type { ManualIngestInput } from '../types/operator-studio.js';
 
 export async function manualIngest(input: ManualIngestInput): Promise<string> {
   const {

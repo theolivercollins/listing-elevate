@@ -1,4 +1,4 @@
-import { getSupabase } from '../client';
+import { getSupabase } from '../client.js';
 import { generatePreviewToken } from './preview-tokens';
 
 export async function createPreviewLink(propertyId: string, expiresAt: string | null = null) {

@@ -1,4 +1,4 @@
-import type { ClientRow, BrandKitVars } from '../types/operator-studio';
+import type { ClientRow, BrandKitVars } from '../types/operator-studio.js';
 
 export function brandKitFromClient(c: ClientRow, ctx: { brokerage?: string | null }): BrandKitVars {
   return {

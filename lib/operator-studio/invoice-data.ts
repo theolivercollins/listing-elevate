@@ -1,6 +1,6 @@
 // lib/operator-studio/invoice-data.ts
-import { getSupabase } from '../client';
-import type { InvoiceSummary } from '../types/operator-studio';
+import { getSupabase } from '../client.js';
+import type { InvoiceSummary } from '../types/operator-studio.js';
 
 function firstOfMonth(d = new Date()): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;

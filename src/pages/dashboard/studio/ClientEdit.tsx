@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
+import { authedFetch } from "@/lib/api";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -117,7 +118,7 @@ const ClientEdit = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/admin/studio/clients/${id}`);
+        const res = await authedFetch(`/api/admin/studio/clients/${id}`);
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const data = await res.json();
         const c = data.client;
@@ -210,7 +211,7 @@ const ClientEdit = () => {
 
       const url = isNew ? '/api/admin/studio/clients' : `/api/admin/studio/clients/${id}`;
       const method = isNew ? 'POST' : 'PATCH';
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -230,7 +231,7 @@ const ClientEdit = () => {
 
   const handleArchive = async () => {
     try {
-      const res = await fetch(`/api/admin/studio/clients/${id}`, { method: 'DELETE' });
+      const res = await authedFetch(`/api/admin/studio/clients/${id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? `${res.status} ${res.statusText}`);

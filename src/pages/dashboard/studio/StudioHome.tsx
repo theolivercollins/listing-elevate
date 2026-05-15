@@ -4,6 +4,7 @@ import { Loader2, Plus } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { formatCents, getRelativeTime } from '@/lib/types';
+import { authedFetch } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ const StudioHome = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/admin/studio/queue');
+        const res = await authedFetch('/api/admin/studio/queue');
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
           throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);

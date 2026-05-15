@@ -22,6 +22,20 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// authedFetch — drop-in replacement for fetch() that attaches the Supabase
+// Bearer token. Returns the raw Response so callers can decide on res.ok
+// handling (used by /api/admin/studio/* pages that need that pattern).
+export async function authedFetch(path: string, options?: RequestInit): Promise<Response> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: Record<string, string> = {
+    ...(options?.headers as Record<string, string>),
+  };
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  return fetch(`${API_BASE}${path}`, { ...options, headers });
+}
+
 export async function fetchProperties(params?: {
   page?: number; limit?: number; status?: string; search?: string;
 }): Promise<{ properties: Property[]; total: number; page: number; totalPages: number }> {

@@ -1,6 +1,6 @@
 // lib/operator-studio/clients.ts
-import { getSupabase } from '../client';
-import type { ClientInput, ClientRow } from '../types/operator-studio';
+import { getSupabase } from '../client.js';
+import type { ClientInput, ClientRow } from '../types/operator-studio.js';
 
 export async function listClients(opts: { includeArchived?: boolean } = {}): Promise<ClientRow[]> {
   let q = getSupabase().from('clients').select('*');

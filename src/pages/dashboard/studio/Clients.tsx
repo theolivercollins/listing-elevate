@@ -5,6 +5,7 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { getRelativeTime } from '@/lib/types';
 import type { ClientRow } from '@/components/studio/ClientPicker';
+import { authedFetch } from "@/lib/api";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,7 +44,7 @@ const Clients = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const res = await fetch('/api/admin/studio/clients');
+        const res = await authedFetch('/api/admin/studio/clients');
         if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
         const data = await res.json();
         if (!cancelled) {
@@ -65,7 +66,7 @@ const Clients = () => {
   const handleCopyInvoice = async (clientId: string) => {
     setCopyingId(clientId);
     try {
-      const res = await fetch('/api/admin/studio/invoice-summary', {
+      const res = await authedFetch('/api/admin/studio/invoice-summary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ client_id: clientId }),

@@ -1,5 +1,5 @@
 // lib/operator-studio/invoice.ts
-import type { InvoiceSummary } from '../types/operator-studio';
+import type { InvoiceSummary } from '../types/operator-studio.js';
 
 const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
