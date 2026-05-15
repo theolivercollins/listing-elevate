@@ -297,22 +297,11 @@ const Pipeline = () => {
             // skip individual property errors
           }
         }
-        // If no scene-level data found, synthesize from property-level cards
-        if (liveScenes.length === 0 && reviewRes.properties.length > 0) {
-          reviewRes.properties.forEach((prop, idx) => {
-            liveScenes.push({
-              id: prop.id,
-              property: prop.address,
-              propertyAddress: prop.address,
-              scene_number: idx + 1,
-              status: "needs_review",
-              confidence: 0.5,
-              provider: "kling",
-              prompt: "Review required — no scene detail available.",
-              issues: ["Manual review required"],
-            });
-          });
-        }
+        // Only real scene-level rows are surfaced here — the Skip/Approve/Retry
+        // buttons all POST to /api/scenes/{id}/*, which 404s if given a
+        // property UUID. If a property is `needs_review` at the property level
+        // without any failing scene rows (e.g. awaiting assembly approval),
+        // it shows in the kanban above, not in this scene-decision queue.
         setReviewScenes(liveScenes);
       } catch {
         // On error: show empty state (no sample fallback)
