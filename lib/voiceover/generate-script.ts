@@ -13,11 +13,16 @@ import { WORD_BUDGET } from "./voices.js";
 
 const MODEL = "claude-sonnet-4-6";
 
-const SYSTEM_PROMPT = `You write cinematic real-estate listing-video voiceover scripts.
-STRICT word budget: {wordBudget} words maximum. Count carefully.
-No clichés like "Welcome to", "Step inside", "Nestled", or "Dream home".
-Tone: confident, evocative. Second-person ("you") optional but encouraged.
-Output the script ONLY — no preamble, no quotes, no commentary.`;
+const SYSTEM_PROMPT = `You write welcoming real-estate listing-video voiceover scripts.
+STRICT word budget: {wordBudget} words maximum. Count carefully — the spoken read at ~150 wpm must fit the duration.
+
+Required structure:
+1. OPEN with a warm greeting that names the property — e.g. "Welcome to <street address>" or "Step inside <street address>".
+2. MIDDLE — use "featuring", "boasting", or "with" to flow into 3–5 of the most distinctive features from the listing description (waterfront, pool, square footage, kitchen, view, etc.). Prefer flowing prose over staccato fragments.
+3. CLOSE with one short, inviting line tied to the package (e.g. "Just listed" / "Just sold" / "Now pending").
+
+Tone: warm, inviting, real-estate-classic. Connected sentences, not bullet points.
+Output the script ONLY — no preamble, no quotes, no commentary, no stage directions.`;
 
 export interface GenerateScriptInput {
   description: string;

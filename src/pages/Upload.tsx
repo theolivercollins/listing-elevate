@@ -229,12 +229,12 @@ const Upload = () => {
     setVoiceoverError(null);
     setVoiceoverPreviewUrl(null);
     setVoiceoverScript(null);
-    setVoiceoverStage("Scraping listing from Compass…");
+    setVoiceoverStage("Reading your listing…");
 
     // Staged messages — typical timing: scrape 10–25s, script 2–5s, TTS 3–8s.
-    const t1 = setTimeout(() => setVoiceoverStage("Writing script with Claude…"), 12_000);
-    const t2 = setTimeout(() => setVoiceoverStage("Generating voice with ElevenLabs…"), 22_000);
-    const t3 = setTimeout(() => setVoiceoverStage("Almost there…"), 38_000);
+    const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), 12_000);
+    const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), 22_000);
+    const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), 38_000);
     const clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
 
     try {

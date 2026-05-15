@@ -11,7 +11,7 @@ ALTER TABLE properties
 -- Service role handles all writes; public read for audio playback.
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('voiceovers', 'voiceovers', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET public = EXCLUDED.public;
 
 -- Allow authenticated users to upload their own voiceover files.
 CREATE POLICY IF NOT EXISTS "voiceovers_insert"
