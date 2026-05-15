@@ -24,7 +24,7 @@ import { thumbUrl } from "@/lib/blog/image-url";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import {
-  useAllyStatus, AllyPulse, AllySkeleton, AllyShimmerOverlay, AutoGrowTextarea,
+  AllyThinking, AllySkeleton, AllyShimmerOverlay, AutoGrowTextarea,
 } from "@/components/blog/ally-status";
 
 const STARTERS = [
@@ -321,7 +321,7 @@ export default function BlogPostChatCompose() {
     }
   }
 
-  const liveStatus = useAllyStatus(chat.isPending, useResearch);
+  // Status owned by <AllyThinking /> inside the pending bubble.
 
   // -- popout preview ----------------------------------------------------------
 
@@ -488,8 +488,11 @@ export default function BlogPostChatCompose() {
                         }
                       >
                         <div className="flex items-center gap-2">
-                          {m.role === "assistant" && m.pending && <AllyPulse size={13} />}
-                          <span>{m.pending ? liveStatus : m.content}</span>
+                          {m.role === "assistant" && m.pending ? (
+                            <AllyThinking active research={useResearch} size="md" />
+                          ) : (
+                            <span>{m.content}</span>
+                          )}
                           {m.queued && (
                             <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
                               queued
