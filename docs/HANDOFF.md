@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-13 (blog publish fix end-to-end + order-form persistence + Creatomate buildout + Shotstack parallel)
+Last updated: 2026-05-15 (Operator Studio Phase 1 — internal MVP shipped on feat/operator-studio; awaiting migration apply + Creatomate Brand.* vars + Oliver's go-ahead to push)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,56 @@ See also:
 
 ## Right now
 
-**2026-05-13 PM (latest): Blog "Publish now" path unbroken end-to-end — PR #39 + follow-up landed, prod env vars set, deploy promoted.** The button has been silently failing since the blog engine shipped (Phase 1, 2026-05-07). User clicks → API enqueues a `blog_jobs` row → per-minute cron `/api/cron/poll-blog-jobs` returns `500 FUNCTION_INVOCATION_FAILED` → job sits `queued` forever. One real example was stuck 22h: post `0f68207f-…` "Charlotte County Housing Market Update – May 2026 B", job `8f6500b9-…`.
+**2026-05-15 (latest): Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
+
+Phase 1 ships the branded end-to-end loop for operator-managed properties: a `/dashboard/studio` Kanban + Clients UI, manual ingest form, Property Command Center (brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, director's notes), client CRUD API, and preview token endpoint with client-note support. Two schema migrations are ready but NOT yet applied to prod Supabase. Brand variables are wired in code but NOT yet configured in the Creatomate dashboard templates.
+
+**Three gates before pushing:**
+
+1. **Oliver to apply migrations to Supabase** (via MCP or dashboard SQL editor):
+   - `supabase/migrations/056_operator_studio.sql` — adds `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` table + `property_revision_notes` table + indexes + RLS policies.
+   - `supabase/migrations/057_operator_studio_scenes_followup.sql` — adds `scenes.director_notes` text column used by the Command Center notes panel.
+
+2. **Oliver to add `Brand.*` variables to Creatomate templates in the dashboard** — the pipeline already sends `Brand.LogoUrl`, `Brand.PrimaryColor`, `Brand.SecondaryColor`, `Brand.AgentName`, `Brand.Brokerage`, `Brand.AgentHeadshotUrl` as modification keys, but Creatomate silently ignores keys for placeholders that don't exist in the template. Without this step, operator-flow properties render with the same overlays as customer-flow ones.
+
+3. **Oliver's explicit go-ahead** to `git push feat/operator-studio` and open a PR to dev.
+
+**What NOT to do yet:** do not push the branch, do not apply migrations unilaterally, do not add the Vercel env vars — those come after Oliver confirms the above two prep steps are done.
+
+---
+
+**2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
+
+**Diagnosis (the actual user-facing problem before the fix):** every Creatomate template render was coming out 1280×720 at 24fps with no text overlays. Three root causes, all empirically verified with three live `/v2/renders` API calls:
+
+1. **`width`/`height` in the request body are silently ignored for template renders.** Output dimensions come from the template canvas; `render_scale` is the only knob. Provider's `assembleFromTemplate` was passing `width: 1920, height: 1080` thinking it would force HD — Creatomate just used the template's 1280×720 canvas. Same root cause produced wrong-aspect "vertical" renders (the 9:16 path swapped `width: 1080, height: 1920` → got 16:9 anyway).
+2. **All template placeholder names had been renamed in the editor.** Old mapper wrote `St#/StName.text`, `Vid-Category/Title.text`, etc.; rev-2 template's elements are `St#/StName-Intro`, `Vid-Category-Intro`, `Listing-Agent-Mid` + `-Final`, `Listing-Brokerage-Mid` + `-Final`, `Full-Address-Final`, `Audio-Music`. Creatomate silently drops modification keys for placeholders it doesn't have, so every text field rendered as the template's default ("123 Waymay Dr", "Brian Helgemo", etc.). Discovered via `GET /v1/templates/:id` inspection.
+3. **Template was designed for one duration (15s) but the resolver had no concept of duration.** A 30s or 60s order would have rendered against the 15s template anyway — wrong-length video.
+
+**Fix shipped (7 files, +364/-156 across `lib/assembly/` + `lib/providers/creatomate.ts` + `lib/pipeline.ts` + `.env.example`):**
+
+- `lib/assembly/template-modifications.ts` — rewritten for rev-2 slot names. Writes `St#/StName-Intro.text`, `City/State-Intro.text`, `Vid-Category-Intro.text`, `Listing-Agent-Mid.text` + `-Final.text`, `Listing-Brokerage-Mid.text` + `-Final.text`, `Full-Address-Final.text`, `Audio-Music.source`, optional `Agent-Headshot-Final.source` (skipped until `user_profiles.headshot_url` exists), `Clip-1.source` … `Clip-8.source`. 14 vitest cases.
+- `lib/assembly/template-resolver.ts` — adds `selectedDuration` + `aspectRatio` to context. Resolution priority: per-order `template_id` override → `CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]` → legacy `CREATOMATE_TEMPLATE_ID_<PKG>` (only when duration is null AND aspect is 16:9) → `CREATOMATE_TEMPLATE_ID_DEFAULT` (same caveat) → null. **Safety rule:** when `selectedDuration` is set but no matching `_<DURATION>` template exists, returns null — pipeline falls back to code-gen instead of shipping a wrong-length template render. **Vertical safety:** 9:16 never falls back to legacy un-suffixed vars; without a `_VERTICAL` template, the pipeline skips the 9:16 render entirely (half the Creatomate credits per order until vertical templates exist). 14 vitest cases.
+- `lib/pipeline.ts:1090-1110` — resolves horizontal + vertical template IDs separately. Caps `clipInputs.slice(0, 8)` before building modifications (defense-in-depth; duration-fit usually keeps us at ≤8 anyway). Wraps vertical render in `if (!skipVertical)` guard — `vertical_video_url` stays null when no vertical template, UI's existing `&&` handles it.
+- `lib/providers/creatomate.ts` — dropped the dead `width`/`height` fields on `TemplateRenderOptions`. `renderScale` is the only knob now; doc comment explains why.
+- `.env.example` — documents `_15`/`_30`/`_60` suffix scheme + `_VERTICAL` suffix + the "no vertical fallback" rule.
+
+**Vercel env changes:** added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15=2f634180-1e85-4f11-b500-2bb57b277581` to prod/preview/dev. Removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED` after main deploy landed. `_JUST_LISTED_30` + `_JUST_LISTED_60` slots created (empty) — fill when those templates exist.
+
+**Verification:**
+- 119/119 vitest, `tsc --noEmit` clean.
+- Three live `/v2/renders` smokes against the template through three iterations: first run came back 1280×720 / 24fps with no overlays (broken state); second after Oliver's template edits came back 1920×1080 / 24fps; third after fps fix + code rewrite came back **1920×1080 / 15s / 30fps with all overlays present**: <https://f002.backblazeb2.com/file/creatomate-c8xg3hsxdu/b068ba28-a82f-4c30-a2eb-289391d711f7.mp4>
+- End-to-end TS smoke `scripts/smoke-rev2-template.ts` exercises resolver → mapper → provider with the rev-2 env scheme; vertical correctly returns null + is skipped.
+
+**Open follow-ups:**
+- Build `CREATOMATE_TEMPLATE_ID_JUST_LISTED_30` + `_60` templates (Creatomate editor) and fill the corresponding Vercel env vars. Until then, 30s/60s orders fall through to the code-gen path.
+- Vertical (9:16) templates remain unbuilt. Per Oliver: not offering vertical yet. When that changes, design a 1080×1920 sister template and set `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15_VERTICAL`.
+- `Agent-Headshot-Final.source` is wired in the mapper but never sent because `user_profiles` has no `headshot_url` column. Template's default headshot plays. Add the column + UI when ready.
+- `just_pended` / `just_closed` / `life_cycle` templates: none configured; those orders fall back to code-gen.
+
+---
+
+**2026-05-13 PM: Blog "Publish now" path unbroken end-to-end — PR #39 + follow-up landed, prod env vars set, deploy promoted.** The button has been silently failing since the blog engine shipped (Phase 1, 2026-05-07). User clicks → API enqueues a `blog_jobs` row → per-minute cron `/api/cron/poll-blog-jobs` returns `500 FUNCTION_INVOCATION_FAILED` → job sits `queued` forever. One real example was stuck 22h: post `0f68207f-…` "Charlotte County Housing Market Update – May 2026 B", job `8f6500b9-…`.
 
 Four stacked failures, each a separate fix:
 
@@ -305,6 +354,8 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-15 — `feat/operator-studio` — Operator Studio Phase 1 — internal MVP shipped (branded end-to-end loop)
+- 2026-05-14 — `<SHA-TBD>` — PR #46 staging → main: Creatomate Just Listed #01 rev-2 template wired end-to-end — new mapper slot names (`*-Intro` / `*-Mid` / `*-Final`), duration-suffixed env vars (`CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]`), vertical-aware resolver that skips 9:16 when no vertical template exists. Live smoke produced 1920×1080 / 15s / 30fps with all overlays. Vercel envs: added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15`, removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED`. 119/119 tests + `tsc` clean.
 - 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
 - 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate
 - 2026-05-13 — `a2fcaf3` — PR #38 feat/creatomate-buildout → dev: Phase 2-6 modules (scene-ordering, duration-fit, branding, music) + template-mode (template-modifications, template-resolver, getTemplate, assembleFromTemplate on /v2/renders) + Shotstack Just Listed port (buildShotstackJustListedTimeline, HTML overlays) + ASSEMBLY_PROVIDER router override. 48 vitest cases.

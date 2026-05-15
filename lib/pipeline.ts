@@ -57,6 +57,8 @@ import { fetchPropertyBranding } from "./assembly/branding.js";
 import { selectMusicTrackForProperty } from "./assembly/music.js";
 import { resolveTemplateId } from "./assembly/template-resolver.js";
 import { buildTemplateModifications } from "./assembly/template-modifications.js";
+import { brandKitFromClient, mergeBrandVars } from "./operator-studio/brand-kit.js";
+import type { ClientRow } from "./types/operator-studio.js";
 import {
   analyzePhotoWithGemini,
   type ExtendedPhotoAnalysis,
@@ -108,7 +110,26 @@ export async function runPipeline(propertyId: string): Promise<void> {
       .update({ pipeline_started_at: new Date().toISOString() })
       .eq("id", propertyId);
 
-    await log(propertyId, "intake", "info", "Pipeline started");
+    // Pull operator-context fields so every log line in this run carries them.
+    // Distinguishes operator-mode work (order_mode='operator', client_id set)
+    // from customer self-serve runs in production logs. Pure read — no behavior fork.
+    let orderMode: string | null = null;
+    let clientId: string | null = null;
+    try {
+      const { data: propCtx } = await getSupabase()
+        .from("properties")
+        .select("order_mode, client_id")
+        .eq("id", propertyId)
+        .maybeSingle();
+      orderMode = (propCtx as { order_mode?: string | null } | null)?.order_mode ?? null;
+      clientId = (propCtx as { client_id?: string | null } | null)?.client_id ?? null;
+    } catch {
+      // Best-effort; never block a pipeline run on context read.
+    }
+    // Shared log context threaded through every top-level log call in this run.
+    const opCtx: Record<string, unknown> = { order_mode: orderMode, client_id: clientId };
+
+    await log(propertyId, "intake", "info", "Pipeline started", opCtx);
     // Best-effort prompt changelog snapshot (no-op if unchanged).
     snapshotPromptRevisions();
 
@@ -117,10 +138,10 @@ export async function runPipeline(propertyId: string): Promise<void> {
     const photos = await getPhotosForProperty(propertyId);
     if (photos.length < 5) {
       await updatePropertyStatus(propertyId, "failed");
-      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`);
+      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`, opCtx);
       return;
     }
-    await log(propertyId, "intake", "info", `${photos.length} photos ready`);
+    await log(propertyId, "intake", "info", `${photos.length} photos ready`, opCtx);
 
     // Stage 2: Analyze
     await runAnalysis(propertyId, photos);
@@ -149,7 +170,7 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // all scenes have settled it calls runAssembly(propertyId).
     await runGenerationSubmit(propertyId);
     await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron will collect clips + assemble.");
+      "All scenes submitted to providers. Cron will collect clips + assemble.", opCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
@@ -953,8 +974,15 @@ async function runQCForScene(
 
 // ─── STAGE 6: ASSEMBLY ─────────────────────────────────────────
 
-export async function runAssembly(propertyId: string): Promise<void> {
-  await updatePropertyStatus(propertyId, "assembling");
+// Internal assembly step — shared by runAssembly (pipeline path) and
+// rerunAssembly (manual clip-swap path). The `reason` flag is threaded
+// into cost_events metadata so the ledger can distinguish pipeline-driven
+// renders from operator-triggered re-renders.
+async function runAssemblyStep(
+  propertyId: string,
+  opts: { reason?: "pipeline" | "manual_rerun" } = {},
+): Promise<void> {
+  const reason = opts.reason ?? "pipeline";
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
@@ -1083,22 +1111,48 @@ export async function runAssembly(propertyId: string): Promise<void> {
           "No active music track in library — rendering silent video");
       }
 
-      // Resolve which Creatomate template (if any) should drive this render.
-      // Priority: property.template_id override > CREATOMATE_TEMPLATE_ID_<PKG>
-      // env var > CREATOMATE_TEMPLATE_ID_DEFAULT > null (fall back to the
-      // code-generated RenderScript path).
-      const templateId = providerName === "creatomate"
+      // Resolve which Creatomate template(s) should drive this render.
+      // We look up horizontal and vertical separately because each aspect
+      // ratio needs its own template (Creatomate ignores width/height when
+      // rendering from a template). When no vertical template exists, the
+      // pipeline skips the 9:16 render entirely rather than producing a
+      // wrong-aspect file. Priority chain: see lib/assembly/template-resolver.
+      const overrideTemplateId =
+        (property as { template_id?: string | null }).template_id ?? null;
+      const horizontalTemplateId = providerName === "creatomate"
         ? resolveTemplateId({
-            propertyTemplateId: (property as { template_id?: string | null }).template_id ?? null,
+            propertyTemplateId: overrideTemplateId,
             selectedPackage: property.selected_package,
+            selectedDuration: property.selected_duration ?? null,
+            aspectRatio: "16:9",
+          })
+        : null;
+      const verticalTemplateId = providerName === "creatomate"
+        ? resolveTemplateId({
+            propertyTemplateId: overrideTemplateId,
+            selectedPackage: property.selected_package,
+            selectedDuration: property.selected_duration ?? null,
+            aspectRatio: "9:16",
           })
         : null;
 
-      if (templateId) {
+      if (horizontalTemplateId) {
         await log(propertyId, "assembly", "info",
-          `Using Creatomate template ${templateId}`,
-          { templateId, selected_package: property.selected_package });
+          `Using Creatomate template ${horizontalTemplateId} (16:9)`,
+          { templateId: horizontalTemplateId, aspect: "16:9", selected_package: property.selected_package });
       }
+      if (verticalTemplateId) {
+        await log(propertyId, "assembly", "info",
+          `Using Creatomate template ${verticalTemplateId} (9:16)`,
+          { templateId: verticalTemplateId, aspect: "9:16", selected_package: property.selected_package });
+      } else if (horizontalTemplateId) {
+        await log(propertyId, "assembly", "info",
+          "No vertical Creatomate template configured — skipping 9:16 render",
+          { selected_package: property.selected_package });
+      }
+
+      // Template-path flag: any template render uses the modifications dict.
+      const templateId = horizontalTemplateId;
 
       await log(propertyId, "assembly", "info",
         `Submitting ${providerName} render (${clipInputs.length} clips)`,
@@ -1108,28 +1162,60 @@ export async function runAssembly(propertyId: string): Promise<void> {
       // Common modifications shared across 16:9 + 9:16 renders. Template
       // ignores any keys for placeholders it doesn't have, so we always send
       // the full set (text + clips + logo + music).
-      const templateMods = templateId
+      // Just Listed #01 (2026-05-14 rev) has 8 clip slots. Cap inputs so
+      // we never silently drop modifications for slots that don't exist.
+      // The duration-fit pass usually already keeps us at ≤8; this is
+      // defense-in-depth.
+      const templateClipInputs = clipInputs.slice(0, 8);
+      let templateMods = templateId
         ? buildTemplateModifications({
             address: property.address,
             selectedPackage: property.selected_package,
             agentName: property.listing_agent,
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
-            clips: clipInputs,
-            logoUrl: branding.logoUrl,
+            clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
           })
         : null;
+
+      // Operator-flow brand injection: when a property belongs to a client,
+      // fetch the client's brand kit and merge Brand.* keys into the
+      // modifications payload. No-op when client_id is null (customer flow)
+      // or when brand fields are unpopulated. Creatomate silently ignores
+      // keys for placeholders that don't exist in the template — the template
+      // must have Brand.* variables added in the Creatomate dashboard for the
+      // values to render visibly. See docs/specs/2026-05-15-operator-studio-design.md.
+      if (templateMods && property.client_id) {
+        const { data: clientRow } = await getSupabase()
+          .from('clients')
+          .select('*')
+          .eq('id', property.client_id)
+          .maybeSingle();
+        if (clientRow) {
+          const brand = brandKitFromClient(
+            clientRow as ClientRow,
+            { brokerage: property.brokerage ?? null },
+          );
+          templateMods = mergeBrandVars(templateMods, brand);
+          await log(propertyId, "assembly", "info",
+            `Brand kit injected for client ${property.client_id}`,
+            {
+              client_id: property.client_id,
+              has_logo: brand.logo_url != null,
+              has_primary: brand.primary_hex != null,
+              has_agent_headshot: brand.agent_headshot_url != null,
+            });
+        }
+      }
 
       const assembleParams = { clips: clipInputs, overlays, music };
 
       // Render both aspect ratios sequentially. Each render typically takes
       // 30–90s. Kept sequential to stay under the 300s function budget.
       // Template path uses assembleFromTemplate; code-generated path uses assemble().
-      const horizontalJob = templateId && templateMods && provider.name === "creatomate"
-        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
+      const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
+        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
             modifications: templateMods,
-            width: 1920,
-            height: 1080,
             renderScale: 1,
           })
         : await provider.assemble({
@@ -1164,48 +1250,58 @@ export async function runAssembly(propertyId: string): Promise<void> {
           output_duration_seconds: horizontalDuration,
           render_time_ms: horizontalResult.renderTimeMs ?? null,
           job_id: horizontalJob.jobId,
+          reason,
         },
       });
 
       // Vertical render — same template-vs-codegen branch as horizontal.
-      // For template renders we swap width/height to force a 1080×1920 frame.
-      const verticalJob = templateId && templateMods && provider.name === "creatomate"
-        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(templateId, {
-            modifications: templateMods,
-            width: 1080,
-            height: 1920,
-            renderScale: 1,
-          })
-        : await provider.assemble({
-            ...assembleParams,
-            aspectRatio: "9:16",
-          });
-      await log(propertyId, "assembly", "info",
-        `${providerName} vertical job queued: ${verticalJob.jobId}`);
-      const verticalResult = await pollAssemblyJob(provider, verticalJob);
-      if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
-        throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
-      }
-      verticalUrl = verticalResult.videoUrl;
+      // When the template path is active but no vertical template is
+      // configured (current state: we aren't offering vertical yet), skip
+      // the 9:16 render entirely. The DB column `vertical_video_url` will
+      // stay null and the UI's `&&` guard handles that gracefully.
+      const skipVertical =
+        horizontalTemplateId !== null &&
+        verticalTemplateId === null &&
+        provider.name === "creatomate";
 
-      const verticalDuration =
-        verticalResult.durationSeconds ?? timelineDurationSeconds;
-      const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
-      await recordCostEvent({
-        propertyId,
-        stage: "assembly",
-        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
-        unitsConsumed: 1,
-        unitType: "renders",
-        costCents: verticalCents,
-        metadata: {
-          aspect_ratio: "9:16",
-          clip_count: clipInputs.length,
-          output_duration_seconds: verticalDuration,
-          render_time_ms: verticalResult.renderTimeMs ?? null,
-          job_id: verticalJob.jobId,
-        },
-      });
+      if (!skipVertical) {
+        const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
+          ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
+              modifications: templateMods,
+              renderScale: 1,
+            })
+          : await provider.assemble({
+              ...assembleParams,
+              aspectRatio: "9:16",
+            });
+        await log(propertyId, "assembly", "info",
+          `${providerName} vertical job queued: ${verticalJob.jobId}`);
+        const verticalResult = await pollAssemblyJob(provider, verticalJob);
+        if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
+          throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
+        }
+        verticalUrl = verticalResult.videoUrl;
+
+        const verticalDuration =
+          verticalResult.durationSeconds ?? timelineDurationSeconds;
+        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
+        await recordCostEvent({
+          propertyId,
+          stage: "assembly",
+          provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
+          unitsConsumed: 1,
+          unitType: "renders",
+          costCents: verticalCents,
+          metadata: {
+            aspect_ratio: "9:16",
+            clip_count: clipInputs.length,
+            output_duration_seconds: verticalDuration,
+            render_time_ms: verticalResult.renderTimeMs ?? null,
+            job_id: verticalJob.jobId,
+            reason,
+          },
+        });
+      }
 
       // Persist the assembly timeline JSON for future revision editing.
       // We store the horizontal timeline since it's the primary deliverable.
@@ -1292,6 +1388,54 @@ export async function runAssembly(propertyId: string): Promise<void> {
   );
   // Silence unused baseline var (kept for potential future delta logging)
   void totalProcessingMsBase;
+}
+
+// ─── PUBLIC ASSEMBLY WRAPPERS ──────────────────────────────────
+
+/**
+ * Called by the poll-scenes cron when all scenes have settled. Sets
+ * `assembling` status then delegates to runAssemblyStep.
+ */
+export async function runAssembly(propertyId: string): Promise<void> {
+  await updatePropertyStatus(propertyId, "assembling");
+  await runAssemblyStep(propertyId, { reason: "pipeline" });
+}
+
+/**
+ * Re-run ONLY the assembly stage for a property whose clips are already
+ * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
+ * or when no completed scenes exist.
+ */
+export async function rerunAssembly(propertyId: string): Promise<void> {
+  const { data: property } = await getSupabase()
+    .from("properties")
+    .select("*")
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  if (!property) {
+    throw new Error(`Property not found: ${propertyId}`);
+  }
+
+  const midPipelineStatuses = ["queued", "analyzing", "scripting", "generating", "qc"];
+  if (midPipelineStatuses.includes(property.status as string)) {
+    throw new Error(
+      `Cannot rerun assembly while pipeline is in ${property.status as string}`,
+    );
+  }
+
+  // Verify at least one completed (qc_pass) scene with a clip URL exists.
+  const scenes = await getScenesForProperty(propertyId);
+  const completedScenes = scenes.filter(
+    (s) => s.status === "qc_pass" && s.clip_url,
+  );
+  if (completedScenes.length === 0) {
+    throw new Error("No completed scenes — nothing to assemble");
+  }
+
+  await updatePropertyStatus(propertyId, "assembling");
+  await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
+  await runAssemblyStep(propertyId, { reason: "manual_rerun" });
 }
 
 function formatPrice(price: number): string {

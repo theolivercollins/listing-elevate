@@ -119,6 +119,9 @@ export interface Property {
   custom_request_text: string | null;
   days_on_market: number | null;
   sold_price: number | null;
+  // Operator Studio Phase 1 — set when order_mode = 'operator'
+  client_id: string | null;
+  order_mode: 'customer' | 'operator';
 }
 
 export interface Photo {

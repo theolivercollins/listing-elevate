@@ -1,0 +1,493 @@
+import {
+  useState,
+  useCallback,
+  useRef,
+  type ChangeEvent,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Loader2, Image, X, ArrowRight } from 'lucide-react';
+import { StudioNav } from '@/components/studio/StudioNav';
+import { StudioShell } from '@/components/studio/StudioShell';
+import { ClientPicker } from '@/components/studio/ClientPicker';
+import { uploadPhotosToStorage } from '@/lib/photo-upload';
+
+const MIN_PHOTOS = 5;
+
+interface UploadedFile {
+  file: File;
+  preview: string;
+  id: string;
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label
+      style={{
+        display: 'block',
+        fontSize: 12,
+        fontWeight: 500,
+        color: 'var(--le-muted)',
+        marginBottom: 6,
+      }}
+    >
+      {children}
+      {required && <span style={{ color: 'var(--le-bad)', marginLeft: 3 }}>*</span>}
+    </label>
+  );
+}
+
+const StudioNew = () => {
+  const navigate = useNavigate();
+
+  // ─── form state ───
+  const [address, setAddress] = useState('');
+  const [clientId, setClientId] = useState<string | null>(null);
+  const [bedrooms, setBedrooms] = useState('');
+  const [bathrooms, setBathrooms] = useState('');
+  const [squareFootage, setSquareFootage] = useState('');
+  const [price, setPrice] = useState('');
+  const [directorNotes, setDirectorNotes] = useState('');
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  // ─── submit state ───
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const isValid = address.trim() && clientId && files.length >= MIN_PHOTOS;
+
+  // ─── file handling ───
+  const handleFiles = useCallback(
+    (newFiles: FileList | File[]) => {
+      const accepted = Array.from(newFiles).filter((f) =>
+        /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name),
+      );
+      const remaining = 60 - files.length;
+      const toAdd = accepted.slice(0, remaining);
+      const mapped = toAdd.map((f) => ({
+        file: f,
+        preview: URL.createObjectURL(f),
+        id: crypto.randomUUID(),
+      }));
+      setFiles((prev) => [...prev, ...mapped]);
+    },
+    [files.length],
+  );
+
+  const removeFile = (id: string) => {
+    setFiles((prev) => {
+      const removed = prev.find((f) => f.id === id);
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prev.filter((f) => f.id !== id);
+    });
+  };
+
+  // ─── submit ───
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValid) return;
+
+    setSubmitting(true);
+    setSubmitError(null);
+    setUploadProgress(null);
+
+    try {
+      const tempId = crypto.randomUUID();
+      const photoPaths = await uploadPhotosToStorage(
+        files.map((f) => f.file),
+        `${tempId}/raw`,
+        (uploaded, total) => setUploadProgress({ uploaded, total }),
+      );
+
+      if (photoPaths.length === 0) {
+        throw new Error('All photo uploads failed. Check browser console for details.');
+      }
+
+      setUploadProgress(null);
+
+      const res = await fetch('/api/admin/studio/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_id: clientId,
+          address: address.trim(),
+          bedrooms: bedrooms ? Number(bedrooms) : null,
+          bathrooms: bathrooms ? Number(bathrooms) : null,
+          square_footage: squareFootage ? Number(squareFootage) : null,
+          price: price ? Number(price) : null,
+          photo_storage_paths: photoPaths,
+          director_notes: directorNotes.trim() || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `${res.status} ${res.statusText}`);
+      }
+
+      const { property_id } = await res.json();
+      fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      navigate(`/dashboard/studio/properties/${property_id}`);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Submission failed');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <StudioShell>
+      {/* ─── Page heading ─── */}
+      <div className="studio-page-heading">
+        <div>
+          <span className="studio-page-eyebrow">Studio · new listing</span>
+          <h1 className="studio-page-h1">New listing</h1>
+          <p className="studio-page-sub">Pick a client, drop in photos, send the pipeline.</p>
+        </div>
+      </div>
+
+      {/* ─── StudioNav ─── */}
+      <StudioNav />
+
+      {/* ─── Form ─── */}
+      <form
+        onSubmit={handleSubmit}
+        style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 0 }}
+      >
+        <div className="studio-card" style={{ padding: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Client picker */}
+            <div>
+              <FieldLabel required>Client</FieldLabel>
+              <ClientPicker value={clientId} onChange={setClientId} includeNone={false} />
+            </div>
+
+            {/* Address */}
+            <div>
+              <FieldLabel required>Address</FieldLabel>
+              <input
+                className="studio-input"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="208 Berry Street, Brooklyn, NY"
+                required
+              />
+            </div>
+
+            {/* Bedrooms / bathrooms */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <FieldLabel>Bedrooms</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={bedrooms}
+                  onChange={(e) => setBedrooms(e.target.value)}
+                  placeholder="3"
+                />
+              </div>
+              <div>
+                <FieldLabel>Bathrooms</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={bathrooms}
+                  onChange={(e) => setBathrooms(e.target.value)}
+                  placeholder="2.5"
+                />
+              </div>
+            </div>
+
+            {/* Square footage / price */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <FieldLabel>Square footage</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={squareFootage}
+                  onChange={(e) => setSquareFootage(e.target.value)}
+                  placeholder="1850"
+                />
+              </div>
+              <div>
+                <FieldLabel>Price ($)</FieldLabel>
+                <div style={{ position: 'relative' }}>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: 13.5,
+                      color: 'var(--le-muted)',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    $
+                  </span>
+                  <input
+                    className="studio-input studio-tabnum"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="2400000"
+                    style={{ paddingLeft: 26 }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Director notes */}
+            <div>
+              <FieldLabel>Director notes</FieldLabel>
+              <textarea
+                className="studio-textarea"
+                value={directorNotes}
+                onChange={(e) => setDirectorNotes(e.target.value)}
+                placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
+                rows={4}
+              />
+            </div>
+
+            {/* Photo dropzone */}
+            <div>
+              <FieldLabel>Photos</FieldLabel>
+              <div
+                className={'studio-dropzone' + (isDragging ? ' dragging' : '')}
+                style={{
+                  aspectRatio: '16/6',
+                  flexDirection: 'column',
+                  textAlign: 'center',
+                  gap: 0,
+                }}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  handleFiles(e.dataTransfer.files);
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".jpg,.jpeg,.png,.heic,.webp"
+                  style={{ display: 'none' }}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    e.target.files && handleFiles(e.target.files)
+                  }
+                />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  {...({ webkitdirectory: '', directory: '' } as React.HTMLAttributes<HTMLInputElement>)}
+                  style={{ display: 'none' }}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    e.target.files && handleFiles(e.target.files)
+                  }
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <Image size={28} strokeWidth={1.4} style={{ color: 'var(--le-muted)' }} />
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--le-ink-2)', letterSpacing: '-0.01em' }}>
+                    Drop photos to upload
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
+                    or click to browse — JPG, PNG, HEIC, WebP
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                    className="studio-btn-ghost"
+                    style={{ fontSize: 11.5, padding: '5px 12px', marginTop: 4 }}
+                  >
+                    Import entire folder
+                  </button>
+                </div>
+              </div>
+
+              {/* Photo count progress */}
+              {files.length > 0 && files.length < MIN_PHOTOS && (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 2,
+                      background: 'var(--le-line)',
+                      borderRadius: 99,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${(files.length / MIN_PHOTOS) * 100}%`,
+                        background: 'var(--le-accent)',
+                        borderRadius: 99,
+                        transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 11.5,
+                      color: 'var(--le-warn)',
+                      fontVariantNumeric: 'tabular-nums',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {MIN_PHOTOS - files.length} more required
+                  </span>
+                </div>
+              )}
+              {files.length >= MIN_PHOTOS && (
+                <p
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: 'var(--le-good)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {files.length} photo{files.length !== 1 ? 's' : ''} ready
+                </p>
+              )}
+
+              {/* Thumbnails */}
+              {files.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(6, 1fr)',
+                    gap: 6,
+                  }}
+                >
+                  {files.map((f) => (
+                    <div
+                      key={f.id}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1',
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        background: 'rgba(11,11,16,0.06)',
+                      }}
+                    >
+                      <img
+                        src={f.preview}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(11,11,16,0.65)',
+                          opacity: 0,
+                          transition: 'opacity 0.15s',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#fff',
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
+                        aria-label="Remove photo"
+                      >
+                        <X size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Error */}
+          {submitError && (
+            <div className="studio-error-strip" style={{ marginTop: 16 }}>{submitError}</div>
+          )}
+
+          {/* Submit footer */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              paddingTop: 20,
+              marginTop: 20,
+              borderTop: '1px solid var(--le-line-2)',
+            }}
+          >
+            <button
+              type="button"
+              className="studio-btn-ghost"
+              onClick={() => navigate('/dashboard/studio')}
+            >
+              Cancel
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {!isValid && !submitting && (
+                <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
+                  {!address.trim()
+                    ? 'Address required'
+                    : !clientId
+                      ? 'Client required'
+                      : files.length < MIN_PHOTOS
+                        ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                        : ''}
+                </span>
+              )}
+              <button
+                type="submit"
+                className="studio-cta-primary"
+                disabled={!isValid || submitting}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="studio-spinner" />
+                    {uploadProgress
+                      ? `Uploading ${uploadProgress.uploaded} / ${uploadProgress.total}…`
+                      : 'Ingesting…'}
+                  </>
+                ) : (
+                  <>
+                    Send to pipeline
+                    <ArrowRight size={13} strokeWidth={2} />
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      </form>
+    </StudioShell>
+  );
+};
+
+export default StudioNew;

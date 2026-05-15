@@ -374,12 +374,12 @@ export function buildCreatomateTimeline(
 export interface TemplateRenderOptions {
   /** Modification dict keyed by template element name (e.g. "St#/StName.text"). */
   modifications: Record<string, string | number | null>;
-  /** Override output resolution. Creatomate default is the template's canvas
-   *  scaled by render_scale. We pass explicit dimensions to force HD. */
-  width?: number;
-  height?: number;
-  /** 0..1; 1 = full template canvas. Default 1 (production quality). The
-   *  Creatomate template default of 0.375 produces a 480×270 thumbnail. */
+  /** Multiplier on the template's canvas (verified 2026-05-14). Output
+   *  dimensions = canvas × renderScale. Top-level `width`/`height` in the
+   *  request body are silently ignored by /v2/renders when a template is
+   *  used, so we don't expose them here — design the canvas you want, and
+   *  use renderScale only to upscale (e.g. 720p canvas + scale 1.5 → 1080p).
+   *  The Creatomate account default of 0.375 produces a 480×270 thumbnail. */
   renderScale?: number;
 }
 
@@ -451,8 +451,11 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
 
   /**
    * Template-driven render. Pass a Creatomate template_id + a modifications
-   * dict. Output dimensions + render_scale are forced to production-quality
-   * defaults (1920×1080 @ scale 1.0) so the response isn't a thumbnail.
+   * dict. render_scale defaults to 1 (full canvas, production quality);
+   * the account-level draft default of 0.375 would produce a thumbnail.
+   * Output aspect ratio comes from the template canvas — pick a template
+   * designed for the aspect you want; width/height in the request body
+   * are silently ignored for template renders.
    */
   async assembleFromTemplate(
     templateId: string,
@@ -463,8 +466,6 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       modifications: opts.modifications,
       render_scale: opts.renderScale ?? 1,
     };
-    if (opts.width) body.width = opts.width;
-    if (opts.height) body.height = opts.height;
 
     const response = await fetch(`${this.baseUrl}/renders`, {
       method: "POST",

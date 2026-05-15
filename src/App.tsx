@@ -43,6 +43,12 @@ import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
 import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
 import BlogTemplates from "./pages/dashboard/BlogTemplates";
 import BlogTemplateDetail from "./pages/dashboard/BlogTemplateDetail";
+import StudioHome from "./pages/dashboard/studio/StudioHome";
+import StudioNew from "./pages/dashboard/studio/StudioNew";
+import StudioClients from "./pages/dashboard/studio/Clients";
+import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
+import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
+import PreviewPage from "./pages/preview/PreviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -66,6 +72,7 @@ const App = () => (
                 <Route path="/login" element={<Navigate to="/?login=1" replace />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
+                <Route path="/preview/:token" element={<PreviewPage />} />
 
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
@@ -109,6 +116,11 @@ const App = () => (
                     <Route path="finances" element={<DashboardFinances />} />
                     <Route path="users" element={<DashboardUsers />} />
                     <Route path="settings" element={<DashboardSettings />} />
+                    <Route path="studio" element={<StudioHome />} />
+                    <Route path="studio/new" element={<StudioNew />} />
+                    <Route path="studio/clients" element={<StudioClients />} />
+                    <Route path="studio/clients/:id" element={<StudioClientEdit />} />
+                    <Route path="studio/properties/:id" element={<StudioPropertyCommandCenter />} />
                   </Route>
                 </Route>
 
