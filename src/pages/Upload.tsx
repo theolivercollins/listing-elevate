@@ -81,6 +81,7 @@ const Upload = () => {
   const [voiceoverError, setVoiceoverError] = useState<string | null>(null);
   const [voiceoverPreviewUrl, setVoiceoverPreviewUrl] = useState<string | null>(null);
   const [voiceoverScript, setVoiceoverScript] = useState<string | null>(null);
+  const [voiceoverStage, setVoiceoverStage] = useState<string | null>(null);
 
   // ─── flow state ───
   const [submitted, setSubmitted] = useState(false);
@@ -228,6 +229,14 @@ const Upload = () => {
     setVoiceoverError(null);
     setVoiceoverPreviewUrl(null);
     setVoiceoverScript(null);
+    setVoiceoverStage("Scraping listing from Compass…");
+
+    // Staged messages — typical timing: scrape 10–25s, script 2–5s, TTS 3–8s.
+    const t1 = setTimeout(() => setVoiceoverStage("Writing script with Claude…"), 12_000);
+    const t2 = setTimeout(() => setVoiceoverStage("Generating voice with ElevenLabs…"), 22_000);
+    const t3 = setTimeout(() => setVoiceoverStage("Almost there…"), 38_000);
+    const clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+
     try {
       const result = await generateVoiceoverPreview({
         voiceId: selectedVoiceId,
@@ -239,7 +248,9 @@ const Upload = () => {
     } catch (err) {
       setVoiceoverError(err instanceof Error ? err.message : "Generation failed");
     } finally {
+      clearStages();
       setVoiceoverGenerating(false);
+      setVoiceoverStage(null);
     }
   };
 
@@ -673,6 +684,12 @@ const Upload = () => {
                               <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Generate voiceover</>
                             )}
                           </Button>
+                          {voiceoverGenerating && voiceoverStage && (
+                            <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-4 py-3">
+                              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" strokeWidth={1.5} />
+                              <span className="text-sm text-foreground">{voiceoverStage}</span>
+                            </div>
+                          )}
                           {voiceoverError && (
                             <p className="text-xs text-red-500">{voiceoverError}</p>
                           )}
