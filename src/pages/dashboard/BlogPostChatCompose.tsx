@@ -67,7 +67,10 @@ export default function BlogPostChatCompose() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormState>(emptyForm);
-  const [messages, setMessages] = useState<AIChatMessage[]>([]);
+  // Messages keep an optional `pending` flag for the optimistic placeholder
+  // bubble that appears the instant the user hits send. Once the real reply
+  // comes back, the trailing pending message gets replaced in place.
+  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean })[]>([]);
   const [pendingActions, setPendingActions] = useState<PendingActionCard[]>([]);
   const [input, setInput] = useState("");
   const [totalCostCents, setTotalCostCents] = useState(0);
@@ -77,7 +80,7 @@ export default function BlogPostChatCompose() {
   const [attachments, setAttachments] = useState<AIAttachment[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showFields, setShowFields] = useState(true);
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,18 +100,37 @@ export default function BlogPostChatCompose() {
 
   // -- chat --------------------------------------------------------------------
 
+  const ALLY_PLACEHOLDERS = [
+    "On it — give me a sec.",
+    "Got it. Drafting now…",
+    "One sec, putting that together.",
+    "Working on it now.",
+  ];
+  function nextPlaceholder() {
+    return ALLY_PLACEHOLDERS[Math.floor(Math.random() * ALLY_PLACEHOLDERS.length)];
+  }
+
   const chat = useMutation({
-    mutationFn: async (nextUser: string): Promise<{ nextMessages: AIChatMessage[]; r: AIChatResponse }> => {
-      const nextMessages: AIChatMessage[] = [...messages, { role: "user", content: nextUser }];
-      const r = await aiChat(nextMessages, form.body_html, {
+    mutationFn: async (args: { historyForApi: AIChatMessage[] }) => {
+      const r = await aiChat(args.historyForApi, form.body_html, {
         templateId: templateId || null,
         includeRecentPosts,
         attachments: attachments.length ? attachments : undefined,
       });
-      return { nextMessages, r };
+      return { r };
     },
-    onSuccess: ({ nextMessages, r }) => {
-      setMessages([...nextMessages, { role: "assistant", content: r.reply }]);
+    onSuccess: ({ r }) => {
+      // Replace the trailing pending placeholder with Ally's real reply.
+      setMessages((prev) => {
+        const copy = prev.slice();
+        const lastIdx = copy.length - 1;
+        if (lastIdx >= 0 && copy[lastIdx].pending) {
+          copy[lastIdx] = { role: "assistant", content: r.reply };
+        } else {
+          copy.push({ role: "assistant", content: r.reply });
+        }
+        return copy;
+      });
 
       // AI manages the whole post — patch every field it sent back.
       setForm((f) => {
@@ -122,7 +144,6 @@ export default function BlogPostChatCompose() {
           author_label: r.author ?? f.author_label,
           category_label: r.category ?? f.category_label,
         };
-        // Queue the action card with a snapshot AFTER patching.
         if (r.action) {
           setPendingActions((prev) => [
             ...prev,
@@ -136,14 +157,34 @@ export default function BlogPostChatCompose() {
       setTotalCostCents((c) => c + r.cost_cents);
       setAttachments([]);
     },
-    onError: (e: any) => toast.error(`Chat failed: ${e?.message ?? e}`),
+    onError: (e: any) => {
+      const msg = e?.message ?? String(e);
+      toast.error(`Chat failed: ${msg}`);
+      setMessages((prev) => {
+        const copy = prev.slice();
+        const lastIdx = copy.length - 1;
+        if (lastIdx >= 0 && copy[lastIdx].pending) {
+          copy[lastIdx] = { role: "assistant", content: `Hit an error: ${msg}` };
+        }
+        return copy;
+      });
+    },
   });
 
   function send(text: string) {
     const t = text.trim();
     if (!t) return;
     setInput("");
-    chat.mutate(t);
+    // Optimistic: show the user message + Ally's placeholder INSTANTLY so the
+    // input feels responsive. Real reply replaces the placeholder on success.
+    const userMsg: AIChatMessage = { role: "user", content: t };
+    const placeholder = { role: "assistant" as const, content: nextPlaceholder(), pending: true };
+    const historyForApi: AIChatMessage[] = [
+      ...messages.filter((m) => !m.pending).map(({ role, content }) => ({ role, content })),
+      userMsg,
+    ];
+    setMessages((prev) => [...prev.filter((m) => !m.pending), userMsg, placeholder]);
+    chat.mutate({ historyForApi });
   }
 
   // -- post mutations ----------------------------------------------------------
@@ -256,7 +297,7 @@ export default function BlogPostChatCompose() {
         </button>
         <div className="flex items-center gap-2 text-sm">
           <MessageSquare className="h-4 w-4 text-primary" />
-          <span className="font-medium">New post · Chat with AI</span>
+          <span className="font-medium">New post · Chat with Ally</span>
           <span className="hidden text-xs text-muted-foreground md:inline">
             {selectedTemplate ? <>· template <span className="font-medium">{selectedTemplate.name}</span></>
               : includeRecentPosts ? <>· style-matched to recent posts</>
@@ -347,10 +388,19 @@ export default function BlogPostChatCompose() {
                       className={
                         m.role === "user"
                           ? "ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm"
-                          : "max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm"
+                          : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm ${m.pending ? "italic text-muted-foreground" : ""}`
                       }
                     >
-                      {m.content}
+                      <div className="flex items-center gap-2">
+                        {m.role === "assistant" && m.pending && (
+                          <span className="inline-flex h-3 items-end gap-0.5" aria-hidden>
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]"></span>
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]"></span>
+                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60"></span>
+                          </span>
+                        )}
+                        <span>{m.content}</span>
+                      </div>
                     </motion.div>
                   ))}
 
@@ -383,11 +433,6 @@ export default function BlogPostChatCompose() {
                     </motion.div>
                   ))}
 
-                  {chat.isPending && (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3 w-3 animate-spin" /> Claude is thinking…
-                    </motion.div>
-                  )}
                 </div>
 
                 <div className="border-t bg-background/95 px-5 pb-4 pt-3 backdrop-blur">
@@ -431,7 +476,11 @@ export default function BlogPostChatCompose() {
               </Button>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
+            {/* Split the sidebar: fields on top, preview pinned below at ~50%
+                when toggled on — preview was previously a tiny 360px box at
+                the end of the scrollable list, which made it nearly useless. */}
+            <div className={`flex-1 min-h-0 ${showPreview ? "grid grid-rows-[minmax(0,1fr)_minmax(0,1fr)]" : "block"}`}>
+            <div className="space-y-4 overflow-y-auto p-4 min-h-0">
               <Field label="Title" filled={!!form.title}>
                 <Input
                   value={form.title}
@@ -511,17 +560,20 @@ export default function BlogPostChatCompose() {
                 />
               </Field>
 
-              {showPreview && (
-                <div className="rounded-md border bg-white">
-                  <div className="border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                    Live preview
-                  </div>
-                  <HtmlPreview
-                    html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"}
-                    style={{ width: "100%", height: 360, border: "none", display: "block" }}
-                  />
+            </div>
+
+            {showPreview && (
+              <div className="flex min-h-0 flex-col border-t bg-white">
+                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+                  <span>Live preview</span>
+                  <span>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
                 </div>
-              )}
+                <HtmlPreview
+                  html={form.body_html || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>Ally hasn't drafted anything yet — send a message.</p>"}
+                  style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
+                />
+              </div>
+            )}
             </div>
           </motion.div>
         )}
