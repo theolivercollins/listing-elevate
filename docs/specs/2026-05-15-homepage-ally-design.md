@@ -87,7 +87,7 @@ Public homepage (V2Landing)
 | `lib/marketing/build-knowledge.ts` | Build-time extractor (Pricing.tsx + FAQ.tsx → JSON) | ~80 |
 | `lib/marketing/rate-limit.ts` | Per-IP & per-conversation Supabase rate limiter | ~120 |
 | `lib/marketing/cookie.ts` | Anonymous conversation_id cookie helper | ~40 |
-| `supabase/migrations/056_marketing_ally.sql` | `marketing_leads` + `marketing_chat_rate_limits` tables | — |
+| `supabase/migrations/057_marketing_ally.sql` | `marketing_leads` + `marketing_chat_rate_limits` tables | — |
 | `scripts/marketing/seed-knowledge-stub.ts` | Generates initial `knowledge.md` from existing docs (one-shot) | ~50 |
 | `api/cron/marketing-ally-cleanup.ts` | Daily janitor: expires rate-limit buckets + abandoned anonymous threads | ~40 |
 

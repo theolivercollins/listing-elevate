@@ -1,4 +1,4 @@
--- supabase/migrations/056_marketing_ally.sql
+-- supabase/migrations/057_marketing_ally.sql
 -- Homepage Ally — public concierge chat tables.
 -- See docs/specs/2026-05-15-homepage-ally-design.md §6 for full data model.
 

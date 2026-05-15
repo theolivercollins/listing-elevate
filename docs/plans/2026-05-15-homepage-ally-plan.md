@@ -25,7 +25,7 @@
 
 | Path | Status | Responsibility |
 |---|---|---|
-| `supabase/migrations/056_marketing_ally.sql` | NEW | `marketing_leads` + `marketing_chat_rate_limits` tables |
+| `supabase/migrations/057_marketing_ally.sql` | NEW | `marketing_leads` + `marketing_chat_rate_limits` tables |
 | `lib/cost.ts` | NEW | Generic `recordCost()` — moved up from `lib/blog-engine/cost.ts` |
 | `lib/blog-engine/cost.ts` | MODIFY | Re-export `recordCost` from new path; keep `recordBlogCost` thin wrapper |
 | `lib/marketing/cookie.ts` | NEW | `getOrSetConversationCookie(req, res)` — anonymous conversation_id |
@@ -62,12 +62,12 @@ After **Task 8**, the backend is curl-testable end-to-end without any UI work. S
 ## Task 1: Database migration
 
 **Files:**
-- Create: `supabase/migrations/056_marketing_ally.sql`
+- Create: `supabase/migrations/057_marketing_ally.sql`
 
 - [ ] **Step 1: Write the migration**
 
 ```sql
--- supabase/migrations/056_marketing_ally.sql
+-- supabase/migrations/057_marketing_ally.sql
 -- Homepage Ally — public concierge chat tables.
 -- See docs/specs/2026-05-15-homepage-ally-design.md §6 for full data model.
 
@@ -129,7 +129,7 @@ for each row execute function marketing_leads_set_updated_at();
 
 - [ ] **Step 2: Verify it lints & looks consistent**
 
-Run: `head -3 supabase/migrations/056_marketing_ally.sql`
+Run: `head -3 supabase/migrations/057_marketing_ally.sql`
 Expected: First three lines match the comment header above.
 
 - [ ] **Step 3: DO NOT apply yet**
@@ -139,8 +139,8 @@ The migration applies to the shared prod Supabase (per `CLAUDE.md` branch model)
 - [ ] **Step 4: Commit**
 
 ```bash
-git add supabase/migrations/056_marketing_ally.sql
-git commit -m "feat(marketing): migration 056 — marketing_leads + rate_limits tables"
+git add supabase/migrations/057_marketing_ally.sql
+git commit -m "feat(marketing): migration 057 — marketing_leads + rate_limits tables"
 ```
 
 ---
@@ -585,7 +585,7 @@ describe("assertRateLimit", () => {
 
 - [ ] **Step 2: Write the Postgres RPC the rate limiter calls**
 
-Append to `supabase/migrations/056_marketing_ally.sql`:
+Append to `supabase/migrations/057_marketing_ally.sql`:
 
 ```sql
 
@@ -710,7 +710,7 @@ Expected: PASS — all 5 tests.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add lib/marketing/rate-limit.ts lib/marketing/rate-limit.test.ts supabase/migrations/056_marketing_ally.sql
+git add lib/marketing/rate-limit.ts lib/marketing/rate-limit.test.ts supabase/migrations/057_marketing_ally.sql
 git commit -m "feat(marketing): per-IP/per-conv/global rate limiter via Postgres bump RPC"
 ```
 
@@ -2202,7 +2202,7 @@ main();
 
 Per Oliver's permission gate, applying ANY migration to the shared prod Supabase requires explicit go-ahead. Pause and ask:
 
-> "Ready to apply migration `056_marketing_ally.sql` to the prod Supabase project (`vrhmaeywqsohlztoouxu`). The migration is additive only — creates 2 tables, 1 trigger, 1 RPC. Rollback path: drop both tables + the trigger fn + the RPC. Confirm to proceed."
+> "Ready to apply migration `057_marketing_ally.sql` to the prod Supabase project (`vrhmaeywqsohlztoouxu`). The migration is additive only — creates 2 tables, 1 trigger, 1 RPC. Rollback path: drop both tables + the trigger fn + the RPC. Confirm to proceed."
 
 After explicit confirmation, use Supabase MCP `apply_migration` with the migration content.
 
@@ -2226,7 +2226,7 @@ Expected: all 5 scenarios pass.
 In the "Right now" section of `docs/HANDOFF.md`, add an entry:
 
 ```markdown
-- **Homepage Ally — `feat/homepage-ally`.** Public concierge chat lifted from in-app blog Ally; feature-flagged off by default (`VITE_HOMEPAGE_ALLY_ENABLED`). Backend at `api/marketing/ally-chat.ts`, widget at `src/components/marketing/MarketingAllyChat.tsx`, migration `056_marketing_ally.sql` applied. Spec: `docs/specs/2026-05-15-homepage-ally-design.md`. Plan: `docs/plans/2026-05-15-homepage-ally-plan.md`. Next: enable in dev → staging → prod via `VITE_HOMEPAGE_ALLY_ENABLED=true` per env (production env change requires explicit Oliver go-ahead per `CLAUDE.md`).
+- **Homepage Ally — `feat/homepage-ally`.** Public concierge chat lifted from in-app blog Ally; feature-flagged off by default (`VITE_HOMEPAGE_ALLY_ENABLED`). Backend at `api/marketing/ally-chat.ts`, widget at `src/components/marketing/MarketingAllyChat.tsx`, migration `057_marketing_ally.sql` applied. Spec: `docs/specs/2026-05-15-homepage-ally-design.md`. Plan: `docs/plans/2026-05-15-homepage-ally-plan.md`. Next: enable in dev → staging → prod via `VITE_HOMEPAGE_ALLY_ENABLED=true` per env (production env change requires explicit Oliver go-ahead per `CLAUDE.md`).
 ```
 
 - [ ] **Step 6: Commit & wrap**
@@ -2240,7 +2240,7 @@ git commit -m "feat(marketing): smoke script + handoff entry"
 
 ## Done state checklist
 
-- [ ] Migration `056_marketing_ally.sql` is on disk AND applied to prod Supabase (with permission)
+- [ ] Migration `057_marketing_ally.sql` is on disk AND applied to prod Supabase (with permission)
 - [ ] All Vitest tests pass: `pnpm test`
 - [ ] `pnpm tsc -p tsconfig.api.json --noEmit && pnpm tsc -p tsconfig.app.json --noEmit` clean
 - [ ] `pnpm build` succeeds (prebuild script generates pricing/faq json)
