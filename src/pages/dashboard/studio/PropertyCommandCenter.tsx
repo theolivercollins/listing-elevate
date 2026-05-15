@@ -1,13 +1,24 @@
-import { useState, useEffect, useRef, useCallback, type CSSProperties } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Loader2, Copy, Check, Plus, AlertTriangle, ExternalLink } from 'lucide-react';
+import {
+  Loader2,
+  Copy,
+  Check,
+  Plus,
+  AlertTriangle,
+  ExternalLink,
+} from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
+import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { getRelativeTime, formatCents } from '@/lib/types';
-import type { ClientRow, RevisionNoteRow, PropertyPreviewRow } from '../../../../lib/types/operator-studio';
-import '@/v2/styles/v2.css';
+import type {
+  ClientRow,
+  RevisionNoteRow,
+  PropertyPreviewRow,
+} from '../../../../lib/types/operator-studio';
 
-// ─── Local types ─────────────────────────────────────────────────────────────
+// ─── Local types ───────────────────────────────────────────────────────────────
 
 interface PropertyRow {
   id: string;
@@ -44,76 +55,35 @@ interface Bundle {
   cost: CostBundle;
 }
 
-// ─── Style constants ──────────────────────────────────────────────────────────
-
-const EYEBROW: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-};
-
-const SECTION_HEADER: CSSProperties = {
-  ...EYEBROW,
-  paddingBottom: 10,
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-  display: 'block',
-  marginBottom: 16,
-};
-
-const GHOST_BTN: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '6px 12px',
-  fontSize: 11,
-  fontWeight: 500,
-  background: 'transparent',
-  color: '#fff',
-  border: '1px solid rgba(220,230,255,0.18)',
-  borderRadius: 2,
-  cursor: 'pointer',
-  fontFamily: 'var(--le-font-sans)',
-};
-
-const ACCENT_BTN: CSSProperties = {
-  ...GHOST_BTN,
-  background: 'var(--le-accent)',
-  color: 'var(--le-accent-fg)',
-  border: 'none',
-};
-
-// ─── Terminal statuses (stop polling when reached) ────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────
 
 const TERMINAL_STATUSES = new Set(['complete', 'failed']);
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Status pill ───────────────────────────────────────────────────────────────
 
 function StatusPill({ status }: { status: string }) {
-  let bg = 'rgba(255,255,255,0.1)';
-  let color = 'rgba(255,255,255,0.7)';
-  if (status === 'complete') { bg = 'rgba(74,222,128,0.15)'; color = '#4ade80'; }
-  else if (status === 'failed') { bg = 'rgba(248,113,113,0.15)'; color = '#f87171'; }
-  else if (['needs_review', 'qc'].includes(status)) { bg = 'rgba(250,204,21,0.15)'; color = '#facc15'; }
-  else if (['generating', 'scripting', 'analyzing', 'assembling', 'queued'].includes(status)) {
-    bg = 'rgba(96,165,250,0.15)'; color = '#60a5fa';
-  }
+  const map: Record<string, { label: string; cls: string }> = {
+    complete:     { label: 'Delivered', cls: 'complete' },
+    queued:       { label: 'Queued', cls: 'queued' },
+    needs_review: { label: 'Review', cls: 'needs_review' },
+    failed:       { label: 'Failed', cls: 'failed' },
+    generating:   { label: 'Generating', cls: 'generating' },
+    analyzing:    { label: 'Analyzing', cls: 'analyzing' },
+    scripting:    { label: 'Scripting', cls: 'scripting' },
+    qc:           { label: 'QC', cls: 'qc' },
+    assembling:   { label: 'Assembling', cls: 'assembling' },
+    ingesting:    { label: 'Ingesting', cls: 'ingesting' },
+  };
+  const s = map[status] ?? { label: status, cls: 'queued' };
   return (
-    <span
-      style={{
-        ...EYEBROW,
-        fontSize: 9,
-        color,
-        background: bg,
-        padding: '3px 8px',
-        letterSpacing: '0.18em',
-      }}
-    >
-      {status.replace(/_/g, ' ')}
+    <span className={`studio-status-pill ${s.cls}`}>
+      <span className="studio-status-dot" />
+      {s.label}
     </span>
   );
 }
+
+// ─── Copy button ───────────────────────────────────────────────────────────────
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -127,23 +97,100 @@ function CopyButton({ text }: { text: string }) {
     }
   };
   return (
-    <button type="button" style={{ ...GHOST_BTN, padding: '3px 8px', fontSize: 10 }} onClick={handleCopy}>
-      {copied ? <Check style={{ width: 10, height: 10 }} /> : <Copy style={{ width: 10, height: 10 }} />}
+    <button
+      type="button"
+      className="studio-btn-ghost"
+      style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}
+      onClick={handleCopy}
+    >
+      {copied ? (
+        <Check size={11} strokeWidth={2} style={{ color: 'var(--le-good)' }} />
+      ) : (
+        <Copy size={11} strokeWidth={1.6} />
+      )}
       {copied ? 'Copied' : 'Copy'}
     </button>
   );
 }
 
-function MetaValue({ label, value }: { label: string; value: string | number | null }) {
+// ─── Section card ──────────────────────────────────────────────────────────────
+
+function SectionCard({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div>
-      <span style={EYEBROW}>{label}</span>
-      <p className="mt-1 text-sm font-medium">{value != null && value !== '' ? String(value) : '—'}</p>
+    <div className="studio-card" style={{ padding: 24 }}>
+      <span
+        style={{
+          display: 'block',
+          fontSize: 11.5,
+          fontWeight: 500,
+          color: 'var(--le-muted)',
+          marginBottom: 6,
+        }}
+      >
+        {eyebrow}
+      </span>
+      <h3
+        style={{
+          margin: '0 0 16px 0',
+          fontSize: 16,
+          fontWeight: 600,
+          letterSpacing: '-0.015em',
+          color: 'var(--le-ink)',
+        }}
+      >
+        {title}
+      </h3>
+      {children}
     </div>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Meta value ────────────────────────────────────────────────────────────────
+
+function MetaValue({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number | null;
+}) {
+  return (
+    <div>
+      <span
+        style={{
+          display: 'block',
+          fontSize: 11.5,
+          fontWeight: 500,
+          color: 'var(--le-muted)',
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </span>
+      <p
+        style={{
+          margin: 0,
+          fontSize: 13.5,
+          fontWeight: 500,
+          color: 'var(--le-ink)',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value != null && value !== '' ? String(value) : '—'}
+      </p>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
 
 const PropertyCommandCenter = () => {
   const { id } = useParams<{ id: string }>();
@@ -151,12 +198,10 @@ const PropertyCommandCenter = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Director's notes form
   const [noteBody, setNoteBody] = useState('');
   const [savingNote, setSavingNote] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
 
-  // Preview link generation
   const [generatingLink, setGeneratingLink] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
@@ -172,7 +217,6 @@ const PropertyCommandCenter = () => {
       const data = (await res.json()) as Bundle;
       setBundle(data);
       setError(null);
-      // Stop polling if terminal
       if (TERMINAL_STATUSES.has(data.property.status) && pollRef.current) {
         clearInterval(pollRef.current);
         pollRef.current = null;
@@ -187,9 +231,7 @@ const PropertyCommandCenter = () => {
   useEffect(() => {
     fetchBundle();
     pollRef.current = setInterval(fetchBundle, 5000);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchBundle]);
 
   const handleSaveNote = async () => {
@@ -238,17 +280,21 @@ const PropertyCommandCenter = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <StudioShell>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+          <Loader2 size={20} className="studio-spinner" style={{ color: 'var(--le-muted)' }} />
+        </div>
+      </StudioShell>
     );
   }
 
   if (error || !bundle) {
     return (
-      <div className="py-20 text-center text-sm text-destructive">
-        {error ?? 'Property not found.'}
-      </div>
+      <StudioShell>
+        <div className="studio-error-strip" style={{ marginTop: 24 }}>
+          {error ?? 'Property not found.'}
+        </div>
+      </StudioShell>
     );
   }
 
@@ -257,359 +303,540 @@ const PropertyCommandCenter = () => {
   const baseUrl = window.location.origin;
 
   return (
-    <div className="space-y-10 pb-20">
-      {/* ─── Header Strip ─── */}
-      <div>
-        <span style={EYEBROW}>— Property Command Center</span>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-4">
-          <div className="flex flex-col gap-2">
-            <h2
-              style={{
-                fontFamily: 'var(--le-font-sans)',
-                fontSize: 'clamp(22px, 3vw, 36px)',
-                fontWeight: 500,
-                letterSpacing: '-0.03em',
-                lineHeight: 1.05,
-                color: '#fff',
-                margin: 0,
-              }}
-            >
-              {property.address}
-            </h2>
-            <div className="flex flex-wrap items-center gap-3">
-              {client && (
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full shrink-0"
-                    style={{ background: client.brand_primary_hex ?? 'rgba(255,255,255,0.3)' }}
-                  />
-                  <span className="text-xs text-muted-foreground">{client.name}</span>
-                </div>
-              )}
-              <StatusPill status={property.status} />
-            </div>
+    <StudioShell>
+      {/* ─── Page heading ─── */}
+      <div className="studio-page-heading">
+        <div>
+          <span className="studio-page-eyebrow">Studio · listing</span>
+          <h1
+            className="studio-page-h1"
+            style={{
+              fontSize: 'clamp(28px, 4vw, 48px)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: '60vw',
+            }}
+          >
+            {property.address}
+          </h1>
+          <div
+            style={{
+              marginTop: 10,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}
+          >
+            {client && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    background: client.brand_primary_hex ?? 'var(--le-muted-2)',
+                    flexShrink: 0,
+                    display: 'inline-block',
+                  }}
+                />
+                <span style={{ fontSize: 13, color: 'var(--le-muted)' }}>{client.name}</span>
+              </div>
+            )}
+            <StatusPill status={property.status} />
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              style={ACCENT_BTN}
-              onClick={handleGeneratePreviewLink}
-              disabled={generatingLink}
+        </div>
+        <div className="studio-page-actions">
+          {property.status === 'complete' && property.vertical_video_url && (
+            <a
+              href={property.vertical_video_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="studio-btn-ghost"
             >
-              {generatingLink ? (
-                <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />
-              ) : (
-                <Plus style={{ width: 12, height: 12 }} />
-              )}
-              Preview link
-            </button>
-            <button
-              type="button"
-              style={{ ...GHOST_BTN, opacity: 0.4, cursor: 'not-allowed' }}
-              disabled
-              title="Edit — Phase 2"
-            >
-              Edit
-            </button>
-          </div>
+              <ExternalLink size={13} strokeWidth={1.6} />
+              Open preview
+            </a>
+          )}
+          <button
+            type="button"
+            className="studio-cta-primary"
+            onClick={handleGeneratePreviewLink}
+            disabled={generatingLink}
+          >
+            {generatingLink ? (
+              <Loader2 size={13} className="studio-spinner" />
+            ) : (
+              <Plus size={13} strokeWidth={2} />
+            )}
+            Generate preview link
+          </button>
         </div>
       </div>
 
+      {/* ─── StudioNav ─── */}
       <StudioNav />
 
-      {/* ─── Final Preview ─── */}
-      {property.status === 'complete' && (property.horizontal_video_url || property.vertical_video_url) && (
-        <section>
-          <span style={SECTION_HEADER}>— Final Preview</span>
-          <div className="flex flex-wrap gap-4">
-            {property.horizontal_video_url && (
-              <div className="flex flex-col gap-2 flex-1 min-w-[260px]">
-                <span style={{ ...EYEBROW, fontSize: 9 }}>Horizontal (16:9)</span>
-                <video
-                  src={property.horizontal_video_url}
-                  controls
-                  muted
-                  playsInline
-                  className="w-full border border-border"
-                  style={{ maxHeight: 320, background: '#000' }}
-                />
-              </div>
-            )}
-            {property.vertical_video_url && (
-              <div className="flex flex-col gap-2" style={{ width: 180 }}>
-                <span style={{ ...EYEBROW, fontSize: 9 }}>Vertical (9:16)</span>
-                <video
-                  src={property.vertical_video_url}
-                  controls
-                  muted
-                  playsInline
-                  className="w-full border border-border"
-                  style={{ maxHeight: 320, background: '#000' }}
-                />
-              </div>
-            )}
-          </div>
-        </section>
-      )}
+      {/* ─── Section stack ─── */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-      {/* ─── Scene Strip ─── */}
-      <section>
-        <span style={SECTION_HEADER}>— Scenes ({scenes.length})</span>
-        <SceneStrip scenes={scenes} propertyId={property.id} onSwapped={fetchBundle} />
-      </section>
+        {/* ── Final video ── */}
+        <SectionCard eyebrow="Studio · listing" title="Final video">
+          {property.status === 'complete' && (property.horizontal_video_url || property.vertical_video_url) ? (
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {property.horizontal_video_url && (
+                <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
+                    Horizontal (16:9)
+                  </span>
+                  <video
+                    src={property.horizontal_video_url}
+                    controls
+                    muted
+                    playsInline
+                    className="studio-video"
+                    style={{ maxHeight: 320 }}
+                  />
+                </div>
+              )}
+              {property.vertical_video_url && (
+                <div style={{ flex: '0 0 180px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
+                    Vertical (9:16)
+                  </span>
+                  <video
+                    src={property.vertical_video_url}
+                    controls
+                    muted
+                    playsInline
+                    className="studio-video"
+                    style={{ maxHeight: 320 }}
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div
+              className="studio-kanban-empty"
+              style={{ padding: 32, textAlign: 'center' }}
+            >
+              <p style={{ fontSize: 13.5, color: 'var(--le-muted)' }}>
+                Pipeline in progress — currently{' '}
+                <strong style={{ color: 'var(--le-ink)' }}>{property.status}</strong>.
+              </p>
+            </div>
+          )}
+        </SectionCard>
 
-      {/* ─── Director's Notes ─── */}
-      <section>
-        <span style={SECTION_HEADER}>— Director's Notes</span>
+        {/* ── Scenes ── */}
+        <SectionCard eyebrow="Studio · listing" title={`Scenes (${scenes.length})`}>
+          <SceneStrip scenes={scenes} propertyId={property.id} onSwapped={fetchBundle} />
+        </SectionCard>
 
-        {/* Note list */}
-        {revision_notes.length === 0 ? (
-          <p className="text-xs text-muted-foreground/60 mb-4">No notes yet.</p>
-        ) : (
-          <div className="mb-5 space-y-2">
-            {revision_notes.map((note) => (
-              <div
-                key={note.id}
-                className="border border-border bg-background/50 px-4 py-3"
-              >
-                <div className="flex items-center justify-between gap-3 mb-2">
-                  <span
+        {/* ── Director's notes ── */}
+        <SectionCard eyebrow="Studio · listing" title="Director's notes">
+          {revision_notes.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)', marginBottom: 16 }}>
+              No notes yet.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {revision_notes.map((note) => (
+                <div
+                  key={note.id}
+                  style={{
+                    background: 'rgba(11,11,16,0.025)',
+                    borderRadius: 'var(--le-radius-sm)',
+                    padding: '12px 14px',
+                  }}
+                >
+                  <div
                     style={{
-                      ...EYEBROW,
-                      fontSize: 9,
-                      color: note.source === 'client_preview' ? '#facc15' : 'rgba(255,255,255,0.45)',
-                      background: note.source === 'client_preview' ? 'rgba(250,204,21,0.12)' : 'transparent',
-                      padding: note.source === 'client_preview' ? '2px 6px' : 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      marginBottom: 8,
                     }}
                   >
-                    {note.source === 'client_preview' ? 'Client Preview' : 'Operator'}
-                  </span>
-                  <span style={{ ...EYEBROW, fontSize: 9 }}>
-                    {getRelativeTime(note.created_at)}
-                  </span>
-                </div>
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{note.body}</p>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Add note */}
-        <div className="space-y-2">
-          <textarea
-            value={noteBody}
-            onChange={(e) => setNoteBody(e.target.value)}
-            placeholder="Add a director's note…"
-            rows={3}
-            className="flex min-h-[80px] w-full border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus-visible:border-accent focus-visible:outline-none"
-          />
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              style={ACCENT_BTN}
-              onClick={handleSaveNote}
-              disabled={savingNote || !noteBody.trim()}
-            >
-              {savingNote ? (
-                <Loader2 style={{ width: 11, height: 11, animation: 'spin 1s linear infinite' }} />
-              ) : null}
-              Save note
-            </button>
-            {noteError && (
-              <span className="text-xs text-destructive">{noteError}</span>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* ─── Preview Links ─── */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <span style={SECTION_HEADER}>— Preview Links</span>
-        </div>
-
-        {linkError && (
-          <p className="mb-3 text-xs text-destructive">{linkError}</p>
-        )}
-
-        {previews.length === 0 ? (
-          <p className="text-xs text-muted-foreground/60">No preview links yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {previews.map((pv) => {
-              const url = `${baseUrl}/preview/${pv.token}`;
-              return (
-                <div
-                  key={pv.token}
-                  className="flex flex-wrap items-center gap-3 border border-border bg-background/50 px-4 py-3"
-                >
-                  <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <a
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="truncate text-xs text-accent hover:underline"
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: note.source === 'client_preview' ? '2px 7px' : '0',
+                        borderRadius: 99,
+                        background:
+                          note.source === 'client_preview'
+                            ? 'rgba(182,128,44,0.10)'
+                            : 'transparent',
+                        color:
+                          note.source === 'client_preview'
+                            ? 'var(--le-warn)'
+                            : 'var(--le-muted)',
+                      }}
                     >
-                      {url}
-                    </a>
-                    <ExternalLink style={{ width: 10, height: 10, flexShrink: 0, color: 'rgba(255,255,255,0.3)' }} />
-                  </div>
-                  <CopyButton text={url} />
-                  <div className="flex items-center gap-4 text-[10px] text-muted-foreground/60">
-                    <span>Viewed: {pv.viewed_count}</span>
-                    <span>
-                      Expires: {pv.expires_at ? getRelativeTime(pv.expires_at) : 'never'}
+                      {note.source === 'client_preview' ? 'Client preview' : 'Operator'}
                     </span>
-                    {pv.last_viewed_at && (
-                      <span>Last: {getRelativeTime(pv.last_viewed_at)}</span>
+                    <span style={{ fontSize: 11, color: 'var(--le-muted-2)' }}>
+                      {getRelativeTime(note.created_at)}
+                    </span>
+                  </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13.5,
+                      lineHeight: 1.55,
+                      color: 'var(--le-ink-2)',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {note.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add note */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <textarea
+              className="studio-textarea"
+              value={noteBody}
+              onChange={(e) => setNoteBody(e.target.value)}
+              placeholder="Add a director's note…"
+              rows={3}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                type="button"
+                className="studio-cta-primary"
+                style={{ fontSize: 12.5, padding: '8px 14px' }}
+                onClick={handleSaveNote}
+                disabled={savingNote || !noteBody.trim()}
+              >
+                {savingNote && <Loader2 size={12} className="studio-spinner" />}
+                Save note
+              </button>
+              {noteError && (
+                <span className="studio-error-strip" style={{ padding: '4px 10px', fontSize: 12 }}>
+                  {noteError}
+                </span>
+              )}
+            </div>
+          </div>
+        </SectionCard>
+
+        {/* ── Preview links ── */}
+        <SectionCard eyebrow="Studio · listing" title="Preview links">
+          {linkError && (
+            <div className="studio-error-strip" style={{ marginBottom: 12 }}>{linkError}</div>
+          )}
+
+          {previews.length === 0 ? (
+            <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)', marginBottom: 16 }}>
+              No preview links yet.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+              {previews.map((pv) => {
+                const url = `${baseUrl}/preview/${pv.token}`;
+                return (
+                  <div
+                    key={pv.token}
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '10px 14px',
+                      background: 'rgba(11,11,16,0.025)',
+                      borderRadius: 'var(--le-radius-sm)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          fontSize: 12.5,
+                          color: 'var(--le-accent)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          flex: 1,
+                        }}
+                      >
+                        {url}
+                      </a>
+                      <ExternalLink
+                        size={11}
+                        strokeWidth={1.6}
+                        style={{ flexShrink: 0, color: 'var(--le-muted-2)' }}
+                      />
+                    </div>
+                    <CopyButton text={url} />
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        fontSize: 11.5,
+                        color: 'var(--le-muted-2)',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      <span>Viewed: {pv.viewed_count}</span>
+                      <span>
+                        Expires: {pv.expires_at ? getRelativeTime(pv.expires_at) : 'never'}
+                      </span>
+                      {pv.last_viewed_at && (
+                        <span>Last: {getRelativeTime(pv.last_viewed_at)}</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="studio-btn-ghost"
+            onClick={handleGeneratePreviewLink}
+            disabled={generatingLink}
+          >
+            {generatingLink ? (
+              <Loader2 size={12} className="studio-spinner" />
+            ) : (
+              <Plus size={13} strokeWidth={2} />
+            )}
+            Generate preview link
+          </button>
+        </SectionCard>
+
+        {/* ── Brand kit summary ── */}
+        <SectionCard eyebrow="Studio · listing" title="Brand kit">
+          {!property.client_id ? (
+            <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No client linked.</p>
+          ) : !client ? (
+            <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>Loading client…</p>
+          ) : !client.brand_logo_url ? (
+            <div className="studio-warn-strip">
+              <AlertTriangle size={14} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1 }} />
+              <div>
+                <p style={{ margin: '0 0 6px', fontWeight: 600, fontSize: 13 }}>
+                  Brand kit incomplete — final video will not be branded
+                </p>
+                <Link
+                  to={`/dashboard/studio/clients/${property.client_id}`}
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--le-warn)',
+                    textDecoration: 'underline',
+                    textUnderlineOffset: 3,
+                  }}
+                >
+                  Complete brand kit
+                </Link>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Logo</span>
+                <img
+                  src={client.brand_logo_url}
+                  alt={`${client.name} logo`}
+                  style={{ height: 40, maxWidth: 120, objectFit: 'contain' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Colors</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {client.brand_primary_hex && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: 8,
+                          background: client.brand_primary_hex,
+                          border: '1px solid var(--le-line)',
+                          display: 'block',
+                        }}
+                        title={client.brand_primary_hex}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)', fontVariantNumeric: 'tabular-nums' }}>
+                        {client.brand_primary_hex}
+                      </span>
+                    </div>
+                  )}
+                  {client.brand_secondary_hex && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: 8,
+                          background: client.brand_secondary_hex,
+                          border: '1px solid var(--le-line)',
+                          display: 'block',
+                        }}
+                        title={client.brand_secondary_hex}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)', fontVariantNumeric: 'tabular-nums' }}>
+                        {client.brand_secondary_hex}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {(client.agent_name || client.agent_headshot_url) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Agent</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {client.agent_headshot_url && (
+                      <img
+                        src={client.agent_headshot_url}
+                        alt={client.agent_name ?? 'Agent'}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: '1px solid var(--le-line)',
+                        }}
+                      />
+                    )}
+                    {client.agent_name && (
+                      <span style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--le-ink)' }}>
+                        {client.agent_name}
+                      </span>
                     )}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* ─── Brand Kit Summary ─── */}
-      <section>
-        <span style={SECTION_HEADER}>— Brand Kit</span>
-        {!property.client_id ? (
-          <p className="text-xs text-muted-foreground/60">No client linked.</p>
-        ) : !client ? (
-          <p className="text-xs text-muted-foreground/60">Loading client…</p>
-        ) : !client.brand_logo_url ? (
-          <div className="flex items-start gap-3 border border-yellow-500/30 bg-yellow-500/10 px-4 py-3">
-            <AlertTriangle style={{ width: 14, height: 14, color: '#facc15', flexShrink: 0, marginTop: 1 }} />
-            <div>
-              <p className="text-xs font-medium text-yellow-300 mb-1">
-                Brand kit incomplete — final video will not be branded
-              </p>
-              <Link
-                to={`/dashboard/studio/clients/${property.client_id}`}
-                className="text-[11px] text-yellow-400 underline underline-offset-4 hover:text-yellow-300"
-              >
-                Complete brand kit
-              </Link>
+              )}
             </div>
-          </div>
-        ) : (
-          <div className="border border-border bg-background/50 px-4 py-4 flex flex-wrap gap-6 items-start">
-            {/* Logo */}
-            <div className="flex flex-col gap-1">
-              <span style={EYEBROW}>Logo</span>
-              <img
-                src={client.brand_logo_url}
-                alt={`${client.name} logo`}
-                className="h-10 w-auto object-contain"
-              />
-            </div>
+          )}
+        </SectionCard>
 
-            {/* Color swatches */}
-            <div className="flex flex-col gap-1">
-              <span style={EYEBROW}>Colors</span>
-              <div className="flex gap-2">
-                {client.brand_primary_hex && (
-                  <div className="flex flex-col items-center gap-1">
-                    <span
-                      className="h-7 w-10 border border-border"
-                      style={{ background: client.brand_primary_hex }}
-                      title={client.brand_primary_hex}
-                    />
-                    <span style={{ ...EYEBROW, fontSize: 8 }}>{client.brand_primary_hex}</span>
-                  </div>
-                )}
-                {client.brand_secondary_hex && (
-                  <div className="flex flex-col items-center gap-1">
-                    <span
-                      className="h-7 w-10 border border-border"
-                      style={{ background: client.brand_secondary_hex }}
-                      title={client.brand_secondary_hex}
-                    />
-                    <span style={{ ...EYEBROW, fontSize: 8 }}>{client.brand_secondary_hex}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Agent info */}
-            {(client.agent_name || client.agent_headshot_url) && (
-              <div className="flex flex-col gap-1">
-                <span style={EYEBROW}>Agent</span>
-                <div className="flex items-center gap-2">
-                  {client.agent_headshot_url && (
-                    <img
-                      src={client.agent_headshot_url}
-                      alt={client.agent_name ?? 'Agent'}
-                      className="h-8 w-8 rounded-full object-cover border border-border"
-                    />
-                  )}
-                  {client.agent_name && (
-                    <span className="text-sm">{client.agent_name}</span>
-                  )}
-                </div>
-              </div>
-            )}
+        {/* ── Cost panel ── */}
+        <SectionCard eyebrow="Studio · listing" title="Cost">
+          <div style={{ marginBottom: 16 }}>
+            <span
+              style={{
+                fontSize: 32,
+                fontWeight: 600,
+                letterSpacing: '-0.03em',
+                color: 'var(--le-ink)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {formatCents(cost.total_cents)}
+            </span>
           </div>
-        )}
-      </section>
 
-      {/* ─── Cost Panel ─── */}
-      <section>
-        <span style={SECTION_HEADER}>— Cost</span>
-        <div className="border border-border bg-background/50 px-4 py-4">
-          <div className="flex items-baseline gap-3 mb-4">
-            <span className="tabular text-2xl font-medium">{formatCents(cost.total_cents)}</span>
-            <span style={EYEBROW}>total</span>
-          </div>
-          {Object.keys(cost.by_provider).length > 0 && (
-            <table className="w-full">
+          {Object.keys(cost.by_provider).length > 0 ? (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left pb-2" style={EYEBROW}>Provider</th>
-                  <th className="text-right pb-2" style={EYEBROW}>Cost</th>
+                <tr style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      paddingBottom: 8,
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                      color: 'var(--le-muted)',
+                    }}
+                  >
+                    Provider
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'right',
+                      paddingBottom: 8,
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                      color: 'var(--le-muted)',
+                    }}
+                  >
+                    Cost
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(cost.by_provider)
                   .sort(([, a], [, b]) => b - a)
                   .map(([provider, cents]) => (
-                    <tr key={provider} className="border-b border-border/40">
-                      <td className="py-2 text-sm capitalize">{provider}</td>
-                      <td className="py-2 text-right tabular text-sm">{formatCents(cents)}</td>
+                    <tr key={provider} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                      <td
+                        style={{
+                          padding: '10px 0',
+                          fontSize: 13,
+                          color: 'var(--le-ink-2)',
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {provider}
+                      </td>
+                      <td
+                        style={{
+                          padding: '10px 0',
+                          textAlign: 'right',
+                          fontSize: 13,
+                          color: 'var(--le-ink)',
+                          fontVariantNumeric: 'tabular-nums',
+                        }}
+                      >
+                        {formatCents(cents)}
+                      </td>
                     </tr>
                   ))}
               </tbody>
             </table>
+          ) : (
+            <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
           )}
-          {Object.keys(cost.by_provider).length === 0 && (
-            <p className="text-xs text-muted-foreground/60">No cost events yet.</p>
-          )}
-        </div>
-      </section>
+        </SectionCard>
 
-      {/* ─── Metadata Panel ─── */}
-      <section>
-        <span style={SECTION_HEADER}>— Metadata</span>
-        <div className="border border-border bg-background/50 px-4 py-4">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-4">
+        {/* ── Metadata ── */}
+        <SectionCard eyebrow="Studio · listing" title="Metadata">
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '16px 24px',
+            }}
+          >
             <MetaValue label="Bedrooms" value={property.bedrooms} />
             <MetaValue label="Bathrooms" value={property.bathrooms} />
             <MetaValue
-              label="Sq Ft"
-              value={property.square_footage != null ? property.square_footage.toLocaleString() : null}
+              label="Sq ft"
+              value={
+                property.square_footage != null
+                  ? property.square_footage.toLocaleString()
+                  : null
+              }
             />
             <MetaValue
               label="Price"
-              value={property.price != null ? `$${property.price.toLocaleString()}` : null}
+              value={
+                property.price != null
+                  ? `$${property.price.toLocaleString()}`
+                  : null
+              }
             />
           </div>
-          <p className="mt-4 text-[10px] text-muted-foreground/40">
+          <p style={{ marginTop: 12, fontSize: 11.5, color: 'var(--le-muted-2)' }}>
             Edit-in-place available in Phase 2.
           </p>
-        </div>
-      </section>
-    </div>
+        </SectionCard>
+      </div>
+    </StudioShell>
   );
 };
 

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
+import { Check, Loader2 } from 'lucide-react';
+import '../../styles/studio-design.css';
 
 type PreviewData = {
   address: string;
@@ -7,6 +9,12 @@ type PreviewData = {
   brand: { logo: string | null; agent_name: string | null; name: string } | null;
 };
 
+/**
+ * PreviewPage — public-facing client preview viewer.
+ * No TopNav, no StudioNav. Centered max-width 720px.
+ * Uses the same .studio-scope tokens but in a stripped-down layout.
+ * No emoji per design rules.
+ */
 export default function PreviewPage() {
   const { token } = useParams<{ token: string }>();
   const [data, setData] = useState<PreviewData | null>(null);
@@ -16,8 +24,11 @@ export default function PreviewPage() {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/preview/${token}`).then(async r => {
-      if (r.status === 404) { setNotFound(true); return; }
+    fetch(`/api/preview/${token}`).then(async (r) => {
+      if (r.status === 404) {
+        setNotFound(true);
+        return;
+      }
       const d = await r.json();
       setData(d);
     });
@@ -32,44 +43,182 @@ export default function PreviewPage() {
       body: JSON.stringify({ body: note }),
     });
     setSubmitting(false);
-    if (r.ok) { setSubmitted(true); setNote(''); }
+    if (r.ok) {
+      setSubmitted(true);
+      setNote('');
+    }
   };
 
-  if (notFound) return <div className="p-8 text-center text-muted-foreground">This preview is no longer available.</div>;
-  if (!data) return <div className="p-8 text-center">Loading…</div>;
+  if (notFound) {
+    return (
+      <div
+        className="studio-scope studio-preview"
+        style={{ minHeight: '100vh', background: 'var(--le-bg)' }}
+      >
+        <div className="studio-bg-base" aria-hidden="true" />
+        <div className="studio-grain" aria-hidden="true" />
+        <div
+          className="studio-preview-container"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '60vh',
+          }}
+        >
+          <p style={{ fontSize: 15, color: 'var(--le-muted)', textAlign: 'center' }}>
+            This preview is no longer available.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div
+        className="studio-scope studio-preview"
+        style={{ minHeight: '100vh', background: 'var(--le-bg)' }}
+      >
+        <div className="studio-bg-base" aria-hidden="true" />
+        <div className="studio-grain" aria-hidden="true" />
+        <div
+          className="studio-preview-container"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: '60vh',
+          }}
+        >
+          <Loader2
+            size={20}
+            className="studio-spinner"
+            style={{ color: 'var(--le-muted)' }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      {data.brand?.logo && <img src={data.brand.logo} alt="" className="h-12" />}
-      <h1 className="text-xl font-medium">{data.address}</h1>
-      {data.video_url ? (
-        <video src={data.video_url} controls className="w-full rounded" />
-      ) : (
-        <div className="text-muted-foreground">Video not yet available.</div>
-      )}
-      {data.brand?.agent_name && (
-        <div className="text-sm text-muted-foreground">
-          {data.brand.agent_name}{data.brand.name ? ` · ${data.brand.name}` : ''}
-        </div>
-      )}
+    <div
+      className="studio-scope studio-preview"
+      style={{ minHeight: '100vh', background: 'var(--le-bg)', position: 'relative' }}
+    >
+      {/* Background layers */}
+      <div className="studio-bg-base" aria-hidden="true" />
+      <div className="studio-grain" aria-hidden="true" />
 
-      <div className="border-t pt-4">
-        <label className="text-sm font-medium">Request a change</label>
-        <textarea
-          value={note}
-          onChange={e => setNote(e.target.value)}
-          maxLength={2000}
-          rows={4}
-          placeholder="Anything you'd like adjusted? (one revision included)"
-          className="w-full mt-2 border rounded p-2 text-sm"
-        />
-        <button
-          onClick={submit}
-          disabled={submitting || !note.trim() || submitted}
-          className="mt-2 px-3 py-1.5 text-sm border rounded disabled:opacity-50"
+      {/* Content container */}
+      <div
+        className="studio-preview-container studio-fade-up"
+        style={{ position: 'relative', zIndex: 2 }}
+      >
+        {/* Brand logo */}
+        {data.brand?.logo && (
+          <div style={{ marginBottom: 28 }}>
+            <img
+              src={data.brand.logo}
+              alt={data.brand.name ?? 'Brand logo'}
+              style={{ height: 40, maxWidth: 160, objectFit: 'contain' }}
+            />
+          </div>
+        )}
+
+        {/* Address heading */}
+        <h1 className="studio-preview-h1">{data.address}</h1>
+
+        {/* Video player */}
+        {data.video_url ? (
+          <video
+            src={data.video_url}
+            controls
+            playsInline
+            className="studio-video"
+            style={{ marginBottom: 16 }}
+          />
+        ) : (
+          <div
+            className="studio-kanban-empty"
+            style={{ padding: 48, textAlign: 'center', marginBottom: 16 }}
+          >
+            <p style={{ fontSize: 14, color: 'var(--le-muted)' }}>
+              Video not yet available.
+            </p>
+          </div>
+        )}
+
+        {/* Agent caption */}
+        {data.brand?.agent_name && (
+          <p
+            style={{
+              fontSize: 13.5,
+              color: 'var(--le-muted)',
+              marginBottom: 32,
+            }}
+          >
+            {data.brand.agent_name}
+            {data.brand.name ? ` · ${data.brand.name}` : ''}
+          </p>
+        )}
+
+        {/* Request a change card */}
+        <div
+          className="studio-card"
+          style={{ padding: 24 }}
         >
-          {submitted ? 'Submitted' : submitting ? 'Submitting…' : 'Submit'}
-        </button>
+          <h3
+            style={{
+              margin: '0 0 6px 0',
+              fontSize: 16,
+              fontWeight: 600,
+              letterSpacing: '-0.015em',
+              color: 'var(--le-ink)',
+            }}
+          >
+            Request a change
+          </h3>
+          <p
+            style={{
+              margin: '0 0 16px 0',
+              fontSize: 13.5,
+              color: 'var(--le-muted)',
+              lineHeight: 1.5,
+            }}
+          >
+            One revision is included. Describe what you'd like adjusted.
+          </p>
+          <textarea
+            className="studio-textarea"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            placeholder="Anything you'd like adjusted?"
+            disabled={submitted}
+            style={{ marginBottom: 12 }}
+          />
+          <button
+            className="studio-cta-primary"
+            onClick={submit}
+            disabled={submitting || !note.trim() || submitted}
+          >
+            {submitted ? (
+              <>
+                <Check size={13} strokeWidth={2} />
+                Submitted
+              </>
+            ) : submitting ? (
+              <>
+                <Loader2 size={13} className="studio-spinner" />
+                Submitting…
+              </>
+            ) : (
+              'Submit'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,9 +1,6 @@
-import { useState, useEffect, useRef, type CSSProperties, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowLeft, Trash2 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,38 +13,10 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { StudioNav } from '@/components/studio/StudioNav';
+import { StudioShell } from '@/components/studio/StudioShell';
 import { uploadSingleFile, getStoragePublicUrl } from '@/lib/photo-upload';
-import '@/v2/styles/v2.css';
 
-const EYEBROW: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-};
-
-const PAGE_H1: CSSProperties = {
-  fontFamily: 'var(--le-font-sans)',
-  fontSize: 'clamp(24px, 3.5vw, 38px)',
-  fontWeight: 500,
-  letterSpacing: '-0.035em',
-  lineHeight: 0.98,
-  color: '#fff',
-  margin: 0,
-};
-
-const SECTION_HEADER: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-  paddingBottom: 12,
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-  display: 'block',
-  marginBottom: 20,
-};
+// ─── Form state ───────────────────────────────────────────────────────────────
 
 interface ClientFormState {
   name: string;
@@ -83,6 +52,47 @@ function centsFromDollars(dollars: string): number | null {
   return Math.round(n * 100);
 }
 
+// ─── Field label component ─────────────────────────────────────────────────────
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label
+      style={{
+        display: 'block',
+        fontSize: 12,
+        fontWeight: 500,
+        color: 'var(--le-muted)',
+        marginBottom: 6,
+      }}
+    >
+      {children}
+      {required && (
+        <span style={{ color: 'var(--le-bad)', marginLeft: 3 }}>*</span>
+      )}
+    </label>
+  );
+}
+
+// ─── Section heading ───────────────────────────────────────────────────────────
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3
+      style={{
+        margin: '0 0 16px 0',
+        fontSize: 16,
+        fontWeight: 600,
+        letterSpacing: '-0.015em',
+        color: 'var(--le-ink)',
+      }}
+    >
+      {children}
+    </h3>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+
 const ClientEdit = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -94,7 +104,6 @@ const ClientEdit = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // File upload state
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [headshotFile, setHeadshotFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -103,8 +112,6 @@ const ClientEdit = () => {
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const headshotInputRef = useRef<HTMLInputElement>(null);
-
-  // Temp ID for file uploads before the row is saved (create flow)
   const tempIdRef = useRef<string>(crypto.randomUUID());
 
   useEffect(() => {
@@ -137,9 +144,7 @@ const ClientEdit = () => {
           setLoadError(null);
         }
       } catch (err) {
-        if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to load client');
-        }
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : 'Failed to load client');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -156,16 +161,14 @@ const ClientEdit = () => {
     const file = e.target.files?.[0];
     if (!file) return;
     setLogoFile(file);
-    const url = URL.createObjectURL(file);
-    setLogoPreview(url);
+    setLogoPreview(URL.createObjectURL(file));
   };
 
   const handleHeadshotChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setHeadshotFile(file);
-    const url = URL.createObjectURL(file);
-    setHeadshotPreview(url);
+    setHeadshotPreview(URL.createObjectURL(file));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -175,10 +178,8 @@ const ClientEdit = () => {
     setSubmitError(null);
 
     try {
-      // Upload any pending files first
       let logoUrl = form.brand_logo_url;
       let headshotUrl = form.agent_headshot_url;
-
       const uploadPrefix = isNew ? tempIdRef.current : id!;
 
       setUploadingFiles(true);
@@ -212,18 +213,15 @@ const ClientEdit = () => {
 
       const url = isNew ? '/api/admin/studio/clients' : `/api/admin/studio/clients/${id}`;
       const method = isNew ? 'POST' : 'PATCH';
-
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? `${res.status} ${res.statusText}`);
       }
-
       navigate('/dashboard/studio/clients');
     } catch (err) {
       setUploadingFiles(false);
@@ -248,288 +246,45 @@ const ClientEdit = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <StudioShell>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '64px 0' }}>
+          <Loader2 size={20} className="studio-spinner" style={{ color: 'var(--le-muted)' }} />
+        </div>
+      </StudioShell>
     );
   }
 
   if (loadError) {
     return (
-      <div className="py-24 text-center text-sm text-destructive">{loadError}</div>
+      <StudioShell>
+        <div className="studio-error-strip" style={{ marginTop: 24 }}>{loadError}</div>
+      </StudioShell>
     );
   }
 
   const isBusy = submitting || uploadingFiles;
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div className="flex items-end justify-between gap-6">
+    <StudioShell>
+      {/* ─── Page heading ─── */}
+      <div className="studio-page-heading">
         <div>
-          <span style={EYEBROW}>— {isNew ? 'New Client' : 'Edit Client'}</span>
-          <h2 className="mt-3" style={PAGE_H1}>
-            {isNew ? 'New Client' : form.name || 'Edit Client'}
-          </h2>
+          <span className="studio-page-eyebrow">Studio · clients</span>
+          <h1 className="studio-page-h1" style={{ fontSize: 40 }}>
+            {isNew ? 'New client' : form.name || 'Edit client'}
+          </h1>
         </div>
-        <button
-          type="button"
-          className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => navigate('/dashboard/studio/clients')}
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to clients
-        </button>
-      </div>
-
-      <StudioNav />
-
-      <form onSubmit={handleSubmit} className="max-w-2xl space-y-12">
-        {/* ─── Basics ─── */}
-        <section>
-          <span style={SECTION_HEADER}>— Basics</span>
-          <div className="space-y-6">
-            <div>
-              <Label className="label text-muted-foreground">
-                Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setField('name', e.target.value)}
-                placeholder="Acme Realty"
-                required
-                className="mt-2"
-              />
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <Label className="label text-muted-foreground">Contact email</Label>
-                <Input
-                  type="email"
-                  value={form.contact_email}
-                  onChange={(e) => setField('contact_email', e.target.value)}
-                  placeholder="jane@acmerealty.com"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label className="label text-muted-foreground">Phone</Label>
-                <Input
-                  type="tel"
-                  value={form.phone}
-                  onChange={(e) => setField('phone', e.target.value)}
-                  placeholder="+1 555 000 0000"
-                  className="mt-2"
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label className="label text-muted-foreground">Monthly rate ($)</Label>
-              <div className="relative mt-2">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
-                  $
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={form.monthly_rate_dollars}
-                  onChange={(e) => setField('monthly_rate_dollars', e.target.value)}
-                  placeholder="500"
-                  className="tabular pl-7"
-                />
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Enter amount in dollars — stored as cents.
-              </p>
-            </div>
-
-            <div>
-              <Label className="label text-muted-foreground">Notes</Label>
-              <textarea
-                value={form.notes}
-                onChange={(e) => setField('notes', e.target.value)}
-                placeholder="Internal notes about this client…"
-                rows={3}
-                className="mt-2 flex min-h-[80px] w-full rounded-none border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:border-accent focus-visible:outline-none"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ─── Brand kit ─── */}
-        <section>
-          <span style={SECTION_HEADER}>— Brand kit</span>
-          <div className="space-y-6">
-            {/* Logo upload */}
-            <div>
-              <Label className="label text-muted-foreground">Brand logo</Label>
-              <div className="mt-2 flex items-center gap-4">
-                {(logoPreview || form.brand_logo_url) && (
-                  <img
-                    src={logoPreview ?? form.brand_logo_url}
-                    alt="Logo preview"
-                    className="h-12 w-12 rounded border border-border object-contain bg-secondary"
-                  />
-                )}
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleLogoChange}
-                />
-                <button
-                  type="button"
-                  className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
-                  onClick={() => logoInputRef.current?.click()}
-                >
-                  {form.brand_logo_url || logoFile ? 'Replace logo' : 'Upload logo'}
-                </button>
-              </div>
-            </div>
-
-            {/* Colors */}
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <Label className="label text-muted-foreground">Primary hex</Label>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={form.brand_primary_hex}
-                    onChange={(e) => setField('brand_primary_hex', e.target.value)}
-                    className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                    aria-label="Primary brand color picker"
-                  />
-                  <Input
-                    value={form.brand_primary_hex}
-                    onChange={(e) => setField('brand_primary_hex', e.target.value)}
-                    placeholder="#000000"
-                    maxLength={7}
-                    className="tabular font-mono text-sm flex-1"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label className="label text-muted-foreground">Secondary hex</Label>
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="color"
-                    value={form.brand_secondary_hex}
-                    onChange={(e) => setField('brand_secondary_hex', e.target.value)}
-                    className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent p-0.5"
-                    aria-label="Secondary brand color picker"
-                  />
-                  <Input
-                    value={form.brand_secondary_hex}
-                    onChange={(e) => setField('brand_secondary_hex', e.target.value)}
-                    placeholder="#ffffff"
-                    maxLength={7}
-                    className="tabular font-mono text-sm flex-1"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Agent name */}
-            <div>
-              <Label className="label text-muted-foreground">Agent name</Label>
-              <Input
-                value={form.agent_name}
-                onChange={(e) => setField('agent_name', e.target.value)}
-                placeholder="Jane Smith"
-                className="mt-2"
-              />
-            </div>
-
-            {/* Headshot upload */}
-            <div>
-              <Label className="label text-muted-foreground">Agent headshot</Label>
-              <div className="mt-2 flex items-center gap-4">
-                {(headshotPreview || form.agent_headshot_url) && (
-                  <img
-                    src={headshotPreview ?? form.agent_headshot_url}
-                    alt="Headshot preview"
-                    className="h-12 w-12 rounded-full border border-border object-cover bg-secondary"
-                  />
-                )}
-                <input
-                  ref={headshotInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleHeadshotChange}
-                />
-                <button
-                  type="button"
-                  className="rounded border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
-                  onClick={() => headshotInputRef.current?.click()}
-                >
-                  {form.agent_headshot_url || headshotFile ? 'Replace headshot' : 'Upload headshot'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ─── Voice (Phase 3 placeholder) ─── */}
-        <section>
-          <span style={SECTION_HEADER}>— Voice</span>
-          <div>
-            <Label className="label text-muted-foreground">
-              ElevenLabs voice ID{' '}
-              <span className="text-muted-foreground/50">— Phase 3 feature, can leave blank</span>
-            </Label>
-            <Input
-              value={form.voice_id}
-              onChange={(e) => setField('voice_id', e.target.value)}
-              placeholder="pNInz6obpgDQGcFmaJgB"
-              className="mt-2 font-mono text-sm"
-            />
-          </div>
-        </section>
-
-        {/* Submit error */}
-        {submitError && (
-          <div className="border border-destructive/40 bg-destructive/10 px-4 py-3">
-            <p className="text-xs text-destructive">{submitError}</p>
-          </div>
-        )}
-
-        {/* Form actions */}
-        <div className="flex items-center justify-between gap-4 border-t border-border pt-6">
-          <div className="flex items-center gap-3">
-            <Button type="submit" disabled={isBusy || !form.name.trim()}>
-              {isBusy ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {uploadingFiles ? 'Uploading files…' : 'Saving…'}
-                </>
-              ) : isNew ? (
-                'Create client'
-              ) : (
-                'Save changes'
-              )}
-            </Button>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4"
-              onClick={() => navigate('/dashboard/studio/clients')}
-            >
-              Cancel
-            </button>
-          </div>
-
-          {/* Archive (edit only) */}
+        <div className="studio-page-actions">
           {!isNew && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <button
                   type="button"
-                  className="flex items-center gap-1.5 text-xs text-destructive/70 hover:text-destructive transition-colors"
+                  className="studio-btn-ghost"
+                  style={{ color: 'var(--le-bad)', borderColor: 'rgba(196,74,74,0.2)' }}
                 >
-                  <Trash2 className="h-3.5 w-3.5" /> Archive client
+                  <Trash2 size={13} strokeWidth={1.6} />
+                  Archive
                 </button>
               </AlertDialogTrigger>
               <AlertDialogContent>
@@ -553,9 +308,345 @@ const ClientEdit = () => {
               </AlertDialogContent>
             </AlertDialog>
           )}
+          <button
+            type="button"
+            className="studio-btn-ghost"
+            onClick={() => navigate('/dashboard/studio/clients')}
+          >
+            <ArrowLeft size={13} strokeWidth={1.6} />
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form="client-edit-form"
+            className="studio-cta-primary"
+            disabled={isBusy || !form.name.trim()}
+          >
+            {isBusy ? (
+              <>
+                <Loader2 size={13} className="studio-spinner" />
+                {uploadingFiles ? 'Uploading…' : 'Saving…'}
+              </>
+            ) : isNew ? (
+              'Create client'
+            ) : (
+              'Save changes'
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ─── StudioNav ─── */}
+      <StudioNav />
+
+      {/* ─── Form ─── */}
+      <form
+        id="client-edit-form"
+        onSubmit={handleSubmit}
+        style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
+        {/* ── Section 1: Basics ── */}
+        <div className="studio-card" style={{ padding: 24 }}>
+          <SectionHeading>Basics</SectionHeading>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <FieldLabel required>Name</FieldLabel>
+              <input
+                className="studio-input"
+                value={form.name}
+                onChange={(e) => setField('name', e.target.value)}
+                placeholder="Acme Realty"
+                required
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 16,
+              }}
+            >
+              <div>
+                <FieldLabel>Contact email</FieldLabel>
+                <input
+                  className="studio-input"
+                  type="email"
+                  value={form.contact_email}
+                  onChange={(e) => setField('contact_email', e.target.value)}
+                  placeholder="jane@acmerealty.com"
+                />
+              </div>
+              <div>
+                <FieldLabel>Phone</FieldLabel>
+                <input
+                  className="studio-input"
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setField('phone', e.target.value)}
+                  placeholder="+1 555 000 0000"
+                />
+              </div>
+            </div>
+
+            <div>
+              <FieldLabel>Monthly rate ($)</FieldLabel>
+              <div style={{ position: 'relative' }}>
+                <span
+                  style={{
+                    position: 'absolute',
+                    left: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: 13.5,
+                    color: 'var(--le-muted)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  $
+                </span>
+                <input
+                  className="studio-input studio-tabnum"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.monthly_rate_dollars}
+                  onChange={(e) => setField('monthly_rate_dollars', e.target.value)}
+                  placeholder="500"
+                  style={{ paddingLeft: 26 }}
+                />
+              </div>
+              <p style={{ marginTop: 5, fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+                Enter in dollars — stored as cents.
+              </p>
+            </div>
+
+            <div>
+              <FieldLabel>Notes</FieldLabel>
+              <textarea
+                className="studio-textarea"
+                value={form.notes}
+                onChange={(e) => setField('notes', e.target.value)}
+                placeholder="Internal notes about this client…"
+                rows={3}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section 2: Brand kit ── */}
+        <div className="studio-card" style={{ padding: 24 }}>
+          <SectionHeading>Brand kit</SectionHeading>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Logo upload */}
+            <div>
+              <FieldLabel>Brand logo</FieldLabel>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {(logoPreview || form.brand_logo_url) && (
+                  <img
+                    src={logoPreview ?? form.brand_logo_url}
+                    alt="Logo preview"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 'var(--le-radius-sm)',
+                      border: '1px solid var(--le-line)',
+                      objectFit: 'contain',
+                      background: 'rgba(11,11,16,0.03)',
+                    }}
+                  />
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleLogoChange}
+                />
+                <button
+                  type="button"
+                  className="studio-btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => logoInputRef.current?.click()}
+                >
+                  {form.brand_logo_url || logoFile ? 'Replace logo' : 'Upload logo'}
+                </button>
+              </div>
+            </div>
+
+            {/* Color pickers */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 16,
+              }}
+            >
+              <div>
+                <FieldLabel>Primary color</FieldLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="color"
+                    value={form.brand_primary_hex}
+                    onChange={(e) => setField('brand_primary_hex', e.target.value)}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      cursor: 'pointer',
+                      borderRadius: 8,
+                      border: '1px solid var(--le-line)',
+                      padding: 2,
+                      background: 'transparent',
+                    }}
+                    aria-label="Primary brand color picker"
+                  />
+                  <input
+                    className="studio-input studio-tabnum"
+                    value={form.brand_primary_hex}
+                    onChange={(e) => setField('brand_primary_hex', e.target.value)}
+                    placeholder="#000000"
+                    maxLength={7}
+                    style={{ flex: 1 }}
+                  />
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Secondary color</FieldLabel>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="color"
+                    value={form.brand_secondary_hex}
+                    onChange={(e) => setField('brand_secondary_hex', e.target.value)}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      cursor: 'pointer',
+                      borderRadius: 8,
+                      border: '1px solid var(--le-line)',
+                      padding: 2,
+                      background: 'transparent',
+                    }}
+                    aria-label="Secondary brand color picker"
+                  />
+                  <input
+                    className="studio-input studio-tabnum"
+                    value={form.brand_secondary_hex}
+                    onChange={(e) => setField('brand_secondary_hex', e.target.value)}
+                    placeholder="#ffffff"
+                    maxLength={7}
+                    style={{ flex: 1 }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Agent name */}
+            <div>
+              <FieldLabel>Agent name</FieldLabel>
+              <input
+                className="studio-input"
+                value={form.agent_name}
+                onChange={(e) => setField('agent_name', e.target.value)}
+                placeholder="Jane Smith"
+              />
+            </div>
+
+            {/* Headshot upload */}
+            <div>
+              <FieldLabel>Agent headshot</FieldLabel>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                {(headshotPreview || form.agent_headshot_url) && (
+                  <img
+                    src={headshotPreview ?? form.agent_headshot_url}
+                    alt="Headshot preview"
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: '50%',
+                      border: '1px solid var(--le-line)',
+                      objectFit: 'cover',
+                      background: 'rgba(11,11,16,0.03)',
+                    }}
+                  />
+                )}
+                <input
+                  ref={headshotInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleHeadshotChange}
+                />
+                <button
+                  type="button"
+                  className="studio-btn-ghost"
+                  style={{ fontSize: 12 }}
+                  onClick={() => headshotInputRef.current?.click()}
+                >
+                  {form.agent_headshot_url || headshotFile ? 'Replace headshot' : 'Upload headshot'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section 3: Voice (Phase 3) ── */}
+        <div className="studio-card" style={{ padding: 24 }}>
+          <SectionHeading>Voice</SectionHeading>
+          <div>
+            <FieldLabel>ElevenLabs voice ID</FieldLabel>
+            <input
+              className="studio-input studio-tabnum"
+              value={form.voice_id}
+              onChange={(e) => setField('voice_id', e.target.value)}
+              placeholder="pNInz6obpgDQGcFmaJgB"
+            />
+            <p style={{ marginTop: 5, fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+              Phase 3 feature — can leave blank.
+            </p>
+          </div>
+        </div>
+
+        {/* ── Error ── */}
+        {submitError && (
+          <div className="studio-error-strip">{submitError}</div>
+        )}
+
+        {/* ── Form actions (bottom inline) ── */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            padding: '16px 0',
+          }}
+        >
+          <button
+            type="button"
+            className="studio-btn-ghost"
+            onClick={() => navigate('/dashboard/studio/clients')}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="studio-cta-primary"
+            disabled={isBusy || !form.name.trim()}
+          >
+            {isBusy ? (
+              <>
+                <Loader2 size={13} className="studio-spinner" />
+                {uploadingFiles ? 'Uploading…' : 'Saving…'}
+              </>
+            ) : isNew ? (
+              'Create client'
+            ) : (
+              'Save changes'
+            )}
+          </button>
         </div>
       </form>
-    </div>
+    </StudioShell>
   );
 };
 

@@ -1,61 +1,26 @@
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, Plus, Pencil, Copy } from 'lucide-react';
+import { Loader2, Plus, Pencil, Copy, Check } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
+import { StudioShell } from '@/components/studio/StudioShell';
 import { getRelativeTime } from '@/lib/types';
 import type { ClientRow } from '@/components/studio/ClientPicker';
-import '@/v2/styles/v2.css';
 
-const EYEBROW: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-};
-
-const PAGE_H1: CSSProperties = {
-  fontFamily: 'var(--le-font-sans)',
-  fontSize: 'clamp(28px, 4vw, 44px)',
-  fontWeight: 500,
-  letterSpacing: '-0.035em',
-  lineHeight: 0.98,
-  color: '#fff',
-  margin: 0,
-};
-
-const GHOST_BTN: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 6,
-  padding: '8px 14px',
-  fontSize: 12,
-  fontWeight: 500,
-  background: 'transparent',
-  color: '#fff',
-  border: '1px solid rgba(220,230,255,0.18)',
-  borderRadius: 2,
-  cursor: 'pointer',
-  fontFamily: 'var(--le-font-sans)',
-};
-
-const ACCENT_BTN: CSSProperties = {
-  ...GHOST_BTN,
-  background: 'var(--le-accent)',
-  color: 'var(--le-accent-fg)',
-  border: 'none',
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMonthlyRate(cents: number | null): string {
   if (cents == null) return '—';
   return `$${Math.round(cents / 100).toLocaleString()}`;
 }
 
+// ─── Main component ────────────────────────────────────────────────────────────
+
 const Clients = () => {
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -93,6 +58,8 @@ const Clients = () => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const data = await res.json();
       await navigator.clipboard.writeText(data.text ?? '');
+      setCopiedId(clientId);
+      setTimeout(() => setCopiedId(null), 2000);
     } catch (err) {
       console.error('Failed to copy invoice summary:', err);
     } finally {
@@ -100,136 +67,190 @@ const Clients = () => {
     }
   };
 
+  const active = clients.filter((c) => !c.archived_at);
+  const archived = clients.filter((c) => c.archived_at);
+
+  // Grid columns definition (mirrored in header and rows)
+  const gridColumns = '28px 1.4fr 1fr 1fr 1fr auto';
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-end justify-between gap-6">
+    <StudioShell>
+      {/* ─── Page heading ─── */}
+      <div className="studio-page-heading">
         <div>
-          <span style={EYEBROW}>— Clients</span>
-          <h2 className="mt-3" style={PAGE_H1}>
-            Clients
-          </h2>
+          <span className="studio-page-eyebrow">Studio · clients</span>
+          <h1 className="studio-page-h1">Clients</h1>
+          {!loading && (
+            <p className="studio-page-sub">
+              {active.length} active.{' '}
+              {archived.length} archived.
+            </p>
+          )}
         </div>
-        <button
-          type="button"
-          style={ACCENT_BTN}
-          onClick={() => navigate('/dashboard/studio/clients/new')}
-        >
-          <Plus style={{ width: 14, height: 14 }} /> New Client
-        </button>
+        <div className="studio-page-actions">
+          <button
+            type="button"
+            className="studio-cta-primary"
+            onClick={() => navigate('/dashboard/studio/clients/new')}
+          >
+            <Plus size={13} strokeWidth={2} />
+            New client
+          </button>
+        </div>
       </div>
 
+      {/* ─── StudioNav ─── */}
       <StudioNav />
 
-      {/* Table */}
-      <div className="border-t border-border">
-        {/* Column headers */}
+      {/* ─── Table card ─── */}
+      <div className="studio-card" style={{ overflow: 'hidden' }}>
+        {/* Header row */}
         <div
-          className="grid gap-4 border-b border-border py-3"
-          style={{
-            gridTemplateColumns: '28px 2fr 1.6fr 1fr 1fr 1fr auto',
-            background: 'rgba(255,255,255,0.03)',
-          }}
+          className="studio-table-header-row"
+          style={{ gridTemplateColumns: gridColumns }}
         >
-          <span style={EYEBROW} />
-          <span style={EYEBROW}>Name</span>
-          <span style={EYEBROW}>Email</span>
-          <span className="text-right" style={EYEBROW}>Monthly rate</span>
-          {/* TODO: # active listings — requires a join against the queue endpoint */}
-          <span className="text-right" style={EYEBROW}>Listings</span>
-          <span style={EYEBROW}>Updated</span>
-          <span style={EYEBROW}>Actions</span>
+          <span className="studio-label" />
+          <span className="studio-label">Name</span>
+          <span className="studio-label">Email</span>
+          <span className="studio-label">Monthly rate</span>
+          <span className="studio-label">Last updated</span>
+          <span className="studio-label">Actions</span>
         </div>
 
         {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '48px 0' }}>
+            <Loader2 size={18} className="studio-spinner" style={{ color: 'var(--le-muted)' }} />
           </div>
         ) : error ? (
-          <div className="py-20 text-center text-sm text-destructive">{error}</div>
+          <div style={{ padding: '24px 18px' }}>
+            <div className="studio-error-strip">{error}</div>
+          </div>
         ) : clients.length === 0 ? (
-          <div className="py-20 text-center text-sm text-muted-foreground">
-            No clients yet.{' '}
-            <Link to="/dashboard/studio/clients/new" className="underline underline-offset-4">
-              Add the first one.
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '64px 24px',
+              gap: 16,
+            }}
+          >
+            <p style={{ fontSize: 14, color: 'var(--le-muted)', margin: 0 }}>No clients yet.</p>
+            <Link to="/dashboard/studio/clients/new" className="studio-cta-primary">
+              <Plus size={13} strokeWidth={2} />
+              Add the first one
             </Link>
           </div>
         ) : (
           clients.map((client) => (
             <div
               key={client.id}
-              className="grid items-center gap-4 border-b border-border py-4 transition-colors hover:bg-secondary/30"
-              style={{
-                gridTemplateColumns: '28px 2fr 1.6fr 1fr 1fr 1fr auto',
-              }}
+              className="studio-table-row"
+              style={{ gridTemplateColumns: gridColumns }}
             >
-              {/* Brand color dot */}
+              {/* Brand dot */}
               <span
-                style={{
-                  display: 'inline-block',
-                  width: 12,
-                  height: 12,
-                  borderRadius: '50%',
-                  background: client.brand_primary_hex ?? 'rgba(255,255,255,0.2)',
-                  flexShrink: 0,
-                }}
+                className="studio-brand-dot"
+                style={{ background: client.brand_primary_hex ?? 'rgba(11,11,16,0.12)' }}
+                title={client.name}
               />
 
               {/* Name */}
               <Link
                 to={`/dashboard/studio/clients/${client.id}`}
-                className="truncate text-sm font-medium hover:underline"
+                style={{
+                  fontSize: 13.5,
+                  fontWeight: 600,
+                  color: 'var(--le-ink)',
+                  textDecoration: 'none',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  letterSpacing: '-0.012em',
+                }}
               >
                 {client.name}
+                {client.archived_at && (
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontSize: 10,
+                      fontWeight: 500,
+                      color: 'var(--le-muted)',
+                      background: 'rgba(11,11,16,0.05)',
+                      borderRadius: 99,
+                      padding: '1px 6px',
+                    }}
+                  >
+                    archived
+                  </span>
+                )}
               </Link>
 
               {/* Email */}
-              <span className="truncate text-xs text-muted-foreground">
+              <span
+                style={{
+                  fontSize: 12.5,
+                  color: 'var(--le-muted)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {client.contact_email ?? '—'}
               </span>
 
               {/* Monthly rate */}
-              <span className="tabular text-right text-sm">
+              <span
+                style={{
+                  fontSize: 13,
+                  color: 'var(--le-ink-2)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
                 {formatMonthlyRate(client.monthly_rate_cents)}
               </span>
 
-              {/* # active listings — TODO: compute via queue endpoint join */}
-              <span className="tabular text-right text-xs text-muted-foreground">—</span>
-
               {/* Last updated */}
-              <span className="tabular text-xs text-muted-foreground">
+              <span style={{ fontSize: 12, color: 'var(--le-muted)', fontVariantNumeric: 'tabular-nums' }}>
                 {getRelativeTime(client.updated_at)}
               </span>
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Link
                   to={`/dashboard/studio/clients/${client.id}`}
-                  style={{ ...GHOST_BTN, padding: '5px 10px', fontSize: 11 }}
+                  className="studio-btn-ghost"
+                  style={{ fontSize: 11.5, padding: '5px 10px', gap: 5 }}
                   aria-label={`Edit ${client.name}`}
                 >
-                  <Pencil style={{ width: 12, height: 12 }} /> Edit
+                  <Pencil size={11} strokeWidth={1.6} />
+                  Edit
                 </Link>
                 <button
                   type="button"
-                  style={{ ...GHOST_BTN, padding: '5px 10px', fontSize: 11 }}
+                  className="studio-btn-ghost"
+                  style={{ fontSize: 11.5, padding: '5px 10px', gap: 5 }}
                   onClick={() => handleCopyInvoice(client.id)}
                   disabled={copyingId === client.id}
                   aria-label={`Copy invoice summary for ${client.name}`}
                 >
                   {copyingId === client.id ? (
-                    <Loader2 style={{ width: 12, height: 12, animation: 'spin 1s linear infinite' }} />
+                    <Loader2 size={11} className="studio-spinner" />
+                  ) : copiedId === client.id ? (
+                    <Check size={11} strokeWidth={2} style={{ color: 'var(--le-good)' }} />
                   ) : (
-                    <Copy style={{ width: 12, height: 12 }} />
-                  )}{' '}
-                  Invoice
+                    <Copy size={11} strokeWidth={1.6} />
+                  )}
+                  {copiedId === client.id ? 'Copied' : 'Invoice'}
                 </button>
               </div>
             </div>
           ))
         )}
       </div>
-    </div>
+    </StudioShell>
   );
 };
 

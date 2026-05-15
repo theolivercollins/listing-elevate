@@ -2,48 +2,14 @@ import {
   useState,
   useCallback,
   useRef,
-  type CSSProperties,
   type ChangeEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Camera, X, ArrowRight } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
+import { Loader2, Image, X, ArrowRight } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
+import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
-import '@/v2/styles/v2.css';
-
-const EYEBROW: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-};
-
-const PAGE_H1: CSSProperties = {
-  fontFamily: 'var(--le-font-sans)',
-  fontSize: 'clamp(28px, 4vw, 44px)',
-  fontWeight: 500,
-  letterSpacing: '-0.035em',
-  lineHeight: 0.98,
-  color: '#fff',
-  margin: 0,
-};
-
-const SECTION_HEADER: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-  paddingBottom: 12,
-  borderBottom: '1px solid rgba(255,255,255,0.08)',
-  display: 'block',
-  marginBottom: 20,
-};
 
 const MIN_PHOTOS = 5;
 
@@ -51,6 +17,23 @@ interface UploadedFile {
   file: File;
   preview: string;
   id: string;
+}
+
+function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
+  return (
+    <label
+      style={{
+        display: 'block',
+        fontSize: 12,
+        fontWeight: 500,
+        color: 'var(--le-muted)',
+        marginBottom: 6,
+      }}
+    >
+      {children}
+      {required && <span style={{ color: 'var(--le-bad)', marginLeft: 3 }}>*</span>}
+    </label>
+  );
 }
 
 const StudioNew = () => {
@@ -69,15 +52,12 @@ const StudioNew = () => {
   // ─── submit state ───
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(
-    null,
-  );
+  const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // Validation
   const isValid = address.trim() && clientId && files.length >= MIN_PHOTOS;
 
   // ─── file handling ───
@@ -116,7 +96,6 @@ const StudioNew = () => {
     setUploadProgress(null);
 
     try {
-      // 1. Upload photos to storage
       const tempId = crypto.randomUUID();
       const photoPaths = await uploadPhotosToStorage(
         files.map((f) => f.file),
@@ -130,7 +109,6 @@ const StudioNew = () => {
 
       setUploadProgress(null);
 
-      // 2. POST to ingest endpoint
       const res = await fetch('/api/admin/studio/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -139,7 +117,6 @@ const StudioNew = () => {
           address: address.trim(),
           bedrooms: bedrooms ? Number(bedrooms) : null,
           bathrooms: bathrooms ? Number(bathrooms) : null,
-          // square_footage accepted by the API but not persisted yet — will land in a future migration
           square_footage: squareFootage ? Number(squareFootage) : null,
           price: price ? Number(price) : null,
           photo_storage_paths: photoPaths,
@@ -153,11 +130,7 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
-
-      // 3. Fire-and-forget pipeline trigger (matches customer-flow pattern in src/lib/api.ts)
       fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
-
-      // 4. Navigate to Property Command Center
       navigate(`/dashboard/studio/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');
@@ -167,274 +140,353 @@ const StudioNew = () => {
   };
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header */}
-      <div>
-        <span style={EYEBROW}>— New Listing</span>
-        <h2 className="mt-3" style={PAGE_H1}>
-          New Listing
-        </h2>
+    <StudioShell>
+      {/* ─── Page heading ─── */}
+      <div className="studio-page-heading">
+        <div>
+          <span className="studio-page-eyebrow">Studio · new listing</span>
+          <h1 className="studio-page-h1">New listing</h1>
+          <p className="studio-page-sub">Pick a client, drop in photos, send the pipeline.</p>
+        </div>
       </div>
 
+      {/* ─── StudioNav ─── */}
       <StudioNav />
 
-      <form onSubmit={handleSubmit} className="max-w-2xl space-y-12">
-        {/* ─── Address + Client ─── */}
-        <section>
-          <span style={SECTION_HEADER}>— Property</span>
-          <div className="space-y-6">
+      {/* ─── Form ─── */}
+      <form
+        onSubmit={handleSubmit}
+        style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 0 }}
+      >
+        <div className="studio-card" style={{ padding: 24 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+            {/* Client picker */}
             <div>
-              <Label className="label text-muted-foreground">
-                Address <span className="text-destructive">*</span>
-              </Label>
-              <Input
+              <FieldLabel required>Client</FieldLabel>
+              <ClientPicker value={clientId} onChange={setClientId} includeNone={false} />
+            </div>
+
+            {/* Address */}
+            <div>
+              <FieldLabel required>Address</FieldLabel>
+              <input
+                className="studio-input"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="208 Berry Street, Brooklyn, NY"
                 required
-                className="mt-2"
               />
             </div>
 
-            <div>
-              <Label className="label text-muted-foreground">
-                Client <span className="text-destructive">*</span>
-              </Label>
-              <div className="mt-2">
-                <ClientPicker value={clientId} onChange={setClientId} includeNone={false} />
-              </div>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
+            {/* Bedrooms / bathrooms */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
-                <Label className="label text-muted-foreground">Bedrooms</Label>
-                <Input
+                <FieldLabel>Bedrooms</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
                   type="number"
                   min={0}
                   step={1}
                   value={bedrooms}
                   onChange={(e) => setBedrooms(e.target.value)}
                   placeholder="3"
-                  className="tabular mt-2"
                 />
               </div>
               <div>
-                <Label className="label text-muted-foreground">Bathrooms</Label>
-                <Input
+                <FieldLabel>Bathrooms</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
                   type="number"
                   min={0}
                   step={0.5}
                   value={bathrooms}
                   onChange={(e) => setBathrooms(e.target.value)}
                   placeholder="2.5"
-                  className="tabular mt-2"
                 />
               </div>
             </div>
 
-            <div className="grid gap-6 md:grid-cols-2">
+            {/* Square footage / price */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
-                <Label className="label text-muted-foreground">Square footage</Label>
-                <Input
+                <FieldLabel>Square footage</FieldLabel>
+                <input
+                  className="studio-input studio-tabnum"
                   type="number"
                   min={0}
                   step={1}
                   value={squareFootage}
                   onChange={(e) => setSquareFootage(e.target.value)}
                   placeholder="1850"
-                  className="tabular mt-2"
                 />
               </div>
               <div>
-                <Label className="label text-muted-foreground">Price ($)</Label>
-                <div className="relative mt-2">
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                <FieldLabel>Price ($)</FieldLabel>
+                <div style={{ position: 'relative' }}>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      fontSize: 13.5,
+                      color: 'var(--le-muted)',
+                      pointerEvents: 'none',
+                    }}
+                  >
                     $
                   </span>
-                  <Input
+                  <input
+                    className="studio-input studio-tabnum"
                     type="number"
                     min={0}
                     step={1}
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
                     placeholder="2400000"
-                    className="tabular pl-7"
+                    style={{ paddingLeft: 26 }}
                   />
                 </div>
               </div>
             </div>
 
+            {/* Director notes */}
             <div>
-              <Label className="label text-muted-foreground">Director notes</Label>
+              <FieldLabel>Director notes</FieldLabel>
               <textarea
+                className="studio-textarea"
                 value={directorNotes}
                 onChange={(e) => setDirectorNotes(e.target.value)}
                 placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
                 rows={4}
-                className="mt-2 flex min-h-[100px] w-full rounded-none border border-border bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus-visible:border-accent focus-visible:outline-none"
               />
             </div>
+
+            {/* Photo dropzone */}
+            <div>
+              <FieldLabel>Photos</FieldLabel>
+              <div
+                className={'studio-dropzone' + (isDragging ? ' dragging' : '')}
+                style={{
+                  aspectRatio: '16/6',
+                  flexDirection: 'column',
+                  textAlign: 'center',
+                  gap: 0,
+                }}
+                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  handleFiles(e.dataTransfer.files);
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') fileInputRef.current?.click(); }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".jpg,.jpeg,.png,.heic,.webp"
+                  style={{ display: 'none' }}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    e.target.files && handleFiles(e.target.files)
+                  }
+                />
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  {...({ webkitdirectory: '', directory: '' } as React.HTMLAttributes<HTMLInputElement>)}
+                  style={{ display: 'none' }}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                    e.target.files && handleFiles(e.target.files)
+                  }
+                />
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                  <Image size={28} strokeWidth={1.4} style={{ color: 'var(--le-muted)' }} />
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--le-ink-2)', letterSpacing: '-0.01em' }}>
+                    Drop photos to upload
+                  </p>
+                  <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
+                    or click to browse — JPG, PNG, HEIC, WebP
+                  </p>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                    className="studio-btn-ghost"
+                    style={{ fontSize: 11.5, padding: '5px 12px', marginTop: 4 }}
+                  >
+                    Import entire folder
+                  </button>
+                </div>
+              </div>
+
+              {/* Photo count progress */}
+              {files.length > 0 && files.length < MIN_PHOTOS && (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 2,
+                      background: 'var(--le-line)',
+                      borderRadius: 99,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${(files.length / MIN_PHOTOS) * 100}%`,
+                        background: 'var(--le-accent)',
+                        borderRadius: 99,
+                        transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
+                      }}
+                    />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 11.5,
+                      color: 'var(--le-warn)',
+                      fontVariantNumeric: 'tabular-nums',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {MIN_PHOTOS - files.length} more required
+                  </span>
+                </div>
+              )}
+              {files.length >= MIN_PHOTOS && (
+                <p
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: 'var(--le-good)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {files.length} photo{files.length !== 1 ? 's' : ''} ready
+                </p>
+              )}
+
+              {/* Thumbnails */}
+              {files.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 16,
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(6, 1fr)',
+                    gap: 6,
+                  }}
+                >
+                  {files.map((f) => (
+                    <div
+                      key={f.id}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1',
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                        background: 'rgba(11,11,16,0.06)',
+                      }}
+                    >
+                      <img
+                        src={f.preview}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(11,11,16,0.65)',
+                          opacity: 0,
+                          transition: 'opacity 0.15s',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#fff',
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
+                        aria-label="Remove photo"
+                      >
+                        <X size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </section>
 
-        {/* ─── Photos ─── */}
-        <section>
-          <span style={SECTION_HEADER}>— Photos</span>
+          {/* Error */}
+          {submitError && (
+            <div className="studio-error-strip" style={{ marginTop: 16 }}>{submitError}</div>
+          )}
 
-          <div className="flex items-baseline justify-between mb-4">
-            <p className="text-sm text-muted-foreground">
-              Drop or browse {MIN_PHOTOS}–60 high-resolution images (JPG, PNG, HEIC, WebP).
-            </p>
-            {files.length > 0 && (
-              <span className="tabular text-xs text-muted-foreground">
-                {files.length} / 60
-              </span>
-            )}
-          </div>
-
-          {/* Drop zone */}
+          {/* Submit footer */}
           <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragging(false);
-              handleFiles(e.dataTransfer.files);
-            }}
-            onClick={() => fileInputRef.current?.click()}
-            className="relative flex aspect-[16/6] cursor-pointer items-center justify-center border-2 border-dashed text-center transition-all duration-500"
             style={{
-              borderColor: isDragging ? 'var(--le-text)' : 'var(--le-border-strong)',
-              background: isDragging ? 'var(--le-bg-sunken)' : 'var(--le-bg-elev)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              paddingTop: 20,
+              marginTop: 20,
+              borderTop: '1px solid var(--le-line-2)',
             }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".jpg,.jpeg,.png,.heic,.webp"
-              className="hidden"
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                e.target.files && handleFiles(e.target.files)
-              }
-            />
-            <input
-              ref={folderInputRef}
-              type="file"
-              {...({ webkitdirectory: '', directory: '' } as React.HTMLAttributes<HTMLInputElement>)}
-              className="hidden"
-              onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                e.target.files && handleFiles(e.target.files)
-              }
-            />
-            <div>
-              <Camera className="mx-auto h-7 w-7 text-muted-foreground" strokeWidth={1.5} />
-              <p className="mt-4 text-sm font-semibold tracking-[-0.01em]">Drop photos to upload</p>
-              <p className="mt-1 text-xs text-muted-foreground">or click to browse files</p>
+            <button
+              type="button"
+              className="studio-btn-ghost"
+              onClick={() => navigate('/dashboard/studio')}
+            >
+              Cancel
+            </button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              {!isValid && !submitting && (
+                <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
+                  {!address.trim()
+                    ? 'Address required'
+                    : !clientId
+                      ? 'Client required'
+                      : files.length < MIN_PHOTOS
+                        ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                        : ''}
+                </span>
+              )}
               <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  folderInputRef.current?.click();
-                }}
-                className="mt-4 text-[11px] font-medium uppercase tracking-[0.15em] text-accent underline underline-offset-4 hover:text-accent/80"
+                type="submit"
+                className="studio-cta-primary"
+                disabled={!isValid || submitting}
               >
-                Import entire folder
+                {submitting ? (
+                  <>
+                    <Loader2 size={13} className="studio-spinner" />
+                    {uploadProgress
+                      ? `Uploading ${uploadProgress.uploaded} / ${uploadProgress.total}…`
+                      : 'Ingesting…'}
+                  </>
+                ) : (
+                  <>
+                    Send to pipeline
+                    <ArrowRight size={13} strokeWidth={2} />
+                  </>
+                )}
               </button>
             </div>
           </div>
-
-          {/* Progress bar */}
-          {files.length > 0 && files.length < MIN_PHOTOS && (
-            <div className="mt-4 flex items-center gap-4">
-              <div className="h-px flex-1 overflow-hidden bg-border">
-                <div
-                  className="h-full bg-foreground transition-all duration-500"
-                  style={{ width: `${(files.length / MIN_PHOTOS) * 100}%` }}
-                />
-              </div>
-              <span className="tabular text-[11px] text-accent">
-                {MIN_PHOTOS - files.length} more required
-              </span>
-            </div>
-          )}
-          {files.length >= MIN_PHOTOS && (
-            <p className="mt-3 text-xs text-accent">
-              {files.length} photo{files.length !== 1 ? 's' : ''} ready
-            </p>
-          )}
-
-          {/* Thumbnails */}
-          {files.length > 0 && (
-            <div className="mt-6 grid grid-cols-4 gap-1 sm:grid-cols-6 md:grid-cols-8">
-              {files.map((f) => (
-                <div
-                  key={f.id}
-                  className="group relative aspect-square overflow-hidden bg-secondary"
-                >
-                  <img src={f.preview} alt="" className="h-full w-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(f.id);
-                    }}
-                    className="absolute inset-0 flex items-center justify-center bg-black/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                    aria-label="Remove photo"
-                  >
-                    <X className="h-3.5 w-3.5 text-white" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        {/* Submit error */}
-        {submitError && (
-          <div className="border border-destructive/40 bg-destructive/10 px-4 py-3">
-            <p className="text-xs text-destructive">{submitError}</p>
-          </div>
-        )}
-
-        {/* Submit */}
-        <div className="flex items-center gap-4 border-t border-border pt-6">
-          <Button
-            type="submit"
-            disabled={!isValid || submitting}
-            className="min-w-[160px]"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {uploadProgress
-                  ? `Uploading ${uploadProgress.uploaded} / ${uploadProgress.total}…`
-                  : 'Ingesting…'}
-              </>
-            ) : (
-              <>
-                Ingest listing <ArrowRight className="ml-2 h-4 w-4" />
-              </>
-            )}
-          </Button>
-
-          {!isValid && !submitting && (
-            <span className="text-xs text-muted-foreground">
-              {!address.trim()
-                ? 'Address required'
-                : !clientId
-                  ? 'Client required'
-                  : files.length < MIN_PHOTOS
-                    ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
-                    : ''}
-            </span>
-          )}
         </div>
       </form>
-    </div>
+    </StudioShell>
   );
 };
 

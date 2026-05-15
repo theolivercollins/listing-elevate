@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from 'react';
-import { FlaskConical } from 'lucide-react';
+import { useState } from 'react';
+import { FlaskConical, Image } from 'lucide-react';
 import { IterateInLabModal } from './IterateInLabModal';
 
 interface SceneRow {
@@ -16,42 +16,26 @@ interface SceneStripProps {
   onSwapped: () => void;
 }
 
-const EYEBROW: CSSProperties = {
-  fontFamily: 'var(--le-font-mono)',
-  fontSize: 10,
-  letterSpacing: '0.22em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.45)',
-};
-
-const GHOST_BTN: CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 5,
-  padding: '4px 10px',
-  fontSize: 10,
-  fontWeight: 500,
-  background: 'transparent',
-  color: '#fff',
-  border: '1px solid rgba(220,230,255,0.18)',
-  borderRadius: 2,
-  cursor: 'pointer',
-  fontFamily: 'var(--le-font-sans)',
-  whiteSpace: 'nowrap',
-};
-
 function formatRoomType(rt: string | null): string {
   if (!rt) return 'Unknown';
   return rt.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * SceneStrip — horizontal-scroll strip of scene thumbnails.
+ * Each card: 200×120 (16:9) with clip or placeholder, room_type label,
+ * and "Iterate in Lab" ghost button.
+ * Must be inside a .studio-scope wrapper.
+ */
 export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
   const [activeScene, setActiveScene] = useState<SceneRow | null>(null);
 
   if (scenes.length === 0) {
     return (
-      <div className="border border-dashed border-border py-10 text-center">
-        <p className="text-xs text-muted-foreground/60">No scenes yet — pipeline in progress.</p>
+      <div className="studio-kanban-empty" style={{ padding: 32, textAlign: 'center' }}>
+        <p style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
+          No scenes yet — pipeline in progress.
+        </p>
       </div>
     );
   }
@@ -59,16 +43,30 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
   return (
     <>
       <div
-        className="flex gap-3 overflow-x-auto pb-2"
-        style={{ scrollbarWidth: 'thin' }}
+        className="studio-hscroll"
+        style={{ display: 'flex', gap: 12, paddingBottom: 4 }}
       >
         {scenes.map((scene) => (
           <div
             key={scene.id}
-            className="flex-none w-[160px] border border-border bg-background/50"
+            style={{
+              flexShrink: 0,
+              width: 200,
+              background: 'var(--le-surface)',
+              borderRadius: 'var(--le-radius-sm)',
+              boxShadow: 'var(--le-shadow-sm)',
+              overflow: 'hidden',
+            }}
           >
-            {/* Thumbnail */}
-            <div className="relative aspect-video bg-secondary overflow-hidden">
+            {/* 16:9 thumbnail area */}
+            <div
+              style={{
+                position: 'relative',
+                aspectRatio: '16/9',
+                background: 'rgba(11,11,16,0.06)',
+                overflow: 'hidden',
+              }}
+            >
               {scene.clip_url ? (
                 <video
                   src={scene.clip_url}
@@ -76,24 +74,35 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
                   loop
                   autoPlay
                   playsInline
-                  className="h-full w-full object-cover"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center">
-                  <span style={{ ...EYEBROW, fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>
-                    No clip
-                  </span>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    color: 'var(--le-muted-2)',
+                  }}
+                >
+                  <Image size={20} strokeWidth={1.4} />
                 </div>
               )}
               {/* Scene number badge */}
               <span
-                className="absolute top-1 left-1 px-1.5 py-0.5"
                 style={{
-                  background: 'rgba(0,0,0,0.65)',
-                  fontFamily: 'var(--le-font-mono)',
-                  fontSize: 9,
-                  color: 'rgba(255,255,255,0.7)',
+                  position: 'absolute',
+                  top: 6,
+                  left: 6,
+                  background: 'rgba(11,11,16,0.65)',
                   backdropFilter: 'blur(4px)',
+                  borderRadius: 6,
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: 'rgba(255,255,255,0.85)',
+                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
                 #{scene.scene_number}
@@ -101,19 +110,27 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
             </div>
 
             {/* Footer */}
-            <div className="p-2 space-y-2">
+            <div style={{ padding: '8px 10px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <p
-                className="truncate leading-snug"
-                style={{ fontFamily: 'var(--le-font-mono)', fontSize: 9, color: 'rgba(255,255,255,0.55)' }}
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 500,
+                  color: 'var(--le-ink-2)',
+                  margin: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
               >
                 {formatRoomType(scene.room_type)}
               </p>
               <button
                 type="button"
-                style={GHOST_BTN}
+                className="studio-btn-ghost"
+                style={{ fontSize: 11, padding: '5px 10px', gap: 5 }}
                 onClick={() => setActiveScene(scene)}
               >
-                <FlaskConical style={{ width: 10, height: 10 }} />
+                <FlaskConical size={11} strokeWidth={1.6} />
                 Iterate in Lab
               </button>
             </div>
