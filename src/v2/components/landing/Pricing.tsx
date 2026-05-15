@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getPricingTiers, type PricingTier } from "@/v2/data/pricing";
+import { getPricingTiers, PRICING_TIERS, type PricingTier } from "@/v2/data/pricing";
+
+export type { PricingTier };
+export { PRICING_TIERS };
 
 export function Pricing() {
   const [tiers, setTiers] = useState<PricingTier[]>([]);

@@ -4,7 +4,7 @@ export interface Faq {
   answer: string;
 }
 
-const FAQS: Faq[] = [
+export const FAQ_ITEMS: readonly Faq[] = [
   {
     id: "turnaround",
     question: "How fast will I get my video?",
@@ -38,5 +38,5 @@ const FAQS: Faq[] = [
 ];
 
 export function getFaqs(): Faq[] {
-  return FAQS;
+  return [...FAQ_ITEMS];
 }

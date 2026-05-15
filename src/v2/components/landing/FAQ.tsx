@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { getFaqs } from "@/v2/data/faqs";
+import { getFaqs, FAQ_ITEMS, type Faq } from "@/v2/data/faqs";
 import { LEIcon } from "@/v2/components/primitives/LEIcon";
+
+export type FaqItem = Faq;
+export { FAQ_ITEMS };
 
 export function FAQ() {
   const faqs = getFaqs();

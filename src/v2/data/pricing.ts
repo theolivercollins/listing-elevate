@@ -7,7 +7,7 @@ export interface PricingTier {
   isLead: boolean;
 }
 
-const MOCK_TIERS: PricingTier[] = [
+export const PRICING_TIERS: readonly PricingTier[] = [
   {
     id: "starter",
     name: "Single Listing",
@@ -35,5 +35,5 @@ const MOCK_TIERS: PricingTier[] = [
 ];
 
 export async function getPricingTiers(): Promise<PricingTier[]> {
-  return MOCK_TIERS;
+  return [...PRICING_TIERS];
 }
