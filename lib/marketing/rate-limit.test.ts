@@ -40,10 +40,12 @@ describe("assertRateLimit", () => {
 
   it("throws RateLimitError when per-conversation message cap exceeded", async () => {
     for (let i = 0; i < LIMITS.CONV_MAX_MESSAGES; i++) {
-      await assertRateLimit(supabase as any, { ipHash: "ipA", conversationId: "c-long", sessionCostCents: 0 });
+      // Use unique ipHash per iteration so the per-IP/min burst bucket
+      // never fires — we're isolating the per-conversation cap.
+      await assertRateLimit(supabase as any, { ipHash: `ip-conv-${i}`, conversationId: "c-long", sessionCostCents: 0 });
     }
     await expect(
-      assertRateLimit(supabase as any, { ipHash: "ipA", conversationId: "c-long", sessionCostCents: 0 }),
+      assertRateLimit(supabase as any, { ipHash: "ip-conv-final", conversationId: "c-long", sessionCostCents: 0 }),
     ).rejects.toMatchObject({ scope: "conversation_messages" });
   });
 

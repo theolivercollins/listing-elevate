@@ -48,25 +48,15 @@ export async function assertRateLimit(
   // 2. Global daily cap
   await bump(supabase, `global:${dayKey}`, oneDayFromNow(now), LIMITS.GLOBAL_PER_DAY, "global_daily", 86400);
 
-  // 3. Per-conversation message count
-  await bump(supabase, `conv:${conversationId}:msgs`, oneDayFromNow(now), LIMITS.CONV_MAX_MESSAGES, "conversation_messages", 0);
+  // 3. Per-IP per minute (burst — counts raw requests; a bot looping in one
+  //    conversation MUST be caught here, not bypassed)
+  await bump(supabase, `ip:${ipHash}:min:${minuteKey}`, oneMinuteFromNow(now), LIMITS.IP_PER_MIN, "ip_per_min", 60);
 
-  // 4. Per-IP per minute (burst): counts unique conversations started by this IP per minute.
-  //    We track a per-(IP, conv, minute) presence key; only on the first message of each
-  //    unique conversation do we increment the IP-minute aggregate counter.
-  const convPresenceKey = `ip:${ipHash}:conv:${conversationId}:min:${minuteKey}`;
-  const { data: presenceCount, error: presenceErr } = await supabase.rpc("marketing_chat_rate_limit_bump", {
-    p_key: convPresenceKey,
-    p_expires_at: oneMinuteFromNow(now).toISOString(),
-  });
-  if (presenceErr) throw new Error(`rate-limit bump failed (ip_per_min presence): ${presenceErr.message}`);
-  if ((presenceCount as number) === 1) {
-    // First message from this (IP, conversation) pair this minute — register against IP aggregate
-    await bump(supabase, `ip:${ipHash}:min:${minuteKey}`, oneMinuteFromNow(now), LIMITS.IP_PER_MIN, "ip_per_min", 60);
-  }
-
-  // 5. Per-IP per day
+  // 4. Per-IP per day
   await bump(supabase, `ip:${ipHash}:day:${dayKey}`, oneDayFromNow(now), LIMITS.IP_PER_DAY, "ip_per_day", 86400);
+
+  // 5. Per-conversation message count
+  await bump(supabase, `conv:${conversationId}:msgs`, oneDayFromNow(now), LIMITS.CONV_MAX_MESSAGES, "conversation_messages", 0);
 }
 
 async function bump(
