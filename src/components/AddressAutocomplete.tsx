@@ -7,7 +7,6 @@
  */
 
 import { useEffect, useRef } from "react";
-import { Input } from "@/components/ui/input";
 
 // ---------------------------------------------------------------------------
 // Lazy Maps loader — singleton per tab
@@ -111,12 +110,12 @@ export function AddressAutocomplete({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <Input
+    <input
       ref={inputRef}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className={className}
+      className={className ?? "g-input"}
       autoComplete="off"
     />
   );
