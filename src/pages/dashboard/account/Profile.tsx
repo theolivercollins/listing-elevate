@@ -200,7 +200,7 @@ export default function AccountProfile() {
   }
 
   return (
-    <div className="le-fade-up" style={{ maxWidth: 720 }}>
+    <div className="le-fade-up">
       <AccountSubNav />
       <PageHeading
         eyebrow={isAdmin ? "Account · Owner" : "Account"}
