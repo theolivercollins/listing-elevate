@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { recordCost, type CostStage } from "../cost.js";
 
-export type BlogCostStage =
+export type BlogCostStage = Extract<CostStage,
   | "blog_research"
   | "blog_topic_distill"
   | "blog_draft"
@@ -9,7 +10,8 @@ export type BlogCostStage =
   | "blog_image_tag"
   | "blog_correction_distill"
   | "blog_publish_browser"
-  | "blog_ai_draft";
+  | "blog_ai_draft"
+>;
 
 export interface BlogCostInput {
   stage: BlogCostStage;
@@ -26,17 +28,12 @@ export async function recordBlogCost(
   supabase: SupabaseClient,
   input: BlogCostInput,
 ): Promise<void> {
-  const { error: costErr } = await supabase
-    .from("cost_events")
-    .insert([{
-      stage: input.stage,
-      cost_cents: input.cost_cents,
-      post_id: input.post_id,
-      site_id: input.site_id,
-      provider: input.provider,
-      metadata: input.metadata ?? {},
-    }]);
-  if (costErr) {
-    throw new Error(`recordBlogCost failed: ${costErr.message}`);
-  }
+  await recordCost(supabase, {
+    stage: input.stage,
+    cost_cents: input.cost_cents,
+    provider: input.provider,
+    post_id: input.post_id,
+    site_id: input.site_id,
+    metadata: input.metadata,
+  });
 }
