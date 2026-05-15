@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-14 (blog dashboard list unstick + delete button + publishing banner; Creatomate Just Listed #01 rev-2)
+Last updated: 2026-05-14 (blog routes + delete dialog + Sierra unpublish + on-hold; earlier: list unstick + Creatomate rev-2)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,40 @@ See also:
 
 ## Right now
 
-**2026-05-14 PM (latest): Blog dashboard list was stuck on "Loading…" + no Delete button + Publish click looked silent.** Three fixes:
+**2026-05-14 evening (latest, PR #51): Smoke test surfaced four follow-on gaps; all fixed.**
+
+1. **DELETE returned 404** — and so did every other `/api/blog/posts/[id]/...` path. `vercel.json` defines explicit `routes` (not filesystem-based dynamic resolution); all other dynamic API paths in this repo had explicit rewrites, but the blog ones did not. Added 7 new rewrites for `posts/[id]`, `posts/[id]/{publish,reject,edit-on-sierra,hold}`, `images/[id]`, `templates/[id]`. This was the root cause of "Delete failed: 404" and probably affected other blog detail flows nobody had exercised since the engine shipped.
+
+2. **`window.confirm` replaced with a real dialog.** New `src/components/blog/DeletePostDialog.tsx` — two checkboxes ("Remove from this dashboard" + "Remove from Sierra (public site)") plus Cancel / Confirm. The Sierra checkbox is disabled when the post has no `external_post_id`. The list trash icon and the detail-page Delete button both open it.
+
+3. **Sierra-side delete is real (was always TODO).** New `blog_jobs.kind = 'unpublish'`. `lib/blog-engine/publishers/sierra/unpublish.ts` opens `/blog-manager.aspx`, locates the row by `external_post_id` (title fallback), auto-accepts the JS `confirm()` Sierra fires, waits for the table to re-render, verifies the row is gone. New handler in `lib/blog-engine/jobs/handlers/unpublish.ts`. Recorded as `blog_publish_browser` cost stage with `metadata.action = "unpublish"` (10¢ Browserbase). The Delete API checks `body.fromSierra` and enqueues this job before the soft-delete. **Selectors are best-guess** (`a:has-text("Delete")` + `a[onclick*="confirm"]` + a couple of `[alt*="delete"]` variants); first real run will tell us if they need tuning — if so update `unpublish.ts`'s selector list, never inline.
+
+4. **New `on_hold` state.** Dashboard-only — does NOT touch Sierra. New `POST /api/blog/posts/[id]/hold { hold: boolean }`. Detail page has Pause/Resume button visible in `edit-live` (Put on hold) and a new `on-hold` mode (Resume back to Live). Banner reads "On hold — hidden from the 'Live' filter. Sierra-side copy is untouched." New "On hold" filter pill in the list + slate pill color. No DB migration needed — `blog_posts.state` is `text` with no CHECK constraint.
+
+**Files touched (PR #51 only):**
+- `vercel.json` — 7 new route rewrites
+- `lib/blog-engine/types.ts` — added `on_hold` state, `unpublish` job kind
+- `lib/blog-engine/publishers/types.ts` — `Publisher.unpublish()` + `UnpublishResult`
+- `lib/blog-engine/publishers/sierra/{index.ts, unpublish.ts}` — sierra implementation
+- `lib/blog-engine/jobs/handlers/{index.ts, unpublish.ts}` — handler + registration
+- `api/blog/posts/[id].ts` — DELETE accepts `{ fromDashboard, fromSierra }`
+- `api/blog/posts/[id]/hold.ts` — new endpoint
+- `src/lib/blog/api-client.ts` — `deletePost(id, { fromDashboard, fromSierra })` + `setHold(id, hold)`
+- `src/components/blog/DeletePostDialog.tsx` — new
+- `src/pages/dashboard/BlogPostsList.tsx` + `BlogPostDetail.tsx` — dialog hookup + on-hold button + on-hold filter/banner
+
+**Verification:**
+- `vite build` green.
+- My touched files clean under `tsc`; the pre-existing TS warnings in `publish.ts`/`taxonomy.ts`/PromptLab/scene-ordering tests still present (unchanged).
+- Route fix is verifiable from outside auth (the path stops 404'ing, starts 401'ing).
+
+**Open follow-ups:**
+- First real Sierra unpublish will tell us if the row-Delete selectors are right. If not, update `lib/blog-engine/publishers/sierra/unpublish.ts` selectors and add a `probe-sierra-delete.ts` similar to the publish probe.
+- Still pending from earlier: ESLint `import/extensions` rule + expired GitHub Actions ANTHROPIC_API_KEY.
+
+---
+
+**2026-05-14 PM: Blog dashboard list was stuck on "Loading…" + no Delete button + Publish click looked silent.** Three fixes:
 
 1. **Blog posts list page hung at "Loading…".** `app/blog/posts` list (and the detail GET) embed `image:image_id (id, blob_url, vision_caption)` via PostgREST. `blog_posts.image_id` had **no foreign-key constraint** to `blog_images(id)` — only `site_id` was an FK — so PostgREST returned `400 Could not find a relationship`. React Query retried, then sat in a fetching state and the user-facing fallback only checks `isLoading`/`posts.length`, so the "Loading…" stayed up. Fixed by migration `056_blog_posts_image_id_fk.sql`: `alter table blog_posts add constraint blog_posts_image_id_fkey foreign key (image_id) references blog_images(id) on delete set null;` + `NOTIFY pgrst, 'reload schema'`. Confirmed 0 orphans before applying. Already applied to shared prod Supabase via MCP — refresh the page and the list loads.
 
