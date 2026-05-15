@@ -18,7 +18,8 @@ create table marketing_leads (
   utm jsonb,
   total_messages int not null default 0,
   total_cost_cents int not null default 0,
-  status text not null default 'new',
+  status text not null default 'new'
+    check (status in ('new', 'contacted', 'converted', 'spam')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -26,7 +27,7 @@ create table marketing_leads (
 create index marketing_leads_email_idx on marketing_leads (email) where email is not null;
 create index marketing_leads_created_idx on marketing_leads (created_at desc);
 create index marketing_leads_status_idx on marketing_leads (status);
-create index marketing_leads_updated_idx on marketing_leads (updated_at);
+create index marketing_leads_updated_idx on marketing_leads (updated_at) where email is null;
 
 alter table marketing_leads enable row level security;
 -- No policies → only service-role API access.
