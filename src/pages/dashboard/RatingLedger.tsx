@@ -258,7 +258,7 @@ function LedgerRowView({ row }: { row: LedgerRow }) {
       <div className="space-y-1 text-xs">
         <SkuChip sku={row.sku} provider={row.provider} />
         {row.order_id && (
-          <div className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
+          <div className="font-sans text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
             {row.order_id}
           </div>
         )}
@@ -408,7 +408,7 @@ function SkuChip({ sku, provider }: { sku: string | null; provider: string | nul
     return <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/40">no SKU</span>;
   }
   return (
-    <span className="inline-flex items-center border border-border bg-secondary/30 px-1.5 py-0.5 font-mono text-[11px]">
+    <span className="inline-flex items-center border border-border bg-secondary/30 px-1.5 py-0.5 font-sans text-[11px]">
       {sku ?? provider}
     </span>
   );

@@ -12,7 +12,7 @@ import { ImageOff } from "lucide-react";
 import "@/v2/styles/v2.css";
 
 const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -135,7 +135,7 @@ const Properties = () => {
         <div>
           <span style={EYEBROW}>— All listings</span>
           <h2 className="mt-3" style={PAGE_H1}>
-            <span style={{ fontFamily: "var(--le-font-mono)" }}>{total}</span> total
+            <span style={{ fontFamily: "var(--le-font-sans)" }}>{total}</span> total
           </h2>
         </div>
       </div>
@@ -244,13 +244,13 @@ const Properties = () => {
       {totalPages > 1 && !loading && (
         <div className="flex items-center justify-between">
           <span style={EYEBROW}>
-            <span style={{ fontFamily: "var(--le-font-mono)" }}>{total}</span> properties
+            <span style={{ fontFamily: "var(--le-font-sans)" }}>{total}</span> properties
           </span>
           <div className="flex items-center gap-3">
             <button type="button" style={{ ...GHOST_BTN, opacity: page <= 1 ? 0.4 : 1 }} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
               <ChevronLeft className="h-4 w-4" /> Previous
             </button>
-            <span className="px-3 text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
+            <span className="px-3 text-xs" style={{ fontFamily: "var(--le-font-sans)", color: "rgba(255,255,255,0.55)" }}>
               Page {page} / {totalPages}
             </span>
             <button type="button" style={{ ...GHOST_BTN, opacity: page >= totalPages ? 0.4 : 1 }} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>

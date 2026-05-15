@@ -5,7 +5,7 @@ import { listListings, type LabListing } from "@/lib/labListingsApi";
 import "@/v2/styles/v2.css";
 
 const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -36,7 +36,7 @@ const PRIMARY_BTN: CSSProperties = {
 };
 const BADGE: CSSProperties = {
   borderRadius: 0,
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 9,
   letterSpacing: "0.18em",
 };

@@ -4,9 +4,9 @@ import { Loader2, RefreshCw, Map as MapIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 import {
   fetchCells,
   fetchCalibrationStatus,

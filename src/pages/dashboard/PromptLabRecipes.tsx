@@ -6,11 +6,11 @@ import { Input } from "@/components/ui/input";
 import { listRecipes, updateRecipe, deleteRecipe, type LabRecipe } from "@/lib/recipesApi";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 const PRIMARY_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", fontSize: 12, fontWeight: 500, background: "#fff", color: "#07080c", border: "none", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
 const GHOST_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
-const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
+const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-sans)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
 
 const PromptLabRecipes = () => {
   const [recipes, setRecipes] = useState<LabRecipe[] | null>(null);
@@ -117,7 +117,7 @@ function RecipeRow({
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Prompt template</label>
-          <Textarea value={tmpl} onChange={(e) => setTmpl(e.target.value)} className="mt-1 min-h-[80px] font-mono text-xs" />
+          <Textarea value={tmpl} onChange={(e) => setTmpl(e.target.value)} className="mt-1 min-h-[80px] font-sans text-xs" />
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} style={GHOST_BTN}>Cancel</button>
@@ -132,7 +132,7 @@ function RecipeRow({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm font-medium">{recipe.archetype}</span>
+            <span className="font-sans text-sm font-medium">{recipe.archetype}</span>
             <span className="bg-muted px-2 py-0.5" style={BADGE}>{recipe.room_type}</span>
             <span className="bg-foreground/10 px-2 py-0.5" style={BADGE}>{recipe.camera_movement}</span>
             {recipe.provider && (
@@ -143,7 +143,7 @@ function RecipeRow({
               {recipe.rating_at_promotion && <> · promoted at {recipe.rating_at_promotion}★</>}
             </span>
           </div>
-          <p className="mt-3 font-mono text-sm leading-relaxed">{recipe.prompt_template}</p>
+          <p className="mt-3 font-sans text-sm leading-relaxed">{recipe.prompt_template}</p>
         </div>
         <div className="flex shrink-0 items-center gap-2 text-muted-foreground">
           <button onClick={onEdit} className="hover:text-foreground" title="Edit"><Edit2 className="h-3.5 w-3.5" /></button>

@@ -5,7 +5,7 @@ import { fetchCellDrillDown } from "@/lib/knowledgeMapApi";
 import type { CellDrillDown } from "../../../lib/knowledge-map/types.js";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 
 const STATE_COLOR: Record<string, string> = {
@@ -81,7 +81,7 @@ export default function KnowledgeMapCell() {
               <ul className="mt-3 grid gap-2 md:grid-cols-2">
                 {data.fail_tags.map((f) => (
                   <li key={f.tag} className="flex items-center justify-between border border-border p-2 text-xs">
-                    <span className="font-mono">{f.tag}</span>
+                    <span className="font-sans">{f.tag}</span>
                     <span className="text-muted-foreground">{f.count}</span>
                   </li>
                 ))}
@@ -98,7 +98,7 @@ export default function KnowledgeMapCell() {
                 {data.recipes.map((r) => (
                   <li key={r.id} className="border border-border p-3 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono">{r.archetype}</span>
+                      <span className="font-sans">{r.archetype}</span>
                       <span className="text-muted-foreground">★{r.rating_at_promotion} · applied {r.times_applied}×</span>
                     </div>
                     <pre className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap text-[10px] text-muted-foreground">{r.prompt_template}</pre>
@@ -116,7 +116,7 @@ export default function KnowledgeMapCell() {
               <ul className="mt-3 space-y-2">
                 {data.overrides.map((o) => (
                   <li key={o.id} className="flex items-center justify-between border border-border p-2 text-xs">
-                    <span className="font-mono">{o.prompt_name}</span>
+                    <span className="font-sans">{o.prompt_name}</span>
                     <span className="text-muted-foreground">{o.body_hash.slice(0, 10)}…</span>
                   </li>
                 ))}

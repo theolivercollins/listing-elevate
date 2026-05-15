@@ -5,10 +5,10 @@ import type { LearningData, PromptRevision } from "@/lib/types";
 import { fetchLearningData, fetchPromptRevisions } from "@/lib/api";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 
 const Learning = () => {
   const [learning, setLearning] = useState<LearningData | null>(null);
@@ -135,7 +135,7 @@ const Learning = () => {
                       <div className="tabular text-[10px] uppercase text-muted-foreground">
                         {w.room_type.replace(/_/g, " ")} · {w.camera_movement.replace(/_/g, " ")} · {w.provider ?? "—"}
                       </div>
-                      <p className="mt-1 font-mono text-xs leading-snug">{w.prompt}</p>
+                      <p className="mt-1 font-sans text-xs leading-snug">{w.prompt}</p>
                       {w.comment && (
                         <p className="mt-2 text-xs italic text-muted-foreground">"{w.comment}"</p>
                       )}
@@ -180,7 +180,7 @@ const Learning = () => {
                       <div className="tabular text-[10px] uppercase text-muted-foreground">
                         {l.room_type.replace(/_/g, " ")} · {l.camera_movement.replace(/_/g, " ")} · {l.provider ?? "—"}
                       </div>
-                      <p className="mt-1 font-mono text-xs leading-snug">{l.prompt}</p>
+                      <p className="mt-1 font-sans text-xs leading-snug">{l.prompt}</p>
                       {l.comment && (
                         <p className="mt-2 text-xs italic text-destructive">"{l.comment}"</p>
                       )}
@@ -299,7 +299,7 @@ const Learning = () => {
                           )}
                         </button>
                         {isOpen && (
-                          <pre className="mb-4 max-h-[500px] overflow-auto border border-border/50 bg-secondary/30 p-4 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+                          <pre className="mb-4 max-h-[500px] overflow-auto border border-border/50 bg-secondary/30 p-4 text-[11px] font-sans leading-relaxed whitespace-pre-wrap">
                             {rev.body}
                           </pre>
                         )}

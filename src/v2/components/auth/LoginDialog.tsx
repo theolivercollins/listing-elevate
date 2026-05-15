@@ -15,7 +15,7 @@ export interface LoginDialogProps {
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const eyebrowStyle: React.CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",

@@ -8,10 +8,10 @@ import "@/v2/styles/v2.css";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
+const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 28, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
 
 function formatCents(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
@@ -103,7 +103,7 @@ export default function AccountBilling() {
             </div>
           </div>
           <div className="mt-10 border-t border-border">
-            <div className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em" }}>
+            <div className="grid grid-cols-[3fr_1fr_1fr_1fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)", fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.18em" }}>
               <span style={EYEBROW}>Property</span>
               <span style={EYEBROW}>Status</span>
               <span style={EYEBROW}>Date</span>

@@ -194,7 +194,7 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
 
   return (
     <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>Admin actions</span>
+      <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>Admin actions</span>
       <button
         type="button"
         style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
@@ -421,18 +421,18 @@ const PropertyDetail = () => {
             <div style={{ position: "absolute", inset: 0, padding: "32px 0", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
               <Link
                 to="/dashboard/properties"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-sans)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
               >
                 <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
               </Link>
               <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: isPolling ? "rgba(80,220,120,0.9)" : "rgba(255,255,255,0.55)" }}>
+                    <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: isPolling ? "rgba(80,220,120,0.9)" : "rgba(255,255,255,0.55)" }}>
                       {property.status.replace(/_/g, " ")}
                     </span>
                     {isPolling && (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.14em", color: "rgba(80,220,120,0.9)" }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.14em", color: "rgba(80,220,120,0.9)" }}>
                         <span style={{ width: 6, height: 6, borderRadius: "50%", background: "rgba(80,220,120,0.9)", animation: "le-pulse 1.6s ease-in-out infinite", display: "inline-block" }} />
                         LIVE
                       </span>
@@ -441,7 +441,7 @@ const PropertyDetail = () => {
                   <h1 style={{ fontSize: "clamp(28px, 4vw, 52px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
                     {property.address}
                   </h1>
-                  <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}>
+                  <p style={{ marginTop: 12, fontFamily: "var(--le-font-sans)", fontSize: 11, letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}>
                     ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
                   </p>
                 </div>
@@ -463,19 +463,19 @@ const PropertyDetail = () => {
           <div style={{ padding: "32px 0" }}>
             <Link
               to="/dashboard/properties"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-sans)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
             >
               <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
             </Link>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
               <div>
-                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", display: "block", marginBottom: 12 }}>
+                <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", display: "block", marginBottom: 12 }}>
                   {property.status.replace(/_/g, " ")}
                 </span>
                 <h1 style={{ fontSize: "clamp(28px, 4vw, 48px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
                   {property.address}
                 </h1>
-                <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, color: "rgba(255,255,255,0.62)" }}>
+                <p style={{ marginTop: 12, fontFamily: "var(--le-font-sans)", fontSize: 11, color: "rgba(255,255,255,0.62)" }}>
                   ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
                 </p>
               </div>
@@ -501,8 +501,8 @@ const PropertyDetail = () => {
           { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
         ].map((s, i) => (
           <div key={s.label} style={{ padding: "20px 24px", borderRight: i < 3 ? "1px solid rgba(220,230,255,0.09)" : "none" }}>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", display: "block" }}>{s.label}</span>
-            <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff", marginTop: 8 }}>{s.value}</div>
+            <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", display: "block" }}>{s.label}</span>
+            <div style={{ fontFamily: "var(--le-font-sans)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff", marginTop: 8 }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -510,7 +510,7 @@ const PropertyDetail = () => {
       {/* Deliverables */}
       {deliverables.length > 0 && (
         <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Deliverables</span>
+          <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Deliverables</span>
           <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
             {deliverables.length} {deliverables.length === 1 ? "clip" : "clips"} ready
           </h3>
@@ -555,7 +555,7 @@ const PropertyDetail = () => {
       {/* Cost breakdown */}
       {costEvents.length > 0 && (
         <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Costs</span>
+          <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Costs</span>
           <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
             Real per-call breakdown · <span style={{ color: "rgba(255,255,255,0.62)" }}>{formatCents(costTotalCents)}</span>
           </h3>
@@ -602,7 +602,7 @@ const PropertyDetail = () => {
               key={tab}
               type="button"
               onClick={() => { setActiveTab(tab); if (tab === "prompts") loadPrompts(); }}
-              style={{ padding: "12px 20px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "#fff" : "rgba(255,255,255,0.45)", background: "none", border: "none", borderBottom: active ? "1px solid #fff" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
+              style={{ padding: "12px 20px", fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "#fff" : "rgba(255,255,255,0.45)", background: "none", border: "none", borderBottom: active ? "1px solid #fff" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
             >
               {labels[tab]}
             </button>
@@ -722,7 +722,7 @@ const PropertyDetail = () => {
                           {copiedScene === scene.id ? "Copied" : "Copy"}
                         </button>
                       </div>
-                      <pre className="whitespace-pre-wrap p-4 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
+                      <pre className="whitespace-pre-wrap p-4 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-sans)", fontSize: 11 }}>
                         {scene.prompt}
                       </pre>
                     </div>
@@ -784,7 +784,7 @@ const PropertyDetail = () => {
                   <div
                     key={log.id}
                     className="grid grid-cols-[80px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed"
-                    style={{ fontFamily: "var(--le-font-mono)" }}
+                    style={{ fontFamily: "var(--le-font-sans)" }}
                   >
                     <span className="tabular text-muted-foreground/60">
                       {new Date(log.created_at).toLocaleTimeString([], {
@@ -840,10 +840,10 @@ const PropertyDetail = () => {
               { label: "QC evaluator", desc: "Used to judge generated clips. Currently auto-passing pending frame-extraction infra.", body: prompts.qc },
             ].map((p) => (
               <section key={p.label}>
-                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— {p.label}</span>
+                <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— {p.label}</span>
                 <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>{p.label}</h3>
                 <p className="mt-2 text-xs text-muted-foreground">{p.desc}</p>
-                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap p-5 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
+                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap p-5 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-sans)", fontSize: 11 }}>
                   {p.body}
                 </pre>
               </section>

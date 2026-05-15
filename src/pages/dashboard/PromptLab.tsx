@@ -892,7 +892,7 @@ function SelectionColumn({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {i.rank != null && (
-                    <span className="font-mono text-[10px] tabular-nums text-muted-foreground">#{i.rank}</span>
+                    <span className="font-sans text-[10px] tabular-nums text-muted-foreground">#{i.rank}</span>
                   )}
                   <span className="truncate text-[11px] font-semibold">
                     {i.room_type ? i.room_type.replace(/_/g, " ") : "?"}
@@ -1333,7 +1333,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
               >
                 <ArrowLeft className="h-4 w-4" />
               </button>
-              <span className="px-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span className="px-1 font-sans text-[10px] tabular-nums text-muted-foreground">
                 {siblingIndex >= 0 ? siblingIndex + 1 : "?"}/{siblings.length}
               </span>
               <button
@@ -1554,7 +1554,7 @@ function PromoteRecipeControl({
         <Input
           value={archetype}
           onChange={(e) => setArchetype(e.target.value)}
-          className="mt-1 font-mono text-xs"
+          className="mt-1 font-sans text-xs"
         />
       </div>
       <div>
@@ -1562,7 +1562,7 @@ function PromoteRecipeControl({
         <Textarea
           value={tmpl}
           onChange={(e) => setTmpl(e.target.value)}
-          className="mt-1 min-h-[60px] font-mono text-xs"
+          className="mt-1 min-h-[60px] font-sans text-xs"
         />
       </div>
       {err && <div className="text-xs text-destructive">{err}</div>}
@@ -2057,7 +2057,7 @@ function IterationCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="label text-muted-foreground">Iteration {iteration.iteration_number}</span>
           {iteration.order_id && (
-            <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
+            <span className="rounded bg-muted/60 px-1.5 py-0.5 font-sans text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
               {iteration.order_id}
             </span>
           )}
@@ -2109,7 +2109,7 @@ function IterationCard({
             </span>
             <span className="text-muted-foreground">{director.duration_seconds}s</span>
           </div>
-          <p className="mt-2 font-mono text-sm leading-relaxed">{director.prompt}</p>
+          <p className="mt-2 font-sans text-sm leading-relaxed">{director.prompt}</p>
         </div>
       )}
 
@@ -2293,7 +2293,7 @@ function IterationCard({
                 </option>
               ))}
             </select>
-            <span className="rounded bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+            <span className="rounded bg-muted px-2 py-0.5 font-sans text-[10px] text-muted-foreground">
               {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
             </span>
           </div>

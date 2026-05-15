@@ -7,7 +7,7 @@ import { fetchLogs } from "@/lib/api";
 import "@/v2/styles/v2.css";
 
 const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -172,7 +172,7 @@ const Logs = () => {
                 <div
                   key={log.id}
                   className="grid grid-cols-[80px_140px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed transition-colors hover:bg-secondary"
-                  style={{ fontFamily: "var(--le-font-mono)" }}
+                  style={{ fontFamily: "var(--le-font-sans)" }}
                 >
                   <span className="text-muted-foreground/60">
                     {new Date(log.created_at).toLocaleTimeString([], {

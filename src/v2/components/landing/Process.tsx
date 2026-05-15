@@ -88,7 +88,7 @@ export function Process() {
             >
               <span
                 style={{
-                  fontFamily: "var(--le-font-mono)",
+                  fontFamily: "var(--le-font-sans)",
                   fontSize: 11,
                   letterSpacing: "0.18em",
                   color: "var(--le-text-faint)",

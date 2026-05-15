@@ -227,7 +227,7 @@ const Development = () => {
               return (
                 <div key={p.prompt_name} className="border border-border bg-background p-4 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="font-mono font-medium">{p.prompt_name}</span>
+                    <span className="font-sans font-medium">{p.prompt_name}</span>
                     <span className="text-muted-foreground">v{latest?.version ?? "—"}</span>
                   </div>
                   <div className="mt-1 text-muted-foreground">
@@ -263,7 +263,7 @@ const Development = () => {
             <div className="mt-4 text-sm text-muted-foreground">
               Movement-first, room-type as tiebreaker. See <code className="text-xs">lib/providers/router.ts</code>.
             </div>
-            <div className="mt-3 grid gap-1 text-xs font-mono">
+            <div className="mt-3 grid gap-1 text-xs font-sans">
               <div>push_in / pull_out / drone_* / top_down / feature_closeup → Runway</div>
               <div>orbit (interior) → Kling · orbit (exterior/aerial) → Runway</div>
               <div>dolly_* / parallax / reveal / low_angle_glide → Kling</div>
@@ -272,7 +272,7 @@ const Development = () => {
 
           <div className="border border-border bg-background p-6">
             <div className="label text-muted-foreground">Camera vocabulary (11 active verbs)</div>
-            <div className="mt-3 font-mono text-xs">
+            <div className="mt-3 font-sans text-xs">
               push_in · pull_out · orbit · parallax · dolly_left_to_right · dolly_right_to_left · reveal · drone_push_in · drone_pull_back · top_down · low_angle_glide · feature_closeup
             </div>
             <div className="mt-3 text-xs text-muted-foreground">
@@ -282,7 +282,7 @@ const Development = () => {
 
           <div className="border border-border bg-background p-6">
             <div className="label text-muted-foreground">Key tables</div>
-            <div className="mt-3 grid gap-2 text-xs font-mono">
+            <div className="mt-3 grid gap-2 text-xs font-sans">
               <div><span className="text-muted-foreground">properties</span> — address, price, status, cost, horizontal/vertical video urls, style_guide jsonb, pipeline_started_at</div>
               <div><span className="text-muted-foreground">photos</span> — room_type, quality/aesthetic, depth_rating, key_features[], composition, video_viable, suggested_motion</div>
               <div><span className="text-muted-foreground">scenes</span> — prompt, camera_movement, provider, provider_task_id, clip_url, status</div>
