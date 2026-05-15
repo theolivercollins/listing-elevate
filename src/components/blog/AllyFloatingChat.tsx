@@ -6,11 +6,15 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowUp, Check, Eye, FileText, Globe, Image as ImageIcon, Loader2, MessageSquare,
-  Paperclip, Plus, RotateCcw, Sparkles, Wand2, X,
+  ArrowUp, Brain, Check, Eye, FileText, Globe, Image as ImageIcon, Loader2, MessageSquare,
+  Paperclip, Plus, RotateCcw, Sparkles, Trash2, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { aiChat, type AIChatMessage, type AIResearchSource } from "@/lib/blog/api-client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  aiChat, listAllyMemories, deleteAllyMemory,
+  type AIChatMessage, type AIResearchSource,
+} from "@/lib/blog/api-client";
 import type { AIAttachment } from "@/lib/blog/types";
 import { AllyThinking, AutoGrowTextarea } from "./ally-status";
 import {
@@ -126,6 +130,20 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
   const scrollerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const qc = useQueryClient();
+  // Memories panel — what Ally has been told to remember (site-wide, not per-post).
+  const { data: memoriesData } = useQuery({
+    queryKey: ["ally-memories"],
+    queryFn: () => listAllyMemories(),
+    enabled: open,
+  });
+  const memories = memoriesData?.memories ?? [];
+  const delMemory = useMutation({
+    mutationFn: (id: string) => deleteAllyMemory(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ally-memories"] }),
+    onError: (e: any) => toast.error(`Couldn't forget: ${e?.message ?? e}`),
+  });
+
   // Save thread to localStorage on every change (debounced via React batching).
   useEffect(() => {
     savePersisted(postId, {
@@ -217,6 +235,10 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
           const seen = new Set(prev.map((s) => s.url));
           return [...prev, ...r.research_sources.filter((s) => !seen.has(s.url))];
         });
+      }
+      if (r.new_memory) {
+        toast.success(`Got it. I'll remember: "${r.new_memory.content.slice(0, 80)}${r.new_memory.content.length > 80 ? "…" : ""}"`);
+        qc.invalidateQueries({ queryKey: ["ally-memories"] });
       }
     },
     onError: (e: any) => {
@@ -405,6 +427,51 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   ${(totalCostCents / 100).toFixed(3)}
                 </span>
               )}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="relative rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label="Ally's memory"
+                    title={memories.length ? `Ally remembers ${memories.length} note${memories.length === 1 ? "" : "s"}` : "Ally's memory"}
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    {memories.length > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-medium text-primary-foreground">
+                        {memories.length}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-2">
+                  <div className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">
+                    Ally remembers ({memories.length})
+                  </div>
+                  {memories.length === 0 ? (
+                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                      Tell Ally to remember something — e.g. "from now on use Brian as the default author" — and it'll show up here.
+                    </div>
+                  ) : (
+                    <ul className="max-h-72 space-y-1 overflow-y-auto">
+                      {memories.map((m) => (
+                        <li key={m.id} className="group flex items-start gap-2 rounded-md p-2 hover:bg-muted">
+                          <span className="flex-1 text-xs leading-snug">{m.content}</span>
+                          <button
+                            type="button"
+                            onClick={() => delMemory.mutate(m.id)}
+                            disabled={delMemory.isPending}
+                            className="invisible rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:visible"
+                            aria-label="Forget this"
+                            title="Forget this"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </PopoverContent>
+              </Popover>
               {(messages.length > 0 || proposals.length > 0) && (
                 <button
                   type="button"

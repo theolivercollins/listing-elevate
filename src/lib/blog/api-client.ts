@@ -248,6 +248,26 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
   return asJson(res);
 }
 
+// Ally persistent memory (per-site facts the user told her to remember).
+export interface AllyMemory {
+  id: string;
+  site_id: string;
+  content: string;
+  created_at: string;
+  active: boolean;
+}
+export async function listAllyMemories(): Promise<{ memories: AllyMemory[] }> {
+  const res = await fetch("/api/blog/ai/memories", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function deleteAllyMemory(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/ai/memories?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  return asJson(res);
+}
+
 // AI multi-turn chat — builds a post conversationally.
 export interface AIChatMessage { role: "user" | "assistant"; content: string; }
 export interface AIResearchSource { url: string; title: string; snippet?: string; }
@@ -274,6 +294,7 @@ export interface AIChatResponse {
   action: "publish" | "save_draft" | null;
   suggest_research: boolean;
   changes_summary: string | null;
+  new_memory: { id: string; content: string } | null;
   research_sources: AIResearchSource[];
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
