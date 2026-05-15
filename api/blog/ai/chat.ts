@@ -9,6 +9,8 @@ import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { recordBlogCost } from "../../../lib/blog-engine/cost.js";
 import { researchTopic, type ResearchSource } from "../../../lib/blog-engine/gemini-research.js";
+import { listMemories, addMemory, memoriesAsPromptBlock, type AllyMemory } from "../../../lib/blog-engine/ally-memory.js";
+import { SOURCE_RULE_TEXT } from "../../../lib/blog-engine/source-allowlist.js";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
@@ -62,12 +64,18 @@ interface ChatResponse {
    * Null when nothing substantive changed. Client renders it under proposal cards.
    */
   changes_summary: string | null;
+  /**
+   * A new persistent memory Ally has just stored (the user asked her to
+   * remember something). Null when nothing new was stored. Client surfaces
+   * a toast / chip so the user sees the memory took effect.
+   */
+  new_memory: { id: string; content: string } | null;
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
 }
 
-const BASE_SYSTEM_PROMPT = `You are a senior real-estate blog editor working with The Helgemo Team in Punta Gorda, Florida. You manage every part of the post (title, body, meta, author, category) on behalf of the user — they may also edit fields directly, in which case respect what's there.
+const BASE_SYSTEM_PROMPT = `You are Ally, the senior real-estate blog editor working with The Helgemo Team in Punta Gorda, Florida. You manage every part of the post (title, body, meta, author, category) on behalf of the user — they may also edit fields directly, in which case respect what's there.
 
 OUTPUT FORMAT — STRICT.
 
@@ -128,6 +136,12 @@ Examples of good bullets:
 - Updated the May 2026 median price stat from $385K to $392K (per researched data)
 Omit this section when you didn't change anything substantive (e.g. you only asked a clarifying question and the placeholder body is unchanged).
 </changes_summary>
+
+<ally_remember>
+One short fact the user just asked you to remember (max 500 chars). Emit ONLY when the user explicitly tells you to remember, save, take note, or "from now on" something — e.g. "remember that we always include a flood-zone callout in beach posts", "from now on use Brian as the default author", "make a note that our office is moving to 123 Marion Ave on June 1". Don't fabricate memories from inference — only when the user is explicit. The note gets stored persistently and shown back to you in every future chat. Omit this section in normal turns.
+</ally_remember>
+
+${SOURCE_RULE_TEXT}
 
 Rules:
 - <post_body> is REQUIRED on every turn and must be the full current draft, never a diff. If the user said hi or is still scoping, put a placeholder like "<p>Tell me more about what this post should cover.</p>" inside <post_body>.
@@ -209,6 +223,7 @@ function parseSections(text: string) {
   const suggestResearchRaw = extractTag(text, "ally_suggest_research");
   const suggest_research = suggestResearchRaw?.toLowerCase().trim() === "true";
   const changes_summary = extractTag(text, "changes_summary");
+  const remember_fact = extractTag(text, "ally_remember");
 
   // Last resort — if we still have no body but the message contains an
   // HTML-looking blob (e.g. the model emitted raw HTML next to the prose
@@ -232,14 +247,14 @@ function parseSections(text: string) {
       reply: text.trim(), body_html: "",
       title: null, meta_title: null, meta_description: null, meta_tags: null,
       author: null, category: null, action: null, suggest_research: false,
-      changes_summary: null,
+      changes_summary: null, remember_fact: null,
     };
   }
 
   return {
     reply, body_html: body_html ?? "",
     title, meta_title, meta_description, meta_tags, author, category, action,
-    suggest_research, changes_summary,
+    suggest_research, changes_summary, remember_fact,
   };
 }
 
@@ -270,8 +285,16 @@ async function buildSystemPrompt(opts: {
   templateId: string | null;
   includeRecentPosts: boolean;
   latestUserMessage: string;
+  siteId: string;
 }): Promise<string> {
   let prompt = BASE_SYSTEM_PROMPT;
+
+  // Persistent memories the user has told Ally to remember — always at the
+  // top of the additional context, before template / archive, since they
+  // override defaults.
+  const memories = await listMemories(opts.supabase, opts.siteId);
+  const memoryBlock = memoriesAsPromptBlock(memories);
+  if (memoryBlock) prompt += `\n\n${memoryBlock}`;
 
   if (opts.templateId) {
     const { data: tpl } = await opts.supabase
@@ -385,6 +408,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const currentHtml = typeof b.current_html === "string" ? b.current_html.slice(0, MAX_DRAFT_CHARS) : "";
 
+  // Resolve the single Sierra site once — used by memory, research cost,
+  // chat cost, and memory store below. Single-site for v1.
+  const { data: site } = await supabase
+    .from("blog_sites").select("id").eq("host_kind", "sierra").single();
+  const siteId = (site?.id ?? "") as string;
+
   // Resolve research mode. Legacy `research:boolean` overrides the default
   // when explicitly sent (preserves old client behavior). Otherwise the new
   // default is "auto" — Ally decides via keyword intent below.
@@ -421,14 +450,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const r = await researchTopic(latestUser.content);
         research = { summary: r.summary, sources: r.sources, cost_cents: r.cost_cents };
-        const { data: siteForCost } = await supabase
-          .from("blog_sites").select("id").eq("host_kind", "sierra").single();
-        if (siteForCost) {
+        if (siteId) {
           await recordBlogCost(supabase, {
             stage: "blog_research",
             cost_cents: r.cost_cents,
             post_id: null,
-            site_id: siteForCost.id,
+            site_id: siteId,
             provider: "gemini",
             metadata: {
               model: r.model,
@@ -452,6 +479,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     templateId: b.template_id ?? null,
     includeRecentPosts: b.include_recent_posts === true,
     latestUserMessage: latestUserContent,
+    siteId,
   });
   if (research) {
     const sourcesText = research.sources.length
@@ -515,13 +543,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const outTok = result.usage.output_tokens;
   const costCents = Math.ceil((inTok / 1_000_000) * 300 + (outTok / 1_000_000) * 1500);
 
-  const { data: site } = await supabase.from("blog_sites").select("id").eq("host_kind", "sierra").single();
-  if (site) {
+  if (siteId) {
     await recordBlogCost(supabase, {
       stage: "blog_ai_draft",
       cost_cents: costCents,
       post_id: null,
-      site_id: site.id,
+      site_id: siteId,
       provider: "anthropic",
       metadata: {
         model: MODEL,
@@ -533,8 +560,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         include_recent_posts: b.include_recent_posts === true,
         attachments_count: attachments.length,
         attachments_kinds: attachments.map((a) => a.kind),
+        research_mode: researchMode,
+        auto_research_triggered: !!research && researchMode === "auto",
       },
     });
+  }
+
+  // If Ally emitted a remember tag, persist it. Skip if siteId is missing
+  // (shouldn't happen but be defensive) or the content is empty.
+  let stored: AllyMemory | null = null;
+  if (siteId && parsed.remember_fact) {
+    stored = await addMemory(supabase, siteId, parsed.remember_fact);
   }
 
   const response: ChatResponse = {
@@ -550,6 +586,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Only surface the suggestion when research isn't already on — otherwise it'd be noise.
     suggest_research: parsed.suggest_research && !research,
     changes_summary: parsed.changes_summary,
+    new_memory: stored ? { id: stored.id, content: stored.content } : null,
     research_sources: research?.sources ?? [],
     cost_cents: costCents + (research?.cost_cents ?? 0),
     usage: { input_tokens: inTok, output_tokens: outTok },

@@ -11,6 +11,7 @@
 // free under the standard tier and the citation metadata comes back inline.
 
 import { GoogleGenAI } from "@google/genai";
+import { isAllowedSource } from "./source-allowlist.js";
 
 const MODEL = "gemini-2.5-flash";
 const MAX_SOURCES = 6;
@@ -46,13 +47,23 @@ function client(): GoogleGenAI {
   return _client;
 }
 
-const SYSTEM = `You are a research assistant for a Florida real-estate team. Use Google Search to gather CURRENT facts, statistics, and direct quotes relevant to the user's topic. Prioritise:
-- Public market reports (NAR, FAR, Stellar MLS, Redfin, Zillow, Realtor.com)
-- County / city government sources for permits, schools, demographics
-- Recent (last 90 days when possible) news from established outlets
-- Avoid hyper-local blogs, personal-agent posts, and content farms
+const SYSTEM = `You are a research assistant for The Helgemo Team, a Florida real-estate brokerage in Punta Gorda. Use Google Search to gather CURRENT facts, statistics, and direct quotes relevant to the user's topic.
 
-Return a tight 200-400 word summary covering the most useful facts. Quote exact numbers where possible. Don't speculate — if you can't verify a stat, say so.`;
+ALLOWED sources:
+- Real-estate portals: Realtor.com, Zillow, Redfin, Trulia, Homes.com
+- News outlets: Reuters, AP, Bloomberg, WSJ, NYT, MarketWatch, CNBC, local TV (WINK / NBC-2 / Fox 4), local papers (yoursun.com / Tampa Bay Times / Miami Herald)
+- Industry data: NAR, Florida Realtors, Stellar MLS, Freddie Mac, Fannie Mae, Inman, HousingWire
+- Government / institutional: any .gov or .edu domain (Charlotte County, City of Punta Gorda, etc.)
+
+FORBIDDEN sources — do NOT cite or summarise from these:
+- Other real estate agents, teams, or brokerages (Century 21, RE/MAX, KW, Coldwell Banker, Compass, eXp, Sotheby's, Douglas Elliman, etc.)
+- Any individual realtor's blog, "about us", "our agents", "meet the team" page
+- Any local Punta Gorda / Charlotte County competitor team site
+- Hyper-local blogs and content farms
+
+If a stat is ONLY available from a forbidden source, OMIT it and say "data not available". Never quote competitor sites.
+
+Return a tight 200-400 word summary covering the most useful facts. Quote exact numbers where possible. Don't speculate — if you can't verify a stat from an allowed source, say so.`;
 
 /**
  * Pull the citation URLs out of Gemini's groundingMetadata. Shape changed
@@ -113,7 +124,10 @@ export async function researchTopic(query: string): Promise<ResearchResult> {
   if (!text) throw new GeminiResearchError("Gemini returned no text");
 
   const summary = text.slice(0, MAX_SUMMARY_CHARS);
-  const sources = extractSources(response);
+  // Filter sources through the allowlist before returning. Gemini sometimes
+  // pulls in agent-site results despite the system-prompt rule — the filter
+  // is the belt to the prompt's suspenders.
+  const sources = extractSources(response).filter((s) => isAllowedSource(s.url));
 
   const usage = response?.usageMetadata ?? {};
   const inTok = usage?.promptTokenCount ?? 0;
