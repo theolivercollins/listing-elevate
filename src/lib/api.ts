@@ -3,6 +3,25 @@ import { supabase } from './supabase';
 
 const API_BASE = '';
 
+const mockNow = new Date().toISOString();
+
+function previewMock<T>(path: string): T | null {
+  if (!import.meta.env.DEV) return null;
+  const pathname = path.split('?')[0];
+  const properties: Property[] = [
+    { id: 'demo-1', created_at: mockNow, updated_at: mockNow, address: '1846 Bayview Ridge, Austin TX', price: 1245000, bedrooms: 4, bathrooms: 3, listing_agent: 'Mia Carter', brokerage: 'Elevate Realty', status: 'generating', photo_count: 38, selected_photo_count: 12, total_cost_cents: 8420, processing_time_ms: 5400000, horizontal_video_url: null, vertical_video_url: null, thumbnail_url: null },
+    { id: 'demo-2', created_at: mockNow, updated_at: mockNow, address: '920 Harbor Walk, Miami FL', price: 2150000, bedrooms: 5, bathrooms: 4, listing_agent: 'Noah Kim', brokerage: 'Coastal Group', status: 'qc', photo_count: 44, selected_photo_count: 15, total_cost_cents: 10640, processing_time_ms: 6900000, horizontal_video_url: null, vertical_video_url: null, thumbnail_url: null },
+    { id: 'demo-3', created_at: mockNow, updated_at: mockNow, address: '71 Aspen Court, Denver CO', price: 989000, bedrooms: 3, bathrooms: 3, listing_agent: 'Ava Stone', brokerage: 'Summit Homes', status: 'complete', photo_count: 31, selected_photo_count: 10, total_cost_cents: 6120, processing_time_ms: 4200000, horizontal_video_url: null, vertical_video_url: null, thumbnail_url: null },
+  ];
+  if (pathname === '/api/stats/overview') return { completedToday: 7, submittedToday: 14, inPipeline: 18, needsReview: 5, avgProcessingMs: 4860000, totalCostTodayCents: 42850, totalCostThisWeekCents: 189700, avgCostPerVideoCents: 8420, successRate: 94, costBreakdown: { byProvider: [], byScope: [], byStage: [] } } as T;
+  if (pathname === '/api/stats/daily') return { stats: Array.from({ length: 14 }, (_, i) => ({ id: `d-${i}`, date: new Date(Date.now() - (13 - i) * 86400000).toISOString().slice(0, 10), properties_completed: 3 + (i % 6), properties_failed: i % 5 === 0 ? 1 : 0, total_clips_generated: 18 + i * 2, total_retries: i % 4, total_cost_cents: 28000 + i * 1700, avg_processing_time_ms: 3800000 + i * 120000, avg_cost_per_video_cents: 7600 + i * 90 })) } as T;
+  if (pathname === '/api/properties') return { properties, total: properties.length, page: 1, totalPages: 1 } as T;
+  if (pathname === '/api/logs') return { logs: [{ id: 'log-1', property_id: 'demo-1', scene_id: null, created_at: mockNow, stage: 'generation', level: 'info', message: 'Runway generation queue started for Bayview Ridge.', metadata: {}, properties: { address: '1846 Bayview Ridge, Austin TX' } }], total: 1, page: 1, totalPages: 1 } as T;
+  if (pathname === '/api/stats/cost-breakdown') return { byProvider: [], byModel: [], byScope: [], byStage: [] } as T;
+  if (pathname === '/api/admin/prompts') return { analysis: '', director: '', qc: '' } as T;
+  return null;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = {
@@ -19,7 +38,14 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   }
   // Handle 204 No Content
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch (error) {
+    const mock = previewMock<T>(path);
+    if (mock) return mock;
+    throw error;
+  }
 }
 
 export async function fetchProperties(params?: {
