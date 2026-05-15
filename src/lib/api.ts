@@ -300,3 +300,21 @@ export async function skipScene(id: string): Promise<void> {
 export async function fetchSystemPrompts(): Promise<{ analysis: string; director: string; qc: string }> {
   return apiFetch('/api/admin/prompts');
 }
+
+export interface ModelHealthRow {
+  provider: string;
+  calls_24h: number;
+  failures_24h: number;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  last_at: string | null;
+}
+
+export interface ModelHealthResponse {
+  rows: ModelHealthRow[];
+  generated_at: string;
+}
+
+export async function fetchModelHealth(): Promise<ModelHealthResponse> {
+  return apiFetch('/api/admin/model-health');
+}

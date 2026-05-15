@@ -37,12 +37,25 @@ const TABS: Tab[] = [
   },
 ];
 
+// Render the sub-nav above the PageHeading so its Y position is constant
+// across all Lab pages (otherwise the nav appears to "bounce" because each
+// page has a different PageHeading height). Stays sticky just below the
+// dashboard top bar so it remains visible while scrolling.
+const STICKY: CSSProperties = {
+  position: "sticky",
+  top: 76,
+  zIndex: 18,
+  background: "var(--bg)",
+  padding: "10px 0 12px",
+  marginTop: -12,
+  marginBottom: 4,
+};
+
 const WRAP: CSSProperties = {
   display: "inline-flex",
   padding: 4,
   background: "rgba(11,11,16,0.04)",
   borderRadius: 999,
-  marginBottom: 24,
 };
 
 const ITEM_BASE: CSSProperties = {
@@ -61,23 +74,25 @@ const ITEM_BASE: CSSProperties = {
 export function LabSubNav() {
   const location = useLocation();
   return (
-    <nav style={WRAP} aria-label="Lab sub-navigation">
-      {TABS.map((t) => {
-        const active = t.match(location.pathname);
-        return (
-          <Link
-            key={t.to}
-            to={t.to}
-            style={{
-              ...ITEM_BASE,
-              background: active ? "var(--ink)" : "transparent",
-              color: active ? "var(--surface)" : "var(--muted)",
-            }}
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div style={STICKY}>
+      <nav style={WRAP} aria-label="Lab sub-navigation">
+        {TABS.map((t) => {
+          const active = t.match(location.pathname);
+          return (
+            <Link
+              key={t.to}
+              to={t.to}
+              style={{
+                ...ITEM_BASE,
+                background: active ? "var(--ink)" : "transparent",
+                color: active ? "var(--surface)" : "var(--muted)",
+              }}
+            >
+              {t.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
   );
 }

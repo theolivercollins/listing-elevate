@@ -24,20 +24,29 @@ const SECTIONS: SidebarSection[] = [
     label: "Studio",
     items: [
       { to: "/dashboard", label: "Overview", icon: "grid", end: true },
-      {
-        to: "/dashboard/studio",
-        label: "Operator studio",
-        icon: "play",
-        match: (p) => p.startsWith("/dashboard/studio"),
-      },
       { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
       { to: "/dashboard/properties", label: "Listings", icon: "home" },
       { to: "/dashboard/users", label: "Users", icon: "users" },
     ],
   },
   {
-    label: "Lab",
+    label: "Ops",
     items: [
+      {
+        to: "/dashboard/studio",
+        label: "Video studio",
+        icon: "play",
+        match: (p) => p.startsWith("/dashboard/studio"),
+      },
+      {
+        to: "/dashboard/blog/posts",
+        label: "Blog creator",
+        icon: "image",
+        match: (p) => p.startsWith("/dashboard/blog"),
+      },
+      { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
+      { to: "/dashboard/logs", label: "Logs", icon: "logs" },
+      { to: "/dashboard/development/system-status", label: "System status", icon: "activity" },
       {
         to: "/dashboard/development/prompt-lab",
         label: "Lab",
@@ -47,20 +56,6 @@ const SECTIONS: SidebarSection[] = [
           p.startsWith("/dashboard/development/proposals") ||
           p.startsWith("/dashboard/development/learning") ||
           p.startsWith("/dashboard/rating-ledger"),
-      },
-    ],
-  },
-  {
-    label: "Ops",
-    items: [
-      { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
-      { to: "/dashboard/logs", label: "Logs", icon: "logs" },
-      { to: "/dashboard/development/system-status", label: "System status", icon: "activity" },
-      {
-        to: "/dashboard/blog/posts",
-        label: "Blog studio",
-        icon: "image",
-        match: (p) => p.startsWith("/dashboard/blog"),
       },
       { to: "/dashboard/settings", label: "Settings", icon: "settings" },
     ],

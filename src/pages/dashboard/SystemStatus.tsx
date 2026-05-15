@@ -11,6 +11,7 @@ import {
   type SystemStatusFlag,
   type SkuAffinityResponse,
 } from "@/lib/systemStatusApi";
+import { fetchModelHealth, type ModelHealthResponse } from "@/lib/api";
 import { PageHeading, KpiCard, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
@@ -18,16 +19,23 @@ import { Icon } from "@/components/dashboard/icons";
 const REFRESH_MS = 30_000;
 
 export default function SystemStatus() {
+  const [tab, setTab] = useState<"health" | "models">("health");
   const [status, setStatus] = useState<SystemStatusResponse | null>(null);
   const [affinity, setAffinity] = useState<SkuAffinityResponse | null>(null);
+  const [modelHealth, setModelHealth] = useState<ModelHealthResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function reload() {
     try {
-      const [s, a] = await Promise.all([fetchSystemStatus(), fetchSkuAffinity()]);
+      const [s, a, mh] = await Promise.all([
+        fetchSystemStatus(),
+        fetchSkuAffinity(),
+        fetchModelHealth().catch(() => null),
+      ]);
       setStatus(s);
       setAffinity(a);
+      setModelHealth(mh);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -67,6 +75,39 @@ export default function SystemStatus() {
         }
       />
 
+      {/* In-page tab control */}
+      <nav
+        style={{
+          display: "inline-flex",
+          padding: 4,
+          background: "rgba(11,11,16,0.04)",
+          borderRadius: 999,
+          alignSelf: "flex-start",
+        }}
+        aria-label="System status sub-navigation"
+      >
+        {(["health", "models"] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 999,
+              fontSize: 12.5,
+              fontWeight: 500,
+              cursor: "pointer",
+              border: "none",
+              background: tab === t ? "var(--ink)" : "transparent",
+              color: tab === t ? "var(--surface)" : "var(--muted)",
+              transition: "background .15s, color .15s",
+            }}
+          >
+            {t === "health" ? "Health" : "Models"}
+          </button>
+        ))}
+      </nav>
+
       {error && (
         <div
           style={{
@@ -86,60 +127,64 @@ export default function SystemStatus() {
         </div>
       )}
 
-      {loading && !status ? (
-        <div style={{ padding: "80px 0", textAlign: "center" }}>
-          <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
-        </div>
-      ) : status ? (
-        <>
-          {/* Hero health card */}
-          <Card padding={20}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span
-                className="le-dot-pulse"
-                style={{
-                  display: "inline-block",
-                  width: 10,
-                  height: 10,
-                  borderRadius: 99,
-                  background: hasDegraded ? "var(--warn)" : "var(--good)",
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontSize: 18,
-                  fontWeight: 600,
-                  letterSpacing: "-0.02em",
-                  color: "var(--ink)",
-                }}
-              >
-                {hasDegraded ? "Degraded — review alerts below" : "All systems operational"}
-              </span>
-            </div>
-            {hasDegraded && (
-              <p style={{ margin: "8px 0 0 22px", fontSize: 13, color: "var(--muted)" }}>
-                {status.queues.renders_orphan_over_30m > 0
-                  ? `${status.queues.renders_orphan_over_30m} render orphan(s) detected · failover may be active`
-                  : "One or more regressions detected — see alerts below"}
-              </p>
-            )}
-          </Card>
+      {tab === "health" ? (
+        loading && !status ? (
+          <div style={{ padding: "80px 0", textAlign: "center" }}>
+            <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
+          </div>
+        ) : status ? (
+          <>
+            {/* Hero health card */}
+            <Card padding={20}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span
+                  className="le-dot-pulse"
+                  style={{
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: 99,
+                    background: hasDegraded ? "var(--warn)" : "var(--good)",
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 18,
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {hasDegraded ? "Degraded — review alerts below" : "All systems operational"}
+                </span>
+              </div>
+              {hasDegraded && (
+                <p style={{ margin: "8px 0 0 22px", fontSize: 13, color: "var(--muted)" }}>
+                  {status.queues.renders_orphan_over_30m > 0
+                    ? `${status.queues.renders_orphan_over_30m} render orphan(s) detected · failover may be active`
+                    : "One or more regressions detected — see alerts below"}
+                </p>
+              )}
+            </Card>
 
-          <BudgetBar budget={status.budget} />
-          <KillSwitchSection flags={status.system_flags} onReload={reload} />
-          <AlertsSection
-            regressions={status.recent_regressions}
-            queues={status.queues}
-            affinity={affinity}
-          />
-          <ProviderSummarySection rows={status.provider_summary} />
-          <QueuesSection queues={status.queues} />
-          <AffinitySection affinity={affinity} />
-          <FeedbackLogSection rows={status.feedback_log} />
-          <LiveFeedSection events={status.events} />
-        </>
-      ) : null}
+            <BudgetBar budget={status.budget} />
+            <KillSwitchSection flags={status.system_flags} onReload={reload} />
+            <AlertsSection
+              regressions={status.recent_regressions}
+              queues={status.queues}
+              affinity={affinity}
+            />
+            <ProviderSummarySection rows={status.provider_summary} />
+            <QueuesSection queues={status.queues} />
+            <AffinitySection affinity={affinity} />
+            <FeedbackLogSection rows={status.feedback_log} />
+            <LiveFeedSection events={status.events} />
+          </>
+        ) : null
+      ) : (
+        <ModelsView data={modelHealth} loading={loading} />
+      )}
     </div>
   );
 }
@@ -832,6 +877,171 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
         </div>
       )}
     </Card>
+  );
+}
+
+// ── Models view ───────────────────────────────────────────
+
+function ModelsView({ data, loading }: { data: ModelHealthResponse | null; loading: boolean }) {
+  if (loading && !data) {
+    return (
+      <div style={{ padding: "80px 0", textAlign: "center" }}>
+        <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
+      </div>
+    );
+  }
+
+  const rows = data?.rows ?? [];
+
+  if (rows.length === 0) {
+    return (
+      <div
+        style={{
+          padding: "48px 24px",
+          textAlign: "center",
+          fontSize: 13,
+          color: "var(--muted)",
+          border: "1px dashed var(--line)",
+          borderRadius: "var(--radius-sm)",
+        }}
+      >
+        No model calls in the last 24 hours.
+      </div>
+    );
+  }
+
+  // KPI aggregates
+  const totalCalls = rows.reduce((s, r) => s + r.calls_24h, 0);
+  const totalFailures = rows.reduce((s, r) => s + r.failures_24h, 0);
+
+  // Weighted uptime: weight each provider by its call count
+  const weightedUptime =
+    totalCalls > 0
+      ? rows.reduce((s, r) => {
+          const uptime = r.calls_24h > 0 ? (1 - r.failures_24h / r.calls_24h) * 100 : 100;
+          return s + uptime * r.calls_24h;
+        }, 0) / totalCalls
+      : 100;
+
+  // Median p50 across providers that have latency data
+  const p50s = rows.map((r) => r.p50_ms).filter((v): v is number => v != null);
+  const avgP50 = p50s.length > 0 ? Math.round(p50s.reduce((a, b) => a + b, 0) / p50s.length) : null;
+
+  return (
+    <>
+      {/* KPI row */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+        <KpiCard
+          label="Avg latency · p50"
+          value={avgP50 != null ? `${avgP50.toLocaleString()} ms` : "—"}
+          sub="median across providers with data"
+        />
+        <KpiCard
+          label="Uptime · 24h"
+          value={`${weightedUptime.toFixed(1)}%`}
+          sub="weighted by call volume"
+        />
+        <KpiCard label="Calls · 24h" value={totalCalls.toLocaleString()} />
+        <KpiCard
+          label="Failures · 24h"
+          value={String(totalFailures)}
+          sub={totalFailures > 0 ? "rows with metadata.error set" : "none recorded"}
+        />
+      </section>
+
+      {/* Per-provider table */}
+      <Card padding={0}>
+        {/* Header row */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "140px 90px 90px 90px 90px 1fr",
+            gap: 12,
+            padding: "10px 14px",
+            borderBottom: "1px solid var(--line-2)",
+          }}
+        >
+          {["Provider", "Latency p50", "Latency p95", "Uptime", "Calls (24h)", "Last call"].map((h, i) => (
+            <span
+              key={h}
+              className="le-d-label"
+              style={{ textAlign: i >= 1 && i <= 4 ? "right" : undefined }}
+            >
+              {h}
+            </span>
+          ))}
+        </div>
+
+        {rows.map((r, idx) => {
+          const uptimePct = r.calls_24h > 0 ? (1 - r.failures_24h / r.calls_24h) * 100 : 100;
+          const dotColor =
+            uptimePct >= 99 ? "var(--good)" : uptimePct >= 95 ? "var(--warn)" : "var(--bad)";
+
+          return (
+            <div
+              key={r.provider}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "140px 90px 90px 90px 90px 1fr",
+                gap: 12,
+                padding: "12px 14px",
+                borderBottom: idx === rows.length - 1 ? "none" : "1px solid var(--line-2)",
+                alignItems: "center",
+                fontSize: 12.5,
+                fontVariantNumeric: "tabular-nums",
+                transition: "background .15s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(11,11,16,0.02)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+            >
+              {/* Provider + status dot */}
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 6,
+                    height: 6,
+                    borderRadius: 99,
+                    background: dotColor,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>{r.provider}</span>
+              </span>
+
+              {/* Latency p50 */}
+              <span style={{ textAlign: "right", color: "var(--ink)" }}>
+                {r.p50_ms != null ? `${r.p50_ms.toLocaleString()} ms` : "—"}
+              </span>
+
+              {/* Latency p95 */}
+              <span style={{ textAlign: "right", color: "var(--ink)" }}>
+                {r.p95_ms != null ? `${r.p95_ms.toLocaleString()} ms` : "—"}
+              </span>
+
+              {/* Uptime */}
+              <span
+                style={{
+                  textAlign: "right",
+                  color: dotColor,
+                  fontWeight: 600,
+                }}
+              >
+                {uptimePct.toFixed(1)}%
+              </span>
+
+              {/* Calls 24h */}
+              <span style={{ textAlign: "right" }}>{r.calls_24h.toLocaleString()}</span>
+
+              {/* Last call */}
+              <span style={{ color: "var(--muted)" }}>
+                {r.last_at ? fmtTime(r.last_at) : "—"}
+              </span>
+            </div>
+          );
+        })}
+      </Card>
+    </>
   );
 }
 

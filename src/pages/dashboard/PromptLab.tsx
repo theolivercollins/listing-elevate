@@ -225,12 +225,12 @@ function SessionList() {
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <LabSubNav />
       <PageHeading
         eyebrow="Lab"
         title="Prompt Lab"
         sub="Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway."
       />
-      <LabSubNav />
 
       <FileDropZone
         uploading={uploading}

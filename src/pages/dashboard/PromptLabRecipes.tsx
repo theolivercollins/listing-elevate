@@ -48,8 +48,8 @@ const PromptLabRecipes = () => {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-      <PageHeading eyebrow="Lab" title="Recipe library" />
       <LabSubNav />
+      <PageHeading eyebrow="Lab" title="Recipe library" />
 
       {error && (
         <div

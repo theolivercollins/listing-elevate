@@ -87,6 +87,8 @@ const PromptProposals = () => {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
+      <LabSubNav />
+
       <PageHeading
         eyebrow="Lab"
         title="Prompt proposals"
@@ -121,7 +123,6 @@ const PromptProposals = () => {
           </div>
         }
       />
-      <LabSubNav />
 
       <p style={{ fontSize: 13, color: "var(--muted)", marginTop: -8, lineHeight: 1.6 }}>
         Aggregates Lab ratings over the window, asks Claude to propose specific edits to the DIRECTOR_SYSTEM based on winner/loser patterns. Each change cites the iterations that justify it. Applied proposals become active lab_prompt_overrides — production stays unaffected.

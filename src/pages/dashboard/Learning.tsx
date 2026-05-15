@@ -79,12 +79,12 @@ const Learning = () => {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
+      <LabSubNav />
       <PageHeading
         eyebrow="Lab"
         title="Learning &amp; changelog"
         sub="Every rated scene feeds into the next director run as in-context learning. The changelog tracks how system prompts have evolved."
       />
-      <LabSubNav />
 
       {/* KPI strip */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>

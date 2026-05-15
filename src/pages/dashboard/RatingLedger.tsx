@@ -168,13 +168,14 @@ export default function RatingLedger() {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
+      <LabSubNav />
+
       {/* Page heading */}
       <PageHeading
         eyebrow="Lab"
         title="Rating ledger"
         sub="Every rated iteration across legacy Lab, Listings Lab, and production scenes. Filter by surface, SKU, rating, or comment to spot routing wins and regressions."
       />
-      <LabSubNav />
 
       {/* KPI strip */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
