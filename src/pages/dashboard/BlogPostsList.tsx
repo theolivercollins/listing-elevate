@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,18 +10,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { deletePost, listPosts, listTemplates } from "@/lib/blog/api-client";
+import { listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
 import {
   Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown, Trash2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { DeletePostDialog } from "@/components/blog/DeletePostDialog";
 
 const STATE_FILTERS: Array<{ label: string; value: BlogPostState | "all" }> = [
   { label: "All", value: "all" },
   { label: "Drafts", value: "awaiting_approval" },
   { label: "Live", value: "live" },
+  { label: "On hold", value: "on_hold" },
   { label: "Quarantined", value: "quarantined" },
 ];
 
@@ -48,19 +49,7 @@ export default function BlogPostsList() {
 
   const posts = data?.posts ?? [];
   const qc = useQueryClient();
-  const del = useMutation({
-    mutationFn: (postId: string) => deletePost(postId),
-    onSuccess: () => {
-      toast.success("Deleted");
-      qc.invalidateQueries({ queryKey: ["blog-posts-list"] });
-    },
-    onError: (e: any) => toast.error(`Delete failed: ${e.message}`),
-  });
-
-  function confirmDelete(postId: string, title: string) {
-    if (!window.confirm(`Delete "${title}"? Removes it from this dashboard. The published copy on Sierra is not affected.`)) return;
-    del.mutate(postId);
-  }
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; hasSierra: boolean } | null>(null);
 
   return (
     <div>
@@ -134,6 +123,15 @@ export default function BlogPostsList() {
         <Input placeholder="Search title…" value={q} onChange={e => setQ(e.target.value)} className="max-w-xs" />
       </div>
 
+      <DeletePostDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        postId={deleteTarget?.id ?? null}
+        postTitle={deleteTarget?.title ?? ""}
+        hasSierraCopy={deleteTarget?.hasSierra ?? false}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ["blog-posts-list"] })}
+      />
+
       <div className="rounded-md border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-left text-xs">
@@ -161,10 +159,9 @@ export default function BlogPostsList() {
                     )}
                     <button
                       type="button"
-                      onClick={() => confirmDelete(p.id, p.title)}
-                      disabled={del.isPending}
+                      onClick={() => setDeleteTarget({ id: p.id, title: p.title, hasSierra: !!p.external_post_url })}
                       aria-label="Delete post"
-                      className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                      className="text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -183,6 +180,7 @@ function StatePill({ state }: { state: BlogPostState }) {
   const color = state === "live" ? "bg-green-100 text-green-800" :
                 state === "quarantined" ? "bg-red-100 text-red-800" :
                 state === "awaiting_approval" ? "bg-amber-100 text-amber-800" :
+                state === "on_hold" ? "bg-slate-200 text-slate-800" :
                 "bg-muted text-muted-foreground";
   return <span className={`inline-block rounded px-2 py-0.5 text-xs ${color}`}>{state}</span>;
 }

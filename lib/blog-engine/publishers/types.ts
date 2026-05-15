@@ -10,6 +10,10 @@ export interface EditResult {
   external_post_url: string;
 }
 
+export interface UnpublishResult {
+  removed: boolean;
+}
+
 export interface TaxonomyResult {
   authors: TaxonomyOption[];
   categories: TaxonomyOption[];
@@ -18,6 +22,7 @@ export interface TaxonomyResult {
 export interface Publisher {
   publish(post: BlogPost, opts: PublisherOpts): Promise<PublishResult>;
   edit(post: BlogPost, opts: PublisherOpts): Promise<EditResult>;
+  unpublish(externalPostId: string, postTitle: string | null, opts: PublisherOpts): Promise<UnpublishResult>;
   fetchTaxonomy(opts: PublisherOpts): Promise<TaxonomyResult>;
 }
 
