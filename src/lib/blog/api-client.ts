@@ -250,9 +250,11 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
 
 // AI multi-turn chat — builds a post conversationally.
 export interface AIChatMessage { role: "user" | "assistant"; content: string; }
+export interface AIResearchSource { url: string; title: string; snippet?: string; }
 export interface AIChatOptions {
   templateId?: string | null;
   includeRecentPosts?: boolean;
+  research?: boolean;
   attachments?: AIAttachment[];
 }
 export interface AIChatResponse {
@@ -265,6 +267,7 @@ export interface AIChatResponse {
   author: string | null;
   category: string | null;
   action: "publish" | "save_draft" | null;
+  research_sources: AIResearchSource[];
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
@@ -282,6 +285,7 @@ export async function aiChat(
       current_html: currentHtml,
       template_id: opts.templateId ?? null,
       include_recent_posts: opts.includeRecentPosts === true,
+      research: opts.research === true,
       attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
     }),
   });

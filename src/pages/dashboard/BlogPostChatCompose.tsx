@@ -10,13 +10,14 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  ArrowUp, FileText, Image as ImageIcon, LayoutTemplate, Loader2, MessageSquare,
-  Paperclip, Pencil, Plus, Sparkles, Wand2, X, ChevronLeft, Send,
+  ArrowUp, Code2, ExternalLink, FileText, Eye, Globe, Image as ImageIcon,
+  LayoutTemplate, Loader2, MessageSquare, Paperclip, Plus, Sparkles, Wand2, X,
+  ChevronLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   aiChat, createPost, getTaxonomy, listTemplates,
-  type AIChatMessage, type AIChatResponse,
+  type AIChatMessage, type AIChatResponse, type AIResearchSource,
 } from "@/lib/blog/api-client";
 import type { AIAttachment, BlogImage, CreatePostInput } from "@/lib/blog/types";
 import { thumbUrl } from "@/lib/blog/image-url";
@@ -77,10 +78,13 @@ export default function BlogPostChatCompose() {
 
   const [templateId, setTemplateId] = useState("");
   const [includeRecentPosts, setIncludeRecentPosts] = useState(true);
+  const [useResearch, setUseResearch] = useState(false);
   const [attachments, setAttachments] = useState<AIAttachment[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [showFields, setShowFields] = useState(true);
   const [showPreview, setShowPreview] = useState(true);
+  const [previewMode, setPreviewMode] = useState<"rendered" | "source">("rendered");
+  const [sources, setSources] = useState<AIResearchSource[]>([]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -106,8 +110,14 @@ export default function BlogPostChatCompose() {
     "One sec, putting that together.",
     "Working on it now.",
   ];
+  const ALLY_RESEARCH_PLACEHOLDERS = [
+    "Pulling sources from Google first…",
+    "Researching now — one sec.",
+    "Hitting the web for current numbers.",
+  ];
   function nextPlaceholder() {
-    return ALLY_PLACEHOLDERS[Math.floor(Math.random() * ALLY_PLACEHOLDERS.length)];
+    const pool = useResearch ? ALLY_RESEARCH_PLACEHOLDERS : ALLY_PLACEHOLDERS;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
   const chat = useMutation({
@@ -115,6 +125,7 @@ export default function BlogPostChatCompose() {
       const r = await aiChat(args.historyForApi, form.body_html, {
         templateId: templateId || null,
         includeRecentPosts,
+        research: useResearch,
         attachments: attachments.length ? attachments : undefined,
       });
       return { r };
@@ -156,6 +167,13 @@ export default function BlogPostChatCompose() {
       if (r.body_html && !showPreview) setShowPreview(true);
       setTotalCostCents((c) => c + r.cost_cents);
       setAttachments([]);
+      if (r.research_sources && r.research_sources.length > 0) {
+        // Merge unique by url so repeat turns don't duplicate.
+        setSources((prev) => {
+          const seen = new Set(prev.map((s) => s.url));
+          return [...prev, ...r.research_sources.filter((s) => !seen.has(s.url))];
+        });
+      }
     },
     onError: (e: any) => {
       const msg = e?.message ?? String(e);
@@ -266,6 +284,35 @@ export default function BlogPostChatCompose() {
     }
   }
 
+  // -- popout preview ----------------------------------------------------------
+
+  function openPreviewInNewTab() {
+    const css = `
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; font-size: 16px; line-height: 1.65; color: #1f2937; padding: 32px; max-width: 760px; margin: 0 auto; background: #fff; }
+      h1 { font-size: 32px; font-weight: 700; margin: 24px 0 12px; }
+      h2 { font-size: 24px; font-weight: 700; margin: 28px 0 12px; }
+      h3 { font-size: 19px; font-weight: 600; margin: 22px 0 8px; }
+      p { margin: 14px 0; }
+      table { border-collapse: collapse; margin: 18px 0; width: 100%; font-size: 14px; }
+      th, td { border: 1px solid #e5e7eb; padding: 9px 12px; text-align: left; vertical-align: top; }
+      th { background: #f9fafb; font-weight: 600; }
+      ul, ol { padding-left: 26px; margin: 14px 0; }
+      li { margin: 4px 0; }
+      a { color: #2563eb; text-decoration: underline; }
+      img { max-width: 100%; height: auto; border-radius: 6px; }
+      blockquote { border-left: 3px solid #e5e7eb; padding-left: 16px; margin: 18px 0; color: #6b7280; font-style: italic; }
+      hr { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+    `.replace(/\s+/g, " ");
+    const title = form.title || "Post preview";
+    const doc = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title><style>${css}</style></head><body><h1>${title}</h1>${form.body_html || "<p><em>Empty.</em></p>"}</body></html>`;
+    const blob = new Blob([doc], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank", "noopener,noreferrer");
+    if (!win) toast.error("Popup blocked — allow popups for this site");
+    // Revoke the blob URL once the tab has loaded; ~1m gives any slow load time.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
   // -- derived -----------------------------------------------------------------
 
   const hasThread = messages.length > 0 || chat.isPending;
@@ -302,6 +349,11 @@ export default function BlogPostChatCompose() {
             {selectedTemplate ? <>· template <span className="font-medium">{selectedTemplate.name}</span></>
               : includeRecentPosts ? <>· style-matched to recent posts</>
               : <>· free-form</>}
+            {useResearch && (
+              <span className="ml-1 inline-flex items-center gap-0.5 text-primary">
+                · <Globe className="ml-0.5 h-3 w-3" /> research on
+              </span>
+            )}
           </span>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -335,8 +387,8 @@ export default function BlogPostChatCompose() {
         </div>
       </div>
 
-      {/* Body — chat on left, fields on right */}
-      <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[3fr_2fr]" : "md:grid-cols-1"} grid-cols-1`}>
+      {/* Body — chat on left, preview-dominant fields on right (Claude-artifact ratio) */}
+      <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[2fr_3fr]" : "md:grid-cols-1"} grid-cols-1`}>
         {/* CHAT COLUMN */}
         <div className="relative flex min-h-0 flex-col bg-background">
           <AnimatePresence mode="wait">
@@ -444,6 +496,7 @@ export default function BlogPostChatCompose() {
                     onFilePick={() => fileInputRef.current?.click()}
                     templates={templates} templateId={templateId} onTemplateChange={setTemplateId}
                     includeRecentPosts={includeRecentPosts} onIncludeRecentPostsChange={setIncludeRecentPosts}
+                    useResearch={useResearch} onUseResearchChange={setUseResearch}
                   />
                 </div>
               </motion.div>
@@ -560,18 +613,77 @@ export default function BlogPostChatCompose() {
                 />
               </Field>
 
+              {sources.length > 0 && (
+                <div>
+                  <Label className="mb-1 flex items-center gap-1 text-xs">
+                    <Globe className="h-3 w-3" /> Research sources
+                    <span className="font-normal text-muted-foreground">· {sources.length}</span>
+                  </Label>
+                  <ol className="space-y-1 rounded-md border bg-background p-2 text-xs">
+                    {sources.map((s, i) => (
+                      <li key={s.url} className="flex items-start gap-1.5">
+                        <span className="text-muted-foreground">[{i + 1}]</span>
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="line-clamp-2 text-primary underline-offset-2 hover:underline"
+                          title={s.url}
+                        >
+                          {s.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
             </div>
 
             {showPreview && (
               <div className="flex min-h-0 flex-col border-t bg-white">
                 <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                  <span>Live preview</span>
-                  <span>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode("rendered")}
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${previewMode === "rendered" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"}`}
+                      title="Rendered preview"
+                    >
+                      <Eye className="h-3 w-3" /> Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode("source")}
+                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${previewMode === "source" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"}`}
+                      title="HTML source"
+                    >
+                      <Code2 className="h-3 w-3" /> Source
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
+                    <button
+                      type="button"
+                      onClick={openPreviewInNewTab}
+                      disabled={!form.body_html}
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-background/50 disabled:opacity-40"
+                      title="Open in new tab"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Open
+                    </button>
+                  </div>
                 </div>
-                <HtmlPreview
-                  html={form.body_html || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>Ally hasn't drafted anything yet — send a message.</p>"}
-                  style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
-                />
+                {previewMode === "rendered" ? (
+                  <HtmlPreview
+                    html={form.body_html || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>Ally hasn't drafted anything yet — send a message.</p>"}
+                    style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
+                  />
+                ) : (
+                  <pre className="flex-1 overflow-auto bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-200">
+                    <code>{form.body_html || "<!-- Empty -->"}</code>
+                  </pre>
+                )}
               </div>
             )}
             </div>
@@ -631,6 +743,8 @@ interface ComposerProps {
   onTemplateChange: (id: string) => void;
   includeRecentPosts: boolean;
   onIncludeRecentPostsChange: (v: boolean) => void;
+  useResearch: boolean;
+  onUseResearchChange: (v: boolean) => void;
 }
 
 function Composer({
@@ -639,6 +753,7 @@ function Composer({
   attachments, onRemoveAttachment, onFilePick,
   templates, templateId, onTemplateChange,
   includeRecentPosts, onIncludeRecentPostsChange,
+  useResearch, onUseResearchChange,
 }: ComposerProps) {
   return (
     <div className={`mx-auto w-full ${big ? "max-w-2xl" : ""}`}>
@@ -706,6 +821,22 @@ function Composer({
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Style + depth of your last 5 published posts.
+                </div>
+              </div>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-muted">
+              <input
+                type="checkbox"
+                checked={useResearch}
+                onChange={(e) => onUseResearchChange(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div className="flex-1 text-sm">
+                <div className="flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5" /> Research with Gemini
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Each turn, Gemini searches the web first and feeds current numbers + sources to Ally.
                 </div>
               </div>
             </label>
