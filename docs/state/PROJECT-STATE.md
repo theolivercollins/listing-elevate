@@ -842,6 +842,15 @@ Lab iterations include analysis + director + render cost in `prompt_lab_iteratio
 
 SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the live path.
 
+| 056 | `operator_studio` | `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` + `property_revision_notes` + RLS — awaiting application to prod (feat/operator-studio) |
+| 057 | `operator_studio_scenes_followup` | `scenes.director_notes` text column — awaiting application to prod (feat/operator-studio) |
+
+---
+
+## Operator Studio — internal operator workflow surface (Phase 1 on feat/operator-studio, awaiting push)
+
+Admin-only surface at `/dashboard/studio` for Oliver to manage operator-mode properties on behalf of brokerage clients; provides a Kanban pipeline view, Clients CRUD, manual listing ingest form, and a Property Command Center with brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, and director's notes. Migrations 056 + 057 apply the required schema. See `docs/specs/2026-05-15-operator-studio-design.md`.
+
 ---
 
 ## Immediate next actions (start here next session)

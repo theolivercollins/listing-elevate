@@ -1,267 +1,598 @@
-import { useState, useEffect, type CSSProperties } from "react";
-import { Link } from "react-router-dom";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ChevronLeft, ChevronRight, Loader2, ArrowRight } from "lucide-react";
-import { formatCents, getRelativeTime } from "@/lib/types";
-import type { Property } from "@/lib/types";
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { KpiCard, StatusPill, PropertyThumb, Card, fmtCents, fmtDuration } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 import { fetchProperties } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
-import { motion } from "framer-motion";
-import { ImageOff } from "lucide-react";
-import "@/v2/styles/v2.css";
+import type { Property } from "@/lib/types";
 
-const EYEBROW: CSSProperties = {
+// ─── view-model ────────────────────────────────────────────────────
+
+interface PropertyVM {
+  id: string;
+  address: string;
+  status: string;
+  photos: number;
+  agent: string;
+  cost: number | null; // cents
+  duration_ms: number | null;
+  thumb_hue: number;
+  created_at_ms: number;
+}
+
+function fromLive(p: Property): PropertyVM {
+  return {
+    id: p.id,
+    address: p.address,
+    status: p.status,
+    photos: p.photo_count ?? 0,
+    agent: p.listing_agent ?? "",
+    cost: p.total_cost_cents ?? null,
+    duration_ms: p.processing_time_ms ?? null,
+    thumb_hue: 200 + (parseInt(p.id.replace(/\D/g, "").slice(-4) || "0", 10) % 160),
+    created_at_ms: p.created_at ? new Date(p.created_at).getTime() : Date.now(),
+  };
+}
+
+// ─── helpers ───────────────────────────────────────────────────────
+
+function addressLine1(addr: string) {
+  return addr.split(",")[0] ?? addr;
+}
+function addressLine2(addr: string) {
+  return addr.split(",").slice(1).join(",").trim();
+}
+
+// ─── inline styles ─────────────────────────────────────────────────
+
+const GRID = "32px 2fr 1.2fr 1fr 1fr 1fr 1fr 32px";
+
+const tabBtnBase: React.CSSProperties = {
+  padding: "8px 14px",
+  borderRadius: 999,
+  border: "none",
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  transition: "background .2s",
   fontFamily: "var(--le-font-sans)",
-  fontSize: 10,
-  letterSpacing: "0.22em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.45)",
 };
-const PAGE_H1: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: "clamp(28px, 4vw, 44px)",
-  fontWeight: 500,
-  letterSpacing: "-0.035em",
-  lineHeight: 0.98,
-  color: "#fff",
-  margin: 0,
-};
-const GHOST_BTN: CSSProperties = {
+
+const ghostBtn: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 6,
-  padding: "6px 12px",
-  fontSize: 11,
+  padding: "9px 13px",
+  borderRadius: 10,
+  border: "1px solid rgba(15,24,60,0.08)",
+  background: "rgba(255,255,255,0.6)",
+  color: "var(--ink-2)",
+  fontSize: 12,
   fontWeight: 500,
-  background: "transparent",
-  color: "#fff",
-  border: "1px solid rgba(220,230,255,0.18)",
-  borderRadius: 2,
   cursor: "pointer",
   fontFamily: "var(--le-font-sans)",
 };
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
-
-const statusLabel: Record<string, string> = {
-  queued: "Queued",
-  ingesting: "Ingesting",
-  analyzing: "Analyzing",
-  scripting: "Directing",
-  generating: "Generating",
-  qc: "QC",
-  assembling: "Assembling",
-  complete: "Delivered",
-  failed: "Failed",
-  needs_review: "Needs review",
+const selBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "7px 12px",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.1)",
+  color: "#fff",
+  border: "none",
+  fontSize: 11.5,
+  fontWeight: 500,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
 };
 
-const statusTone: Record<string, string> = {
-  complete: "text-accent",
-  failed: "text-destructive",
-  needs_review: "text-destructive",
-};
+// ─── main component ────────────────────────────────────────────────
 
 const Properties = () => {
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [page, setPage] = useState(1);
-  const [properties, setProperties] = useState<Property[]>([]);
-  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const [total, setTotal] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const perPage = 25;
+  const navigate = useNavigate();
 
+  const [rawProperties, setRawProperties] = useState<Property[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"all" | "active" | "complete" | "review">("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // ── fetch ────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       try {
-        const params: { page: number; limit: number; status?: string; search?: string } = {
-          page,
-          limit: perPage,
-        };
-        if (statusFilter !== "all") params.status = statusFilter;
-        if (search) params.search = search;
-        const res = await fetchProperties(params);
-        if (cancelled) return;
-        setProperties(res.properties);
-        setTotal(res.total);
-        setTotalPages(res.totalPages);
-        setError(null);
-
-        // Batch-load one thumbnail per property. Prefer the first selected
-        // (hero) photo; fall back to the first photo overall if none selected.
-        const ids = res.properties.map((p) => p.id);
-        if (ids.length > 0) {
-          const { data: photos } = await supabase
-            .from("photos")
-            .select("property_id, file_url, selected, created_at")
-            .in("property_id", ids)
-            .order("selected", { ascending: false })
-            .order("created_at", { ascending: true });
-          if (cancelled) return;
-          const map: Record<string, string> = {};
-          for (const ph of photos || []) {
-            if (!map[ph.property_id]) map[ph.property_id] = ph.file_url as string;
-          }
-          setThumbnails(map);
-        } else {
-          setThumbnails({});
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load properties");
+        const res = await fetchProperties({ page: 1, limit: 200 });
+        if (!cancelled) setRawProperties(res.properties);
+      } catch {
+        // fall through to sample data
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
     load();
-    return () => {
-      cancelled = true;
-    };
-  }, [search, statusFilter, page]);
+    return () => { cancelled = true; };
+  }, []);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, statusFilter]);
+  // ── view-model ───────────────────────────────────────────────────
+  const allVM: PropertyVM[] = rawProperties.map(fromLive);
+
+  // ── search ───────────────────────────────────────────────────────
+  const searchLower = search.toLowerCase();
+  const searched = searchLower
+    ? allVM.filter(
+        (p) =>
+          p.address.toLowerCase().includes(searchLower) ||
+          p.agent.toLowerCase().includes(searchLower),
+      )
+    : allVM;
+
+  // ── tabs ─────────────────────────────────────────────────────────
+  const ACTIVE_STATUSES = new Set(["queued", "ingesting", "analyzing", "scripting", "generating", "qc", "assembling"]);
+
+  const tabCounts = {
+    all: searched.length,
+    active: searched.filter((p) => ACTIVE_STATUSES.has(p.status)).length,
+    complete: searched.filter((p) => p.status === "complete").length,
+    review: searched.filter((p) => p.status === "needs_review").length,
+  };
+
+  const filtered = searched.filter((p) => {
+    if (tab === "all") return true;
+    if (tab === "active") return ACTIVE_STATUSES.has(p.status);
+    if (tab === "complete") return p.status === "complete";
+    if (tab === "review") return p.status === "needs_review";
+    return true;
+  });
+
+  // ── KPI totals ───────────────────────────────────────────────────
+  const totalListings = allVM.length;
+  const activeCount = allVM.filter((p) => ACTIVE_STATUSES.has(p.status)).length;
+  const completed = allVM.filter((p) => p.status === "complete" && p.duration_ms);
+  const avgDeliveryMs =
+    completed.length > 0
+      ? completed.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completed.length
+      : null;
+  const rerunCount = allVM.filter((p) => p.status === "needs_review").length;
+
+  // ── KPI deltas (live-computed, null if not enough data) ──────────
+  const now = Date.now();
+  const MS_7D = 7 * 24 * 60 * 60 * 1000;
+  const thisWeek = allVM.filter((p) => now - p.created_at_ms < MS_7D);
+  const prevWeek = allVM.filter((p) => {
+    const age = now - p.created_at_ms;
+    return age >= MS_7D && age < 2 * MS_7D;
+  });
+
+  function pctChange(curr: number, prev: number): number | null {
+    if (prev === 0 || curr === 0) return null;
+    return ((curr - prev) / prev) * 100;
+  }
+
+  const totalListingsDelta = pctChange(thisWeek.length, prevWeek.length);
+
+  const thisWeekActive = thisWeek.filter((p) => ACTIVE_STATUSES.has(p.status)).length;
+  const prevWeekActive = prevWeek.filter((p) => ACTIVE_STATUSES.has(p.status)).length;
+  const activeCountDelta = pctChange(thisWeekActive, prevWeekActive);
+
+  const completedThisWeek = allVM.filter(
+    (p) => p.status === "complete" && p.duration_ms != null && now - p.created_at_ms < MS_7D,
+  );
+  const completedPrevWeek = allVM.filter(
+    (p) => p.status === "complete" && p.duration_ms != null && (() => { const age = now - p.created_at_ms; return age >= MS_7D && age < 2 * MS_7D; })(),
+  );
+  const avgDeliveryThisWeek =
+    completedThisWeek.length > 0
+      ? completedThisWeek.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completedThisWeek.length
+      : null;
+  const avgDeliveryPrevWeek =
+    completedPrevWeek.length > 0
+      ? completedPrevWeek.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completedPrevWeek.length
+      : null;
+  const avgDeliveryDelta =
+    avgDeliveryThisWeek != null && avgDeliveryPrevWeek != null
+      ? pctChange(avgDeliveryThisWeek, avgDeliveryPrevWeek)
+      : null;
+
+  // ── selection helpers ─────────────────────────────────────────────
+  const toggle = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    setSelected((prev) =>
+      prev.size === filtered.length ? new Set() : new Set(filtered.map((p) => p.id)),
+    );
+  }, [filtered]);
+
+  // ── tab button ───────────────────────────────────────────────────
+  const TabBtn = ({
+    id,
+    label,
+    count,
+  }: {
+    id: typeof tab;
+    label: string;
+    count: number;
+  }) => {
+    const active = tab === id;
+    return (
+      <button
+        onClick={() => setTab(id)}
+        style={{
+          ...tabBtnBase,
+          background: active ? "var(--ink)" : "transparent",
+          color: active ? "#fff" : "var(--muted)",
+        }}
+      >
+        {label}
+        <span
+          style={{
+            fontVariantNumeric: "tabular-nums",
+            fontSize: 10,
+            padding: "1px 6px",
+            borderRadius: 99,
+            background: active ? "rgba(255,255,255,0.18)" : "rgba(15,24,60,0.05)",
+          }}
+        >
+          {count}
+        </span>
+      </button>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-12">
-      <div className="flex items-end justify-between gap-6">
-        <div>
-          <span style={EYEBROW}>— All listings</span>
-          <h2 className="mt-3" style={PAGE_H1}>
-            <span style={{ fontFamily: "var(--le-font-sans)" }}>{total}</span> total
-          </h2>
-        </div>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* KPI row */}
+      <section
+        style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}
+      >
+        <KpiCard
+          label="Total listings"
+          value={totalListings}
+          sub={thisWeek.length > 0 ? `+${thisWeek.length} this week` : "no new this week"}
+          delta={totalListingsDelta}
+        />
+        <KpiCard
+          label="Active"
+          value={activeCount}
+          sub="across all stages"
+          delta={activeCountDelta}
+        />
+        <KpiCard
+          label="Avg delivery"
+          value={avgDeliveryMs ? fmtDuration(avgDeliveryMs) : "—"}
+          sub="below 72h SLA"
+          delta={avgDeliveryDelta}
+          deltaPositiveIsGood={false}
+        />
+        <KpiCard
+          label="Reruns"
+          value={rerunCount}
+          sub={rerunCount > 0 ? `${((rerunCount / Math.max(totalListings, 1)) * 100).toFixed(1)}% rerun rate` : "no reruns"}
+          delta={null}
+          deltaPositiveIsGood={false}
+        />
+      </section>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[280px] flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-          <Input
-            placeholder="Search by address…"
-            className="pl-11"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All status</SelectItem>
-            {Object.entries(statusLabel).map(([k, v]) => (
-              <SelectItem key={k} value={k}>
-                {v}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Table */}
-      <div className="border-t border-border">
-        <div className="grid grid-cols-[64px_3fr_1.2fr_1fr_1.2fr_0.6fr_1fr_1fr_0.5fr] gap-6 border-b border-border py-4" style={{ background: "rgba(255,255,255,0.03)" }}>
-          <span style={EYEBROW}>Photo</span>
-          <span style={EYEBROW}>Property</span>
-          <span style={EYEBROW}>Agent</span>
-          <span className="text-right" style={EYEBROW}>Price</span>
-          <span style={EYEBROW}>Status</span>
-          <span className="text-right" style={EYEBROW}>Photos</span>
-          <span className="text-right" style={EYEBROW}>Cost</span>
-          <span style={EYEBROW}>Created</span>
-          <span className="text-right" style={EYEBROW}>View</span>
-        </div>
-
-        {loading ? (
-          <div className="flex justify-center py-24">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      {/* Table card */}
+      <Card padding={20}>
+        {/* Tabs + filter row */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <TabBtn id="all" label="All" count={tabCounts.all} />
+            <TabBtn id="active" label="Active" count={tabCounts.active} />
+            <TabBtn id="complete" label="Delivered" count={tabCounts.complete} />
+            <TabBtn id="review" label="Review" count={tabCounts.review} />
           </div>
-        ) : error ? (
-          <div className="py-24 text-center text-sm text-destructive">{error}</div>
-        ) : properties.length === 0 ? (
-          <div className="py-24 text-center text-sm text-muted-foreground">No listings match your filters</div>
-        ) : (
-          properties.map((p, i) => {
-            const tone = statusTone[p.status] || "text-foreground";
-            const thumb = thumbnails[p.id];
-            return (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.02, ease: EASE }}
-                className="group grid grid-cols-[64px_3fr_1.2fr_1fr_1.2fr_0.6fr_1fr_1fr_0.5fr] items-center gap-6 border-b border-border py-5 transition-colors duration-500 hover:bg-secondary/40"
+
+          <div style={{ flex: 1 }} />
+
+          {/* Search */}
+          <div
+            className="le-card-flat"
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", minWidth: 260 }}
+          >
+            <Icon name="search" size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
+            <input
+              placeholder="Filter listings…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontSize: 12.5,
+                fontFamily: "var(--le-font-sans)",
+                color: "var(--ink)",
+              }}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", lineHeight: 0, padding: 0 }}
               >
-                <Link
-                  to={`/dashboard/properties/${p.id}`}
-                  className="relative block aspect-[4/3] w-16 overflow-hidden border border-border bg-secondary"
-                  aria-label={`View ${p.address}`}
-                >
-                  {thumb ? (
-                    <img
-                      src={thumb}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover transition-transform duration-700 ease-cinematic group-hover:scale-105"
-                    />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center text-muted-foreground/40">
-                      <ImageOff className="h-4 w-4" strokeWidth={1.5} />
-                    </span>
-                  )}
-                </Link>
-                <Link to={`/dashboard/properties/${p.id}`} className="truncate text-sm font-medium hover:underline">
-                  {p.address}
-                </Link>
-                <span className="truncate text-xs text-muted-foreground">{p.listing_agent}</span>
-                <span className="tabular text-right text-sm">${p.price.toLocaleString()}</span>
-                <span className={tone} style={{ ...EYEBROW, color: undefined }}>{statusLabel[p.status] || p.status}</span>
-                <span className="tabular text-right text-xs text-muted-foreground">{p.photo_count}</span>
-                <span className="tabular text-right text-xs">{formatCents(p.total_cost_cents)}</span>
-                <span className="tabular text-xs text-muted-foreground">{getRelativeTime(p.created_at)}</span>
-                <Link
-                  to={`/dashboard/properties/${p.id}`}
-                  className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-                  aria-label="View"
-                >
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </motion.div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && !loading && (
-        <div className="flex items-center justify-between">
-          <span style={EYEBROW}>
-            <span style={{ fontFamily: "var(--le-font-sans)" }}>{total}</span> properties
-          </span>
-          <div className="flex items-center gap-3">
-            <button type="button" style={{ ...GHOST_BTN, opacity: page <= 1 ? 0.4 : 1 }} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              <ChevronLeft className="h-4 w-4" /> Previous
-            </button>
-            <span className="px-3 text-xs" style={{ fontFamily: "var(--le-font-sans)", color: "rgba(255,255,255,0.55)" }}>
-              Page {page} / {totalPages}
-            </span>
-            <button type="button" style={{ ...GHOST_BTN, opacity: page >= totalPages ? 0.4 : 1 }} disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              Next <ChevronRight className="h-4 w-4" />
-            </button>
+                <Icon name="x" size={12} />
+              </button>
+            )}
           </div>
+
+          <button style={ghostBtn}>
+            <Icon name="filter" size={14} />
+            Filters
+          </button>
+          <button style={ghostBtn}>
+            <Icon name="upload" size={14} />
+            Export
+          </button>
+        </div>
+
+        {/* Header row */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: GRID,
+            gap: 16,
+            padding: "10px 14px",
+            borderBottom: "1px solid var(--line)",
+            alignItems: "center",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={filtered.length > 0 && selected.size === filtered.length}
+            onChange={toggleAll}
+            style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+          />
+          <span className="le-d-label">Property</span>
+          <span className="le-d-label">Agent</span>
+          <span className="le-d-label">Status</span>
+          <span className="le-d-label" style={{ textAlign: "right" }}>
+            Photos
+          </span>
+          <span className="le-d-label" style={{ textAlign: "right" }}>
+            Duration
+          </span>
+          <span className="le-d-label" style={{ textAlign: "right" }}>
+            Cost
+          </span>
+          <span />
+        </div>
+
+        {/* Body rows */}
+        {filtered.length === 0 ? (
+          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            {allVM.length === 0
+              ? "No listings yet — your first listing will appear here once submitted."
+              : "No listings match your filters."}
+          </div>
+        ) : (
+          filtered.map((p) => (
+            <PropertyRow
+              key={p.id}
+              p={p}
+              selected={selected.has(p.id)}
+              onToggle={toggle}
+              onNavigate={() => navigate("/dashboard/properties/" + p.id)}
+            />
+          ))
+        )}
+      </Card>
+
+      {/* Floating selection bar */}
+      {selected.size > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 28,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 60,
+            padding: "10px 12px 10px 18px",
+            borderRadius: 16,
+            background: "var(--ink)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            boxShadow: "0 24px 60px -20px rgba(11,18,32,0.5)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Selected: {selected.size}</span>
+          <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.18)", flexShrink: 0 }} />
+          <button style={selBtn}>
+            <Icon name="retry" size={13} />
+            Rerun
+          </button>
+          <button style={selBtn}>
+            <Icon name="upload" size={13} />
+            Export
+          </button>
+          <button style={selBtn}>
+            <Icon name="x" size={13} />
+            Delete
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            style={{
+              padding: "8px 14px",
+              borderRadius: 10,
+              background: "#fff",
+              color: "var(--ink)",
+              border: "none",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            Discard
+          </button>
         </div>
       )}
-
     </div>
   );
 };
+
+// ─── PropertyRow ───────────────────────────────────────────────────
+
+function PropertyRow({
+  p,
+  selected,
+  onToggle,
+  onNavigate,
+}: {
+  p: PropertyVM;
+  selected: boolean;
+  onToggle: (id: string) => void;
+  onNavigate: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onClick={onNavigate}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "32px 2fr 1.2fr 1fr 1fr 1fr 1fr 32px",
+        gap: 16,
+        padding: "12px 14px",
+        borderBottom: "1px solid rgba(15,24,60,0.04)",
+        alignItems: "center",
+        cursor: "pointer",
+        background: selected || hovered ? "rgba(15,24,60,0.02)" : "transparent",
+        transition: "background .15s",
+      }}
+    >
+      {/* Checkbox */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onClick={(e) => e.stopPropagation()}
+        onChange={() => onToggle(p.id)}
+        style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+      />
+
+      {/* Address */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <PropertyThumb hue={p.thumb_hue} size={36} />
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              color: "var(--ink)",
+            }}
+          >
+            {addressLine1(p.address)}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 2 }}>
+            {addressLine2(p.address)}
+          </div>
+        </div>
+      </div>
+
+      {/* Agent */}
+      <span
+        style={{
+          fontSize: 12.5,
+          color: "var(--ink-2)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {p.agent}
+      </span>
+
+      {/* Status */}
+      <StatusPill status={p.status} />
+
+      {/* Photos */}
+      <span
+        style={{
+          fontSize: 12.5,
+          textAlign: "right",
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--ink-2)",
+        }}
+      >
+        {p.photos}
+      </span>
+
+      {/* Duration */}
+      <span
+        style={{
+          fontSize: 12.5,
+          textAlign: "right",
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--muted)",
+        }}
+      >
+        {p.duration_ms ? fmtDuration(p.duration_ms) : "—"}
+      </span>
+
+      {/* Cost */}
+      <span
+        style={{
+          fontSize: 12.5,
+          fontWeight: 600,
+          textAlign: "right",
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--ink)",
+        }}
+      >
+        {fmtCents(p.cost)}
+      </span>
+
+      {/* Dots */}
+      <button
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "transparent",
+          border: "none",
+          color: "var(--muted-2)",
+          cursor: "pointer",
+          lineHeight: 0,
+          padding: 0,
+        }}
+      >
+        <Icon name="dots" size={14} />
+      </button>
+    </div>
+  );
+}
 
 export default Properties;

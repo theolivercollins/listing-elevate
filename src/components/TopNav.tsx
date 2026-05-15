@@ -30,6 +30,7 @@ import {
   Image as ImageIcon,
   Newspaper,
   LayoutTemplate,
+  Clapperboard,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -41,6 +42,7 @@ const dashboardNav = [
   { to: "/dashboard/properties", label: "Listings", icon: Building2 },
   { to: "/dashboard/logs", label: "Logs", icon: FileText },
   { to: "/dashboard/finances", label: "Finances", icon: DollarSign },
+  { to: "/dashboard/studio", label: "Studio", icon: Clapperboard },
   { to: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
 ];
 
@@ -149,6 +151,10 @@ export function TopNav() {
 
   // Login + auth callback render their own editorial branding.
   if (location.pathname === "/login" || location.pathname.startsWith("/auth")) return null;
+
+  // Dashboard renders its own left sidebar; suppress the legacy horizontal
+  // sub-nav to avoid double-navigation.
+  if (location.pathname.startsWith("/dashboard")) return null;
 
   // /upload renders its own SiteNav inside Upload.tsx — suppress the legacy TopNav
   // so the page doesn't stack two nav bars (was leaving ~100px of empty space).

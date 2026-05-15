@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Loader2,
@@ -14,9 +15,26 @@ import {
   Check,
   ChevronDown,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
+import { PageHeading, Card } from "@/components/dashboard/primitives";
+
+// ─── Design-system input primitives ───────────────────────────────────────────
+const INPUT_STYLE: CSSProperties = {
+  padding: "9px 14px",
+  borderRadius: 12,
+  border: "1px solid var(--line)",
+  background: "var(--surface)",
+  color: "var(--ink)",
+  fontSize: 13,
+  fontFamily: "inherit",
+  outline: "none",
+  width: "100%",
+};
+const TEXTAREA_STYLE: CSSProperties = {
+  ...INPUT_STYLE,
+  resize: "vertical",
+  minHeight: 100,
+  lineHeight: 1.5,
+};
 import {
   uploadLabImage,
   listSessions,
@@ -206,14 +224,13 @@ function SessionList() {
   }
 
   return (
-    <div className="space-y-10">
-      <div>
-        <span className="label text-muted-foreground">— Prompt Lab</span>
-        <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em]">Iterative prompt refinement</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway.
-        </p>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <LabSubNav />
+      <PageHeading
+        eyebrow="Lab"
+        title="Prompt Lab"
+        sub="Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway."
+      />
 
       <FileDropZone
         uploading={uploading}
@@ -227,11 +244,20 @@ function SessionList() {
       />
 
       {sessions === null ? (
-        <div className="py-20 text-center">
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
+          <Loader2 style={{ width: 22, height: 22 }} className="animate-spin" />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+        <div
+          style={{
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius)",
+            padding: 48,
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+          }}
+        >
           No sessions yet. Upload an image above to start.
         </div>
       ) : (
@@ -264,69 +290,98 @@ function FileDropZone({
 }) {
   const [dragOver, setDragOver] = useState(false);
   return (
-    <div
-      className={`border bg-background p-6 transition ${dragOver ? "border-foreground bg-accent/40" : "border-border"}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes("Files")) {
-          e.preventDefault();
-          setDragOver(true);
-        }
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        if (e.dataTransfer.files?.length) {
-          e.preventDefault();
-          setDragOver(false);
-          onFiles(e.dataTransfer.files);
-        }
-      }}
+    <Card
+      padding={20}
+      style={{ border: dragOver ? "1px solid var(--ink)" : undefined, background: dragOver ? "rgba(11,11,16,0.02)" : undefined }}
     >
-      <div className="label text-muted-foreground">New session(s)</div>
-      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-        <div className="flex-1">
-          <label className="text-xs text-muted-foreground">Batch label (groups these uploads together)</label>
-          <Input
-            value={batchLabel}
-            onChange={(e) => setBatchLabel(e.target.value)}
-            placeholder="e.g. Smith property · Kitchen study #2"
-            className="mt-1"
-          />
+      <div
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          if (e.dataTransfer.files?.length) {
+            e.preventDefault();
+            setDragOver(false);
+            onFiles(e.dataTransfer.files);
+          }
+        }}
+      >
+        <span className="le-d-label">New session(s)</span>
+        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>
+              Batch label (groups these uploads together)
+            </label>
+            <input
+              value={batchLabel}
+              onChange={(e) => setBatchLabel(e.target.value)}
+              placeholder="e.g. Smith property · Kitchen study #2"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--line)",
+                background: "var(--surface)",
+                fontSize: 13,
+                fontFamily: "var(--le-font-sans)",
+                color: "var(--ink)",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
+            <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} style={{ accentColor: "var(--accent)", cursor: "pointer" }} />
+            Auto-analyze on upload
+          </label>
+          <label
+            className="le-btn-ghost"
+            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" style={{ width: 14, height: 14 }} /> : <Upload style={{ width: 14, height: 14 }} />}
+            <span>
+              {uploading
+                ? uploadProgress
+                  ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                  : "Uploading…"
+                : "Upload images"}
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files) onFiles(e.target.files);
+              }}
+              disabled={uploading}
+            />
+          </label>
         </div>
-        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} />
-          Auto-analyze on upload
-        </label>
-        <label className="inline-flex cursor-pointer items-center gap-2 border border-border bg-background px-4 py-2 text-sm hover:bg-accent">
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          <span>
-            {uploading
-              ? uploadProgress
-                ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
-                : "Uploading…"
-              : "Upload images"}
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) onFiles(e.target.files);
+        <p style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
+          Drag files from your desktop onto this panel, or click "Upload images". One session per image. With auto-analyze, the director runs on each in parallel. You can drag session cards between batches after they're created.
+        </p>
+        {error && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--bad)",
             }}
-            disabled={uploading}
-          />
-        </label>
+          >
+            <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
+            <span>{error}</span>
+          </div>
+        )}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Drag files from your desktop onto this panel, or click &quot;Upload images&quot;. One session per image. With auto-analyze, the director runs on each in parallel. You can drag session cards between batches after they&apos;re created.
-      </p>
-      {error && (
-        <div className="mt-3 flex items-start gap-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }
 
@@ -468,30 +523,39 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
   }
 
   return (
-    <div className="space-y-10">
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Organize toolbar */}
-      <div className="flex items-center justify-between">
-        <Button
-          size="sm"
-          variant={organizeMode ? "default" : "outline"}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className={organizeMode ? "le-btn-dark" : "le-btn-ghost"}
           onClick={() => {
             setOrganizeMode((prev) => !prev);
             if (organizeMode) setSelectedIds(new Set());
           }}
         >
           {organizeMode ? "Done organizing" : "Organize"}
-        </Button>
+        </button>
 
-        <div className="flex items-center gap-2">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {organizeMode && selectedIds.size > 0 && (
             <>
-              <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-              <Button size="sm" variant="outline" onClick={groupSelected}>
+              <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{selectedIds.size} selected</span>
+              <button type="button" className="le-btn-ghost" onClick={groupSelected}>
                 Group into batch
-              </Button>
+              </button>
               {ordered.filter(([b]) => b !== "Unbatched").length > 0 && (
                 <select
-                  className="border border-border bg-background px-2 py-1 text-xs"
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--line)",
+                    background: "var(--surface)",
+                    fontSize: 12,
+                    fontFamily: "var(--le-font-sans)",
+                    color: "var(--ink-2)",
+                    cursor: "pointer",
+                  }}
                   value=""
                   onChange={(e) => {
                     if (e.target.value) batchMoveSelected(e.target.value === "__unbatched__" ? null : e.target.value);
@@ -505,25 +569,27 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                 </select>
               )}
               {Array.from(selectedIds).some((id) => !sessions.find((s) => s.id === id)?.archived) && (
-                <Button size="sm" variant="outline" onClick={archiveSelected}>
-                  <Trash2 className="mr-2 h-3 w-3" /> Archive
-                </Button>
+                <button type="button" className="le-btn-ghost" onClick={archiveSelected}>
+                  <Trash2 style={{ width: 12, height: 12, marginRight: 4 }} />
+                  Archive
+                </button>
               )}
               {showArchived && Array.from(selectedIds).some((id) => sessions.find((s) => s.id === id)?.archived) && (
-                <Button size="sm" variant="outline" onClick={unarchiveSelected}>
+                <button type="button" className="le-btn-ghost" onClick={unarchiveSelected}>
                   Unarchive
-                </Button>
+                </button>
               )}
-              <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
+              <button type="button" className="le-btn-ghost" onClick={() => setSelectedIds(new Set())}>
                 Clear
-              </Button>
+              </button>
             </>
           )}
-          <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
             <input
               type="checkbox"
               checked={showArchived}
               onChange={(e) => setShowArchived(e.target.checked)}
+              style={{ accentColor: "var(--accent)", cursor: "pointer" }}
             />
             Show archived
           </label>
@@ -566,9 +632,8 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
           return (
             <div
               key={batch}
-              className={`${isExpanded ? "col-span-full" : ""} transition ${
-                isTarget ? "outline outline-2 outline-foreground bg-accent/30" : ""
-              }`}
+              className={isExpanded ? "col-span-full" : ""}
+              style={isTarget ? { outline: "2px solid var(--ink)", borderRadius: "var(--radius)", background: "rgba(11,11,16,0.03)" } : undefined}
               onDragOver={(e) => {
                 if (draggingId) {
                   e.preventDefault();
@@ -587,57 +652,61 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
               }}
             >
               {isExpanded ? (
-                <div className="rounded-sm border border-border p-3">
-                  <div className="mb-3 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
+                <div className="le-card" style={{ padding: 20 }}>
+                  <div style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <button
                         onClick={() => toggleExpand(batch)}
-                        className="p-1 text-muted-foreground hover:text-foreground transition"
+                        type="button"
+                        className="le-btn-ghost"
                         title="Collapse"
+                        style={{ padding: "4px 8px" }}
                       >
-                        <ChevronDown className="h-4 w-4" />
+                        <ChevronDown style={{ width: 14, height: 14 }} />
                       </button>
                       <BatchTitle label={batch} onRename={(v) => renameBatch(batch, v)} />
                       {organizeMode && (
                         <button
+                          type="button"
                           onClick={() => selectAllInBatch(batch, items)}
-                          className="ml-2 text-[10px] text-muted-foreground hover:text-foreground underline"
+                          style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
                         >
                           {items.every((s) => selectedIds.has(s.id)) ? "Deselect all" : "Select all"}
                         </button>
                       )}
                     </div>
-                    <span className="shrink-0 text-xs text-muted-foreground">
+                    <span style={{ flexShrink: 0, fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                       {counts.completed}/{counts.all} completed
                       {avgRating ? ` · avg ${avgRating.toFixed(1)}★` : ""}
                     </span>
                   </div>
 
-                  <div className="mb-3 flex flex-wrap gap-1">
-                    {(
-                      [
-                        ["all", `All (${counts.all})`],
-                        ["not_started", `Need to start (${counts.not_started})`],
-                        ["in_progress", `In progress (${counts.in_progress})`],
-                        ["completed", `Completed (${counts.completed})`],
-                      ] as const
-                    ).map(([key, label]) => (
-                      <button
-                        key={key}
-                        onClick={() => setFilters((prev) => ({ ...prev, [batch]: key }))}
-                        className={`rounded-full border px-3 py-1 text-[10px] uppercase tracking-wider transition ${
-                          filter === key ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    <div className="le-seg">
+                      {(
+                        [
+                          ["all", `All (${counts.all})`],
+                          ["not_started", `Need to start (${counts.not_started})`],
+                          ["in_progress", `In progress (${counts.in_progress})`],
+                          ["completed", `Completed (${counts.completed})`],
+                        ] as const
+                      ).map(([key, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setFilters((prev) => ({ ...prev, [batch]: key }))}
+                          className={`le-seg-item${filter === key ? " is-active" : ""}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} />
 
                   {visible.length === 0 ? (
-                    <div className="rounded border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+                    <div style={{ border: "1px dashed var(--line)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
                       No sessions in this filter.
                     </div>
                   ) : (
@@ -664,24 +733,25 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                 <button
                   type="button"
                   onClick={() => toggleExpand(batch)}
-                  className="group flex aspect-square w-full flex-col border border-border bg-background p-3 text-left transition hover:border-foreground"
+                  className="le-lift"
                   title={`Expand "${batch}"`}
+                  style={{ display: "flex", flexDirection: "column", width: "100%", padding: 12, textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius)", cursor: "pointer", aspectRatio: "1" }}
                 >
-                  <div className="mb-3 grid min-h-0 flex-1 grid-cols-2 gap-1">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, flex: 1, minHeight: 0, marginBottom: 10, overflow: "hidden", borderRadius: 10 }}>
                     {previewImages.map((src, i) => (
-                      <div key={i} className="overflow-hidden bg-muted/60">
+                      <div key={i} style={{ overflow: "hidden", background: "rgba(11,11,16,0.06)" }}>
                         {src ? (
-                          <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                          <img src={src} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : null}
                       </div>
                     ))}
                     {Array.from({ length: Math.max(0, 4 - previewImages.length) }).map((_, i) => (
-                      <div key={`placeholder-${i}`} className="bg-muted/30" />
+                      <div key={`placeholder-${i}`} style={{ background: "rgba(11,11,16,0.04)" }} />
                     ))}
                   </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold tracking-tight">{batch}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.015em", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{batch}</div>
+                    <div style={{ marginTop: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                       {counts.all} session{counts.all === 1 ? "" : "s"} · {counts.completed}/{counts.all} done
                       {avgRating ? ` · ${avgRating.toFixed(1)}★` : ""}
                     </div>
@@ -695,9 +765,16 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
 
       {/* Drop-here-to-create-new-batch zone */}
       <div
-        className={`rounded-sm border-2 border-dashed p-6 text-center text-xs transition ${
-          draggingId ? "border-foreground text-foreground bg-accent/20" : "border-border text-muted-foreground"
-        }`}
+        style={{
+          borderRadius: "var(--radius)",
+          border: `2px dashed ${draggingId ? "var(--ink)" : "var(--line)"}`,
+          padding: 24,
+          textAlign: "center",
+          fontSize: 12,
+          color: draggingId ? "var(--ink)" : "var(--muted)",
+          background: draggingId ? "rgba(11,11,16,0.02)" : undefined,
+          transition: "all 0.15s",
+        }}
         onDragOver={(e) => {
           if (draggingId) e.preventDefault();
         }}
@@ -750,42 +827,54 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
   }
 
   return (
-    <div className="mb-4 border border-border">
+    <div style={{ marginBottom: 16, border: "1px solid var(--line)", borderRadius: "var(--radius-sm)" }}>
       <button
         type="button"
         onClick={toggle}
-        className="flex w-full items-center justify-between px-3 py-2 text-left text-xs hover:bg-accent/30 transition"
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "10px 14px",
+          textAlign: "left",
+          fontSize: 12,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: "inherit",
+        }}
       >
-        <span className="flex items-center gap-2">
-          <Sparkles className="h-3.5 w-3.5" />
-          <span className="font-semibold uppercase tracking-[0.12em]">See listing selection</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ink)" }}>
+          <Sparkles style={{ width: 13, height: 13, color: "var(--accent)" }} />
+          <span style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", fontSize: 11 }}>See listing selection</span>
           {data && (
-            <span className="text-muted-foreground">
+            <span style={{ color: "var(--muted)" }}>
               · {data.selected_count} picked · {data.not_selected_count} skipped · {data.discarded_count} discarded
               {data.unanalyzed.length > 0 ? ` · ${data.unanalyzed.length} unanalyzed` : ""}
             </span>
           )}
         </span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "" : "-rotate-90"}`} />
+        <ChevronDown style={{ width: 14, height: 14, color: "var(--muted)", transform: open ? undefined : "rotate(-90deg)", transition: "transform 0.15s" }} />
       </button>
 
       {open && (
-        <div className="border-t border-border p-3 text-xs">
+        <div style={{ borderTop: "1px solid var(--line-2)", padding: "14px 14px 10px" }}>
           {loading ? (
-            <div className="flex items-center gap-2 py-6 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Running production selection…
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "24px 0", color: "var(--muted)", fontSize: 12 }}>
+              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /> Running production selection…
             </div>
           ) : error ? (
-            <div className="flex items-start gap-2 py-3 text-destructive">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "12px 0", color: "var(--bad)", fontSize: 12 }}>
+              <AlertTriangle style={{ width: 13, height: 13, flexShrink: 0, marginTop: 1 }} />
               <span>{error}</span>
-              <button onClick={run} className="ml-auto underline">Retry</button>
+              <button type="button" onClick={run} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 12, textDecoration: "underline", color: "var(--muted)", fontFamily: "inherit" }}>Retry</button>
             </div>
           ) : !data ? (
-            <div className="py-3 text-muted-foreground">Loading…</div>
+            <div style={{ padding: "12px 0", color: "var(--muted)", fontSize: 12 }}>Loading…</div>
           ) : (
             <>
-              <p className="mb-3 text-muted-foreground">
+              <p style={{ marginBottom: 14, fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
                 Target {data.target} scenes · max {data.max_per_room} per room type. Run against each session's cached vision analysis.
                 {data.unanalyzed.length > 0 && (
                   <> {data.unanalyzed.length} session{data.unanalyzed.length === 1 ? "" : "s"} still need analysis and were excluded.</>
@@ -815,31 +904,32 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                 />
               </div>
               {data.unanalyzed.length > 0 && (
-                <div className="mt-4 border-t border-border pt-3 text-muted-foreground">
-                  <div className="mb-2 font-semibold uppercase tracking-[0.12em]">
+                <div style={{ marginTop: 16, borderTop: "1px solid var(--line-2)", paddingTop: 12, color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 8, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em" }}>
                     Unanalyzed ({data.unanalyzed.length})
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {data.unanalyzed.map((u) => (
                       <button
                         key={u.session_id}
+                        type="button"
                         onClick={() => navigate(`/dashboard/development/prompt-lab/${u.session_id}`)}
-                        className="h-10 w-10 overflow-hidden border border-border bg-muted hover:border-foreground"
+                        style={{ width: 40, height: 40, overflow: "hidden", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", cursor: "pointer", padding: 0 }}
                         title={u.label ?? ""}
                       >
                         {u.image_url && (
-                          <img src={u.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                          <img src={u.image_url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         )}
                       </button>
                     ))}
                   </div>
                 </div>
               )}
-              <div className="mt-3 flex justify-end">
-                <Button size="sm" variant="outline" onClick={run}>
-                  <Loader2 className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : "hidden"}`} />
+              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="le-btn-ghost" onClick={run} style={{ fontSize: 11.5 }}>
+                  {loading && <Loader2 style={{ width: 12, height: 12, marginRight: 4 }} className="animate-spin" />}
                   Re-run
-                </Button>
+                </button>
               </div>
             </>
           )}
@@ -862,50 +952,64 @@ function SelectionColumn({
   tone: "positive" | "neutral" | "negative";
   onOpenSession: (sessionId: string) => void;
 }) {
-  const toneClasses =
-    tone === "positive"
-      ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
-      : tone === "negative"
-        ? "border-destructive/40 text-destructive"
-        : "border-border text-muted-foreground";
+  const headerColor =
+    tone === "positive" ? "var(--good)"
+    : tone === "negative" ? "var(--bad)"
+    : "var(--muted)";
 
   return (
     <div>
-      <div className={`mb-2 border-b pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${toneClasses}`}>
+      <div style={{ marginBottom: 8, borderBottom: `1px solid var(--line)`, paddingBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.14em", color: headerColor }}>
         {title} ({count})
       </div>
       {items.length === 0 ? (
-        <div className="py-3 text-muted-foreground/60">—</div>
+        <div style={{ padding: "12px 0", color: "var(--muted-2)", fontSize: 12 }}>—</div>
       ) : (
-        <div className="space-y-2">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {items.map((i) => (
             <button
               key={i.session_id}
+              type="button"
               onClick={() => onOpenSession(i.session_id)}
-              className="flex w-full items-start gap-3 border border-border bg-background p-2 text-left transition hover:border-foreground"
+              style={{
+                display: "flex",
+                width: "100%",
+                alignItems: "flex-start",
+                gap: 10,
+                border: "1px solid var(--line-2)",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--surface)",
+                padding: 8,
+                textAlign: "left",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                transition: "background 0.12s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(11,11,16,0.02)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface)"; }}
             >
-              <div className="h-14 w-14 shrink-0 overflow-hidden bg-muted">
+              <div style={{ width: 56, height: 56, flexShrink: 0, overflow: "hidden", borderRadius: 8, background: "rgba(11,11,16,0.06)" }}>
                 {i.image_url && (
-                  <img src={i.image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  <img src={i.image_url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 )}
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {i.rank != null && (
-                    <span className="font-sans text-[10px] tabular-nums text-muted-foreground">#{i.rank}</span>
+                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>#{i.rank}</span>
                   )}
-                  <span className="truncate text-[11px] font-semibold">
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {i.room_type ? i.room_type.replace(/_/g, " ") : "?"}
                   </span>
                   {i.aesthetic_score != null && (
-                    <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
+                    <span style={{ marginLeft: "auto", flexShrink: 0, fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                       {i.aesthetic_score.toFixed(1)}/10
                     </span>
                   )}
                 </div>
-                <div className="mt-1 text-[10px] leading-snug text-muted-foreground">{i.reason}</div>
+                <div style={{ marginTop: 3, fontSize: 10, lineHeight: 1.4, color: "var(--muted)" }}>{i.reason}</div>
                 {i.label && (
-                  <div className="mt-1 truncate text-[10px] text-muted-foreground/60">{i.label}</div>
+                  <div style={{ marginTop: 2, fontSize: 10, color: "var(--muted-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.label}</div>
                 )}
               </div>
             </button>
@@ -934,22 +1038,23 @@ function SkuAffinityHint({
   if (hint.verdict === "neutral") return null;
 
   const isAvoid = hint.verdict === "avoid";
-  const tone = isAvoid
-    ? "border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300"
-    : "border-emerald-500/40 bg-emerald-500/5 text-emerald-800 dark:text-emerald-300";
+  const dotColor = isAvoid ? "var(--warn)" : "var(--good)";
+  const textColor = isAvoid ? "var(--warn)" : "var(--good)";
 
   return (
-    <div className={`flex flex-wrap items-start gap-2 rounded border px-2 py-1.5 text-[11px] ${tone}`}>
-      <span className="font-semibold uppercase tracking-wider">
-        {isAvoid ? "⚠ bad fit" : "✓ best fit"}
+    <div className="le-card-flat" style={{ padding: 10, display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 8, fontSize: 12.5 }}>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em", color: textColor }}>
+        <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0, display: "inline-block" }} />
+        {isAvoid ? "bad fit" : "best fit"}
       </span>
-      <span className="flex-1 leading-snug">{hint.message}</span>
+      <span style={{ flex: 1, lineHeight: 1.45, color: "var(--ink-2)" }}>{hint.message}</span>
       {isAvoid && hint.suggested_sku && (
         <button
           type="button"
+          className="le-btn-ghost"
           onClick={() => onPickSuggested(hint.suggested_sku!)}
-          className="shrink-0 rounded border border-foreground/20 bg-background px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider hover:bg-foreground hover:text-background"
           title={hint.evidence}
+          style={{ fontSize: 10.5, padding: "3px 8px" }}
         >
           Use {hint.suggested_sku}
         </button>
@@ -984,14 +1089,25 @@ function BatchTitle({ label, onRename }: { label: string; onRename: (v: string) 
           }
         }}
         placeholder={label === "Unbatched" ? "Name this batch…" : ""}
-        className="bg-transparent text-lg font-semibold tracking-tight outline-none border-b border-border focus:border-foreground min-w-0"
+        style={{
+          background: "transparent",
+          border: "none",
+          borderBottom: "1px solid var(--line)",
+          outline: "none",
+          fontSize: 18,
+          fontWeight: 600,
+          letterSpacing: "-0.02em",
+          color: "var(--ink)",
+          fontFamily: "inherit",
+          minWidth: 0,
+        }}
       />
     );
   }
   return (
     <h3
       onClick={() => setEditing(true)}
-      className="text-lg font-semibold tracking-tight cursor-text hover:opacity-70"
+      style={{ fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", cursor: "text" }}
       title="Click to rename (renames all sessions in this batch)"
     >
       {label}
@@ -1016,6 +1132,10 @@ function SessionCard({
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
+  const borderColor = organizeMode
+    ? selected ? "var(--ink)" : "var(--line)"
+    : session.completed ? "rgba(47,138,85,0.3)" : "var(--line)";
+
   return (
     <Link
       to={organizeMode ? "#" : `/dashboard/development/prompt-lab/${session.id}`}
@@ -1027,65 +1147,76 @@ function SessionCard({
         onDragStart();
       }}
       onDragEnd={organizeMode ? undefined : onDragEnd}
-      className={`relative border bg-background transition ${
-        organizeMode
-          ? selected
-            ? "border-foreground ring-2 ring-foreground/20 cursor-pointer"
-            : "border-border cursor-pointer hover:border-foreground/50"
-          : `border-border hover:border-foreground ${isDragging ? "opacity-40" : ""}`
-      } ${session.completed ? "border-emerald-500/50" : ""}`}
+      className="le-lift"
+      style={{
+        display: "block",
+        textDecoration: "none",
+        border: `1px solid ${borderColor}`,
+        borderRadius: "var(--radius)",
+        background: "var(--surface)",
+        overflow: "hidden",
+        opacity: isDragging ? 0.4 : 1,
+        cursor: organizeMode ? "pointer" : undefined,
+        boxShadow: organizeMode && selected ? `0 0 0 2px rgba(11,11,16,0.15)` : undefined,
+      }}
     >
-      <div className="relative aspect-video w-full overflow-hidden bg-muted">
+      <div style={{ position: "relative", aspectRatio: "16/9", width: "100%", overflow: "hidden", background: "rgba(11,11,16,0.06)" }}>
         {organizeMode && (
-          <div className="absolute top-2 left-2 z-10">
+          <div style={{ position: "absolute", top: 8, left: 8, zIndex: 10 }}>
             <div
-              className={`h-5 w-5 rounded border-2 flex items-center justify-center transition ${
-                selected
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-white/80 bg-black/30 text-transparent"
-              }`}
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 4,
+                border: selected ? "2px solid var(--ink)" : "2px solid rgba(255,255,255,0.8)",
+                background: selected ? "var(--ink)" : "rgba(0,0,0,0.3)",
+                color: selected ? "var(--surface)" : "transparent",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
             >
-              {selected && <Check className="h-3 w-3" />}
+              {selected && <Check style={{ width: 10, height: 10 }} />}
             </div>
           </div>
         )}
-        <img src={session.image_url} alt={session.label ?? "session"} className="h-full w-full object-cover pointer-events-none" />
+        <img src={session.image_url} alt={session.label ?? "session"} style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", display: "block" }} />
         {session.pending_render && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-            <div className="inline-flex items-center gap-2 rounded bg-amber-500/90 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-white shadow-lg">
-              <Loader2 className="h-3 w-3 animate-spin" />
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, background: "rgba(182,128,44,0.9)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+              <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
               Rendering
             </div>
           </div>
         )}
         {session.archived && (
-          <div className="absolute top-2 right-2 inline-flex items-center gap-1 rounded bg-zinc-500 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white shadow-sm">
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6, background: "rgba(100,100,110,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
             Archived
           </div>
         )}
         {!session.archived && session.completed && (
-          <div className="absolute top-2 right-2 inline-flex items-center gap-1 rounded bg-emerald-500 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-white shadow-sm">
-            ✓ Completed
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6, background: "rgba(47,138,85,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+            Completed
           </div>
         )}
         {!session.completed && !session.pending_render && session.ready_for_approval && (
-          <div className="absolute bottom-0 inset-x-0 bg-sky-500 px-2 py-1 text-center text-[10px] font-medium uppercase tracking-wider text-white">
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(42,111,219,0.9)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
             Generation approval needed
           </div>
         )}
         {!session.completed && !session.pending_render && !session.ready_for_approval && session.iteration_needs_attention && (
-          <div className="absolute bottom-0 inset-x-0 bg-teal-500 px-2 py-1 text-center text-[10px] font-medium uppercase tracking-wider text-white">
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(30,130,118,0.9)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
             Iteration approval needed
           </div>
         )}
       </div>
-      <div className="p-3">
-        <div className="text-xs font-medium truncate">{session.label || session.archetype || "Untitled"}</div>
-        <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+      <div style={{ padding: "10px 12px" }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.01em" }}>{session.label || session.archetype || "Untitled"}</div>
+        <div style={{ marginTop: 4, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 10.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
           <span>{session.iteration_count ?? 0} iter{session.iteration_count === 1 ? "" : "s"}</span>
           {typeof session.best_rating === "number" && (
-            <span className="inline-flex items-center gap-1">
-              <Star className="h-3 w-3 fill-foreground text-foreground" />
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+              <Star style={{ width: 11, height: 11, fill: "var(--ink)", color: "var(--ink)" }} />
               {session.best_rating}
             </span>
           )}
@@ -1306,7 +1437,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   if (!data) {
     return (
       <div className="py-20 text-center">
-        <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2 className="animate-spin" style={{ width: 22, height: 22, display: "block", margin: "0 auto", color: "var(--muted)" }} />
       </div>
     );
   }
@@ -1316,24 +1447,24 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   const totalCost = iterations.reduce((sum, it) => sum + (it.cost_cents ?? 0), 0);
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link to="/dashboard/development/prompt-lab" className="text-muted-foreground hover:text-foreground" title="Back to list">
-            <ArrowLeft className="h-4 w-4" />
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Link to="/dashboard/development/prompt-lab" title="Back to list" style={{ color: "var(--muted)", display: "inline-flex" }}>
+            <ArrowLeft style={{ width: 16, height: 16 }} />
           </Link>
           {siblings.length > 1 && (
-            <div className="flex items-center gap-1 border-l border-border pl-3">
+            <div style={{ display: "flex", alignItems: "center", gap: 4, borderLeft: "1px solid var(--line)", paddingLeft: 12 }}>
               <button
                 type="button"
                 onClick={() => prevSibling && navigate(`/dashboard/development/prompt-lab/${prevSibling.id}`)}
                 disabled={!prevSibling}
                 title={prevSibling ? `Previous (←) · ${prevSibling.label ?? "Untitled"}` : "No previous session"}
-                className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+                style={{ background: "none", border: "none", cursor: prevSibling ? "pointer" : "default", color: "var(--muted)", opacity: !prevSibling ? 0.3 : 1, padding: 4 }}
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft style={{ width: 14, height: 14 }} />
               </button>
-              <span className="px-1 font-sans text-[10px] tabular-nums text-muted-foreground">
+              <span style={{ padding: "0 4px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 {siblingIndex >= 0 ? siblingIndex + 1 : "?"}/{siblings.length}
               </span>
               <button
@@ -1341,14 +1472,14 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
                 onClick={() => nextSibling && navigate(`/dashboard/development/prompt-lab/${nextSibling.id}`)}
                 disabled={!nextSibling}
                 title={nextSibling ? `Next (→) · ${nextSibling.label ?? "Untitled"}` : "No next session"}
-                className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+                style={{ background: "none", border: "none", cursor: nextSibling ? "pointer" : "default", color: "var(--muted)", opacity: !nextSibling ? 0.3 : 1, padding: 4 }}
               >
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight style={{ width: 14, height: 14 }} />
               </button>
             </div>
           )}
           <div>
-            <span className="label text-muted-foreground">— Prompt Lab session</span>
+            <span className="le-d-label">Lab · Session</span>
             <EditableLabel
               value={session.label}
               placeholder="Untitled session"
@@ -1359,56 +1490,99 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
             />
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <DollarSign className="h-3 w-3" />
+        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, color: "var(--muted)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontVariantNumeric: "tabular-nums" }}>
+            <DollarSign style={{ width: 12, height: 12 }} />
             ${(totalCost / 100).toFixed(3)}
           </span>
           {iterations.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
               avg ${(iterations.reduce((s, i) => s + (i.cost_cents ?? 0), 0) / iterations.length / 100).toFixed(2)}/clip
             </span>
           )}
-          <button onClick={handleDelete} className="inline-flex items-center gap-1 hover:text-destructive">
-            <Trash2 className="h-3.5 w-3.5" />
+          <button
+            type="button"
+            onClick={handleDelete}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            <Trash2 style={{ width: 13, height: 13 }} />
             Delete
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(196,74,74,0.3)",
+            background: "rgba(196,74,74,0.05)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="flex items-start gap-2 border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-          <Sparkles className="h-4 w-4 shrink-0" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(47,138,85,0.3)",
+            background: "rgba(47,138,85,0.05)",
+            fontSize: 13,
+            color: "var(--good)",
+          }}
+        >
+          <Sparkles style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
           <span>{success}</span>
-          <button onClick={() => setSuccess(null)} className="ml-auto text-xs opacity-60 hover:opacity-100">dismiss</button>
+          <button
+            type="button"
+            onClick={() => setSuccess(null)}
+            style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            dismiss
+          </button>
         </div>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-[360px_1fr]">
+      <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 32, alignItems: "flex-start" }}>
         {/* Source image column */}
-        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-          <div className="overflow-hidden border border-border bg-muted">
-            <img src={session.image_url} alt="source" className="w-full" />
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 16, alignSelf: "start" }}>
+          <Card padding={0} style={{ overflow: "hidden" }}>
+            <img src={session.image_url} alt="source" style={{ width: "100%", display: "block" }} />
+          </Card>
           {iterations.length === 0 && (
-            <Button onClick={handleAnalyze} disabled={busy === "analyze"} className="w-full">
-              {busy === "analyze" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            <button type="button" className="le-btn-dark" onClick={handleAnalyze} disabled={busy === "analyze"} style={{ width: "100%", justifyContent: "center", opacity: busy === "analyze" ? 0.6 : 1 }}>
+              {busy === "analyze" ? <Loader2 style={{ width: 14, height: 14, marginRight: 8 }} className="animate-spin" /> : <Sparkles style={{ width: 14, height: 14, marginRight: 8 }} />}
               Analyze + Direct
-            </Button>
+            </button>
           )}
         </div>
 
         {/* Iteration stack */}
-        <div className="space-y-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {iterations.length === 0 ? (
-            <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+            <div
+              style={{
+                border: "1px dashed var(--line)",
+                borderRadius: "var(--radius)",
+                padding: 48,
+                textAlign: "center",
+                fontSize: 13,
+                color: "var(--muted)",
+              }}
+            >
               No iterations yet. Click "Analyze + Direct" to generate the first one.
             </div>
           ) : (
@@ -1475,17 +1649,38 @@ function EditableLabel({
             setEditing(false);
           }
         }}
-        className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none border-b border-border focus:border-foreground"
+        style={{
+          marginTop: 4,
+          width: "100%",
+          background: "transparent",
+          border: "none",
+          borderBottom: "1px solid var(--line)",
+          outline: "none",
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: "-0.022em",
+          color: "var(--ink)",
+          fontFamily: "var(--le-font-sans)",
+          paddingBottom: 2,
+        }}
       />
     );
   }
   return (
     <h2
       onClick={() => setEditing(true)}
-      className="mt-1 text-2xl font-semibold tracking-[-0.02em] cursor-text hover:opacity-70"
+      style={{
+        marginTop: 4,
+        fontSize: 22,
+        fontWeight: 600,
+        letterSpacing: "-0.022em",
+        color: value ? "var(--ink)" : "var(--muted-2)",
+        cursor: "text",
+        fontFamily: "var(--le-font-sans)",
+      }}
       title="Click to edit"
     >
-      {value || <span className="text-muted-foreground/60">{placeholder}</span>}
+      {value || placeholder}
     </h2>
   );
 }
@@ -1517,17 +1712,17 @@ function PromoteRecipeControl({
 
   if (promoted) {
     return (
-      <div className="mt-4 inline-flex items-center gap-2 rounded bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-700 dark:text-emerald-400">
-        ✓ Promoted to recipe library
+      <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, background: "rgba(47,138,85,0.08)", padding: "6px 12px", fontSize: 12, color: "var(--good)" }}>
+        Promoted to recipe library
       </div>
     );
   }
 
   if (!open) {
     return (
-      <Button size="sm" variant="outline" className="mt-4" onClick={() => setOpen(true)}>
-        <Sparkles className="mr-2 h-3 w-3" /> Promote to recipe
-      </Button>
+      <button type="button" className="le-btn-ghost" style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6 }} onClick={() => setOpen(true)}>
+        <Sparkles style={{ width: 12, height: 12 }} /> Promote to recipe
+      </button>
     );
   }
 
@@ -1547,31 +1742,31 @@ function PromoteRecipeControl({
   }
 
   return (
-    <div className="mt-4 border border-border bg-muted/30 p-4 space-y-3">
-      <div className="label text-muted-foreground">Promote to recipe library</div>
+    <div className="le-card-flat" style={{ marginTop: 16, padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+      <span className="le-d-label">Promote to recipe library</span>
       <div>
-        <label className="text-xs text-muted-foreground">Archetype name <span className="opacity-60">(auto-filled, edit if you want)</span></label>
-        <Input
+        <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Archetype name <span style={{ opacity: 0.6 }}>(auto-filled, edit if you want)</span></label>
+        <input
           value={archetype}
           onChange={(e) => setArchetype(e.target.value)}
-          className="mt-1 font-sans text-xs"
+          style={{ ...INPUT_STYLE, fontFamily: "var(--le-font-mono)", fontSize: 12 }}
         />
       </div>
       <div>
-        <label className="text-xs text-muted-foreground">Prompt template (use this verbatim on similar photos)</label>
-        <Textarea
+        <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Prompt template (use this verbatim on similar photos)</label>
+        <textarea
           value={tmpl}
           onChange={(e) => setTmpl(e.target.value)}
-          className="mt-1 min-h-[60px] font-sans text-xs"
+          style={{ ...TEXTAREA_STYLE, minHeight: 60, fontFamily: "var(--le-font-mono)", fontSize: 12 }}
         />
       </div>
-      {err && <div className="text-xs text-destructive">{err}</div>}
-      <div className="flex justify-end gap-2">
-        <Button size="sm" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-        <Button size="sm" onClick={submit} disabled={!archetype.trim() || busy}>
-          {busy ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
+      {err && <div style={{ fontSize: 12, color: "var(--bad)" }}>{err}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <button type="button" className="le-btn-ghost" onClick={() => setOpen(false)}>Cancel</button>
+        <button type="button" className="le-btn-dark" onClick={submit} disabled={!archetype.trim() || busy} style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (!archetype.trim() || busy) ? 0.5 : 1 }}>
+          {busy ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : null}
           Promote
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -1585,11 +1780,12 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
   const losers = metadata.losers ?? [];
   const recipe = metadata.recipe;
   if (exemplars.length === 0 && losers.length === 0 && !recipe) return null;
+  const chipBase: CSSProperties = { borderRadius: 6, padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" };
   return (
     <>
       {exemplars.length > 0 && (
         <span
-          className="rounded bg-foreground/10 px-2 py-0.5 text-[10px] uppercase tracking-wider"
+          style={{ ...chipBase, background: "rgba(11,11,16,0.07)", color: "var(--ink-2)" }}
           title={exemplars.map((e) => `${e.rating}★ · ${e.camera_movement} · d=${e.distance.toFixed(3)}\n   ${e.prompt}`).join("\n\n")}
         >
           Based on {exemplars.length} similar {exemplars.length === 1 ? "win" : "wins"}
@@ -1597,7 +1793,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
       )}
       {losers.length > 0 && (
         <span
-          className="rounded bg-rose-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-rose-700 dark:text-rose-400"
+          style={{ ...chipBase, background: "rgba(196,74,74,0.08)", color: "var(--bad)" }}
           title={losers.map((e) => `${e.rating}★ · ${e.camera_movement} · d=${e.distance.toFixed(3)}\n   ${e.prompt}`).join("\n\n")}
         >
           Avoiding {losers.length} {losers.length === 1 ? "loser" : "losers"}
@@ -1605,7 +1801,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
       )}
       {recipe && (
         <span
-          className="rounded bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400"
+          style={{ ...chipBase, background: "rgba(47,138,85,0.08)", color: "var(--good)" }}
           title={`${recipe.prompt_template}\n\ndistance ${recipe.distance.toFixed(3)}`}
         >
           Recipe · {recipe.archetype}
@@ -1632,18 +1828,19 @@ function JudgeChip({
   // when judge_rating_json is also null (see Fix 7 for that precedence).
   if (iteration.judge_error && iteration.judge_rating_json == null) {
     return (
-      <div className="mt-3 space-y-2">
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-          <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">
+      <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)" }}>
+          <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }}>
             Judge failed
           </span>
-          <span className="truncate max-w-[200px] text-muted-foreground/70" title={iteration.judge_error}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, color: "var(--muted-2)" }} title={iteration.judge_error}>
             {iteration.judge_error.slice(0, 60)}
           </span>
           <button
             type="button"
             onClick={() => setShowOverride((v) => !v)}
-            className="ml-1 rounded border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider hover:bg-muted"
+            className="le-btn-ghost"
+            style={{ fontSize: 10, padding: "2px 8px" }}
           >
             {showOverride ? "Cancel" : "Override"}
           </button>
@@ -1675,15 +1872,15 @@ function JudgeChip({
   const hasStaleError = !!iteration.judge_error;
 
   return (
-    <div className="mt-3 space-y-2">
+    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
       {/* Chip row — dim when a stale retry error is also present */}
-      <div className={`flex flex-wrap items-center gap-2 text-[11px] tabular-nums text-muted-foreground${hasStaleError ? " opacity-60" : ""}`}>
-        <span className="rounded bg-foreground/8 px-2 py-0.5 font-medium text-foreground">
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 11, fontVariantNumeric: "tabular-nums", color: "var(--muted)", opacity: hasStaleError ? 0.6 : 1 }}>
+        <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontWeight: 600, color: "var(--ink)" }}>
           Judge: {iteration.judge_rating_overall}/5
         </span>
         {hasStaleError && (
           <span
-            className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-700 dark:text-amber-400"
+            style={{ borderRadius: 6, background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
             title={iteration.judge_error ?? "retry error"}
           >
             retry err
@@ -1692,22 +1889,22 @@ function JudgeChip({
         {j && (
           <>
             <span title="motion faithfulness">Motion {j.motion_faithfulness}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--line)" }}>·</span>
             <span title="geometry coherence">Geom {j.geometry_coherence}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--line)" }}>·</span>
             <span title="room consistency">Room {j.room_consistency}</span>
-            <span className="text-muted-foreground/40">·</span>
+            <span style={{ color: "var(--line)" }}>·</span>
             <span title="judge confidence">conf {j.confidence}</span>
           </>
         )}
         {flags.length > 0 && (
           <>
-            <span className="text-muted-foreground/40">·</span>
-            <span className="text-amber-600 dark:text-amber-400">
+            <span style={{ color: "var(--line)" }}>·</span>
+            <span>
               {flags.map((f) => (
                 <span
                   key={f}
-                  className="mr-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px]"
+                  style={{ marginRight: 4, borderRadius: 5, background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
                 >
                   {f}
                 </span>
@@ -1718,7 +1915,8 @@ function JudgeChip({
         <button
           type="button"
           onClick={() => setShowOverride((v) => !v)}
-          className="ml-1 rounded border border-border px-2 py-0.5 text-[10px] uppercase tracking-wider hover:bg-muted"
+          className="le-btn-ghost"
+          style={{ marginLeft: 4, fontSize: 10, padding: "2px 8px" }}
         >
           {showOverride ? "Cancel" : "Override"}
         </button>
@@ -1799,11 +1997,11 @@ function OverridePanel({
   }
 
   return (
-    <div className="rounded border border-border bg-muted/30 p-4 space-y-4 text-xs">
-      <div className="font-medium text-foreground text-[11px] uppercase tracking-wider">
+    <div className="le-card-flat" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink)" }}>
         Override judge rating
         {panelNote && (
-          <span className="ml-2 normal-case font-normal text-muted-foreground">
+          <span style={{ marginLeft: 8, textTransform: "none", fontWeight: 400, color: "var(--muted)" }}>
             {panelNote}
           </span>
         )}
@@ -1819,8 +2017,8 @@ function OverridePanel({
           ["Overall", overall, setOverall],
         ] as Array<[string, number, (v: number) => void]>
       ).map(([label, value, setter]) => (
-        <div key={label} className="flex items-center gap-3">
-          <span className="w-40 shrink-0 text-muted-foreground">{label}</span>
+        <div key={label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ width: 150, flexShrink: 0, fontSize: 12, color: "var(--muted)" }}>{label}</span>
           <input
             type="range"
             min={1}
@@ -1828,16 +2026,16 @@ function OverridePanel({
             step={1}
             value={value}
             onChange={(e) => setter(Number(e.target.value))}
-            className="flex-1"
+            style={{ flex: 1, accentColor: "var(--accent)" }}
           />
-          <span className="w-5 tabular-nums text-right text-foreground">{value}</span>
+          <span style={{ width: 18, textAlign: "right", fontSize: 12, fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>{value}</span>
         </div>
       ))}
 
       {/* Hallucination flags */}
       <div>
-        <div className="mb-1.5 text-muted-foreground">Hallucination flags</div>
-        <div className="flex flex-wrap gap-1.5">
+        <div style={{ marginBottom: 6, fontSize: 12, color: "var(--muted)" }}>Hallucination flags</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
           {HALLUCINATION_FLAGS.map((f) => {
             const active = flags.includes(f as HallucinationFlag);
             return (
@@ -1845,11 +2043,17 @@ function OverridePanel({
                 key={f}
                 type="button"
                 onClick={() => toggleFlag(f as HallucinationFlag)}
-                className={`rounded border px-2 py-0.5 text-[10px] transition ${
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-foreground"
-                }`}
+                style={{
+                  borderRadius: 6,
+                  border: `1px solid ${active ? "var(--ink)" : "var(--line)"}`,
+                  background: active ? "var(--ink)" : "transparent",
+                  color: active ? "var(--surface)" : "var(--muted)",
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  transition: "all 0.1s",
+                }}
               >
                 {f}
               </button>
@@ -1860,41 +2064,41 @@ function OverridePanel({
 
       {/* Reasoning (required) */}
       <div>
-        <div className="mb-1 text-muted-foreground">
-          Reasoning <span className="text-destructive">*</span>
+        <div style={{ marginBottom: 5, fontSize: 12, color: "var(--muted)" }}>
+          Reasoning <span style={{ color: "var(--bad)" }}>*</span>
         </div>
-        <Textarea
+        <textarea
           value={reasoning}
           onChange={(e) => setReasoning(e.target.value)}
           placeholder="1–3 sentences citing specific frames or defects"
           maxLength={500}
-          className="min-h-[60px] text-xs"
+          style={{ ...TEXTAREA_STYLE, minHeight: 60, fontSize: 12 }}
         />
       </div>
 
       {/* Correction reason (optional) */}
       <div>
-        <div className="mb-1 text-muted-foreground">Why you're overriding (optional)</div>
-        <Textarea
+        <div style={{ marginBottom: 5, fontSize: 12, color: "var(--muted)" }}>Why you're overriding (optional)</div>
+        <textarea
           value={correctionReason}
           onChange={(e) => setCorrectionReason(e.target.value)}
           placeholder="e.g. Judge missed that the geometry warped at second 3"
-          className="min-h-[50px] text-xs"
+          style={{ ...TEXTAREA_STYLE, minHeight: 50, fontSize: 12 }}
         />
       </div>
 
       {error && (
-        <div className="text-[11px] text-destructive">{error}</div>
+        <div style={{ fontSize: 11.5, color: "var(--bad)" }}>{error}</div>
       )}
 
-      <div className="flex items-center gap-2">
-        <Button size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Check className="mr-2 h-3 w-3" />}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button type="button" className="le-btn-dark" onClick={handleSave} disabled={saving} style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: saving ? 0.6 : 1 }}>
+          {saving ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <Check style={{ width: 12, height: 12 }} />}
           Save override
-        </Button>
-        <Button size="sm" variant="outline" onClick={onCancel} disabled={saving}>
+        </button>
+        <button type="button" className="le-btn-ghost" onClick={onCancel} disabled={saving} style={{ opacity: saving ? 0.5 : 1 }}>
           Cancel
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -2041,427 +2245,444 @@ function IterationCard({
   const rating_saving = busy === `rate-${iteration.id}`;
 
   return (
-    <div
-      className={
-        isLatest
-          ? "relative border-2 border-foreground bg-background p-6 shadow-sm"
-          : "border border-border bg-background/60 p-6 opacity-80"
-      }
-    >
+    <Card padding={0} style={{
+      border: isLatest ? "2px solid var(--ink)" : "1px solid var(--line)",
+      opacity: isLatest ? 1 : 0.82,
+      position: "relative",
+    }}>
       {isLatest && (
-        <div className="absolute -top-[1px] -left-[1px] rounded-br bg-foreground px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-background">
+        <div style={{
+          position: "absolute",
+          top: -1,
+          left: -1,
+          borderRadius: "0 0 var(--radius-sm) 0",
+          background: "var(--ink)",
+          padding: "3px 10px",
+          fontSize: 9.5,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.10em",
+          color: "var(--surface)",
+        }}>
           Latest · active
         </div>
       )}
-      <div className={`flex items-center justify-between ${isLatest ? "mt-3" : ""}`}>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="label text-muted-foreground">Iteration {iteration.iteration_number}</span>
-          {iteration.order_id && (
-            <span className="rounded bg-muted/60 px-1.5 py-0.5 font-sans text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
-              {iteration.order_id}
-            </span>
-          )}
-          {(iteration.model_used || iteration.provider) && (
-            <span className="rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider" title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
-              {iteration.model_used ?? iteration.provider}
-            </span>
-          )}
-          <RetrievalChips metadata={iteration.retrieval_metadata} />
-        </div>
-        <span className="text-xs text-muted-foreground">
-          {new Date(iteration.created_at).toLocaleString()}
-        </span>
-      </div>
 
-      {/* Analysis summary */}
-      {analysis && (
-        <div className="mt-4 grid gap-3 text-xs md:grid-cols-2">
-          <div>
-            <span className="text-muted-foreground">Room: </span>
-            <span className="font-medium">{String(analysis.room_type)}</span>
-            <span className="ml-3 text-muted-foreground">Depth: </span>
-            <span className="font-medium">{String(analysis.depth_rating)}</span>
-            <span className="ml-3 text-muted-foreground">Aesthetic: </span>
-            <span className="font-medium">{String(analysis.aesthetic_score)}</span>
+      <div style={{ padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: isLatest ? 14 : 0 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+            <span className="le-d-label">Iteration {iteration.iteration_number}</span>
+            {iteration.order_id && (
+              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 6px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                {iteration.order_id}
+              </span>
+            )}
+            {(iteration.model_used || iteration.provider) && (
+              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }} title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
+                {iteration.model_used ?? iteration.provider}
+              </span>
+            )}
+            <RetrievalChips metadata={iteration.retrieval_metadata} />
           </div>
-          <div>
-            <span className="text-muted-foreground">Suggested motion: </span>
-            <span className="font-medium">{String(analysis.suggested_motion ?? "—")}</span>
-          </div>
-          {Array.isArray(analysis.key_features) && (
-            <div className="md:col-span-2 text-muted-foreground">
-              <span>Features: </span>
-              <span className="text-foreground">{(analysis.key_features as string[]).join(" · ")}</span>
+          <span style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+            {new Date(iteration.created_at).toLocaleString()}
+          </span>
+        </div>
+
+        {/* Analysis summary */}
+        {analysis && (
+          <div style={{ marginTop: 16, display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr", fontSize: 12 }}>
+            <div style={{ color: "var(--muted)" }}>
+              Room: <span style={{ fontWeight: 600, color: "var(--ink)" }}>{String(analysis.room_type)}</span>
+              <span style={{ marginLeft: 12 }}>Depth: <span style={{ fontWeight: 600, color: "var(--ink)" }}>{String(analysis.depth_rating)}</span></span>
+              <span style={{ marginLeft: 12 }}>Aesthetic: <span style={{ fontWeight: 600, color: "var(--ink)" }}>{String(analysis.aesthetic_score)}</span></span>
             </div>
-          )}
-          {typeof analysis.composition === "string" && (
-            <div className="md:col-span-2 italic text-muted-foreground">{analysis.composition as string}</div>
-          )}
-        </div>
-      )}
-
-      {/* Director output */}
-      {director && (
-        <div className="mt-5 border-l-2 border-foreground/20 pl-4">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="rounded bg-foreground px-2 py-0.5 text-[10px] uppercase tracking-wider text-background">
-              {director.camera_movement}
-            </span>
-            <span className="text-muted-foreground">{director.duration_seconds}s</span>
-          </div>
-          <p className="mt-2 font-sans text-sm leading-relaxed">{director.prompt}</p>
-        </div>
-      )}
-
-      {iteration.user_comment && iteration.user_comment.startsWith("[refiner rationale]") && (
-        <div className="mt-3 rounded bg-muted/40 p-3 text-xs italic text-muted-foreground">
-          {iteration.user_comment.replace("[refiner rationale] ", "Why: ")}
-        </div>
-      )}
-
-      {/* Queued for render (waiting for provider slot) */}
-      {!iteration.clip_url && !iteration.provider_task_id && iteration.render_queued_at && !iteration.render_error && (
-        <div className="mt-5 inline-flex items-center gap-2 rounded bg-violet-500/10 px-3 py-1.5 text-xs text-violet-700 dark:text-violet-400">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Queued for {iteration.provider ?? "render"} — waiting for slot
-          <span className="text-violet-700/70 dark:text-violet-400/70">
-            · auto-submits when capacity opens (cron checks every minute)
-          </span>
-        </div>
-      )}
-
-      {/* Pending render indicator */}
-      {!iteration.clip_url && iteration.provider_task_id && !iteration.render_error && (
-        <div className="mt-5 inline-flex items-center gap-2 rounded bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Rendering on {iteration.provider}
-          {iteration.render_submitted_at && (
-            <span className="text-amber-700/70 dark:text-amber-400/70">
-              · submitted {new Date(iteration.render_submitted_at).toLocaleTimeString()}
-            </span>
-          )}
-          <span className="text-amber-700/70 dark:text-amber-400/70">
-            · cron finalizes (safe to leave this page)
-          </span>
-        </div>
-      )}
-
-      {/* Render error */}
-      {iteration.render_error && !iteration.clip_url && (
-        <div className="mt-5 rounded bg-destructive/10 p-3 text-xs text-destructive">
-          <div className="font-medium">Render failed</div>
-          <div className="mt-1 text-destructive/80">{iteration.render_error}</div>
-        </div>
-      )}
-
-      {/* Clip player */}
-      {iteration.clip_url && (
-        <div className="mt-5 space-y-2">
-          <video
-            key={iteration.clip_url}
-            src={iteration.clip_url}
-            controls
-            playsInline
-            preload="metadata"
-            className="w-full max-w-md border border-border"
-          />
-          <a
-            href={iteration.clip_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-xs text-muted-foreground hover:text-foreground underline"
-          >
-            Open clip in new tab ↗
-          </a>
-        </div>
-      )}
-
-      {/* Judge pending — clip has landed but judge cron hasn't run yet. */}
-      {iteration.clip_url
-        && iteration.judge_rating_overall == null
-        && iteration.judge_error == null
-        && (
-          <div className="mt-3 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="inline-flex items-center gap-1.5 rounded bg-muted px-2 py-0.5 text-[10px] uppercase tracking-wider">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              Judging…
-            </span>
-            <span className="text-muted-foreground/60">Gemini auto-judge runs every minute</span>
+            <div style={{ color: "var(--muted)" }}>
+              Suggested motion: <span style={{ fontWeight: 600, color: "var(--ink)" }}>{String(analysis.suggested_motion ?? "—")}</span>
+            </div>
+            {Array.isArray(analysis.key_features) && (
+              <div style={{ gridColumn: "span 2", color: "var(--muted)" }}>
+                Features: <span style={{ color: "var(--ink)" }}>{(analysis.key_features as string[]).join(" · ")}</span>
+              </div>
+            )}
+            {typeof analysis.composition === "string" && (
+              <div style={{ gridColumn: "span 2", fontStyle: "italic", color: "var(--muted)" }}>{analysis.composition as string}</div>
+            )}
           </div>
         )}
 
-      {/* Judge chip — appears when judge has run (or errored) */}
-      {(iteration.judge_rating_overall != null || iteration.judge_error != null) && (
-        <JudgeChip
-          iteration={iteration}
-          onOverrideSuccess={onJudgeOverrideSuccess ?? (() => {})}
-        />
-      )}
-
-      {/* Try with different provider (any iteration that has a clip or director output) */}
-      {director && (iteration.clip_url || iteration.render_error) && (
-        <div className="mt-4 flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Try with:</span>
-          {(["kling", "runway"] as const)
-            .filter((p) => p !== iteration.provider)
-            .map((p) => (
-              <Button
-                key={p}
-                size="sm"
-                variant="outline"
-                disabled={busy === `rerender-${iteration.id}`}
-                onClick={() => onRerender(p)}
-              >
-                {busy === `rerender-${iteration.id}` ? (
-                  <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                ) : (
-                  <Play className="mr-2 h-3 w-3" />
-                )}
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </Button>
-            ))}
-        </div>
-      )}
-
-      {/* Try another SKU (Atlas) — shown on successful renders AND failed ones
-          so users can retry a stuck/failed iteration on a different SKU without
-          falling back to the legacy Kling-native / Runway escape hatches. */}
-      {(iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
-        <div className="mt-2 flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">
-            {iteration.render_error ? "Retry on another SKU:" : "Try another SKU:"}
-          </span>
-          {SKU_DROPDOWN_OPTIONS
-            .filter((s) => s !== iteration.model_used
-              && !(s === "kling-v2-native" && iteration.provider === "kling")
-              && !(s === "runway-gen4-native" && iteration.provider === "runway"))
-            .map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => onRerenderWithSku(s)}
-                disabled={busy === `rerender-${iteration.id}`}
-                className="border border-border px-2 py-0.5 hover:bg-muted disabled:opacity-50"
-                title={
-                  s === "kling-v2-native" ? "Native Kling v2.0 — uses pre-paid credits"
-                    : s === "runway-gen4-native" ? "Runway Gen-4 turbo — strong on exteriors / drone"
-                      : `$${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}/5s`
-                }
-              >
-                {V1_SKU_LABELS[s].replace(" (default)", "")}
-              </button>
-            ))}
-        </div>
-      )}
-
-      {/* Promote to recipe (on 5★ iterations) */}
-      {typeof iteration.rating === "number" && iteration.rating >= 4 && director && (
-        <PromoteRecipeControl iteration={iteration} director={director} />
-      )}
-
-      {/* Render controls (latest only, not currently rendering) */}
-      {isLatest && !iteration.clip_url && !iteration.provider_task_id && director && (
-        <div className="mt-5 flex flex-wrap items-center gap-3">
-          <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={renderForReal}
-              onChange={(e) => {
-              setRenderForReal(e.target.checked);
-              // Audit C C1: defensive reset — if user unchecks "Render for real",
-              // also collapse the Advanced panel and reset provider to auto so
-              // stale overrides don't persist silently on re-tick.
-              if (!e.target.checked) {
-                setProviderChoice("auto");
-                setShowAdvancedProvider(false);
-              }
-            }}
-            />
-            Render for real (~$0.36–$1.11 per clip depending on SKU)
-          </label>
-          <div className="flex items-center gap-2 text-xs">
-            <label className="text-muted-foreground">SKU:</label>
-            <select
-              value={sku}
-              onChange={(e) => setSku(e.target.value as SkuChoice)}
-              className="border border-border bg-background px-2 py-1 text-xs"
-              disabled={!renderForReal || rendering}
-            >
-              {SKU_DROPDOWN_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {V1_SKU_LABELS[s]} — {s === "kling-v2-native" ? "credits" : `≈ $${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}`}
-                </option>
-              ))}
-            </select>
-            <span className="rounded bg-muted px-2 py-0.5 font-sans text-[10px] text-muted-foreground">
-              {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
-            </span>
-          </div>
-          <SkuAffinityHint
-            cameraMovement={(director as { camera_movement?: string } | null)?.camera_movement ?? null}
-            sku={sku}
-            onPickSuggested={(s) => setSku(s as SkuChoice)}
-          />
-          {showAdvancedProvider ? (
-            <div className="flex items-center gap-1">
-              <select
-                value={providerChoice}
-                onChange={(e) => setProviderChoice(e.target.value as "auto" | "kling" | "runway")}
-                className="border border-border bg-background px-2 py-1 text-xs"
-                disabled={!renderForReal || rendering}
-                title="Provider override. Default is Atlas (routes via your selected SKU). Kling native burns pre-paid credits instead of Atlas billing. Runway uses Gen-4 instead of Kling."
-              >
-                <option value="auto">Atlas (default)</option>
-                <option value="kling">Kling native</option>
-                <option value="runway">Runway Gen-4</option>
-              </select>
-              {/* Audit C C1: close button resets provider to auto + collapses panel */}
-              <button
-                type="button"
-                onClick={() => {
-                  setProviderChoice("auto");
-                  setShowAdvancedProvider(false);
-                }}
-                disabled={!renderForReal || rendering}
-                className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-                title="Reset to Atlas (default) and collapse"
-              >
-                ◂
-              </button>
+        {/* Director output */}
+        {director && (
+          <div style={{ marginTop: 20, borderLeft: "2px solid rgba(11,11,16,0.12)", paddingLeft: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ borderRadius: 6, background: "var(--ink)", color: "var(--surface)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                {director.camera_movement}
+              </span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>{director.duration_seconds}s</span>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowAdvancedProvider(true)}
-              disabled={!renderForReal || rendering}
-              className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-              title="Show provider override (Kling native / Runway)"
-            >
-              Advanced ▸
-            </button>
-          )}
-          <Button
-            size="sm"
-            variant={renderForReal ? "default" : "outline"}
-            disabled={!renderForReal || rendering}
-            onClick={() => {
-              // If the user picked a native-provider pseudo-SKU, route via
-              // that provider (Atlas SKU ignored). Else honor any explicit
-              // provider override + Atlas SKU.
-              if (isNativeKlingSku(sku)) {
-                onRender("kling", sku);
-              } else if (isNativeRunwaySku(sku)) {
-                onRender("runway", sku);
-              } else {
-                onRender(providerChoice === "auto" ? null : providerChoice, sku);
-              }
-            }}
-          >
-            {rendering ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Play className="mr-2 h-3 w-3" />}
-            {rendering ? "Rendering…" : "Render clip"}
-          </Button>
-        </div>
-      )}
+            <p style={{ marginTop: 8, fontFamily: "var(--le-font-mono)", fontSize: 13, lineHeight: 1.6, color: "var(--ink)" }}>{director.prompt}</p>
+          </div>
+        )}
 
-      {/* Feedback — rating available on any iteration; refine latest only */}
-      {director && (
-        <div className="mt-6 space-y-4 border-t border-border pt-5">
-          <div className="flex items-center justify-between">
-            <span className="label text-muted-foreground">Rate this iteration</span>
-            <span className="text-[10px] tabular-nums text-muted-foreground" aria-live="polite">
-              {autoSaveState === "saving" ? "saving…"
-                : autoSaveState === "saved" ? "✓ saved"
-                : autoSaveState === "error" ? "⚠ auto-save failed — use Save rating button"
-                : ""}
+        {iteration.user_comment && iteration.user_comment.startsWith("[refiner rationale]") && (
+          <div style={{ marginTop: 12, borderRadius: "var(--radius-sm)", background: "rgba(11,11,16,0.04)", padding: 12, fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>
+            {iteration.user_comment.replace("[refiner rationale] ", "Why: ")}
+          </div>
+        )}
+
+        {/* Queued for render (waiting for provider slot) */}
+        {!iteration.clip_url && !iteration.provider_task_id && iteration.render_queued_at && !iteration.render_error && (
+          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, background: "rgba(115,80,195,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--accent)" }}>
+            <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
+            Queued for {iteration.provider ?? "render"} — waiting for slot
+            <span style={{ opacity: 0.7 }}>
+              · auto-submits when capacity opens (cron checks every minute)
             </span>
           </div>
-          <div>
-            <span className="sr-only">Rate this iteration</span>
-            <div className="mt-2 flex items-center gap-1">
-              {[1, 2, 3, 4, 5].map((n) => (
+        )}
+
+        {/* Pending render indicator */}
+        {!iteration.clip_url && iteration.provider_task_id && !iteration.render_error && (
+          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, background: "rgba(182,128,44,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--warn)" }}>
+            <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
+            Rendering on {iteration.provider}
+            {iteration.render_submitted_at && (
+              <span style={{ opacity: 0.7 }}>
+                · submitted {new Date(iteration.render_submitted_at).toLocaleTimeString()}
+              </span>
+            )}
+            <span style={{ opacity: 0.7 }}>· cron finalizes (safe to leave this page)</span>
+          </div>
+        )}
+
+        {/* Render error */}
+        {iteration.render_error && !iteration.clip_url && (
+          <div style={{ marginTop: 20, borderRadius: "var(--radius-sm)", background: "rgba(196,74,74,0.06)", border: "1px solid rgba(196,74,74,0.2)", padding: 12, fontSize: 12, color: "var(--bad)" }}>
+            <div style={{ fontWeight: 600 }}>Render failed</div>
+            <div style={{ marginTop: 4, opacity: 0.8 }}>{iteration.render_error}</div>
+          </div>
+        )}
+
+        {/* Clip player */}
+        {iteration.clip_url && (
+          <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+            <video
+              key={iteration.clip_url}
+              src={iteration.clip_url}
+              controls
+              playsInline
+              preload="metadata"
+              style={{ width: "100%", maxWidth: 480, borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", display: "block" }}
+            />
+            <a
+              href={iteration.clip_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ fontSize: 12, color: "var(--muted)", textDecoration: "underline" }}
+            >
+              Open clip in new tab
+            </a>
+          </div>
+        )}
+
+        {/* Judge pending — clip has landed but judge cron hasn't run yet. */}
+        {iteration.clip_url
+          && iteration.judge_rating_overall == null
+          && iteration.judge_error == null
+          && (
+            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
+                Judging…
+              </span>
+              <span style={{ opacity: 0.6 }}>Gemini auto-judge runs every minute</span>
+            </div>
+          )}
+
+        {/* Judge chip — appears when judge has run (or errored) */}
+        {(iteration.judge_rating_overall != null || iteration.judge_error != null) && (
+          <JudgeChip
+            iteration={iteration}
+            onOverrideSuccess={onJudgeOverrideSuccess ?? (() => {})}
+          />
+        )}
+
+        {/* Try with different provider (any iteration that has a clip or director output) */}
+        {director && (iteration.clip_url || iteration.render_error) && (
+          <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>Try with:</span>
+            {(["kling", "runway"] as const)
+              .filter((p) => p !== iteration.provider)
+              .map((p) => (
                 <button
-                  key={n}
-                  onClick={() => setRating(rating === n ? null : n)}
-                  className="p-1"
-                  aria-label={`${n} stars`}
+                  key={p}
+                  type="button"
+                  className="le-btn-ghost"
+                  disabled={busy === `rerender-${iteration.id}`}
+                  onClick={() => onRerender(p)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, opacity: busy === `rerender-${iteration.id}` ? 0.5 : 1 }}
                 >
-                  <Star
-                    className={`h-5 w-5 ${rating != null && n <= rating ? "fill-foreground text-foreground" : "text-muted-foreground/40"}`}
-                    strokeWidth={1.5}
-                  />
+                  {busy === `rerender-${iteration.id}` ? (
+                    <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
+                  ) : (
+                    <Play style={{ width: 11, height: 11 }} />
+                  )}
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
                 </button>
               ))}
-            </div>
           </div>
+        )}
 
-          <div>
-            <span className="label text-muted-foreground">Tags</span>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {RATING_TAGS.map((t) => {
-                const active = tags.includes(t);
-                return (
-                  <button
-                    key={t}
-                    onClick={() => toggleTag(t)}
-                    className={`rounded-full border px-2.5 py-1 text-[10px] transition ${
-                      active ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:border-foreground"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div>
-            <span className="label text-muted-foreground">Notes (optional)</span>
-            <Textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              onBlur={() => flushSave(false)}
-              placeholder="Anything you want to remember about this iteration"
-              className="mt-2 min-h-[60px]"
-            />
-          </div>
-
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onRate({ rating, tags, comment })}
-              disabled={rating_saving || (rating === null && tags.length === 0 && !comment.trim())}
-            >
-              {rating_saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : <Star className="mr-2 h-3 w-3" />}
-              Save rating
-            </Button>
-          </div>
-
-          <div>
-            <span className="label text-muted-foreground">
-              What should change?{!isLatest && <span className="text-foreground/60"> (will branch from this iteration)</span>}
+        {/* Try another SKU (Atlas) */}
+        {(iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
+          <div style={{ marginTop: 8, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
+            <span style={{ color: "var(--muted)" }}>
+              {iteration.render_error ? "Retry on another SKU:" : "Try another SKU:"}
             </span>
-            <Textarea
-              value={chat}
-              onChange={(e) => setChat(e.target.value)}
-              placeholder="e.g. 'the dolly is too fast, make it slower' or 'use reveal past the island corner instead of push_in'"
-              className="mt-2 min-h-[80px]"
-            />
-            <div className="mt-3 flex justify-end">
-              <Button
-                onClick={() =>
-                  onRefine({ rating, tags, comment, chatInstruction: chat })
-                }
-                disabled={!chat.trim() || refining}
+            {SKU_DROPDOWN_OPTIONS
+              .filter((s) => s !== iteration.model_used
+                && !(s === "kling-v2-native" && iteration.provider === "kling")
+                && !(s === "runway-gen4-native" && iteration.provider === "runway"))
+              .map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="le-btn-ghost"
+                  onClick={() => onRerenderWithSku(s)}
+                  disabled={busy === `rerender-${iteration.id}`}
+                  style={{ fontSize: 11, opacity: busy === `rerender-${iteration.id}` ? 0.5 : 1 }}
+                  title={
+                    s === "kling-v2-native" ? "Native Kling v2.0 — uses pre-paid credits"
+                      : s === "runway-gen4-native" ? "Runway Gen-4 turbo — strong on exteriors / drone"
+                        : `$${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}/5s`
+                  }
+                >
+                  {V1_SKU_LABELS[s].replace(" (default)", "")}
+                </button>
+              ))}
+          </div>
+        )}
+
+        {/* Promote to recipe (on 4+ star iterations) */}
+        {typeof iteration.rating === "number" && iteration.rating >= 4 && director && (
+          <PromoteRecipeControl iteration={iteration} director={director} />
+        )}
+
+        {/* Render controls (latest only, not currently rendering) */}
+        {isLatest && !iteration.clip_url && !iteration.provider_task_id && director && (
+          <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
+              <input
+                type="checkbox"
+                checked={renderForReal}
+                onChange={(e) => {
+                  setRenderForReal(e.target.checked);
+                  if (!e.target.checked) {
+                    setProviderChoice("auto");
+                    setShowAdvancedProvider(false);
+                  }
+                }}
+                style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+              />
+              Render for real (~$0.36–$1.11 per clip depending on SKU)
+            </label>
+            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
+              <label style={{ color: "var(--muted)" }}>SKU:</label>
+              <select
+                value={sku}
+                onChange={(e) => setSku(e.target.value as SkuChoice)}
+                disabled={!renderForReal || rendering}
+                style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
               >
-                {refining ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Refine → new iteration
-              </Button>
+                {SKU_DROPDOWN_OPTIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {V1_SKU_LABELS[s]} — {s === "kling-v2-native" ? "credits" : `≈ $${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}`}
+                  </option>
+                ))}
+              </select>
+              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
+                {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
+              </span>
+            </div>
+            <SkuAffinityHint
+              cameraMovement={(director as { camera_movement?: string } | null)?.camera_movement ?? null}
+              sku={sku}
+              onPickSuggested={(s) => setSku(s as SkuChoice)}
+            />
+            {showAdvancedProvider ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                <select
+                  value={providerChoice}
+                  onChange={(e) => setProviderChoice(e.target.value as "auto" | "kling" | "runway")}
+                  disabled={!renderForReal || rendering}
+                  style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                  title="Provider override. Default is Atlas (routes via your selected SKU). Kling native burns pre-paid credits instead of Atlas billing. Runway uses Gen-4 instead of Kling."
+                >
+                  <option value="auto">Atlas (default)</option>
+                  <option value="kling">Kling native</option>
+                  <option value="runway">Runway Gen-4</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { setProviderChoice("auto"); setShowAdvancedProvider(false); }}
+                  disabled={!renderForReal || rendering}
+                  style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                  title="Reset to Atlas (default) and collapse"
+                >
+                  ◂
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAdvancedProvider(true)}
+                disabled={!renderForReal || rendering}
+                style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                title="Show provider override (Kling native / Runway)"
+              >
+                Advanced ▸
+              </button>
+            )}
+            <button
+              type="button"
+              className={renderForReal ? "le-btn-dark" : "le-btn-ghost"}
+              disabled={!renderForReal || rendering}
+              onClick={() => {
+                if (isNativeKlingSku(sku)) {
+                  onRender("kling", sku);
+                } else if (isNativeRunwaySku(sku)) {
+                  onRender("runway", sku);
+                } else {
+                  onRender(providerChoice === "auto" ? null : providerChoice, sku);
+                }
+              }}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+            >
+              {rendering ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <Play style={{ width: 13, height: 13 }} />}
+              {rendering ? "Rendering…" : "Render clip"}
+            </button>
+          </div>
+        )}
+
+        {/* Feedback — rating available on any iteration; refine latest only */}
+        {director && (
+          <div style={{ marginTop: 24, borderTop: "1px solid var(--line-2)", paddingTop: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span className="le-d-label">Rate this iteration</span>
+              <span style={{ fontSize: 10, fontVariantNumeric: "tabular-nums", color: "var(--muted)" }} aria-live="polite">
+                {autoSaveState === "saving" ? "saving…"
+                  : autoSaveState === "saved" ? "saved"
+                  : autoSaveState === "error" ? "auto-save failed — use Save rating button"
+                  : ""}
+              </span>
+            </div>
+
+            {/* Stars */}
+            <div>
+              <span className="sr-only">Rate this iteration</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setRating(rating === n ? null : n)}
+                    style={{ padding: 4, background: "none", border: "none", cursor: "pointer" }}
+                    aria-label={`${n} stars`}
+                  >
+                    <Star
+                      style={{ width: 20, height: 20 }}
+                      fill={rating != null && n <= rating ? "var(--ink)" : "none"}
+                      stroke={rating != null && n <= rating ? "var(--ink)" : "var(--line)"}
+                      strokeWidth={1.5}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Tags */}
+            <div>
+              <span className="le-d-label">Tags</span>
+              <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {RATING_TAGS.map((t) => {
+                  const active = tags.includes(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => toggleTag(t)}
+                      style={{
+                        borderRadius: "var(--radius-pill)",
+                        border: `1px solid ${active ? "var(--ink)" : "var(--line)"}`,
+                        background: active ? "var(--ink)" : "transparent",
+                        color: active ? "var(--surface)" : "var(--muted)",
+                        padding: "4px 10px",
+                        fontSize: 10,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        transition: "all 0.1s",
+                      }}
+                    >
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <span className="le-d-label">Notes (optional)</span>
+              <textarea
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                onBlur={() => flushSave(false)}
+                placeholder="Anything you want to remember about this iteration"
+                style={{ ...TEXTAREA_STYLE, marginTop: 8, minHeight: 60 }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                className="le-btn-ghost"
+                onClick={() => onRate({ rating, tags, comment })}
+                disabled={rating_saving || (rating === null && tags.length === 0 && !comment.trim())}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (rating_saving || (rating === null && tags.length === 0 && !comment.trim())) ? 0.5 : 1 }}
+              >
+                {rating_saving ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <Star style={{ width: 12, height: 12 }} />}
+                Save rating
+              </button>
+            </div>
+
+            {/* Refine */}
+            <div>
+              <span className="le-d-label">
+                What should change?{!isLatest && <span style={{ color: "var(--muted-2)", fontWeight: 400 }}> (will branch from this iteration)</span>}
+              </span>
+              <textarea
+                value={chat}
+                onChange={(e) => setChat(e.target.value)}
+                placeholder="e.g. 'the dolly is too fast, make it slower' or 'use reveal past the island corner instead of push_in'"
+                style={{ ...TEXTAREA_STYLE, marginTop: 8, minHeight: 80 }}
+              />
+              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="le-btn-dark"
+                  onClick={() => onRefine({ rating, tags, comment, chatInstruction: chat })}
+                  disabled={!chat.trim() || refining}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (!chat.trim() || refining) ? 0.5 : 1 }}
+                >
+                  {refining ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <Sparkles style={{ width: 13, height: 13 }} />}
+                  Refine → new iteration
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
