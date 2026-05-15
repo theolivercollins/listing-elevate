@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-14 (blog routes + delete dialog + Sierra unpublish + on-hold; earlier: list unstick + Creatomate rev-2)
+Last updated: 2026-05-15 (Ally — the full blog AI editor: chat-as-page, Gemini research, team-archive cross-linking, persistent memory, source allowlist, history page)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,110 @@ See also:
 
 ## Right now
 
-**2026-05-14 evening (latest, PR #51): Smoke test surfaced four follow-on gaps; all fixed.**
+**2026-05-15 (latest, PRs #50-#70 over one long session): Built "Ally" — the blog AI editor that runs the entire post-creation + improvement workflow. The blog system went from "publish endpoint works" to a full AI-first product surface in one session.**
+
+### What Ally is, end to end
+
+**For new posts** — `/dashboard/blog/posts/new?chat=1` is a dedicated full-page chat-compose experience (replaces the old modal). 60/40 split: chat thread + composer on the left, live form sidebar on the right (title, image, author, category, meta title/desc/keywords). Hero "Ready when you are." empty state with daily-rotating starter chips (pool of 30 topics, day-of-year rotation). Ally populates every field as you chat; each sidebar field shows a green `✓ filled` pill once she fills it. "Publish now" + "Save draft" pinned in the header; chat commands ("publish it", "save as draft") render an in-thread confirm card with a form-state snapshot so later edits can't drift what ships.
+
+**For existing posts** — `AllyFloatingChat` is a bottom-right Intercom-style widget on every post-detail page (drafts / live / on-hold). Closed = pill button "Improve with Ally". Open = ~440×640 panel with thread + composer + proposal cards. AI replies that touch title/body/meta render an Apply button that patches the parent form (advisory — Save still goes through the existing buttons). "See the diff" opens a side-by-side dialog (Current vs Proposed) with full HTML previews. Per-post chat history persists in localStorage; reopen = resume.
+
+**Conversation history** — `/dashboard/blog/ally-history` lists every persisted chat across all posts (resume, search, delete). Linked from the Blog Posts header.
+
+### Ally's brain
+
+- **Model**: Claude Sonnet 4.6 (`claude-sonnet-4-6`).
+- **Schema**: Ally returns a namespaced envelope per turn — `<reply>`, `<post_title>`, `<post_body>`, `<seo_title>`, `<seo_description>`, `<seo_tags>`, `<post_author>`, `<post_category>`, `<post_action>` (publish | save_draft), plus four advisory tags: `<changes_summary>` (bulleted "what I changed"), `<ally_suggest_research>` (true when she'd benefit from web data), `<ally_remember>` (persistent memory), `<ally_forget>` (not yet emitted but parsable). All tag names are `post_*`/`seo_*`/`ally_*` prefixed to avoid colliding with real HTML elements (the `<html>` collision bug bit us once already).
+- **Status indicator**: `AllyThinking` (in `src/components/blog/ally-status.tsx`) drives a phase-aware progress display — Eye/Globe/BookOpenText/PenLine/ScrollText/Sparkles icons rotate as Ally moves through Reading → Searching (research-on only) → Reading sources → Drafting → Polishing. 3-5 rotating label variants per phase cycled every 2.5s. Replaces the old single "Working on it…" text. Live status owns the pending bubble — no separate loader.
+- **Queued messages**: Composer stays sendable while a turn is in flight. Sends while pending append to the thread with a "queued" badge + ring outline. A `useEffect` watching `chat.isPending` promotes the first queued message + fires the next turn when ready.
+
+### Team archive integration (the big SEO unlock)
+
+`buildSystemPrompt` fetches up to 50 live team posts and injects two sections into every chat:
+
+1. **ARCHIVE CATALOG** — all 50 posts as one-liners with title + category + date + URL so Ally knows what exists.
+2. **DETAILED EXCERPTS** — top 8 topically-ranked posts (word-overlap score on title × 3 + category × 2 + tags × 1 + 0–5 recency bonus over 150 days) with ~1100-char body excerpts.
+
+System prompt is explicit: *"The posts below ARE the URLs. You do NOT need to fetch anything. NEVER say 'I can't access URLs'."* + concrete cross-link rules ("our market update" → find Market Reports post → quote stats → link inline). Cures the failure mode where Ally claimed she couldn't access team URLs and fabricated stats instead.
+
+### Gemini research (3-mode toggle)
+
+- **Auto** (default): server runs a keyword intent detector on the latest user message (direct intent like "research X", freshness markers like "current/this month/2026/today's", market-stat vocab, market-report references); only fires Gemini when matched. Zero Gemini cost on tone-tweak / structural-edit turns.
+- **Always**: Gemini every turn (force-on via the `+` menu toggle).
+- **Never**: skip grounding entirely.
+
+Each research call uses **Gemini 2.5 Flash with googleSearch grounding**. Returns synthesized 200-400 word summary + numbered sources. Server injects the brief + sources into the Claude system prompt; Claude cites `[n]` inline and emits a `<h3>Sources</h3><ol>` at the end of the post. Cost recorded as `stage=blog_research, provider=gemini, model=gemini-2.5-flash`.
+
+`<ally_suggest_research>true</ally_suggest_research>` is Ally's hint when auto-mode skipped but she'd have benefited; UI renders a "Search the web & retry" pill that toggles research + resends in one click.
+
+### Source allowlist (no competitor realtors)
+
+`lib/blog-engine/source-allowlist.ts` exports `isAllowedSource(url)` and `SOURCE_RULE_TEXT`:
+
+- **Allowed**: Realtor.com / Zillow / Redfin / Trulia / Homes.com / Movoto / Homefinder, Reuters / AP / Bloomberg / WSJ / NYT / CNBC / MarketWatch, local news (WINK / NBC-2 / Fox 4 / yoursun.com / Tampa Bay Times / Miami Herald), industry data (NAR / Florida Realtors / Stellar MLS / Freddie Mac / Fannie Mae / Inman / HousingWire), any `.gov` or `.edu`, and the team's own posts.
+- **Blocked**: Century21 / RE-MAX / KW / Coldwell Banker / Compass / eXp / Sotheby's / Douglas Elliman / Berkshire Hathaway, any URL matching `/agent[s]?/` / `/our-team/` / `/meet-(the-)?team/` on non-portal domains, heuristic catches for domains containing `realty/realtor/realestate/homes/team/group/partners/properties/brokerage`.
+
+Defense-in-depth: `SOURCE_RULE_TEXT` is appended to both Ally's `BASE_SYSTEM_PROMPT` and Gemini-research's `SYSTEM` instruction, AND the Gemini result's `sources[]` is filtered through `isAllowedSource()` before reaching Ally or the UI.
+
+### Persistent memory (`ally_memories` table)
+
+Migration 057 added `ally_memories` (site-scoped, soft-delete, max 100/site, dedup on identical content). User says "remember X" → Ally emits `<ally_remember>X</ally_remember>` → server stores it. All subsequent chats inject active memories as `ALLY'S NOTES` at the top of the system prompt. New `GET /api/blog/ai/memories` + `DELETE /api/blog/ai/memories?id=` endpoints. UI: Brain icon + badge in the floating chat header opens a Popover listing memories with per-item trash-to-forget. Toast confirms each new memory.
+
+### Files / fields / state visibility
+
+- **File uploads** on both chat surfaces (`AllyFloatingChat` + `BlogPostChatCompose`): PDF / image / CSV / .txt, max 5 × 3 MB, one-shot per turn (consumed on send), sent as Anthropic content blocks on the most recent user turn.
+- **Templates**: + menu has a Template picker; selected template's body_html is injected as a `<template>` structural block in the system prompt.
+- **Internal linking** to past team posts is enforced via system-prompt rule + topical scoring.
+- **Visible changes**: `<changes_summary>` bullet list rendered in the proposal card + a "See the diff" button that opens a side-by-side modal (Current/Proposed iframes + inline title diff + Apply-from-dialog).
+- **Skeleton + shimmer** while Ally works: `AllySkeleton` (empty preview, first turn) + `AllyShimmerOverlay` (regenerating, has prior draft).
+
+### Other dashboard improvements
+
+- **Soft-delete with checkboxes** (`DeletePostDialog`): "Remove from dashboard" + "Remove from Sierra (public site)" toggles. Sierra-side runs a new `unpublish` blog_jobs kind via Browserbase that opens `/blog-manager.aspx`, locates the row by `external_post_id`, auto-accepts the JS confirm, verifies the row is gone.
+- **On-hold state**: `POST /api/blog/posts/[id]/hold {hold:boolean}` toggles between `live` and `on_hold`. Dashboard-only — never touches Sierra. Pause/Resume buttons + status pill + filter.
+- **Routing fix**: `vercel.json` got 7 new rewrites for `/api/blog/posts/[id]/*` paths (`/publish`, `/reject`, `/edit-on-sierra`, `/hold`) + `images/[id]` + `templates/[id]`. Without these, every dynamic blog API path 404'd.
+- **List page unstick**: missing FK `blog_posts.image_id → blog_images.id` (migration 056) was causing PostgREST 400 on the embed query → react-query retries → "Loading…" forever. Fix applied to prod via MCP.
+- **TinyMCE editor** (replaces Tiptap): loaded GPL from jsDelivr (no API key, no domain registration). Matches Sierra's TinyMCE 8 renderer so the editor view IS the preview. Bundle ~400 KB smaller.
+- **Big preview** with Open-in-new-tab + Source/Code view toggle. 2fr/3fr split (preview-dominant, Claude.ai artifact ratio).
+- **Composer**: `AutoGrowTextarea` grows to a pixel cap then scrolls inside. Killed Chrome's focus rectangle via `.ally-composer-input` class with `!important` rules + `-webkit-appearance: none`.
+
+### Migrations applied this session
+
+- **052** (`blog_templates_defaults`) — was committed to the repo months ago but had never been applied to prod Supabase; surfaced as 500 on the first template save. Applied via MCP.
+- **056** (`blog_posts_image_id_fk`) — added the missing FK that was hanging the dashboard list.
+- **057** (`ally_memories`) — persistent memory table.
+
+### Key files
+
+- `api/blog/ai/chat.ts` — the heart of Ally. ~600 lines covering schema, intent detection, research, memory, archive injection, cost tracking.
+- `lib/blog-engine/gemini-research.ts` — Gemini 2.5 Flash googleSearch wrapper + source filter.
+- `lib/blog-engine/ally-memory.ts` — list/add/deactivate helpers + system-prompt block builder.
+- `lib/blog-engine/source-allowlist.ts` — `isAllowedSource(url)` + `SOURCE_RULE_TEXT`.
+- `lib/blog-engine/publishers/sierra/unpublish.ts` — Browserbase Sierra delete.
+- `src/pages/dashboard/BlogPostChatCompose.tsx` — full-page chat-compose for new posts.
+- `src/pages/dashboard/BlogAllyHistory.tsx` — conversation history viewer.
+- `src/components/blog/AllyFloatingChat.tsx` — Improve-with-Ally widget.
+- `src/components/blog/AIChatModal.tsx` — legacy modal kept for compatibility.
+- `src/components/blog/ally-status.tsx` — `AllyThinking`, `AllyPulse`, `AllySkeleton`, `AllyShimmerOverlay`, `AutoGrowTextarea`, `useAllyStatus`.
+- `src/components/blog/ally-storage.ts` — per-post chat localStorage persistence (used by floating chat + history page).
+- `src/components/blog/ally-starters.ts` — daily-rotating starter chips pool.
+
+### Open follow-ups (not addressed this session)
+
+- Streaming responses (currently buffered — the phase-rotation status is a UX patch, not real streaming).
+- Per-author voice profiles (Ally could learn each agent's voice from their past posts; currently treats all team posts as one voice).
+- Auto-listing-to-post pipeline (MLS → new draft) — pitched but not built.
+- Multi-channel snippets (IG/FB/LinkedIn captions + email paragraph per post) — pitched but not built.
+- ESLint `import/extensions: ['error', 'always', { ts: 'never' }]` to catch the Vercel .js-extension gotcha in CI.
+- Expired `ANTHROPIC_API_KEY` in GitHub Actions secrets — claude-review workflow still failing on PRs.
+
+### PR list (this session, in order)
+
+#39 + #43 (publish unbreak — earlier session) → #46 (directory imports) → #50 (list FK unstick) → #51 (Sierra route fix + dialog) → #52 (rename modal) → #53 (error state) → #54 (preview popout + research toggle) → #55 (TinyMCE) → #56 (hero + + menu) → #57 (chat-as-page) → #58 (post_body tag fix) → #59 (instant placeholder + Ally rename) → #60 (Gemini research) → #61 (floating chat + research suggest) → #62 (composer growth + contrast + skeleton) → #63 (auto-research) → #64/#65 (focus outline) → #66 (visible changes) → #67 (queue) → #68 (phase status + uploads + persistence) → #69 (archive + history + daily starters) → #70 (source allowlist + memory).
+
+---
+
+**2026-05-14 evening (PR #51): Smoke test surfaced four follow-on gaps; all fixed.**
 
 1. **DELETE returned 404** — and so did every other `/api/blog/posts/[id]/...` path. `vercel.json` defines explicit `routes` (not filesystem-based dynamic resolution); all other dynamic API paths in this repo had explicit rewrites, but the blog ones did not. Added 7 new rewrites for `posts/[id]`, `posts/[id]/{publish,reject,edit-on-sierra,hold}`, `images/[id]`, `templates/[id]`. This was the root cause of "Delete failed: 404" and probably affected other blog detail flows nobody had exercised since the engine shipped.
 
