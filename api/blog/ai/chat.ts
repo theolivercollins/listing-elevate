@@ -54,6 +54,11 @@ interface ChatResponse {
    * true so the user can opt in with one click.
    */
   suggest_research: boolean;
+  /**
+   * Plain-text bullet list of changes Ally made this turn ("- Added X", "- Rewrote Y").
+   * Null when nothing substantive changed. Client renders it under proposal cards.
+   */
+  changes_summary: string | null;
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
@@ -110,6 +115,16 @@ One word: true. Emit this ONLY when ALL of the following are true:
   3. You would otherwise have to fabricate or guess numbers.
 When you emit this, ALSO mention it in your <reply> — for example: "Want me to pull current numbers from Google first? Toggle the Research switch above the input, or click the suggestion below." Omit this tag when research is already on or when fabrication isn't a risk (e.g. tone tweaks, structural edits, generic advice).
 </ally_suggest_research>
+
+<changes_summary>
+A bullet-pointed list (one bullet per line, plain text, no markdown syntax — just leading "- ") of EVERY change you made to the post this turn compared to the CURRENT DRAFT the user gave you. Be specific about what was added, removed, or rewritten and roughly where.
+Examples of good bullets:
+- Added a "HOA fees" section before the CTA (~120 words)
+- Rewrote the intro from 3 paragraphs to 1, tightening the hook
+- Replaced the closing CTA with a private-showings invitation
+- Updated the May 2026 median price stat from $385K to $392K (per researched data)
+Omit this section when you didn't change anything substantive (e.g. you only asked a clarifying question and the placeholder body is unchanged).
+</changes_summary>
 
 Rules:
 - <post_body> is REQUIRED on every turn and must be the full current draft, never a diff. If the user said hi or is still scoping, put a placeholder like "<p>Tell me more about what this post should cover.</p>" inside <post_body>.
@@ -190,6 +205,7 @@ function parseSections(text: string) {
     actionRaw === "publish" || actionRaw === "save_draft" ? actionRaw : null;
   const suggestResearchRaw = extractTag(text, "ally_suggest_research");
   const suggest_research = suggestResearchRaw?.toLowerCase().trim() === "true";
+  const changes_summary = extractTag(text, "changes_summary");
 
   // Last resort — if we still have no body but the message contains an
   // HTML-looking blob (e.g. the model emitted raw HTML next to the prose
@@ -213,13 +229,14 @@ function parseSections(text: string) {
       reply: text.trim(), body_html: "",
       title: null, meta_title: null, meta_description: null, meta_tags: null,
       author: null, category: null, action: null, suggest_research: false,
+      changes_summary: null,
     };
   }
 
   return {
     reply, body_html: body_html ?? "",
     title, meta_title, meta_description, meta_tags, author, category, action,
-    suggest_research,
+    suggest_research, changes_summary,
   };
 }
 
@@ -470,6 +487,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     action: parsed.action,
     // Only surface the suggestion when research isn't already on — otherwise it'd be noise.
     suggest_research: parsed.suggest_research && !research,
+    changes_summary: parsed.changes_summary,
     research_sources: research?.sources ?? [],
     cost_cents: costCents + (research?.cost_cents ?? 0),
     usage: { input_tokens: inTok, output_tokens: outTok },

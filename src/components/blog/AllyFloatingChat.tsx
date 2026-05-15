@@ -6,11 +6,15 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowUp, Check, Globe, Loader2, MessageSquare, Plus, Sparkles, Wand2, X,
+  ArrowUp, Check, Eye, Globe, Loader2, MessageSquare, Plus, Sparkles, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { aiChat, type AIChatMessage, type AIResearchSource } from "@/lib/blog/api-client";
 import { useAllyStatus, AllyPulse, AutoGrowTextarea } from "./ally-status";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import { HtmlPreview } from "./HtmlPreview";
 
 /**
  * "Improve with AI" floating chat anchored to the bottom-right corner of the
@@ -35,8 +39,17 @@ interface ProposalCard {
   reply: string;
   /** Only the fields that actually changed vs. the current form. */
   patch: FormPatch;
-  /** Human-readable summary like "title, body, meta description". */
+  /** Human-readable label like "title, body, meta description". */
   changedSummary: string;
+  /** Multi-line plain-text bullets from Ally describing each change. */
+  changesNarrative: string | null;
+  /** Snapshot of the body BEFORE this proposal — used for the diff view. */
+  beforeBodyHtml: string;
+  /** Snapshot of the body AFTER (Ally's proposed body) — for the diff view. */
+  afterBodyHtml: string;
+  /** Title snapshots so the diff modal can show those too if changed. */
+  beforeTitle: string;
+  afterTitle: string;
   applied: boolean;
 }
 
@@ -82,6 +95,7 @@ function summariseChanges(patch: FormPatch): string {
 
 export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLabel }: Props) {
   const [open, setOpen] = useState(false);
+  const [diffCard, setDiffCard] = useState<ProposalCard | null>(null);
   const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; suggestResearch?: boolean })[]>([]);
   const [proposals, setProposals] = useState<ProposalCard[]>([]);
   const [input, setInput] = useState("");
@@ -152,6 +166,11 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
             reply: r.reply,
             patch,
             changedSummary: summariseChanges(patch),
+            changesNarrative: r.changes_summary,
+            beforeBodyHtml: curHtml,
+            afterBodyHtml: patch.body_html ?? curHtml,
+            beforeTitle: cur.title,
+            afterTitle: patch.title ?? cur.title,
             applied: false,
           },
         ]);
@@ -361,11 +380,37 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                       </>
                     )}
                   </div>
+                  {/* Bullet list of what Ally actually changed, if she shared one. */}
+                  {card.changesNarrative && (
+                    <ul className="mb-2 space-y-0.5 text-[11px] leading-snug text-foreground/80">
+                      {card.changesNarrative
+                        .split("\n")
+                        .map((line) => line.replace(/^[-*•]\s*/, "").trim())
+                        .filter(Boolean)
+                        .slice(0, 8)
+                        .map((bullet, i) => (
+                          <li key={i} className="flex gap-1.5">
+                            <span className="text-muted-foreground">•</span>
+                            <span>{bullet}</span>
+                          </li>
+                        ))}
+                    </ul>
+                  )}
                   {!card.applied && (
-                    <div className="flex gap-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       <Button size="sm" className="h-7 px-2 text-xs" onClick={() => applyProposal(card)}>
                         Apply
                       </Button>
+                      {(card.patch.body_html !== undefined || card.patch.title !== undefined) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setDiffCard(card)}
+                        >
+                          <Eye className="mr-1 h-3 w-3" /> See the diff
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
@@ -460,6 +505,85 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
           </motion.div>
         )}
       </AnimatePresence>
+      <Dialog open={!!diffCard} onOpenChange={(v) => { if (!v) setDiffCard(null); }}>
+        <DialogContent className="max-w-6xl gap-0 p-0">
+          <DialogHeader className="border-b px-5 py-3">
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Eye className="h-4 w-4 text-primary" /> See the change
+              {diffCard && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  · {diffCard.changedSummary}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {diffCard && (
+            <div className="flex flex-col">
+              {diffCard.changesNarrative && (
+                <div className="border-b bg-muted/30 px-5 py-3">
+                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">What Ally changed</div>
+                  <ul className="space-y-0.5 text-sm leading-snug">
+                    {diffCard.changesNarrative
+                      .split("\n")
+                      .map((line) => line.replace(/^[-*•]\s*/, "").trim())
+                      .filter(Boolean)
+                      .map((bullet, i) => (
+                        <li key={i} className="flex gap-2">
+                          <span className="text-muted-foreground">•</span>
+                          <span>{bullet}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+              {(diffCard.beforeTitle !== diffCard.afterTitle) && (
+                <div className="grid grid-cols-2 gap-0 border-b text-sm">
+                  <div className="border-r px-5 py-3">
+                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Title — current</div>
+                    <div className="rounded bg-rose-50 px-2 py-1 text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
+                      {diffCard.beforeTitle || <em className="text-muted-foreground">(empty)</em>}
+                    </div>
+                  </div>
+                  <div className="px-5 py-3">
+                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Title — proposed</div>
+                    <div className="rounded bg-emerald-50 px-2 py-1 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+                      {diffCard.afterTitle}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-0" style={{ height: "65vh" }}>
+                <div className="flex min-h-0 flex-col border-r">
+                  <div className="border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Current draft
+                  </div>
+                  <HtmlPreview
+                    html={diffCard.beforeBodyHtml || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>(empty)</p>"}
+                    style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
+                  />
+                </div>
+                <div className="flex min-h-0 flex-col">
+                  <div className="border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    Proposed
+                  </div>
+                  <HtmlPreview
+                    html={diffCard.afterBodyHtml || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>(empty)</p>"}
+                    style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
+                <Button variant="ghost" onClick={() => setDiffCard(null)}>Close</Button>
+                {!diffCard.applied && (
+                  <Button onClick={() => { applyProposal(diffCard); setDiffCard(null); }}>
+                    Apply this change
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
