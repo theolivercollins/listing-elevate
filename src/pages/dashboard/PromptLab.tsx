@@ -14,6 +14,8 @@ import {
   Check,
   ChevronDown,
 } from "lucide-react";
+import { PageHeading, Card } from "@/components/dashboard/primitives";
+// shadcn primitives kept for IterationCard sub-components (complex streaming logic — not reskinned)
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -206,14 +208,12 @@ function SessionList() {
   }
 
   return (
-    <div className="space-y-10">
-      <div>
-        <span className="label text-muted-foreground">— Prompt Lab</span>
-        <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em]">Iterative prompt refinement</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway.
-        </p>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <PageHeading
+        eyebrow="Lab"
+        title="Prompt Lab"
+        sub="Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway."
+      />
 
       <FileDropZone
         uploading={uploading}
@@ -227,11 +227,20 @@ function SessionList() {
       />
 
       {sessions === null ? (
-        <div className="py-20 text-center">
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
+        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
+          <Loader2 style={{ width: 22, height: 22 }} className="animate-spin" />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+        <div
+          style={{
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius)",
+            padding: 48,
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+          }}
+        >
           No sessions yet. Upload an image above to start.
         </div>
       ) : (
@@ -264,69 +273,98 @@ function FileDropZone({
 }) {
   const [dragOver, setDragOver] = useState(false);
   return (
-    <div
-      className={`border bg-background p-6 transition ${dragOver ? "border-foreground bg-accent/40" : "border-border"}`}
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes("Files")) {
-          e.preventDefault();
-          setDragOver(true);
-        }
-      }}
-      onDragLeave={() => setDragOver(false)}
-      onDrop={(e) => {
-        if (e.dataTransfer.files?.length) {
-          e.preventDefault();
-          setDragOver(false);
-          onFiles(e.dataTransfer.files);
-        }
-      }}
+    <Card
+      padding={20}
+      style={{ border: dragOver ? "1px solid var(--ink)" : undefined, background: dragOver ? "rgba(11,11,16,0.02)" : undefined }}
     >
-      <div className="label text-muted-foreground">New session(s)</div>
-      <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-end">
-        <div className="flex-1">
-          <label className="text-xs text-muted-foreground">Batch label (groups these uploads together)</label>
-          <Input
-            value={batchLabel}
-            onChange={(e) => setBatchLabel(e.target.value)}
-            placeholder="e.g. Smith property · Kitchen study #2"
-            className="mt-1"
-          />
+      <div
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) {
+            e.preventDefault();
+            setDragOver(true);
+          }
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          if (e.dataTransfer.files?.length) {
+            e.preventDefault();
+            setDragOver(false);
+            onFiles(e.dataTransfer.files);
+          }
+        }}
+      >
+        <span className="le-d-label">New session(s)</span>
+        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>
+              Batch label (groups these uploads together)
+            </label>
+            <input
+              value={batchLabel}
+              onChange={(e) => setBatchLabel(e.target.value)}
+              placeholder="e.g. Smith property · Kitchen study #2"
+              style={{
+                width: "100%",
+                padding: "8px 10px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--line)",
+                background: "var(--surface)",
+                fontSize: 13,
+                fontFamily: "var(--le-font-sans)",
+                color: "var(--ink)",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
+            <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} style={{ accentColor: "var(--accent)", cursor: "pointer" }} />
+            Auto-analyze on upload
+          </label>
+          <label
+            className="le-btn-ghost"
+            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}
+          >
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" style={{ width: 14, height: 14 }} /> : <Upload style={{ width: 14, height: 14 }} />}
+            <span>
+              {uploading
+                ? uploadProgress
+                  ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                  : "Uploading…"
+                : "Upload images"}
+            </span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                if (e.target.files) onFiles(e.target.files);
+              }}
+              disabled={uploading}
+            />
+          </label>
         </div>
-        <label className="inline-flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} />
-          Auto-analyze on upload
-        </label>
-        <label className="inline-flex cursor-pointer items-center gap-2 border border-border bg-background px-4 py-2 text-sm hover:bg-accent">
-          {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-          <span>
-            {uploading
-              ? uploadProgress
-                ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
-                : "Uploading…"
-              : "Upload images"}
-          </span>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files) onFiles(e.target.files);
+        <p style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
+          Drag files from your desktop onto this panel, or click "Upload images". One session per image. With auto-analyze, the director runs on each in parallel. You can drag session cards between batches after they're created.
+        </p>
+        {error && (
+          <div
+            style={{
+              marginTop: 10,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
+              fontSize: 13,
+              color: "var(--bad)",
             }}
-            disabled={uploading}
-          />
-        </label>
+          >
+            <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
+            <span>{error}</span>
+          </div>
+        )}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Drag files from your desktop onto this panel, or click &quot;Upload images&quot;. One session per image. With auto-analyze, the director runs on each in parallel. You can drag session cards between batches after they&apos;re created.
-      </p>
-      {error && (
-        <div className="mt-3 flex items-start gap-2 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-    </div>
+    </Card>
   );
 }
 
@@ -468,30 +506,39 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
   }
 
   return (
-    <div className="space-y-10">
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       {/* Organize toolbar */}
-      <div className="flex items-center justify-between">
-        <Button
-          size="sm"
-          variant={organizeMode ? "default" : "outline"}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          className={organizeMode ? "le-btn-dark" : "le-btn-ghost"}
           onClick={() => {
             setOrganizeMode((prev) => !prev);
             if (organizeMode) setSelectedIds(new Set());
           }}
         >
           {organizeMode ? "Done organizing" : "Organize"}
-        </Button>
+        </button>
 
-        <div className="flex items-center gap-2">
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {organizeMode && selectedIds.size > 0 && (
             <>
-              <span className="text-xs text-muted-foreground">{selectedIds.size} selected</span>
-              <Button size="sm" variant="outline" onClick={groupSelected}>
+              <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{selectedIds.size} selected</span>
+              <button type="button" className="le-btn-ghost" onClick={groupSelected}>
                 Group into batch
-              </Button>
+              </button>
               {ordered.filter(([b]) => b !== "Unbatched").length > 0 && (
                 <select
-                  className="border border-border bg-background px-2 py-1 text-xs"
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: "var(--radius-sm)",
+                    border: "1px solid var(--line)",
+                    background: "var(--surface)",
+                    fontSize: 12,
+                    fontFamily: "var(--le-font-sans)",
+                    color: "var(--ink-2)",
+                    cursor: "pointer",
+                  }}
                   value=""
                   onChange={(e) => {
                     if (e.target.value) batchMoveSelected(e.target.value === "__unbatched__" ? null : e.target.value);
@@ -505,25 +552,27 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                 </select>
               )}
               {Array.from(selectedIds).some((id) => !sessions.find((s) => s.id === id)?.archived) && (
-                <Button size="sm" variant="outline" onClick={archiveSelected}>
-                  <Trash2 className="mr-2 h-3 w-3" /> Archive
-                </Button>
+                <button type="button" className="le-btn-ghost" onClick={archiveSelected}>
+                  <Trash2 style={{ width: 12, height: 12, marginRight: 4 }} />
+                  Archive
+                </button>
               )}
               {showArchived && Array.from(selectedIds).some((id) => sessions.find((s) => s.id === id)?.archived) && (
-                <Button size="sm" variant="outline" onClick={unarchiveSelected}>
+                <button type="button" className="le-btn-ghost" onClick={unarchiveSelected}>
                   Unarchive
-                </Button>
+                </button>
               )}
-              <Button size="sm" variant="outline" onClick={() => setSelectedIds(new Set())}>
+              <button type="button" className="le-btn-ghost" onClick={() => setSelectedIds(new Set())}>
                 Clear
-              </Button>
+              </button>
             </>
           )}
-          <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+          <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
             <input
               type="checkbox"
               checked={showArchived}
               onChange={(e) => setShowArchived(e.target.checked)}
+              style={{ accentColor: "var(--accent)", cursor: "pointer" }}
             />
             Show archived
           </label>
@@ -835,11 +884,11 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                   </div>
                 </div>
               )}
-              <div className="mt-3 flex justify-end">
-                <Button size="sm" variant="outline" onClick={run}>
-                  <Loader2 className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : "hidden"}`} />
+              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="le-btn-ghost" onClick={run} style={{ fontSize: 11.5 }}>
+                  {loading && <Loader2 style={{ width: 12, height: 12, marginRight: 4 }} className="animate-spin" />}
                   Re-run
-                </Button>
+                </button>
               </div>
             </>
           )}
@@ -1316,24 +1365,24 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   const totalCost = iterations.reduce((sum, it) => sum + (it.cost_cents ?? 0), 0);
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Link to="/dashboard/development/prompt-lab" className="text-muted-foreground hover:text-foreground" title="Back to list">
-            <ArrowLeft className="h-4 w-4" />
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Link to="/dashboard/development/prompt-lab" title="Back to list" style={{ color: "var(--muted)", display: "inline-flex" }}>
+            <ArrowLeft style={{ width: 16, height: 16 }} />
           </Link>
           {siblings.length > 1 && (
-            <div className="flex items-center gap-1 border-l border-border pl-3">
+            <div style={{ display: "flex", alignItems: "center", gap: 4, borderLeft: "1px solid var(--line)", paddingLeft: 12 }}>
               <button
                 type="button"
                 onClick={() => prevSibling && navigate(`/dashboard/development/prompt-lab/${prevSibling.id}`)}
                 disabled={!prevSibling}
                 title={prevSibling ? `Previous (←) · ${prevSibling.label ?? "Untitled"}` : "No previous session"}
-                className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+                style={{ background: "none", border: "none", cursor: prevSibling ? "pointer" : "default", color: "var(--muted)", opacity: !prevSibling ? 0.3 : 1, padding: 4 }}
               >
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft style={{ width: 14, height: 14 }} />
               </button>
-              <span className="px-1 font-mono text-[10px] tabular-nums text-muted-foreground">
+              <span style={{ padding: "0 4px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 {siblingIndex >= 0 ? siblingIndex + 1 : "?"}/{siblings.length}
               </span>
               <button
@@ -1341,14 +1390,14 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
                 onClick={() => nextSibling && navigate(`/dashboard/development/prompt-lab/${nextSibling.id}`)}
                 disabled={!nextSibling}
                 title={nextSibling ? `Next (→) · ${nextSibling.label ?? "Untitled"}` : "No next session"}
-                className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:hover:text-muted-foreground"
+                style={{ background: "none", border: "none", cursor: nextSibling ? "pointer" : "default", color: "var(--muted)", opacity: !nextSibling ? 0.3 : 1, padding: 4 }}
               >
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight style={{ width: 14, height: 14 }} />
               </button>
             </div>
           )}
           <div>
-            <span className="label text-muted-foreground">— Prompt Lab session</span>
+            <span className="le-d-label">Lab · Session</span>
             <EditableLabel
               value={session.label}
               placeholder="Untitled session"
@@ -1359,56 +1408,99 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
             />
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <DollarSign className="h-3 w-3" />
+        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, color: "var(--muted)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontVariantNumeric: "tabular-nums" }}>
+            <DollarSign style={{ width: 12, height: 12 }} />
             ${(totalCost / 100).toFixed(3)}
           </span>
           {iterations.length > 0 && (
-            <span className="text-xs text-muted-foreground">
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
               avg ${(iterations.reduce((s, i) => s + (i.cost_cents ?? 0), 0) / iterations.length / 100).toFixed(2)}/clip
             </span>
           )}
-          <button onClick={handleDelete} className="inline-flex items-center gap-1 hover:text-destructive">
-            <Trash2 className="h-3.5 w-3.5" />
+          <button
+            type="button"
+            onClick={handleDelete}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            <Trash2 style={{ width: 13, height: 13 }} />
             Delete
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(196,74,74,0.3)",
+            background: "rgba(196,74,74,0.05)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
-        <div className="flex items-start gap-2 border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-400">
-          <Sparkles className="h-4 w-4 shrink-0" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(47,138,85,0.3)",
+            background: "rgba(47,138,85,0.05)",
+            fontSize: 13,
+            color: "var(--good)",
+          }}
+        >
+          <Sparkles style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
           <span>{success}</span>
-          <button onClick={() => setSuccess(null)} className="ml-auto text-xs opacity-60 hover:opacity-100">dismiss</button>
+          <button
+            type="button"
+            onClick={() => setSuccess(null)}
+            style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            dismiss
+          </button>
         </div>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-[360px_1fr]">
+      <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 32, alignItems: "flex-start" }}>
         {/* Source image column */}
-        <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
-          <div className="overflow-hidden border border-border bg-muted">
-            <img src={session.image_url} alt="source" className="w-full" />
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "sticky", top: 16, alignSelf: "start" }}>
+          <Card padding={0} style={{ overflow: "hidden" }}>
+            <img src={session.image_url} alt="source" style={{ width: "100%", display: "block" }} />
+          </Card>
           {iterations.length === 0 && (
-            <Button onClick={handleAnalyze} disabled={busy === "analyze"} className="w-full">
-              {busy === "analyze" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+            <button type="button" className="le-btn-dark" onClick={handleAnalyze} disabled={busy === "analyze"} style={{ width: "100%", justifyContent: "center", opacity: busy === "analyze" ? 0.6 : 1 }}>
+              {busy === "analyze" ? <Loader2 style={{ width: 14, height: 14, marginRight: 8 }} className="animate-spin" /> : <Sparkles style={{ width: 14, height: 14, marginRight: 8 }} />}
               Analyze + Direct
-            </Button>
+            </button>
           )}
         </div>
 
         {/* Iteration stack */}
-        <div className="space-y-6">
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           {iterations.length === 0 ? (
-            <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+            <div
+              style={{
+                border: "1px dashed var(--line)",
+                borderRadius: "var(--radius)",
+                padding: 48,
+                textAlign: "center",
+                fontSize: 13,
+                color: "var(--muted)",
+              }}
+            >
               No iterations yet. Click "Analyze + Direct" to generate the first one.
             </div>
           ) : (
@@ -1475,17 +1567,38 @@ function EditableLabel({
             setEditing(false);
           }
         }}
-        className="mt-1 w-full bg-transparent text-2xl font-semibold tracking-[-0.02em] outline-none border-b border-border focus:border-foreground"
+        style={{
+          marginTop: 4,
+          width: "100%",
+          background: "transparent",
+          border: "none",
+          borderBottom: "1px solid var(--line)",
+          outline: "none",
+          fontSize: 22,
+          fontWeight: 600,
+          letterSpacing: "-0.022em",
+          color: "var(--ink)",
+          fontFamily: "var(--le-font-sans)",
+          paddingBottom: 2,
+        }}
       />
     );
   }
   return (
     <h2
       onClick={() => setEditing(true)}
-      className="mt-1 text-2xl font-semibold tracking-[-0.02em] cursor-text hover:opacity-70"
+      style={{
+        marginTop: 4,
+        fontSize: 22,
+        fontWeight: 600,
+        letterSpacing: "-0.022em",
+        color: value ? "var(--ink)" : "var(--muted-2)",
+        cursor: "text",
+        fontFamily: "var(--le-font-sans)",
+      }}
       title="Click to edit"
     >
-      {value || <span className="text-muted-foreground/60">{placeholder}</span>}
+      {value || placeholder}
     </h2>
   );
 }

@@ -24,6 +24,12 @@ const SECTIONS: SidebarSection[] = [
     label: "Studio",
     items: [
       { to: "/dashboard", label: "Overview", icon: "grid", end: true },
+      {
+        to: "/dashboard/studio",
+        label: "Operator studio",
+        icon: "play",
+        match: (p) => p.startsWith("/dashboard/studio"),
+      },
       { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
       { to: "/dashboard/properties", label: "Listings", icon: "home" },
       { to: "/dashboard/users", label: "Users", icon: "users" },

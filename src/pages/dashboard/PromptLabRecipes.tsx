@@ -1,16 +1,30 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, ArrowLeft, Archive, Trash2, Edit2 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
+import { PageHeading, Card } from "@/components/dashboard/primitives";
 import { listRecipes, updateRecipe, deleteRecipe, type LabRecipe } from "@/lib/recipesApi";
-import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
-const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
-const PRIMARY_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", fontSize: 12, fontWeight: 500, background: "#fff", color: "#07080c", border: "none", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
-const GHOST_BTN: CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
-const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
+// ─── shared styles ────────────────────────────────────────────────
+const INPUT_STYLE: React.CSSProperties = {
+  width: "100%",
+  padding: "8px 10px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line)",
+  background: "var(--surface)",
+  fontSize: 13,
+  fontFamily: "var(--le-font-sans)",
+  color: "var(--ink)",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const TEXTAREA_STYLE: React.CSSProperties = {
+  ...INPUT_STYLE,
+  resize: "vertical" as const,
+  minHeight: 80,
+  lineHeight: 1.5,
+  fontFamily: "var(--le-font-mono)",
+  fontSize: 12,
+};
 
 const PromptLabRecipes = () => {
   const [recipes, setRecipes] = useState<LabRecipe[] | null>(null);
@@ -31,45 +45,99 @@ const PromptLabRecipes = () => {
   }, []);
 
   return (
-    <div className="space-y-10">
-      <div className="flex items-center gap-3">
-        <Link to="/dashboard/development/prompt-lab" className="text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <div>
-          <span style={EYEBROW}>— Prompt Lab</span>
-          <h2 className="mt-1" style={PAGE_H1}>Recipe library</h2>
-        </div>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-      {error && <div className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      <PageHeading
+        eyebrow="Lab · Recipes"
+        title="Recipe library"
+        actions={
+          <Link to="/dashboard/development/prompt-lab" style={{ textDecoration: "none" }}>
+            <button type="button" className="le-btn-ghost">
+              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 5l-7 7 7 7" />
+              </svg>
+              Back to Lab
+            </button>
+          </Link>
+        }
+      />
 
-      {recipes === null ? (
-        <div className="py-20 text-center">
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" />
-        </div>
-      ) : recipes.length === 0 ? (
-        <div className="border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-          No recipes yet. Rate a Lab iteration 5 and click &quot;Promote to recipe&quot; on the iteration card.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {recipes.map((r) => (
-            <RecipeRow
-              key={r.id}
-              recipe={r}
-              isEditing={editing === r.id}
-              onEdit={() => setEditing(r.id)}
-              onCancel={() => setEditing(null)}
-              onSaved={() => {
-                setEditing(null);
-                reload();
-              }}
-              onDeleted={reload}
-            />
-          ))}
+      {error && (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(196,74,74,0.3)",
+            background: "rgba(196,74,74,0.05)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          {error}
         </div>
       )}
+
+      <Card padding={0} style={{ overflow: "hidden" }}>
+        {recipes === null ? (
+          <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
+            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+            </svg>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : recipes.length === 0 ? (
+          <div
+            style={{
+              padding: 48,
+              textAlign: "center",
+              fontSize: 13,
+              color: "var(--muted)",
+              border: "1px dashed var(--line)",
+              borderRadius: "var(--radius)",
+              margin: 20,
+            }}
+          >
+            No recipes yet. Rate a Lab iteration 5 and click "Promote to recipe" on the iteration card.
+          </div>
+        ) : (
+          <div>
+            {/* Table header */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+                gap: 16,
+                padding: "10px 18px",
+                borderBottom: "1px solid var(--line)",
+                alignItems: "center",
+              }}
+            >
+              <span className="le-d-label">Archetype / Template</span>
+              <span className="le-d-label">Room</span>
+              <span className="le-d-label">Movement</span>
+              <span className="le-d-label">Applied</span>
+              <span className="le-d-label">Actions</span>
+            </div>
+            {recipes.map((r, i) => (
+              <RecipeRow
+                key={r.id}
+                recipe={r}
+                isEditing={editing === r.id}
+                isLast={i === recipes.length - 1}
+                onEdit={() => setEditing(r.id)}
+                onCancel={() => setEditing(null)}
+                onSaved={() => {
+                  setEditing(null);
+                  reload();
+                }}
+                onDeleted={reload}
+                inputStyle={INPUT_STYLE}
+                textareaStyle={TEXTAREA_STYLE}
+              />
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };
@@ -77,17 +145,23 @@ const PromptLabRecipes = () => {
 function RecipeRow({
   recipe,
   isEditing,
+  isLast,
   onEdit,
   onCancel,
   onSaved,
   onDeleted,
+  inputStyle,
+  textareaStyle,
 }: {
   recipe: LabRecipe;
   isEditing: boolean;
+  isLast: boolean;
   onEdit: () => void;
   onCancel: () => void;
   onSaved: () => void;
   onDeleted: () => void;
+  inputStyle: React.CSSProperties;
+  textareaStyle: React.CSSProperties;
 }) {
   const [archetype, setArchetype] = useState(recipe.archetype);
   const [tmpl, setTmpl] = useState(recipe.prompt_template);
@@ -110,45 +184,144 @@ function RecipeRow({
 
   if (isEditing) {
     return (
-      <div className="border border-border bg-background p-5 space-y-3">
+      <div
+        style={{
+          padding: 20,
+          borderBottom: isLast ? "none" : "1px solid var(--line-2)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+          background: "rgba(11,11,16,0.015)",
+        }}
+      >
         <div>
-          <label className="text-xs text-muted-foreground">Archetype</label>
-          <Input value={archetype} onChange={(e) => setArchetype(e.target.value)} className="mt-1" />
+          <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Archetype</label>
+          <input value={archetype} onChange={(e) => setArchetype(e.target.value)} style={inputStyle} />
         </div>
         <div>
-          <label className="text-xs text-muted-foreground">Prompt template</label>
-          <Textarea value={tmpl} onChange={(e) => setTmpl(e.target.value)} className="mt-1 min-h-[80px] font-mono text-xs" />
+          <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>Prompt template</label>
+          <textarea value={tmpl} onChange={(e) => setTmpl(e.target.value)} style={textareaStyle} />
         </div>
-        <div className="flex justify-end gap-2">
-          <button onClick={onCancel} style={GHOST_BTN}>Cancel</button>
-          <button onClick={save} style={PRIMARY_BTN}>Save</button>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="le-btn-ghost" onClick={onCancel}>Cancel</button>
+          <button type="button" className="le-btn-dark" onClick={save}>Save</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border border-border bg-background p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm font-medium">{recipe.archetype}</span>
-            <span className="bg-muted px-2 py-0.5" style={BADGE}>{recipe.room_type}</span>
-            <span className="bg-foreground/10 px-2 py-0.5" style={BADGE}>{recipe.camera_movement}</span>
-            {recipe.provider && (
-              <span className="bg-muted px-2 py-0.5" style={BADGE}>{recipe.provider}</span>
-            )}
-            <span className="text-xs text-muted-foreground">
-              applied {recipe.times_applied}×
-              {recipe.rating_at_promotion && <> · promoted at {recipe.rating_at_promotion}★</>}
-            </span>
+    <div
+      style={{
+        padding: "16px 18px",
+        borderBottom: isLast ? "none" : "1px solid var(--line-2)",
+      }}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 16, alignItems: "flex-start" }}>
+        {/* Archetype + template */}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{recipe.archetype}</div>
+          <p style={{ marginTop: 6, fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, wordBreak: "break-word" }}>
+            {recipe.prompt_template}
+          </p>
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+            applied {recipe.times_applied}&times;
+            {recipe.rating_at_promotion != null && <> &middot; promoted at {recipe.rating_at_promotion}/5</>}
           </div>
-          <p className="mt-3 font-mono text-sm leading-relaxed">{recipe.prompt_template}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2 text-muted-foreground">
-          <button onClick={onEdit} className="hover:text-foreground" title="Edit"><Edit2 className="h-3.5 w-3.5" /></button>
-          <button onClick={archive} className="hover:text-foreground" title="Archive"><Archive className="h-3.5 w-3.5" /></button>
-          <button onClick={remove} className="hover:text-destructive" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
+
+        {/* Room */}
+        <div>
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 8px",
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(11,11,16,0.05)",
+              border: "1px solid var(--line-2)",
+              fontFamily: "var(--le-font-mono)",
+              fontSize: 10.5,
+              color: "var(--ink-2)",
+            }}
+          >
+            {recipe.room_type}
+          </span>
+        </div>
+
+        {/* Movement */}
+        <div>
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 8px",
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(11,11,16,0.05)",
+              border: "1px solid var(--line-2)",
+              fontFamily: "var(--le-font-mono)",
+              fontSize: 10.5,
+              color: "var(--ink-2)",
+            }}
+          >
+            {recipe.camera_movement}
+          </span>
+          {recipe.provider && (
+            <div style={{ marginTop: 4 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  padding: "2px 6px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(42,111,219,0.08)",
+                  fontSize: 10.5,
+                  color: "var(--accent)",
+                }}
+              >
+                {recipe.provider}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Applied count */}
+        <div style={{ fontSize: 13, color: "var(--ink-2)", fontVariantNumeric: "tabular-nums" }}>
+          {recipe.times_applied}&times;
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)" }}>
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4 }}
+          >
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={archive}
+            title="Archive"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4 }}
+          >
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 8v13H3V8" />
+              <path d="M23 3H1v5h22z" />
+              <path d="M10 12h4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            onClick={remove}
+            title="Delete"
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4 }}
+          >
+            <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+            </svg>
+          </button>
         </div>
       </div>
     </div>

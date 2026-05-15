@@ -290,11 +290,15 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     }
   }
 
-  // QC pass rate: stats.successRate or compute from DAILY last7 vs prev7
+  // QC pass rate: stats.successRate or compute from DAILY last7 vs prev7.
+  // API may return successRate as a 0–1 fraction OR a 0–100 percent depending on
+  // history; detect and clamp so we never display 10000%.
   let qcPassRate: string;
   let qcDelta: number | null = null;
   if (stats?.successRate != null) {
-    qcPassRate = (stats.successRate * 100).toFixed(1) + "%";
+    const raw = stats.successRate;
+    const pct = raw > 1 ? Math.min(raw, 100) : raw * 100;
+    qcPassRate = pct.toFixed(1) + "%";
     // delta: last7 success rate vs prev7 from DAILY
     if (DAILY && DAILY.length >= 14) {
       const calcRate = (slice: DailyStat[]) => {

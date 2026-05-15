@@ -1,10 +1,12 @@
 import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import "@/v2/styles/v2.css";
-import { ArrowLeft, Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, Star } from "lucide-react";
+import { Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, Star, ArrowLeft } from "lucide-react";
 import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
 import { fetchProperty, fetchLogs, rerunProperty, fetchSystemPrompts, rateScene, resubmitScene } from "@/lib/api";
+import { PageHeading, StatusPill, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 
 const FAILURE_TAGS = [
   "hallucinated architecture",
@@ -78,9 +80,14 @@ function RatingWidget({
   const availableTags = rating >= 4 ? SUCCESS_TAGS : rating > 0 && rating <= 2 ? FAILURE_TAGS : [...SUCCESS_TAGS, ...FAILURE_TAGS];
 
   return (
-    <div className="border-t border-border/60 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-0.5">
+    <div
+      style={{
+        borderTop: "1px solid var(--line-2)",
+        padding: 14,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           {[1, 2, 3, 4, 5].map((n) => {
             const filled = (hoverValue ?? rating) >= n;
             return (
@@ -90,28 +97,50 @@ function RatingWidget({
                 onMouseEnter={() => setHoverValue(n)}
                 onMouseLeave={() => setHoverValue(null)}
                 onClick={() => clickStar(n)}
-                className="p-0.5 transition-transform hover:scale-110"
+                style={{ padding: 2, background: "none", border: "none", cursor: "pointer", lineHeight: 0 }}
                 aria-label={`${n} star`}
               >
                 <Star
-                  className={`h-4 w-4 ${filled ? "fill-foreground text-foreground" : "text-muted-foreground/40"}`}
-                  strokeWidth={1.5}
+                  style={{
+                    width: 14,
+                    height: 14,
+                    fill: filled ? "var(--ink)" : "none",
+                    color: filled ? "var(--ink)" : "rgba(11,11,16,0.25)",
+                    strokeWidth: 1.5,
+                  }}
                 />
               </button>
             );
           })}
           {rating > 0 && (
-            <span className="tabular ml-2 text-[10px] text-muted-foreground">{rating}/5</span>
+            <span
+              style={{
+                marginLeft: 8,
+                fontSize: 10,
+                color: "var(--muted)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {rating}/5
+            </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {saving && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-          {justSaved && <Check className="h-3 w-3 text-accent" />}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {saving && <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite", color: "var(--muted)" }} />}
+          {justSaved && <Check style={{ width: 12, height: 12, color: "var(--good)" }} />}
           {rating > 0 && !expanded && (
             <button
               type="button"
               onClick={() => setExpanded(true)}
-              className="label text-muted-foreground transition-colors hover:text-foreground"
+              style={{
+                background: "none",
+                border: "none",
+                padding: 0,
+                fontSize: 11,
+                color: "var(--muted)",
+                cursor: "pointer",
+                fontFamily: "var(--le-font-sans)",
+              }}
             >
               Add note
             </button>
@@ -120,17 +149,30 @@ function RatingWidget({
       </div>
 
       {expanded && (
-        <div className="mt-3 space-y-2">
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             onBlur={commentBlur}
             placeholder={rating <= 2 ? "What went wrong? (required for low ratings)" : "What worked? (optional)"}
             rows={2}
-            className="w-full resize-y border border-border bg-background p-2 text-xs leading-snug placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-foreground"
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              fontSize: 12,
+              fontFamily: "var(--le-font-sans)",
+              color: "var(--ink)",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              resize: "vertical",
+              outline: "none",
+              lineHeight: 1.5,
+              boxSizing: "border-box",
+            }}
           />
           {rating > 0 && (
-            <div className="flex flex-wrap gap-1">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
               {availableTags.map((tag) => {
                 const selected = tags.includes(tag);
                 const isFail = FAILURE_TAGS.includes(tag);
@@ -139,13 +181,22 @@ function RatingWidget({
                     key={tag}
                     type="button"
                     onClick={() => toggleTag(tag)}
-                    className={`label px-2 py-1 transition-colors ${
-                      selected
+                    style={{
+                      padding: "4px 10px",
+                      fontSize: 11,
+                      fontWeight: 500,
+                      borderRadius: "var(--radius-pill)",
+                      border: selected ? "none" : "1px solid var(--line)",
+                      background: selected
                         ? isFail
-                          ? "bg-destructive text-destructive-foreground"
-                          : "bg-foreground text-background"
-                        : "border border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-                    }`}
+                          ? "var(--bad)"
+                          : "var(--ink)"
+                        : "transparent",
+                      color: selected ? "#fff" : "var(--muted)",
+                      cursor: "pointer",
+                      fontFamily: "var(--le-font-sans)",
+                      transition: "background .15s, color .15s",
+                    }}
                   >
                     {tag}
                   </button>
@@ -190,32 +241,59 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
     }
   }
 
-  const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 4, padding: "6px 12px", fontSize: 11, fontWeight: 500, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, cursor: "pointer", fontFamily: "var(--le-font-sans)" };
+  const rsBtn: React.CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 5,
+    padding: "6px 12px",
+    fontSize: 11.5,
+    fontWeight: 500,
+    background: "transparent",
+    color: "var(--ink-2)",
+    border: "1px solid var(--line)",
+    borderRadius: 8,
+    cursor: "pointer",
+    fontFamily: "var(--le-font-sans)",
+  };
 
   return (
-    <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-4">
-      <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>Admin actions</span>
+    <div
+      style={{
+        marginTop: 16,
+        paddingTop: 14,
+        borderTop: "1px solid var(--line-2)",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 8,
+      }}
+    >
+      <span className="le-d-label">Admin actions</span>
       <button
         type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+        style={{ ...rsBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id), "auto")}
       >
-        {busy === "auto" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+        {busy === "auto"
+          ? <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
+          : <RotateCcw style={{ width: 13, height: 13 }} />}
         Resubmit
       </button>
       <button
         type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+        style={{ ...rsBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={() => call(() => resubmitScene(scene.id, { provider: other }), "other")}
       >
-        {busy === "other" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+        {busy === "other"
+          ? <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
+          : <RotateCcw style={{ width: 13, height: 13 }} />}
         Try {other}
       </button>
       <button
         type="button"
-        style={{ ...ghostBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
+        style={{ ...rsBtn, cursor: busy !== null ? "not-allowed" : "pointer", opacity: busy !== null ? 0.5 : 1 }}
         disabled={busy !== null}
         onClick={async () => {
           const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
@@ -223,17 +301,19 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
           await call(() => resubmitScene(scene.id, { prompt: next.trim() }), "edit");
         }}
       >
-        <RotateCcw className="h-3.5 w-3.5" /> Edit + resubmit
+        <RotateCcw style={{ width: 13, height: 13 }} /> Edit + resubmit
       </button>
       {message && (
         <span
-          className={`text-xs ${
-            kind === "error"
-              ? "text-destructive"
-              : kind === "warn"
-              ? "text-accent"
-              : "text-muted-foreground"
-          }`}
+          style={{
+            fontSize: 12,
+            color:
+              kind === "error"
+                ? "var(--bad)"
+                : kind === "warn"
+                ? "var(--warn)"
+                : "var(--muted)",
+          }}
         >
           {message}
         </span>
@@ -374,22 +454,40 @@ const PropertyDetail = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
+        <Loader2 style={{ width: 20, height: 20, animation: "spin 1s linear infinite", color: "var(--muted)" }} />
       </div>
     );
   }
 
   if (error || !property) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
-        <div className="flex items-start gap-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
+      <div
+        style={{
+          padding: 32,
+          borderRadius: "var(--radius)",
+          background: "rgba(196,74,74,0.05)",
+          border: "1px solid rgba(196,74,74,0.18)",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "rgba(196,74,74,0.10)",
+              display: "grid",
+              placeItems: "center",
+              color: "var(--bad)",
+              flexShrink: 0,
+            }}
+          >
+            <AlertTriangle style={{ width: 18, height: 18 }} strokeWidth={1.5} />
           </div>
           <div>
-            <span className="label text-destructive">— Error</span>
-            <p className="mt-3 text-sm text-muted-foreground">{error || "Property not found"}</p>
+            <span className="le-d-label" style={{ color: "var(--bad)" }}>Error</span>
+            <p style={{ marginTop: 10, fontSize: 13, color: "var(--muted)" }}>{error || "Property not found"}</p>
           </div>
         </div>
       </div>
@@ -406,129 +504,205 @@ const PropertyDetail = () => {
   // photo overall. photos[] is already ordered by created_at from fetchProperty.
   const primaryPhoto = photos.find((p) => p.selected) ?? photos[0] ?? null;
 
+  const subLine = [
+    `$${property.price.toLocaleString()}`,
+    `${property.bedrooms}bd`,
+    `${property.bathrooms}ba`,
+    property.listing_agent,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <div className="space-y-16">
-      {/* Header — full-bleed photo with text overlay */}
-      <div style={{ position: "relative", overflow: "hidden", marginBottom: 0 }}>
-        {primaryPhoto ? (
-          <div style={{ position: "relative", height: 320 }}>
-            <img
-              src={primaryPhoto.file_url}
-              alt={primaryPhoto.file_name || property.address}
-              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "brightness(0.45) saturate(1.1)" }}
-            />
-            <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(5,7,14,0.4) 0%, rgba(5,7,14,0.75) 100%)", pointerEvents: "none" }} />
-            <div style={{ position: "absolute", inset: 0, padding: "32px 0", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-              <Link
-                to="/dashboard/properties"
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Page heading */}
+      <PageHeading
+        eyebrow="Listing"
+        title={property.address}
+        sub={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <StatusPill status={property.status} />
+            {isPolling && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: "var(--good)",
+                }}
               >
-                <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
-              </Link>
-              <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: isPolling ? "rgba(80,220,120,0.9)" : "rgba(255,255,255,0.55)" }}>
-                      {property.status.replace(/_/g, " ")}
-                    </span>
-                    {isPolling && (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.14em", color: "rgba(80,220,120,0.9)" }}>
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "rgba(80,220,120,0.9)", animation: "le-pulse 1.6s ease-in-out infinite", display: "inline-block" }} />
-                        LIVE
-                      </span>
-                    )}
-                  </div>
-                  <h1 style={{ fontSize: "clamp(28px, 4vw, 52px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
-                    {property.address}
-                  </h1>
-                  <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, letterSpacing: "0.08em", color: "rgba(255,255,255,0.62)" }}>
-                    ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={handleRerun}
-                    disabled={rerunning}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 2, padding: "8px 14px", fontSize: 12, fontWeight: 500, cursor: rerunning ? "not-allowed" : "pointer", fontFamily: "var(--le-font-sans)", backdropFilter: "blur(8px)" }}
-                  >
-                    <RotateCcw style={{ width: 12, height: 12, ...(rerunning ? { animation: "spin 1s linear infinite" } : {}) }} />
-                    Rerun
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ padding: "32px 0" }}>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "var(--good)",
+                    animation: "le-pulse 1.6s ease-in-out infinite",
+                    display: "inline-block",
+                  }}
+                />
+                Live
+              </span>
+            )}
+            <span style={{ color: "var(--muted)" }}>{subLine}</span>
+          </span>
+        }
+        actions={
+          <div style={{ display: "flex", gap: 8 }}>
             <Link
               to="/dashboard/properties"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontFamily: "var(--le-font-mono)", letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", textDecoration: "none", marginBottom: 20 }}
+              className="le-btn-ghost"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
             >
-              <ArrowLeft style={{ width: 12, height: 12 }} /> Properties
+              <ArrowLeft style={{ width: 13, height: 13 }} />
+              Properties
             </Link>
-            <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-              <div>
-                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.55)", display: "block", marginBottom: 12 }}>
-                  {property.status.replace(/_/g, " ")}
-                </span>
-                <h1 style={{ fontSize: "clamp(28px, 4vw, 48px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", fontFamily: "var(--le-font-sans)", margin: 0 }}>
-                  {property.address}
-                </h1>
-                <p style={{ marginTop: 12, fontFamily: "var(--le-font-mono)", fontSize: 11, color: "rgba(255,255,255,0.62)" }}>
-                  ${property.price.toLocaleString()} · {property.bedrooms}bd · {property.bathrooms}ba · {property.listing_agent}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleRerun}
-                disabled={rerunning}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: "#fff", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, padding: "8px 14px", fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
-              >
-                <RotateCcw style={{ width: 12, height: 12 }} /> Rerun
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleRerun}
+              disabled={rerunning}
+              className="le-btn-dark"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: rerunning ? 0.5 : 1,
+                cursor: rerunning ? "not-allowed" : "pointer",
+              }}
+            >
+              <RotateCcw style={{ width: 13, height: 13, ...(rerunning ? { animation: "spin 1s linear infinite" } : {}) }} />
+              Rerun
+            </button>
           </div>
-        )}
-      </div>
+        }
+      />
+
+      {/* Hero photo (when available) */}
+      {primaryPhoto && (
+        <div style={{ borderRadius: 14, overflow: "hidden", background: "#000" }}>
+          <img
+            src={primaryPhoto.file_url}
+            alt={primaryPhoto.file_name || property.address}
+            style={{ width: "100%", maxHeight: 280, objectFit: "cover", display: "block", filter: "brightness(0.85) saturate(1.05)" }}
+          />
+        </div>
+      )}
 
       {/* Stat strip */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 48 }}>
-        {[
-          { label: "Total cost", value: formatCents(property.total_cost_cents) },
-          { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
-          { label: "Photos", value: `${property.selected_photo_count} / ${property.photo_count}` },
-          { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
-        ].map((s, i) => (
-          <div key={s.label} style={{ padding: "20px 24px", borderRight: i < 3 ? "1px solid rgba(220,230,255,0.09)" : "none" }}>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", display: "block" }}>{s.label}</span>
-            <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff", marginTop: 8 }}>{s.value}</div>
-          </div>
-        ))}
-      </div>
+      <Card padding={0}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+          {[
+            { label: "Total cost", value: formatCents(property.total_cost_cents) },
+            { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
+            { label: "Photos", value: `${property.selected_photo_count} / ${property.photo_count}` },
+            { label: "Clips delivered", value: `${deliverables.length} / ${scenes.length}` },
+          ].map((s, i) => (
+            <div
+              key={s.label}
+              style={{
+                padding: "18px 24px",
+                borderRight: i < 3 ? "1px solid var(--line-2)" : "none",
+              }}
+            >
+              <span className="le-d-label">{s.label}</span>
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 600,
+                  letterSpacing: "-0.02em",
+                  color: "var(--ink)",
+                  marginTop: 6,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {s.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* Deliverables */}
       {deliverables.length > 0 && (
-        <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Deliverables</span>
-          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
-            {deliverables.length} {deliverables.length === 1 ? "clip" : "clips"} ready
-          </h3>
-          <div className="mt-8 grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+        <Card padding={24}>
+          <SectionTitle
+            eyebrow="Deliverables"
+            title={`${deliverables.length} ${deliverables.length === 1 ? "clip" : "clips"} ready`}
+          />
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 12,
+            }}
+          >
             {deliverables.map((scene) => (
-              <div key={scene.id} className="border border-border bg-secondary/30">
-                <video src={scene.clip_url!} controls playsInline preload="metadata" className="aspect-video w-full bg-black" />
-                <div className="flex items-center justify-between gap-3 p-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold">
+              <div
+                key={scene.id}
+                style={{
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--line)",
+                  background: "var(--surface)",
+                  overflow: "hidden",
+                }}
+              >
+                {/* Video frame */}
+                <div style={{ borderRadius: 0, overflow: "hidden", background: "#000" }}>
+                  <video src={scene.clip_url!} controls playsInline preload="metadata" style={{ width: "100%", aspectRatio: "16/9", display: "block" }} />
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <p
+                      style={{
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "var(--ink)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       Scene {scene.scene_number} · {scene.camera_movement.replace(/_/g, " ")}
                     </p>
-                    <p className="tabular mt-1 text-[10px] text-muted-foreground">
+                    <p
+                      style={{
+                        marginTop: 3,
+                        fontSize: 11,
+                        color: "var(--muted)",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
                       {scene.provider ?? "—"} · {scene.duration_seconds}s
                     </p>
                   </div>
-                  <a href={scene.clip_url!} download={`scene_${scene.scene_number}.mp4`} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32, background: "transparent", border: "1px solid rgba(220,230,255,0.18)", borderRadius: 2, color: "#fff" }}>
-                    <Download style={{ width: 14, height: 14 }} />
+                  <a
+                    href={scene.clip_url!}
+                    download={`scene_${scene.scene_number}.mp4`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 32,
+                      height: 32,
+                      background: "transparent",
+                      border: "1px solid var(--line)",
+                      borderRadius: 8,
+                      color: "var(--ink-2)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Download style={{ width: 13, height: 13 }} />
                   </a>
                 </div>
                 <RatingWidget
@@ -549,23 +723,32 @@ const PropertyDetail = () => {
               </div>
             ))}
           </div>
-        </section>
+        </Card>
       )}
 
       {/* Cost breakdown */}
       {costEvents.length > 0 && (
-        <section>
-          <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— Costs</span>
-          <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>
-            Real per-call breakdown · <span style={{ color: "rgba(255,255,255,0.62)" }}>{formatCents(costTotalCents)}</span>
-          </h3>
-          <div className="mt-8 border-t border-border">
-            <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 border-b border-border py-4">
-              <span className="label text-muted-foreground">Stage</span>
-              <span className="label text-muted-foreground">Provider</span>
-              <span className="label text-right text-muted-foreground">Scene</span>
-              <span className="label text-right text-muted-foreground">Units</span>
-              <span className="label text-right text-muted-foreground">Cost</span>
+        <Card padding={24}>
+          <SectionTitle
+            eyebrow="Costs"
+            title={<>Real per-call breakdown <span style={{ fontWeight: 400, color: "var(--muted)" }}>· {formatCents(costTotalCents)}</span></>}
+          />
+          <div style={{ marginTop: 16 }}>
+            {/* Header row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.2fr 1fr 0.6fr 1fr 1fr",
+                gap: 16,
+                padding: "8px 14px",
+                borderBottom: "1px solid var(--line)",
+              }}
+            >
+              <span className="le-d-label">Stage</span>
+              <span className="le-d-label">Provider</span>
+              <span className="le-d-label" style={{ textAlign: "right" }}>Scene</span>
+              <span className="le-d-label" style={{ textAlign: "right" }}>Units</span>
+              <span className="le-d-label" style={{ textAlign: "right" }}>Cost</span>
             </div>
             {costEvents.map((ev) => {
               const sceneNum = ev.scene_id ? scenes.find((s) => s.id === ev.scene_id)?.scene_number ?? "—" : "—";
@@ -574,249 +757,465 @@ const PropertyDetail = () => {
                   ? `${Math.round(ev.units_consumed).toLocaleString()} ${ev.unit_type ?? ""}`.trim()
                   : "—";
               return (
-                <div key={ev.id} className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] items-center gap-6 border-b border-border py-3 text-xs">
-                  <span className="capitalize">{ev.stage}</span>
-                  <span className="tabular">{ev.provider}</span>
-                  <span className="tabular text-right text-muted-foreground">{sceneNum}</span>
-                  <span className="tabular text-right">{unitsLabel}</span>
-                  <span className="tabular text-right font-semibold">{formatCents(ev.cost_cents)}</span>
+                <div
+                  key={ev.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.2fr 1fr 0.6fr 1fr 1fr",
+                    gap: 16,
+                    padding: "10px 14px",
+                    borderBottom: "1px solid var(--line-2)",
+                    fontSize: 12.5,
+                    color: "var(--ink-2)",
+                    alignItems: "center",
+                  }}
+                >
+                  <span style={{ textTransform: "capitalize" }}>{ev.stage}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{ev.provider}</span>
+                  <span style={{ textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{sceneNum}</span>
+                  <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{unitsLabel}</span>
+                  <span style={{ textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatCents(ev.cost_cents)}</span>
                 </div>
               );
             })}
-            <div className="grid grid-cols-[1.2fr_1fr_0.6fr_1fr_1fr] gap-6 py-5">
-              <span className="label text-foreground">Total</span>
-              <span /> <span /> <span />
-              <span className="tabular text-right text-base font-semibold">{formatCents(costTotalCents)}</span>
+            {/* Total row */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.2fr 1fr 0.6fr 1fr 1fr",
+                gap: 16,
+                padding: "14px 14px",
+              }}
+            >
+              <span className="le-d-label" style={{ color: "var(--ink)" }}>Total</span>
+              <span /><span /><span />
+              <span
+                style={{
+                  textAlign: "right",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  fontVariantNumeric: "tabular-nums",
+                  color: "var(--ink)",
+                }}
+              >
+                {formatCents(costTotalCents)}
+              </span>
             </div>
           </div>
-        </section>
+        </Card>
       )}
 
       {/* Section tabs */}
-      <div style={{ borderBottom: "1px solid rgba(220,230,255,0.09)", marginBottom: 40, display: "flex", gap: 0 }}>
-        {(["photos", "shots", "logs", "prompts"] as const).map((tab) => {
-          const labels: Record<string, string> = { photos: `Photos · ${photos.length}`, shots: `Shot plan · ${scenes.length}`, logs: "Timeline", prompts: "System prompts" };
-          const active = activeTab === tab;
-          return (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => { setActiveTab(tab); if (tab === "prompts") loadPrompts(); }}
-              style={{ padding: "12px 20px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 500, color: active ? "#fff" : "rgba(255,255,255,0.45)", background: "none", border: "none", borderBottom: active ? "1px solid #fff" : "1px solid transparent", cursor: "pointer", marginBottom: -1 }}
-            >
-              {labels[tab]}
-            </button>
-          );
-        })}
-      </div>
-
-      {activeTab === "photos" && (
-        <div style={{ marginTop: 40 }}>
-          {photos.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">No photos</p>
-          ) : (
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-4">
-              {photos.map((photo) => (
-                <div
-                  key={photo.id}
-                  className={`border bg-secondary/30 ${photo.selected ? "border-foreground/60" : "border-border opacity-70"}`}
-                >
-                  <div className="relative aspect-[4/3] bg-secondary">
-                    <img src={photo.file_url} alt={photo.file_name} className="h-full w-full object-cover" loading="lazy" />
-                    <span
-                      className={`label absolute left-2 top-2 px-2 py-1 ${
-                        photo.selected ? "bg-foreground text-background" : "bg-destructive text-destructive-foreground"
-                      }`}
-                    >
-                      {photo.selected ? "Selected" : "Discarded"}
-                    </span>
-                  </div>
-                  <div className="space-y-2 p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="label text-foreground">{photo.room_type?.replace(/_/g, " ") ?? "—"}</span>
-                      <span className="tabular text-[10px] text-muted-foreground">depth {photo.depth_rating ?? "—"}</span>
-                    </div>
-                    <div className="tabular flex gap-3 text-[10px] text-muted-foreground">
-                      <span>Q {photo.quality_score ?? "—"}</span>
-                      <span>A {photo.aesthetic_score ?? "—"}</span>
-                      {photo.video_viable === true && (
-                        <span className="text-foreground">✓ video</span>
-                      )}
-                      {photo.video_viable === false && (
-                        <span className="text-destructive">✕ video</span>
-                      )}
-                    </div>
-                    {photo.video_viable && photo.suggested_motion && (
-                      <p className="text-[10px] leading-tight text-muted-foreground">
-                        <span className="tabular text-foreground">{photo.suggested_motion.replace(/_/g, " ")}</span>
-                        {photo.motion_rationale && <span> · {photo.motion_rationale}</span>}
-                      </p>
-                    )}
-                    {photo.key_features && photo.key_features.length > 0 && (
-                      <ul className="space-y-0.5 text-[10px] leading-tight text-muted-foreground">
-                        {photo.key_features.map((f, i) => (
-                          <li key={i} className="flex gap-1">
-                            <span className="text-foreground/40">·</span>
-                            <span>{f}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {photo.composition && (
-                      <p className="border-t border-border/50 pt-2 text-[10px] italic leading-snug text-muted-foreground">
-                        {photo.composition}
-                      </p>
-                    )}
-                    {!photo.selected && photo.discard_reason && (
-                      <p className="border-t border-border/50 pt-2 text-[11px] leading-snug text-destructive">
-                        {photo.discard_reason}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      <Card padding={0}>
+        {/* Tab bar */}
+        <div
+          style={{
+            display: "flex",
+            gap: 0,
+            borderBottom: "1px solid var(--line-2)",
+          }}
+        >
+          {(["photos", "shots", "logs", "prompts"] as const).map((tab) => {
+            const labels: Record<string, string> = {
+              photos: `Photos · ${photos.length}`,
+              shots: `Shot plan · ${scenes.length}`,
+              logs: "Timeline",
+              prompts: "System prompts",
+            };
+            const active = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => { setActiveTab(tab); if (tab === "prompts") loadPrompts(); }}
+                style={{
+                  padding: "12px 18px",
+                  fontSize: 12,
+                  fontWeight: active ? 600 : 500,
+                  color: active ? "var(--ink)" : "var(--muted)",
+                  background: "none",
+                  border: "none",
+                  borderBottom: active ? "2px solid var(--ink)" : "2px solid transparent",
+                  cursor: "pointer",
+                  marginBottom: -1,
+                  fontFamily: "var(--le-font-sans)",
+                  transition: "color .15s",
+                }}
+              >
+                {labels[tab]}
+              </button>
+            );
+          })}
         </div>
-      )}
 
-      {activeTab === "shots" && (
-        <div style={{ marginTop: 40 }}>
-          {scenes.length === 0 ? (
-            <p className="py-16 text-center text-sm text-muted-foreground">No scenes yet</p>
-          ) : (
-            <div className="grid gap-px bg-border">
-              {scenes.map((scene) => {
-                const sourcePhoto = photoById.get(scene.photo_id);
-                return (
-                  <div key={scene.id} className="bg-background p-6">
-                    <div className="flex items-start gap-4">
-                      {sourcePhoto ? (
-                        <img src={sourcePhoto.file_url} alt={sourcePhoto.file_name} className="h-16 w-24 shrink-0 object-cover" />
-                      ) : (
-                        <div className="h-16 w-24 shrink-0 bg-secondary" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="tabular text-sm font-semibold">#{scene.scene_number}</span>
-                          <span className="text-xs font-medium capitalize">{scene.camera_movement?.replace(/_/g, " ")}</span>
-                          <span className="label text-muted-foreground">{scene.status?.replace(/_/g, " ")}</span>
-                          {scene.provider && <span className="label text-muted-foreground">{scene.provider}</span>}
-                        </div>
-                        <p className="tabular mt-1 text-[10px] text-muted-foreground">
-                          source: {sourcePhoto?.file_name ?? "—"} · {sourcePhoto?.room_type?.replace(/_/g, " ") ?? "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Prompt */}
-                    <div className="mt-5">
-                      <div className="mb-2 flex items-center justify-between">
-                        <span className="label text-muted-foreground">Prompt sent to {scene.provider ?? "provider"}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyPrompt(scene.id, scene.prompt)}
-                          className="label inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
-                        >
-                          {copiedScene === scene.id ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                          {copiedScene === scene.id ? "Copied" : "Copy"}
-                        </button>
-                      </div>
-                      <pre className="whitespace-pre-wrap p-4 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
-                        {scene.prompt}
-                      </pre>
-                    </div>
-
-                    {/* Metadata */}
-                    <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border pt-5 md:grid-cols-3 lg:grid-cols-6">
-                      {[
-                        { l: "Duration", v: `${scene.duration_seconds}s` },
-                        { l: "Attempts", v: scene.attempt_count ?? 0 },
-                        { l: "Gen time", v: scene.generation_time_ms ? formatDuration(scene.generation_time_ms) : "—" },
-                        { l: "Cost", v: scene.generation_cost_cents ? formatCents(scene.generation_cost_cents) : "—" },
-                        { l: "QC verdict", v: scene.qc_verdict ?? "—" },
-                        { l: "QC confidence", v: scene.qc_confidence != null ? `${Math.round(scene.qc_confidence * 100)}%` : "—" },
-                      ].map((m) => (
-                        <div key={m.l}>
-                          <p className="label text-muted-foreground">{m.l}</p>
-                          <p className="tabular mt-1.5 text-xs">{m.v}</p>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Output clip */}
-                    {scene.clip_url && (
-                      <div className="mt-5">
-                        <span className="label text-muted-foreground">Output clip</span>
-                        <video
-                          src={scene.clip_url}
-                          controls
-                          playsInline
-                          preload="metadata"
-                          className="mt-3 aspect-video w-full max-w-md bg-black"
-                        />
-                      </div>
-                    )}
-
-                    {(scene.status === "needs_review" ||
-                      scene.status === "qc_hard_reject" ||
-                      scene.status === "qc_soft_reject" ||
-                      scene.status === "failed" ||
-                      scene.status === "pending") && (
-                      <ResubmitControls scene={scene} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {activeTab === "logs" && (
-        <div style={{ marginTop: 40 }}>
-          <div className="max-h-[640px] overflow-y-auto border border-border bg-secondary/20">
-            {logs.length === 0 ? (
-              <p className="py-16 text-center text-sm text-muted-foreground">No logs for this property</p>
+        {/* Tab content */}
+        {activeTab === "photos" && (
+          <div style={{ padding: 20 }}>
+            {photos.length === 0 ? (
+              <p style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>No photos</p>
             ) : (
-              <div className="divide-y divide-border/60">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                {photos.map((photo) => (
+                  <div
+                    key={photo.id}
+                    style={{
+                      border: `1px solid ${photo.selected ? "rgba(11,11,16,0.18)" : "var(--line)"}`,
+                      borderRadius: "var(--radius-sm)",
+                      overflow: "hidden",
+                      opacity: photo.selected ? 1 : 0.65,
+                    }}
+                  >
+                    <div style={{ position: "relative", aspectRatio: "4/3", background: "var(--bg)" }}>
+                      <img
+                        src={photo.file_url}
+                        alt={photo.file_name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        loading="lazy"
+                      />
+                      <span
+                        style={{
+                          position: "absolute",
+                          top: 8,
+                          left: 8,
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "2px 7px",
+                          borderRadius: "var(--radius-pill)",
+                          background: photo.selected ? "var(--ink)" : "var(--bad)",
+                          color: "#fff",
+                        }}
+                      >
+                        {photo.selected ? "Selected" : "Discarded"}
+                      </span>
+                    </div>
+                    <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 600, color: "var(--ink)" }}>
+                          {photo.room_type?.replace(/_/g, " ") ?? "—"}
+                        </span>
+                        <span style={{ fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                          depth {photo.depth_rating ?? "—"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", gap: 10, fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                        <span>Q {photo.quality_score ?? "—"}</span>
+                        <span>A {photo.aesthetic_score ?? "—"}</span>
+                        {photo.video_viable === true && (
+                          <span style={{ color: "var(--good)" }}>video ok</span>
+                        )}
+                        {photo.video_viable === false && (
+                          <span style={{ color: "var(--bad)" }}>no video</span>
+                        )}
+                      </div>
+                      {photo.video_viable && photo.suggested_motion && (
+                        <p style={{ fontSize: 10, color: "var(--muted)", lineHeight: 1.4 }}>
+                          <span style={{ fontVariantNumeric: "tabular-nums", color: "var(--ink-2)" }}>
+                            {photo.suggested_motion.replace(/_/g, " ")}
+                          </span>
+                          {photo.motion_rationale && <span> · {photo.motion_rationale}</span>}
+                        </p>
+                      )}
+                      {photo.key_features && photo.key_features.length > 0 && (
+                        <ul style={{ fontSize: 10, color: "var(--muted)", lineHeight: 1.4, margin: 0, padding: 0, listStyle: "none" }}>
+                          {photo.key_features.map((f, i) => (
+                            <li key={i} style={{ display: "flex", gap: 4 }}>
+                              <span style={{ color: "var(--line)" }}>·</span>
+                              <span>{f}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {photo.composition && (
+                        <p
+                          style={{
+                            paddingTop: 6,
+                            borderTop: "1px solid var(--line-2)",
+                            fontSize: 10,
+                            fontStyle: "italic",
+                            color: "var(--muted)",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {photo.composition}
+                        </p>
+                      )}
+                      {!photo.selected && photo.discard_reason && (
+                        <p
+                          style={{
+                            paddingTop: 6,
+                            borderTop: "1px solid var(--line-2)",
+                            fontSize: 11,
+                            color: "var(--bad)",
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {photo.discard_reason}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "shots" && (
+          <div style={{ padding: 20 }}>
+            {scenes.length === 0 ? (
+              <p style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>No scenes yet</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                {scenes.map((scene) => {
+                  const sourcePhoto = photoById.get(scene.photo_id);
+                  return (
+                    <div
+                      key={scene.id}
+                      style={{
+                        padding: 20,
+                        borderBottom: "1px solid var(--line-2)",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+                        {/* Thumb — 60px as per spec */}
+                        <div
+                          style={{
+                            width: 80,
+                            height: 60,
+                            borderRadius: 8,
+                            overflow: "hidden",
+                            flexShrink: 0,
+                            background: sourcePhoto ? undefined : "var(--bg)",
+                            border: "1px solid var(--line-2)",
+                            position: "relative",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {sourcePhoto ? (
+                            <img
+                              src={sourcePhoto.file_url}
+                              alt={sourcePhoto.file_name}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: "100%",
+                                height: "100%",
+                                background: `linear-gradient(135deg, hsl(220, 10%, 78%), hsl(250, 10%, 62%))`,
+                                display: "grid",
+                                placeItems: "center",
+                              }}
+                            />
+                          )}
+                          {/* Play icon overlay */}
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              display: "grid",
+                              placeItems: "center",
+                              background: "rgba(0,0,0,0.25)",
+                            }}
+                          >
+                            <Icon name="play" size={14} style={{ color: "#fff" }} />
+                          </div>
+                        </div>
+
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                            <span
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "var(--ink)",
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              #{scene.scene_number}
+                            </span>
+                            <span style={{ fontSize: 12.5, fontWeight: 500, textTransform: "capitalize", color: "var(--ink-2)" }}>
+                              {scene.camera_movement?.replace(/_/g, " ")}
+                            </span>
+                            <StatusPill status={scene.status ?? "queued"} />
+                            {scene.provider && (
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  fontWeight: 500,
+                                  padding: "2px 8px",
+                                  borderRadius: "var(--radius-pill)",
+                                  background: "rgba(11,11,16,0.05)",
+                                  color: "var(--muted)",
+                                }}
+                              >
+                                {scene.provider}
+                              </span>
+                            )}
+                          </div>
+                          <p style={{ marginTop: 3, fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                            source: {sourcePhoto?.file_name ?? "—"} · {sourcePhoto?.room_type?.replace(/_/g, " ") ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Prompt */}
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                          <span className="le-d-label">Prompt → {scene.provider ?? "provider"}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPrompt(scene.id, scene.prompt)}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              fontSize: 11,
+                              fontWeight: 500,
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                              fontFamily: "var(--le-font-sans)",
+                            }}
+                          >
+                            {copiedScene === scene.id ? <Check style={{ width: 11, height: 11 }} /> : <Copy style={{ width: 11, height: 11 }} />}
+                            {copiedScene === scene.id ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                        <pre
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            padding: "12px 14px",
+                            fontSize: 11,
+                            lineHeight: 1.6,
+                            fontFamily: "var(--le-font-mono, monospace)",
+                            color: "var(--ink-2)",
+                            background: "rgba(11,11,16,0.025)",
+                            border: "1px solid var(--line-2)",
+                            borderRadius: 8,
+                          }}
+                        >
+                          {scene.prompt}
+                        </pre>
+                      </div>
+
+                      {/* Metadata grid */}
+                      <div
+                        style={{
+                          marginTop: 16,
+                          paddingTop: 16,
+                          borderTop: "1px solid var(--line-2)",
+                          display: "grid",
+                          gridTemplateColumns: "repeat(6, 1fr)",
+                          gap: "12px 20px",
+                        }}
+                      >
+                        {[
+                          { l: "Duration", v: `${scene.duration_seconds}s` },
+                          { l: "Attempts", v: scene.attempt_count ?? 0 },
+                          { l: "Gen time", v: scene.generation_time_ms ? formatDuration(scene.generation_time_ms) : "—" },
+                          { l: "Cost", v: scene.generation_cost_cents ? formatCents(scene.generation_cost_cents) : "—" },
+                          { l: "QC verdict", v: scene.qc_verdict ?? "—" },
+                          { l: "QC confidence", v: scene.qc_confidence != null ? `${Math.round(scene.qc_confidence * 100)}%` : "—" },
+                        ].map((m) => (
+                          <div key={m.l}>
+                            <p className="le-d-label">{m.l}</p>
+                            <p style={{ marginTop: 4, fontSize: 12.5, fontVariantNumeric: "tabular-nums", color: "var(--ink-2)" }}>{m.v}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Output clip */}
+                      {scene.clip_url && (
+                        <div style={{ marginTop: 16 }}>
+                          <span className="le-d-label">Output clip</span>
+                          <div style={{ marginTop: 8, borderRadius: 10, overflow: "hidden", background: "#000", maxWidth: 420 }}>
+                            <video
+                              src={scene.clip_url}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              style={{ width: "100%", aspectRatio: "16/9", display: "block" }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {(scene.status === "needs_review" ||
+                        scene.status === "qc_hard_reject" ||
+                        scene.status === "qc_soft_reject" ||
+                        scene.status === "failed" ||
+                        scene.status === "pending") && (
+                        <ResubmitControls scene={scene} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "logs" && (
+          <div style={{ padding: 0, maxHeight: 640, overflowY: "auto" }}>
+            {logs.length === 0 ? (
+              <p style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
+                No logs for this property
+              </p>
+            ) : (
+              <div>
                 {logs.map((log) => (
                   <div
                     key={log.id}
-                    className="grid grid-cols-[80px_90px_60px_1fr] items-start gap-4 px-5 py-2.5 text-[11px] leading-relaxed"
-                    style={{ fontFamily: "var(--le-font-mono)" }}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "80px 90px 60px 1fr",
+                      alignItems: "flex-start",
+                      gap: 16,
+                      padding: "8px 20px",
+                      borderBottom: "1px solid var(--line-2)",
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      fontFamily: "var(--le-font-mono, monospace)",
+                    }}
                   >
-                    <span className="tabular text-muted-foreground/60">
+                    <span style={{ color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
                       {new Date(log.created_at).toLocaleTimeString([], {
                         hour: "2-digit",
                         minute: "2-digit",
                         second: "2-digit",
                       })}
                     </span>
-                    <span className="label text-muted-foreground">{log.stage}</span>
+                    <span style={{ color: "var(--muted)" }}>{log.stage}</span>
                     <span
-                      className={`label ${
-                        log.level === "error"
-                          ? "text-destructive"
-                          : log.level === "warn"
-                          ? "text-accent"
-                          : "text-muted-foreground"
-                      }`}
+                      style={{
+                        color:
+                          log.level === "error"
+                            ? "var(--bad)"
+                            : log.level === "warn"
+                            ? "var(--warn)"
+                            : "var(--muted)",
+                      }}
                     >
                       {log.level}
                     </span>
                     <span
-                      className={
-                        log.level === "error"
-                          ? "text-destructive"
-                          : log.level === "warn"
-                          ? "text-accent"
-                          : "text-foreground"
-                      }
+                      style={{
+                        color:
+                          log.level === "error"
+                            ? "var(--bad)"
+                            : log.level === "warn"
+                            ? "var(--warn)"
+                            : "var(--ink-2)",
+                      }}
                     >
                       {log.message}
                       {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <span className="ml-2 text-muted-foreground">{JSON.stringify(log.metadata)}</span>
+                        <span style={{ marginLeft: 8, color: "var(--muted)" }}>{JSON.stringify(log.metadata)}</span>
                       )}
                     </span>
                   </div>
@@ -824,33 +1223,47 @@ const PropertyDetail = () => {
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
 
-      {activeTab === "prompts" && (
-        <div style={{ marginTop: 40 }} className="space-y-12">
-          {!prompts ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            [
-              { label: "Photo analysis", desc: "Used by Claude Sonnet to score every photo on quality, aesthetics, depth, and room type.", body: prompts.analysis },
-              { label: "Director (shot planning)", desc: "Used to turn selected photos into an ordered shot list.", body: prompts.director },
-              { label: "QC evaluator", desc: "Used to judge generated clips. Currently auto-passing pending frame-extraction infra.", body: prompts.qc },
-            ].map((p) => (
-              <section key={p.label}>
-                <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>— {p.label}</span>
-                <h3 style={{ marginTop: 12, fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", fontFamily: "var(--le-font-sans)" }}>{p.label}</h3>
-                <p className="mt-2 text-xs text-muted-foreground">{p.desc}</p>
-                <pre className="mt-6 max-h-[480px] overflow-y-auto whitespace-pre-wrap p-5 text-[11px] leading-relaxed" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(220,230,255,0.09)", fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
-                  {p.body}
-                </pre>
-              </section>
-            ))
-          )}
-        </div>
-      )}
+        {activeTab === "prompts" && (
+          <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 28 }}>
+            {!prompts ? (
+              <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
+                <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--muted)" }} />
+              </div>
+            ) : (
+              [
+                { label: "Photo analysis", desc: "Used by Claude Sonnet to score every photo on quality, aesthetics, depth, and room type.", body: prompts.analysis },
+                { label: "Director (shot planning)", desc: "Used to turn selected photos into an ordered shot list.", body: prompts.director },
+                { label: "QC evaluator", desc: "Used to judge generated clips. Currently auto-passing pending frame-extraction infra.", body: prompts.qc },
+              ].map((p) => (
+                <section key={p.label}>
+                  <SectionTitle eyebrow={p.label} title={p.label} />
+                  <p style={{ marginTop: 6, fontSize: 12.5, color: "var(--muted)" }}>{p.desc}</p>
+                  <pre
+                    style={{
+                      marginTop: 12,
+                      maxHeight: 480,
+                      overflowY: "auto",
+                      whiteSpace: "pre-wrap",
+                      padding: "14px 16px",
+                      fontSize: 11,
+                      lineHeight: 1.6,
+                      fontFamily: "var(--le-font-mono, monospace)",
+                      color: "var(--ink-2)",
+                      background: "rgba(11,11,16,0.025)",
+                      border: "1px solid var(--line-2)",
+                      borderRadius: 8,
+                    }}
+                  >
+                    {p.body}
+                  </pre>
+                </section>
+              ))
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };

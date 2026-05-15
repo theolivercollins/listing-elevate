@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, AlertTriangle, RefreshCw, ChevronDown, ExternalLink, ArrowLeft } from "lucide-react";
+import { Loader2, AlertTriangle, RefreshCw, ChevronDown, ExternalLink } from "lucide-react";
 import {
   fetchSystemStatus,
   fetchSkuAffinity,
@@ -11,6 +11,8 @@ import {
   type SystemStatusFlag,
   type SkuAffinityResponse,
 } from "@/lib/systemStatusApi";
+import { PageHeading, KpiCard, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 
 // Auto-refresh every 30s while the tab is visible. Cheap — one endpoint.
 const REFRESH_MS = 30_000;
@@ -42,41 +44,88 @@ export default function SystemStatus() {
     return () => clearInterval(t);
   }, []);
 
+  const hasDegraded = status
+    ? status.queues.renders_orphan_over_30m > 0 || status.recent_regressions.length > 0
+    : false;
+
   return (
-    <div className="space-y-10">
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <Link to="/dashboard/development" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <span className="label text-muted-foreground">— Development</span>
-            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em]">System status</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Live view of every API call, queue depth, and budget. Auto-refreshes every 30s while this tab is visible.
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={reload}
-          className="inline-flex items-center gap-2 border border-border bg-background px-3 py-1.5 text-xs hover:border-foreground"
-        >
-          <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <PageHeading
+        eyebrow="Infrastructure · Health"
+        title="System status"
+        sub="Live view of every API call, queue depth, and budget. Auto-refreshes every 30s while this tab is visible."
+        actions={
+          <button
+            type="button"
+            className="le-btn-ghost"
+            onClick={reload}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 14px", fontSize: 12.5, fontWeight: 500 }}
+          >
+            <RefreshCw style={{ width: 12, height: 12 }} className={loading ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        }
+      />
 
       {error && (
-        <div className="flex items-start gap-2 border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            background: "rgba(196,74,74,0.06)",
+            border: "1px solid rgba(196,74,74,0.20)",
+            color: "var(--bad)",
+            fontSize: 13,
+          }}
+        >
+          <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
           <span>{error}</span>
         </div>
       )}
 
       {loading && !status ? (
-        <div className="py-20 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-muted-foreground" /></div>
+        <div style={{ padding: "80px 0", textAlign: "center" }}>
+          <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
+        </div>
       ) : status ? (
         <>
+          {/* Hero health card */}
+          <Card padding={20}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <span
+                className="le-dot-pulse"
+                style={{
+                  display: "inline-block",
+                  width: 10,
+                  height: 10,
+                  borderRadius: 99,
+                  background: hasDegraded ? "var(--warn)" : "var(--good)",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: 18,
+                  fontWeight: 600,
+                  letterSpacing: "-0.02em",
+                  color: "var(--ink)",
+                }}
+              >
+                {hasDegraded ? "Degraded — review alerts below" : "All systems operational"}
+              </span>
+            </div>
+            {hasDegraded && (
+              <p style={{ margin: "8px 0 0 22px", fontSize: 13, color: "var(--muted)" }}>
+                {status.queues.renders_orphan_over_30m > 0
+                  ? `${status.queues.renders_orphan_over_30m} render orphan(s) detected · failover may be active`
+                  : "One or more regressions detected — see alerts below"}
+              </p>
+            )}
+          </Card>
+
           <BudgetBar budget={status.budget} />
           <KillSwitchSection flags={status.system_flags} onReload={reload} />
           <AlertsSection
@@ -99,24 +148,11 @@ export default function SystemStatus() {
 
 function BudgetBar({ budget }: { budget: SystemStatusResponse["budget"] }) {
   return (
-    <section className="grid grid-cols-3 gap-3">
-      <StatCard label="Today" value={fmtDollars(budget.today_cents)} />
-      <StatCard label="Last 7 days" value={fmtDollars(budget.last_7d_cents)} />
-      <StatCard label="Last 30 days" value={fmtDollars(budget.last_30d_cents)} />
+    <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <KpiCard label="Today" value={fmtDollars(budget.today_cents)} />
+      <KpiCard label="Last 7 days" value={fmtDollars(budget.last_7d_cents)} />
+      <KpiCard label="Last 30 days" value={fmtDollars(budget.last_30d_cents)} />
     </section>
-  );
-}
-
-function StatCard({ label, value, tone }: { label: string; value: string; tone?: "warn" | "error" }) {
-  const toneClass =
-    tone === "error" ? "border-destructive/40 bg-destructive/5"
-    : tone === "warn" ? "border-amber-500/40 bg-amber-500/5"
-    : "border-border bg-background";
-  return (
-    <div className={`border px-4 py-3 ${toneClass}`}>
-      <div className="label text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</div>
-    </div>
   );
 }
 
@@ -164,84 +200,119 @@ function AlertsSection({
     });
   }
 
-  if (items.length === 0) {
-    return (
-      <section>
-        <div className="label text-muted-foreground">Alerts</div>
-        <div className="mt-3 border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-          All systems green — no active regressions, queues are draining, affinity refresh is recent.
-        </div>
-      </section>
-    );
-  }
-
   return (
-    <section>
-      <div className="label text-muted-foreground">Alerts</div>
-      <div className="mt-3 space-y-2">
-        {items.map((it, i) => (
+    <Card padding={20}>
+      <SectionTitle eyebrow="Alerts" title="Active alerts" />
+      <div style={{ marginTop: 14 }}>
+        {items.length === 0 ? (
           <div
-            key={i}
-            className={`border px-4 py-3 text-sm ${
-              it.tone === "error"
-                ? "border-destructive/40 bg-destructive/5 text-destructive"
-                : "border-amber-500/40 bg-amber-500/5 text-amber-800 dark:text-amber-300"
-            }`}
+            style={{
+              padding: "12px 14px",
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(47,138,85,0.07)",
+              border: "1px solid rgba(47,138,85,0.18)",
+              color: "var(--good)",
+              fontSize: 13,
+            }}
           >
-            <div className="font-semibold">{it.title}</div>
-            <div className="mt-1 text-xs opacity-90">{it.detail}</div>
+            All systems green — no active regressions, queues are draining, affinity refresh is recent.
           </div>
-        ))}
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {items.map((it, i) => (
+              <div
+                key={i}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: it.tone === "error" ? "rgba(196,74,74,0.06)" : "rgba(182,128,44,0.06)",
+                  border: `1px solid ${it.tone === "error" ? "rgba(196,74,74,0.20)" : "rgba(182,128,44,0.20)"}`,
+                  color: it.tone === "error" ? "var(--bad)" : "var(--warn)",
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{it.title}</div>
+                <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>{it.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    </section>
+    </Card>
   );
 }
 
 // ── Provider × stage summary ───────────────────────────────
 
 function ProviderSummarySection({ rows }: { rows: SystemStatusResponse["provider_summary"] }) {
-  if (rows.length === 0) {
-    return (
-      <section>
-        <div className="label text-muted-foreground">Providers (7d)</div>
-        <div className="mt-3 border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+  return (
+    <Card padding={20}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 14 }}>
+        <SectionTitle eyebrow="Providers (7d)" title="Provider × stage breakdown" />
+        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Sorted by 7-day spend</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div
+          style={{
+            padding: "24px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
           No API calls recorded in the last 7 days.
         </div>
-      </section>
-    );
-  }
-  return (
-    <section>
-      <div className="flex items-baseline justify-between">
-        <div className="label text-muted-foreground">Providers × stage (7d)</div>
-        <div className="text-xs text-muted-foreground">Sorted by 7-day spend</div>
-      </div>
-      <div className="mt-3 grid grid-cols-[120px_140px_80px_90px_90px_90px_1fr] items-center gap-x-3 border-b border-border pb-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-        <div>Provider</div>
-        <div>Stage</div>
-        <div className="text-right">24h n</div>
-        <div className="text-right">24h $</div>
-        <div className="text-right">7d $</div>
-        <div className="text-right">Mean $</div>
-        <div>Last call</div>
-      </div>
-      {rows.map((r) => (
-        <div
-          key={`${r.provider}|${r.stage}`}
-          className="grid grid-cols-[120px_140px_80px_90px_90px_90px_1fr] items-center gap-x-3 border-b border-border/50 py-1.5 text-xs tabular-nums"
-        >
-          <div className="font-mono font-medium">{r.provider}</div>
-          <div className="text-muted-foreground">{r.stage}</div>
-          <div className="text-right">{r.count_24h}</div>
-          <div className="text-right">{fmtDollars(r.cost_cents_24h)}</div>
-          <div className="text-right">{fmtDollars(r.cost_cents_7d)}</div>
-          <div className="text-right">{fmtDollars(r.mean_cost_cents)}</div>
-          <div className="text-muted-foreground">
-            {r.last_at ? new Date(r.last_at).toLocaleString() : "—"}
+      ) : (
+        <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "120px 140px 80px 90px 90px 90px 1fr",
+              gap: 12,
+              padding: "10px 14px",
+              borderBottom: "1px solid var(--line-2)",
+            }}
+          >
+            {["Provider", "Stage", "24h n", "24h $", "7d $", "Mean $", "Last call"].map((h, i) => (
+              <span
+                key={h}
+                className="le-d-label"
+                style={{ textAlign: i >= 2 && i <= 5 ? "right" : undefined }}
+              >
+                {h}
+              </span>
+            ))}
           </div>
-        </div>
-      ))}
-    </section>
+          {rows.map((r) => (
+            <div
+              key={`${r.provider}|${r.stage}`}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "120px 140px 80px 90px 90px 90px 1fr",
+                gap: 12,
+                padding: "12px 14px",
+                borderBottom: "1px solid var(--line-2)",
+                alignItems: "center",
+                fontSize: 12.5,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              <span style={{ fontWeight: 600, color: "var(--ink)" }}>{r.provider}</span>
+              <span style={{ color: "var(--muted)" }}>{r.stage}</span>
+              <span style={{ textAlign: "right" }}>{r.count_24h}</span>
+              <span style={{ textAlign: "right" }}>{fmtDollars(r.cost_cents_24h)}</span>
+              <span style={{ textAlign: "right" }}>{fmtDollars(r.cost_cents_7d)}</span>
+              <span style={{ textAlign: "right" }}>{fmtDollars(r.mean_cost_cents)}</span>
+              <span style={{ color: "var(--muted)" }}>
+                {r.last_at ? new Date(r.last_at).toLocaleString() : "—"}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -249,14 +320,23 @@ function ProviderSummarySection({ rows }: { rows: SystemStatusResponse["provider
 
 function QueuesSection({ queues }: { queues: SystemStatusResponse["queues"] }) {
   return (
-    <section>
-      <div className="label text-muted-foreground">Queue depth</div>
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Judge pending" value={String(queues.judge_pending)} tone={queues.judge_pending > 20 ? "warn" : undefined} />
-        <StatCard label="Judge errors 24h" value={String(queues.judge_errors_24h)} tone={queues.judge_errors_24h > 5 ? "warn" : undefined} />
-        <StatCard label="Renders in-flight" value={String(queues.renders_pending)} />
-        <StatCard label="Render orphans (>30m)" value={String(queues.renders_orphan_over_30m)} tone={queues.renders_orphan_over_30m > 0 ? "error" : undefined} />
-      </div>
+    <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <KpiCard
+        label="Judge pending"
+        value={String(queues.judge_pending)}
+        sub={queues.judge_pending > 20 ? "above 20 — check cron" : "draining normally"}
+      />
+      <KpiCard
+        label="Judge errors · 24h"
+        value={String(queues.judge_errors_24h)}
+        sub={queues.judge_errors_24h > 5 ? "elevated — review logs" : "within threshold"}
+      />
+      <KpiCard label="Renders in-flight" value={String(queues.renders_pending)} sub="submitted, awaiting callback" />
+      <KpiCard
+        label="Render orphans (>30m)"
+        value={String(queues.renders_orphan_over_30m)}
+        sub={queues.renders_orphan_over_30m > 0 ? "check poll-lab-renders" : "none detected"}
+      />
     </section>
   );
 }
@@ -265,55 +345,104 @@ function QueuesSection({ queues }: { queues: SystemStatusResponse["queues"] }) {
 
 function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null }) {
   if (!affinity) return null;
+
+  const confStyle: Record<string, { color: string; bg: string }> = {
+    high_empirical: { color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
+    medium_empirical: { color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
+  };
+
   return (
-    <section>
-      <div className="flex items-baseline justify-between">
-        <div className="label text-muted-foreground">SKU × motion affinity</div>
+    <Card padding={20}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 14 }}>
+        <SectionTitle eyebrow="Affinity" title="SKU × motion affinity" />
         {affinity.recent_runs[0] && (
-          <div className="text-xs text-muted-foreground">
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
             Last refreshed {new Date(affinity.recent_runs[0].ran_at).toLocaleString()}
-          </div>
+          </span>
         )}
       </div>
+
       {affinity.rules.length === 0 ? (
-        <div className="mt-3 border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
-          No rules yet. The refresh cron needs ≥5 ratings per (motion × SKU) to emit a rule.
+        <div
+          style={{
+            padding: "24px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
+          No rules yet. The refresh cron needs at least 5 ratings per (motion × SKU) to emit a rule.
         </div>
       ) : (
-        <div className="mt-3 space-y-2">
-          {affinity.rules.map((r) => (
-            <div key={r.camera_movement} className="border border-border bg-background px-4 py-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-mono font-medium">{r.camera_movement}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${
-                  r.confidence === "high_empirical" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                  : r.confidence === "medium_empirical" ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                  : "bg-muted text-muted-foreground"
-                }`}>
-                  {r.confidence}
-                </span>
-                <span className="ml-auto text-[11px] text-muted-foreground">
-                  refreshed {new Date(r.last_refreshed_at).toLocaleDateString()}
-                </span>
-              </div>
-              <div className="mt-2 text-xs text-muted-foreground">{r.reason}</div>
-              <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
-                {r.prefer.length > 0 && (
-                  <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-emerald-800 dark:text-emerald-300">
-                    ✓ prefer: {r.prefer.join(", ")}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {affinity.rules.map((r) => {
+            const cs = confStyle[r.confidence] ?? { color: "var(--muted)", bg: "rgba(11,11,16,0.05)" };
+            return (
+              <div
+                key={r.camera_movement}
+                style={{
+                  padding: "12px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(11,11,16,0.025)",
+                  border: "1px solid var(--line)",
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 600, color: "var(--ink)" }}>{r.camera_movement}</span>
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 99,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      background: cs.bg,
+                      color: cs.color,
+                    }}
+                  >
+                    {r.confidence}
                   </span>
-                )}
-                {r.avoid.length > 0 && (
-                  <span className="rounded bg-amber-500/10 px-2 py-0.5 text-amber-800 dark:text-amber-300">
-                    ⚠ avoid: {r.avoid.join(", ")}
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)" }}>
+                    refreshed {new Date(r.last_refreshed_at).toLocaleDateString()}
                   </span>
-                )}
+                </div>
+                <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>{r.reason}</div>
+                <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {r.prefer.length > 0 && (
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 99,
+                        fontSize: 11,
+                        background: "rgba(47,138,85,0.10)",
+                        color: "var(--good)",
+                      }}
+                    >
+                      prefer: {r.prefer.join(", ")}
+                    </span>
+                  )}
+                  {r.avoid.length > 0 && (
+                    <span
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: 99,
+                        fontSize: 11,
+                        background: "rgba(182,128,44,0.10)",
+                        color: "var(--warn)",
+                      }}
+                    >
+                      avoid: {r.avoid.join(", ")}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -331,71 +460,148 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
     });
   }
 
-  if (events.length === 0) {
-    return (
-      <section>
-        <div className="label text-muted-foreground">Live feed</div>
-        <div className="mt-3 border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+  return (
+    <Card padding={20}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 14 }}>
+        <SectionTitle eyebrow="Live feed" title="Last 100 API calls" />
+        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Click any row to expand</span>
+      </div>
+
+      {events.length === 0 ? (
+        <div
+          style={{
+            padding: "24px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
           No recent API calls.
         </div>
-      </section>
-    );
-  }
-
-  return (
-    <section>
-      <div className="flex items-baseline justify-between">
-        <div className="label text-muted-foreground">Live feed — last 100 API calls</div>
-        <div className="text-xs text-muted-foreground">Click any row to expand</div>
-      </div>
-      <div className="mt-3 space-y-1">
-        {events.map((e) => {
-          const isOpen = expanded.has(e.id);
-          const iterationId = (e.metadata?.iteration_id ?? e.metadata?.session_id ?? null) as string | null;
-          return (
-            <div key={e.id} className="border border-border bg-background text-xs">
-              <button
-                onClick={() => toggle(e.id)}
-                className="grid w-full grid-cols-[110px_90px_110px_90px_1fr_24px] items-center gap-x-3 px-3 py-1.5 text-left hover:bg-accent/30"
+      ) : (
+        <div
+          className="le-card-flat"
+          style={{ padding: 0, overflow: "hidden" }}
+        >
+          {events.map((e, idx) => {
+            const isOpen = expanded.has(e.id);
+            const iterationId = (e.metadata?.iteration_id ?? e.metadata?.session_id ?? null) as string | null;
+            return (
+              <div
+                key={e.id}
+                style={{ borderBottom: idx === events.length - 1 ? "none" : "1px solid var(--line-2)" }}
               >
-                <span className="font-mono text-muted-foreground">{fmtTime(e.created_at)}</span>
-                <span className="font-mono font-medium">{e.provider}</span>
-                <span className="text-muted-foreground">{e.stage}</span>
-                <span className="text-right font-medium tabular-nums">{fmtDollars(e.cost_cents ?? 0)}</span>
-                <span className="truncate text-muted-foreground">
-                  {metadataSummary(e.metadata)}
-                </span>
-                <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${isOpen ? "" : "-rotate-90"}`} />
-              </button>
-              {isOpen && (
-                <div className="border-t border-border px-3 py-3 text-[11px]">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
-                    <span className="text-muted-foreground">units:</span><span>{e.units_consumed ?? "—"} {e.unit_type ?? ""}</span>
-                    <span className="text-muted-foreground">cost:</span><span>{fmtDollars(e.cost_cents ?? 0)}</span>
-                  </div>
-                  {iterationId && (
-                    <div className="mt-2">
-                      <Link
-                        to={`/dashboard/development/prompt-lab/${iterationId}`}
-                        className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground underline"
-                      >
-                        Open iteration <ExternalLink className="h-3 w-3" />
-                      </Link>
+                <button
+                  onClick={() => toggle(e.id)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "110px 90px 110px 90px 1fr 20px",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "9px 14px",
+                    width: "100%",
+                    textAlign: "left",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontVariantNumeric: "tabular-nums",
+                    transition: "background .15s",
+                  }}
+                  onMouseEnter={(ev) => { ev.currentTarget.style.background = "rgba(11,11,16,0.025)"; }}
+                  onMouseLeave={(ev) => { ev.currentTarget.style.background = "transparent"; }}
+                >
+                  <span style={{ color: "var(--muted)" }}>{fmtTime(e.created_at)}</span>
+                  <span style={{ fontWeight: 600, color: "var(--ink)" }}>{e.provider}</span>
+                  <span style={{ color: "var(--muted)" }}>{e.stage}</span>
+                  <span style={{ textAlign: "right", fontWeight: 600 }}>{fmtDollars(e.cost_cents ?? 0)}</span>
+                  <span
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {metadataSummary(e.metadata)}
+                  </span>
+                  <ChevronDown
+                    style={{
+                      width: 12,
+                      height: 12,
+                      color: "var(--muted)",
+                      transition: "transform .2s",
+                      transform: isOpen ? "none" : "rotate(-90deg)",
+                    }}
+                  />
+                </button>
+                {isOpen && (
+                  <div
+                    style={{
+                      borderTop: "1px solid var(--line-2)",
+                      padding: "12px 14px",
+                      fontSize: 11.5,
+                      color: "var(--ink-2)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "auto 1fr",
+                        gap: "4px 16px",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      <span style={{ color: "var(--muted)" }}>units:</span>
+                      <span>{e.units_consumed ?? "—"} {e.unit_type ?? ""}</span>
+                      <span style={{ color: "var(--muted)" }}>cost:</span>
+                      <span>{fmtDollars(e.cost_cents ?? 0)}</span>
                     </div>
-                  )}
-                  <div className="mt-2">
-                    <div className="text-muted-foreground">metadata:</div>
-                    <pre className="mt-1 overflow-x-auto rounded bg-muted/40 p-2 font-mono text-[10px] leading-relaxed">
-                      {JSON.stringify(e.metadata ?? {}, null, 2)}
-                    </pre>
+                    {iterationId && (
+                      <div style={{ marginTop: 8 }}>
+                        <Link
+                          to={`/dashboard/development/prompt-lab/${iterationId}`}
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                            fontSize: 11.5,
+                            color: "var(--muted)",
+                            textDecoration: "underline",
+                          }}
+                        >
+                          Open iteration
+                          <ExternalLink style={{ width: 11, height: 11 }} />
+                        </Link>
+                      </div>
+                    )}
+                    <div style={{ marginTop: 8 }}>
+                      <span style={{ color: "var(--muted)" }}>metadata:</span>
+                      <pre
+                        style={{
+                          marginTop: 4,
+                          padding: "8px 10px",
+                          borderRadius: "var(--radius-sm)",
+                          background: "rgba(11,11,16,0.04)",
+                          fontSize: 10.5,
+                          lineHeight: 1.6,
+                          overflowX: "auto",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {JSON.stringify(e.metadata ?? {}, null, 2)}
+                      </pre>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -422,38 +628,64 @@ function KillSwitchSection({ flags, onReload }: { flags: SystemStatusFlag[]; onR
   }
 
   return (
-    <section>
-      <div className="label text-muted-foreground">Kill switches</div>
-      <div className="mt-3 space-y-2">
+    <Card padding={20}>
+      <SectionTitle eyebrow="Kill switches" title="System flags" />
+      <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
         {flags.map((f) => (
           <div
             key={f.name}
-            className={`flex flex-wrap items-center gap-3 border px-4 py-3 text-sm ${
-              f.value ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-background"
-            }`}
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              gap: 10,
+              padding: "12px 14px",
+              borderRadius: "var(--radius-sm)",
+              background: f.value ? "rgba(182,128,44,0.06)" : "rgba(11,11,16,0.025)",
+              border: `1px solid ${f.value ? "rgba(182,128,44,0.20)" : "var(--line)"}`,
+            }}
           >
-            <span className="font-mono font-medium">{f.name}</span>
-            <span className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-wider ${
-              f.value ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
-                      : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
-            }`}>
+            <span style={{ fontWeight: 600, color: "var(--ink)", fontSize: 13 }}>{f.name}</span>
+            <span
+              style={{
+                padding: "2px 8px",
+                borderRadius: 99,
+                fontSize: 10.5,
+                fontWeight: 600,
+                background: f.value ? "rgba(182,128,44,0.12)" : "rgba(47,138,85,0.10)",
+                color: f.value ? "var(--warn)" : "var(--good)",
+              }}
+            >
               {f.value ? "PAUSED" : "RUNNING"}
             </span>
-            {f.reason && <span className="text-muted-foreground text-xs">"{f.reason}"</span>}
-            <span className="ml-auto text-[11px] text-muted-foreground">
+            {f.reason && (
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>"{f.reason}"</span>
+            )}
+            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
               set {new Date(f.set_at).toLocaleString()}
             </span>
             <button
+              type="button"
               onClick={() => toggle(f)}
               disabled={pending === f.name}
-              className="shrink-0 border border-foreground/40 bg-background px-3 py-1 text-xs hover:bg-foreground hover:text-background transition"
+              className={f.value ? "le-btn-dark" : "le-btn-ghost"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 12px",
+                fontSize: 12,
+                fontWeight: 500,
+                borderRadius: "var(--radius-pill)",
+                flexShrink: 0,
+                cursor: "pointer",
+              }}
             >
               {pending === f.name ? "…" : f.value ? "Resume" : "Pause"}
             </button>
           </div>
         ))}
       </div>
-    </section>
+    </Card>
   );
 }
 
@@ -470,63 +702,113 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
     return true;
   });
 
+  const ratingColor = (rating: number) => {
+    if (rating >= 4) return "var(--good)";
+    if (rating <= 2) return "var(--bad)";
+    return "var(--muted)";
+  };
+
   return (
-    <section>
-      <div className="flex items-baseline justify-between">
-        <div className="label text-muted-foreground">Feedback log — last 100 iterations with any saved feedback</div>
-        <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-          {(["all","rated","tagged","commented","refined"] as const).map((k) => (
+    <Card padding={20}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 14 }}>
+        <SectionTitle eyebrow="Feedback log" title="Last 100 iterations with saved feedback" />
+        <div className="le-seg" style={{ display: "inline-flex" }}>
+          {(["all", "rated", "tagged", "commented", "refined"] as const).map((k) => (
             <button
               key={k}
+              type="button"
               onClick={() => setFilter(k)}
-              className={`rounded-full border px-2 py-0.5 transition ${
-                filter === k ? "border-foreground bg-foreground text-background" : "border-border hover:border-foreground"
-              }`}
+              className={`le-seg-item${filter === k ? " is-active" : ""}`}
+              style={{ fontSize: 11, padding: "5px 10px", cursor: "pointer" }}
             >
               {k}
             </button>
           ))}
         </div>
       </div>
+
       {filtered.length === 0 ? (
-        <div className="mt-3 border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+        <div
+          style={{
+            padding: "24px",
+            textAlign: "center",
+            fontSize: 13,
+            color: "var(--muted)",
+            border: "1px dashed var(--line)",
+            borderRadius: "var(--radius-sm)",
+          }}
+        >
           No feedback matching filter.
         </div>
       ) : (
-        <div className="mt-3 space-y-1">
-          {filtered.map((r) => (
-            <div key={r.iteration_id} className="border border-border bg-background px-3 py-2 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+        <div
+          className="le-card-flat"
+          style={{ padding: 0, overflow: "hidden" }}
+        >
+          {filtered.map((r, idx) => (
+            <div
+              key={r.iteration_id}
+              style={{
+                padding: "10px 14px",
+                borderBottom: idx === filtered.length - 1 ? "none" : "1px solid var(--line-2)",
+                fontSize: 12,
+              }}
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                <span style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums", fontSize: 11 }}>
                   {new Date(r.created_at).toLocaleString()}
                 </span>
                 {r.order_id && (
                   <Link
                     to={`/dashboard/development/prompt-lab/${r.session_id ?? ""}`}
-                    className="font-mono text-[10px] tabular-nums text-muted-foreground hover:text-foreground underline"
+                    style={{
+                      color: "var(--muted)",
+                      fontSize: 11,
+                      fontVariantNumeric: "tabular-nums",
+                      textDecoration: "underline",
+                    }}
                     title="Open session"
                   >
                     {r.order_id}
                   </Link>
                 )}
                 {r.model_used && (
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <span
+                    style={{
+                      padding: "2px 6px",
+                      borderRadius: "var(--radius-sm)",
+                      background: "rgba(11,11,16,0.05)",
+                      fontSize: 11,
+                      color: "var(--muted)",
+                    }}
+                  >
                     {r.model_used}
                   </span>
                 )}
                 {r.rating != null && (
-                  <span className={`inline-flex items-center gap-0.5 font-medium ${
-                    r.rating >= 4 ? "text-emerald-700 dark:text-emerald-300"
-                    : r.rating <= 2 ? "text-destructive"
-                    : "text-muted-foreground"
-                  }`}>
+                  <span
+                    style={{
+                      fontWeight: 600,
+                      color: ratingColor(r.rating),
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
                     {"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}
                   </span>
                 )}
                 {r.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                     {r.tags.map((t) => (
-                      <span key={t} className="rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      <span
+                        key={t}
+                        style={{
+                          padding: "1px 6px",
+                          borderRadius: 99,
+                          fontSize: 10.5,
+                          background: "rgba(11,11,16,0.05)",
+                          color: "var(--muted)",
+                        }}
+                      >
                         {t}
                       </span>
                     ))}
@@ -534,14 +816,14 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
                 )}
               </div>
               {r.user_comment && (
-                <div className="mt-1 leading-snug text-muted-foreground">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">note: </span>
+                <div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
+                  <span style={{ fontSize: 10.5, color: "var(--muted-2)" }}>note: </span>
                   {r.user_comment}
                 </div>
               )}
               {r.refinement_instruction && (
-                <div className="mt-1 leading-snug text-muted-foreground">
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">refine: </span>
+                <div style={{ marginTop: 4, fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
+                  <span style={{ fontSize: 10.5, color: "var(--muted-2)" }}>refine: </span>
                   {r.refinement_instruction}
                 </div>
               )}
@@ -549,7 +831,7 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
           ))}
         </div>
       )}
-    </section>
+    </Card>
   );
 }
 

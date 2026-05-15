@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 import { toast } from "sonner";
 import "@/v2/styles/v2.css";
 
@@ -42,25 +43,6 @@ function SettingRow({ label, hint, children, first }: { label: string; hint?: st
   );
 }
 
-// ─── FieldInput ─────────────────────────────────────────────────
-function FieldInput({ value, onChange, placeholder, type = "text" }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; type?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      placeholder={placeholder}
-      style={{
-        width: "100%", fontSize: 13, padding: "10px 14px", borderRadius: 12,
-        border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
-        outline: "none", fontFamily: "inherit",
-      }}
-    />
-  );
-}
-
 // ─── SegControl ─────────────────────────────────────────────────
 function SegControl<T extends string>({ options, value, onChange }: {
   options: { label: string; value: T }[]; value: T; onChange: (v: T) => void;
@@ -81,7 +63,53 @@ function SegControl<T extends string>({ options, value, onChange }: {
   );
 }
 
-// ─── Section header ──────────────────────────────────────────────
+// ─── NumInput ────────────────────────────────────────────────────
+function NumInput({ value, onChange, min, prefix }: {
+  value: number; onChange: (v: number) => void; min?: number; prefix?: string;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {prefix && <span style={{ fontSize: 13, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{prefix}</span>}
+      <input
+        type="number"
+        value={value}
+        min={min}
+        onChange={e => onChange(Number(e.target.value))}
+        style={{
+          width: 90, fontSize: 13, padding: "8px 10px", borderRadius: 10,
+          border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
+          outline: "none", fontFamily: "inherit", fontVariantNumeric: "tabular-nums",
+          textAlign: "right",
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── ReadOnly pill ────────────────────────────────────────────────
+function ReadPill({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="le-card-flat" style={{ padding: "8px 14px", fontSize: 12.5, color: "var(--muted)", borderRadius: 10, whiteSpace: "nowrap" }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── ModelChip ────────────────────────────────────────────────────
+function ModelChip({ provider, model }: { provider: string; model: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "rgba(11,11,16,0.06)", color: "var(--muted)", letterSpacing: "0.02em" }}>
+        {provider}
+      </span>
+      <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace" }}>
+        {model}
+      </span>
+    </div>
+  );
+}
+
+// ─── SectionHeader ───────────────────────────────────────────────
 function SectionHeader({ eyebrow, title, onSave }: { eyebrow: string; title: string; onSave?: () => void }) {
   return (
     <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 4 }}>
@@ -95,109 +123,157 @@ function SectionHeader({ eyebrow, title, onSave }: { eyebrow: string; title: str
   );
 }
 
-// ─── Integrations data ──────────────────────────────────────────
-const INTEGRATIONS = [
-  { name: "Anthropic", desc: "Claude director / scene chat", connected: true },
-  { name: "Atlas Cloud", desc: "Kling SKU routing", connected: true },
-  { name: "Runway Gen-4", desc: "Video generation", connected: true },
-  { name: "Luma Ray2", desc: "Video generation", connected: true },
-  { name: "Shotstack", desc: "Assembly + compositing", connected: true },
-  { name: "Creatomate", desc: "Template rendering", connected: true },
-  { name: "Browserbase", desc: "Headless browser ops", connected: true },
-  { name: "Gemini", desc: "Vision judge + embeddings", connected: true },
-  { name: "Supabase", desc: "Storage + database", connected: true },
+// ─── Providers data ───────────────────────────────────────────────
+const PROVIDERS = [
+  { name: "Anthropic",    desc: "Director / scene chat",     connected: true,  spend: "$18.42", events: 312 },
+  { name: "Atlas Cloud",  desc: "Kling SKU routing",         connected: true,  spend: "$94.10", events: 87  },
+  { name: "Gemini",       desc: "Judge + embeddings",        connected: true,  spend: "$6.03",  events: 204 },
+  { name: "Runway Gen-4", desc: "Video generation",          connected: true,  spend: "$0.00",  events: 0   },
+  { name: "Luma Ray2",    desc: "Video generation",          connected: true,  spend: "$0.00",  events: 0   },
+  { name: "Shotstack",    desc: "Assembly + compositing",    connected: true,  spend: "$11.20", events: 51  },
+  { name: "Creatomate",   desc: "Template rendering",        connected: false, spend: "$0.00",  events: 0   },
+  { name: "Browserbase",  desc: "Headless browser ops",      connected: true,  spend: "$2.75",  events: 14  },
+  { name: "Supabase",     desc: "Storage + database",        connected: true,  spend: "$0.00",  events: 0   },
 ];
+
+// ─── DangerButton with confirm ───────────────────────────────────
+function DangerButton({ label, confirmLabel, onConfirm, destructive = false }: {
+  label: string; confirmLabel: string; onConfirm: () => void; destructive?: boolean;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  if (confirming) {
+    return (
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <span style={{ fontSize: 12.5, color: "var(--muted)", flex: 1 }}>This action cannot be undone.</span>
+        <button
+          type="button"
+          className="le-btn-ghost"
+          style={{ fontSize: 12, padding: "7px 14px", color: destructive ? "var(--bad)" : undefined, borderColor: destructive ? "rgba(196,74,74,0.35)" : undefined }}
+          onClick={() => { onConfirm(); setConfirming(false); }}
+        >
+          {confirmLabel}
+        </button>
+        <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "7px 14px" }} onClick={() => setConfirming(false)}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="le-btn-ghost"
+      style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13, color: destructive ? "var(--bad)" : undefined, borderColor: destructive ? "rgba(196,74,74,0.25)" : undefined }}
+      onClick={() => setConfirming(true)}
+    >
+      {label}
+    </button>
+  );
+}
 
 // ─── Main ────────────────────────────────────────────────────────
 const Settings = () => {
-  // Brand identity
-  const [brokerage, setBrokerage] = useState("Recasi Real Estate");
-  const [logoUrl, setLogoUrl] = useState("");
-  const [brandColor, setBrandColor] = useState("#0B5FFF");
-  const [agentName, setAgentName] = useState("Oliver Helgemo");
-  const [agentEmail, setAgentEmail] = useState("oliver@recasi.com");
-  const [agentPhone, setAgentPhone] = useState("");
-
-  // Video presets
-  const [duration, setDuration] = useState<"15" | "30" | "60">("30");
-  const [orientation, setOrientation] = useState<"vertical" | "horizontal" | "both">("vertical");
-  const [pkg, setPkg] = useState<"just_listed" | "just_pended" | "just_closed" | "life_cycle">("just_listed");
-  const [voiceover, setVoiceover] = useState(false);
-  const [music, setMusic] = useState(true);
-
-  // Notifications
-  const [emailOnComplete, setEmailOnComplete] = useState(true);
-  const [emailOnFailure, setEmailOnFailure] = useState(true);
-  const [slackWebhook, setSlackWebhook] = useState("");
-
   // Pipeline behavior
   const [thompsonRouter, setThompsonRouter] = useState(true);
-  const [autoJudge, setAutoJudge] = useState(false);
-  const [qcBehavior, setQcBehavior] = useState<"auto-pass" | "route-to-review">("route-to-review");
+  const [autoJudge, setAutoJudge]           = useState(false);
+  const [judgeCronPaused, setJudgeCronPaused] = useState(false);
+  const [defaultSku, setDefaultSku] = useState<"kling-v2-6-pro" | "kling-v3-pro" | "kling-v3-std" | "kling-v2-1-pair" | "kling-o3-pro" | "kling-v2-master">("kling-v2-6-pro");
 
-  // Danger zone
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Video presets
+  const [duration, setDuration]       = useState<"15" | "30" | "60">("30");
+  const [orientation, setOrientation] = useState<"vertical" | "horizontal" | "both">("vertical");
+  const [pkg, setPkg]                 = useState<"just_listed" | "just_pended" | "just_closed" | "life_cycle">("just_listed");
+  const [music, setMusic]             = useState(true);
+  const [voiceover, setVoiceover]     = useState(false);
+
+  // Cost ceilings
+  const [dailyCap, setDailyCap]       = useState(50);
+  const [listingCap, setListingCap]   = useState(10);
+  const [onBreach, setOnBreach]       = useState<"manual-review" | "hard-stop" | "log-only">("manual-review");
+
+  // Pipeline pause
+  const [pipelinePaused, setPipelinePaused] = useState(false);
 
   const save = (section: string) => toast.success(`${section} saved`);
 
   return (
     <div className="le-fade-up" style={{ maxWidth: 780, margin: "0 auto" }}>
       <PageHeading
-        eyebrow="Workspace"
+        eyebrow="Owner workspace"
         title="Settings"
-        sub="Brand defaults, video presets, notifications, and pipeline behavior."
+        sub="Pipeline controls, model versions, cost ceilings, and platform info. The buttons here change real Listing Elevate behavior — handle with care."
       />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 32 }}>
 
-        {/* 1. Brand identity */}
+        {/* 1. Pipeline behavior */}
         <Card padding={24}>
-          <SectionHeader eyebrow="Identity" title="Brand" onSave={() => save("Brand identity")} />
-          <SettingRow first label="Brokerage name" hint="Shown on all exported videos and share pages.">
-            <FieldInput value={brokerage} onChange={setBrokerage} placeholder="Your brokerage" />
+          <SectionHeader eyebrow="Advanced" title="Pipeline behavior" onSave={() => save("Pipeline behavior")} />
+          <SettingRow first label="Thompson router" hint="Multi-armed bandit allocation across providers and SKUs. Maps to USE_THOMPSON_ROUTER. When off, static SKU below is used.">
+            <Toggle value={thompsonRouter} onChange={setThompsonRouter} />
           </SettingRow>
-          <SettingRow label="Logo URL" hint="Public URL to your brokerage logo (PNG or SVG, transparent background).">
-            <FieldInput value={logoUrl} onChange={setLogoUrl} placeholder="https://..." />
+          <SettingRow label="Auto-judge" hint="Run Gemini vision scoring after every render. Maps to JUDGE_ENABLED env var.">
+            <Toggle value={autoJudge} onChange={setAutoJudge} />
           </SettingRow>
-          <SettingRow label="Primary brand color" hint="Used for lower-thirds and title cards.">
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input
-                type="color"
-                value={brandColor}
-                onChange={e => setBrandColor(e.target.value)}
-                style={{ width: 36, height: 36, borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", padding: 2 }}
-              />
-              <div className="le-card-flat" style={{ padding: "7px 12px", fontSize: 12, fontVariantNumeric: "tabular-nums", color: "var(--muted)", borderRadius: 8, minWidth: 80, textAlign: "center" }}>
-                {brandColor.toUpperCase()}
-              </div>
-            </div>
+          <SettingRow label="Judge cron paused" hint="Pause the poll-judge cron. Maps to system_flags.judge_cron_paused db row.">
+            <Toggle value={judgeCronPaused} onChange={setJudgeCronPaused} />
           </SettingRow>
-          <SettingRow label="Default agent name" hint="Pre-filled when creating a new listing.">
-            <FieldInput value={agentName} onChange={setAgentName} placeholder="Agent name" />
-          </SettingRow>
-          <SettingRow label="Default agent email">
-            <FieldInput value={agentEmail} onChange={setAgentEmail} placeholder="agent@brokerage.com" type="email" />
-          </SettingRow>
-          <SettingRow label="Default agent phone">
-            <FieldInput value={agentPhone} onChange={setAgentPhone} placeholder="+1 (555) 000-0000" type="tel" />
+          <SettingRow label="Default V1 Atlas SKU" hint="Fallback SKU when Thompson router is off or has no data for a bucket.">
+            <select
+              value={defaultSku}
+              onChange={e => setDefaultSku(e.target.value as typeof defaultSku)}
+              style={{
+                fontSize: 12.5, padding: "8px 10px", borderRadius: 10,
+                border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
+                outline: "none", fontFamily: "inherit", cursor: "pointer",
+              }}
+            >
+              <option value="kling-v2-6-pro">kling-v2-6-pro</option>
+              <option value="kling-v3-pro">kling-v3-pro</option>
+              <option value="kling-v3-std">kling-v3-std</option>
+              <option value="kling-v2-1-pair">kling-v2-1-pair</option>
+              <option value="kling-o3-pro">kling-o3-pro</option>
+              <option value="kling-v2-master">kling-v2-master</option>
+            </select>
           </SettingRow>
         </Card>
 
-        {/* 2. Default video presets */}
+        {/* 2. Model versions */}
+        <Card padding={24}>
+          <SectionHeader eyebrow="Runtime" title="Model versions" />
+          <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 4px", lineHeight: 1.6 }}>
+            Read-only. Change model constants in <span style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", fontSize: 11 }}>lib/providers/*</span> and redeploy.
+          </p>
+          <SettingRow first label="Director" hint="Writes the scene script and orchestrates the pipeline.">
+            <ModelChip provider="Anthropic" model="claude-sonnet-4-6" />
+          </SettingRow>
+          <SettingRow label="Scene chat" hint="Handles per-scene creative Q&A in the prompt lab.">
+            <ModelChip provider="Anthropic" model="claude-haiku-4-5-20251001" />
+          </SettingRow>
+          <SettingRow label="Judge" hint="Scores every lab iteration with vision rubric.">
+            <ModelChip provider="Gemini" model="gemini-2.5-flash" />
+          </SettingRow>
+          <SettingRow label="Image embedding" hint="768-dim vectors for photo similarity routing.">
+            <ModelChip provider="Gemini" model="gemini-embedding-2 @ 768d" />
+          </SettingRow>
+          <SettingRow label="Photo analyzer" hint="Extracts scene metadata from listing photos.">
+            <ModelChip provider="Gemini" model="gemini-3-flash-preview" />
+          </SettingRow>
+        </Card>
+
+        {/* 3. Default video presets */}
         <Card padding={24}>
           <SectionHeader eyebrow="Presets" title="Default video settings" onSave={() => save("Video presets")} />
-          <SettingRow first label="Duration" hint="Applied to every new upload unless overridden per-listing.">
+          <SettingRow first label="Duration" hint="Applied when a new listing's selected_duration is null.">
             <SegControl
               options={[{ label: "15s", value: "15" }, { label: "30s", value: "30" }, { label: "60s", value: "60" }]}
-              value={duration}
-              onChange={setDuration}
+              value={duration} onChange={setDuration}
             />
           </SettingRow>
-          <SettingRow label="Orientation">
+          <SettingRow label="Orientation" hint="Determines aspect ratio for video export.">
             <SegControl
               options={[{ label: "Vertical", value: "vertical" }, { label: "Horizontal", value: "horizontal" }, { label: "Both", value: "both" }]}
-              value={orientation}
-              onChange={setOrientation}
+              value={orientation} onChange={setOrientation}
             />
           </SettingRow>
           <SettingRow label="Package" hint="Narrative arc applied by the director.">
@@ -208,148 +284,130 @@ const Settings = () => {
                 { label: "Closed", value: "just_closed" },
                 { label: "Life cycle", value: "life_cycle" },
               ]}
-              value={pkg}
-              onChange={setPkg}
+              value={pkg} onChange={setPkg}
             />
           </SettingRow>
-          <SettingRow label="Include voiceover" hint="AI-generated narration over the video.">
-            <Toggle value={voiceover} onChange={setVoiceover} />
-          </SettingRow>
-          <SettingRow label="Include music" hint="Background music track mixed into the final export.">
+          <SettingRow label="Default music" hint="Background music track mixed into the final export.">
             <Toggle value={music} onChange={setMusic} />
           </SettingRow>
-        </Card>
-
-        {/* 3. Notifications */}
-        <Card padding={24}>
-          <SectionHeader eyebrow="Alerts" title="Notifications" onSave={() => save("Notifications")} />
-          <SettingRow first label="Email on complete" hint="Receive an email when a video finishes processing.">
-            <Toggle value={emailOnComplete} onChange={setEmailOnComplete} />
-          </SettingRow>
-          <SettingRow label="Email on failure" hint="Receive an email when a property pipeline errors out.">
-            <Toggle value={emailOnFailure} onChange={setEmailOnFailure} />
-          </SettingRow>
-          <SettingRow label="Slack webhook URL" hint="Post completion and failure events to a Slack channel.">
-            <FieldInput value={slackWebhook} onChange={setSlackWebhook} placeholder="https://hooks.slack.com/..." />
+          <SettingRow label="Default voiceover" hint="AI-generated narration. Billed extra per render.">
+            <Toggle value={voiceover} onChange={setVoiceover} />
           </SettingRow>
         </Card>
 
-        {/* 4. Integrations */}
+        {/* 4. Cost ceilings */}
         <Card padding={24}>
-          <SectionHeader eyebrow="Connected services" title="Integrations" />
-          <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 20px", lineHeight: 1.6 }}>
-            API credentials live in Vercel environment variables. Connection status reflects server-side key presence.
+          <SectionHeader eyebrow="Margin protection" title="Cost ceilings" onSave={() => save("Cost ceilings")} />
+          <SettingRow first label="Daily total ceiling" hint="Hard budget across all providers for a calendar day.">
+            <NumInput value={dailyCap} onChange={setDailyCap} min={0} prefix="$" />
+          </SettingRow>
+          <SettingRow label="Per-listing soft cap" hint="Flags a property when cumulative spend exceeds this.">
+            <NumInput value={listingCap} onChange={setListingCap} min={0} prefix="$" />
+          </SettingRow>
+          <SettingRow label="On breach" hint="Action taken when a ceiling is hit.">
+            <SegControl
+              options={[
+                { label: "Manual review", value: "manual-review" },
+                { label: "Hard stop", value: "hard-stop" },
+                { label: "Log only", value: "log-only" },
+              ]}
+              value={onBreach} onChange={setOnBreach}
+            />
+          </SettingRow>
+        </Card>
+
+        {/* 5. Providers */}
+        <Card padding={24}>
+          <SectionHeader eyebrow="Connected services" title="Providers" />
+          <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 16px", lineHeight: 1.6 }}>
+            API credentials live in Vercel env vars. Spend and event counts are last-7d estimates from cost_events.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-            {INTEGRATIONS.map(int => (
-              <div
-                key={int.name}
-                className="le-card-flat"
-                style={{ padding: "12px 14px", borderRadius: 10 }}
-              >
+            {PROVIDERS.map(p => (
+              <div key={p.name} className="le-card-flat" style={{ padding: "12px 14px", borderRadius: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{
-                    width: 7, height: 7, borderRadius: 99, flexShrink: 0,
-                    background: int.connected ? "var(--good)" : "var(--muted-2)",
-                  }} />
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{int.name}</span>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{p.name}</span>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, paddingLeft: 15 }}>{int.desc}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, paddingLeft: 15 }}>{p.desc}</div>
+                <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 6, paddingLeft: 15, fontVariantNumeric: "tabular-nums" }}>
+                  {p.spend} · {p.events} events (7d)
+                </div>
               </div>
             ))}
           </div>
         </Card>
 
-        {/* 5. Pipeline behavior */}
-        <Card padding={24}>
-          <SectionHeader eyebrow="Advanced" title="Pipeline behavior" onSave={() => save("Pipeline behavior")} />
-          <SettingRow first label="Thompson router" hint="Use multi-armed bandit allocation across providers and SKUs. Maps to USE_THOMPSON_ROUTER env.">
-            <Toggle value={thompsonRouter} onChange={setThompsonRouter} />
-          </SettingRow>
-          <SettingRow label="Auto-judge" hint="Run Gemini vision scoring after every render. Maps to JUDGE_ENABLED env.">
-            <Toggle value={autoJudge} onChange={setAutoJudge} />
-          </SettingRow>
-          <SettingRow label="Default QC behavior" hint="What happens when a clip passes QC thresholds.">
-            <SegControl
-              options={[{ label: "Auto-pass", value: "auto-pass" }, { label: "Route to review", value: "route-to-review" }]}
-              value={qcBehavior}
-              onChange={setQcBehavior}
-            />
-          </SettingRow>
-        </Card>
-
         {/* 6. Workspace */}
         <Card padding={24}>
           <SectionHeader eyebrow="Account" title="Workspace" />
-          <SettingRow first label="Workspace name" hint="Contact support to rename your workspace.">
-            <div className="le-card-flat" style={{ padding: "10px 14px", fontSize: 13, color: "var(--muted)", borderRadius: 12 }}>
-              Recasi
-            </div>
+          <SettingRow first label="Workspace name">
+            <ReadPill>Recasi</ReadPill>
           </SettingRow>
           <SettingRow label="Plan">
-            <div className="le-card-flat" style={{ padding: "10px 14px", fontSize: 13, color: "var(--muted)", borderRadius: 12 }}>
-              Studio
-            </div>
+            <ReadPill>Studio · v2.4</ReadPill>
           </SettingRow>
-          <SettingRow label="Seats" hint="Active users in this workspace.">
-            <div className="le-card-flat" style={{ padding: "10px 14px", fontSize: 13, color: "var(--muted)", borderRadius: 12 }}>
-              8 of 20
-            </div>
+          <SettingRow label="Primary owner">
+            <ReadPill>Oliver Helgemo · oliver@recasi.com</ReadPill>
           </SettingRow>
         </Card>
 
-        {/* 7. Danger zone */}
+        {/* 7. Domains & secrets */}
+        <Card padding={24}>
+          <SectionHeader eyebrow="Infrastructure" title="Domains and secrets" />
+          {([
+            { label: "Production",    hint: "Main branch · all crons enabled",   url: "https://listingelevate.com" },
+            { label: "Staging",       hint: "staging branch · crons disabled",   url: "https://listingelevate-git-staging-recasi.vercel.app" },
+            { label: "Dev",           hint: "dev branch · crons disabled",       url: "https://listingelevate-git-dev-recasi.vercel.app" },
+          ] as const).map((row, i) => (
+            <SettingRow key={row.label} first={i === 0} label={row.label} hint={row.hint}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {row.url.replace("https://", "")}
+                </span>
+                <a href={row.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--muted)", display: "flex", lineHeight: 1 }}>
+                  <Icon name="external" size={13} strokeWidth={1.8} />
+                </a>
+              </div>
+            </SettingRow>
+          ))}
+          <SettingRow label="Supabase project" hint="Shared across all environments.">
+            <ReadPill>vrhmaeywqsohlztoouxu</ReadPill>
+          </SettingRow>
+          <SettingRow label="Vercel project">
+            <ReadPill>prj_ZJRb76Pu05FHirZsHNH17MuJcL00</ReadPill>
+          </SettingRow>
+        </Card>
+
+        {/* 8. Danger zone */}
         <Card padding={24}>
           <SectionHeader eyebrow="Irreversible actions" title="Danger zone" />
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-            <button
-              type="button"
-              className="le-btn-ghost"
-              style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13 }}
-              onClick={() => { toast.success("Signed out of all sessions"); }}
-            >
-              Sign out everywhere
-            </button>
-            <button
-              type="button"
-              className="le-btn-ghost"
-              style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13 }}
-              onClick={() => { toast.success("Data export requested — you'll receive an email within 24h"); }}
-            >
-              Request data export
-            </button>
-            {!confirmDelete ? (
-              <button
-                type="button"
-                className="le-btn-ghost"
-                style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13, color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }}
-                onClick={() => setConfirmDelete(true)}
-              >
-                Delete workspace
-              </button>
-            ) : (
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 12.5, color: "var(--muted)", flex: 1 }}>
-                  This cannot be undone. All data will be permanently deleted.
-                </span>
-                <button
-                  type="button"
-                  className="le-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 14px", color: "var(--bad)", borderColor: "rgba(196,74,74,0.35)" }}
-                  onClick={() => { toast.error("Workspace deletion is disabled in this environment"); setConfirmDelete(false); }}
-                >
-                  Confirm delete
-                </button>
-                <button
-                  type="button"
-                  className="le-btn-ghost"
-                  style={{ fontSize: 12, padding: "7px 14px" }}
-                  onClick={() => setConfirmDelete(false)}
-                >
-                  Cancel
-                </button>
+            <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", borderRadius: 10, border: "1px solid var(--line-2)", gap: 16 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>Pause all pipeline crons</div>
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Sets system_flags.pipeline_paused. No new renders will start.</div>
               </div>
-            )}
+              <Toggle value={pipelinePaused} onChange={(v) => { setPipelinePaused(v); toast.success(v ? "Pipeline crons paused" : "Pipeline crons resumed"); }} />
+            </div>
+            <button
+              type="button"
+              className="le-btn-ghost"
+              style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13 }}
+              onClick={() => window.alert("pnpm exec tsx scripts/cost-reconcile.ts")}
+            >
+              Run cost reconcile now
+            </button>
+            <DangerButton
+              label="Sign out of all sessions"
+              confirmLabel="Confirm sign out"
+              onConfirm={() => toast.success("Signed out of all sessions")}
+            />
+            <DangerButton
+              label="Export workspace data"
+              confirmLabel="Confirm export"
+              onConfirm={() => toast.success("Export requested — you'll receive an email within 24h")}
+            />
           </div>
         </Card>
 

@@ -1,11 +1,30 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Loader2, Upload as UploadIcon, ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabase";
 import { createListing } from "@/lib/labListingsApi";
+import { PageHeading, Card } from "@/components/dashboard/primitives";
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "9px 14px",
+  fontSize: 13,
+  fontFamily: "var(--le-font-sans)",
+  color: "var(--ink)",
+  background: "var(--surface)",
+  border: "1px solid var(--line)",
+  borderRadius: 12,
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const labelStyle: React.CSSProperties = {
+  fontSize: 12,
+  fontWeight: 500,
+  color: "var(--muted)",
+  display: "block",
+  marginBottom: 6,
+};
 
 export default function LabListingNew() {
   const navigate = useNavigate();
@@ -58,68 +77,149 @@ export default function LabListingNew() {
   }
 
   return (
-    <div className="space-y-10">
-      <div>
-        <Link to="/dashboard/development/lab" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> back to listings
-        </Link>
-        <h2 className="mt-3 text-3xl font-semibold tracking-[-0.02em]">Create listing</h2>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <PageHeading
+        eyebrow="Lab · New listing"
+        title="Create lab listing"
+        actions={
+          <Link
+            to="/dashboard/development/lab"
+            className="le-btn-ghost"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+          >
+            <ArrowLeft style={{ width: 13, height: 13 }} />
+            Back
+          </Link>
+        }
+      />
 
-      <div className="max-w-2xl space-y-5">
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Name (optional)</label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Miami waterfront test" />
-        </div>
+      <div style={{ maxWidth: 680 }}>
+        <Card padding={24}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Name */}
+            <div>
+              <label style={labelStyle}>Name (optional)</label>
+              <input
+                style={inputStyle}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Miami waterfront test"
+              />
+            </div>
 
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Default model (use Generate-all on each scene to A/B)</label>
-          <div className="flex flex-wrap gap-2">
-            {MODEL_OPTIONS.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                onClick={() => setModel(m.key)}
-                className={`border px-3 py-2 text-xs ${model === m.key ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:border-foreground"}`}
+            {/* Model picker */}
+            <div>
+              <label style={labelStyle}>Default model · use Generate-all on each scene to A/B</label>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {MODEL_OPTIONS.map((m) => {
+                  const active = model === m.key;
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      onClick={() => setModel(m.key)}
+                      style={{
+                        padding: "7px 12px",
+                        fontSize: 12,
+                        fontWeight: 500,
+                        borderRadius: "var(--radius-sm)",
+                        border: active ? "none" : "1px solid var(--line)",
+                        background: active ? "var(--ink)" : "var(--surface)",
+                        color: active ? "#fff" : "var(--ink-2)",
+                        cursor: "pointer",
+                        fontFamily: "var(--le-font-sans)",
+                        transition: "background .15s, color .15s",
+                      }}
+                    >
+                      {m.label}{" "}
+                      <span style={{ opacity: 0.6 }}>{m.price}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label style={labelStyle}>Notes</label>
+              <textarea
+                style={{ ...inputStyle, minHeight: 80, resize: "vertical", lineHeight: 1.5 }}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="What are you testing?"
+              />
+            </div>
+
+            {/* File upload */}
+            <div>
+              <label style={labelStyle}>Photos (10–30 recommended)</label>
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                style={{ ...inputStyle, cursor: "pointer" }}
+              />
+              {files.length > 0 && (
+                <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>
+                  {files.length} {files.length === 1 ? "file" : "files"} selected
+                </p>
+              )}
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(196,74,74,0.07)",
+                  border: "1px solid rgba(196,74,74,0.18)",
+                  fontSize: 12.5,
+                  color: "var(--bad)",
+                }}
               >
-                {m.label} <span className="opacity-70">{m.price}</span>
+                {error}
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
+              <button
+                type="button"
+                onClick={handleCreate}
+                disabled={uploading || files.length === 0}
+                className="le-btn-dark"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  opacity: uploading || files.length === 0 ? 0.5 : 1,
+                  cursor: uploading || files.length === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
+                    Uploading {progress.done}/{progress.total}
+                  </>
+                ) : (
+                  <>
+                    <UploadIcon style={{ width: 13, height: 13 }} />
+                    Upload &amp; Analyze
+                  </>
+                )}
               </button>
-            ))}
+              <Link
+                to="/dashboard/development/lab"
+                className="le-btn-ghost"
+                style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}
+              >
+                Cancel
+              </Link>
+            </div>
           </div>
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Notes</label>
-          <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What are you testing?" className="min-h-24" />
-        </div>
-
-        <div className="space-y-2">
-          <label className="text-xs uppercase tracking-wider text-muted-foreground">Photos (10-30 recommended)</label>
-          <Input
-            type="file"
-            multiple
-            accept="image/*"
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-          />
-          {files.length > 0 && (
-            <p className="text-[11px] text-muted-foreground">{files.length} selected</p>
-          )}
-        </div>
-
-        {error && <p className="text-xs text-destructive">{error}</p>}
-
-        <Button onClick={handleCreate} disabled={uploading || files.length === 0} size="lg">
-          {uploading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Uploading {progress.done}/{progress.total}
-            </>
-          ) : (
-            <>
-              <UploadIcon className="mr-2 h-4 w-4" /> Upload &amp; Analyze
-            </>
-          )}
-        </Button>
+        </Card>
       </div>
     </div>
   );

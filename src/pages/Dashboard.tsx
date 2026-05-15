@@ -17,6 +17,11 @@ const PAGE_TITLES: Array<{ match: RegExp; title: TitleMeta }> = [
   { match: /^\/dashboard\/pipeline/, title: { eyebrow: "Live", title: "Pipeline" } },
   { match: /^\/dashboard\/properties/, title: { eyebrow: "Listings", title: "All listings" } },
   { match: /^\/dashboard\/users/, title: { eyebrow: "Workspace", title: "Users" } },
+  { match: /^\/dashboard\/studio\/new/, title: { eyebrow: "Operator studio", title: "New listing" } },
+  { match: /^\/dashboard\/studio\/clients\/[^/]+/, title: { eyebrow: "Operator studio · Clients", title: "Client" } },
+  { match: /^\/dashboard\/studio\/clients/, title: { eyebrow: "Operator studio", title: "Clients" } },
+  { match: /^\/dashboard\/studio\/properties\/[^/]+/, title: { eyebrow: "Operator studio", title: "Property" } },
+  { match: /^\/dashboard\/studio/, title: { eyebrow: "Operator studio", title: "Queue" } },
   { match: /^\/dashboard\/finances/, title: { eyebrow: "All providers", title: "Finances" } },
   { match: /^\/dashboard\/logs/, title: { eyebrow: "Last 24 hours", title: "Pipeline logs" } },
   { match: /^\/dashboard\/development\/prompt-lab\/recipes/, title: { eyebrow: "Lab", title: "Recipe library" } },
@@ -253,10 +258,11 @@ function DashboardTopBar() {
 
   return (
     <header className="le-top-bar">
-      <div className="le-top-bar-title">
-        {titleMeta.eyebrow && <div className="le-top-eyebrow">{titleMeta.eyebrow}</div>}
-        <div className="le-top-title">{titleMeta.title}</div>
-      </div>
+      {titleMeta.eyebrow && (
+        <div className="le-top-eyebrow" style={{ margin: 0, fontSize: 12 }}>
+          {titleMeta.eyebrow}
+        </div>
+      )}
       <div style={{ flex: 1 }} />
       <div className="le-top-search">
         <Icon name="search" size={15} style={{ color: "var(--muted)" }} />
