@@ -18,16 +18,8 @@ export interface Voice {
 }
 
 export const VOICES: Voice[] = [
-  // Females
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel",    gender: "female", description: "Calm, professional" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella",     gender: "female", description: "Soft, friendly" },
-  { id: "XB0fDUnXU5powFXDhCwa", name: "Charlotte", gender: "female", description: "Conversational, British" },
-  { id: "pFZP5JQG7iQjIQuC4Bku", name: "Lily",      gender: "female", description: "Calm, authoritative" },
-  // Males
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   gender: "male", description: "Deep, narration-style" },
-  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", gender: "male", description: "Warm, conversational" },
-  { id: "nPczCjzI2devNBz1zQrb", name: "Brian",  gender: "male", description: "Confident narrator" },
-  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", gender: "male", description: "British, news-anchor" },
+  { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",  gender: "male", description: "Natural, conversational" },
+  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Titan", gender: "male", description: "Deep, commanding narrator" },
 ];
 
 /** Valid voice IDs — used for fast validation without iterating. */

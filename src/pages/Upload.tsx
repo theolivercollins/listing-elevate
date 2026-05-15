@@ -32,16 +32,8 @@ import "@/v2/styles/v2.css";
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
-  // Females
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel",    gender: "female" as const, description: "Calm, professional" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella",     gender: "female" as const, description: "Soft, friendly" },
-  { id: "XB0fDUnXU5powFXDhCwa", name: "Charlotte", gender: "female" as const, description: "Conversational, British" },
-  { id: "pFZP5JQG7iQjIQuC4Bku", name: "Lily",      gender: "female" as const, description: "Calm, authoritative" },
-  // Males
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   gender: "male" as const, description: "Deep, narration-style" },
-  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", gender: "male" as const, description: "Warm, conversational" },
-  { id: "nPczCjzI2devNBz1zQrb", name: "Brian",  gender: "male" as const, description: "Confident narrator" },
-  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", gender: "male" as const, description: "British, news-anchor" },
+  { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",  gender: "male" as const, description: "Natural, conversational" },
+  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Titan", gender: "male" as const, description: "Deep, commanding narrator" },
 ];
 
 interface UploadedFile {

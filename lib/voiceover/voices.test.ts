@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { VOICES, getVoice, isValidVoiceId, WORD_BUDGET } from "./voices.js";
 
 describe("VOICES catalog", () => {
-  it("exports exactly 8 voices", () => {
-    expect(VOICES).toHaveLength(8);
+  it("exports exactly 2 voices", () => {
+    expect(VOICES).toHaveLength(2);
   });
 
   it("each voice has required fields", () => {
@@ -15,17 +15,17 @@ describe("VOICES catalog", () => {
     }
   });
 
-  it("includes both male and female voices", () => {
+  it("catalog gender split matches design (currently 2 male)", () => {
     const males = VOICES.filter((v) => v.gender === "male");
     const females = VOICES.filter((v) => v.gender === "female");
-    expect(males).toHaveLength(4);
-    expect(females).toHaveLength(4);
+    expect(males).toHaveLength(2);
+    expect(females).toHaveLength(0);
   });
 
   it("getVoice returns correct voice by id", () => {
-    const adam = getVoice("pNInz6obpgDQGcFmaJgB");
-    expect(adam?.name).toBe("Adam");
-    expect(adam?.gender).toBe("male");
+    const mark = getVoice("UgBBYS2sOqTuMpoF3BR0");
+    expect(mark?.name).toBe("Mark");
+    expect(mark?.gender).toBe("male");
   });
 
   it("getVoice returns undefined for unknown id", () => {
