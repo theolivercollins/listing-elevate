@@ -759,6 +759,7 @@ export default function BlogPostChatCompose() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onSelect={(img) => setForm({ ...form, image: img })}
+        selectedId={form.image?.id ?? null}
       />
     </div>
   );
