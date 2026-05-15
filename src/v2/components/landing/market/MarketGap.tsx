@@ -83,7 +83,7 @@ export default function MarketGap() {
             transition={{ delay: 1.2 }}
             className="mt-4"
           >
-            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Properties Online (2018)
             </span>
           </motion.div>
@@ -139,7 +139,7 @@ export default function MarketGap() {
             transition={{ delay: 1.2 }}
             className="mt-4"
           >
-            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Properties Online (2018)
             </span>
           </motion.div>
@@ -206,8 +206,8 @@ export default function MarketGap() {
                 </motion.div>
               </div>
               <div className="flex justify-between mt-1.5">
-                <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>11%</span>
-                <span className="text-[9px] tabular-nums" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>73%</span>
+                <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>11%</span>
+                <span className="text-[9px] tabular-nums" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>73%</span>
               </div>
             </div>
           </div>

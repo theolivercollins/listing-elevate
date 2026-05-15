@@ -1,185 +1,37 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
-import type { BlogPostState, BlogPostListItem } from "@/lib/blog/types";
-import { PageHeading, Card } from "@/components/dashboard/primitives";
-import { Icon } from "@/components/dashboard/icons";
+import type { BlogPostState } from "@/lib/blog/types";
+import {
+  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown, Trash2, MessageSquare,
+} from "lucide-react";
+import { DeletePostDialog } from "@/components/blog/DeletePostDialog";
 
-// ─── state filter config ──────────────────────────────────────────
 const STATE_FILTERS: Array<{ label: string; value: BlogPostState | "all" }> = [
   { label: "All", value: "all" },
   { label: "Drafts", value: "awaiting_approval" },
   { label: "Live", value: "live" },
+  { label: "On hold", value: "on_hold" },
   { label: "Quarantined", value: "quarantined" },
 ];
 
-// ─── blog post status → design token mapping ─────────────────────
-function blogStatePill(state: BlogPostState) {
-  const MAP: Record<string, { label: string; color: string; bg: string }> = {
-    live:             { label: "Live",        color: "var(--good)",   bg: "rgba(47,138,85,0.10)" },
-    awaiting_approval:{ label: "Draft",       color: "var(--muted)",  bg: "rgba(11,11,16,0.05)" },
-    publish_due:      { label: "Publish due", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-    publishing:       { label: "Publishing",  color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-    failed:           { label: "Failed",      color: "var(--bad)",    bg: "rgba(196,74,74,0.10)" },
-    quarantined:      { label: "Quarantined", color: "var(--bad)",    bg: "rgba(196,74,74,0.10)" },
-    paused:           { label: "Paused",      color: "var(--warn)",   bg: "rgba(182,128,44,0.10)" },
-  };
-  const s = MAP[state] ?? { label: state, color: "var(--muted)", bg: "rgba(11,11,16,0.05)" };
-  return (
-    <span
-      className="le-status-pill"
-      style={{ background: s.bg, color: s.color }}
-    >
-      <span className="le-status-dot" />
-      {s.label}
-    </span>
-  );
-}
-
-// ─── dropdown menu (native, no shadcn) ───────────────────────────
-function NewPostMenu({ templates, navigate }: {
-  templates: Array<{ id: string; name: string }>;
-  navigate: (to: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button
-        className="le-btn-dark"
-        onClick={() => setOpen(v => !v)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        style={{ display: "inline-flex", alignItems: "center", gap: 7 }}
-      >
-        <Icon name="plus" size={13} />
-        New post
-        <Icon name="chevron-down" size={12} style={{ opacity: 0.7 }} />
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            right: 0,
-            top: "calc(100% + 6px)",
-            width: 260,
-            background: "var(--surface)",
-            borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--line)",
-            boxShadow: "var(--shadow-lg)",
-            zIndex: 200,
-            padding: "4px 0",
-          }}
-        >
-          <MenuRow
-            icon="book"
-            label="Write manually"
-            sub="Blank editor — type or paste HTML"
-            onClick={() => { setOpen(false); navigate("/dashboard/blog/posts/new"); }}
-          />
-          <MenuRow
-            icon="sparkles"
-            label="Generate with AI"
-            sub="Claude writes the first draft"
-            onClick={() => { setOpen(false); navigate("/dashboard/blog/posts/new?ai=1"); }}
-          />
-          {templates.length > 0 && (
-            <>
-              <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
-              <div style={{ padding: "4px 14px 2px", fontSize: 11, color: "var(--muted)" }}>From template</div>
-              {templates.slice(0, 6).map(t => (
-                <MenuRow
-                  key={t.id}
-                  icon="logs"
-                  label={t.name}
-                  onClick={() => { setOpen(false); navigate(`/dashboard/blog/posts/new?template=${t.id}`); }}
-                />
-              ))}
-              {templates.length > 6 && (
-                <MenuRow
-                  icon="chevron-right"
-                  label="Manage templates"
-                  onClick={() => { setOpen(false); navigate("/dashboard/blog/templates"); }}
-                />
-              )}
-            </>
-          )}
-          {templates.length === 0 && (
-            <>
-              <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
-              <MenuRow
-                icon="logs"
-                label="Create a template"
-                sub="Save HTML to reuse later"
-                onClick={() => { setOpen(false); navigate("/dashboard/blog/templates/new"); }}
-              />
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function MenuRow({
-  icon,
-  label,
-  sub,
-  onClick,
-}: {
-  icon: Parameters<typeof Icon>[0]["name"];
-  label: string;
-  sub?: string;
-  onClick: () => void;
-}) {
-  const [hov, setHov] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        width: "100%",
-        padding: "8px 14px",
-        background: hov ? "rgba(11,11,16,0.03)" : "transparent",
-        border: "none",
-        cursor: "pointer",
-        textAlign: "left",
-      }}
-    >
-      <Icon name={icon} size={14} style={{ color: "var(--muted)", marginTop: 1, flexShrink: 0 }} />
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{label}</div>
-        {sub && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>{sub}</div>}
-      </div>
-    </button>
-  );
-}
-
-// ─── input style ─────────────────────────────────────────────────
-const INPUT_STYLE: React.CSSProperties = {
-  padding: "9px 14px",
-  borderRadius: 12,
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
-  fontSize: 13,
-  fontFamily: "var(--le-font-sans)",
-  color: "var(--ink)",
-  outline: "none",
-  width: 220,
-};
-
-// ─── page ─────────────────────────────────────────────────────────
 export default function BlogPostsList() {
   const [state, setState] = useState<BlogPostState | "all">("all");
   const [q, setQ] = useState("");
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["blog-posts-list", state, q],
     queryFn: () => listPosts({
       state: state === "all" ? undefined : state,
@@ -188,141 +40,174 @@ export default function BlogPostsList() {
     }),
   });
 
+  // Load templates so we can offer "Start from template" as a sub-menu.
   const { data: tplData } = useQuery({
     queryKey: ["blog-templates"],
     queryFn: () => listTemplates(),
   });
   const templates = tplData?.templates ?? [];
+
   const posts = data?.posts ?? [];
+  const qc = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; hasSierra: boolean } | null>(null);
 
   return (
-    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Blog posts</h1>
+          <Link
+            to="/dashboard/blog/ally-history"
+            className="inline-flex items-center gap-1 rounded-md border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Browse your Ally conversation history"
+          >
+            <MessageSquare className="h-3 w-3" /> Ally history
+          </Link>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>
+              <Plus className="mr-1 h-4 w-4" /> New post
+              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new?chat=1")} className="cursor-pointer">
+              <MessageSquare className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Chat with AI</span>
+                <span className="text-xs text-muted-foreground">Build the post by talking to Claude</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new?ai=1")} className="cursor-pointer">
+              <Sparkles className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Quick AI draft</span>
+                <span className="text-xs text-muted-foreground">One-shot — fill a prompt, get a draft</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new")} className="cursor-pointer">
+              <Pencil className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Write manually</span>
+                <span className="text-xs text-muted-foreground">Blank editor — type or paste HTML</span>
+              </div>
+            </DropdownMenuItem>
+            {templates.length > 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1 text-xs text-muted-foreground">From template</div>
+                {templates.slice(0, 6).map((t) => (
+                  <DropdownMenuItem
+                    key={t.id}
+                    onClick={() => navigate(`/dashboard/blog/posts/new?template=${t.id}`)}
+                    className="cursor-pointer"
+                  >
+                    <LayoutTemplate className="mr-2 h-4 w-4" />
+                    <span className="truncate">{t.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                {templates.length > 6 && (
+                  <DropdownMenuItem onClick={() => navigate("/dashboard/blog/templates")} className="cursor-pointer text-xs text-muted-foreground">
+                    Manage templates →
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
+            {templates.length === 0 && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate("/dashboard/blog/templates/new")} className="cursor-pointer">
+                  <LayoutTemplate className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>Create a template</span>
+                    <span className="text-xs text-muted-foreground">Save HTML to reuse later</span>
+                  </div>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
-      <PageHeading
-        eyebrow="Content · Blog · Posts"
-        title="Blog posts"
-        sub="All posts across draft, scheduled, and live states."
-        actions={<NewPostMenu templates={templates} navigate={navigate} />}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {STATE_FILTERS.map(f => (
+          <Button key={f.value} size="sm" variant={state === f.value ? "default" : "outline"} onClick={() => setState(f.value)}>
+            {f.label}
+          </Button>
+        ))}
+        <Input placeholder="Search title…" value={q} onChange={e => setQ(e.target.value)} className="max-w-xs" />
+      </div>
+
+      <DeletePostDialog
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        postId={deleteTarget?.id ?? null}
+        postTitle={deleteTarget?.title ?? ""}
+        hasSierraCopy={deleteTarget?.hasSierra ?? false}
+        onSuccess={() => qc.invalidateQueries({ queryKey: ["blog-posts-list"] })}
       />
 
-      {/* Filter bar */}
-      <Card padding={16}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <div className="le-seg">
-            {STATE_FILTERS.map(f => (
-              <button
-                key={f.value}
-                className={`le-seg-item${state === f.value ? " is-active" : ""}`}
-                onClick={() => setState(f.value)}
-              >
-                {f.label}
-              </button>
+      <div className="rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-left text-xs">
+            <tr><th className="p-3">Title</th><th>State</th><th>Image</th><th>Author</th><th>Updated</th><th>Cost</th><th></th></tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">Loading…</td></tr>
+            ) : isError ? (
+              <tr><td colSpan={7} className="p-4 text-center">
+                <div className="text-sm text-destructive">Failed to load posts: {(error as any)?.message ?? String(error)}</div>
+                <button onClick={() => refetch()} className="mt-2 text-xs underline text-muted-foreground">Retry</button>
+              </td></tr>
+            ) : posts.length === 0 ? (
+              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">
+                {state === "all" && !q ? (
+                  <>No posts yet — click <span className="font-medium">New post</span> to start.</>
+                ) : (
+                  <>No posts match {state !== "all" && <span className="font-mono">state={state}</span>} {q && <span>title contains "{q}"</span>}. Try the <button onClick={() => { setState("all"); setQ(""); }} className="underline">All</button> filter.</>
+                )}
+              </td></tr>
+            ) : posts.map(p => (
+              <tr key={p.id} className="border-t hover:bg-muted/20">
+                <td className="p-3"><Link to={`/dashboard/blog/posts/${p.id}`} className="font-medium underline-offset-2 hover:underline">{p.title}</Link></td>
+                <td><StatePill state={p.state} /></td>
+                <td>{p.image ? <img src={thumbUrl(p.image.blob_url, { width: 120, quality: 65 })} loading="lazy" decoding="async" className="h-8 w-12 rounded object-cover" alt="" /> : "—"}</td>
+                <td>{p.author_label ?? "—"}</td>
+                <td className="text-xs text-muted-foreground">{new Date(p.updated_at).toLocaleString()}</td>
+                <td className="text-xs">${(p.cost_usd_cents / 100).toFixed(2)}</td>
+                <td className="pr-3">
+                  <div className="flex items-center justify-end gap-3">
+                    {p.external_post_url && (
+                      <a href={p.external_post_url} target="_blank" rel="noreferrer" aria-label="Open on Sierra">
+                        <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget({ id: p.id, title: p.title, hasSierra: !!p.external_post_url })}
+                      aria-label="Delete post"
+                      className="text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
             ))}
-          </div>
-          <input
-            placeholder="Search title…"
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            style={INPUT_STYLE}
-          />
-        </div>
-      </Card>
-
-      {/* Table */}
-      <Card padding={0} style={{ overflow: "hidden" }}>
-        {/* Header */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 130px 72px 140px 140px 90px 40px",
-          gap: 12,
-          padding: "10px 18px",
-          borderBottom: "1px solid var(--line)",
-          alignItems: "center",
-        }}>
-          <span className="le-d-label">Title</span>
-          <span className="le-d-label">State</span>
-          <span className="le-d-label">Image</span>
-          <span className="le-d-label">Author</span>
-          <span className="le-d-label">Updated</span>
-          <span className="le-d-label">Cost</span>
-          <span className="le-d-label"></span>
-        </div>
-
-        {isLoading && (
-          <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-            <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-            </svg>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        )}
-
-        {!isLoading && posts.length === 0 && (
-          <div style={{ padding: "64px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
-            No posts match this filter.
-          </div>
-        )}
-
-        {!isLoading && posts.map((p, i) => (
-          <PostRow key={p.id} p={p} isLast={i === posts.length - 1} />
-        ))}
-      </Card>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-// ─── table row ────────────────────────────────────────────────────
-function PostRow({ p, isLast }: { p: BlogPostListItem; isLast: boolean }) {
-  const [hov, setHov] = useState(false);
-  return (
-    <div
-      onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 130px 72px 140px 140px 90px 40px",
-        gap: 12,
-        padding: "12px 18px",
-        borderBottom: isLast ? "none" : "1px solid var(--line-2)",
-        alignItems: "center",
-        background: hov ? "rgba(11,11,16,0.02)" : "transparent",
-        transition: "background .15s",
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <Link
-          to={`/dashboard/blog/posts/${p.id}`}
-          style={{
-            fontSize: 13,
-            fontWeight: 500,
-            color: "var(--ink)",
-            textDecoration: "none",
-          }}
-        >
-          {p.title}
-        </Link>
-      </div>
-      <div>{blogStatePill(p.state)}</div>
-      <div>
-        {p.image
-          ? <img src={thumbUrl(p.image.blob_url, { width: 120, quality: 65 })} loading="lazy" decoding="async" style={{ width: 48, height: 32, objectFit: "cover", borderRadius: "var(--radius-sm)", display: "block", border: "1px solid var(--line-2)" }} alt="" />
-          : <span style={{ fontSize: 12, color: "var(--muted-2)" }}>—</span>
-        }
-      </div>
-      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{p.author_label ?? "—"}</div>
-      <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-        {new Date(p.updated_at).toLocaleString()}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--ink-2)", fontVariantNumeric: "tabular-nums" }}>
-        ${(p.cost_usd_cents / 100).toFixed(2)}
-      </div>
-      <div>
-        {p.external_post_url && (
-          <a href={p.external_post_url} target="_blank" rel="noreferrer" style={{ color: "var(--muted)" }}>
-            <Icon name="external" size={14} />
-          </a>
-        )}
-      </div>
-    </div>
-  );
+function StatePill({ state }: { state: BlogPostState }) {
+  const color = state === "live" ? "bg-green-100 text-green-800" :
+                state === "quarantined" ? "bg-red-100 text-red-800" :
+                state === "awaiting_approval" ? "bg-amber-100 text-amber-800" :
+                state === "on_hold" ? "bg-slate-200 text-slate-800" :
+                "bg-muted text-muted-foreground";
+  return <span className={`inline-block rounded px-2 py-0.5 text-xs ${color}`}>{state}</span>;
 }

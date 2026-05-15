@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-15 (dashboard rebuild + Operator Studio integration on `worktree-dashboard-soft-pastel-reskin`; preview-only)
+Last updated: 2026-05-15 (Ally — the full blog AI editor: chat-as-page, Gemini research, team-archive cross-linking, persistent memory, source allowlist, history page)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,67 +14,159 @@ See also:
 
 ## Right now
 
-**2026-05-15 (latest): Full dashboard rebuild + Account revamp + Operator Studio integration on `worktree-dashboard-soft-pastel-reskin`.** Branch is preview-only — not yet merged to `dev`/`staging`/`main`. Full session report: [`sessions/2026-05-15-dashboard-rebuild.md`](./sessions/2026-05-15-dashboard-rebuild.md). Stable preview alias: `https://listingelevate-git-worktree-dashboard-soft-pastel-reskin-recasi.vercel.app/dashboard`.
+**2026-05-15 (latest, PRs #50-#70 over one long session): Built "Ally" — the blog AI editor that runs the entire post-creation + improvement workflow. The blog system went from "publish endpoint works" to a full AI-first product surface in one session.**
 
-What's in the branch (HEAD `e382b64`):
+### What Ally is, end to end
 
-1. **Dashboard fully ported to Apple-clean × Noteflow-soft design system.** New `.le-dash-shell` token scope (--ink/--ink-2/--muted/--muted-2/--line/--line-2/--surface/--bg/--accent/--good/--warn/--bad/--radius/--shadow-*) with light + dark variants. 32-icon stroke set + shared primitives (`PageHeading`, `KpiCard`, `StatusPill`, `Sparkline`, `Bars`, `Ring`, `PropertyThumb`, `AIBanner`, `MiniStat`, `ActivityItem`, `HealthCard`, `Card`, `SectionTitle`).
+**For new posts** — `/dashboard/blog/posts/new?chat=1` is a dedicated full-page chat-compose experience (replaces the old modal). 60/40 split: chat thread + composer on the left, live form sidebar on the right (title, image, author, category, meta title/desc/keywords). Hero "Ready when you are." empty state with daily-rotating starter chips (pool of 30 topics, day-of-year rotation). Ally populates every field as you chat; each sidebar field shows a green `✓ filled` pill once she fills it. "Publish now" + "Save draft" pinned in the header; chat commands ("publish it", "save as draft") render an in-thread confirm card with a form-state snapshot so later edits can't drift what ships.
 
-2. **Sidebar restructure.** Collapsible 256↔72 with two sections — Studio (Overview / Pipeline / Listings / Users) and Ops (Video studio / Blog creator / Finances / Logs / System status / Lab / Settings). "Operator studio" renamed to **Video studio**, "Blog studio" renamed to **Blog creator**. Lab is one icon; sticky LabSubNav at the top of each Lab page handles Prompts/Recipes/Proposals/Rating ledger/Learning.
+**For existing posts** — `AllyFloatingChat` is a bottom-right Intercom-style widget on every post-detail page (drafts / live / on-hold). Closed = pill button "Improve with Ally". Open = ~440×640 panel with thread + composer + proposal cards. AI replies that touch title/body/meta render an Apply button that patches the parent form (advisory — Save still goes through the existing buttons). "See the diff" opens a side-by-side dialog (Current vs Proposed) with full HTML previews. Per-post chat history persists in localStorage; reopen = resume.
 
-3. **Top bar** is pure utilities now (search + notifications bell with live `needs_review` + warn/error log popover + theme toggle + 3-dots account menu). No duplicated headers — page identity lives in PageHeading only.
+**Conversation history** — `/dashboard/blog/ally-history` lists every persisted chat across all posts (resume, search, delete). Linked from the Blog Posts header.
 
-4. **Every main page rebuilt.** Overview (live deltas + leaderboard with case-insensitive dedup + ≥2-completed filter), Pipeline, Properties, Logs, Finances (with new Add-expense modal POSTing to `/api/admin/expenses`), Users (new — fetches `/api/admin/users`), Settings (rewritten for owner — pipeline flags / model versions / cost ceilings / providers / domains / danger zone), Rating Ledger.
+### Ally's brain
 
-5. **Every sub-page reskinned** to the same chrome (PromptLab including IterationCard / SessionCard / BatchGroups deep reskin, Recipes, Proposals, Learning, Development, SystemStatus, KnowledgeMap + Cell, all 5 Blog pages, LabListings + New + Detail, PropertyDetail). Data/behavior preserved verbatim.
+- **Model**: Claude Sonnet 4.6 (`claude-sonnet-4-6`).
+- **Schema**: Ally returns a namespaced envelope per turn — `<reply>`, `<post_title>`, `<post_body>`, `<seo_title>`, `<seo_description>`, `<seo_tags>`, `<post_author>`, `<post_category>`, `<post_action>` (publish | save_draft), plus four advisory tags: `<changes_summary>` (bulleted "what I changed"), `<ally_suggest_research>` (true when she'd benefit from web data), `<ally_remember>` (persistent memory), `<ally_forget>` (not yet emitted but parsable). All tag names are `post_*`/`seo_*`/`ally_*` prefixed to avoid colliding with real HTML elements (the `<html>` collision bug bit us once already).
+- **Status indicator**: `AllyThinking` (in `src/components/blog/ally-status.tsx`) drives a phase-aware progress display — Eye/Globe/BookOpenText/PenLine/ScrollText/Sparkles icons rotate as Ally moves through Reading → Searching (research-on only) → Reading sources → Drafting → Polishing. 3-5 rotating label variants per phase cycled every 2.5s. Replaces the old single "Working on it…" text. Live status owns the pending bubble — no separate loader.
+- **Queued messages**: Composer stays sendable while a turn is in flight. Sends while pending append to the thread with a "queued" badge + ring outline. A `useEffect` watching `chat.isPending` promotes the first queued message + fires the next turn when ready.
 
-6. **System Status — Models sub-page** (new). In-page tab between Health (existing) and Models (new). Per-provider table with latency p50/p95, uptime %, calls 24h, last call. New `api/admin/model-health.ts` endpoint pulls last-24h `cost_events`, groups by provider, reads latency from `metadata->duration_ms` and uptime from `metadata->error` presence. Latency columns show "—" until callsites instrument `duration_ms` in metadata (uptime works today).
+### Team archive integration (the big SEO unlock)
 
-7. **Operator Studio merged** (`664fdab`). All 69 files from `feat/operator-studio` integrated — `/api/admin/studio/*`, `/lib/operator-studio/*`, `src/components/studio/*`, `src/pages/dashboard/studio/{StudioHome,StudioNew,Clients,ClientEdit,PropertyCommandCenter}`, `src/pages/preview/PreviewPage`. Migrations 056 + 057 still NOT applied to prod Supabase.
+`buildSystemPrompt` fetches up to 50 live team posts and injects two sections into every chat:
 
-8. **Account moved into dashboard shell** (`1aad283`). Routes moved to `/dashboard/account/*` (profile / billing / listings). Sticky AccountSubNav. Old `/account/*` paths kept as Navigate redirects for bookmark survival. Deleted `src/pages/Account.tsx` + `src/pages/account/*`.
+1. **ARCHIVE CATALOG** — all 50 posts as one-liners with title + category + date + URL so Ally knows what exists.
+2. **DETAILED EXCERPTS** — top 8 topically-ranked posts (word-overlap score on title × 3 + category × 2 + tags × 1 + 0–5 recency bonus over 150 days) with ~1100-char body excerpts.
 
-9. **Profile: password update + admin-branched layout** (`e382b64`). Every role gets a Password card (Supabase `auth.updateUser`). Admins see a Security & sessions card (with `auth.signOut({ scope: "global" })` revoke-everywhere button) instead of the tenant brokerage/brand form. Default users keep the brokerage + brand form (logo upload, primary/secondary colors).
+System prompt is explicit: *"The posts below ARE the URLs. You do NOT need to fetch anything. NEVER say 'I can't access URLs'."* + concrete cross-link rules ("our market update" → find Market Reports post → quote stats → link inline). Cures the failure mode where Ally claimed she couldn't access team URLs and fabricated stats instead.
 
-10. **Data correctness pass.** Stripped `SAMPLE_*` hard fallbacks from prod KPIs / financial totals / chart series across Overview, Pipeline, Properties, Logs, Finances. Sample-data stays only as a soft fallback for decorative widgets (activity feed, leaderboard, provider mix). Fixed `successRate * 100 = 10000%` bug, fixed Finances MTD math (was rolling-14d — now calendar-month), fixed leaderboard dedup (case-insensitive + ≥2 completed videos), removed hardcoded "$172,819" / "$89,641" / "94.3% QC pass rate" / etc. magic numbers. Logged backend TODOs in the session report for things that need API-side fixes.
+### Gemini research (3-mode toggle)
 
-**Three gates before promoting to `dev`:**
+- **Auto** (default): server runs a keyword intent detector on the latest user message (direct intent like "research X", freshness markers like "current/this month/2026/today's", market-stat vocab, market-report references); only fires Gemini when matched. Zero Gemini cost on tone-tweak / structural-edit turns.
+- **Always**: Gemini every turn (force-on via the `+` menu toggle).
+- **Never**: skip grounding entirely.
 
-1. Eyeball the preview end-to-end on the stable alias.
-2. Apply Operator Studio migrations to prod Supabase via MCP:
-   - `supabase/migrations/056_operator_studio.sql`
-   - `supabase/migrations/057_operator_studio_scenes_followup.sql`
-3. Decide whether to bundle the dashboard rebuild as one big PR or split (e.g., design system + pages first, then Operator Studio second).
+Each research call uses **Gemini 2.5 Flash with googleSearch grounding**. Returns synthesized 200-400 word summary + numbered sources. Server injects the brief + sources into the Claude system prompt; Claude cites `[n]` inline and emits a `<h3>Sources</h3><ol>` at the end of the post. Cost recorded as `stage=blog_research, provider=gemini, model=gemini-2.5-flash`.
 
-**Backend follow-ups not blocking the merge:**
+`<ally_suggest_research>true</ally_suggest_research>` is Ally's hint when auto-mode skipped but she'd have benefited; UI renders a "Search the web & retry" pill that toggles research + resends in one click.
 
-- `api/stats/cost-breakdown.ts` `month` bucket is rolling-30d but the frontend labels it "MTD". One-line fix to use a `new Date(year, month, 1)` filter.
-- Instrument all `recordCostEvent()` write sites to include `metadata.duration_ms` so System Status → Models latency stops showing "—".
-- Implement `POST /api/admin/expenses` so the Add-expense modal isn't a 404.
+### Source allowlist (no competitor realtors)
+
+`lib/blog-engine/source-allowlist.ts` exports `isAllowedSource(url)` and `SOURCE_RULE_TEXT`:
+
+- **Allowed**: Realtor.com / Zillow / Redfin / Trulia / Homes.com / Movoto / Homefinder, Reuters / AP / Bloomberg / WSJ / NYT / CNBC / MarketWatch, local news (WINK / NBC-2 / Fox 4 / yoursun.com / Tampa Bay Times / Miami Herald), industry data (NAR / Florida Realtors / Stellar MLS / Freddie Mac / Fannie Mae / Inman / HousingWire), any `.gov` or `.edu`, and the team's own posts.
+- **Blocked**: Century21 / RE-MAX / KW / Coldwell Banker / Compass / eXp / Sotheby's / Douglas Elliman / Berkshire Hathaway, any URL matching `/agent[s]?/` / `/our-team/` / `/meet-(the-)?team/` on non-portal domains, heuristic catches for domains containing `realty/realtor/realestate/homes/team/group/partners/properties/brokerage`.
+
+Defense-in-depth: `SOURCE_RULE_TEXT` is appended to both Ally's `BASE_SYSTEM_PROMPT` and Gemini-research's `SYSTEM` instruction, AND the Gemini result's `sources[]` is filtered through `isAllowedSource()` before reaching Ally or the UI.
+
+### Persistent memory (`ally_memories` table)
+
+Migration 057 added `ally_memories` (site-scoped, soft-delete, max 100/site, dedup on identical content). User says "remember X" → Ally emits `<ally_remember>X</ally_remember>` → server stores it. All subsequent chats inject active memories as `ALLY'S NOTES` at the top of the system prompt. New `GET /api/blog/ai/memories` + `DELETE /api/blog/ai/memories?id=` endpoints. UI: Brain icon + badge in the floating chat header opens a Popover listing memories with per-item trash-to-forget. Toast confirms each new memory.
+
+### Files / fields / state visibility
+
+- **File uploads** on both chat surfaces (`AllyFloatingChat` + `BlogPostChatCompose`): PDF / image / CSV / .txt, max 5 × 3 MB, one-shot per turn (consumed on send), sent as Anthropic content blocks on the most recent user turn.
+- **Templates**: + menu has a Template picker; selected template's body_html is injected as a `<template>` structural block in the system prompt.
+- **Internal linking** to past team posts is enforced via system-prompt rule + topical scoring.
+- **Visible changes**: `<changes_summary>` bullet list rendered in the proposal card + a "See the diff" button that opens a side-by-side modal (Current/Proposed iframes + inline title diff + Apply-from-dialog).
+- **Skeleton + shimmer** while Ally works: `AllySkeleton` (empty preview, first turn) + `AllyShimmerOverlay` (regenerating, has prior draft).
+
+### Other dashboard improvements
+
+- **Soft-delete with checkboxes** (`DeletePostDialog`): "Remove from dashboard" + "Remove from Sierra (public site)" toggles. Sierra-side runs a new `unpublish` blog_jobs kind via Browserbase that opens `/blog-manager.aspx`, locates the row by `external_post_id`, auto-accepts the JS confirm, verifies the row is gone.
+- **On-hold state**: `POST /api/blog/posts/[id]/hold {hold:boolean}` toggles between `live` and `on_hold`. Dashboard-only — never touches Sierra. Pause/Resume buttons + status pill + filter.
+- **Routing fix**: `vercel.json` got 7 new rewrites for `/api/blog/posts/[id]/*` paths (`/publish`, `/reject`, `/edit-on-sierra`, `/hold`) + `images/[id]` + `templates/[id]`. Without these, every dynamic blog API path 404'd.
+- **List page unstick**: missing FK `blog_posts.image_id → blog_images.id` (migration 056) was causing PostgREST 400 on the embed query → react-query retries → "Loading…" forever. Fix applied to prod via MCP.
+- **TinyMCE editor** (replaces Tiptap): loaded GPL from jsDelivr (no API key, no domain registration). Matches Sierra's TinyMCE 8 renderer so the editor view IS the preview. Bundle ~400 KB smaller.
+- **Big preview** with Open-in-new-tab + Source/Code view toggle. 2fr/3fr split (preview-dominant, Claude.ai artifact ratio).
+- **Composer**: `AutoGrowTextarea` grows to a pixel cap then scrolls inside. Killed Chrome's focus rectangle via `.ally-composer-input` class with `!important` rules + `-webkit-appearance: none`.
+
+### Migrations applied this session
+
+- **052** (`blog_templates_defaults`) — was committed to the repo months ago but had never been applied to prod Supabase; surfaced as 500 on the first template save. Applied via MCP.
+- **056** (`blog_posts_image_id_fk`) — added the missing FK that was hanging the dashboard list.
+- **057** (`ally_memories`) — persistent memory table.
+
+### Key files
+
+- `api/blog/ai/chat.ts` — the heart of Ally. ~600 lines covering schema, intent detection, research, memory, archive injection, cost tracking.
+- `lib/blog-engine/gemini-research.ts` — Gemini 2.5 Flash googleSearch wrapper + source filter.
+- `lib/blog-engine/ally-memory.ts` — list/add/deactivate helpers + system-prompt block builder.
+- `lib/blog-engine/source-allowlist.ts` — `isAllowedSource(url)` + `SOURCE_RULE_TEXT`.
+- `lib/blog-engine/publishers/sierra/unpublish.ts` — Browserbase Sierra delete.
+- `src/pages/dashboard/BlogPostChatCompose.tsx` — full-page chat-compose for new posts.
+- `src/pages/dashboard/BlogAllyHistory.tsx` — conversation history viewer.
+- `src/components/blog/AllyFloatingChat.tsx` — Improve-with-Ally widget.
+- `src/components/blog/AIChatModal.tsx` — legacy modal kept for compatibility.
+- `src/components/blog/ally-status.tsx` — `AllyThinking`, `AllyPulse`, `AllySkeleton`, `AllyShimmerOverlay`, `AutoGrowTextarea`, `useAllyStatus`.
+- `src/components/blog/ally-storage.ts` — per-post chat localStorage persistence (used by floating chat + history page).
+- `src/components/blog/ally-starters.ts` — daily-rotating starter chips pool.
+
+### Open follow-ups (not addressed this session)
+
+- Streaming responses (currently buffered — the phase-rotation status is a UX patch, not real streaming).
+- Per-author voice profiles (Ally could learn each agent's voice from their past posts; currently treats all team posts as one voice).
+- Auto-listing-to-post pipeline (MLS → new draft) — pitched but not built.
+- Multi-channel snippets (IG/FB/LinkedIn captions + email paragraph per post) — pitched but not built.
+- ESLint `import/extensions: ['error', 'always', { ts: 'never' }]` to catch the Vercel .js-extension gotcha in CI.
+- Expired `ANTHROPIC_API_KEY` in GitHub Actions secrets — claude-review workflow still failing on PRs.
+
+### PR list (this session, in order)
+
+#39 + #43 (publish unbreak — earlier session) → #46 (directory imports) → #50 (list FK unstick) → #51 (Sierra route fix + dialog) → #52 (rename modal) → #53 (error state) → #54 (preview popout + research toggle) → #55 (TinyMCE) → #56 (hero + + menu) → #57 (chat-as-page) → #58 (post_body tag fix) → #59 (instant placeholder + Ally rename) → #60 (Gemini research) → #61 (floating chat + research suggest) → #62 (composer growth + contrast + skeleton) → #63 (auto-research) → #64/#65 (focus outline) → #66 (visible changes) → #67 (queue) → #68 (phase status + uploads + persistence) → #69 (archive + history + daily starters) → #70 (source allowlist + memory).
 
 ---
 
-### Previous Right Now (now superseded by the dashboard rebuild above)
+**2026-05-14 evening (PR #51): Smoke test surfaced four follow-on gaps; all fixed.**
 
-**2026-05-15 AM: Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
+1. **DELETE returned 404** — and so did every other `/api/blog/posts/[id]/...` path. `vercel.json` defines explicit `routes` (not filesystem-based dynamic resolution); all other dynamic API paths in this repo had explicit rewrites, but the blog ones did not. Added 7 new rewrites for `posts/[id]`, `posts/[id]/{publish,reject,edit-on-sierra,hold}`, `images/[id]`, `templates/[id]`. This was the root cause of "Delete failed: 404" and probably affected other blog detail flows nobody had exercised since the engine shipped.
 
-Phase 1 ships the branded end-to-end loop for operator-managed properties: a `/dashboard/studio` Kanban + Clients UI, manual ingest form, Property Command Center (brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, director's notes), client CRUD API, and preview token endpoint with client-note support. Two schema migrations are ready but NOT yet applied to prod Supabase. Brand variables are wired in code but NOT yet configured in the Creatomate dashboard templates.
+2. **`window.confirm` replaced with a real dialog.** New `src/components/blog/DeletePostDialog.tsx` — two checkboxes ("Remove from this dashboard" + "Remove from Sierra (public site)") plus Cancel / Confirm. The Sierra checkbox is disabled when the post has no `external_post_id`. The list trash icon and the detail-page Delete button both open it.
 
-**Three gates before pushing:**
+3. **Sierra-side delete is real (was always TODO).** New `blog_jobs.kind = 'unpublish'`. `lib/blog-engine/publishers/sierra/unpublish.ts` opens `/blog-manager.aspx`, locates the row by `external_post_id` (title fallback), auto-accepts the JS `confirm()` Sierra fires, waits for the table to re-render, verifies the row is gone. New handler in `lib/blog-engine/jobs/handlers/unpublish.ts`. Recorded as `blog_publish_browser` cost stage with `metadata.action = "unpublish"` (10¢ Browserbase). The Delete API checks `body.fromSierra` and enqueues this job before the soft-delete. **Selectors are best-guess** (`a:has-text("Delete")` + `a[onclick*="confirm"]` + a couple of `[alt*="delete"]` variants); first real run will tell us if they need tuning — if so update `unpublish.ts`'s selector list, never inline.
 
-1. **Oliver to apply migrations to Supabase** (via MCP or dashboard SQL editor):
-   - `supabase/migrations/056_operator_studio.sql` — adds `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` table + `property_revision_notes` table + indexes + RLS policies.
-   - `supabase/migrations/057_operator_studio_scenes_followup.sql` — adds `scenes.director_notes` text column used by the Command Center notes panel.
+4. **New `on_hold` state.** Dashboard-only — does NOT touch Sierra. New `POST /api/blog/posts/[id]/hold { hold: boolean }`. Detail page has Pause/Resume button visible in `edit-live` (Put on hold) and a new `on-hold` mode (Resume back to Live). Banner reads "On hold — hidden from the 'Live' filter. Sierra-side copy is untouched." New "On hold" filter pill in the list + slate pill color. No DB migration needed — `blog_posts.state` is `text` with no CHECK constraint.
 
-2. **Oliver to add `Brand.*` variables to Creatomate templates in the dashboard** — the pipeline already sends `Brand.LogoUrl`, `Brand.PrimaryColor`, `Brand.SecondaryColor`, `Brand.AgentName`, `Brand.Brokerage`, `Brand.AgentHeadshotUrl` as modification keys, but Creatomate silently ignores keys for placeholders that don't exist in the template. Without this step, operator-flow properties render with the same overlays as customer-flow ones.
+**Files touched (PR #51 only):**
+- `vercel.json` — 7 new route rewrites
+- `lib/blog-engine/types.ts` — added `on_hold` state, `unpublish` job kind
+- `lib/blog-engine/publishers/types.ts` — `Publisher.unpublish()` + `UnpublishResult`
+- `lib/blog-engine/publishers/sierra/{index.ts, unpublish.ts}` — sierra implementation
+- `lib/blog-engine/jobs/handlers/{index.ts, unpublish.ts}` — handler + registration
+- `api/blog/posts/[id].ts` — DELETE accepts `{ fromDashboard, fromSierra }`
+- `api/blog/posts/[id]/hold.ts` — new endpoint
+- `src/lib/blog/api-client.ts` — `deletePost(id, { fromDashboard, fromSierra })` + `setHold(id, hold)`
+- `src/components/blog/DeletePostDialog.tsx` — new
+- `src/pages/dashboard/BlogPostsList.tsx` + `BlogPostDetail.tsx` — dialog hookup + on-hold button + on-hold filter/banner
 
-3. **Oliver's explicit go-ahead** to `git push feat/operator-studio` and open a PR to dev.
+**Verification:**
+- `vite build` green.
+- My touched files clean under `tsc`; the pre-existing TS warnings in `publish.ts`/`taxonomy.ts`/PromptLab/scene-ordering tests still present (unchanged).
+- Route fix is verifiable from outside auth (the path stops 404'ing, starts 401'ing).
 
-**What NOT to do yet:** do not push the branch, do not apply migrations unilaterally, do not add the Vercel env vars — those come after Oliver confirms the above two prep steps are done.
+**Open follow-ups:**
+- First real Sierra unpublish will tell us if the row-Delete selectors are right. If not, update `lib/blog-engine/publishers/sierra/unpublish.ts` selectors and add a `probe-sierra-delete.ts` similar to the publish probe.
+- Still pending from earlier: ESLint `import/extensions` rule + expired GitHub Actions ANTHROPIC_API_KEY.
 
 ---
 
-**2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
+**2026-05-14 PM: Blog dashboard list was stuck on "Loading…" + no Delete button + Publish click looked silent.** Three fixes:
+
+1. **Blog posts list page hung at "Loading…".** `app/blog/posts` list (and the detail GET) embed `image:image_id (id, blob_url, vision_caption)` via PostgREST. `blog_posts.image_id` had **no foreign-key constraint** to `blog_images(id)` — only `site_id` was an FK — so PostgREST returned `400 Could not find a relationship`. React Query retried, then sat in a fetching state and the user-facing fallback only checks `isLoading`/`posts.length`, so the "Loading…" stayed up. Fixed by migration `056_blog_posts_image_id_fk.sql`: `alter table blog_posts add constraint blog_posts_image_id_fkey foreign key (image_id) references blog_images(id) on delete set null;` + `NOTIFY pgrst, 'reload schema'`. Confirmed 0 orphans before applying. Already applied to shared prod Supabase via MCP — refresh the page and the list loads.
+
+2. **No way to delete a post from the dashboard.** Added `DELETE /api/blog/posts/[id]` (soft-delete via `active=false`; the existing list query already filters on `active=true` so hidden rows disappear cleanly). UI: trash icon at the right of every list row, and a `Delete` button in the post detail action bar. Both confirm-prompt before firing. Sierra-side post is **not** touched — that's a separate manual step if you want to take it offline on Sierra too.
+
+3. **"Publish now" looked like it did nothing.** Backend was fine — post 60418 "Test Smoke" went live the same minute the click fired (job `0df7853d`, `attempts=1`, `last_error=null`). The UX failure was no in-flight indicator: toast.success flashes once, page navigates to detail, post is in `publish_due` which renders as the readonly branch (no buttons, no status banner) for the ~60s it takes the cron to flip it to `live`. Added a primary-color "Publishing to Sierra — usually live within 60s · this page refreshes automatically" banner whenever `post.state ∈ {publish_due, publishing, editing}`, and a green "✓ Live on Sierra — View on Sierra ↗" banner once `state==='live'`. Also added spinner + "Publishing…" / "Saving…" / "Deleting…" labels on the buttons themselves while their mutations are pending so the click registers visually.
+
+**Files touched:** `supabase/migrations/056_blog_posts_image_id_fk.sql` (new), `api/blog/posts/[id].ts` (DELETE handler), `src/lib/blog/api-client.ts` (`deletePost(id)`), `src/pages/dashboard/BlogPostsList.tsx` (trash icon + confirm + mutation), `src/pages/dashboard/BlogPostDetail.tsx` (status banners + button spinners + Delete button).
+
+**Verification:** DB FK present in `information_schema.table_constraints`; 0 orphaned `image_id`s before applying; Supabase API logs show no `400` on `blog_posts` after the migration; `vite build` green (3214 modules); my files type-check clean (pre-existing TS warnings in `publish.ts`/`taxonomy.ts`/PromptLab tests untouched — already in deployed main); Sierra-side: post 60418 "Test Smoke" confirmed publicly live on thehelgemoteam.com/blog.
+
+**PR #50** on `worktree-blog-post-fix-2`. DB fix is already serving prod since Supabase is shared; the Delete buttons + banners need the SPA deploy.
+
+---
+
+**2026-05-14 (earlier): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
 
 **Diagnosis (the actual user-facing problem before the fix):** every Creatomate template render was coming out 1280×720 at 24fps with no text overlays. Three root causes, all empirically verified with three live `/v2/renders` API calls:
 
@@ -396,7 +488,8 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
-- 2026-05-15 — `feat/operator-studio` — Operator Studio Phase 1 — internal MVP shipped (branded end-to-end loop)
+- 2026-05-15 — `<SHA-TBD>` — PR #72 feat/voiceover-pipeline → main: customer-facing order flow finally end-to-end. `/upload` rewritten to the glass design (Apple-clean × Noteflow-soft, light theme, white cards on warm gray, sticky right-rail order summary). MLS-by-address auto-fill via `tri_angle/redfin-detail` Apify actor (price/beds/baths/sqft/agent/description from a typed address). 4-voice ElevenLabs voiceover panel (Mark / Jack / Amanda / Jessica) with Compass scrape → Claude script → TTS, voice-swap without full regen. Stripe Checkout bundling voice-clone setup fee (lifted from `feat/elevenlabs-voiceover` via diff, not merge). Bug fixes: `submitted_by` threaded through `POST /api/properties`, Brokerage step-2 field, `splitAddress` `lastIndexOf→indexOf`, Vertical "coming soon" gate. Spacing fix: suppressed duplicate `<TopNav>` on `/upload` (it was stacking under page's `<SiteNav>`), tightened paddingTop. Address field switched off shadcn `<Input>` (hard-coded `rounded-none`) to plain `<input className="g-input">`. **Migrations 060 + 061 pending — apply via Supabase MCP before voiceover endpoints are used in prod.**
+- 2026-05-14 — `6ec3fbb` — PR worktree-kill-jetbrains-mono → main: killed JetBrains Mono UI font site-wide (Oliver hates it). `--le-font-mono` aliased to Inter sans stack with lockdown comment, `.le-eyebrow`/`.le-mono`/`.le-badge`/`.le-img-placeholder` switched to `--le-font-sans`, Tailwind `fontFamily.mono` retargeted to Inter, JetBrains+Mono dropped from `index.html` + `v2.css` Google Fonts URLs. 47 files, +163/-159. CLAUDE.md ship-gate rule #6 added so future sessions can't reintroduce it.
 - 2026-05-14 — `<SHA-TBD>` — PR #46 staging → main: Creatomate Just Listed #01 rev-2 template wired end-to-end — new mapper slot names (`*-Intro` / `*-Mid` / `*-Final`), duration-suffixed env vars (`CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]`), vertical-aware resolver that skips 9:16 when no vertical template exists. Live smoke produced 1920×1080 / 15s / 30fps with all overlays. Vercel envs: added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15`, removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED`. 119/119 tests + `tsc` clean.
 - 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
 - 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate

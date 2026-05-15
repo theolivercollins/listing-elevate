@@ -71,8 +71,8 @@ export default function ConsumerDemand() {
             ))}
           </div>
           <div className="flex justify-between mt-1.5">
-            <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>0%</span>
-            <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>100%</span>
+            <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>0%</span>
+            <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>100%</span>
           </div>
 
           {/* What this means */}
@@ -97,7 +97,7 @@ export default function ConsumerDemand() {
             transition={{ delay: 1.2 }}
             className="mt-5"
           >
-            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Source: Wyzowl State of Video Marketing (2026)
             </span>
           </motion.div>
@@ -161,11 +161,11 @@ export default function ConsumerDemand() {
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5" style={{ background: WHITE }} />
-                <span className="text-[10px]" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>$65 Listing Elevate</span>
+                <span className="text-[10px]" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>$65 Listing Elevate</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-2.5 h-2.5" style={{ background: "var(--le-border)" }} />
-                <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>~$9K commission</span>
+                <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>~$9K commission</span>
               </div>
             </div>
           </div>
@@ -188,7 +188,7 @@ export default function ConsumerDemand() {
                   <AnimatedCircleCheck isInView={isInView} delay={0.9 + i * 0.18} size={12} />
                   <span className="text-[12px]" style={{ color: DIM }}>{item.label}</span>
                 </div>
-                <span className="text-[12px] font-medium tabular-nums" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
+                <span className="text-[12px] font-medium tabular-nums" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>{item.value}</span>
               </motion.div>
             ))}
           </div>

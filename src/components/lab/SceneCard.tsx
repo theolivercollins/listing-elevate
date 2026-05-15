@@ -210,7 +210,7 @@ function IterationExpanded({ listingId, scene, iter, onReload, onRateOptimistic 
           </div>
 
           {promptOpen && (
-            <pre className="mt-2 whitespace-pre-wrap rounded border border-border bg-muted p-2 font-mono text-[11px] text-foreground">{iter.director_prompt}</pre>
+            <pre className="mt-2 whitespace-pre-wrap rounded border border-border bg-muted p-2 font-sans text-[11px] text-foreground">{iter.director_prompt}</pre>
           )}
 
           <div className="mt-3">
@@ -241,7 +241,7 @@ function IterationCollapsed({ iter, expanded, onToggle }: {
       className="flex w-full items-center gap-2 border-b border-border px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-muted/40"
     >
       {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />}
-      <span className="font-mono text-muted-foreground">#{iter.iteration_number}</span>
+      <span className="font-sans text-muted-foreground">#{iter.iteration_number}</span>
       <span className="border border-border px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground">{iter.model_used}</span>
       <span className={`border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${
         iter.status === "rendered" || iter.status === "rated" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700" :
@@ -467,7 +467,7 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
           </div>
         ) : (
           <div className="mt-2 flex items-start justify-between gap-4">
-            <p className="flex-1 font-mono text-sm">{scene.director_prompt}</p>
+            <p className="flex-1 font-sans text-sm">{scene.director_prompt}</p>
             <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
               <Sparkles className="mr-1 h-3 w-3" /> Refine
             </Button>
@@ -508,7 +508,7 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
                   {rendering ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}
                   Render {effectiveModel?.shortLabel ?? effectiveModelKey}
                   {effectiveModel?.priceLabel && (
-                    <span className="ml-1.5 font-mono text-[10px] tabular-nums opacity-70">{effectiveModel.priceLabel}</span>
+                    <span className="ml-1.5 font-sans text-[10px] tabular-nums opacity-70">{effectiveModel.priceLabel}</span>
                   )}
                 </Button>
               );

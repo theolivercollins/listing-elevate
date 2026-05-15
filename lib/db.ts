@@ -11,6 +11,7 @@ import type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 } from "./types.js";
 import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
 
@@ -26,6 +27,7 @@ export type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 };
 
 let client: SupabaseClient | null = null;
@@ -58,6 +60,11 @@ export async function createProperty(data: {
   custom_request_text?: string | null;
   days_on_market?: number | null;
   sold_price?: number | null;
+  // Stripe billing — migration 059
+  status?: string;
+  stripe_payment_status?: string;
+  // Auth — populated on POST /api/properties when user is signed in.
+  submitted_by?: string;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")
@@ -382,10 +389,10 @@ export async function recordCostEvent(event: {
    */
   propertyId: string | null;
   sceneId?: string | null;
-  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
+  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision" | "voiceover";
+  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "apify" | "elevenlabs";
   unitsConsumed?: number;
-  unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
+  unitType?: "tokens" | "credits" | "kling_units" | "renders" | "compute_units" | "characters" | null;
   costCents: number;
   metadata?: Record<string, unknown>;
 }): Promise<void> {

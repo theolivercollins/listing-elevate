@@ -70,6 +70,12 @@ export interface ModificationContext {
   musicUrl?: string | null;
   /** Optional agent headshot URL → Agent-Headshot-Final.source. */
   agentHeadshotUrl?: string | null;
+  /**
+   * AI voiceover MP3 URL → Voice-Over.source.
+   * When present the template swaps in the generated narration track.
+   * Templates without a Voice-Over element silently ignore this key.
+   */
+  voiceoverUrl?: string | null;
 }
 
 /**
@@ -109,6 +115,10 @@ export function buildTemplateModifications(
 
   if (ctx.agentHeadshotUrl) {
     mods["Agent-Headshot-Final.source"] = ctx.agentHeadshotUrl;
+  }
+
+  if (ctx.voiceoverUrl) {
+    mods["Voice-Over.source"] = ctx.voiceoverUrl;
   }
 
   return mods;

@@ -1175,6 +1175,7 @@ async function runAssemblyStep(
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
             clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
+            voiceoverUrl: (property as Record<string, unknown>).voiceover_url as string | null | undefined,
           })
         : null;
 

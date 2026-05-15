@@ -94,7 +94,7 @@ export function ShotPlanTable({ scenes: allScenes, iterations, photos, selectedS
             <div className="relative h-9 w-14 overflow-hidden border border-border bg-muted">
               {photo && <img src={photo.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />}
             </div>
-            <span className="font-mono text-muted-foreground">{String(s.scene_number).padStart(2, "0")}</span>
+            <span className="font-sans text-muted-foreground">{String(s.scene_number).padStart(2, "0")}</span>
             <div className="min-w-0">
               <div className="truncate font-medium text-foreground">{s.room_type}</div>
               <div className="truncate text-[10px] text-muted-foreground">{s.director_prompt.slice(0, 80)}</div>

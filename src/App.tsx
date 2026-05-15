@@ -10,6 +10,8 @@ import { TopNav } from "@/components/TopNav";
 import Index from "./pages/Index";
 import V2Landing from "./v2/pages/Landing";
 import Upload from "./pages/Upload";
+import UploadSuccess from "./pages/UploadSuccess";
+import UploadCancelled from "./pages/UploadCancelled";
 import Presets from "./pages/Presets";
 import Status from "./pages/Status";
 import AuthCallback from "./pages/AuthCallback";
@@ -40,6 +42,7 @@ import DashboardLabListingDetail from "./pages/dashboard/LabListingDetail";
 import DashboardRatingLedger from "./pages/dashboard/RatingLedger";
 import BlogPostsList from "./pages/dashboard/BlogPostsList";
 import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
+import BlogAllyHistory from "./pages/dashboard/BlogAllyHistory";
 import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
 import BlogTemplates from "./pages/dashboard/BlogTemplates";
 import BlogTemplateDetail from "./pages/dashboard/BlogTemplateDetail";
@@ -80,6 +83,10 @@ const App = () => (
                 <Route path="/account/billing" element={<Navigate to="/dashboard/account/billing" replace />} />
                 <Route path="/account/properties" element={<Navigate to="/dashboard/account/listings" replace />} />
 
+                {/* Stripe Checkout redirect targets — public so Stripe can land here */}
+                <Route path="/upload/success" element={<UploadSuccess />} />
+                <Route path="/upload/cancelled" element={<UploadCancelled />} />
+
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
                   <Route path="/upload" element={<Upload />} />
@@ -110,6 +117,7 @@ const App = () => (
                     <Route path="blog/posts" element={<BlogPostsList />} />
                     <Route path="blog/posts/new" element={<BlogPostDetail />} />
                     <Route path="blog/posts/:id" element={<BlogPostDetail />} />
+                    <Route path="blog/ally-history" element={<BlogAllyHistory />} />
                     <Route path="blog/images" element={<BlogImageLibrary />} />
                     <Route path="blog/templates" element={<BlogTemplates />} />
                     <Route path="blog/templates/new" element={<BlogTemplateDetail />} />

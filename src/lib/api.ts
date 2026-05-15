@@ -70,6 +70,23 @@ export async function fetchPropertyStatus(id: string): Promise<{
 const SUPABASE_URL = 'https://vrhmaeywqsohlztoouxu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyaG1hZXl3cXNvaGx6dG9vdXh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDIxOTIsImV4cCI6MjA5MTQxODE5Mn0.GaiexH5L24zAoLgvjOUiixbHdnQW8kUMXXbyjnM8cM4';
 
+export async function generateVoiceoverPreview(data: {
+  voiceId: string;
+  durationSec: number;
+  /** Full chain: Compass scrape + script gen + TTS. Required if neither script nor description is provided. */
+  compassUrl?: string;
+  /** When set, skips Compass scrape + Claude script and only re-runs TTS. */
+  script?: string;
+  /** When set, skips Compass scrape and passes description directly to Claude script gen + TTS. */
+  description?: string;
+}): Promise<{ audioUrl: string; script: string; voice: { id: string; name: string } }> {
+  return apiFetch('/api/voiceover/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function createProperty(
   data: {
     address: string; price: number; bedrooms: number; bathrooms: number;
@@ -83,9 +100,11 @@ export async function createProperty(
     customRequestText?: string;
     daysOnMarket?: string;
     soldPrice?: string;
+    /** Preview MP3 URL from /api/voiceover/preview — persisted to property on create. */
+    voiceoverPreviewUrl?: string;
   },
   onProgress?: (uploaded: number, total: number) => void,
-): Promise<{ id: string; status: string; photoCount: number }> {
+): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
   const tempId = crypto.randomUUID();
   const total = data.photos.length;
   let uploaded = 0;
@@ -147,8 +166,15 @@ export async function createProperty(
     console.warn(`Only ${uploadedPaths.length}/${total} photos uploaded successfully`);
   }
 
-  // API call is instant — just sends paths + metadata
-  const result = await apiFetch<{ id: string; status: string; photoCount: number }>('/api/properties', {
+  // API call is instant — just sends paths + metadata.
+  // Returns { property, checkoutUrl } — client should redirect to checkoutUrl.
+  // The pipeline fires from the Stripe webhook (checkout.session.completed),
+  // NOT from here.
+  const result = await apiFetch<{
+    property: { id: string; status: string };
+    checkoutUrl: string;
+    photoCount: number;
+  }>('/api/properties', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -169,20 +195,23 @@ export async function createProperty(
       customRequestText: data.customRequestText ?? null,
       daysOnMarket: data.daysOnMarket ?? null,
       soldPrice: data.soldPrice ?? null,
+      voiceoverPreviewUrl: data.voiceoverPreviewUrl ?? null,
     }),
   });
 
-  // Trigger pipeline in a separate long-running function (fire-and-forget)
-  triggerPipeline(result.id);
-
+  // Pipeline fires from webhook — do NOT call triggerPipeline here.
   return result;
 }
 
 export async function createPropertyFromDrive(data: {
   address: string; price: number; bedrooms: number; bathrooms: number;
   listing_agent: string; brokerage: string; driveLink: string;
-}): Promise<{ id: string; status: string; photoCount: number }> {
-  const result = await apiFetch<{ id: string; status: string; photoCount: number }>('/api/properties', {
+}): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
+  const result = await apiFetch<{
+    property: { id: string; status: string };
+    checkoutUrl: string;
+    photoCount: number;
+  }>('/api/properties', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -196,15 +225,16 @@ export async function createPropertyFromDrive(data: {
     }),
   });
 
-  // Trigger pipeline in a separate long-running function (fire-and-forget)
-  triggerPipeline(result.id);
-
+  // Pipeline fires from webhook — do NOT call triggerPipeline here.
   return result;
 }
 
-// Fire-and-forget: triggers the pipeline in a separate 300s function
-function triggerPipeline(propertyId: string) {
-  fetch(`/api/pipeline/${propertyId}`, { method: 'POST' }).catch(() => {});
+/**
+ * Re-create a Stripe Checkout Session for a pending_payment property.
+ * Call this when the user cancelled and wants to retry payment.
+ */
+export async function resumeCheckout(propertyId: string): Promise<{ checkoutUrl: string }> {
+  return apiFetch(`/api/properties/${propertyId}/resume-checkout`, { method: 'POST' });
 }
 
 export async function rerunProperty(id: string): Promise<void> {
@@ -317,4 +347,46 @@ export interface ModelHealthResponse {
 
 export async function fetchModelHealth(): Promise<ModelHealthResponse> {
   return apiFetch('/api/admin/model-health');
+}
+
+export interface MlsScrapeResult {
+  address: string | null;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  agent: string | null;
+  description: string | null;
+}
+
+export async function scrapeMls(url: string): Promise<MlsScrapeResult> {
+  return apiFetch('/api/properties/scrape-mls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}
+
+export interface MlsLookupResult {
+  source: 'redfin' | 'realtor';
+  address: string;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  sqft: number | null;
+  agent: string | null;
+  description: string | null;
+  listingUrl: string | null;
+}
+
+/**
+ * Look up MLS listing details by address.
+ * Tries Redfin first, falls back to Realtor.com.
+ * Throws (with hint message) if both sources fail.
+ */
+export async function lookupMls(address: string): Promise<MlsLookupResult> {
+  return apiFetch('/api/properties/lookup-mls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
+  });
 }

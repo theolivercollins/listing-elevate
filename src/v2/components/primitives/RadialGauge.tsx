@@ -155,7 +155,7 @@ export function RadialGauge({
           dominantBaseline="middle"
           fill="rgba(255,255,255,0.55)"
           style={{
-            fontFamily: "var(--le-font-mono)",
+            fontFamily: "var(--le-font-sans)",
             fontSize: 10,
             letterSpacing: "0.2em",
             textTransform: "uppercase",

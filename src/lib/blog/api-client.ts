@@ -100,6 +100,30 @@ export async function rejectPost(id: string): Promise<{ ok: true }> {
   return asJson(res);
 }
 
+export async function deletePost(
+  id: string,
+  opts: { fromDashboard?: boolean; fromSierra?: boolean } = {},
+): Promise<{ ok: true; job_id: string | null }> {
+  const res = await fetch(`/api/blog/posts/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      fromDashboard: opts.fromDashboard !== false,
+      fromSierra: opts.fromSierra === true,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function setHold(id: string, hold: boolean): Promise<{ ok: true; state: string }> {
+  const res = await fetch(`/api/blog/posts/${id}/hold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ hold }),
+  });
+  return asJson(res);
+}
+
 export async function editOnSierra(
   id: string,
   fields_changed: string[]
@@ -220,6 +244,78 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+
+// Ally persistent memory (per-site facts the user told her to remember).
+export interface AllyMemory {
+  id: string;
+  site_id: string;
+  content: string;
+  created_at: string;
+  active: boolean;
+}
+export async function listAllyMemories(): Promise<{ memories: AllyMemory[] }> {
+  const res = await fetch("/api/blog/ai/memories", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function deleteAllyMemory(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/ai/memories?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  return asJson(res);
+}
+
+// AI multi-turn chat — builds a post conversationally.
+export interface AIChatMessage { role: "user" | "assistant"; content: string; }
+export interface AIResearchSource { url: string; title: string; snippet?: string; }
+export interface AIChatOptions {
+  templateId?: string | null;
+  includeRecentPosts?: boolean;
+  /**
+   * "auto"   — Ally decides per turn (default)
+   * "always" — research every turn
+   * "never"  — never research
+   */
+  researchMode?: "auto" | "always" | "never";
+  attachments?: AIAttachment[];
+}
+export interface AIChatResponse {
+  reply: string;
+  body_html: string;
+  title: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  meta_tags: string[] | null;
+  author: string | null;
+  category: string | null;
+  action: "publish" | "save_draft" | null;
+  suggest_research: boolean;
+  changes_summary: string | null;
+  new_memory: { id: string; content: string } | null;
+  research_sources: AIResearchSource[];
+  cost_cents: number;
+  usage: { input_tokens: number; output_tokens: number };
+  model: string;
+}
+export async function aiChat(
+  messages: AIChatMessage[],
+  currentHtml: string,
+  opts: AIChatOptions = {},
+): Promise<AIChatResponse> {
+  const res = await fetch("/api/blog/ai/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      messages,
+      current_html: currentHtml,
+      template_id: opts.templateId ?? null,
+      include_recent_posts: opts.includeRecentPosts === true,
+      research_mode: opts.researchMode ?? "auto",
+      attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
+    }),
   });
   return asJson(res);
 }
