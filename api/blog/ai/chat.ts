@@ -8,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { recordBlogCost } from "../../../lib/blog-engine/cost.js";
+import { researchTopic, type ResearchSource } from "../../../lib/blog-engine/gemini-research.js";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
@@ -45,6 +46,8 @@ interface ChatResponse {
   author: string | null;
   category: string | null;
   action: "publish" | "save_draft" | null;
+  /** Sources found via Gemini-grounded research, if research:true was requested. */
+  research_sources: ResearchSource[];
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
@@ -248,6 +251,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     current_html?: string;
     template_id?: string | null;
     include_recent_posts?: boolean;
+    research?: boolean;
     attachments?: unknown;
   };
 
@@ -273,11 +277,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const currentHtml = typeof b.current_html === "string" ? b.current_html.slice(0, MAX_DRAFT_CHARS) : "";
 
-  const system = await buildSystemPrompt({
+  // Optional Gemini-grounded research, run BEFORE the Claude call so its
+  // findings + sources can be included in the system prompt. Failure is
+  // non-fatal: log + continue without research rather than blocking the chat.
+  let research: { summary: string; sources: ResearchSource[]; cost_cents: number } | null = null;
+  if (b.research === true) {
+    const latestUser = b.messages.filter((m) => m.role === "user").slice(-1)[0];
+    if (latestUser?.content?.trim()) {
+      try {
+        const r = await researchTopic(latestUser.content);
+        research = { summary: r.summary, sources: r.sources, cost_cents: r.cost_cents };
+        const { data: siteForCost } = await supabase
+          .from("blog_sites").select("id").eq("host_kind", "sierra").single();
+        if (siteForCost) {
+          await recordBlogCost(supabase, {
+            stage: "blog_research",
+            cost_cents: r.cost_cents,
+            post_id: null,
+            site_id: siteForCost.id,
+            provider: "gemini",
+            metadata: {
+              model: r.model,
+              usage: r.usage,
+              sources_count: r.sources.length,
+              query_chars: latestUser.content.length,
+            },
+          });
+        }
+      } catch (e: any) {
+        // eslint-disable-next-line no-console
+        console.warn("[chat] research failed, continuing without:", e?.message ?? e);
+      }
+    }
+  }
+
+  let system = await buildSystemPrompt({
     supabase,
     templateId: b.template_id ?? null,
     includeRecentPosts: b.include_recent_posts === true,
   });
+  if (research) {
+    const sourcesText = research.sources.length
+      ? research.sources.map((s, i) => `[${i + 1}] ${s.title} — ${s.url}`).join("\n")
+      : "(no sources captured)";
+    system += `\n\nRESEARCH BRIEF (Gemini, googleSearch-grounded). Use these facts and quote numbers verbatim. Cite sources inline using the [n] notation, then list a "Sources" section at the end of the post HTML as <h3>Sources</h3><ol><li><a href="URL">Title</a></li></ol>.\n\n${research.summary}\n\nSOURCES:\n${sourcesText}`;
+  }
 
   // Build messages array. Stitch the current draft into the trailing user turn,
   // and attach files (if any) as Anthropic content blocks on that same turn.
@@ -366,7 +410,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     author: parsed.author,
     category: parsed.category,
     action: parsed.action,
-    cost_cents: costCents,
+    research_sources: research?.sources ?? [],
+    cost_cents: costCents + (research?.cost_cents ?? 0),
     usage: { input_tokens: inTok, output_tokens: outTok },
     model: MODEL,
   };
