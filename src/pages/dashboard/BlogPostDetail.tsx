@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PostEditor } from "@/components/blog/PostEditor";
 import { AIDraftModal } from "@/components/blog/AIDraftModal";
 import { AIChatModal } from "@/components/blog/AIChatModal";
+import { AllyFloatingChat } from "@/components/blog/AllyFloatingChat";
 import BlogPostChatCompose from "./BlogPostChatCompose";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
@@ -560,6 +561,43 @@ export default function BlogPostDetailPage() {
           setEditorMode("rich");
         }}
       />
+
+      {/* Improve-with-Ally floating chat — only mount on existing posts; the
+          dedicated chat-compose page handles new-post flow. */}
+      {!isCompose && (
+        <AllyFloatingChat
+          contextLabel={
+            mode === "edit-live" ? "Editing the live post"
+              : mode === "on-hold" ? "Editing a held post"
+              : mode === "review-auto" ? "Reviewing AI draft"
+              : "Editing this post"
+          }
+          currentBodyHtml={form.body_html}
+          current={{
+            title: form.title,
+            meta_title: form.meta_title,
+            meta_description: form.meta_description,
+            meta_tags: form.meta_tags
+              ? form.meta_tags.split(",").map((t) => t.trim()).filter(Boolean)
+              : [],
+            author_label: form.author_label,
+            category_label: form.category_label,
+          }}
+          onApply={(patch) => {
+            setForm((f) => ({
+              ...f,
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.body_html !== undefined ? { body_html: patch.body_html } : {}),
+              ...(patch.meta_title !== undefined ? { meta_title: patch.meta_title } : {}),
+              ...(patch.meta_description !== undefined ? { meta_description: patch.meta_description } : {}),
+              ...(patch.meta_tags !== undefined ? { meta_tags: patch.meta_tags.join(", ") } : {}),
+              ...(patch.author_label !== undefined ? { author_label: patch.author_label } : {}),
+              ...(patch.category_label !== undefined ? { category_label: patch.category_label } : {}),
+            }));
+            if (patch.body_html !== undefined) setEditorMode("rich");
+          }}
+        />
+      )}
 
       {/* Post body preview dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>

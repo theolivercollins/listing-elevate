@@ -23,6 +23,7 @@ import type { AIAttachment, BlogImage, CreatePostInput } from "@/lib/blog/types"
 import { thumbUrl } from "@/lib/blog/image-url";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
+import { useAllyStatus, AllyPulse } from "@/components/blog/ally-status";
 
 const STARTERS = [
   "Punta Gorda May market update — inventory up 4%, median $385K",
@@ -71,7 +72,7 @@ export default function BlogPostChatCompose() {
   // Messages keep an optional `pending` flag for the optimistic placeholder
   // bubble that appears the instant the user hits send. Once the real reply
   // comes back, the trailing pending message gets replaced in place.
-  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean })[]>([]);
+  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; suggestResearch?: boolean })[]>([]);
   const [pendingActions, setPendingActions] = useState<PendingActionCard[]>([]);
   const [input, setInput] = useState("");
   const [totalCostCents, setTotalCostCents] = useState(0);
@@ -104,21 +105,9 @@ export default function BlogPostChatCompose() {
 
   // -- chat --------------------------------------------------------------------
 
-  const ALLY_PLACEHOLDERS = [
-    "On it — give me a sec.",
-    "Got it. Drafting now…",
-    "One sec, putting that together.",
-    "Working on it now.",
-  ];
-  const ALLY_RESEARCH_PLACEHOLDERS = [
-    "Pulling sources from Google first…",
-    "Researching now — one sec.",
-    "Hitting the web for current numbers.",
-  ];
-  function nextPlaceholder() {
-    const pool = useResearch ? ALLY_RESEARCH_PLACEHOLDERS : ALLY_PLACEHOLDERS;
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
+  // Pending bubble starts with empty content; useAllyStatus drives the
+  // live-status text so the message rotates through phases as time passes.
+  const nextPlaceholder = () => "";
 
   const chat = useMutation({
     mutationFn: async (args: { historyForApi: AIChatMessage[] }) => {
@@ -135,11 +124,13 @@ export default function BlogPostChatCompose() {
       setMessages((prev) => {
         const copy = prev.slice();
         const lastIdx = copy.length - 1;
-        if (lastIdx >= 0 && copy[lastIdx].pending) {
-          copy[lastIdx] = { role: "assistant", content: r.reply };
-        } else {
-          copy.push({ role: "assistant", content: r.reply });
-        }
+        const msg = {
+          role: "assistant" as const,
+          content: r.reply,
+          suggestResearch: r.suggest_research === true && !useResearch,
+        };
+        if (lastIdx >= 0 && copy[lastIdx].pending) copy[lastIdx] = msg;
+        else copy.push(msg);
         return copy;
       });
 
@@ -188,6 +179,18 @@ export default function BlogPostChatCompose() {
       });
     },
   });
+
+  function enableResearchAndRetry() {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user" && !m.pending);
+    if (!lastUser) {
+      setUseResearch(true);
+      return;
+    }
+    setUseResearch(true);
+    const lastUserIdx = messages.lastIndexOf(lastUser);
+    setMessages(messages.slice(0, lastUserIdx));
+    setTimeout(() => send(lastUser.content), 0);
+  }
 
   function send(text: string) {
     const t = text.trim();
@@ -283,6 +286,8 @@ export default function BlogPostChatCompose() {
       }
     }
   }
+
+  const liveStatus = useAllyStatus(chat.isPending, useResearch);
 
   // -- popout preview ----------------------------------------------------------
 
@@ -434,26 +439,33 @@ export default function BlogPostChatCompose() {
               >
                 <div ref={scrollerRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-5">
                   {messages.map((m, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
-                      className={
-                        m.role === "user"
-                          ? "ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm"
-                          : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm ${m.pending ? "italic text-muted-foreground" : ""}`
-                      }
-                    >
-                      <div className="flex items-center gap-2">
-                        {m.role === "assistant" && m.pending && (
-                          <span className="inline-flex h-3 items-end gap-0.5" aria-hidden>
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]"></span>
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]"></span>
-                            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60"></span>
-                          </span>
-                        )}
-                        <span>{m.content}</span>
-                      </div>
-                    </motion.div>
+                    <div key={i} className="space-y-1.5">
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
+                        className={
+                          m.role === "user"
+                            ? "ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm"
+                            : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm ${m.pending ? "italic text-muted-foreground" : ""}`
+                        }
+                      >
+                        <div className="flex items-center gap-2">
+                          {m.role === "assistant" && m.pending && <AllyPulse size={13} />}
+                          <span>{m.pending ? liveStatus : m.content}</span>
+                        </div>
+                      </motion.div>
+                      {m.role === "assistant" && m.suggestResearch && !useResearch && (
+                        <motion.button
+                          initial={{ opacity: 0, y: 4 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.15, delay: 0.05 }}
+                          onClick={enableResearchAndRetry}
+                          disabled={chat.isPending}
+                          className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                        >
+                          <Globe className="h-3 w-3" /> Search the web &amp; retry
+                        </motion.button>
+                      )}
+                    </div>
                   ))}
 
                   {pendingActions.map((card) => (

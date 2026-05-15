@@ -48,6 +48,12 @@ interface ChatResponse {
   action: "publish" | "save_draft" | null;
   /** Sources found via Gemini-grounded research, if research:true was requested. */
   research_sources: ResearchSource[];
+  /**
+   * Ally's hint that the user's request would benefit from web research and
+   * research is currently off. Client renders a "Search the web?" button when
+   * true so the user can opt in with one click.
+   */
+  suggest_research: boolean;
   cost_cents: number;
   usage: { input_tokens: number; output_tokens: number };
   model: string;
@@ -96,6 +102,14 @@ Single line, e.g. "Market Reports".
 <post_action>
 One word: publish | save_draft. Emit ONLY when the user has clearly asked to publish or save (e.g. "publish it", "save this draft", "go live"). Otherwise omit. Never publish or save without an explicit user request.
 </post_action>
+
+<ally_suggest_research>
+One word: true. Emit this ONLY when ALL of the following are true:
+  1. Research is currently OFF (no RESEARCH BRIEF is present above), AND
+  2. The user's request would clearly benefit from current real-world facts you don't have (market stats, recent news, comparable sales, current mortgage rates, etc.), AND
+  3. You would otherwise have to fabricate or guess numbers.
+When you emit this, ALSO mention it in your <reply> — for example: "Want me to pull current numbers from Google first? Toggle the Research switch above the input, or click the suggestion below." Omit this tag when research is already on or when fabrication isn't a risk (e.g. tone tweaks, structural edits, generic advice).
+</ally_suggest_research>
 
 Rules:
 - <post_body> is REQUIRED on every turn and must be the full current draft, never a diff. If the user said hi or is still scoping, put a placeholder like "<p>Tell me more about what this post should cover.</p>" inside <post_body>.
@@ -174,6 +188,8 @@ function parseSections(text: string) {
   const actionRaw = extractTag(text, "post_action", "action");
   const action: "publish" | "save_draft" | null =
     actionRaw === "publish" || actionRaw === "save_draft" ? actionRaw : null;
+  const suggestResearchRaw = extractTag(text, "ally_suggest_research");
+  const suggest_research = suggestResearchRaw?.toLowerCase().trim() === "true";
 
   // Last resort — if we still have no body but the message contains an
   // HTML-looking blob (e.g. the model emitted raw HTML next to the prose
@@ -186,6 +202,7 @@ function parseSections(text: string) {
       .replace(/<post_title>[\s\S]*?<\/post_title>/i, "")
       .replace(/<seo_[a-z_]+>[\s\S]*?<\/seo_[a-z_]+>/gi, "")
       .replace(/<post_[a-z_]+>[\s\S]*?<\/post_[a-z_]+>/gi, "")
+      .replace(/<ally_[a-z_]+>[\s\S]*?<\/ally_[a-z_]+>/gi, "")
       .trim();
     if (looksLikeHtml(stripped)) body_html = stripped;
   }
@@ -195,13 +212,14 @@ function parseSections(text: string) {
     return {
       reply: text.trim(), body_html: "",
       title: null, meta_title: null, meta_description: null, meta_tags: null,
-      author: null, category: null, action: null,
+      author: null, category: null, action: null, suggest_research: false,
     };
   }
 
   return {
     reply, body_html: body_html ?? "",
     title, meta_title, meta_description, meta_tags, author, category, action,
+    suggest_research,
   };
 }
 
@@ -410,6 +428,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     author: parsed.author,
     category: parsed.category,
     action: parsed.action,
+    // Only surface the suggestion when research isn't already on — otherwise it'd be noise.
+    suggest_research: parsed.suggest_research && !research,
     research_sources: research?.sources ?? [],
     cost_cents: costCents + (research?.cost_cents ?? 0),
     usage: { input_tokens: inTok, output_tokens: outTok },
