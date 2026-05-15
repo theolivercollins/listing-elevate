@@ -110,7 +110,26 @@ export async function runPipeline(propertyId: string): Promise<void> {
       .update({ pipeline_started_at: new Date().toISOString() })
       .eq("id", propertyId);
 
-    await log(propertyId, "intake", "info", "Pipeline started");
+    // Pull operator-context fields so every log line in this run carries them.
+    // Distinguishes operator-mode work (order_mode='operator', client_id set)
+    // from customer self-serve runs in production logs. Pure read — no behavior fork.
+    let orderMode: string | null = null;
+    let clientId: string | null = null;
+    try {
+      const { data: propCtx } = await getSupabase()
+        .from("properties")
+        .select("order_mode, client_id")
+        .eq("id", propertyId)
+        .maybeSingle();
+      orderMode = (propCtx as { order_mode?: string | null } | null)?.order_mode ?? null;
+      clientId = (propCtx as { client_id?: string | null } | null)?.client_id ?? null;
+    } catch {
+      // Best-effort; never block a pipeline run on context read.
+    }
+    // Shared log context threaded through every top-level log call in this run.
+    const opCtx: Record<string, unknown> = { order_mode: orderMode, client_id: clientId };
+
+    await log(propertyId, "intake", "info", "Pipeline started", opCtx);
     // Best-effort prompt changelog snapshot (no-op if unchanged).
     snapshotPromptRevisions();
 
@@ -119,10 +138,10 @@ export async function runPipeline(propertyId: string): Promise<void> {
     const photos = await getPhotosForProperty(propertyId);
     if (photos.length < 5) {
       await updatePropertyStatus(propertyId, "failed");
-      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`);
+      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`, opCtx);
       return;
     }
-    await log(propertyId, "intake", "info", `${photos.length} photos ready`);
+    await log(propertyId, "intake", "info", `${photos.length} photos ready`, opCtx);
 
     // Stage 2: Analyze
     await runAnalysis(propertyId, photos);
@@ -151,7 +170,7 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // all scenes have settled it calls runAssembly(propertyId).
     await runGenerationSubmit(propertyId);
     await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron will collect clips + assemble.");
+      "All scenes submitted to providers. Cron will collect clips + assemble.", opCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
