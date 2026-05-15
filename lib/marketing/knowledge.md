@@ -15,24 +15,23 @@ deliver it via email — no human touches the video.
 
 - Cinematic AI-generated video of the property
 - Vertical (9:16) for Reels/TikTok/Shorts, or horizontal (16:9) for YouTube/web
-- Multiple duration options (15s, 30s, 60s) — agent's choice at order time
 - Optional voiceover (AI or your own clone)
 - Brokerage logo + brand colors burned into the final video
 
 ## How it works
 
 1. Sign up and create an account (60 seconds).
-2. Upload 10–60 photos of the property along with the listing details (address, beds/baths, price, etc.).
+2. Upload 20 to 60 photos of the property along with the listing details (address, beds/baths, price, etc.).
 3. We analyze the photos, plan the scenes, generate motion clips, and assemble the final video automatically.
 4. Finished video lands in your inbox.
 
 ## Turnaround
 
-Typical turnaround is under an hour from upload to delivered video. Larger orders or peak demand may take longer; we'll always email you when it's ready.
+Under 24 hours from the moment you finish uploading. Larger orders or peak demand may take longer; we'll always email you when it's ready.
 
 ## What you need from the agent
 
-- 10–60 high-resolution property photos (interior + exterior).
+- 20 to 60 high-resolution property photos (interior + exterior).
 - Listing basics: address, beds, baths, square footage, asking price.
 - Optional: agent name, brokerage, contact info, voiceover script.
 

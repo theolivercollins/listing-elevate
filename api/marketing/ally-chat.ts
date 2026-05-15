@@ -123,17 +123,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!Array.isArray(messagesRaw) || messagesRaw.length === 0) {
     return res.status(400).json({ error: "messages[] required" });
   }
-  const messages: ChatMessage[] = [];
-  for (const m of messagesRaw.slice(-MAX_MESSAGES)) {
-    const mm = m as any;
-    if (!mm || (mm.role !== "user" && mm.role !== "assistant")) {
-      return res.status(400).json({ error: "each message needs role user|assistant" });
-    }
-    if (typeof mm.content !== "string" || mm.content.length === 0) {
-      return res.status(400).json({ error: "each message needs string content" });
-    }
-    messages.push({ role: mm.role, content: mm.content.slice(0, MAX_MESSAGE_CHARS) });
+  // Only accept the LAST message from the client; ignore any history the client sends.
+  // Server-stored conversation is the canonical thread — this prevents prompt-injection
+  // via fake assistant turns in the client payload.
+  const lastRaw = messagesRaw[messagesRaw.length - 1] as any;
+  if (!lastRaw || lastRaw.role !== "user") {
+    return res.status(400).json({ error: "last message must be from user" });
   }
+  if (typeof lastRaw.content !== "string" || lastRaw.content.length === 0) {
+    return res.status(400).json({ error: "each message needs string content" });
+  }
+  const latestUserMessage = lastRaw.content.slice(0, MAX_MESSAGE_CHARS);
 
   const conversationId = getOrSetConversationCookie(req, res);
   const ipHash = hashIp(req);
@@ -160,16 +160,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const systemBlocks = buildSystemBlocks({
-    turn: messages.length,
+    turn: (existing?.total_messages ?? 0) + 1,
     has_email: hasEmail,
     source_url: sourceUrl,
   });
+
+  // Build the Anthropic messages array from server-stored conversation (canonical)
+  // plus the single validated user message from this request.
+  const serverHistory = (existing?.conversation as ChatMessage[] ?? []).slice(-(MAX_MESSAGES - 1));
+  const anthropicMessages: ChatMessage[] = [
+    ...serverHistory,
+    { role: "user", content: latestUserMessage },
+  ];
 
   const result = await anthropic().messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
     system: systemBlocks as any,
-    messages: messages.map(m => ({ role: m.role, content: m.content })),
+    messages: anthropicMessages.map(m => ({ role: m.role, content: m.content })),
   });
 
   const text = result.content
@@ -208,7 +216,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const updatedThread = [
     ...(existing?.conversation as ChatMessage[] ?? []),
-    messages[messages.length - 1],
+    { role: "user" as const, content: latestUserMessage },
     { role: "assistant" as const, content: text },
   ].slice(-MAX_MESSAGES);
 

@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "buildCommand": "vite build",
+  "buildCommand": "pnpm build",
   "outputDirectory": "dist",
   "crons": [
     { "path": "/api/cron/poll-scenes", "schedule": "* * * * *" },
