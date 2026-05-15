@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-15 (Operator Studio Phase 1 — internal MVP shipped on feat/operator-studio; awaiting migration apply + Creatomate Brand.* vars + Oliver's go-ahead to push)
+Last updated: 2026-05-15 (dashboard rebuild + Operator Studio integration on `worktree-dashboard-soft-pastel-reskin`; preview-only)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,49 @@ See also:
 
 ## Right now
 
-**2026-05-15 (latest): Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
+**2026-05-15 (latest): Full dashboard rebuild + Account revamp + Operator Studio integration on `worktree-dashboard-soft-pastel-reskin`.** Branch is preview-only — not yet merged to `dev`/`staging`/`main`. Full session report: [`sessions/2026-05-15-dashboard-rebuild.md`](./sessions/2026-05-15-dashboard-rebuild.md). Stable preview alias: `https://listingelevate-git-worktree-dashboard-soft-pastel-reskin-recasi.vercel.app/dashboard`.
+
+What's in the branch (HEAD `e382b64`):
+
+1. **Dashboard fully ported to Apple-clean × Noteflow-soft design system.** New `.le-dash-shell` token scope (--ink/--ink-2/--muted/--muted-2/--line/--line-2/--surface/--bg/--accent/--good/--warn/--bad/--radius/--shadow-*) with light + dark variants. 32-icon stroke set + shared primitives (`PageHeading`, `KpiCard`, `StatusPill`, `Sparkline`, `Bars`, `Ring`, `PropertyThumb`, `AIBanner`, `MiniStat`, `ActivityItem`, `HealthCard`, `Card`, `SectionTitle`).
+
+2. **Sidebar restructure.** Collapsible 256↔72 with two sections — Studio (Overview / Pipeline / Listings / Users) and Ops (Video studio / Blog creator / Finances / Logs / System status / Lab / Settings). "Operator studio" renamed to **Video studio**, "Blog studio" renamed to **Blog creator**. Lab is one icon; sticky LabSubNav at the top of each Lab page handles Prompts/Recipes/Proposals/Rating ledger/Learning.
+
+3. **Top bar** is pure utilities now (search + notifications bell with live `needs_review` + warn/error log popover + theme toggle + 3-dots account menu). No duplicated headers — page identity lives in PageHeading only.
+
+4. **Every main page rebuilt.** Overview (live deltas + leaderboard with case-insensitive dedup + ≥2-completed filter), Pipeline, Properties, Logs, Finances (with new Add-expense modal POSTing to `/api/admin/expenses`), Users (new — fetches `/api/admin/users`), Settings (rewritten for owner — pipeline flags / model versions / cost ceilings / providers / domains / danger zone), Rating Ledger.
+
+5. **Every sub-page reskinned** to the same chrome (PromptLab including IterationCard / SessionCard / BatchGroups deep reskin, Recipes, Proposals, Learning, Development, SystemStatus, KnowledgeMap + Cell, all 5 Blog pages, LabListings + New + Detail, PropertyDetail). Data/behavior preserved verbatim.
+
+6. **System Status — Models sub-page** (new). In-page tab between Health (existing) and Models (new). Per-provider table with latency p50/p95, uptime %, calls 24h, last call. New `api/admin/model-health.ts` endpoint pulls last-24h `cost_events`, groups by provider, reads latency from `metadata->duration_ms` and uptime from `metadata->error` presence. Latency columns show "—" until callsites instrument `duration_ms` in metadata (uptime works today).
+
+7. **Operator Studio merged** (`664fdab`). All 69 files from `feat/operator-studio` integrated — `/api/admin/studio/*`, `/lib/operator-studio/*`, `src/components/studio/*`, `src/pages/dashboard/studio/{StudioHome,StudioNew,Clients,ClientEdit,PropertyCommandCenter}`, `src/pages/preview/PreviewPage`. Migrations 056 + 057 still NOT applied to prod Supabase.
+
+8. **Account moved into dashboard shell** (`1aad283`). Routes moved to `/dashboard/account/*` (profile / billing / listings). Sticky AccountSubNav. Old `/account/*` paths kept as Navigate redirects for bookmark survival. Deleted `src/pages/Account.tsx` + `src/pages/account/*`.
+
+9. **Profile: password update + admin-branched layout** (`e382b64`). Every role gets a Password card (Supabase `auth.updateUser`). Admins see a Security & sessions card (with `auth.signOut({ scope: "global" })` revoke-everywhere button) instead of the tenant brokerage/brand form. Default users keep the brokerage + brand form (logo upload, primary/secondary colors).
+
+10. **Data correctness pass.** Stripped `SAMPLE_*` hard fallbacks from prod KPIs / financial totals / chart series across Overview, Pipeline, Properties, Logs, Finances. Sample-data stays only as a soft fallback for decorative widgets (activity feed, leaderboard, provider mix). Fixed `successRate * 100 = 10000%` bug, fixed Finances MTD math (was rolling-14d — now calendar-month), fixed leaderboard dedup (case-insensitive + ≥2 completed videos), removed hardcoded "$172,819" / "$89,641" / "94.3% QC pass rate" / etc. magic numbers. Logged backend TODOs in the session report for things that need API-side fixes.
+
+**Three gates before promoting to `dev`:**
+
+1. Eyeball the preview end-to-end on the stable alias.
+2. Apply Operator Studio migrations to prod Supabase via MCP:
+   - `supabase/migrations/056_operator_studio.sql`
+   - `supabase/migrations/057_operator_studio_scenes_followup.sql`
+3. Decide whether to bundle the dashboard rebuild as one big PR or split (e.g., design system + pages first, then Operator Studio second).
+
+**Backend follow-ups not blocking the merge:**
+
+- `api/stats/cost-breakdown.ts` `month` bucket is rolling-30d but the frontend labels it "MTD". One-line fix to use a `new Date(year, month, 1)` filter.
+- Instrument all `recordCostEvent()` write sites to include `metadata.duration_ms` so System Status → Models latency stops showing "—".
+- Implement `POST /api/admin/expenses` so the Add-expense modal isn't a 404.
+
+---
+
+### Previous Right Now (now superseded by the dashboard rebuild above)
+
+**2026-05-15 AM: Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
 
 Phase 1 ships the branded end-to-end loop for operator-managed properties: a `/dashboard/studio` Kanban + Clients UI, manual ingest form, Property Command Center (brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, director's notes), client CRUD API, and preview token endpoint with client-note support. Two schema migrations are ready but NOT yet applied to prod Supabase. Brand variables are wired in code but NOT yet configured in the Creatomate dashboard templates.
 
