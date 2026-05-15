@@ -1,4 +1,4 @@
--- 056_cost_events_elevenlabs.sql
+-- 057_cost_events_elevenlabs.sql
 -- Widen cost_events.provider CHECK to include 'elevenlabs' (AI voiceover TTS).
 -- The constraint as of migration 053 includes:
 --   'anthropic','runway','kling','luma','shotstack','openai',

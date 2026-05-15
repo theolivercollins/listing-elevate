@@ -5,7 +5,7 @@
  * Does NOT persist to a property row.
  *
  * Run:
- *   APIFY_TOKEN=... ELEVENLABS_API_KEY=... ANTHROPIC_API_KEY=... \
+ *   APIFY_API_TOKEN=... ELEVENLABS_API_KEY=... ANTHROPIC_API_KEY=... \
  *   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
  *   pnpm exec tsx scripts/smoke-voiceover.ts
  *

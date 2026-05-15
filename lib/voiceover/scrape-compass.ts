@@ -36,8 +36,8 @@ export async function scrapeCompassDescription(
   url: string,
   propertyId: string | null,
 ): Promise<ScrapeCompassResult> {
-  const token = process.env.APIFY_TOKEN;
-  if (!token) throw new Error("APIFY_TOKEN env var is not set");
+  const token = process.env.APIFY_API_TOKEN;
+  if (!token) throw new Error("APIFY_API_TOKEN env var is not set");
 
   const client = new ApifyClient({ token });
 

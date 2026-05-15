@@ -1,4 +1,4 @@
--- 057_voiceover.sql
+-- 058_voiceover.sql
 -- Add AI voiceover fields to properties + create voiceovers storage bucket.
 
 ALTER TABLE properties
