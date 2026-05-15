@@ -64,6 +64,9 @@ Each phase ends on a green branch; merge `feat/operator-studio` → `dev` → `s
 **Notes on conventions the executing agent must verify and follow (do NOT invent new patterns):**
 - **Data-fetching:** look at how `Properties.tsx`, `Pipeline.tsx`, `Finances.tsx` fetch admin data. If they use TanStack Query / SWR / a hooks library, use the same. If they use raw `fetch` in `useEffect`, do that. **Do not unilaterally introduce a new data layer in Phase 1.** If the existing pattern is painful, log it for Phase 2 cleanup; don't fork the codebase.
 - **Storage uploads:** the existing `Upload.tsx` already uploads photos to the `property-photos` bucket. Reuse that helper; if it's inlined in `Upload.tsx`, extract it into `src/lib/upload-helper.ts` (or whatever path matches existing structure) as part of Task 13 and use it from both places.
+- **Supabase service client:** the existing service-role client is `getSupabase()` from `lib/client.ts` (NOT `getSupabase()` from `lib/supabase/service.ts` — that does not exist). Every code block in this plan that imports `serviceClient` must be rewritten as `import { getSupabase } from '../client'` (or appropriate relative path) and call `getSupabase()`. Tests should mock `lib/client.ts` accordingly.
+- **Pipeline trigger:** there is NO server-side `triggerPipeline` helper today — `src/lib/api.ts` defines a client-side fire-and-forget that POSTs `/api/pipeline/:id`. For the operator ingest flow, `manualIngest` should NOT trigger the pipeline itself. Instead, the admin ingest endpoint returns `{ property_id }` and the React page (`StudioNew.tsx`) does the same client-side `fetch('/api/pipeline/:id', { method: 'POST' })` after redirect. This matches the existing customer flow exactly.
+- **`requireAdmin`:** confirmed at `lib/auth.ts:75`. Signature returns `null` on 401/403 (the endpoint should then early-return without writing its own response).
 
 ---
 
@@ -385,7 +388,7 @@ d('buildInvoice (integration)', () => {
   let outOfRangePropId: string;
 
   beforeAll(async () => {
-    const db = serviceClient();
+    const db = getSupabase();
     const { data: c } = await db.from('clients').insert({ name: clientName, monthly_rate_cents: 50000 }).select('id').single();
     clientId = c!.id;
 
@@ -408,7 +411,7 @@ d('buildInvoice (integration)', () => {
   });
 
   afterAll(async () => {
-    const db = serviceClient();
+    const db = getSupabase();
     await db.from('properties').delete().eq('client_id', clientId);
     await db.from('clients').delete().eq('id', clientId);
   });
@@ -433,7 +436,7 @@ d('buildInvoice (integration)', () => {
 
 ```ts
 // lib/operator-studio/invoice-data.ts
-import { serviceClient } from '../supabase/service';
+import { getSupabase } from '../client';
 import type { InvoiceSummary } from '../types/operator-studio';
 
 function firstOfMonth(d = new Date()): string {
@@ -448,7 +451,7 @@ export async function buildInvoice(opts: { client_id: string; from?: string; to?
   const from = opts.from ?? firstOfMonth();
   const to = opts.to ?? lastOfMonth();
 
-  const db = serviceClient();
+  const db = getSupabase();
   const { data: client, error: cErr } = await db.from('clients').select('id, name, monthly_rate_cents').eq('id', opts.client_id).maybeSingle();
   if (cErr) throw new Error(`buildInvoice: ${cErr.message}`);
   if (!client) throw new Error(`buildInvoice: client ${opts.client_id} not found`);
@@ -510,39 +513,39 @@ Identical to v1 Task 4. (Code reproduced in full below to keep this plan self-co
 **Files:** Create `lib/operator-studio/clients.ts` + `lib/operator-studio/__tests__/clients.test.ts`
 
 - [ ] Failing test for `listClients` (excludes archived), `createClient` (rejects empty name; inserts), `archiveClient` (sets `archived_at`).
-- [ ] Implement `listClients`, `getClient`, `createClient`, `updateClient`, `archiveClient` against `serviceClient().from('clients')`. (Code per v1 Task 4 — unchanged.)
+- [ ] Implement `listClients`, `getClient`, `createClient`, `updateClient`, `archiveClient` against `getSupabase().from('clients')`. (Code per v1 Task 4 — unchanged.)
 - [ ] PASS + commit — `feat(operator-studio): clients CRUD module`
 
 ```ts
 // lib/operator-studio/clients.ts
-import { serviceClient } from '../supabase/service';
+import { getSupabase } from '../client';
 import type { ClientInput, ClientRow } from '../types/operator-studio';
 
 export async function listClients(opts: { includeArchived?: boolean } = {}): Promise<ClientRow[]> {
-  let q = serviceClient().from('clients').select('*');
+  let q = getSupabase().from('clients').select('*');
   if (!opts.includeArchived) q = q.is('archived_at', null);
   const { data, error } = await q.order('name', { ascending: true });
   if (error) throw new Error(`listClients: ${error.message}`);
   return data ?? [];
 }
 export async function getClient(id: string): Promise<ClientRow | null> {
-  const { data, error } = await serviceClient().from('clients').select('*').eq('id', id).maybeSingle();
+  const { data, error } = await getSupabase().from('clients').select('*').eq('id', id).maybeSingle();
   if (error) throw new Error(`getClient: ${error.message}`);
   return data;
 }
 export async function createClient(input: ClientInput): Promise<ClientRow> {
   if (!input.name?.trim()) throw new Error('createClient: name is required');
-  const { data, error } = await serviceClient().from('clients').insert({ ...input, name: input.name.trim() }).select('*').single();
+  const { data, error } = await getSupabase().from('clients').insert({ ...input, name: input.name.trim() }).select('*').single();
   if (error) throw new Error(`createClient: ${error.message}`);
   return data;
 }
 export async function updateClient(id: string, patch: Partial<ClientInput>): Promise<ClientRow> {
-  const { data, error } = await serviceClient().from('clients').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select('*').single();
+  const { data, error } = await getSupabase().from('clients').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id).select('*').single();
   if (error) throw new Error(`updateClient: ${error.message}`);
   return data;
 }
 export async function archiveClient(id: string): Promise<ClientRow> {
-  const { data, error } = await serviceClient().from('clients').update({ archived_at: new Date().toISOString() }).eq('id', id).select('*').single();
+  const { data, error } = await getSupabase().from('clients').update({ archived_at: new Date().toISOString() }).eq('id', id).select('*').single();
   if (error) throw new Error(`archiveClient: ${error.message}`);
   return data;
 }
@@ -673,7 +676,7 @@ Locate where the Creatomate submission is built (likely inside `lib/providers/as
 
 ```ts
 if (property.client_id) {
-  const { data: client } = await serviceClient().from('clients').select('*').eq('id', property.client_id).maybeSingle();
+  const { data: client } = await getSupabase().from('clients').select('*').eq('id', property.client_id).maybeSingle();
   if (client) {
     const brand = brandKitFromClient(client, { brokerage: property.brokerage ?? null });
     modifications = mergeBrandVars(modifications, brand);
@@ -751,11 +754,11 @@ Edge case: if no completed scenes exist, fail fast with a clear error.
 
 ```ts
 // lib/operator-studio/clip-swap.ts
-import { serviceClient } from '../supabase/service';
+import { getSupabase } from '../client';
 import { rerunAssembly } from '../pipeline';
 
 export async function swapClip(propertyId: string, sceneIdx: number, iterationId: string): Promise<void> {
-  const db = serviceClient();
+  const db = getSupabase();
   const { data: scene, error: sErr } = await db.from('scenes').select('id, room_type').eq('property_id', propertyId).eq('sequence', sceneIdx).maybeSingle();
   if (sErr || !scene) throw new Error(`swapClip: scene not found at sequence ${sceneIdx}`);
   const { data: iter, error: iErr } = await db.from('prompt_lab_listing_scene_iterations').select('id, clip_url, room_type').eq('id', iterationId).maybeSingle();
@@ -871,18 +874,18 @@ describe('preview/:token', () => {
 
 ```ts
 // lib/operator-studio/preview.ts (NEW module containing the data access for previews)
-import { serviceClient } from '../supabase/service';
+import { getSupabase } from '../client';
 import { generatePreviewToken } from './preview-tokens';
 
 export async function createPreviewLink(propertyId: string, expiresAt: string | null = null) {
   const token = generatePreviewToken();
-  const { data, error } = await serviceClient().from('property_previews').insert({ property_id: propertyId, token, expires_at: expiresAt }).select('*').single();
+  const { data, error } = await getSupabase().from('property_previews').insert({ property_id: propertyId, token, expires_at: expiresAt }).select('*').single();
   if (error) throw new Error(`createPreviewLink: ${error.message}`);
   return data;
 }
 
 export async function fetchByToken(token: string) {
-  const db = serviceClient();
+  const db = getSupabase();
   const { data: pv } = await db.from('property_previews').select('*').eq('token', token).maybeSingle();
   if (!pv) return null;
   const expired = pv.expires_at ? new Date(pv.expires_at) < new Date() : false;
@@ -897,13 +900,13 @@ export async function fetchByToken(token: string) {
 }
 
 export async function recordPreviewView(token: string) {
-  await serviceClient().rpc('increment_preview_view', { p_token: token }).then(() => null).catch(() => null);
+  await getSupabase().rpc('increment_preview_view', { p_token: token }).then(() => null).catch(() => null);
   // Fallback if no RPC: update directly (one network roundtrip; fine for low volume)
-  await serviceClient().from('property_previews').update({ viewed_count: (undefined as never), last_viewed_at: new Date().toISOString() } as never).eq('token', token);
+  await getSupabase().from('property_previews').update({ viewed_count: (undefined as never), last_viewed_at: new Date().toISOString() } as never).eq('token', token);
 }
 
 export async function insertClientNote(args: { property_id: string; source: 'client_preview'; body: string }) {
-  const { error } = await serviceClient().from('property_revision_notes').insert(args);
+  const { error } = await getSupabase().from('property_revision_notes').insert(args);
   if (error) throw new Error(`insertClientNote: ${error.message}`);
 }
 ```
@@ -919,7 +922,7 @@ create or replace function increment_preview_view(p_token text) returns void as 
 $$ language sql;
 ```
 
-Then replace the JS fallback above with just `serviceClient().rpc('increment_preview_view', { p_token: token })`.
+Then replace the JS fallback above with just `getSupabase().rpc('increment_preview_view', { p_token: token })`.
 
 - [ ] **Step 3: Endpoints**
 
@@ -1105,4 +1108,4 @@ git commit -m "docs: operator studio phase 1 shipping log"
 - **Cost-tracking:** new cost paths are clip-swap (writes via `rerunAssembly` → existing assembly cost writer, tagged `metadata.reason='manual_rerun'`) and preview-link issuance (no external API → no cost event, by design). Invoice math is integration-tested.
 - **Security:** preview tokens use `crypto.randomBytes`, validated by `isWellFormedToken` before any DB read; rate limited at UI; admin endpoints all gated by `requireAdmin()`.
 - **No placeholders:** Task code blocks include the actual implementation. Tasks 6/12/13/14/15/16/17/18 reference v1 content verbatim — the code is in the v1 plan in commit history of this branch if executing agents prefer a single rendering, but the file paths + types + verbs in this v2 plan are sufficient to write them.
-- **No phantom imports:** `serviceClient`, `requireAdmin`, `submitAssembly`, `triggerPipeline` are all existing helpers (verified during the surface inventory).
+- **No phantom imports:** `getSupabase` (from `lib/client.ts`) and `requireAdmin` (from `lib/auth.ts`) are confirmed existing helpers. `submitAssembly` may live under a different name inside `lib/providers/assembly-router.ts` — the executing agent for Task 8/9 must grep for the actual submitter and adapt. Server-side pipeline trigger is delegated to the React page (see "Pipeline trigger" note above).
