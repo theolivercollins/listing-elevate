@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,12 +10,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { listPosts, listTemplates } from "@/lib/blog/api-client";
+import { deletePost, listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
 import {
-  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown,
+  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown, Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const STATE_FILTERS: Array<{ label: string; value: BlogPostState | "all" }> = [
   { label: "All", value: "all" },
@@ -46,6 +47,20 @@ export default function BlogPostsList() {
   const templates = tplData?.templates ?? [];
 
   const posts = data?.posts ?? [];
+  const qc = useQueryClient();
+  const del = useMutation({
+    mutationFn: (postId: string) => deletePost(postId),
+    onSuccess: () => {
+      toast.success("Deleted");
+      qc.invalidateQueries({ queryKey: ["blog-posts-list"] });
+    },
+    onError: (e: any) => toast.error(`Delete failed: ${e.message}`),
+  });
+
+  function confirmDelete(postId: string, title: string) {
+    if (!window.confirm(`Delete "${title}"? Removes it from this dashboard. The published copy on Sierra is not affected.`)) return;
+    del.mutate(postId);
+  }
 
   return (
     <div>
@@ -137,7 +152,24 @@ export default function BlogPostsList() {
                 <td>{p.author_label ?? "—"}</td>
                 <td className="text-xs text-muted-foreground">{new Date(p.updated_at).toLocaleString()}</td>
                 <td className="text-xs">${(p.cost_usd_cents / 100).toFixed(2)}</td>
-                <td>{p.external_post_url && <a href={p.external_post_url} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4" /></a>}</td>
+                <td className="pr-3">
+                  <div className="flex items-center justify-end gap-3">
+                    {p.external_post_url && (
+                      <a href={p.external_post_url} target="_blank" rel="noreferrer" aria-label="Open on Sierra">
+                        <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => confirmDelete(p.id, p.title)}
+                      disabled={del.isPending}
+                      aria-label="Delete post"
+                      className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

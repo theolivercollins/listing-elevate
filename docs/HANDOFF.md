@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-14 (Creatomate Just Listed #01 rev-2: 1080p/30fps template + per-duration env scheme + vertical-aware resolver)
+Last updated: 2026-05-14 (blog dashboard list unstick + delete button + publishing banner; Creatomate Just Listed #01 rev-2)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,23 @@ See also:
 
 ## Right now
 
-**2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
+**2026-05-14 PM (latest): Blog dashboard list was stuck on "Loading…" + no Delete button + Publish click looked silent.** Three fixes:
+
+1. **Blog posts list page hung at "Loading…".** `app/blog/posts` list (and the detail GET) embed `image:image_id (id, blob_url, vision_caption)` via PostgREST. `blog_posts.image_id` had **no foreign-key constraint** to `blog_images(id)` — only `site_id` was an FK — so PostgREST returned `400 Could not find a relationship`. React Query retried, then sat in a fetching state and the user-facing fallback only checks `isLoading`/`posts.length`, so the "Loading…" stayed up. Fixed by migration `056_blog_posts_image_id_fk.sql`: `alter table blog_posts add constraint blog_posts_image_id_fkey foreign key (image_id) references blog_images(id) on delete set null;` + `NOTIFY pgrst, 'reload schema'`. Confirmed 0 orphans before applying. Already applied to shared prod Supabase via MCP — refresh the page and the list loads.
+
+2. **No way to delete a post from the dashboard.** Added `DELETE /api/blog/posts/[id]` (soft-delete via `active=false`; the existing list query already filters on `active=true` so hidden rows disappear cleanly). UI: trash icon at the right of every list row, and a `Delete` button in the post detail action bar. Both confirm-prompt before firing. Sierra-side post is **not** touched — that's a separate manual step if you want to take it offline on Sierra too.
+
+3. **"Publish now" looked like it did nothing.** Backend was fine — post 60418 "Test Smoke" went live the same minute the click fired (job `0df7853d`, `attempts=1`, `last_error=null`). The UX failure was no in-flight indicator: toast.success flashes once, page navigates to detail, post is in `publish_due` which renders as the readonly branch (no buttons, no status banner) for the ~60s it takes the cron to flip it to `live`. Added a primary-color "Publishing to Sierra — usually live within 60s · this page refreshes automatically" banner whenever `post.state ∈ {publish_due, publishing, editing}`, and a green "✓ Live on Sierra — View on Sierra ↗" banner once `state==='live'`. Also added spinner + "Publishing…" / "Saving…" / "Deleting…" labels on the buttons themselves while their mutations are pending so the click registers visually.
+
+**Files touched:** `supabase/migrations/056_blog_posts_image_id_fk.sql` (new), `api/blog/posts/[id].ts` (DELETE handler), `src/lib/blog/api-client.ts` (`deletePost(id)`), `src/pages/dashboard/BlogPostsList.tsx` (trash icon + confirm + mutation), `src/pages/dashboard/BlogPostDetail.tsx` (status banners + button spinners + Delete button).
+
+**Verification:** DB FK present in `information_schema.table_constraints`; 0 orphaned `image_id`s before applying; Supabase API logs show no `400` on `blog_posts` after the migration; `vite build` green (3214 modules); my files type-check clean (pre-existing TS warnings in `publish.ts`/`taxonomy.ts`/PromptLab tests untouched — already in deployed main); Sierra-side: post 60418 "Test Smoke" confirmed publicly live on thehelgemoteam.com/blog.
+
+**PR #50** on `worktree-blog-post-fix-2`. DB fix is already serving prod since Supabase is shared; the Delete buttons + banners need the SPA deploy.
+
+---
+
+**2026-05-14 (earlier): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
 
 **Diagnosis (the actual user-facing problem before the fix):** every Creatomate template render was coming out 1280×720 at 24fps with no text overlays. Three root causes, all empirically verified with three live `/v2/renders` API calls:
 

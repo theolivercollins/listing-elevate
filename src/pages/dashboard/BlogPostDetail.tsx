@@ -11,7 +11,7 @@ import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
-  listTemplates, getTemplate, getTaxonomy, generateAIDraft,
+  listTemplates, getTemplate, getTaxonomy, generateAIDraft, deletePost,
 } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -19,7 +19,7 @@ import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Loader2, Sparkles } from "lucide-react";
+import { Eye, Loader2, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
@@ -272,6 +272,19 @@ export default function BlogPostDetailPage() {
     onError: (e: any) => toast.error(`Reject failed: ${e.message}`),
   });
 
+  const del = useMutation({
+    mutationFn: () => deletePost(id!),
+    onSuccess: () => { toast.success("Deleted"); navigate("/dashboard/blog/posts"); },
+    onError: (e: any) => toast.error(`Delete failed: ${e.message}`),
+  });
+
+  function confirmDelete() {
+    if (!post && !isCompose) return;
+    const t = form.title || post?.title || "this post";
+    if (!window.confirm(`Delete "${t}"? Removes it from this dashboard. The published copy on Sierra is not affected.`)) return;
+    del.mutate();
+  }
+
   if (!isCompose && isLoading) return <div>Loading…</div>;
 
   const readOnly = mode === "readonly";
@@ -300,6 +313,29 @@ export default function BlogPostDetailPage() {
               <Button size="sm" variant="ghost" onClick={discardAIResult}>Discard</Button>
             </>
           ) : null}
+        </div>
+      )}
+
+      {/* Publish progress banner — visible while job is in flight + briefly after it lands.
+          Without this, the page goes silent between click and ~60s-later "live", and users
+          conclude the click did nothing. */}
+      {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="flex-1">
+            <span className="font-medium">
+              {post.state === "editing" ? "Updating Sierra" : "Publishing to Sierra"}
+            </span>
+            <span className="ml-2 text-muted-foreground">— usually live within 60s · this page refreshes automatically</span>
+          </span>
+        </div>
+      )}
+      {post && post.state === "live" && post.external_post_url && (
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-green-600/30 bg-green-600/5 px-4 py-2 text-sm">
+          <span className="font-medium text-green-700">✓ Live on Sierra</span>
+          <a href={post.external_post_url} target="_blank" rel="noreferrer" className="text-primary underline">
+            View on Sierra ↗
+          </a>
         </div>
       )}
 
@@ -406,14 +442,26 @@ export default function BlogPostDetailPage() {
       <div className="mt-6 flex flex-wrap gap-2">
         {mode === "compose" && (
           <>
-            <Button onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>Save as draft</Button>
-            <Button onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>Publish now</Button>
+            <Button onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>
+              {createDraft.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {createDraft.isPending ? "Saving…" : "Save as draft"}
+            </Button>
+            <Button onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>
+              {createPublish.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {createPublish.isPending ? "Publishing…" : "Publish now"}
+            </Button>
           </>
         )}
         {mode === "edit-manual" && (
           <>
-            <Button variant="outline" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Save</Button>
-            <Button onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>Publish now</Button>
+            <Button variant="outline" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>
+              {saveEdit.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {saveEdit.isPending ? "Saving…" : "Save"}
+            </Button>
+            <Button onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>
+              {publishIt.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {publishIt.isPending ? "Publishing…" : "Publish now"}
+            </Button>
           </>
         )}
         {mode === "review-auto" && (
@@ -432,6 +480,17 @@ export default function BlogPostDetailPage() {
         <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
           <Eye className="mr-1 h-4 w-4" /> Preview
         </Button>
+        {!isCompose && (
+          <Button
+            variant="ghost"
+            onClick={confirmDelete}
+            disabled={del.isPending}
+            className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            {del.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1 h-4 w-4" />}
+            {del.isPending ? "Deleting…" : "Delete"}
+          </Button>
+        )}
       </div>
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
