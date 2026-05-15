@@ -150,6 +150,10 @@ export function TopNav() {
   // Login + auth callback render their own editorial branding.
   if (location.pathname === "/login" || location.pathname.startsWith("/auth")) return null;
 
+  // Dashboard renders its own left sidebar; suppress the legacy horizontal
+  // sub-nav to avoid double-navigation.
+  if (location.pathname.startsWith("/dashboard")) return null;
+
   const isAdmin = profile?.role === "admin";
   const inDashboard = location.pathname.startsWith("/dashboard");
 
