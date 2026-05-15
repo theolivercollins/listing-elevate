@@ -116,8 +116,7 @@ export function AutoGrowTextarea({
         outline: "none", boxShadow: "none", border: "none",
       }}
       className={[
-        "w-full bg-transparent placeholder:text-muted-foreground/60",
-        "focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0",
+        "ally-composer-input w-full bg-transparent placeholder:text-muted-foreground/60",
         small ? "px-1 py-1 text-xs" : "px-1 py-1.5 text-sm",
         "disabled:cursor-not-allowed disabled:opacity-50",
       ].join(" ")}
