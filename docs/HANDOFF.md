@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-14 (Creatomate Just Listed #01 rev-2: 1080p/30fps template + per-duration env scheme + vertical-aware resolver)
+Last updated: 2026-05-15 (Operator Studio Phase 1 — internal MVP shipped on feat/operator-studio; awaiting migration apply + Creatomate Brand.* vars + Oliver's go-ahead to push)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,24 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-15 (latest): Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
+
+Phase 1 ships the branded end-to-end loop for operator-managed properties: a `/dashboard/studio` Kanban + Clients UI, manual ingest form, Property Command Center (brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, director's notes), client CRUD API, and preview token endpoint with client-note support. Two schema migrations are ready but NOT yet applied to prod Supabase. Brand variables are wired in code but NOT yet configured in the Creatomate dashboard templates.
+
+**Three gates before pushing:**
+
+1. **Oliver to apply migrations to Supabase** (via MCP or dashboard SQL editor):
+   - `supabase/migrations/056_operator_studio.sql` — adds `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` table + `property_revision_notes` table + indexes + RLS policies.
+   - `supabase/migrations/057_operator_studio_scenes_followup.sql` — adds `scenes.director_notes` text column used by the Command Center notes panel.
+
+2. **Oliver to add `Brand.*` variables to Creatomate templates in the dashboard** — the pipeline already sends `Brand.LogoUrl`, `Brand.PrimaryColor`, `Brand.SecondaryColor`, `Brand.AgentName`, `Brand.Brokerage`, `Brand.AgentHeadshotUrl` as modification keys, but Creatomate silently ignores keys for placeholders that don't exist in the template. Without this step, operator-flow properties render with the same overlays as customer-flow ones.
+
+3. **Oliver's explicit go-ahead** to `git push feat/operator-studio` and open a PR to dev.
+
+**What NOT to do yet:** do not push the branch, do not apply migrations unilaterally, do not add the Vercel env vars — those come after Oliver confirms the above two prep steps are done.
+
+---
 
 **2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
 
@@ -336,6 +354,7 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-05-15 — `feat/operator-studio` — Operator Studio Phase 1 — internal MVP shipped (branded end-to-end loop)
 - 2026-05-14 — `<SHA-TBD>` — PR #46 staging → main: Creatomate Just Listed #01 rev-2 template wired end-to-end — new mapper slot names (`*-Intro` / `*-Mid` / `*-Final`), duration-suffixed env vars (`CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]`), vertical-aware resolver that skips 9:16 when no vertical template exists. Live smoke produced 1920×1080 / 15s / 30fps with all overlays. Vercel envs: added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15`, removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED`. 119/119 tests + `tsc` clean.
 - 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
 - 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate
