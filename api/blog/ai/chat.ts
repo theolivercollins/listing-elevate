@@ -272,6 +272,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     current_html?: string;
     template_id?: string | null;
     include_recent_posts?: boolean;
+    /**
+     * Research mode:
+     *   "auto"   — Ally decides via keyword intent on the latest user message (default)
+     *   "always" — run Gemini grounding every turn
+     *   "never"  — never run grounding
+     * Legacy boolean `research` is accepted for backward compat: true → "always",
+     * false/absent → "auto" (NEW DEFAULT — previously this was "never").
+     */
+    research_mode?: "auto" | "always" | "never";
     research?: boolean;
     attachments?: unknown;
   };
@@ -298,11 +307,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const currentHtml = typeof b.current_html === "string" ? b.current_html.slice(0, MAX_DRAFT_CHARS) : "";
 
+  // Resolve research mode. Legacy `research:boolean` overrides the default
+  // when explicitly sent (preserves old client behavior). Otherwise the new
+  // default is "auto" — Ally decides via keyword intent below.
+  const researchMode: "auto" | "always" | "never" =
+    b.research_mode ??
+    (b.research === true ? "always" : b.research === false ? "never" : "auto");
+
+  // Decide whether to actually call Gemini this turn.
+  function shouldAutoResearch(userMessage: string): boolean {
+    const t = userMessage.toLowerCase();
+    // Direct intent — user explicitly asks
+    if (/\b(research|look ?up|find out|google|web ?search|search (for|the web|online))\b/.test(t)) return true;
+    // Freshness intent
+    if (/\b(current(ly)?|latest|today'?s?|right now|this (month|week|quarter|year)|2026|recent(ly)?)\b/.test(t)) return true;
+    // Market-stat vocabulary (these almost always need a real source)
+    if (/\b(median (price|sale|sold)|mortgage rate|interest rate|days on market|price per (sq ?ft|square foot)|inventory|absorption rate|months of inventory|closed sales|pending sales|new listings|sold[\/ ]list ratio)\b/.test(t)) return true;
+    // Reports / data
+    if (/\b(market (update|report|stats?|statistics|conditions)|housing (data|stats?|market)|trend(s|ing)?|comps?|comparable sales)\b/.test(t)) return true;
+    return false;
+  }
+
+  const latestUserContent = b.messages.filter((m) => m.role === "user").slice(-1)[0]?.content?.trim() ?? "";
+  const doResearch =
+    researchMode === "always" ||
+    (researchMode === "auto" && latestUserContent.length > 0 && shouldAutoResearch(latestUserContent));
+
   // Optional Gemini-grounded research, run BEFORE the Claude call so its
   // findings + sources can be included in the system prompt. Failure is
   // non-fatal: log + continue without research rather than blocking the chat.
   let research: { summary: string; sources: ResearchSource[]; cost_cents: number } | null = null;
-  if (b.research === true) {
+  if (doResearch) {
     const latestUser = b.messages.filter((m) => m.role === "user").slice(-1)[0];
     if (latestUser?.content?.trim()) {
       try {
@@ -322,6 +357,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               usage: r.usage,
               sources_count: r.sources.length,
               query_chars: latestUser.content.length,
+              research_mode: researchMode,
+              auto_triggered: researchMode === "auto",
             },
           });
         }

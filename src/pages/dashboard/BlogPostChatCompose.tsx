@@ -116,7 +116,7 @@ export default function BlogPostChatCompose() {
       const r = await aiChat(args.historyForApi, form.body_html, {
         templateId: templateId || null,
         includeRecentPosts,
-        research: useResearch,
+        researchMode: useResearch ? "always" : "auto",
         attachments: attachments.length ? attachments : undefined,
       });
       return { r };
@@ -356,9 +356,13 @@ export default function BlogPostChatCompose() {
             {selectedTemplate ? <>· template <span className="font-medium">{selectedTemplate.name}</span></>
               : includeRecentPosts ? <>· style-matched to recent posts</>
               : <>· free-form</>}
-            {useResearch && (
+            {useResearch ? (
               <span className="ml-1 inline-flex items-center gap-0.5 text-primary">
-                · <Globe className="ml-0.5 h-3 w-3" /> research on
+                · <Globe className="ml-0.5 h-3 w-3" /> research always-on
+              </span>
+            ) : (
+              <span className="ml-1 inline-flex items-center gap-0.5 text-muted-foreground">
+                · <Globe className="ml-0.5 h-3 w-3" /> research: auto
               </span>
             )}
           </span>
@@ -856,10 +860,10 @@ function Composer({
               />
               <div className="flex-1 text-sm">
                 <div className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5" /> Research with Gemini
+                  <Globe className="h-3.5 w-3.5" /> Always research
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  Each turn, Gemini searches the web first and feeds current numbers + sources to Ally.
+                  Off: Ally only searches when your request needs fresh data (current rates, market stats, recent news). On: Gemini grounding every turn.
                 </div>
               </div>
             </label>
