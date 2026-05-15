@@ -150,6 +150,10 @@ export function TopNav() {
   // Login + auth callback render their own editorial branding.
   if (location.pathname === "/login" || location.pathname.startsWith("/auth")) return null;
 
+  // /upload renders its own SiteNav inside Upload.tsx — suppress the legacy TopNav
+  // so the page doesn't stack two nav bars (was leaving ~100px of empty space).
+  if (location.pathname === "/upload") return null;
+
   const isAdmin = profile?.role === "admin";
   const inDashboard = location.pathname.startsWith("/dashboard");
 

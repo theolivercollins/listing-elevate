@@ -10,6 +10,8 @@ import { TopNav } from "@/components/TopNav";
 import Index from "./pages/Index";
 import V2Landing from "./v2/pages/Landing";
 import Upload from "./pages/Upload";
+import UploadSuccess from "./pages/UploadSuccess";
+import UploadCancelled from "./pages/UploadCancelled";
 import Presets from "./pages/Presets";
 import Status from "./pages/Status";
 import AuthCallback from "./pages/AuthCallback";
@@ -66,6 +68,10 @@ const App = () => (
                 <Route path="/login" element={<Navigate to="/?login=1" replace />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
+
+                {/* Stripe Checkout redirect targets — public so Stripe can land here */}
+                <Route path="/upload/success" element={<UploadSuccess />} />
+                <Route path="/upload/cancelled" element={<UploadCancelled />} />
 
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
