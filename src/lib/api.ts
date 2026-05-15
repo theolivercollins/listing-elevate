@@ -70,6 +70,18 @@ export async function fetchPropertyStatus(id: string): Promise<{
 const SUPABASE_URL = 'https://vrhmaeywqsohlztoouxu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZyaG1hZXl3cXNvaGx6dG9vdXh1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDIxOTIsImV4cCI6MjA5MTQxODE5Mn0.GaiexH5L24zAoLgvjOUiixbHdnQW8kUMXXbyjnM8cM4';
 
+export async function generateVoiceoverPreview(data: {
+  voiceId: string;
+  durationSec: number;
+  compassUrl: string;
+}): Promise<{ audioUrl: string; script: string; voice: { id: string; name: string } }> {
+  return apiFetch('/api/voiceover/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
 export async function createProperty(
   data: {
     address: string; price: number; bedrooms: number; bathrooms: number;
@@ -83,6 +95,8 @@ export async function createProperty(
     customRequestText?: string;
     daysOnMarket?: string;
     soldPrice?: string;
+    /** Preview MP3 URL from /api/voiceover/preview — persisted to property on create. */
+    voiceoverPreviewUrl?: string;
   },
   onProgress?: (uploaded: number, total: number) => void,
 ): Promise<{ id: string; status: string; photoCount: number }> {
@@ -169,6 +183,7 @@ export async function createProperty(
       customRequestText: data.customRequestText ?? null,
       daysOnMarket: data.daysOnMarket ?? null,
       soldPrice: data.soldPrice ?? null,
+      voiceoverPreviewUrl: data.voiceoverPreviewUrl ?? null,
     }),
   });
 

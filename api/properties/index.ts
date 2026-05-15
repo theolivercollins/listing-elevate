@@ -55,6 +55,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       selectedPackage, selectedDuration, selectedOrientation,
       addVoiceover, addVoiceClone, addCustomRequest, customRequestText,
       daysOnMarket, soldPrice,
+      voiceoverPreviewUrl,
     } = req.body;
 
     console.log('POST /api/properties body:', JSON.stringify({
@@ -143,6 +144,16 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
           .eq('id', property.id);
         photoCount = photoRecords.length;
       }
+    }
+
+    // If a voiceover preview URL was generated pre-submit, persist it to the property.
+    // The preview MP3 is already in Supabase storage (voiceovers/preview/...);
+    // we just save the URL — the pipeline reads voiceover_url at render time.
+    if (voiceoverPreviewUrl && typeof voiceoverPreviewUrl === 'string') {
+      await supabase
+        .from('properties')
+        .update({ voiceover_url: voiceoverPreviewUrl })
+        .eq('id', property.id);
     }
 
     // Pipeline is triggered separately via POST /api/pipeline/[propertyId]

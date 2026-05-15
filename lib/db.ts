@@ -383,9 +383,9 @@ export async function recordCostEvent(event: {
   propertyId: string | null;
   sceneId?: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
+  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "apify" | "elevenlabs";
   unitsConsumed?: number;
-  unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
+  unitType?: "tokens" | "credits" | "kling_units" | "renders" | "compute_units" | "characters" | null;
   costCents: number;
   metadata?: Record<string, unknown>;
 }): Promise<void> {

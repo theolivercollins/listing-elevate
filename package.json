@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "apify-client": "^2.12.2",
     "@browserbasehq/sdk": "^2.10.0",
     "@google/genai": "^1.50.1",
     "@hookform/resolvers": "^3.10.0",

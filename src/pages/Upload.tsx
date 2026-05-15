@@ -26,9 +26,17 @@ import {
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
-import { createProperty } from "@/lib/api";
+import { createProperty, generateVoiceoverPreview } from "@/lib/api";
 import { SiteNav } from "@/v2/components/SiteNav";
 import "@/v2/styles/v2.css";
+
+// Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
+const VOICE_CATALOG = [
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", gender: "male" as const, description: "Deep, narration-style" },
+  { id: "ErXwobaYiN019PkySvjV", name: "Antoni", gender: "male" as const, description: "Warm, conversational" },
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", gender: "female" as const, description: "Calm, professional" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", gender: "female" as const, description: "Soft, friendly" },
+];
 
 interface UploadedFile {
   file: File;
@@ -65,6 +73,14 @@ const Upload = () => {
   const [addCustomRequest, setAddCustomRequest] = useState(false);
   const [customRequestText, setCustomRequestText] = useState("");
   const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  // ─── voiceover panel state ───
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
+  const [compassUrl, setCompassUrl] = useState("");
+  const [voiceoverGenerating, setVoiceoverGenerating] = useState(false);
+  const [voiceoverError, setVoiceoverError] = useState<string | null>(null);
+  const [voiceoverPreviewUrl, setVoiceoverPreviewUrl] = useState<string | null>(null);
+  const [voiceoverScript, setVoiceoverScript] = useState<string | null>(null);
 
   // ─── flow state ───
   const [submitted, setSubmitted] = useState(false);
@@ -204,6 +220,29 @@ const Upload = () => {
   const formatSize = (bytes: number) =>
     bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
+  // ─── voiceover generation ───
+  const handleGenerateVoiceover = async () => {
+    if (!selectedVoiceId || !compassUrl || !selectedDuration) return;
+    const durationSec = parseInt(selectedDuration.replace(/s$/, ""), 10);
+    setVoiceoverGenerating(true);
+    setVoiceoverError(null);
+    setVoiceoverPreviewUrl(null);
+    setVoiceoverScript(null);
+    try {
+      const result = await generateVoiceoverPreview({
+        voiceId: selectedVoiceId,
+        durationSec,
+        compassUrl,
+      });
+      setVoiceoverPreviewUrl(result.audioUrl);
+      setVoiceoverScript(result.script);
+    } catch (err) {
+      setVoiceoverError(err instanceof Error ? err.message : "Generation failed");
+    } finally {
+      setVoiceoverGenerating(false);
+    }
+  };
+
   // ─── submit ───
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -228,6 +267,7 @@ const Upload = () => {
           customRequestText,
           daysOnMarket,
           soldPrice,
+          voiceoverPreviewUrl: voiceoverPreviewUrl ?? undefined,
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
@@ -513,8 +553,17 @@ const Upload = () => {
                       {
                         active: addVoiceover,
                         toggle: () => {
-                          setAddVoiceover(!addVoiceover);
-                          if (!addVoiceover) setAddVoiceClone(false);
+                          const next = !addVoiceover;
+                          setAddVoiceover(next);
+                          if (next) setAddVoiceClone(false);
+                          // Reset voiceover panel when toggled off
+                          if (!next) {
+                            setSelectedVoiceId(null);
+                            setCompassUrl("");
+                            setVoiceoverPreviewUrl(null);
+                            setVoiceoverScript(null);
+                            setVoiceoverError(null);
+                          }
                         },
                         icon: Mic,
                         label: "AI voiceover",
@@ -567,6 +616,91 @@ const Upload = () => {
                       );
                     })}
                   </div>
+
+                  <AnimatePresence>
+                    {addVoiceover && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.5, ease: EASE }}
+                        className="overflow-hidden"
+                      >
+                        <div className="mt-6 space-y-6 border border-border p-6">
+                          <div>
+                            <Label className="label text-muted-foreground">Choose a voice</Label>
+                            <div className="mt-4 grid grid-cols-2 gap-3">
+                              {VOICE_CATALOG.map((v) => (
+                                <button
+                                  key={v.id}
+                                  type="button"
+                                  onClick={() => setSelectedVoiceId(v.id)}
+                                  className={`flex flex-col gap-1 border p-4 text-left transition-colors duration-300 ${
+                                    selectedVoiceId === v.id
+                                      ? "border-foreground bg-foreground/5"
+                                      : "border-border hover:border-foreground/30"
+                                  }`}
+                                >
+                                  <span className="text-sm font-semibold tracking-[-0.01em]">{v.name}</span>
+                                  <span className="text-xs text-muted-foreground capitalize">{v.gender} · {v.description}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="label text-muted-foreground">Compass listing URL</Label>
+                            <Input
+                              value={compassUrl}
+                              onChange={(e) => {
+                                setCompassUrl(e.target.value);
+                                setVoiceoverPreviewUrl(null);
+                                setVoiceoverScript(null);
+                              }}
+                              placeholder="https://www.compass.com/listing/..."
+                              className="mt-3"
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            disabled={!selectedVoiceId || !compassUrl || !selectedDuration || voiceoverGenerating}
+                            onClick={handleGenerateVoiceover}
+                            className="w-full"
+                          >
+                            {voiceoverGenerating ? (
+                              <><Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} /> Generating…</>
+                            ) : (
+                              <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Generate voiceover</>
+                            )}
+                          </Button>
+                          {voiceoverError && (
+                            <p className="text-xs text-red-500">{voiceoverError}</p>
+                          )}
+                          {voiceoverPreviewUrl && voiceoverScript && (
+                            <div className="space-y-4">
+                              <audio controls src={voiceoverPreviewUrl} className="w-full" />
+                              <blockquote className="border-l-2 border-border pl-4 text-sm leading-relaxed text-muted-foreground italic">
+                                {voiceoverScript}
+                              </blockquote>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setVoiceoverPreviewUrl(null);
+                                  setVoiceoverScript(null);
+                                }}
+                                className="text-xs text-muted-foreground"
+                              >
+                                <RotateCcw className="mr-1.5 h-3 w-3" strokeWidth={1.5} />
+                                Regenerate
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   <AnimatePresence>
                     {addCustomRequest && (
