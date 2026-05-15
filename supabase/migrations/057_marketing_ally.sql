@@ -57,3 +57,19 @@ $$;
 create trigger marketing_leads_set_updated_at_trg
 before update on marketing_leads
 for each row execute function marketing_leads_set_updated_at();
+
+-- 4. Atomic increment-and-return for rate-limit buckets.
+create or replace function marketing_chat_rate_limit_bump(
+  p_key text,
+  p_expires_at timestamptz
+) returns int language plpgsql as $$
+declare
+  v_count int;
+begin
+  insert into marketing_chat_rate_limits (bucket_key, count, window_start, expires_at)
+  values (p_key, 1, now(), p_expires_at)
+  on conflict (bucket_key) do update set count = marketing_chat_rate_limits.count + 1
+  returning count into v_count;
+  return v_count;
+end;
+$$;
