@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { PageHeading, KpiCard, Card } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
+import { toast } from "sonner";
+import { inviteUser } from "@/lib/api";
 
 // ─── User shape ───────────────────────────────────────────────────
 interface User {
@@ -133,6 +135,7 @@ export default function Users() {
   const [tab, setTab] = useState<TabId>("all");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +208,7 @@ export default function Users() {
               <Icon name="upload" size={13} />
               Export
             </button>
-            <button className="le-btn-dark">
+            <button className="le-btn-dark" onClick={() => setInviteOpen(true)}>
               <Icon name="plus" size={13} />
               Invite user
             </button>
@@ -368,7 +371,7 @@ export default function Users() {
                 <>
                   No users yet. Invite your first teammate to get started.
                   <div style={{ marginTop: 16 }}>
-                    <button className="le-btn-dark" style={{ fontSize: 12, padding: "8px 18px" }}>
+                    <button className="le-btn-dark" style={{ fontSize: 12, padding: "8px 18px" }} onClick={() => setInviteOpen(true)}>
                       <Icon name="plus" size={13} />
                       Invite user
                     </button>
@@ -550,6 +553,122 @@ export default function Users() {
           </Card>
         ))}
       </section>
+
+      {inviteOpen && (
+        <InviteUserDialog
+          onClose={() => setInviteOpen(false)}
+          onInvited={(email) => {
+            setUsers((prev) => [
+              ...prev,
+              {
+                name: email.split("@")[0],
+                email,
+                role: "Member",
+                status: "invited",
+                last_active_at: null,
+              },
+            ]);
+            setInviteOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── InviteUserDialog ────────────────────────────────────────────
+function InviteUserDialog({
+  onClose,
+  onInvited,
+}: {
+  onClose: () => void;
+  onInvited: (email: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email.trim() || !email.includes("@")) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await inviteUser(email.trim());
+      toast.success(`Invite sent to ${email.trim()}`);
+      onInvited(email.trim());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to send invite");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(11,11,16,0.45)",
+        zIndex: 100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <form
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={handleSubmit}
+        style={{
+          background: "var(--surface)",
+          borderRadius: 16,
+          padding: 24,
+          width: "100%",
+          maxWidth: 440,
+          boxShadow: "0 24px 60px -12px rgba(11,11,16,0.35)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--ink)" }}>Invite teammate</div>
+          <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 4 }}>
+            They'll receive an email with a secure sign-up link to /dashboard.
+          </div>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Email</span>
+          <input
+            type="email"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="teammate@example.com"
+            style={{
+              padding: "10px 12px",
+              border: "1px solid var(--line)",
+              borderRadius: 10,
+              fontSize: 14,
+              fontFamily: "inherit",
+              outline: "none",
+            }}
+          />
+        </label>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button type="button" className="le-btn-ghost" onClick={onClose} disabled={submitting}>
+            Cancel
+          </button>
+          <button type="submit" className="le-btn-dark" disabled={submitting || !email.trim()}>
+            {submitting ? "Sending…" : "Send invite"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

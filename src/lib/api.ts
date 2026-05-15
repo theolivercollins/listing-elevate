@@ -390,3 +390,12 @@ export async function lookupMls(address: string): Promise<MlsLookupResult> {
     body: JSON.stringify({ address }),
   });
 }
+
+// ─── Admin: invite teammate ──────────────────────────────────────
+export async function inviteUser(email: string): Promise<{ ok: boolean; userId: string | null }> {
+  return apiFetch('/api/admin/invites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+}

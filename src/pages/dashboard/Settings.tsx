@@ -198,7 +198,7 @@ const Settings = () => {
   const save = (section: string) => toast.success(`${section} saved`);
 
   return (
-    <div className="le-fade-up" style={{ maxWidth: 780, margin: "0 auto" }}>
+    <div className="le-fade-up">
       <PageHeading
         eyebrow="Owner workspace"
         title="Settings"
