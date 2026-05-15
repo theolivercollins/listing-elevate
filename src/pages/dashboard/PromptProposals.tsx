@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { Link } from "react-router-dom";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
@@ -87,49 +88,40 @@ const PromptProposals = () => {
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
       <PageHeading
-        eyebrow="Lab · Proposals"
+        eyebrow="Lab"
         title="Prompt proposals"
         actions={
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Link to="/dashboard/development" style={{ textDecoration: "none" }}>
-              <button type="button" className="le-btn-ghost">
-                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5M12 5l-7 7 7 7" />
-              </svg>
-                Development
-              </button>
-            </Link>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <input
-                type="number"
-                min={1}
-                max={365}
-                value={days}
-                onChange={(e) => setDays(parseInt(e.target.value) || 60)}
-                style={{ ...INPUT_STYLE, width: 64, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
-              />
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>days</span>
-              <button
-                type="button"
-                className="le-btn-dark"
-                onClick={handleMine}
-                disabled={mining}
-                style={{ opacity: mining ? 0.6 : 1 }}
-              >
-                {mining ? (
-                  <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-                    <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-                  </svg>
-                ) : (
-                  <Icon name="play" size={13} />
-                )}
-                Run rule mining
-              </button>
-              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={days}
+              onChange={(e) => setDays(parseInt(e.target.value) || 60)}
+              style={{ ...INPUT_STYLE, width: 64, textAlign: "right", fontVariantNumeric: "tabular-nums" }}
+            />
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>days</span>
+            <button
+              type="button"
+              className="le-btn-dark"
+              onClick={handleMine}
+              disabled={mining}
+              style={{ opacity: mining ? 0.6 : 1 }}
+            >
+              {mining ? (
+                <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+              ) : (
+                <Icon name="play" size={13} />
+              )}
+              Run rule mining
+            </button>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         }
       />
+      <LabSubNav />
 
       <p style={{ fontSize: 13, color: "var(--muted)", marginTop: -8, lineHeight: 1.6 }}>
         Aggregates Lab ratings over the window, asks Claude to propose specific edits to the DIRECTOR_SYSTEM based on winner/loser patterns. Each change cites the iterations that justify it. Applied proposals become active lab_prompt_overrides — production stays unaffected.

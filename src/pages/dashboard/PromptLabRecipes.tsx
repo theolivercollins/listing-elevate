@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { Link } from "react-router-dom";
 import { PageHeading, Card } from "@/components/dashboard/primitives";
 import { listRecipes, updateRecipe, deleteRecipe, type LabRecipe } from "@/lib/recipesApi";
@@ -47,20 +48,8 @@ const PromptLabRecipes = () => {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-      <PageHeading
-        eyebrow="Lab · Recipes"
-        title="Recipe library"
-        actions={
-          <Link to="/dashboard/development/prompt-lab" style={{ textDecoration: "none" }}>
-            <button type="button" className="le-btn-ghost">
-              <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5M12 5l-7 7 7 7" />
-              </svg>
-              Back to Lab
-            </button>
-          </Link>
-        }
-      />
+      <PageHeading eyebrow="Lab" title="Recipe library" />
+      <LabSubNav />
 
       {error && (
         <div

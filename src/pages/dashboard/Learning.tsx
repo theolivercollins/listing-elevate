@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { Icon } from "@/components/dashboard/icons";
 import { PageHeading, KpiCard, Card, SectionTitle } from "@/components/dashboard/primitives";
 import type { LearningData, PromptRevision } from "@/lib/types";
@@ -79,10 +80,11 @@ const Learning = () => {
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
       <PageHeading
-        eyebrow="Learning loop"
-        title="Feedback &amp; prompt changelog"
+        eyebrow="Lab"
+        title="Learning &amp; changelog"
         sub="Every rated scene feeds into the next director run as in-context learning. The changelog tracks how system prompts have evolved."
       />
+      <LabSubNav />
 
       {/* KPI strip */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>

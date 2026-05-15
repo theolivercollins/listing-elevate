@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Loader2,
@@ -214,6 +215,7 @@ function SessionList() {
         title="Prompt Lab"
         sub="Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway."
       />
+      <LabSubNav />
 
       <FileDropZone
         uploading={uploading}

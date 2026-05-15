@@ -150,23 +150,25 @@ function deriveActivity(props: UIProperty[]): ActivityEntry[] {
   return items;
 }
 
-// ─── sparkline: weekly buckets from completed properties ──────────────────────
+// ─── sparkline: weekly buckets from completed properties (case-insensitive) ──
 function agentSparkline(agentName: string, allProps: Property[]): number[] {
   const now = Date.now();
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const target = agentName.trim().toLowerCase();
   const buckets = Array<number>(12).fill(0);
   for (const p of allProps) {
-    if (p.status !== "complete" || p.listing_agent !== agentName) continue;
+    if (p.status !== "complete" || (p.listing_agent ?? "").trim().toLowerCase() !== target) continue;
     const age = now - new Date(p.updated_at).getTime();
     const weekIndex = Math.floor(age / WEEK_MS);
     if (weekIndex >= 0 && weekIndex < 12) {
       buckets[11 - weekIndex] += 1;
     }
   }
-  // If all zeros fall back to a flat derived series
   const total = buckets.reduce((s, v) => s + v, 0);
   if (total === 0) {
-    const videoCount = allProps.filter((p) => p.listing_agent === agentName && p.status === "complete").length;
+    const videoCount = allProps.filter(
+      (p) => p.status === "complete" && (p.listing_agent ?? "").trim().toLowerCase() === target,
+    ).length;
     const base = Math.max(1, Math.floor(videoCount / 12));
     return Array.from({ length: 12 }, (_, i) => base + (i % 3));
   }
@@ -234,18 +236,30 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   const inProgressForUI = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).slice(0, 5);
 
   // ── top agents: derive from live allProps or fall back to sample ──────────
-  const agentMap = new Map<string, { videos: number; spend: number; company: string }>();
+  // Group case-insensitively on a normalized key so "Adam" and "adam" collapse;
+  // store the prettiest variant we saw + the brokerage for display.
+  const agentMap = new Map<string, { display: string; company: string; videos: number; spend: number }>();
+  const titleCase = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+      .join(" ");
   for (const p of allProps) {
-    const key = p.listing_agent || "—";
-    const e = agentMap.get(key) || { videos: 0, spend: 0, company: "" };
+    const raw = (p.listing_agent ?? "").trim();
+    if (!raw) continue;
+    const key = raw.toLowerCase();
+    const e = agentMap.get(key) || { display: titleCase(raw), company: p.brokerage ?? "", videos: 0, spend: 0 };
     e.videos += 1;
     e.spend += p.total_cost_cents || 0;
+    if (!e.company && p.brokerage) e.company = p.brokerage;
     agentMap.set(key, e);
   }
-  const topAgentsFromLive = Array.from(agentMap.entries())
-    .sort((a, b) => b[1].videos - a[1].videos)
+  const topAgentsFromLive = Array.from(agentMap.values())
+    .sort((a, b) => b.spend - a.spend || b.videos - a.videos)
     .slice(0, 5)
-    .map(([name, e]) => ({ name, company: e.company, videos: e.videos, spend: e.spend }));
+    .map((e) => ({ name: e.display, company: e.company, videos: e.videos, spend: e.spend }));
 
   const agentsForUI = topAgentsFromLive.length > 0 ? topAgentsFromLive : SAMPLE_AGENTS.slice(0, 5);
 

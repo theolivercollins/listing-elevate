@@ -38,10 +38,16 @@ const SECTIONS: SidebarSection[] = [
   {
     label: "Lab",
     items: [
-      { to: "/dashboard/development/prompt-lab", label: "Prompt lab", icon: "beaker" },
-      { to: "/dashboard/development/prompt-lab/recipes", label: "Recipes", icon: "book" },
-      { to: "/dashboard/development/proposals", label: "Proposals", icon: "branch" },
-      { to: "/dashboard/rating-ledger", label: "Rating ledger", icon: "sliders" },
+      {
+        to: "/dashboard/development/prompt-lab",
+        label: "Lab",
+        icon: "beaker",
+        match: (p) =>
+          p.startsWith("/dashboard/development/prompt-lab") ||
+          p.startsWith("/dashboard/development/proposals") ||
+          p.startsWith("/dashboard/development/learning") ||
+          p.startsWith("/dashboard/rating-ledger"),
+      },
     ],
   },
   {

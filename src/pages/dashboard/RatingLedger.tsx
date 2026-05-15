@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
 import { fetchRatingLedger, type LedgerRow, type LedgerSurface } from "@/lib/ratingLedgerApi";
 import { PageHeading, KpiCard, Card, fmtRel } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
@@ -169,10 +170,11 @@ export default function RatingLedger() {
 
       {/* Page heading */}
       <PageHeading
-        eyebrow="Lab · Quality"
+        eyebrow="Lab"
         title="Rating ledger"
         sub="Every rated iteration across legacy Lab, Listings Lab, and production scenes. Filter by surface, SKU, rating, or comment to spot routing wins and regressions."
       />
+      <LabSubNav />
 
       {/* KPI strip */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
