@@ -100,10 +100,26 @@ export async function rejectPost(id: string): Promise<{ ok: true }> {
   return asJson(res);
 }
 
-export async function deletePost(id: string): Promise<{ ok: true }> {
+export async function deletePost(
+  id: string,
+  opts: { fromDashboard?: boolean; fromSierra?: boolean } = {},
+): Promise<{ ok: true; job_id: string | null }> {
   const res = await fetch(`/api/blog/posts/${id}`, {
     method: "DELETE",
-    headers: await authHeaders(),
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      fromDashboard: opts.fromDashboard !== false,
+      fromSierra: opts.fromSierra === true,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function setHold(id: string, hold: boolean): Promise<{ ok: true; state: string }> {
+  const res = await fetch(`/api/blog/posts/${id}/hold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ hold }),
   });
   return asJson(res);
 }

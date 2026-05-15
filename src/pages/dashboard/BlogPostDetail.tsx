@@ -11,18 +11,19 @@ import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
-  listTemplates, getTemplate, getTaxonomy, generateAIDraft, deletePost,
+  listTemplates, getTemplate, getTaxonomy, generateAIDraft, setHold,
 } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DeletePostDialog } from "@/components/blog/DeletePostDialog";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Loader2, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Loader2, Pause, Play, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
+type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "on-hold" | "readonly";
 
 interface FormState {
   title: string;
@@ -72,6 +73,7 @@ export default function BlogPostDetailPage() {
     if (isCompose) return "compose";
     if (!post) return "readonly";
     if (post.state === "live") return "edit-live";
+    if (post.state === "on_hold") return "on-hold";
     if (post.state === "awaiting_approval") {
       return post.authored === "auto" ? "review-auto" : "edit-manual";
     }
@@ -272,18 +274,16 @@ export default function BlogPostDetailPage() {
     onError: (e: any) => toast.error(`Reject failed: ${e.message}`),
   });
 
-  const del = useMutation({
-    mutationFn: () => deletePost(id!),
-    onSuccess: () => { toast.success("Deleted"); navigate("/dashboard/blog/posts"); },
-    onError: (e: any) => toast.error(`Delete failed: ${e.message}`),
+  const hold = useMutation({
+    mutationFn: (next: boolean) => setHold(id!, next),
+    onSuccess: (r) => {
+      toast.success(r.state === "on_hold" ? "Put on hold" : "Resumed");
+      qc.invalidateQueries({ queryKey: ["blog-post", id] });
+    },
+    onError: (e: any) => toast.error(`Status change failed: ${e.message}`),
   });
 
-  function confirmDelete() {
-    if (!post && !isCompose) return;
-    const t = form.title || post?.title || "this post";
-    if (!window.confirm(`Delete "${t}"? Removes it from this dashboard. The published copy on Sierra is not affected.`)) return;
-    del.mutate();
-  }
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   if (!isCompose && isLoading) return <div>Loading…</div>;
 
@@ -336,6 +336,15 @@ export default function BlogPostDetailPage() {
           <a href={post.external_post_url} target="_blank" rel="noreferrer" className="text-primary underline">
             View on Sierra ↗
           </a>
+        </div>
+      )}
+      {post && post.state === "on_hold" && (
+        <div className="mb-4 flex items-center gap-3 rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm">
+          <Pause className="h-4 w-4 text-slate-700" />
+          <span className="flex-1">
+            <span className="font-medium text-slate-800">On hold</span>
+            <span className="ml-2 text-muted-foreground">— hidden from the "Live" filter. Sierra-side copy is untouched.</span>
+          </span>
         </div>
       )}
 
@@ -475,6 +484,23 @@ export default function BlogPostDetailPage() {
           <>
             <Button onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</Button>
             {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
+            <Button
+              variant="outline"
+              onClick={() => hold.mutate(true)}
+              disabled={hold.isPending}
+            >
+              {hold.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Pause className="mr-1 h-4 w-4" />}
+              Put on hold
+            </Button>
+          </>
+        )}
+        {mode === "on-hold" && (
+          <>
+            <Button onClick={() => hold.mutate(false)} disabled={hold.isPending}>
+              {hold.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Play className="mr-1 h-4 w-4" />}
+              Resume (back to Live)
+            </Button>
+            {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
           </>
         )}
         <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
@@ -483,15 +509,22 @@ export default function BlogPostDetailPage() {
         {!isCompose && (
           <Button
             variant="ghost"
-            onClick={confirmDelete}
-            disabled={del.isPending}
+            onClick={() => setDeleteOpen(true)}
             className="ml-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
           >
-            {del.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Trash2 className="mr-1 h-4 w-4" />}
-            {del.isPending ? "Deleting…" : "Delete"}
+            <Trash2 className="mr-1 h-4 w-4" /> Delete
           </Button>
         )}
       </div>
+
+      <DeletePostDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        postId={id ?? null}
+        postTitle={form.title || post?.title || ""}
+        hasSierraCopy={!!post?.external_post_id}
+        onSuccess={() => navigate("/dashboard/blog/posts")}
+      />
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
 

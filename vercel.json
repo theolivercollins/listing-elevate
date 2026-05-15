@@ -39,6 +39,13 @@
     { "src": "/api/admin/prompt-lab/proposals", "dest": "/api/admin/prompt-lab/proposals" },
     { "src": "/api/admin/prompt-lab/rate", "dest": "/api/admin/prompt-lab/rate" },
     { "src": "/api/admin/prompt-lab/([^/]+)", "dest": "/api/admin/prompt-lab/[sessionId]?sessionId=$1" },
+    { "src": "/api/blog/posts/([^/]+)/publish", "dest": "/api/blog/posts/[id]/publish?id=$1" },
+    { "src": "/api/blog/posts/([^/]+)/reject", "dest": "/api/blog/posts/[id]/reject?id=$1" },
+    { "src": "/api/blog/posts/([^/]+)/edit-on-sierra", "dest": "/api/blog/posts/[id]/edit-on-sierra?id=$1" },
+    { "src": "/api/blog/posts/([^/]+)/hold", "dest": "/api/blog/posts/[id]/hold?id=$1" },
+    { "src": "/api/blog/posts/([^/]+)", "dest": "/api/blog/posts/[id]?id=$1" },
+    { "src": "/api/blog/images/([^/]+)", "dest": "/api/blog/images/[id]?id=$1" },
+    { "src": "/api/blog/templates/([^/]+)", "dest": "/api/blog/templates/[id]?id=$1" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/(.*)", "dest": "/index.html" }
