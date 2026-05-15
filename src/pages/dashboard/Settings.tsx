@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { toast } from "sonner";
@@ -124,16 +125,16 @@ function SectionHeader({ eyebrow, title, onSave }: { eyebrow: string; title: str
 }
 
 // ─── Providers data ───────────────────────────────────────────────
-const PROVIDERS = [
-  { name: "Anthropic",    desc: "Director / scene chat",     connected: true,  spend: "$18.42", events: 312 },
-  { name: "Atlas Cloud",  desc: "Kling SKU routing",         connected: true,  spend: "$94.10", events: 87  },
-  { name: "Gemini",       desc: "Judge + embeddings",        connected: true,  spend: "$6.03",  events: 204 },
-  { name: "Runway Gen-4", desc: "Video generation",          connected: true,  spend: "$0.00",  events: 0   },
-  { name: "Luma Ray2",    desc: "Video generation",          connected: true,  spend: "$0.00",  events: 0   },
-  { name: "Shotstack",    desc: "Assembly + compositing",    connected: true,  spend: "$11.20", events: 51  },
-  { name: "Creatomate",   desc: "Template rendering",        connected: false, spend: "$0.00",  events: 0   },
-  { name: "Browserbase",  desc: "Headless browser ops",      connected: true,  spend: "$2.75",  events: 14  },
-  { name: "Supabase",     desc: "Storage + database",        connected: true,  spend: "$0.00",  events: 0   },
+const PROVIDERS: { name: string; desc: string; connected: boolean }[] = [
+  { name: "Anthropic",    desc: "Director / scene chat",     connected: true  },
+  { name: "Atlas Cloud",  desc: "Kling SKU routing",         connected: true  },
+  { name: "Gemini",       desc: "Judge + embeddings",        connected: true  },
+  { name: "Runway Gen-4", desc: "Video generation",          connected: true  },
+  { name: "Luma Ray2",    desc: "Video generation",          connected: true  },
+  { name: "Shotstack",    desc: "Assembly + compositing",    connected: true  },
+  { name: "Creatomate",   desc: "Template rendering",        connected: false },
+  { name: "Browserbase",  desc: "Headless browser ops",      connected: true  },
+  { name: "Supabase",     desc: "Storage + database",        connected: true  },
 ];
 
 // ─── DangerButton with confirm ───────────────────────────────────
@@ -318,9 +319,19 @@ const Settings = () => {
 
         {/* 5. Providers */}
         <Card padding={24}>
-          <SectionHeader eyebrow="Connected services" title="Providers" />
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 4 }}>
+            <SectionTitle eyebrow="Connected services" title="Providers" />
+            <Link
+              to="/dashboard/finances"
+              style={{ fontSize: 12, color: "var(--accent)", textDecoration: "none", marginBottom: 4, whiteSpace: "nowrap" }}
+            >
+              Last-7d spend in Finances
+              <Icon name="chevron-right" size={12} style={{ marginLeft: 4, verticalAlign: "middle" }} />
+            </Link>
+          </div>
           <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 16px", lineHeight: 1.6 }}>
-            API credentials live in Vercel env vars. Spend and event counts are last-7d estimates from cost_events.
+            API credentials live in Vercel env vars. Last-7d spend lives in{" "}
+            <Link to="/dashboard/finances" style={{ color: "var(--accent)", textDecoration: "none" }}>Finances</Link>.
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
             {PROVIDERS.map(p => (
@@ -330,9 +341,6 @@ const Settings = () => {
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{p.name}</span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, paddingLeft: 15 }}>{p.desc}</div>
-                <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 6, paddingLeft: 15, fontVariantNumeric: "tabular-nums" }}>
-                  {p.spend} · {p.events} events (7d)
-                </div>
               </div>
             ))}
           </div>

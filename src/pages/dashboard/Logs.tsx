@@ -3,7 +3,6 @@ import type { PipelineLog } from "@/lib/types";
 import { fetchLogs } from "@/lib/api";
 import { KpiCard, Card } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { SAMPLE_LOG_LINES } from "@/components/dashboard/sample-data";
 
 // ─── view-model ───────────────────────────────────────────────────
 interface LogRow {
@@ -27,10 +26,6 @@ function fromLive(l: PipelineLog): LogRow {
     source: l.stage,
     msg: l.message,
   };
-}
-
-function fromSample(l: (typeof SAMPLE_LOG_LINES)[number], i: number): LogRow {
-  return { key: "s" + i, ts: l.ts, level: l.level, source: l.source, msg: l.msg };
 }
 
 // ─── level colour map ─────────────────────────────────────────────
@@ -60,35 +55,36 @@ const GHOST_BTN: CSSProperties = {
 
 const Logs = () => {
   const [rows, setRows] = useState<LogRow[]>([]);
-  const [usingSample, setUsingSample] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setLoading(true);
       try {
         const res = await fetchLogs({ limit: 60 });
         if (cancelled) return;
-        if (res.logs.length > 0) {
-          setRows(res.logs.map(fromLive));
-          setUsingSample(false);
-        } else {
-          setRows(SAMPLE_LOG_LINES.map(fromSample));
-          setUsingSample(true);
-        }
+        setRows(res.logs.map(fromLive));
       } catch {
-        if (!cancelled) {
-          setRows(SAMPLE_LOG_LINES.map(fromSample));
-          setUsingSample(true);
-        }
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // ─── KPI counts (live or static fallback) ──────────────────────
-  const eventsValue = usingSample ? "1,284" : String(rows.length);
-  const errorCount = usingSample ? 3 : rows.filter((r) => r.level === "error").length;
-  const warnCount  = usingSample ? 18 : rows.filter((r) => r.level === "warn").length;
+  // ─── KPI counts (live only) ────────────────────────────────────
+  const errorCount = rows.filter((r) => r.level === "error").length;
+  const warnCount  = rows.filter((r) => r.level === "warn").length;
+
+  if (loading) {
+    return (
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      </div>
+    );
+  }
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -97,30 +93,29 @@ const Logs = () => {
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Events · 24h"
-          value={eventsValue}
+          value={String(rows.length)}
           sub="across all services"
-          delta={12.2}
+          delta={null}
         />
         <KpiCard
           label="Errors"
           value={String(errorCount)}
-          sub="all auto-recovered"
-          delta={-66.7}
+          sub={errorCount === 0 ? "none in window" : "in window"}
+          delta={null}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="Warnings"
           value={String(warnCount)}
-          sub="mostly QC soft-rejects"
-          delta={4.1}
+          sub={warnCount === 0 ? "none in window" : "in window"}
+          delta={null}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="P95 latency"
-          value="240ms"
-          sub="API response"
-          delta={-8.1}
-          deltaPositiveIsGood={false}
+          value="—"
+          sub="no live p95 metric yet"
+          delta={null}
         />
       </section>
 
@@ -172,49 +167,55 @@ const Logs = () => {
           className="le-card-flat"
           style={{ padding: 0, overflow: "hidden" }}
         >
-          {rows.map((l, i) => (
-            <div
-              key={l.key}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "auto auto auto 1fr",
-                gap: 16,
-                padding: "8px 14px",
-                borderBottom:
-                  i === rows.length - 1 ? "none" : "1px solid var(--line-2)",
-                fontSize: 12,
-                alignItems: "center",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              <span style={{ color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
-                {l.ts}
-              </span>
-              <span
-                style={{
-                  fontWeight: 600,
-                  color: LEVEL_COLOR[l.level] ?? "var(--muted)",
-                  textTransform: "uppercase",
-                  fontSize: 10,
-                  letterSpacing: "0.08em",
-                }}
-              >
-                {l.level}
-              </span>
-              <span
-                style={{
-                  color: "var(--muted)",
-                  padding: "2px 7px",
-                  background: "rgba(11,11,16,0.04)",
-                  borderRadius: 99,
-                  fontSize: 10,
-                }}
-              >
-                {l.source}
-              </span>
-              <span style={{ color: "var(--ink-2)" }}>{l.msg}</span>
+          {rows.length === 0 ? (
+            <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+              No events in the last hour.
             </div>
-          ))}
+          ) : (
+            rows.map((l, i) => (
+              <div
+                key={l.key}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto auto auto 1fr",
+                  gap: 16,
+                  padding: "8px 14px",
+                  borderBottom:
+                    i === rows.length - 1 ? "none" : "1px solid var(--line-2)",
+                  fontSize: 12,
+                  alignItems: "center",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                <span style={{ color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
+                  {l.ts}
+                </span>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color: LEVEL_COLOR[l.level] ?? "var(--muted)",
+                    textTransform: "uppercase",
+                    fontSize: 10,
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  {l.level}
+                </span>
+                <span
+                  style={{
+                    color: "var(--muted)",
+                    padding: "2px 7px",
+                    background: "rgba(11,11,16,0.04)",
+                    borderRadius: 99,
+                    fontSize: 10,
+                  }}
+                >
+                  {l.source}
+                </span>
+                <span style={{ color: "var(--ink-2)" }}>{l.msg}</span>
+              </div>
+            ))
+          )}
         </div>
       </Card>
     </div>

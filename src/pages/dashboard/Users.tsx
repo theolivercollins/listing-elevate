@@ -1,7 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PageHeading, KpiCard, Card } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { SAMPLE_USERS } from "@/components/dashboard/sample-data";
+
+// ─── User shape ───────────────────────────────────────────────────
+interface User {
+  id?: string;
+  name: string;
+  email: string;
+  role: string;
+  status: "active" | "pending" | "invited";
+  last_active_at?: string | null;
+  listings?: number;
+  hue?: number;
+}
 
 // ─── UserStatus pill ─────────────────────────────────────────────
 type UserStatusValue = "active" | "pending" | "invited";
@@ -52,11 +63,10 @@ function UserStatusPill({ status }: { status: UserStatusValue }) {
 // ─── tab types ────────────────────────────────────────────────────
 type TabId = "all" | "active" | "pending" | "admins";
 
-// ─── role definitions ─────────────────────────────────────────────
+// ─── role definitions (static — these are permission docs, not counts) ──
 const ROLES = [
   {
     role: "Admin",
-    count: 1,
     perms: [
       "Full workspace access",
       "Billing & plan",
@@ -66,7 +76,6 @@ const ROLES = [
   },
   {
     role: "Agent",
-    count: 5,
     perms: [
       "Upload listings",
       "View own analytics",
@@ -75,7 +84,6 @@ const ROLES = [
   },
   {
     role: "Reviewer / Dev",
-    count: 2,
     perms: [
       "Manual QC review",
       "Pipeline + logs",
@@ -84,18 +92,100 @@ const ROLES = [
   },
 ] as const;
 
+// ─── derive a hue from email (deterministic) ───────────────────────
+function emailHue(email: string): number {
+  let h = 0;
+  for (let i = 0; i < email.length; i++) h = (h * 31 + email.charCodeAt(i)) & 0xffff;
+  return h % 360;
+}
+
+// ─── map raw API row to User shape ────────────────────────────────
+function toUser(raw: Record<string, unknown>): User {
+  const status = (raw.status as string | undefined) ?? "active";
+  const normalizedStatus: UserStatusValue =
+    status === "pending" || status === "invited" ? status : "active";
+  const email = String(raw.email ?? "");
+  return {
+    id: raw.id ? String(raw.id) : undefined,
+    name: String(raw.name ?? raw.full_name ?? raw.email ?? "Unknown"),
+    email,
+    role: String(raw.role ?? "Agent"),
+    status: normalizedStatus,
+    last_active_at: raw.last_active_at ? String(raw.last_active_at) : null,
+    listings: typeof raw.listings === "number" ? raw.listings : undefined,
+    hue: emailHue(email),
+  };
+}
+
+function fmtLastActive(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
 // ─── Users page ───────────────────────────────────────────────────
 export default function Users() {
   const [tab, setTab] = useState<TabId>("all");
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/users", { credentials: "include" });
+        if (!res.ok) throw new Error("non-ok");
+        const data = await res.json() as unknown;
+        if (cancelled) return;
+        const arr: Record<string, unknown>[] = Array.isArray(data)
+          ? (data as Record<string, unknown>[])
+          : Array.isArray((data as Record<string, unknown[]>).users)
+            ? ((data as Record<string, unknown[]>).users as Record<string, unknown>[])
+            : [];
+        setUsers(arr.map(toUser));
+      } catch {
+        if (!cancelled) setUsers([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      </div>
+    );
+  }
+
+  // ─── KPI values ─────────────────────────────────────────────────
+  const totalUsers = users.length;
+  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const activeRecently = users.filter(
+    (u) => u.last_active_at && new Date(u.last_active_at).getTime() > sevenDaysAgo,
+  ).length;
+  const hasLastActive = users.some((u) => u.last_active_at);
+  const pendingInvites = users.filter(
+    (u) => u.status === "pending" || u.status === "invited",
+  ).length;
+
+  // ─── tab filter ──────────────────────────────────────────────────
   const tabs: { id: TabId; label: string; count: number }[] = [
-    { id: "all",     label: "All",     count: SAMPLE_USERS.length },
-    { id: "active",  label: "Active",  count: SAMPLE_USERS.filter((u) => u.status === "active").length },
-    { id: "pending", label: "Pending", count: SAMPLE_USERS.filter((u) => u.status === "pending" || u.status === "invited").length },
-    { id: "admins",  label: "Admins",  count: SAMPLE_USERS.filter((u) => u.role === "Admin").length },
+    { id: "all",     label: "All",     count: users.length },
+    { id: "active",  label: "Active",  count: users.filter((u) => u.status === "active").length },
+    { id: "pending", label: "Pending", count: users.filter((u) => u.status === "pending" || u.status === "invited").length },
+    { id: "admins",  label: "Admins",  count: users.filter((u) => u.role === "Admin").length },
   ];
 
-  const filtered = SAMPLE_USERS.filter((u) => {
+  const filtered = users.filter((u) => {
     if (tab === "all")     return true;
     if (tab === "active")  return u.status === "active";
     if (tab === "pending") return u.status === "pending" || u.status === "invited";
@@ -132,10 +222,30 @@ export default function Users() {
           marginBottom: 24,
         }}
       >
-        <KpiCard label="Total users"     value="8"  sub="across 3 roles"       delta={null} />
-        <KpiCard label="Active · 7d"     value="6"  sub="75% engagement"        delta={12.4} />
-        <KpiCard label="Pending invites" value="2"  sub="awaiting acceptance"   delta={null} />
-        <KpiCard label="Seats available" value="12" sub="of 20 in plan"         delta={null} />
+        <KpiCard
+          label="Total users"
+          value={totalUsers === 0 ? "0" : String(totalUsers)}
+          sub={totalUsers === 0 ? "no users yet" : "across all roles"}
+          delta={null}
+        />
+        <KpiCard
+          label="Active · 7d"
+          value={hasLastActive ? String(activeRecently) : "—"}
+          sub={hasLastActive ? "active in last 7 days" : "no last-active data"}
+          delta={null}
+        />
+        <KpiCard
+          label="Pending invites"
+          value={String(pendingInvites)}
+          sub={pendingInvites === 0 ? "none pending" : "awaiting acceptance"}
+          delta={null}
+        />
+        <KpiCard
+          label="Seats available"
+          value="—"
+          sub="no plan source yet"
+          delta={null}
+        />
       </section>
 
       {/* Users table card */}
@@ -243,87 +353,123 @@ export default function Users() {
         </div>
 
         {/* Table body */}
-        {filtered.map((u) => (
+        {filtered.length === 0 ? (
           <div
-            key={u.email}
             style={{
-              display: "grid",
-              gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 32px",
-              gap: 16,
-              padding: "14px 14px",
-              borderBottom: "1px solid var(--line-2)",
-              alignItems: "center",
-              transition: "background .15s",
+              padding: "48px 20px",
+              textAlign: "center",
+              color: "var(--muted)",
+              fontSize: 13,
+              lineHeight: 1.6,
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(11,11,16,0.02)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
           >
-            {/* User cell */}
-            <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-              <div
+            {users.length === 0
+              ? (
+                <>
+                  No users yet. Invite your first teammate to get started.
+                  <div style={{ marginTop: 16 }}>
+                    <button className="le-btn-dark" style={{ fontSize: 12, padding: "8px 18px" }}>
+                      <Icon name="plus" size={13} />
+                      Invite user
+                    </button>
+                  </div>
+                </>
+              )
+              : "No users match this filter."}
+          </div>
+        ) : (
+          filtered.map((u) => (
+            <div
+              key={u.email}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 32px",
+                gap: 16,
+                padding: "14px 14px",
+                borderBottom: "1px solid var(--line-2)",
+                alignItems: "center",
+                transition: "background .15s",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(11,11,16,0.02)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+            >
+              {/* User cell */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 99,
+                    flexShrink: 0,
+                    background: `linear-gradient(135deg, hsl(${u.hue ?? 200}, 12%, 60%), hsl(${(u.hue ?? 200) + 30}, 14%, 42%))`,
+                    color: "#fff",
+                    fontWeight: 600,
+                    fontSize: 12,
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {u.name
+                    .split(" ")
+                    .map((s) => s[0])
+                    .join("")
+                    .slice(0, 2)}
+                </div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{u.name}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{u.email}</div>
+                </div>
+              </div>
+
+              {/* Role */}
+              <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{u.role}</span>
+
+              {/* Status */}
+              <UserStatusPill status={u.status} />
+
+              {/* Listings */}
+              <span
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 99,
-                  flexShrink: 0,
-                  background: `linear-gradient(135deg, hsl(${u.hue}, 12%, 60%), hsl(${u.hue + 30}, 14%, 42%))`,
-                  color: "#fff",
+                  fontSize: 13,
                   fontWeight: 600,
-                  fontSize: 12,
-                  display: "grid",
-                  placeItems: "center",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                  color: "var(--ink)",
                 }}
               >
-                {u.name
-                  .split(" ")
-                  .map((s) => s[0])
-                  .join("")}
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>{u.name}</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{u.email}</div>
-              </div>
+                {u.listings != null ? String(u.listings) : "—"}
+              </span>
+
+              {/* Last active */}
+              <span
+                style={{
+                  fontSize: 12,
+                  color: "var(--muted)",
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {fmtLastActive(u.last_active_at)}
+              </span>
+
+              {/* Dots menu */}
+              <button
+                type="button"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--muted-2)",
+                  cursor: "pointer",
+                  display: "grid",
+                  placeItems: "center",
+                  padding: 0,
+                }}
+              >
+                <Icon name="dots" size={14} />
+              </button>
             </div>
-
-            {/* Role */}
-            <span style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{u.role}</span>
-
-            {/* Status */}
-            <UserStatusPill status={u.status} />
-
-            {/* Listings */}
-            <span
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                textAlign: "right",
-                fontVariantNumeric: "tabular-nums",
-                color: "var(--ink)",
-              }}
-            >
-              {u.listings || "—"}
-            </span>
-
-            {/* Last active */}
-            <span style={{ fontSize: 12, color: "var(--muted)", textAlign: "right" }}>{u.last}</span>
-
-            {/* Dots menu */}
-            <button
-              type="button"
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "var(--muted-2)",
-                cursor: "pointer",
-                display: "grid",
-                placeItems: "center",
-                padding: 0,
-              }}
-            >
-              <Icon name="dots" size={14} />
-            </button>
-          </div>
-        ))}
+          ))
+        )}
       </Card>
 
       {/* Roles & permissions cards */}
@@ -353,20 +499,25 @@ export default function Users() {
                   {r.role}
                 </div>
               </div>
-              <span
-                style={{
-                  fontSize: 11.5,
-                  fontWeight: 500,
-                  color: "var(--muted)",
-                  padding: "3px 9px",
-                  borderRadius: 99,
-                  background: "rgba(11,11,16,0.05)",
-                  fontVariantNumeric: "tabular-nums",
-                  flexShrink: 0,
-                }}
-              >
-                {r.count} {r.count === 1 ? "user" : "users"}
-              </span>
+              {users.length > 0 && (
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: "var(--muted)",
+                    padding: "3px 9px",
+                    borderRadius: 99,
+                    background: "rgba(11,11,16,0.05)",
+                    fontVariantNumeric: "tabular-nums",
+                    flexShrink: 0,
+                  }}
+                >
+                  {(() => {
+                    const c = users.filter((u) => u.role === r.role).length;
+                    return `${c} ${c === 1 ? "user" : "users"}`;
+                  })()}
+                </span>
+              )}
             </div>
 
             {/* Permissions list */}

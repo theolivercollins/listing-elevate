@@ -28,6 +28,7 @@ import DashboardFinances from "./pages/dashboard/Finances";
 import DashboardSettings from "./pages/dashboard/Settings";
 import DashboardUsers from "./pages/dashboard/Users";
 import DashboardDevelopment from "./pages/dashboard/Development";
+import DashboardLearning from "./pages/dashboard/Learning";
 import DashboardPromptLab from "./pages/dashboard/PromptLab";
 import DashboardPromptLabRecipes from "./pages/dashboard/PromptLabRecipes";
 import DashboardPromptProposals from "./pages/dashboard/PromptProposals";
@@ -95,6 +96,7 @@ const App = () => (
                     <Route path="properties/:id" element={<PropertyDetail />} />
                     <Route path="logs" element={<DashboardLogs />} />
                     <Route path="development" element={<DashboardDevelopment />} />
+                    <Route path="development/learning" element={<DashboardLearning />} />
                     <Route path="development/prompt-lab" element={<DashboardPromptLab />} />
                     <Route path="development/prompt-lab/recipes" element={<DashboardPromptLabRecipes />} />
                     <Route path="development/prompt-lab/:sessionId" element={<DashboardPromptLab />} />

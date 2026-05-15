@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { KpiCard, StatusPill, PropertyThumb, Card, fmtCents, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { SAMPLE_PROPERTIES } from "@/components/dashboard/sample-data";
-import type { SampleProperty } from "@/components/dashboard/sample-data";
 import { fetchProperties } from "@/lib/api";
 import type { Property } from "@/lib/types";
 
@@ -19,20 +17,6 @@ interface PropertyVM {
   duration_ms: number | null;
   thumb_hue: number;
   created_at_ms: number;
-}
-
-function fromSample(p: SampleProperty): PropertyVM {
-  return {
-    id: p.id,
-    address: p.address,
-    status: p.status,
-    photos: p.photos,
-    agent: p.agent,
-    cost: p.cost,
-    duration_ms: p.duration_ms,
-    thumb_hue: p.thumb_hue,
-    created_at_ms: p.created_at,
-  };
 }
 
 function fromLive(p: Property): PropertyVM {
@@ -136,10 +120,7 @@ const Properties = () => {
   }, []);
 
   // ── view-model ───────────────────────────────────────────────────
-  const allVM: PropertyVM[] =
-    rawProperties.length > 0
-      ? rawProperties.map(fromLive)
-      : SAMPLE_PROPERTIES.map(fromSample);
+  const allVM: PropertyVM[] = rawProperties.map(fromLive);
 
   // ── search ───────────────────────────────────────────────────────
   const searchLower = search.toLowerCase();
@@ -178,6 +159,45 @@ const Properties = () => {
       ? completed.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completed.length
       : null;
   const rerunCount = allVM.filter((p) => p.status === "needs_review").length;
+
+  // ── KPI deltas (live-computed, null if not enough data) ──────────
+  const now = Date.now();
+  const MS_7D = 7 * 24 * 60 * 60 * 1000;
+  const thisWeek = allVM.filter((p) => now - p.created_at_ms < MS_7D);
+  const prevWeek = allVM.filter((p) => {
+    const age = now - p.created_at_ms;
+    return age >= MS_7D && age < 2 * MS_7D;
+  });
+
+  function pctChange(curr: number, prev: number): number | null {
+    if (prev === 0 || curr === 0) return null;
+    return ((curr - prev) / prev) * 100;
+  }
+
+  const totalListingsDelta = pctChange(thisWeek.length, prevWeek.length);
+
+  const thisWeekActive = thisWeek.filter((p) => ACTIVE_STATUSES.has(p.status)).length;
+  const prevWeekActive = prevWeek.filter((p) => ACTIVE_STATUSES.has(p.status)).length;
+  const activeCountDelta = pctChange(thisWeekActive, prevWeekActive);
+
+  const completedThisWeek = allVM.filter(
+    (p) => p.status === "complete" && p.duration_ms != null && now - p.created_at_ms < MS_7D,
+  );
+  const completedPrevWeek = allVM.filter(
+    (p) => p.status === "complete" && p.duration_ms != null && (() => { const age = now - p.created_at_ms; return age >= MS_7D && age < 2 * MS_7D; })(),
+  );
+  const avgDeliveryThisWeek =
+    completedThisWeek.length > 0
+      ? completedThisWeek.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completedThisWeek.length
+      : null;
+  const avgDeliveryPrevWeek =
+    completedPrevWeek.length > 0
+      ? completedPrevWeek.reduce((s, p) => s + (p.duration_ms ?? 0), 0) / completedPrevWeek.length
+      : null;
+  const avgDeliveryDelta =
+    avgDeliveryThisWeek != null && avgDeliveryPrevWeek != null
+      ? pctChange(avgDeliveryThisWeek, avgDeliveryPrevWeek)
+      : null;
 
   // ── selection helpers ─────────────────────────────────────────────
   const toggle = useCallback((id: string) => {
@@ -230,6 +250,14 @@ const Properties = () => {
     );
   };
 
+  if (loading) {
+    return (
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      </div>
+    );
+  }
+
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* KPI row */}
@@ -239,27 +267,27 @@ const Properties = () => {
         <KpiCard
           label="Total listings"
           value={totalListings}
-          sub="+12 this week"
-          delta={4.9}
+          sub={thisWeek.length > 0 ? `+${thisWeek.length} this week` : "no new this week"}
+          delta={totalListingsDelta}
         />
         <KpiCard
           label="Active"
           value={activeCount}
           sub="across all stages"
-          delta={8.1}
+          delta={activeCountDelta}
         />
         <KpiCard
           label="Avg delivery"
           value={avgDeliveryMs ? fmtDuration(avgDeliveryMs) : "—"}
           sub="below 72h SLA"
-          delta={-12.4}
+          delta={avgDeliveryDelta}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="Reruns"
           value={rerunCount}
-          sub={rerunCount > 0 ? `${((rerunCount / totalListings) * 100).toFixed(1)}% rerun rate` : "no reruns"}
-          delta={-1.8}
+          sub={rerunCount > 0 ? `${((rerunCount / Math.max(totalListings, 1)) * 100).toFixed(1)}% rerun rate` : "no reruns"}
+          delta={null}
           deltaPositiveIsGood={false}
         />
       </section>
@@ -358,13 +386,11 @@ const Properties = () => {
         </div>
 
         {/* Body rows */}
-        {loading ? (
+        {filtered.length === 0 ? (
           <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-            Loading…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-            No listings match your filters.
+            {allVM.length === 0
+              ? "No listings yet — your first listing will appear here once submitted."
+              : "No listings match your filters."}
           </div>
         ) : (
           filtered.map((p) => (

@@ -3,7 +3,7 @@ import type { Property, Scene, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
 import { HealthCard, StatusPill, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { SAMPLE_PROPERTIES, SAMPLE_STAGES, SAMPLE_REVIEW_SCENES } from "@/components/dashboard/sample-data";
+import { SAMPLE_STAGES } from "@/components/dashboard/sample-data";
 import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
 
 // ─── Adapter: live Property → SampleProperty shape ───────────────
@@ -249,7 +249,6 @@ const Pipeline = () => {
         if (cancelled) return;
 
         const allLive: Property[] = stageResults.flatMap((r) => r.properties);
-        const totalLive = allLive.length;
         setAllLiveProps(allLive);
 
         if (overviewRes?.avgProcessingMs != null) {
@@ -259,80 +258,68 @@ const Pipeline = () => {
           setDailyStats(dailyRes.stats);
         }
 
-        let displayProps: SampleProperty[];
-        if (totalLive === 0) {
-          displayProps = SAMPLE_PROPERTIES;
-        } else {
-          displayProps = allLive.map(adaptProperty);
-        }
-
-        // Group by stage
+        // Group live props by stage — no sample fallback
         const byStage: Record<string, SampleProperty[]> = {};
         SAMPLE_STAGES.forEach((s) => { byStage[s.key] = []; });
-        displayProps.forEach((p) => {
+        allLive.map(adaptProperty).forEach((p) => {
           if (byStage[p.status]) byStage[p.status].push(p);
         });
         setPropsByStage(byStage);
 
-        // Review scenes
-        if (totalLive === 0) {
-          setReviewScenes(SAMPLE_REVIEW_SCENES);
-        } else {
-          const reviewRes = await fetchProperties({ status: "needs_review", limit: 20 });
-          if (cancelled) return;
-          const liveScenes: (SampleReviewScene & { propertyAddress?: string })[] = [];
-          for (const prop of reviewRes.properties) {
-            try {
-              const detail = await fetchProperty(prop.id);
-              if (cancelled) return;
-              const failed = detail.scenes.filter(
-                (s: Scene) =>
-                  s.status === "qc_hard_reject" ||
-                  s.status === "qc_soft_reject" ||
-                  s.status === "needs_review",
-              );
-              failed.forEach((s: Scene) => {
-                liveScenes.push({
-                  id: s.id,
-                  property: prop.address,
-                  propertyAddress: prop.address,
-                  scene_number: s.scene_number,
-                  status: s.status,
-                  confidence: s.qc_confidence,
-                  provider: s.provider,
-                  prompt: s.prompt,
-                  issues: (s.qc_issues as { issues?: string[] } | null)?.issues ?? [],
-                });
-              });
-            } catch {
-              // skip individual property errors
-            }
-          }
-          // If no scene-level data found, fall back to property-level cards
-          if (liveScenes.length === 0 && reviewRes.properties.length > 0) {
-            reviewRes.properties.forEach((prop, idx) => {
+        // Review scenes — live only
+        const reviewRes = await fetchProperties({ status: "needs_review", limit: 20 });
+        if (cancelled) return;
+        const liveScenes: (SampleReviewScene & { propertyAddress?: string })[] = [];
+        for (const prop of reviewRes.properties) {
+          try {
+            const detail = await fetchProperty(prop.id);
+            if (cancelled) return;
+            const failed = detail.scenes.filter(
+              (s: Scene) =>
+                s.status === "qc_hard_reject" ||
+                s.status === "qc_soft_reject" ||
+                s.status === "needs_review",
+            );
+            failed.forEach((s: Scene) => {
               liveScenes.push({
-                id: prop.id,
+                id: s.id,
                 property: prop.address,
                 propertyAddress: prop.address,
-                scene_number: idx + 1,
-                status: "needs_review",
-                confidence: 0.5,
-                provider: "kling",
-                prompt: "Review required — no scene detail available.",
-                issues: ["Manual review required"],
+                scene_number: s.scene_number,
+                status: s.status,
+                confidence: s.qc_confidence,
+                provider: s.provider,
+                prompt: s.prompt,
+                issues: (s.qc_issues as { issues?: string[] } | null)?.issues ?? [],
               });
             });
+          } catch {
+            // skip individual property errors
           }
-          setReviewScenes(liveScenes);
         }
+        // If no scene-level data found, synthesize from property-level cards
+        if (liveScenes.length === 0 && reviewRes.properties.length > 0) {
+          reviewRes.properties.forEach((prop, idx) => {
+            liveScenes.push({
+              id: prop.id,
+              property: prop.address,
+              propertyAddress: prop.address,
+              scene_number: idx + 1,
+              status: "needs_review",
+              confidence: 0.5,
+              provider: "kling",
+              prompt: "Review required — no scene detail available.",
+              issues: ["Manual review required"],
+            });
+          });
+        }
+        setReviewScenes(liveScenes);
       } catch {
-        // Fall back to sample data on any top-level error
+        // On error: show empty state (no sample fallback)
         const byStage: Record<string, SampleProperty[]> = {};
         SAMPLE_STAGES.forEach((s) => { byStage[s.key] = []; });
-        SAMPLE_PROPERTIES.forEach((p) => { if (byStage[p.status]) byStage[p.status].push(p); });
         setPropsByStage(byStage);
-        setReviewScenes(SAMPLE_REVIEW_SCENES);
+        setReviewScenes([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -353,9 +340,10 @@ const Pipeline = () => {
     }
   };
 
-  // Derive "in flight" count
-  const allProps = Object.values(propsByStage).flat();
-  const inFlight = allProps.filter((p) => !["complete", "queued", "needs_review"].includes(p.status)).length;
+  // Derive "in flight" count — live only
+  const inFlight = allLiveProps.filter(
+    (p) => !["complete", "queued", "needs_review"].includes(p.status),
+  ).length;
 
   // ── Avg stage time delta: today vs avg of last week ───────────────────────
   const avgStageDisplay = avgProcessingMs != null ? fmtDuration(avgProcessingMs) : "—";
@@ -462,6 +450,17 @@ const Pipeline = () => {
         </div>
 
         {/* Kanban grid */}
+        {allLiveProps.length === 0 ? (
+          <div
+            style={{
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              padding: "56px 0", textAlign: "center",
+              fontSize: 13, color: "var(--muted)",
+            }}
+          >
+            No properties in the pipeline yet. New uploads will appear here.
+          </div>
+        ) : (
         <div
           style={{
             display: "grid",
@@ -521,6 +520,7 @@ const Pipeline = () => {
             );
           })}
         </div>
+        )}
       </Card>
 
       {/* ── 3. Manual review section ── */}

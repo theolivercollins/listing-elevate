@@ -21,8 +21,6 @@ import {
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import {
-  SAMPLE_PROPERTIES,
-  SAMPLE_DAILY,
   SAMPLE_ACTIVITY,
   SAMPLE_AGENTS,
   SAMPLE_PROVIDER_MIX,
@@ -219,33 +217,19 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     return () => { cancelled = true; };
   }, []);
 
-  // ── fallback to sample data when live rows are empty ──────────────────────
-  const propsForUI: UIProperty[] =
-    allProps.length > 0
-      ? allProps.map(adaptLiveProp)
-      : SAMPLE_PROPERTIES.map((p) => ({
-          id: p.id,
-          address: p.address,
-          status: p.status,
-          photos: p.photos,
-          agent: p.agent,
-          created_at: p.created_at,
-          updated_at: p.created_at,
-          progress: p.progress,
-          thumb_hue: p.thumb_hue,
-        }));
+  // ── live-only data — no sample fallback for hard numbers ─────────────────
+  const propsForUI: UIProperty[] = allProps.map(adaptLiveProp);
 
   const DAILY = dailyStatsData.length > 0 ? dailyStatsData : null;
 
-  const dailyForUI =
-    DAILY
-      ? DAILY.map((d) => ({
-          date: d.date,
-          cost: d.total_cost_cents ?? 0,
-          videos: d.properties_completed ?? 0,
-          sla: 90,
-        }))
-      : SAMPLE_DAILY;
+  const dailyForUI = DAILY
+    ? DAILY.map((d) => ({
+        date: d.date,
+        cost: d.total_cost_cents ?? 0,
+        videos: d.properties_completed ?? 0,
+        sla: 90,
+      }))
+    : [];
 
   const inProgressForUI = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).slice(0, 5);
 
@@ -267,9 +251,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
 
   // ── KPI metrics ──────────────────────────────────────────────────────────
   const rangeLen = chartRange === "7d" ? 7 : chartRange === "30d" ? 30 : 14;
-  const last7Cost = dailyForUI.slice(-7).reduce((s, d) => s + d.cost, 0);
-  const prev7Cost = dailyForUI.slice(-14, -7).reduce((s, d) => s + d.cost, 0);
-  const costDelta = prev7Cost > 0 ? ((last7Cost - prev7Cost) / prev7Cost) * 100 : 0;
+  const last7Cost = DAILY ? DAILY.slice(-7).reduce((s, d) => s + (d.total_cost_cents ?? 0), 0) : 0;
+  const prev7Cost = DAILY && DAILY.length >= 14 ? DAILY.slice(-14, -7).reduce((s, d) => s + (d.total_cost_cents ?? 0), 0) : 0;
+  const costDelta: number | null = (DAILY && DAILY.length >= 14 && prev7Cost > 0) ? ((last7Cost - prev7Cost) / prev7Cost) * 100 : null;
 
   const inFlightCount = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).length;
   const completedToday = stats?.completedToday ?? 0;
@@ -330,7 +314,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   // ── SLA ring ─────────────────────────────────────────────────────────────
   const avgSla = dailyForUI.length > 0
     ? Math.round(dailyForUI.reduce((s, d) => s + d.sla, 0) / dailyForUI.length)
-    : 91;
+    : 0;
   const slaMof = Math.round((avgSla / 100) * 156);
 
   // ── Activity feed ─────────────────────────────────────────────────────────
@@ -389,9 +373,6 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         }
       />
 
-      {/* ── AI banner ────────────────────────────────────────────────── */}
-      {showAIBanner && <AIBanner />}
-
       {/* ── KPI row ──────────────────────────────────────────────────── */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <KpiCard
@@ -447,15 +428,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               ))}
             </div>
           </div>
-          <Bars
-            data={chartData.map((d) => ({
-              label: d.date.slice(3),
-              value: d.cost,
-              tooltip: fmtCents(d.cost),
-            }))}
-            accentIndex={chartData.length - 1}
-            height={220}
-          />
+          {chartData.length === 0 ? (
+            <div style={{ height: 220, display: "grid", placeItems: "center", fontSize: 13, color: "var(--muted)" }}>
+              No cost events yet.
+            </div>
+          ) : (
+            <Bars
+              data={chartData.map((d) => ({
+                label: d.date.slice(3),
+                value: d.cost,
+                tooltip: fmtCents(d.cost),
+              }))}
+              accentIndex={chartData.length - 1}
+              height={220}
+            />
+          )}
         </div>
 
         {/* Delivery SLA */}
@@ -497,6 +484,11 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             </button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {inProgressForUI.length === 0 && (
+              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
+                No properties in pipeline yet.
+              </div>
+            )}
             {inProgressForUI.map((p) => (
               <div
                 key={p.id}
@@ -563,9 +555,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <span className="le-d-label">Provider mix · 30d</span>
           <h3 style={{ margin: "6px 0 18px", fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em", color: "var(--ink)" }}>
-            {totalScenesGenerated !== null
+            {totalScenesGenerated !== null && totalScenesGenerated > 0
               ? `${totalScenesGenerated.toLocaleString()} scenes generated`
-              : "1,284 scenes generated"}
+              : "No scenes generated yet"}
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {providerMixForUI.map((p) => (

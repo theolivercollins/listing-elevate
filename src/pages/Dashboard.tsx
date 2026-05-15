@@ -1,47 +1,11 @@
-import { Outlet, useLocation, Link } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Outlet, Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
 import "@/v2/styles/v2.css";
 import { DashboardSidebar, useDashboardSidebar } from "@/components/DashboardSidebar";
 import { Icon } from "@/components/dashboard/icons";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { useAuth } from "@/lib/auth";
 import { fetchLogs, fetchProperties } from "@/lib/api";
-
-interface TitleMeta {
-  eyebrow?: string;
-  title: string;
-}
-
-const PAGE_TITLES: Array<{ match: RegExp; title: TitleMeta }> = [
-  { match: /^\/dashboard\/?$/, title: { eyebrow: "Studio · today", title: "Studio overview" } },
-  { match: /^\/dashboard\/pipeline/, title: { eyebrow: "Live", title: "Pipeline" } },
-  { match: /^\/dashboard\/properties/, title: { eyebrow: "Listings", title: "All listings" } },
-  { match: /^\/dashboard\/users/, title: { eyebrow: "Workspace", title: "Users" } },
-  { match: /^\/dashboard\/studio\/new/, title: { eyebrow: "Operator studio", title: "New listing" } },
-  { match: /^\/dashboard\/studio\/clients\/[^/]+/, title: { eyebrow: "Operator studio · Clients", title: "Client" } },
-  { match: /^\/dashboard\/studio\/clients/, title: { eyebrow: "Operator studio", title: "Clients" } },
-  { match: /^\/dashboard\/studio\/properties\/[^/]+/, title: { eyebrow: "Operator studio", title: "Property" } },
-  { match: /^\/dashboard\/studio/, title: { eyebrow: "Operator studio", title: "Queue" } },
-  { match: /^\/dashboard\/finances/, title: { eyebrow: "All providers", title: "Finances" } },
-  { match: /^\/dashboard\/logs/, title: { eyebrow: "Last 24 hours", title: "Pipeline logs" } },
-  { match: /^\/dashboard\/development\/prompt-lab\/recipes/, title: { eyebrow: "Lab", title: "Recipe library" } },
-  { match: /^\/dashboard\/development\/prompt-lab/, title: { eyebrow: "Lab", title: "Prompt lab" } },
-  { match: /^\/dashboard\/development\/proposals/, title: { eyebrow: "Lab", title: "Prompt proposals" } },
-  { match: /^\/dashboard\/development\/system-status/, title: { eyebrow: "Infrastructure", title: "System status" } },
-  { match: /^\/dashboard\/development/, title: { eyebrow: "Lab", title: "Development" } },
-  { match: /^\/dashboard\/rating-ledger/, title: { eyebrow: "Lab", title: "Rating ledger" } },
-  { match: /^\/dashboard\/blog\/templates/, title: { eyebrow: "Content", title: "Blog templates" } },
-  { match: /^\/dashboard\/blog\/images/, title: { eyebrow: "Content", title: "Image library" } },
-  { match: /^\/dashboard\/blog/, title: { eyebrow: "Content", title: "Blog studio" } },
-  { match: /^\/dashboard\/settings/, title: { eyebrow: "Workspace", title: "Settings" } },
-];
-
-function resolveTitle(pathname: string): TitleMeta {
-  for (const entry of PAGE_TITLES) {
-    if (entry.match.test(pathname)) return entry.title;
-  }
-  return { eyebrow: "Dashboard", title: "Listing Elevate" };
-}
 
 interface Notification {
   id: string;
@@ -253,22 +217,14 @@ function NotificationsButton() {
 }
 
 function DashboardTopBar() {
-  const location = useLocation();
-  const titleMeta = useMemo(() => resolveTitle(location.pathname), [location.pathname]);
-
   return (
     <header className="le-top-bar">
-      {titleMeta.eyebrow && (
-        <div className="le-top-eyebrow" style={{ margin: 0, fontSize: 12 }}>
-          {titleMeta.eyebrow}
-        </div>
-      )}
-      <div style={{ flex: 1 }} />
       <div className="le-top-search">
         <Icon name="search" size={15} style={{ color: "var(--muted)" }} />
         <input placeholder="Search listings, agents, prompts…" aria-label="Search" />
         <span className="le-top-search-kbd">⌘K</span>
       </div>
+      <div style={{ flex: 1 }} />
       <div className="le-top-actions">
         <NotificationsButton />
         <ThemeToggle />
