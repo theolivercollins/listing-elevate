@@ -292,6 +292,11 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
           drone_push_in: true,
           top_down: true,
         };
+        // Track which positions in `batch` got an analysis so we can detect
+        // and retry the truncation case (Claude returns N items for a batch
+        // of M photos where N < M — without this, photos at positions
+        // N..M-1 were silently dropped from the pipeline).
+        const analyzedInBatch: boolean[] = new Array(batch.length).fill(false);
         for (let j = 0; j < results.length && j < batch.length; j++) {
           const claudeAnalysis = results[j];
           // Promote Claude's PhotoAnalysisResult to ExtendedPhotoAnalysis
@@ -308,11 +313,102 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
             },
           };
           allResults.push({ photo: batch[j], analysis: extended, provider: "anthropic" });
+          analyzedInBatch[j] = true;
+        }
+
+        // If Claude truncated, retry the missing photos one-at-a-time.
+        // Single-photo prompts are small enough that the model can't run
+        // out of tokens before completing the JSON array.
+        const missingPhotos = batch.filter((_, j) => !analyzedInBatch[j]);
+        if (missingPhotos.length > 0) {
+          await log(propertyId, "analysis", "warn",
+            `Claude returned ${results.length}/${batch.length} analyses for batch ${i} — retrying ${missingPhotos.length} missed photo(s) individually`);
+
+          for (const photo of missingPhotos) {
+            try {
+              const singleRes = await fetch(photo.file_url);
+              const singleType = singleRes.headers.get("content-type") ?? "";
+              const singleBuf = Buffer.from(await singleRes.arrayBuffer());
+              const singleMedia: "image/jpeg" | "image/png" | "image/webp" | "image/gif" =
+                singleType.includes("png") ? "image/png"
+                : singleType.includes("webp") ? "image/webp"
+                : singleType.includes("gif") ? "image/gif"
+                : "image/jpeg";
+
+              const singleResp = await client.messages.create({
+                model: ANALYSIS_MODEL,
+                max_tokens: 4096,
+                system: PHOTO_ANALYSIS_SYSTEM,
+                messages: [{
+                  role: "user",
+                  content: [
+                    { type: "image", source: { type: "base64", media_type: singleMedia, data: singleBuf.toString("base64") } },
+                    { type: "text", text: buildAnalysisUserPrompt(1) },
+                  ],
+                }],
+              });
+
+              const singleCost = computeClaudeCost(singleResp.usage as never, ANALYSIS_MODEL);
+              await recordCostEvent({
+                propertyId,
+                stage: "analysis",
+                provider: "anthropic",
+                unitsConsumed: singleCost.totalTokens,
+                unitType: "tokens",
+                costCents: singleCost.costCents,
+                metadata: {
+                  scope: "prod_photo_eyes_fallback_retry",
+                  model: ANALYSIS_MODEL,
+                  photo_id: photo.id,
+                  reason: "claude_batch_truncation",
+                  ...singleCost.breakdown,
+                },
+              });
+
+              const singleText = singleResp.content[0].type === "text" ? singleResp.content[0].text : "";
+              const singleMatch = singleText.match(/\[[\s\S]*\]/);
+              if (!singleMatch) {
+                await log(propertyId, "analysis", "error",
+                  `Single-photo retry returned no JSON for ${photo.file_name}`);
+                continue;
+              }
+              const singleResults: PhotoAnalysisResult[] = JSON.parse(singleMatch[0]);
+              if (singleResults.length === 0) continue;
+
+              const extended: ExtendedPhotoAnalysis = {
+                ...singleResults[0],
+                camera_height: "eye_level",
+                camera_tilt: "level",
+                frame_coverage: "medium",
+                motion_headroom: permissiveHeadroom,
+                motion_headroom_rationale: {
+                  note: "gemini failed; claude single-photo retry after batch truncation",
+                },
+              };
+              allResults.push({ photo, analysis: extended, provider: "anthropic" });
+            } catch (retryErr) {
+              const msg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+              await log(propertyId, "analysis", "error",
+                `Single-photo retry failed for ${photo.file_name}: ${msg}`);
+            }
+          }
         }
       } catch (err) {
         await log(propertyId, "analysis", "error", `Claude fallback batch ${i} failed: ${err}`);
       }
     }
+  }
+
+  // Final coverage check — warn if any photos still have no analysis after
+  // both Gemini and the Claude fallback (with single-photo retry). The
+  // pipeline can still proceed with whatever it has, but Oliver needs to
+  // see this in the logs because it usually points at an upstream config
+  // issue (missing GEMINI_API_KEY, expired Anthropic key, etc.).
+  const analyzedPhotoIds = new Set(allResults.map(r => r.photo.id));
+  const missingFromAnalysis = photos.filter(p => !analyzedPhotoIds.has(p.id));
+  if (missingFromAnalysis.length > 0) {
+    await log(propertyId, "analysis", "error",
+      `${missingFromAnalysis.length}/${photos.length} photos have NO analysis after Gemini + Claude fallback. Director will work from a smaller pool. Files: ${missingFromAnalysis.map(p => p.file_name).join(", ")}`);
   }
 
   // Selection algorithm — only video-viable photos are eligible
@@ -999,6 +1095,10 @@ export async function runAssembly(propertyId: string): Promise<void> {
 
   let horizontalUrl: string | null = null;
   let verticalUrl: string | null = null;
+  // Hoisted so the post-render metadata log can reference it even when
+  // the 9:16 render was skipped (skipVertical branch leaves verticalResult
+  // undeclared inside its block scope).
+  let verticalRenderMs: number | null = null;
   let assemblyErrored = false;
 
   // Use the assembly router to select the best provider.
@@ -1222,6 +1322,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
           throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
         }
         verticalUrl = verticalResult.videoUrl;
+        verticalRenderMs = verticalResult.renderTimeMs ?? null;
 
         const verticalDuration =
           verticalResult.durationSeconds ?? timelineDurationSeconds;
@@ -1275,7 +1376,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
           horizontalUrl,
           verticalUrl,
           horizontalRenderMs: horizontalResult.renderTimeMs,
-          verticalRenderMs: verticalResult.renderTimeMs,
+          verticalRenderMs,
         },
       );
     } catch (err) {
