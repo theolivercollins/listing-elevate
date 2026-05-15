@@ -248,6 +248,27 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
   return asJson(res);
 }
 
+// AI multi-turn chat — builds a post conversationally.
+export interface AIChatMessage { role: "user" | "assistant"; content: string; }
+export interface AIChatResponse {
+  reply: string;
+  body_html: string;
+  cost_cents: number;
+  usage: { input_tokens: number; output_tokens: number };
+  model: string;
+}
+export async function aiChat(
+  messages: AIChatMessage[],
+  currentHtml: string,
+): Promise<AIChatResponse> {
+  const res = await fetch("/api/blog/ai/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ messages, current_html: currentHtml }),
+  });
+  return asJson(res);
+}
+
 // Analyze template
 export async function analyzeTemplate(body_html: string): Promise<AnalyzeTemplateResult> {
   const res = await fetch("/api/blog/ai/analyze-template", {

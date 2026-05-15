@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PostEditor } from "@/components/blog/PostEditor";
 import { AIDraftModal } from "@/components/blog/AIDraftModal";
+import { AIChatModal } from "@/components/blog/AIChatModal";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
@@ -20,7 +21,7 @@ import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Loader2, Pause, Play, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Loader2, MessageSquare, Pause, Play, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "on-hold" | "readonly";
@@ -50,6 +51,7 @@ export default function BlogPostDetailPage() {
   const [searchParams] = useSearchParams();
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [aiOpen, setAIOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // AI generation state — lifted out of modal
@@ -134,12 +136,11 @@ export default function BlogPostDetailPage() {
     });
   }, [searchParams, isCompose]);
 
-  // Auto-open the AI modal when /posts/new?ai=1
+  // Auto-open the AI modal when /posts/new?ai=1 or chat modal when ?chat=1
   useEffect(() => {
     if (!isCompose) return;
-    if (searchParams.get("ai") === "1") {
-      setAIOpen(true);
-    }
+    if (searchParams.get("ai") === "1") setAIOpen(true);
+    if (searchParams.get("chat") === "1") setChatOpen(true);
   }, [searchParams, isCompose]);
 
   // AI generation mutation
@@ -377,8 +378,11 @@ export default function BlogPostDetailPage() {
                 <option value="">Start from template…</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
+              <Button size="sm" onClick={() => setChatOpen(true)}>
+                <MessageSquare className="mr-1 h-3.5 w-3.5" /> Chat with AI
+              </Button>
               <Button variant="outline" size="sm" onClick={() => setAIOpen(true)}>
-                <Sparkles className="mr-1 h-3.5 w-3.5" /> Generate with AI
+                <Sparkles className="mr-1 h-3.5 w-3.5" /> Quick draft
               </Button>
             </div>
           )}
@@ -535,6 +539,16 @@ export default function BlogPostDetailPage() {
         onClose={() => setAIOpen(false)}
         onSubmit={(input) => { startAIGen(input); setAIOpen(false); }}
         currentHtml={form.body_html}
+      />
+
+      <AIChatModal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        initialHtml={form.body_html}
+        onApply={(html) => {
+          setForm((f) => ({ ...f, body_html: html }));
+          setEditorMode("rich");
+        }}
       />
 
       {/* Post body preview dialog */}
