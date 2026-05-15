@@ -5,13 +5,12 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowUp, Check, Globe, Loader2, MessageSquare, Plus, Sparkles, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { aiChat, type AIChatMessage, type AIResearchSource } from "@/lib/blog/api-client";
-import { useAllyStatus, AllyPulse } from "./ally-status";
+import { useAllyStatus, AllyPulse, AutoGrowTextarea } from "./ally-status";
 
 /**
  * "Improve with AI" floating chat anchored to the bottom-right corner of the
@@ -345,13 +344,17 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.15 }}
-                  className={`rounded-xl border p-2.5 text-xs ${card.applied ? "border-emerald-300 bg-emerald-50" : "border-primary/30 bg-primary/5"}`}
+                  className={`rounded-xl border p-2.5 text-xs ${
+                    card.applied
+                      ? "border-emerald-500/60 bg-emerald-500/10 text-foreground"
+                      : "border-primary/30 bg-primary/5"
+                  }`}
                 >
-                  <div className="mb-2 flex items-center gap-1.5 font-medium">
+                  <div className={`mb-2 flex items-center gap-1.5 font-medium ${card.applied ? "text-emerald-700 dark:text-emerald-300" : ""}`}>
                     {card.applied ? (
                       <>
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                        Applied: {card.changedSummary}
+                        <Check className="h-3.5 w-3.5" />
+                        Applied — {card.changedSummary}. Scroll up to review.
                       </>
                     ) : (
                       <>
@@ -432,20 +435,15 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                   </PopoverContent>
                 </Popover>
 
-                <Textarea
+                <AutoGrowTextarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      send(input);
-                    }
-                  }}
+                  onChange={setInput}
+                  onSend={() => send(input)}
                   placeholder="Ask Ally to tweak this post…"
-                  rows={1}
-                  className="min-h-0 resize-none border-0 bg-transparent px-1 py-1 text-xs shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-                  style={{ maxHeight: 120 }}
                   disabled={chat.isPending}
+                  minRows={1}
+                  maxHeight={110}
+                  small
                 />
 
                 <Button

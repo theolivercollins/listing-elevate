@@ -27,16 +27,20 @@ export function PostEditor({
 }: PostEditorProps) {
   const editorRef = useRef<any>(null);
 
-  // When the parent flips from source/preview back into rich mode, push the
-  // textarea/source value into TinyMCE. TinyMCE manages its own buffer once
-  // editing starts, but we want it to pick up external edits cleanly.
+  // Push external value changes (template applied, Ally chat patch, mode
+  // toggle) into TinyMCE. Sync on every value change regardless of mode so
+  // chat-driven edits actually appear in the editor — previously this only
+  // synced on rich mode, which made Apply look like a no-op when the user
+  // was on Source/Preview.
   useEffect(() => {
-    if (mode !== "rich") return;
     const ed = editorRef.current;
-    if (ed && typeof ed.getContent === "function" && ed.getContent() !== value) {
-      ed.setContent(value);
+    if (ed && typeof ed.setContent === "function") {
+      const current = typeof ed.getContent === "function" ? ed.getContent() : "";
+      if (current !== value) {
+        ed.setContent(value || "");
+      }
     }
-  }, [mode, value]);
+  }, [value, mode]);
 
   return (
     <div className="rounded-md border bg-card">
