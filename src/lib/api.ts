@@ -317,3 +317,20 @@ export async function skipScene(id: string): Promise<void> {
 export async function fetchSystemPrompts(): Promise<{ analysis: string; director: string; qc: string }> {
   return apiFetch('/api/admin/prompts');
 }
+
+export interface MlsScrapeResult {
+  address: string | null;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  agent: string | null;
+  description: string | null;
+}
+
+export async function scrapeMls(url: string): Promise<MlsScrapeResult> {
+  return apiFetch('/api/properties/scrape-mls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url }),
+  });
+}

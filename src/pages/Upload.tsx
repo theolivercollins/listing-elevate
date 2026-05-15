@@ -22,11 +22,13 @@ import {
   Square,
   Camera,
   Check,
+  Search,
 } from "lucide-react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
-import { createProperty, generateVoiceoverPreview } from "@/lib/api";
+import { createProperty, generateVoiceoverPreview, scrapeMls } from "@/lib/api";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SiteNav } from "@/v2/components/SiteNav";
 import "@/v2/styles/v2.css";
 
@@ -50,7 +52,8 @@ const stepFade: Variants = {
   exit: { opacity: 0, y: -24, transition: { duration: 0.4, ease: EASE } },
 };
 
-const STEPS = ["Style", "Add-ons", "Property", "Photos"] as const;
+// Step order: Style → Property → Add-ons → Photos
+const STEPS = ["Style", "Property", "Add-ons", "Photos"] as const;
 type StepId = 0 | 1 | 2 | 3;
 
 const Upload = () => {
@@ -80,10 +83,13 @@ const Upload = () => {
   const [voiceoverPreviewUrl, setVoiceoverPreviewUrl] = useState<string | null>(null);
   const [voiceoverScript, setVoiceoverScript] = useState<string | null>(null);
   const [voiceoverStage, setVoiceoverStage] = useState<string | null>(null);
-  // The voice ID used to generate the current preview audio. When the
-  // user changes their selection after audio exists, the action becomes
-  // "Try this voice" — a TTS-only re-render that skips scrape + script.
   const [lastUsedVoiceId, setLastUsedVoiceId] = useState<string | null>(null);
+
+  // ─── MLS auto-fill state ───
+  const [mlsUrl, setMlsUrl] = useState("");
+  const [mlsScraping, setMlsScraping] = useState(false);
+  const [mlsError, setMlsError] = useState<string | null>(null);
+  const [mlsPanelOpen, setMlsPanelOpen] = useState(false);
 
   // ─── flow state ───
   const [submitted, setSubmitted] = useState(false);
@@ -150,6 +156,27 @@ const Upload = () => {
     }, 1200);
   };
 
+  // ─── MLS auto-fill ───
+  const handleMlsScrape = async () => {
+    if (!mlsUrl.trim()) return;
+    setMlsScraping(true);
+    setMlsError(null);
+    try {
+      const r = await scrapeMls(mlsUrl.trim());
+      if (r.address && !address) setAddress(r.address);
+      if (r.price != null && !price) setPrice(String(r.price));
+      if (r.bedrooms != null && !bedrooms) setBedrooms(String(r.bedrooms));
+      if (r.bathrooms != null && !bathrooms) setBathrooms(String(r.bathrooms));
+      if (r.agent && !agent) setAgent(r.agent);
+      setMlsPanelOpen(false);
+      setMlsUrl("");
+    } catch (e) {
+      setMlsError(e instanceof Error ? e.message : "Failed to fetch listing details");
+    } finally {
+      setMlsScraping(false);
+    }
+  };
+
   // ─── catalog ───
   const packages = [
     { id: "just_listed", name: "Just Listed", desc: "New to market", icon: Home },
@@ -164,10 +191,11 @@ const Upload = () => {
     { id: "60s", label: "60", price: 175, lifeCyclePrice: 190 },
   ];
 
+  // Horizontal is primary (index 0); vertical and both are coming soon.
   const orientations = [
-    { id: "vertical", label: "Vertical", ratio: "9:16", icon: RectangleVertical, extra: 0 },
     { id: "horizontal", label: "Horizontal", ratio: "16:9", icon: RectangleHorizontal, extra: 0 },
-    { id: "both", label: "Both", ratio: "9:16 + 16:9", icon: Square, extra: 10 },
+    { id: "vertical", label: "Vertical", ratio: "9:16", icon: RectangleVertical, extra: 0, comingSoon: true },
+    { id: "both", label: "Both", ratio: "9:16 + 16:9", icon: Square, extra: 10, comingSoon: true },
   ];
 
   const selectedDur = durations.find((d) => d.id === selectedDuration);
@@ -182,10 +210,10 @@ const Upload = () => {
   const needsDaysOnMarket = selectedPackage === "just_pended" || selectedPackage === "just_closed";
   const needsSoldPrice = selectedPackage === "just_closed";
 
-  // ─── per-step validity ───
+  // ─── per-step validity (new order: 0=Style, 1=Property, 2=Add-ons, 3=Photos) ───
   const step0Valid = !!(selectedPackage && selectedDuration && selectedOrientation);
-  const step1Valid = !addCustomRequest || customRequestText.trim().length > 0;
-  const step2Valid = !!(
+  // Step 1 = Property
+  const step1Valid = !!(
     address &&
     price &&
     bedrooms &&
@@ -194,10 +222,17 @@ const Upload = () => {
     (!needsDaysOnMarket || daysOnMarket) &&
     (!needsSoldPrice || soldPrice)
   );
+  // Step 2 = Add-ons
+  const step2Valid = !addCustomRequest || customRequestText.trim().length > 0;
   const step3Valid = files.length >= 10;
   const stepValidity = [step0Valid, step1Valid, step2Valid, step3Valid] as const;
   const canAdvance = stepValidity[step];
   const canSubmit = stepValidity.every(Boolean);
+
+  // Auto-select horizontal orientation (only available option for now)
+  useEffect(() => {
+    if (!selectedOrientation) setSelectedOrientation("horizontal");
+  }, [selectedOrientation]);
 
   // ─── files ───
   const handleFiles = useCallback(
@@ -226,20 +261,17 @@ const Upload = () => {
   // ─── voiceover generation ───
   const handleGenerateVoiceover = async () => {
     if (!selectedVoiceId || !selectedDuration) return;
-    // Voice-only re-render: we have a script + audio AND the voice changed.
     const isVoiceOnlyRerender =
       !!voiceoverScript &&
       !!voiceoverPreviewUrl &&
       !!lastUsedVoiceId &&
       selectedVoiceId !== lastUsedVoiceId;
 
-    // Full chain still needs a Compass URL.
     if (!isVoiceOnlyRerender && !compassUrl) return;
 
     const durationSec = parseInt(selectedDuration.replace(/s$/, ""), 10);
     setVoiceoverGenerating(true);
     setVoiceoverError(null);
-    // Don't clear script on voice-only re-render — we're sending it to the API.
     if (!isVoiceOnlyRerender) {
       setVoiceoverPreviewUrl(null);
       setVoiceoverScript(null);
@@ -247,7 +279,6 @@ const Upload = () => {
 
     let clearStages = () => {};
     if (isVoiceOnlyRerender) {
-      // TTS only — typically 5–10s. One short message is enough.
       setVoiceoverStage("Recording the new voiceover…");
     } else {
       setVoiceoverStage("Reading your listing…");
@@ -262,8 +293,6 @@ const Upload = () => {
         voiceId: selectedVoiceId,
         durationSec,
         compassUrl,
-        // Pass the existing script when only swapping voices; backend skips
-        // Compass + Claude entirely and just re-runs TTS.
         script: isVoiceOnlyRerender ? voiceoverScript! : undefined,
       });
       setVoiceoverPreviewUrl(result.audioUrl);
@@ -386,12 +415,11 @@ const Upload = () => {
       <div style={{ borderBottom: "1px solid var(--le-border)" }}>
         <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-8 md:px-12">
           <div>
-            <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>— New listing</span>
-            <h1 style={{ marginTop: 12, fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
-              {step === 0 && "Define the cut."}
-              {step === 1 && "Refine with add-ons."}
-              {step === 2 && "Tell us about the property."}
-              {step === 3 && "Upload your photography."}
+            <h1 style={{ fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
+              {step === 0 && "Create a New Video"}
+              {step === 1 && "Property Details"}
+              {step === 2 && "Add Upgrades"}
+              {step === 3 && "Upload Your Photos"}
             </h1>
           </div>
           {hasPresets && (
@@ -456,11 +484,10 @@ const Upload = () => {
           <AnimatePresence mode="wait">
             {/* ─── Step 0 — Style ─── */}
             {step === 0 && (
-              <motion.div key="step-0" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-16">
+              <motion.div key="step-0" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
                 {/* Package */}
                 <section>
-                  <span className="label text-muted-foreground">— Package</span>
-                  <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Choose a story.</h2>
+                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Video Type</h2>
                   <div className="mt-8 grid gap-px md:grid-cols-2" style={{ background: "var(--le-border)" }}>
                     {packages.map((pkg) => {
                       const Icon = pkg.icon;
@@ -498,8 +525,7 @@ const Upload = () => {
 
                 {/* Duration */}
                 <section>
-                  <span className="label text-muted-foreground">— Duration</span>
-                  <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Set the length.</h2>
+                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Duration</h2>
                   <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
                     {durations.map((d) => {
                       const sel = selectedDuration === d.id;
@@ -532,18 +558,19 @@ const Upload = () => {
 
                 {/* Orientation */}
                 <section>
-                  <span className="label text-muted-foreground">— Format</span>
-                  <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Pick your canvas.</h2>
+                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Format</h2>
                   <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
                     {orientations.map((o) => {
                       const Icon = o.icon;
                       const sel = selectedOrientation === o.id;
+                      const isComingSoon = "comingSoon" in o && o.comingSoon;
                       return (
                         <button
                           key={o.id}
                           type="button"
-                          onClick={() => setSelectedOrientation(o.id)}
-                          className="group flex items-center justify-between p-6 text-left transition-all duration-500 ease-cinematic"
+                          onClick={() => { if (!isComingSoon) setSelectedOrientation(o.id); }}
+                          disabled={isComingSoon}
+                          className="group flex items-center justify-between p-6 text-left transition-all duration-500 ease-cinematic disabled:cursor-not-allowed disabled:opacity-50"
                           style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <div className="flex items-center gap-5">
@@ -559,11 +586,17 @@ const Upload = () => {
                               <div className="tabular text-[11px] text-muted-foreground">{o.ratio}</div>
                             </div>
                           </div>
-                          {o.extra > 0 && !isLifeCycle && (
-                            <span className="tabular text-xs text-muted-foreground">+${o.extra}</span>
-                          )}
-                          {o.extra > 0 && isLifeCycle && (
-                            <span className="label text-accent">— Included</span>
+                          {isComingSoon ? (
+                            <span className="label text-accent">— Soon</span>
+                          ) : (
+                            <>
+                              {o.extra > 0 && !isLifeCycle && (
+                                <span className="tabular text-xs text-muted-foreground">+${o.extra}</span>
+                              )}
+                              {o.extra > 0 && isLifeCycle && (
+                                <span className="label text-accent">— Included</span>
+                              )}
+                            </>
                           )}
                         </button>
                       );
@@ -573,83 +606,272 @@ const Upload = () => {
               </motion.div>
             )}
 
-            {/* ─── Step 1 — Add-ons ─── */}
+            {/* ─── Step 1 — Property ─── */}
             {step === 1 && (
               <motion.div key="step-1" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
                 <section>
-                  <span className="label text-muted-foreground">— Optional</span>
-                  <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Refine the experience.</h2>
+                  {/* MLS auto-fill */}
+                  <div className="mb-8">
+                    {!mlsPanelOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => { setMlsPanelOpen(true); setMlsError(null); }}
+                        className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-accent underline underline-offset-4 hover:text-accent/80 transition-colors"
+                      >
+                        <Search className="h-3.5 w-3.5" />
+                        Auto-fill from MLS?
+                      </button>
+                    ) : (
+                      <div className="space-y-3 border border-border p-5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-semibold tracking-[-0.01em]">Fetch from listing</span>
+                          <button
+                            type="button"
+                            onClick={() => { setMlsPanelOpen(false); setMlsError(null); setMlsUrl(""); }}
+                            className="text-muted-foreground hover:text-foreground transition-colors"
+                            aria-label="Close"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <Input
+                          value={mlsUrl}
+                          onChange={(e) => setMlsUrl(e.target.value)}
+                          placeholder="Paste listing URL"
+                          onKeyDown={(e) => e.key === "Enter" && handleMlsScrape()}
+                          disabled={mlsScraping}
+                        />
+                        {mlsError && (
+                          <p className="text-xs text-red-500">{mlsError}</p>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={handleMlsScrape}
+                          disabled={!mlsUrl.trim() || mlsScraping}
+                          className="w-full"
+                        >
+                          {mlsScraping ? (
+                            <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> Fetching listing details…</>
+                          ) : (
+                            "Auto-fill"
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-8">
+                    <div>
+                      <Label className="label text-muted-foreground">Address</Label>
+                      <AddressAutocomplete
+                        value={address}
+                        onChange={setAddress}
+                        placeholder="208 Berry Street, Brooklyn, NY"
+                        className="mt-3"
+                      />
+                    </div>
+
+                    <div className="grid gap-6 md:grid-cols-3">
+                      <div>
+                        <Label className="label text-muted-foreground">Price</Label>
+                        <div className="relative mt-3">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                            $
+                          </span>
+                          <Input
+                            type="number"
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            placeholder="2,400,000"
+                            className="tabular pl-7"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="label text-muted-foreground">Bedrooms</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={bedrooms}
+                          onChange={(e) => setBedrooms(e.target.value)}
+                          placeholder="3"
+                          className="tabular mt-3"
+                        />
+                      </div>
+                      <div>
+                        <Label className="label text-muted-foreground">Bathrooms</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          value={bathrooms}
+                          onChange={(e) => setBathrooms(e.target.value)}
+                          placeholder="2.5"
+                          className="tabular mt-3"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="label text-muted-foreground">Listing agent</Label>
+                      <Input
+                        value={agent}
+                        onChange={(e) => setAgent(e.target.value)}
+                        placeholder="Jane Smith"
+                        className="mt-3"
+                      />
+                    </div>
+
+                    {needsDaysOnMarket && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, ease: EASE }}
+                        className="grid gap-6 md:grid-cols-2"
+                      >
+                        <div>
+                          <Label className="label text-muted-foreground">Days on market</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={daysOnMarket}
+                            onChange={(e) => setDaysOnMarket(e.target.value)}
+                            placeholder="14"
+                            className="tabular mt-3"
+                          />
+                        </div>
+                        {needsSoldPrice && (
+                          <div>
+                            <Label className="label text-muted-foreground">Sold price</Label>
+                            <div className="relative mt-3">
+                              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
+                                $
+                              </span>
+                              <Input
+                                type="number"
+                                value={soldPrice}
+                                onChange={(e) => setSoldPrice(e.target.value)}
+                                placeholder="2,500,000"
+                                className="tabular pl-7"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </div>
+                </section>
+              </motion.div>
+            )}
+
+            {/* ─── Step 2 — Add-ons ─── */}
+            {step === 2 && (
+              <motion.div key="step-2" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
+                <section>
+                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Optional Upgrades</h2>
                   <p className="mt-2 max-w-md text-sm text-muted-foreground">
                     Each add-on is optional. Voice clone and AI voiceover are mutually exclusive — pick one or neither.
                   </p>
 
                   <div className="mt-10 grid gap-px" style={{ background: "var(--le-border)" }}>
-                    {[
-                      {
-                        active: addVoiceover,
-                        toggle: () => {
-                          const next = !addVoiceover;
-                          setAddVoiceover(next);
-                          if (next) setAddVoiceClone(false);
-                          // Reset voiceover panel when toggled off
-                          if (!next) {
-                            setSelectedVoiceId(null);
-                            setCompassUrl("");
-                            setVoiceoverPreviewUrl(null);
-                            setVoiceoverScript(null);
-                            setVoiceoverError(null);
-                          }
-                        },
-                        icon: Mic,
-                        label: "AI voiceover",
-                        desc: "Studio-quality narration generated from a script tailored to the listing.",
-                      },
-                      {
-                        active: addVoiceClone,
-                        toggle: () => {
-                          setAddVoiceClone(!addVoiceClone);
-                          if (!addVoiceClone) setAddVoiceover(false);
-                        },
-                        icon: Mic,
-                        label: "Voice clone",
-                        desc: "Use a sample of your own voice. Setup happens after submission.",
-                      },
-                      {
-                        active: addCustomRequest,
-                        toggle: () => setAddCustomRequest(!addCustomRequest),
-                        icon: Sparkles,
-                        label: "Custom request",
-                        desc: "Specific shots, music, or pacing notes for the production team.",
-                      },
-                    ].map((addon) => {
-                      const Icon = addon.icon;
+                    {/* AI voiceover */}
+                    {(() => {
+                      const active = addVoiceover;
                       return (
                         <button
-                          key={addon.label}
                           type="button"
-                          onClick={addon.toggle}
+                          onClick={() => {
+                            const next = !addVoiceover;
+                            setAddVoiceover(next);
+                            if (next) setAddVoiceClone(false);
+                            if (!next) {
+                              setSelectedVoiceId(null);
+                              setCompassUrl("");
+                              setVoiceoverPreviewUrl(null);
+                              setVoiceoverScript(null);
+                              setVoiceoverError(null);
+                            }
+                          }}
                           className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: addon.active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
+                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
                         >
                           <span
                             className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
-                              addon.active
+                              active
                                 ? "border-foreground bg-foreground text-background"
                                 : "border-border text-muted-foreground group-hover:border-foreground/40"
                             }`}
                           >
-                            <Icon className="h-4 w-4" strokeWidth={1.5} />
+                            <Mic className="h-4 w-4" strokeWidth={1.5} />
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-baseline justify-between gap-3">
-                              <h3 className="text-base font-semibold tracking-[-0.01em]">{addon.label}</h3>
+                              <h3 className="text-base font-semibold tracking-[-0.01em]">AI voiceover</h3>
                               <span className="tabular text-xs text-muted-foreground">+ $15</span>
                             </div>
-                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">{addon.desc}</p>
+                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                              Studio-quality narration generated from a script tailored to the listing.
+                            </p>
                           </div>
                         </button>
                       );
-                    })}
+                    })()}
+
+                    {/* Voice clone — coming soon */}
+                    <div
+                      className="flex items-start gap-6 p-6 opacity-50 cursor-not-allowed"
+                      style={{ background: "var(--le-bg)" }}
+                    >
+                      <span className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center border border-border text-muted-foreground">
+                        <Mic className="h-4 w-4" strokeWidth={1.5} />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <h3 className="text-base font-semibold tracking-[-0.01em]">Voice clone</h3>
+                            <span className="label text-accent">— Coming soon</span>
+                          </div>
+                          <span className="tabular text-xs text-muted-foreground">+ $15</span>
+                        </div>
+                        <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                          Use a sample of your own voice. Setup happens after submission.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Custom request */}
+                    {(() => {
+                      const active = addCustomRequest;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => setAddCustomRequest(!addCustomRequest)}
+                          className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
+                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
+                        >
+                          <span
+                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
+                              active
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border text-muted-foreground group-hover:border-foreground/40"
+                            }`}
+                          >
+                            <Sparkles className="h-4 w-4" strokeWidth={1.5} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <h3 className="text-base font-semibold tracking-[-0.01em]">Custom request</h3>
+                              <span className="tabular text-xs text-muted-foreground">+ $15</span>
+                            </div>
+                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                              Specific shots, music, or pacing notes for the production team.
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })()}
                   </div>
 
                   <AnimatePresence>
@@ -777,126 +999,13 @@ const Upload = () => {
               </motion.div>
             )}
 
-            {/* ─── Step 2 — Property ─── */}
-            {step === 2 && (
-              <motion.div key="step-2" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
-                <section>
-                  <span className="label text-muted-foreground">— Property</span>
-                  <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Listing details.</h2>
-
-                  <div className="mt-10 space-y-8">
-                    <div>
-                      <Label className="label text-muted-foreground">Address</Label>
-                      <Input
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        placeholder="208 Berry Street, Brooklyn, NY"
-                        className="mt-3"
-                      />
-                    </div>
-
-                    <div className="grid gap-6 md:grid-cols-3">
-                      <div>
-                        <Label className="label text-muted-foreground">Price</Label>
-                        <div className="relative mt-3">
-                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
-                            $
-                          </span>
-                          <Input
-                            type="number"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            placeholder="2,400,000"
-                            className="tabular pl-7"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="label text-muted-foreground">Bedrooms</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={bedrooms}
-                          onChange={(e) => setBedrooms(e.target.value)}
-                          placeholder="3"
-                          className="tabular mt-3"
-                        />
-                      </div>
-                      <div>
-                        <Label className="label text-muted-foreground">Bathrooms</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          step={0.5}
-                          value={bathrooms}
-                          onChange={(e) => setBathrooms(e.target.value)}
-                          placeholder="2.5"
-                          className="tabular mt-3"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label className="label text-muted-foreground">Listing agent</Label>
-                      <Input
-                        value={agent}
-                        onChange={(e) => setAgent(e.target.value)}
-                        placeholder="Jane Smith"
-                        className="mt-3"
-                      />
-                    </div>
-
-                    {needsDaysOnMarket && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, ease: EASE }}
-                        className="grid gap-6 md:grid-cols-2"
-                      >
-                        <div>
-                          <Label className="label text-muted-foreground">Days on market</Label>
-                          <Input
-                            type="number"
-                            min={0}
-                            value={daysOnMarket}
-                            onChange={(e) => setDaysOnMarket(e.target.value)}
-                            placeholder="14"
-                            className="tabular mt-3"
-                          />
-                        </div>
-                        {needsSoldPrice && (
-                          <div>
-                            <Label className="label text-muted-foreground">Sold price</Label>
-                            <div className="relative mt-3">
-                              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
-                                $
-                              </span>
-                              <Input
-                                type="number"
-                                value={soldPrice}
-                                onChange={(e) => setSoldPrice(e.target.value)}
-                                placeholder="2,500,000"
-                                className="tabular pl-7"
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    )}
-                  </div>
-                </section>
-              </motion.div>
-            )}
-
             {/* ─── Step 3 — Photos ─── */}
             {step === 3 && (
               <motion.div key="step-3" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-10">
                 <section>
                   <div className="flex items-baseline justify-between">
                     <div>
-                      <span className="label text-muted-foreground">— Source material</span>
-                      <h2 className="mt-4 text-xl font-semibold tracking-[-0.01em]">Bring in the photos.</h2>
-                      <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                      <p className="max-w-md text-sm text-muted-foreground">
                         Drop or browse 10 to 60 high-resolution images. JPG, PNG, HEIC, or WebP.
                       </p>
                     </div>
