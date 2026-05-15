@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { PostEditor } from "@/components/blog/PostEditor";
 import { AIDraftModal } from "@/components/blog/AIDraftModal";
 import { AIChatModal } from "@/components/blog/AIChatModal";
+import BlogPostChatCompose from "./BlogPostChatCompose";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
@@ -46,9 +47,18 @@ const empty: FormState = {
 export default function BlogPostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const isCompose = !id || id === "new";
+  const [searchParams] = useSearchParams();
+
+  // /posts/new?chat=1 now renders a dedicated AI-first compose page that
+  // takes over the whole route — chat on the left, form sidebar on the right,
+  // Save draft / Publish now pinned in the header. The old "Chat with AI"
+  // modal (AIChatModal) is still wired below for the edit flow.
+  if (isCompose && searchParams.get("chat") === "1") {
+    return <BlogPostChatCompose />;
+  }
+
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [aiOpen, setAIOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -136,11 +146,11 @@ export default function BlogPostDetailPage() {
     });
   }, [searchParams, isCompose]);
 
-  // Auto-open the AI modal when /posts/new?ai=1 or chat modal when ?chat=1
+  // Auto-open the quick-AI-draft modal when /posts/new?ai=1.
+  // (?chat=1 routes to BlogPostChatCompose above, not the modal.)
   useEffect(() => {
     if (!isCompose) return;
     if (searchParams.get("ai") === "1") setAIOpen(true);
-    if (searchParams.get("chat") === "1") setChatOpen(true);
   }, [searchParams, isCompose]);
 
   // AI generation mutation
