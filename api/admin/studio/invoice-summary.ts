@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../../../lib/auth';
-import { buildInvoice } from '../../../lib/operator-studio/invoice-data';
-import { formatInvoiceSummary } from '../../../lib/operator-studio/invoice';
+import { requireAdmin } from '../../../lib/auth.js';
+import { buildInvoice } from '../../../lib/operator-studio/invoice-data.js';
+import { formatInvoiceSummary } from '../../../lib/operator-studio/invoice.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);

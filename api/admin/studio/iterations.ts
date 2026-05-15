@@ -2,8 +2,8 @@
 // filtered by room_type. Created to avoid a dependency on the Lab listing-scoped
 // API surface, which requires a listing_id + scene_id chain.
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../../../lib/auth';
-import { getSupabase } from '../../../lib/client';
+import { requireAdmin } from '../../../lib/auth.js';
+import { getSupabase } from '../../../lib/client.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../../../../lib/auth';
-import { getClient, updateClient, archiveClient } from '../../../../lib/operator-studio/clients';
+import { requireAdmin } from '../../../../lib/auth.js';
+import { getClient, updateClient, archiveClient } from '../../../../lib/operator-studio/clients.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
