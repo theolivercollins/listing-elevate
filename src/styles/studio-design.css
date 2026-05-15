@@ -586,7 +586,7 @@
 
 /* ─── Scene strip card ───────────────────────────────────────────── */
 .studio-scope .studio-scene-card {
-  flex-none;
+  flex: none;
   width: 200px;
   background: var(--le-surface);
   border-radius: var(--le-radius-sm);
