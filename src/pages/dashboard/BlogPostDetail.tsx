@@ -564,8 +564,9 @@ export default function BlogPostDetailPage() {
 
       {/* Improve-with-Ally floating chat — only mount on existing posts; the
           dedicated chat-compose page handles new-post flow. */}
-      {!isCompose && (
+      {!isCompose && id && (
         <AllyFloatingChat
+          postId={id}
           contextLabel={
             mode === "edit-live" ? "Editing the live post"
               : mode === "on-hold" ? "Editing a held post"

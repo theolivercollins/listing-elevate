@@ -6,11 +6,13 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowUp, Check, Eye, Globe, Loader2, MessageSquare, Plus, Sparkles, Wand2, X,
+  ArrowUp, Check, Eye, FileText, Globe, Image as ImageIcon, Loader2, MessageSquare,
+  Paperclip, Plus, RotateCcw, Sparkles, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { aiChat, type AIChatMessage, type AIResearchSource } from "@/lib/blog/api-client";
-import { useAllyStatus, AllyPulse, AutoGrowTextarea } from "./ally-status";
+import type { AIAttachment } from "@/lib/blog/types";
+import { AllyThinking, AutoGrowTextarea } from "./ally-status";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -54,6 +56,8 @@ interface ProposalCard {
 }
 
 interface Props {
+  /** Post id — used to scope the persisted chat thread in localStorage. */
+  postId: string;
   /** Used as the chat's "current_html" so each turn anchors on the latest draft. */
   currentBodyHtml: string;
   /** Existing form values — chat sees them as the starting state. */
@@ -78,6 +82,15 @@ const STARTERS = [
   "Punchier closing CTA",
 ];
 
+const MAX_ATTACHMENTS = 5;
+const MAX_FILE_BYTES = 3_500_000;
+
+function formatBytes(n: number) {
+  if (n < 1024) return `${Math.round(n)} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
 function summariseChanges(patch: FormPatch): string {
   const bits: string[] = [];
   if (patch.title !== undefined) bits.push("title");
@@ -93,20 +106,89 @@ function summariseChanges(patch: FormPatch): string {
   return bits.slice(0, -1).join(", ") + ", and " + bits.slice(-1);
 }
 
-export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLabel }: Props) {
+// ---------------------------------------------------------------------------
+// Persistence — keyed by postId. Stores the chat thread + proposals + research
+// sources + research-mode + cost so reopening the panel resumes where you
+// left off. Attachments are NOT persisted (they're one-shot per turn and would
+// blow the localStorage budget). Schema is versioned so we can migrate later.
+// ---------------------------------------------------------------------------
+
+interface PersistedChat {
+  v: 1;
+  messages: Array<AIChatMessage & { suggestResearch?: boolean; queued?: boolean }>;
+  proposals: ProposalCard[];
+  sources: AIResearchSource[];
+  totalCostCents: number;
+  useResearch: boolean;
+}
+
+const STORAGE_PREFIX = "ally-chat:";
+const MAX_PERSISTED_MESSAGES = 60;
+
+function storageKey(postId: string) {
+  return `${STORAGE_PREFIX}${postId}`;
+}
+
+function loadPersisted(postId: string): PersistedChat | null {
+  if (!postId || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(storageKey(postId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.v !== 1 || !Array.isArray(parsed.messages)) return null;
+    return parsed as PersistedChat;
+  } catch {
+    return null;
+  }
+}
+
+function savePersisted(postId: string, state: PersistedChat) {
+  if (!postId || typeof window === "undefined") return;
+  try {
+    const trimmed: PersistedChat = {
+      ...state,
+      messages: state.messages.slice(-MAX_PERSISTED_MESSAGES),
+    };
+    window.localStorage.setItem(storageKey(postId), JSON.stringify(trimmed));
+  } catch {
+    // Quota exceeded or storage disabled — silently skip; chat still works in-memory.
+  }
+}
+
+function clearPersisted(postId: string) {
+  if (!postId || typeof window === "undefined") return;
+  try { window.localStorage.removeItem(storageKey(postId)); } catch { /* ignore */ }
+}
+
+export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, contextLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [diffCard, setDiffCard] = useState<ProposalCard | null>(null);
-  // Messages support three transient flags:
-  //   pending  — assistant placeholder while waiting for a response
-  //   queued   — user message waiting its turn (sent while another was in-flight)
-  //   suggestResearch — backend flag for "want to research?"
-  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; queued?: boolean; suggestResearch?: boolean })[]>([]);
-  const [proposals, setProposals] = useState<ProposalCard[]>([]);
+
+  // Hydrate from localStorage on first render so reopening Ally on the same
+  // post resumes the conversation. New posts start with empty state.
+  const initial = (typeof window !== "undefined" ? loadPersisted(postId) : null);
+  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; queued?: boolean; suggestResearch?: boolean })[]>(initial?.messages ?? []);
+  const [proposals, setProposals] = useState<ProposalCard[]>(initial?.proposals ?? []);
   const [input, setInput] = useState("");
-  const [useResearch, setUseResearch] = useState(false);
-  const [sources, setSources] = useState<AIResearchSource[]>([]);
-  const [totalCostCents, setTotalCostCents] = useState(0);
+  const [useResearch, setUseResearch] = useState(initial?.useResearch ?? false);
+  const [sources, setSources] = useState<AIResearchSource[]>(initial?.sources ?? []);
+  const [totalCostCents, setTotalCostCents] = useState(initial?.totalCostCents ?? 0);
+  // Attachments are one-shot per turn — never persisted, consumed on send.
+  const [attachments, setAttachments] = useState<AIAttachment[]>([]);
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Save thread to localStorage on every change (debounced via React batching).
+  useEffect(() => {
+    savePersisted(postId, {
+      v: 1,
+      messages: messages.filter((m) => !m.pending), // drop transient placeholders
+      proposals,
+      sources,
+      totalCostCents,
+      useResearch,
+    });
+  }, [postId, messages, proposals, sources, totalCostCents, useResearch]);
 
   // Always send the latest current state to the API — refs avoid closure
   // staleness on the in-flight mutation.
@@ -120,12 +202,13 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
   }, [messages.length, proposals.length, open]);
 
   const chat = useMutation({
-    mutationFn: async (args: { historyForApi: AIChatMessage[] }) => {
+    mutationFn: async (args: { historyForApi: AIChatMessage[]; attachments?: AIAttachment[] }) => {
       const { currentBodyHtml: html } = latestRef.current;
       const r = await aiChat(args.historyForApi, html, {
         templateId: null,
         includeRecentPosts: true,
         researchMode: useResearch ? "always" : "auto",
+        attachments: args.attachments && args.attachments.length ? args.attachments : undefined,
       });
       return { r };
     },
@@ -221,7 +304,9 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
       userMsg,
     ];
     setMessages((prev) => [...prev.filter((m) => !m.pending), userMsg, placeholder]);
-    chat.mutate({ historyForApi });
+    const sentAttachments = attachments;
+    setAttachments([]); // one-shot — clear immediately so user sees them consumed
+    chat.mutate({ historyForApi, attachments: sentAttachments });
   }
 
   // When the current turn finishes, promote the first queued message and fire it.
@@ -246,11 +331,54 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
       return copy;
     });
     // Defer mutate to next tick so React commits the setMessages first.
-    setTimeout(() => chat.mutate({ historyForApi }), 0);
+    setTimeout(() => chat.mutate({ historyForApi }), 0); // no attachments on queued turns
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.isPending]);
 
-  const liveStatus = useAllyStatus(chat.isPending, useResearch);
+  // Status is owned by <AllyThinking /> directly inside the pending bubble.
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    const slots = MAX_ATTACHMENTS - attachments.length;
+    for (const file of files.slice(0, slots)) {
+      if (file.size > MAX_FILE_BYTES) { toast.error(`${file.name} > 3MB`); continue; }
+      const isPdf = file.type === "application/pdf" || file.name.endsWith(".pdf");
+      const isImage = file.type.startsWith("image/");
+      const isText = file.type.startsWith("text/") || file.name.endsWith(".csv") || file.name.endsWith(".txt");
+      if (!isPdf && !isImage && !isText) { toast.error(`${file.name}: unsupported`); continue; }
+      if (isText) {
+        const text = await file.text();
+        if (text.length > 100_000) { toast.error(`${file.name}: > 100KB`); continue; }
+        setAttachments((p) => [...p, { kind: "text", filename: file.name, data: text }]);
+      } else {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let binary = "";
+        const chunk = 0x8000;
+        for (let i = 0; i < buf.length; i += chunk) {
+          binary += String.fromCharCode.apply(null, Array.from(buf.subarray(i, i + chunk)));
+        }
+        const b64 = btoa(binary);
+        setAttachments((p) => [...p, {
+          kind: isPdf ? "pdf" : "image",
+          filename: file.name,
+          data: b64,
+          media_type: isPdf ? "application/pdf" : (file.type || "image/jpeg"),
+        }]);
+      }
+    }
+  }
+
+  function resetChat() {
+    if (messages.length === 0 && proposals.length === 0) return;
+    if (!window.confirm("Clear this conversation? The post itself isn't affected.")) return;
+    setMessages([]);
+    setProposals([]);
+    setSources([]);
+    setTotalCostCents(0);
+    setAttachments([]);
+    clearPersisted(postId);
+  }
 
   function enableResearchAndRetry() {
     // Find the last user message and resend it with research on.
@@ -329,6 +457,17 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                   ${(totalCostCents / 100).toFixed(3)}
                 </span>
               )}
+              {(messages.length > 0 || proposals.length > 0) && (
+                <button
+                  type="button"
+                  onClick={resetChat}
+                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  aria-label="Reset conversation"
+                  title="Reset this conversation"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -373,8 +512,11 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                     }
                   >
                     <div className="flex items-center gap-1.5">
-                      {m.role === "assistant" && m.pending && <AllyPulse size={11} />}
-                      <span>{m.pending ? liveStatus : m.content}</span>
+                      {m.role === "assistant" && m.pending ? (
+                        <AllyThinking active research={useResearch} size="sm" />
+                      ) : (
+                        <span>{m.content}</span>
+                      )}
                       {m.queued && (
                         <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
                           queued
@@ -493,6 +635,25 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
 
             {/* Composer */}
             <div className="border-t bg-background/95 px-3 py-2 backdrop-blur">
+              {attachments.length > 0 && (
+                <div className="mb-1.5 flex flex-wrap gap-1">
+                  {attachments.map((a, i) => (
+                    <div key={i} className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[10px]">
+                      {a.kind === "pdf" ? <FileText className="h-2.5 w-2.5" /> : a.kind === "image" ? <ImageIcon className="h-2.5 w-2.5" /> : <FileText className="h-2.5 w-2.5" />}
+                      <span className="max-w-[120px] truncate">{a.filename}</span>
+                      <span className="text-muted-foreground">{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+                      <button
+                        type="button"
+                        onClick={() => setAttachments((p) => p.filter((_, idx) => idx !== i))}
+                        className="rounded p-0.5 hover:bg-background"
+                        aria-label="Remove attachment"
+                      >
+                        <X className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex items-end gap-1.5 rounded-2xl border bg-background px-2 py-1.5 shadow-sm transition focus-within:border-primary/40">
                 <Popover>
                   <PopoverTrigger asChild>
@@ -500,7 +661,22 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                       <Plus className="h-3.5 w-3.5" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-64 p-2">
+                  <PopoverContent align="start" className="w-72 p-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={attachments.length >= MAX_ATTACHMENTS}
+                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                    >
+                      <Paperclip className="h-4 w-4" />
+                      <div className="flex-1">
+                        <div>Attach file</div>
+                        <div className="text-xs text-muted-foreground">
+                          PDF, image, CSV, .txt · up to {MAX_ATTACHMENTS} · 3 MB each · one-shot per turn
+                        </div>
+                      </div>
+                    </button>
+                    <div className="my-1 border-t" />
                     <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-muted">
                       <input
                         type="checkbox"
@@ -519,6 +695,14 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                     </label>
                   </PopoverContent>
                 </Popover>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.txt,application/pdf,image/*,text/csv,text/plain"
+                  multiple
+                  className="hidden"
+                  onChange={onFileChange}
+                />
 
                 <AutoGrowTextarea
                   value={input}
@@ -533,7 +717,7 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                 <Button
                   type="button"
                   onClick={() => send(input)}
-                  disabled={!input.trim()}
+                  disabled={!input.trim() && attachments.length === 0}
                   className="h-7 w-7 shrink-0 rounded-full p-0"
                   title={chat.isPending ? "Queue for next" : "Send"}
                 >
