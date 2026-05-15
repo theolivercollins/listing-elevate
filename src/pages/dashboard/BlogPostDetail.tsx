@@ -457,15 +457,15 @@ export default function BlogPostDetailPage() {
             </Field>
           </Card>
 
-          <Card padding={0} style={{ overflow: "hidden" }}>
-            <PostEditor
-              value={form.body_html}
-              onChange={(html) => setForm({ ...form, body_html: html })}
-              onInsertImageClick={() => setPickerOpen(true)}
-              mode={editorMode}
-              onModeChange={setEditorMode}
-            />
-          </Card>
+          {/* No Card wrapper — PostEditor renders its own bordered container.
+              overflow:hidden would clip Tiptap table-resize handles. */}
+          <PostEditor
+            value={form.body_html}
+            onChange={(html) => setForm({ ...form, body_html: html })}
+            onInsertImageClick={() => setPickerOpen(true)}
+            mode={editorMode}
+            onModeChange={setEditorMode}
+          />
         </div>
 
         {/* Right: sidebar */}

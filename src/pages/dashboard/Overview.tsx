@@ -235,9 +235,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
 
   const inProgressForUI = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).slice(0, 5);
 
-  // ── top agents: derive from live allProps or fall back to sample ──────────
-  // Group case-insensitively on a normalized key so "Adam" and "adam" collapse;
-  // store the prettiest variant we saw + the brokerage for display.
+  // ── top agents: derive from live allProps only count COMPLETED deliveries ─
+  // Group case-insensitively so "Adam" / "adam" collapse, drop entries with
+  // fewer than 2 completed videos (filters out one-off test uploads), and
+  // require a real-looking name (>= 2 alphanumeric chars). If nothing meets
+  // the threshold we render an empty state instead of sample data.
+  const MIN_COMPLETED_FOR_LEADERBOARD = 2;
   const agentMap = new Map<string, { display: string; company: string; videos: number; spend: number }>();
   const titleCase = (s: string) =>
     s
@@ -247,8 +250,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
       .join(" ");
   for (const p of allProps) {
+    if (p.status !== "complete") continue;
     const raw = (p.listing_agent ?? "").trim();
-    if (!raw) continue;
+    if (raw.replace(/[^a-z0-9]/gi, "").length < 2) continue;
     const key = raw.toLowerCase();
     const e = agentMap.get(key) || { display: titleCase(raw), company: p.brokerage ?? "", videos: 0, spend: 0 };
     e.videos += 1;
@@ -257,11 +261,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     agentMap.set(key, e);
   }
   const topAgentsFromLive = Array.from(agentMap.values())
+    .filter((e) => e.videos >= MIN_COMPLETED_FOR_LEADERBOARD)
     .sort((a, b) => b.spend - a.spend || b.videos - a.videos)
     .slice(0, 5)
     .map((e) => ({ name: e.display, company: e.company, videos: e.videos, spend: e.spend }));
 
-  const agentsForUI = topAgentsFromLive.length > 0 ? topAgentsFromLive : SAMPLE_AGENTS.slice(0, 5);
+  const agentsForUI = topAgentsFromLive;
 
   // ── KPI metrics ──────────────────────────────────────────────────────────
   const rangeLen = chartRange === "7d" ? 7 : chartRange === "30d" ? 30 : 14;
@@ -598,6 +603,11 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             </button>
           </div>
           <div>
+            {agentsForUI.length === 0 && (
+              <div style={{ padding: "28px 4px", fontSize: 13, color: "var(--muted)" }}>
+                Not enough delivered listings yet to rank agents.
+              </div>
+            )}
             {agentsForUI.map((a, i) => {
               const sparkData = allProps.length > 0
                 ? agentSparkline(a.name, allProps)

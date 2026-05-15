@@ -303,11 +303,19 @@ export default function Finances() {
   const totalSpend14 = costSeries.reduce((s, c) => s + c, 0);
 
   // ── KPI: Spend · MTD ────────────────────────────────────────────
+  // cost-breakdown already uses a rolling-30d window from the API, which is
+  // the best available MTD approximation without a dedicated calendar-month query.
+  // Fallback: filter daily_stats to the current calendar month (not last-14).
   const mtdCents = (() => {
     if (costBreakdown?.byProvider?.length) {
       return costBreakdown.byProvider.reduce((s, r) => s + r.month.cents, 0);
     }
-    if (liveDailyAvailable) return dailyStats.slice(-14).reduce((s, d) => s + d.total_cost_cents, 0);
+    if (liveDailyAvailable) {
+      const monthPrefix = new Date().toISOString().slice(0, 7); // "YYYY-MM"
+      return dailyStats
+        .filter((d) => d.date.startsWith(monthPrefix))
+        .reduce((s, d) => s + d.total_cost_cents, 0);
+    }
     return 0;
   })();
 
@@ -326,15 +334,16 @@ export default function Finances() {
   })();
 
   // ── KPI: Avg / video ────────────────────────────────────────────
+  // Returns null (renders "—") when there are no completions to average over.
   const avgPerVideo = (() => {
     if (overviewAvgCents !== null && overviewAvgCents > 0) return overviewAvgCents;
     if (liveDailyAvailable) {
       const last14 = dailyStats.slice(-14);
       const totalVideos = last14.reduce((s, d) => s + d.properties_completed, 0);
       const totalCost = last14.reduce((s, d) => s + d.total_cost_cents, 0);
-      return totalVideos > 0 ? Math.round(totalCost / totalVideos) : 0;
+      return totalVideos > 0 ? Math.round(totalCost / totalVideos) : null;
     }
-    return 0;
+    return null;
   })();
 
   const avgVideoDelta = (() => {

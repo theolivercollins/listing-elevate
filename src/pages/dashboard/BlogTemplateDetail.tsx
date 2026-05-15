@@ -242,7 +242,8 @@ export default function BlogTemplateDetail() {
       </Card>
 
       {/* Body HTML editor */}
-      <Card padding={0} style={{ overflow: "hidden" }}>
+      {/* overflow:visible is required so Tiptap table-resize handles are not clipped */}
+      <Card padding={0}>
         {/* Editor toolbar */}
         <div style={{
           display: "flex",
