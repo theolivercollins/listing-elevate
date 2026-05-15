@@ -242,16 +242,19 @@ async function buildSystemPrompt(opts: {
   if (opts.includeRecentPosts) {
     const { data: posts } = await opts.supabase
       .from("blog_posts")
-      .select("title, body_html")
+      .select("title, body_html, external_post_url, category_label, updated_at")
       .eq("active", true).eq("state", "live")
       .order("updated_at", { ascending: false })
       .limit(RECENT_POSTS_LIMIT);
     if (Array.isArray(posts) && posts.length > 0) {
       const examples = posts.map((p: any, i: number) => {
         const html = String(p.body_html ?? "").slice(0, RECENT_POST_EXCERPT_CHARS);
-        return `### Example ${i + 1}: "${p.title}"\n${html}`;
+        const url = p.external_post_url ? `URL: ${p.external_post_url}` : "URL: (not yet published)";
+        const cat = p.category_label ? `Category: ${p.category_label}` : "";
+        const meta = [url, cat].filter(Boolean).join(" · ");
+        return `### Recent post ${i + 1} — "${p.title}"\n${meta}\nExcerpt:\n${html}`;
       }).join("\n\n");
-      prompt += `\n\nThe Helgemo Team's RECENT PUBLISHED POSTS — match this voice, depth, and structural rhythm:\n\n${examples}`;
+      prompt += `\n\nTHE HELGEMO TEAM'S RECENT PUBLISHED POSTS — match this voice, depth, and structural rhythm. When relevant, LINK TO these posts inline using their URL (e.g. <a href="URL">our latest market update</a>) and reference their data instead of inventing your own. For example, a neighborhood spotlight should cite the most recent Market Update post if one exists. Don't link to posts whose URL is "(not yet published)".\n\n${examples}`;
     }
   }
 

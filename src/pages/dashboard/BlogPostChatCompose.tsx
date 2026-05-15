@@ -23,7 +23,9 @@ import type { AIAttachment, BlogImage, CreatePostInput } from "@/lib/blog/types"
 import { thumbUrl } from "@/lib/blog/image-url";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
-import { useAllyStatus, AllyPulse } from "@/components/blog/ally-status";
+import {
+  useAllyStatus, AllyPulse, AllySkeleton, AllyShimmerOverlay, AutoGrowTextarea,
+} from "@/components/blog/ally-status";
 
 const STARTERS = [
   "Punta Gorda May market update — inventory up 4%, median $385K",
@@ -653,7 +655,7 @@ export default function BlogPostChatCompose() {
             </div>
 
             {showPreview && (
-              <div className="flex min-h-0 flex-col border-t bg-white">
+              <div className="relative flex min-h-0 flex-col border-t bg-white">
                 <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <button
@@ -686,7 +688,13 @@ export default function BlogPostChatCompose() {
                     </button>
                   </div>
                 </div>
-                {previewMode === "rendered" ? (
+                {/* First-turn empty + isPending → skeleton ghost so the user sees
+                    layout taking shape rather than a static "(empty)" page. */}
+                {chat.isPending && !form.body_html.trim() ? (
+                  <div className="flex-1 overflow-auto">
+                    <AllySkeleton />
+                  </div>
+                ) : previewMode === "rendered" ? (
                   <HtmlPreview
                     html={form.body_html || "<p style='color:#9ca3af;font-family:system-ui;padding:24px'>Ally hasn't drafted anything yet — send a message.</p>"}
                     style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
@@ -696,6 +704,9 @@ export default function BlogPostChatCompose() {
                     <code>{form.body_html || "<!-- Empty -->"}</code>
                   </pre>
                 )}
+                {/* Subsequent turns with existing content + isPending → shimmer
+                    overlay so the user sees activity without losing the previous draft underneath. */}
+                <AllyShimmerOverlay visible={chat.isPending && !!form.body_html.trim()} />
               </div>
             )}
             </div>
@@ -855,20 +866,14 @@ function Composer({
           </PopoverContent>
         </Popover>
 
-        <Textarea
+        <AutoGrowTextarea
           value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              onSend();
-            }
-          }}
+          onChange={onInputChange}
+          onSend={onSend}
           placeholder={big ? "Ask anything — describe the post, paste numbers, attach a market report…" : "Ask for tweaks, paste numbers, say 'publish it'…"}
-          rows={big ? 2 : 1}
-          className="min-h-0 resize-none border-0 bg-transparent px-1 py-1.5 text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-          style={{ maxHeight: 200 }}
           disabled={isPending}
+          minRows={big ? 2 : 1}
+          maxHeight={big ? 180 : 140}
         />
 
         <Button
