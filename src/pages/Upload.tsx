@@ -27,12 +27,26 @@ import {
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
-import { createProperty, generateVoiceoverPreview, scrapeMls } from "@/lib/api";
+import { createProperty, generateVoiceoverPreview } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import "@/v2/styles/v2.css";
+
+// TEMP: declared here until merge with backend branch. Same shape as the real
+// helper in src/lib/api.ts. Remove this stub and add `import { lookupMls } from '@/lib/api'` when merging.
+declare const lookupMls: (address: string) => Promise<{
+  source: "redfin" | "realtor";
+  address: string;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  sqft: number | null;
+  agent: string | null;
+  description: string | null;
+  listingUrl: string;
+}>;
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
@@ -71,6 +85,7 @@ const Upload = () => {
   const [price, setPrice] = useState("");
   const [bedrooms, setBedrooms] = useState("");
   const [bathrooms, setBathrooms] = useState("");
+  const [sqft, setSqft] = useState("");
   const [agent, setAgent] = useState("");
   const [daysOnMarket, setDaysOnMarket] = useState("");
   const [soldPrice, setSoldPrice] = useState("");
@@ -93,11 +108,11 @@ const Upload = () => {
   const [voiceoverStage, setVoiceoverStage] = useState<string | null>(null);
   const [lastUsedVoiceId, setLastUsedVoiceId] = useState<string | null>(null);
 
-  // ─── MLS auto-fill state ───
-  const [mlsUrl, setMlsUrl] = useState("");
-  const [mlsScraping, setMlsScraping] = useState(false);
+  // ─── MLS lookup state ───
+  const [mlsLookingUp, setMlsLookingUp] = useState(false);
   const [mlsError, setMlsError] = useState<string | null>(null);
-  const [mlsPanelOpen, setMlsPanelOpen] = useState(false);
+  const [mlsFilled, setMlsFilled] = useState(false);
+  const [compassDescription, setCompassDescription] = useState<string | null>(null);
 
   // ─── flow state ───
   const [submitted, setSubmitted] = useState(false);
@@ -164,25 +179,37 @@ const Upload = () => {
     }, 1200);
   };
 
-  // ─── MLS auto-fill ───
-  const handleMlsScrape = async () => {
-    if (!mlsUrl.trim()) return;
-    setMlsScraping(true);
+  // ─── MLS lookup by address ───
+  const handleMlsLookup = async () => {
+    if (!address.trim()) return;
+    setMlsLookingUp(true);
     setMlsError(null);
+    setMlsFilled(false);
     try {
-      const r = await scrapeMls(mlsUrl.trim());
-      if (r.address && !address) setAddress(r.address);
-      if (r.price != null && !price) setPrice(String(r.price));
-      if (r.bedrooms != null && !bedrooms) setBedrooms(String(r.bedrooms));
-      if (r.bathrooms != null && !bathrooms) setBathrooms(String(r.bathrooms));
-      if (r.agent && !agent) setAgent(r.agent);
-      setMlsPanelOpen(false);
-      setMlsUrl("");
+      const r = await lookupMls(address.trim());
+      if (r.price != null) setPrice(String(r.price));
+      if (r.bedrooms != null) setBedrooms(String(r.bedrooms));
+      if (r.bathrooms != null) setBathrooms(String(r.bathrooms));
+      if (r.sqft != null) setSqft(String(r.sqft));
+      if (r.agent) setAgent(r.agent);
+      if (r.description) setCompassDescription(r.description);
+      setMlsFilled(true);
     } catch (e) {
-      setMlsError(e instanceof Error ? e.message : "Failed to fetch listing details");
+      setMlsError(e instanceof Error ? e.message : "Couldn't find this address on MLS — fill in details manually.");
     } finally {
-      setMlsScraping(false);
+      setMlsLookingUp(false);
     }
+  };
+
+  const handleMlsReset = () => {
+    setPrice("");
+    setBedrooms("");
+    setBathrooms("");
+    setSqft("");
+    setAgent("");
+    setCompassDescription(null);
+    setMlsFilled(false);
+    setMlsError(null);
   };
 
   // ─── catalog ───
@@ -234,6 +261,7 @@ const Upload = () => {
     price &&
     bedrooms &&
     bathrooms &&
+    sqft &&
     agent &&
     (!needsDaysOnMarket || daysOnMarket) &&
     (!needsSoldPrice || soldPrice)
@@ -283,7 +311,8 @@ const Upload = () => {
       !!lastUsedVoiceId &&
       selectedVoiceId !== lastUsedVoiceId;
 
-    if (!isVoiceOnlyRerender && !compassUrl) return;
+    // Need either a cached MLS description, a Compass URL, or an existing script to re-render
+    if (!isVoiceOnlyRerender && !compassDescription && !compassUrl) return;
 
     const durationSec = parseInt(selectedDuration.replace(/s$/, ""), 10);
     setVoiceoverGenerating(true);
@@ -297,10 +326,10 @@ const Upload = () => {
     if (isVoiceOnlyRerender) {
       setVoiceoverStage("Recording the new voiceover…");
     } else {
-      setVoiceoverStage("Reading your listing…");
-      const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), 12_000);
-      const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), 22_000);
-      const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), 38_000);
+      setVoiceoverStage(compassDescription ? "Writing your script…" : "Reading your listing…");
+      const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), compassDescription ? 0 : 12_000);
+      const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), compassDescription ? 10_000 : 22_000);
+      const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), compassDescription ? 25_000 : 38_000);
       clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
     }
 
@@ -308,8 +337,13 @@ const Upload = () => {
       const result = await generateVoiceoverPreview({
         voiceId: selectedVoiceId,
         durationSec,
-        compassUrl,
-        script: isVoiceOnlyRerender ? voiceoverScript! : undefined,
+        // When MLS description is cached, pass it directly and skip Compass scrape.
+        // Otherwise fall back to compassUrl (manual path).
+        ...(isVoiceOnlyRerender
+          ? { compassUrl, script: voiceoverScript! }
+          : compassDescription
+            ? { description: compassDescription, compassUrl: undefined }
+            : { compassUrl }),
       });
       setVoiceoverPreviewUrl(result.audioUrl);
       setVoiceoverScript(result.script);
@@ -335,6 +369,7 @@ const Upload = () => {
           price: Number(price),
           bedrooms: Number(bedrooms),
           bathrooms: Number(bathrooms),
+          sqft: sqft ? Number(sqft) : undefined,
           listing_agent: agent,
           brokerage: "",
           photos: files.map((f) => f.file),
@@ -626,70 +661,59 @@ const Upload = () => {
             {step === 1 && (
               <motion.div key="step-1" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
                 <section>
-                  {/* MLS auto-fill */}
-                  <div className="mb-8">
-                    {!mlsPanelOpen ? (
-                      <button
-                        type="button"
-                        onClick={() => { setMlsPanelOpen(true); setMlsError(null); }}
-                        className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-accent underline underline-offset-4 hover:text-accent/80 transition-colors"
-                      >
-                        <Search className="h-3.5 w-3.5" />
-                        Auto-fill from MLS?
-                      </button>
-                    ) : (
-                      <div className="space-y-3 border border-border p-5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold tracking-[-0.01em]">Fetch from listing</span>
-                          <button
-                            type="button"
-                            onClick={() => { setMlsPanelOpen(false); setMlsError(null); setMlsUrl(""); }}
-                            className="text-muted-foreground hover:text-foreground transition-colors"
-                            aria-label="Close"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <Input
-                          value={mlsUrl}
-                          onChange={(e) => setMlsUrl(e.target.value)}
-                          placeholder="Paste listing URL"
-                          onKeyDown={(e) => e.key === "Enter" && handleMlsScrape()}
-                          disabled={mlsScraping}
-                        />
-                        {mlsError && (
-                          <p className="text-xs text-red-500">{mlsError}</p>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleMlsScrape}
-                          disabled={!mlsUrl.trim() || mlsScraping}
-                          className="w-full"
-                        >
-                          {mlsScraping ? (
-                            <><Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" strokeWidth={1.5} /> Fetching listing details…</>
-                          ) : (
-                            "Auto-fill"
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-
                   <div className="space-y-8">
+                    {/* Address + Find on MLS button */}
                     <div>
                       <Label className="label text-muted-foreground">Address</Label>
                       <AddressAutocomplete
                         value={address}
-                        onChange={setAddress}
+                        onChange={(val) => {
+                          setAddress(val);
+                          // Reset MLS state when address changes
+                          if (mlsFilled) handleMlsReset();
+                        }}
                         placeholder="208 Berry Street, Brooklyn, NY"
                         className="mt-3"
                       />
+                      {/* Find on MLS — appears after 5+ chars */}
+                      {address.trim().length >= 5 && (
+                        <div className="mt-3 flex items-center gap-3">
+                          {mlsFilled ? (
+                            <span className="flex items-center gap-2 text-[11px] font-medium text-green-600">
+                              <Check className="h-3.5 w-3.5" />
+                              Found on MLS ✓
+                              <button
+                                type="button"
+                                onClick={handleMlsReset}
+                                className="ml-1 text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+                              >
+                                (reset)
+                              </button>
+                            </span>
+                          ) : mlsLookingUp ? (
+                            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+                              Searching MLS for this address…
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleMlsLookup}
+                              disabled={mlsLookingUp}
+                              className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-accent underline underline-offset-4 hover:text-accent/80 transition-colors"
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                              Find on MLS
+                            </button>
+                          )}
+                          {mlsError && !mlsLookingUp && (
+                            <span className="text-[11px] text-red-500">{mlsError}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="grid gap-6 md:grid-cols-3">
+                    <div className="grid gap-6 md:grid-cols-4">
                       <div>
                         <Label className="label text-muted-foreground">Price</Label>
                         <div className="relative mt-3">
@@ -725,6 +749,17 @@ const Upload = () => {
                           value={bathrooms}
                           onChange={(e) => setBathrooms(e.target.value)}
                           placeholder="2.5"
+                          className="tabular mt-3"
+                        />
+                      </div>
+                      <div>
+                        <Label className="label text-muted-foreground">Sqft</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={sqft}
+                          onChange={(e) => setSqft(e.target.value)}
+                          placeholder="1,850"
                           className="tabular mt-3"
                         />
                       </div>
@@ -808,6 +843,8 @@ const Upload = () => {
                               setVoiceoverPreviewUrl(null);
                               setVoiceoverScript(null);
                               setVoiceoverError(null);
+                              // Note: compassDescription is intentionally NOT cleared here —
+                              // it was populated by MLS lookup and may be re-used if voiceover is re-enabled.
                             }
                           }}
                           className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
@@ -943,19 +980,26 @@ const Upload = () => {
                               ))}
                             </div>
                           </div>
-                          <div>
-                            <Label className="label text-muted-foreground">Compass listing URL</Label>
-                            <Input
-                              value={compassUrl}
-                              onChange={(e) => {
-                                setCompassUrl(e.target.value);
-                                setVoiceoverPreviewUrl(null);
-                                setVoiceoverScript(null);
-                              }}
-                              placeholder="https://www.compass.com/listing/..."
-                              className="mt-3"
-                            />
-                          </div>
+                          {compassDescription ? (
+                            <div className="flex items-center gap-2 rounded-none border border-green-600/30 bg-green-600/5 px-4 py-3 text-[11px] font-medium text-green-700">
+                              <Check className="h-3.5 w-3.5 shrink-0" />
+                              Using listing details from MLS ✓
+                            </div>
+                          ) : (
+                            <div>
+                              <Label className="label text-muted-foreground">Compass listing URL</Label>
+                              <Input
+                                value={compassUrl}
+                                onChange={(e) => {
+                                  setCompassUrl(e.target.value);
+                                  setVoiceoverPreviewUrl(null);
+                                  setVoiceoverScript(null);
+                                }}
+                                placeholder="https://www.compass.com/listing/..."
+                                className="mt-3"
+                              />
+                            </div>
+                          )}
                           <Button
                             type="button"
                             variant="outline"
@@ -963,7 +1007,7 @@ const Upload = () => {
                               !selectedVoiceId ||
                               !selectedDuration ||
                               voiceoverGenerating ||
-                              (!voiceoverScript && !compassUrl)
+                              (!voiceoverScript && !compassDescription && !compassUrl)
                             }
                             onClick={handleGenerateVoiceover}
                             className="w-full"
