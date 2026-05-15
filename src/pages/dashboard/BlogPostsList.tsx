@@ -14,7 +14,7 @@ import { listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
 import {
-  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown, Trash2,
+  Plus, ExternalLink, Pencil, Sparkles, LayoutTemplate, ChevronDown, Trash2, MessageSquare,
 } from "lucide-react";
 import { DeletePostDialog } from "@/components/blog/DeletePostDialog";
 
@@ -63,18 +63,25 @@ export default function BlogPostsList() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new")} className="cursor-pointer">
-              <Pencil className="mr-2 h-4 w-4" />
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new?chat=1")} className="cursor-pointer">
+              <MessageSquare className="mr-2 h-4 w-4" />
               <div className="flex flex-col">
-                <span>Write manually</span>
-                <span className="text-xs text-muted-foreground">Blank editor — type or paste HTML</span>
+                <span>Chat with AI</span>
+                <span className="text-xs text-muted-foreground">Build the post by talking to Claude</span>
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new?ai=1")} className="cursor-pointer">
               <Sparkles className="mr-2 h-4 w-4" />
               <div className="flex flex-col">
-                <span>Generate with AI</span>
-                <span className="text-xs text-muted-foreground">Claude writes the first draft</span>
+                <span>Quick AI draft</span>
+                <span className="text-xs text-muted-foreground">One-shot — fill a prompt, get a draft</span>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/dashboard/blog/posts/new")} className="cursor-pointer">
+              <Pencil className="mr-2 h-4 w-4" />
+              <div className="flex flex-col">
+                <span>Write manually</span>
+                <span className="text-xs text-muted-foreground">Blank editor — type or paste HTML</span>
               </div>
             </DropdownMenuItem>
             {templates.length > 0 && (
