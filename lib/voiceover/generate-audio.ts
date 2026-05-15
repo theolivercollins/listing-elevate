@@ -1,18 +1,20 @@
 /**
  * ElevenLabs TTS generator.
  *
- * Uses the eleven_turbo_v2_5 model (fast + cheap at ~$0.30/1k chars).
+ * Uses the eleven_multilingual_v2 model (highest-quality stable, ~$0.60/1k chars).
  * The MP3 binary is uploaded to Supabase storage at:
  *   voiceovers/{propertyId|"preview"}/{Date.now()}.mp3
  *
- * Cost formula: ceil(chars / 1000 * 30) cents (30¢ per 1k chars for turbo).
- * Example: 150-word script ≈ 800 chars → ceil(0.8 * 30) = 24¢ → rounded to 24.
+ * Cost formula: ceil(chars / 1000 * 60) cents (60¢ per 1k chars for multilingual_v2).
+ * Example: 150-word script ≈ 800 chars → ceil(0.8 * 60) = 48¢.
  */
 
 import { getSupabase, recordCostEvent } from "../db.js";
 
 const ELEVENLABS_API = "https://api.elevenlabs.io/v1/text-to-speech";
-const MODEL_ID = "eleven_turbo_v2_5";
+// Highest-quality stable model. eleven_v3 is alpha and not all
+// pre-built voices support it yet — flip when GA.
+const MODEL_ID = "eleven_multilingual_v2";
 
 export interface GenerateAudioInput {
   script: string;
@@ -86,7 +88,7 @@ export async function generateVoiceoverAudio(
 
   // Compute cost: ceil(chars / 1000 * 30) cents.
   const chars = script.length;
-  const costCents = Math.ceil((chars / 1000) * 30);
+  const costCents = Math.ceil((chars / 1000) * 60);
   // Rough duration estimate: ~15 chars/sec average narration pace.
   const durationMs = Math.round((chars / 15) * 1000);
 

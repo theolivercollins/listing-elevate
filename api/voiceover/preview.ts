@@ -28,7 +28,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAuth(req, res);
   if (!auth) return; // requireAuth already sent 401
 
-  const { voiceId, durationSec, compassUrl } = req.body ?? {};
+  const { voiceId, durationSec, compassUrl, script: providedScript } = req.body ?? {};
 
   // ── Input validation ──
   if (!voiceId || typeof voiceId !== "string" || !isValidVoiceId(voiceId)) {
@@ -40,47 +40,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "durationSec must be 15, 30, or 60" });
   }
 
-  if (
-    !compassUrl ||
-    typeof compassUrl !== "string" ||
-    !compassUrl.match(/^https?:\/\/(www\.)?compass\.com\//i)
-  ) {
-    return res.status(400).json({
-      error: "compassUrl must be a valid compass.com URL",
-    });
+  // If `script` is provided, we skip Compass scrape + Claude script and run
+  // ONLY the TTS step. Used by the "try this voice" flow when the user
+  // already has a script and just wants to swap voices.
+  const skipScriptGen = typeof providedScript === "string" && providedScript.trim().length > 0;
+
+  if (!skipScriptGen) {
+    if (
+      !compassUrl ||
+      typeof compassUrl !== "string" ||
+      !compassUrl.match(/^https?:\/\/(www\.)?compass\.com\//i)
+    ) {
+      return res.status(400).json({
+        error: "compassUrl must be a valid compass.com URL",
+      });
+    }
   }
 
   const voice = getVoice(voiceId)!;
   // Unique temp ID for storage path — not tied to a property yet.
   const tempId = `preview/${crypto.randomUUID()}`;
 
-  // ── Step 1: Scrape Compass ──
-  let description: string;
-  try {
-    const scrapeResult = await scrapeCompassDescription(compassUrl, null);
-    description = scrapeResult.description;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return res.status(422).json({
-      error: msg,
-      hint: "Try pasting the description manually",
-    });
-  }
-
-  // ── Step 2: Generate script ──
   let script: string;
-  try {
-    const scriptResult = await generateVoiceoverScript({
-      description,
-      durationSec: duration as 15 | 30 | 60,
-      address: "", // address not available pre-property; script uses description
-      packageLabel: "Just Listed",
-      propertyId: null,
-    });
-    script = scriptResult.script;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return res.status(500).json({ error: `Script generation failed: ${msg}` });
+
+  if (skipScriptGen) {
+    // Voice-only regeneration — use the script the client already has.
+    script = providedScript.trim();
+  } else {
+    // ── Step 1: Scrape Compass ──
+    let description: string;
+    try {
+      const scrapeResult = await scrapeCompassDescription(compassUrl, null);
+      description = scrapeResult.description;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(422).json({
+        error: msg,
+        hint: "Try pasting the description manually",
+      });
+    }
+
+    // ── Step 2: Generate script ──
+    try {
+      const scriptResult = await generateVoiceoverScript({
+        description,
+        durationSec: duration as 15 | 30 | 60,
+        address: "", // address not available pre-property; script uses description
+        packageLabel: "Just Listed",
+        propertyId: null,
+      });
+      script = scriptResult.script;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ error: `Script generation failed: ${msg}` });
+    }
   }
 
   // ── Step 3: Generate audio ──

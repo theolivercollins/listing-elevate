@@ -74,6 +74,8 @@ export async function generateVoiceoverPreview(data: {
   voiceId: string;
   durationSec: number;
   compassUrl: string;
+  /** When set, skips Compass scrape + Claude script and only re-runs TTS. */
+  script?: string;
 }): Promise<{ audioUrl: string; script: string; voice: { id: string; name: string } }> {
   return apiFetch('/api/voiceover/preview', {
     method: 'POST',

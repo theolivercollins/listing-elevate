@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { VOICES, getVoice, isValidVoiceId, WORD_BUDGET } from "./voices.js";
 
 describe("VOICES catalog", () => {
-  it("exports exactly 4 voices", () => {
-    expect(VOICES).toHaveLength(4);
+  it("exports exactly 8 voices", () => {
+    expect(VOICES).toHaveLength(8);
   });
 
   it("each voice has required fields", () => {
@@ -18,8 +18,8 @@ describe("VOICES catalog", () => {
   it("includes both male and female voices", () => {
     const males = VOICES.filter((v) => v.gender === "male");
     const females = VOICES.filter((v) => v.gender === "female");
-    expect(males).toHaveLength(2);
-    expect(females).toHaveLength(2);
+    expect(males).toHaveLength(4);
+    expect(females).toHaveLength(4);
   });
 
   it("getVoice returns correct voice by id", () => {

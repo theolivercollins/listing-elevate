@@ -32,10 +32,16 @@ import "@/v2/styles/v2.css";
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
-  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam", gender: "male" as const, description: "Deep, narration-style" },
+  // Females
+  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel",    gender: "female" as const, description: "Calm, professional" },
+  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella",     gender: "female" as const, description: "Soft, friendly" },
+  { id: "XB0fDUnXU5powFXDhCwa", name: "Charlotte", gender: "female" as const, description: "Conversational, British" },
+  { id: "pFZP5JQG7iQjIQuC4Bku", name: "Lily",      gender: "female" as const, description: "Calm, authoritative" },
+  // Males
+  { id: "pNInz6obpgDQGcFmaJgB", name: "Adam",   gender: "male" as const, description: "Deep, narration-style" },
   { id: "ErXwobaYiN019PkySvjV", name: "Antoni", gender: "male" as const, description: "Warm, conversational" },
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", gender: "female" as const, description: "Calm, professional" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella", gender: "female" as const, description: "Soft, friendly" },
+  { id: "nPczCjzI2devNBz1zQrb", name: "Brian",  gender: "male" as const, description: "Confident narrator" },
+  { id: "onwK4e9ZLuTAKqWW03F9", name: "Daniel", gender: "male" as const, description: "British, news-anchor" },
 ];
 
 interface UploadedFile {
@@ -82,6 +88,10 @@ const Upload = () => {
   const [voiceoverPreviewUrl, setVoiceoverPreviewUrl] = useState<string | null>(null);
   const [voiceoverScript, setVoiceoverScript] = useState<string | null>(null);
   const [voiceoverStage, setVoiceoverStage] = useState<string | null>(null);
+  // The voice ID used to generate the current preview audio. When the
+  // user changes their selection after audio exists, the action becomes
+  // "Try this voice" — a TTS-only re-render that skips scrape + script.
+  const [lastUsedVoiceId, setLastUsedVoiceId] = useState<string | null>(null);
 
   // ─── flow state ───
   const [submitted, setSubmitted] = useState(false);
@@ -223,28 +233,50 @@ const Upload = () => {
 
   // ─── voiceover generation ───
   const handleGenerateVoiceover = async () => {
-    if (!selectedVoiceId || !compassUrl || !selectedDuration) return;
+    if (!selectedVoiceId || !selectedDuration) return;
+    // Voice-only re-render: we have a script + audio AND the voice changed.
+    const isVoiceOnlyRerender =
+      !!voiceoverScript &&
+      !!voiceoverPreviewUrl &&
+      !!lastUsedVoiceId &&
+      selectedVoiceId !== lastUsedVoiceId;
+
+    // Full chain still needs a Compass URL.
+    if (!isVoiceOnlyRerender && !compassUrl) return;
+
     const durationSec = parseInt(selectedDuration.replace(/s$/, ""), 10);
     setVoiceoverGenerating(true);
     setVoiceoverError(null);
-    setVoiceoverPreviewUrl(null);
-    setVoiceoverScript(null);
-    setVoiceoverStage("Reading your listing…");
+    // Don't clear script on voice-only re-render — we're sending it to the API.
+    if (!isVoiceOnlyRerender) {
+      setVoiceoverPreviewUrl(null);
+      setVoiceoverScript(null);
+    }
 
-    // Staged messages — typical timing: scrape 10–25s, script 2–5s, TTS 3–8s.
-    const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), 12_000);
-    const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), 22_000);
-    const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), 38_000);
-    const clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    let clearStages = () => {};
+    if (isVoiceOnlyRerender) {
+      // TTS only — typically 5–10s. One short message is enough.
+      setVoiceoverStage("Recording the new voiceover…");
+    } else {
+      setVoiceoverStage("Reading your listing…");
+      const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), 12_000);
+      const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), 22_000);
+      const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), 38_000);
+      clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }
 
     try {
       const result = await generateVoiceoverPreview({
         voiceId: selectedVoiceId,
         durationSec,
         compassUrl,
+        // Pass the existing script when only swapping voices; backend skips
+        // Compass + Claude entirely and just re-runs TTS.
+        script: isVoiceOnlyRerender ? voiceoverScript! : undefined,
       });
       setVoiceoverPreviewUrl(result.audioUrl);
       setVoiceoverScript(result.script);
+      setLastUsedVoiceId(result.voice.id);
     } catch (err) {
       setVoiceoverError(err instanceof Error ? err.message : "Generation failed");
     } finally {
@@ -674,12 +706,19 @@ const Upload = () => {
                           <Button
                             type="button"
                             variant="outline"
-                            disabled={!selectedVoiceId || !compassUrl || !selectedDuration || voiceoverGenerating}
+                            disabled={
+                              !selectedVoiceId ||
+                              !selectedDuration ||
+                              voiceoverGenerating ||
+                              (!voiceoverScript && !compassUrl)
+                            }
                             onClick={handleGenerateVoiceover}
                             className="w-full"
                           >
                             {voiceoverGenerating ? (
                               <><Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} /> Generating…</>
+                            ) : voiceoverScript && lastUsedVoiceId && selectedVoiceId !== lastUsedVoiceId ? (
+                              <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Try this voice</>
                             ) : (
                               <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Generate voiceover</>
                             )}
@@ -706,6 +745,7 @@ const Upload = () => {
                                 onClick={() => {
                                   setVoiceoverPreviewUrl(null);
                                   setVoiceoverScript(null);
+                                  setLastUsedVoiceId(null);
                                 }}
                                 className="text-xs text-muted-foreground"
                               >
