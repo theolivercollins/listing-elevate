@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}", "lib/**/*.{test,spec}.ts", "lib/**/__tests__/**/*.{test,spec}.ts"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "lib/**/*.{test,spec}.ts", "lib/**/__tests__/**/*.{test,spec}.ts", "api/**/*.{test,spec}.ts"],
     globals: false,
   },
   resolve: {
