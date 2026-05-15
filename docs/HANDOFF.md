@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-15 (Operator Studio Phase 1 — internal MVP shipped on feat/operator-studio; awaiting migration apply + Creatomate Brand.* vars + Oliver's go-ahead to push)
+Last updated: 2026-05-15 PM (Operator Studio Phase 1 + Glass design system shipped to Vercel preview on feat/operator-studio; migrations 056+057 applied; only Creatomate template Brand.* vars still pending)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,21 +14,44 @@ See also:
 
 ## Right now
 
-**2026-05-15 (latest): Operator Studio Phase 1 — internal MVP on `feat/operator-studio`, awaiting Oliver's go-ahead to push.**
+**2026-05-15 PM (latest): Operator Studio Phase 1 + Glass design system are live on Vercel preview at `feat/operator-studio` — last open gate is adding `Brand.*` variables to the Creatomate templates.**
 
-Phase 1 ships the branded end-to-end loop for operator-managed properties: a `/dashboard/studio` Kanban + Clients UI, manual ingest form, Property Command Center (brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, director's notes), client CRUD API, and preview token endpoint with client-note support. Two schema migrations are ready but NOT yet applied to prod Supabase. Brand variables are wired in code but NOT yet configured in the Creatomate dashboard templates.
+Preview URL: `https://listingelevate-git-feat-operator-studio-recasi.vercel.app/dashboard/studio` (admin login). Migrations `056_operator_studio.sql` + `057_operator_studio_scenes_followup.sql` were applied via Supabase MCP earlier today; the schema is live in shared prod Supabase. 28+ commits on `feat/operator-studio` (off `dev`); not yet merged anywhere. Full session log at `docs/sessions/2026-05-15-operator-studio.md`.
 
-**Three gates before pushing:**
+**What ships in this branch:**
 
-1. **Oliver to apply migrations to Supabase** (via MCP or dashboard SQL editor):
-   - `supabase/migrations/056_operator_studio.sql` — adds `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` table + `property_revision_notes` table + indexes + RLS policies.
-   - `supabase/migrations/057_operator_studio_scenes_followup.sql` — adds `scenes.director_notes` text column used by the Command Center notes panel.
+- `/dashboard/studio` Kanban (Inbox / Rendering / Needs review / Delivered) with KPI strip, restyled in the Glass design system (warm-gray canvas, white cards, near-monochrome, Inter only, no gradients on inner cards). Glass tokens scoped under `.studio-scope` so they never bleed into the rest of the app.
+- `/dashboard/studio/clients` list + `/clients/:id` create+edit form (brand kit fields: logo, primary/secondary hex, agent name + headshot, voice_id placeholder for Phase 3).
+- `/dashboard/studio/new` manual ingest form → POST `/api/admin/studio/ingest` then client-side trigger of `/api/pipeline/:id` (matches the customer-flow trigger pattern from `src/lib/api.ts`).
+- `/dashboard/studio/properties/:id` Property Command Center (final video, scene strip with Iterate-in-Lab modal driving the clip-swap endpoint, director's notes mixing operator + client_preview sources, preview-link list, brand-kit summary with "incomplete kit" warning, cost panel, metadata).
+- `/preview/:token` public viewer (no auth, signed `crypto.randomBytes` token) — video player + brand logo + "Request a change" textarea posting back as `source='client_preview'` revision notes.
+- Brand-kit injection at assembly: `lib/pipeline.ts:1144-1182` reads `properties.client_id`, looks up the client, and merges `Brand.*` keys into the Creatomate modifications payload. Customer-flow path (client_id null) is byte-identical to before — pure additive branch.
+- `rerunAssembly(propertyId)` exported from `lib/pipeline.ts` — the assembly stage of `runPipeline` was refactored into `runAssemblyStep` so the clip-swap endpoint can re-trigger assembly without rerunning intake → generation. Cost events tagged `metadata.reason='manual_rerun'`.
+- Spec at `docs/specs/2026-05-15-operator-studio-design.md` (v2, re-phased after Gemini adversarial review pulled brand-kit / preview-link / clip-swap into P1). Plan at `docs/plans/2026-05-15-operator-studio-plan.md`. Phase 2/3 outlined.
+- 104 Operator Studio tests passing + 2 skipped invoice-data integration tests (gated on `LE_RUN_INTEGRATION=true` — will fire against the live DB once unblocked). Full suite green except the pre-existing `MarketComparison.test.tsx` failure (unrelated to this branch).
 
-2. **Oliver to add `Brand.*` variables to Creatomate templates in the dashboard** — the pipeline already sends `Brand.LogoUrl`, `Brand.PrimaryColor`, `Brand.SecondaryColor`, `Brand.AgentName`, `Brand.Brokerage`, `Brand.AgentHeadshotUrl` as modification keys, but Creatomate silently ignores keys for placeholders that don't exist in the template. Without this step, operator-flow properties render with the same overlays as customer-flow ones.
+**Schema actually applied (correct contents — earlier draft of this section was wrong about 057):**
 
-3. **Oliver's explicit go-ahead** to `git push feat/operator-studio` and open a PR to dev.
+- `clients` table (id, name, contact_email, phone, monthly_rate_cents, notes, brand_logo_url, brand_primary_hex, brand_secondary_hex, agent_name, agent_headshot_url, voice_id, archived_at, created_at, updated_at) — RLS enabled, no policies (service-role only).
+- `property_previews` (property_id FK, token text UNIQUE, expires_at, viewed_count, last_viewed_at) — public-route reads server-side only.
+- `property_revision_notes` (property_id FK, source check ('operator','client_preview'), body, created_at) — append-only event log.
+- `properties.order_mode` text default 'customer' check ('customer','operator'); `properties.client_id` uuid → clients(id) ON DELETE SET NULL; `properties.ingest_source` text check; `properties.ingest_source_url` text. Partial index `idx_properties_order_mode_client` only on operator-mode rows.
+- `scenes.replaced_at` timestamptz nullable + `scenes.room_type` text with a one-time backfill from `photos.room_type` via `scenes.photo_id` (avoids the JOIN in `swapClip`'s hot path). `prompt_lab_listing_scene_iterations.room_type` text with the same backfill pattern from the parent scene row.
+- Postgres function `increment_preview_view(p_token text)` — atomic counter increment via SQL `UPDATE … SET viewed_count = viewed_count + 1, last_viewed_at = now()`.
 
-**What NOT to do yet:** do not push the branch, do not apply migrations unilaterally, do not add the Vercel env vars — those come after Oliver confirms the above two prep steps are done.
+**Glass design system (commits `860fee3` + fix `a22c2d4`):** new `src/styles/studio-design.css` with `--le-*` tokens scoped under `.studio-scope`. All 8 Studio surfaces wrap in `<StudioShell>` (warm-gray canvas + 5%-opacity SVG grain layer). Pixel targets per `listing-elevate-backend/project/glass/STYLE-GUIDE.md` (the Claude Design bundle). Existing app TopNav + admin auth unchanged.
+
+**Build trap caught:** an earlier design-restyle commit (`860fee3`) deployed and failed Vercel build with `[postcss] Unknown word flex-none` — the implementer left a stray Tailwind utility (`flex-none;`) as a bare CSS property inside `studio-design.css`. Tailwind utilities can only be used as classNames or inside `@apply` — never as standalone CSS values. Fix in `a22c2d4` swapped to the actual CSS shorthand `flex: none;`. **Lesson for next session:** when touching CSS files, run `vite build` (not just `tsc --noEmit`) before pushing — tsc doesn't run PostCSS and won't catch this class of error.
+
+**One open gate (the only thing blocking visible brand-kit on rendered videos):**
+
+- **Add `Brand.*` placeholder variables to the active Creatomate templates in the Creatomate dashboard.** Pipeline already sends `Brand.logo`, `Brand.primary`, `Brand.secondary`, `Brand.agent_name`, `Brand.agent_headshot`, `Brand.brokerage` as modification keys (see `lib/operator-studio/brand-kit.ts:BRAND_KEY_MAP`). Creatomate silently ignores keys for placeholders that don't exist on the template, so until those placeholders are added in the editor, operator-flow renders look identical to customer-flow renders. One-time dashboard edit per template — not a code task. Document the chosen final placeholder names in PROJECT-STATE under "Creatomate templates" after the edit.
+
+**Three known follow-ups (not blocking the preview, do before merging to dev):**
+
+- `square_footage` is accepted by `manualIngest` but the `properties` table has no such column — value is silently dropped. Add a column or rip the input from the form.
+- `ClientRow` was inlined into `src/components/studio/ClientPicker.tsx` instead of being imported from `lib/types/operator-studio.ts` (Task 16 implementer missed the existing file). Small DRY drift.
+- `IterateInLabModal` uses a studio-local Lab-iterations wrapper at `api/admin/studio/iterations.ts` because the existing `/api/admin/prompt-lab/listings/:id` endpoint requires a `listing_id` + `scene_id` chain that doesn't map cleanly to "give me iterations for room_type=kitchen". Consider unifying later — for now the studio wrapper is the single source of truth for the Command Center's clip picker.
 
 ---
 
@@ -354,7 +377,8 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
-- 2026-05-15 — `feat/operator-studio` — Operator Studio Phase 1 — internal MVP shipped (branded end-to-end loop)
+- 2026-05-15 PM — `feat/operator-studio` (preview only — not yet merged) — Glass design system applied across all 8 Studio surfaces (`860fee3` + CSS fix `a22c2d4`); migrations `056_operator_studio` + `057_operator_studio_scenes_followup` applied via Supabase MCP. Vercel preview live at `listingelevate-git-feat-operator-studio-recasi.vercel.app/dashboard/studio`. Open gate: add `Brand.*` placeholders to Creatomate templates so brand-kit injection becomes visible on rendered videos.
+- 2026-05-15 AM — `feat/operator-studio` — Operator Studio Phase 1 — internal MVP shipped (branded end-to-end loop: Kanban, Clients CRUD, manual ingest, Property Command Center with brand-kit injection + preview-link + inline clip-swap, invoice rollup formatter, public `/preview/:token` viewer). 27 commits, 104 new tests, spec + plan v2 (post-Gemini adversarial review)
 - 2026-05-14 — `<SHA-TBD>` — PR #46 staging → main: Creatomate Just Listed #01 rev-2 template wired end-to-end — new mapper slot names (`*-Intro` / `*-Mid` / `*-Final`), duration-suffixed env vars (`CREATOMATE_TEMPLATE_ID_<PKG>_<DURATION>[_VERTICAL]`), vertical-aware resolver that skips 9:16 when no vertical template exists. Live smoke produced 1920×1080 / 15s / 30fps with all overlays. Vercel envs: added `CREATOMATE_TEMPLATE_ID_JUST_LISTED_15`, removed legacy `CREATOMATE_TEMPLATE_ID_JUST_LISTED`. 119/119 tests + `tsc` clean.
 - 2026-05-13 — `4328d1c` — PR #41 staging → main: order-form persistence (migration 054) + Creatomate buildout (Phase 2-6 + template-mode + cron-assembly wire + migrations 053/055/056) + Shotstack code-defined Just Listed port + ASSEMBLY_PROVIDER override env var. Orders now produce real assembled MP4s end-to-end on listingelevate.com.
 - 2026-05-13 — `cd1f25c` — PR #40 dev → staging: same bundle, staging gate

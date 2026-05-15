@@ -847,9 +847,67 @@ SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the liv
 
 ---
 
-## Operator Studio — internal operator workflow surface (Phase 1 on feat/operator-studio, awaiting push)
+## Operator Studio — internal operator workflow surface (Phase 1 on `feat/operator-studio`, Vercel preview live, not yet merged)
 
-Admin-only surface at `/dashboard/studio` for Oliver to manage operator-mode properties on behalf of brokerage clients; provides a Kanban pipeline view, Clients CRUD, manual listing ingest form, and a Property Command Center with brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, and director's notes. Migrations 056 + 057 apply the required schema. See `docs/specs/2026-05-15-operator-studio-design.md`.
+Admin-only surface at `/dashboard/studio` (gated by existing `<RequireAdmin />`) for Oliver to manage operator-mode properties on behalf of brokerage clients. Customer-flow path (`order_mode='customer'`, the default) is byte-identical to before — every operator-mode hook is gated on `order_mode='operator'` or `client_id IS NOT NULL`.
+
+Preview URL: `https://listingelevate-git-feat-operator-studio-recasi.vercel.app/dashboard/studio`.
+
+**Routes:**
+- `/dashboard/studio` — Kanban (Inbox / Rendering / Needs review / Delivered) + KPI strip
+- `/dashboard/studio/clients` + `/clients/:id` — list + create/edit (brand kit fields)
+- `/dashboard/studio/new` — manual ingest form
+- `/dashboard/studio/properties/:id` — Property Command Center
+- `/preview/:token` (PUBLIC, no auth) — signed-token viewer + revision-request textarea
+
+**Admin endpoints (all behind `requireAdmin()`):**
+- `/api/admin/studio/clients` — GET (list) + POST (create); `/clients/[id]` — GET / PATCH / DELETE (soft-archive)
+- `/api/admin/studio/ingest` — POST, runs `manualIngest()`, returns `{ property_id }`; pipeline trigger is client-side via `fetch('/api/pipeline/:id', { method: 'POST' })`
+- `/api/admin/studio/invoice-summary` — POST `{ client_id, from?, to? }` returns `{ text, data: InvoiceSummary }`
+- `/api/admin/studio/queue` — GET, returns operator-mode properties bucketed inbox/rendering/needs_review/delivered
+- `/api/admin/studio/iterations` — GET `?room_type=` returns up to 50 latest `prompt_lab_listing_scene_iterations` (studio-local wrapper)
+- `/api/admin/studio/properties/[id]` — GET, bundle (property + scenes + revision_notes + previews + per-provider cost rollup)
+- `/api/admin/studio/properties/[id]/notes` — POST, append operator-source revision note
+- `/api/admin/studio/properties/[id]/preview-link` — POST, issue signed preview token
+- `/api/admin/studio/properties/[id]/scenes/[idx]/swap-clip` — POST, copies a Lab iteration's clip into the scene + triggers `rerunAssembly`
+
+**Public endpoint:** `/api/preview/[token]` — GET (returns video URL + brand bits, increments view counter via Postgres `increment_preview_view` RPC) + POST (appends `source='client_preview'` revision note)
+
+**Key library files:**
+- `lib/operator-studio/clients.ts` — CRUD wrapper
+- `lib/operator-studio/ingest.ts` — `manualIngest()` (creates property, links photos, optional director-notes seed). Does NOT trigger pipeline server-side.
+- `lib/operator-studio/invoice.ts` — pure `formatInvoiceSummary()` text formatter
+- `lib/operator-studio/invoice-data.ts` — `buildInvoice()` joins clients + properties + cost_events (integration-tested when `LE_RUN_INTEGRATION=true`)
+- `lib/operator-studio/brand-kit.ts` — `brandKitFromClient()` + `mergeBrandVars()` (pure helpers, fully unit-tested)
+- `lib/operator-studio/clip-swap.ts` — `swapClip()` validates room_type match, copies clip_url + sets `scenes.replaced_at`, calls `rerunAssembly`
+- `lib/operator-studio/preview.ts` — preview-link data access (`createPreviewLink`, `fetchByToken`, `recordPreviewView`, `insertClientNote`)
+- `lib/operator-studio/preview-tokens.ts` — `crypto.randomBytes(24).toString('base64url').slice(0,32)` + regex validator (precheck before any DB hit)
+- `lib/pipeline.ts:rerunAssembly()` — new export. The assembly stage was refactored into `runAssemblyStep()`; both `runPipeline` and `rerunAssembly` call it. Cost events take a `reason` parameter — `runAssemblyStep({ reason: 'manual_rerun' })` emits `cost_events.metadata.reason='manual_rerun'`.
+- `lib/pipeline.ts:1144-1182` — brand-kit injection at assembly: when `properties.client_id` is set, fetches the client + merges `Brand.*` keys into Creatomate modifications. No-op when `client_id` is null.
+
+**Frontend:**
+- `src/styles/studio-design.css` — Glass design tokens (`--le-*`) + utility classes scoped under `.studio-scope`
+- `src/components/studio/StudioShell.tsx` — wraps every Studio page with the warm-gray canvas + 5%-opacity SVG grain layer + `.studio-scope` token scope
+- `src/components/studio/StudioNav.tsx` — segmented-pill nav (Queue / Clients)
+- `src/components/studio/ClientPicker.tsx`, `SceneStrip.tsx`, `IterateInLabModal.tsx`
+- Pages: `StudioHome.tsx`, `Clients.tsx`, `ClientEdit.tsx`, `StudioNew.tsx`, `PropertyCommandCenter.tsx`, `src/pages/preview/PreviewPage.tsx`
+
+**Schema (applied via Supabase MCP 2026-05-15):**
+- Migration `056_operator_studio.sql` — `clients`, `property_previews`, `property_revision_notes` tables; `properties.order_mode`, `client_id`, `ingest_source`, `ingest_source_url`; partial index on operator-mode properties; RLS enabled with no policies (service-role only); `increment_preview_view(p_token text)` Postgres function for atomic counter increment.
+- Migration `057_operator_studio_scenes_followup.sql` — `scenes.replaced_at`, `scenes.room_type` (backfilled from `photos.room_type` via `scenes.photo_id`); `prompt_lab_listing_scene_iterations.room_type` (backfilled from parent scene).
+
+**Open gates before merging to dev:**
+1. **Add `Brand.*` placeholders to Creatomate templates in the editor.** Code sends `Brand.logo`, `Brand.primary`, `Brand.secondary`, `Brand.agent_name`, `Brand.agent_headshot`, `Brand.brokerage`. Creatomate silently ignores unknown keys — until placeholders exist, operator videos look identical to customer videos. Document the final placeholder names back here after the edit.
+2. Decide: add a `properties.square_footage` column or remove the input from the form (currently the field is accepted by `manualIngest` and silently dropped).
+3. Cleanup: `ClientRow` is inlined in `ClientPicker.tsx` instead of imported from `lib/types/operator-studio.ts`.
+
+**Design system:** `listing-elevate-backend/project/glass/STYLE-GUIDE.md` from the Claude Design bundle. "Apple-clean × Noteflow-soft" — warm-gray canvas, white cards, near-monochrome, Inter only, no gradients on inner cards, no glass blur on cards (only allowed on a sidebar — which we don't have, since the existing TopNav handles nav).
+
+**Spec + plan:** `docs/specs/2026-05-15-operator-studio-design.md` (v2 — re-phased after Gemini adversarial review pulled brand-kit, preview-link, and clip-swap into Phase 1; full playbooks deferred to Phase 2). `docs/plans/2026-05-15-operator-studio-plan.md`. Session notes: `docs/sessions/2026-05-15-operator-studio.md`.
+
+**Phase 2/3 outline (no detailed plans yet):**
+- P2: Apify magic-link scraper for Zillow/Redfin/Sierra URLs; full `playbooks` table + CRUD + UI + pipeline application; director's notes panel polish; Claude distill notes → scene actions.
+- P3: Finances integration (per-client P&L card); ElevenLabs voice clone wiring (`clients.voice_id` becomes the voiceover input); multi-revision tracking + cap.
 
 ---
 
