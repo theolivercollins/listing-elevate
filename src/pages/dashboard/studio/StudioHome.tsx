@@ -144,26 +144,25 @@ const StudioHome = () => {
   const needsReview = b.needs_review.length;
   const deliveredCount = b.delivered.length;
   const totalAll = b.inbox.length + b.rendering.length + b.needs_review.length + b.delivered.length;
+  const activeOrders = totalIn + needsReview;
 
   return (
     <StudioShell>
       {/* ─── Page heading ─── */}
       <div className="studio-page-heading">
         <div>
-          <span className="studio-page-eyebrow">Studio · queue</span>
-          <h1 className="studio-page-h1">New listings</h1>
+          <span className="studio-page-eyebrow">Operator Studio</span>
+          <h1 className="studio-page-h1">Queue</h1>
           {!loading && (
             <p className="studio-page-sub">
-              {totalIn} in production.{' '}
-              {needsReview} need{needsReview === 1 ? 's' : ''} review.{' '}
-              {deliveredCount} delivered this week.
+              {activeOrders > 0
+                ? `${activeOrders} active order${activeOrders !== 1 ? 's' : ''}${needsReview > 0 ? ` — ${needsReview} need${needsReview === 1 ? 's' : ''} review` : ''}.`
+                : 'No active orders.'}
+              {deliveredCount > 0 && ` ${deliveredCount} delivered this week.`}
             </p>
           )}
         </div>
         <div className="studio-page-actions">
-          <Link to="/dashboard/studio" className="studio-btn-ghost">
-            View pipeline
-          </Link>
           <Link to="/dashboard/studio/new" className="studio-cta-primary">
             <Plus size={13} strokeWidth={2} />
             New listing
@@ -193,23 +192,15 @@ const StudioHome = () => {
           >
             <div className="studio-kpi-card">
               <div className="studio-kpi-head">
-                <span className="studio-kpi-label">Inbox</span>
+                <span className="studio-kpi-label">Active orders</span>
               </div>
-              <div className="studio-kpi-value studio-tabnum">{b.inbox.length}</div>
-              <div className="studio-kpi-sub">Awaiting pipeline</div>
+              <div className="studio-kpi-value studio-tabnum">{activeOrders}</div>
+              <div className="studio-kpi-sub">{b.inbox.length} inbox · {b.rendering.length} rendering</div>
             </div>
 
             <div className="studio-kpi-card">
               <div className="studio-kpi-head">
-                <span className="studio-kpi-label">Rendering</span>
-              </div>
-              <div className="studio-kpi-value studio-tabnum">{b.rendering.length}</div>
-              <div className="studio-kpi-sub">In progress</div>
-            </div>
-
-            <div className="studio-kpi-card">
-              <div className="studio-kpi-head">
-                <span className="studio-kpi-label">Needs review</span>
+                <span className="studio-kpi-label">Awaiting review</span>
               </div>
               <div
                 className="studio-kpi-value studio-tabnum"
@@ -217,7 +208,7 @@ const StudioHome = () => {
               >
                 {needsReview}
               </div>
-              <div className="studio-kpi-sub">Flagged for attention</div>
+              <div className="studio-kpi-sub">{needsReview === 0 ? 'All clear' : 'Need a decision'}</div>
             </div>
 
             <div className="studio-kpi-card">
@@ -231,6 +222,14 @@ const StudioHome = () => {
                 {deliveredCount}
               </div>
               <div className="studio-kpi-sub">This week</div>
+            </div>
+
+            <div className="studio-kpi-card">
+              <div className="studio-kpi-head">
+                <span className="studio-kpi-label">Total in queue</span>
+              </div>
+              <div className="studio-kpi-value studio-tabnum">{totalAll}</div>
+              <div className="studio-kpi-sub">All stages</div>
             </div>
           </div>
 

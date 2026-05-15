@@ -13,6 +13,74 @@ import { uploadPhotosToStorage } from '@/lib/photo-upload';
 
 const MIN_PHOTOS = 5;
 
+// ─── Step indicator ───────────────────────────────────────────────────────────
+
+function StepIndicator({ steps, currentStep }: { steps: string[]; currentStep: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 28 }}>
+      {steps.map((label, i) => {
+        const done = i < currentStep;
+        const active = i === currentStep;
+        return (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', flex: i < steps.length - 1 ? 1 : 'none' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: done
+                    ? 'var(--le-ink)'
+                    : active
+                      ? 'var(--le-ink)'
+                      : 'rgba(11,11,16,0.06)',
+                  color: done || active ? '#fff' : 'var(--le-muted)',
+                  transition: 'background 0.2s, color 0.2s',
+                  flexShrink: 0,
+                }}
+              >
+                {done ? (
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  i + 1
+                )}
+              </div>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: active ? 'var(--le-ink)' : done ? 'var(--le-muted)' : 'var(--le-muted-2)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </span>
+            </div>
+            {i < steps.length - 1 && (
+              <div
+                style={{
+                  flex: 1,
+                  height: 1,
+                  background: done ? 'var(--le-ink)' : 'rgba(11,11,16,0.10)',
+                  margin: '0 8px',
+                  marginBottom: 22,
+                  transition: 'background 0.2s',
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 interface UploadedFile {
   file: File;
   preview: string;
@@ -59,6 +127,13 @@ const StudioNew = () => {
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const isValid = address.trim() && clientId && files.length >= MIN_PHOTOS;
+
+  // Step indicator — which conceptual step the user is on
+  // Step 0: client + address (required)
+  // Step 1: property details + notes
+  // Step 2: photos
+  const currentStep = !clientId || !address.trim() ? 0 : files.length < MIN_PHOTOS ? 1 : 2;
+  const FORM_STEPS = ['Client & address', 'Details & notes', 'Photos'];
 
   // ─── file handling ───
   const handleFiles = useCallback(
@@ -158,6 +233,8 @@ const StudioNew = () => {
         onSubmit={handleSubmit}
         style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 0 }}
       >
+        <StepIndicator steps={FORM_STEPS} currentStep={currentStep} />
+
         <div className="studio-card" style={{ padding: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
