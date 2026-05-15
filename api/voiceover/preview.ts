@@ -1,12 +1,15 @@
 /**
  * POST /api/voiceover/preview
  *
- * Orchestrate: Compass scrape → Claude script → ElevenLabs TTS.
+ * Orchestrate: [Compass scrape →] Claude script → ElevenLabs TTS.
  * Uploads the MP3 to storage under voiceovers/preview/{tempId}.mp3.
  * Does NOT persist to a property row — the client passes the returned audioUrl
  * to createProperty which moves the file to a permanent path.
  *
- * Body: { voiceId, durationSec, compassUrl }
+ * Body: { voiceId, durationSec, compassUrl?, script?, description? }
+ *   - compassUrl: scrape Compass then generate script + TTS (original path)
+ *   - script:     skip scrape + script gen; run TTS only (voice-swap flow)
+ *   - description: skip Compass scrape; pass description directly to script gen + TTS
  * Returns: { audioUrl, script, voice: { id, name } }
  */
 
@@ -28,7 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAuth(req, res);
   if (!auth) return; // requireAuth already sent 401
 
-  const { voiceId, durationSec, compassUrl, script: providedScript } = req.body ?? {};
+  const {
+    voiceId,
+    durationSec,
+    compassUrl,
+    script: providedScript,
+    description: providedDescription,
+  } = req.body ?? {};
 
   // ── Input validation ──
   if (!voiceId || typeof voiceId !== "string" || !isValidVoiceId(voiceId)) {
@@ -40,19 +49,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "durationSec must be 15, 30, or 60" });
   }
 
-  // If `script` is provided, we skip Compass scrape + Claude script and run
-  // ONLY the TTS step. Used by the "try this voice" flow when the user
-  // already has a script and just wants to swap voices.
+  // Determine execution path:
+  //   skipScriptGen=true  → TTS only (script already provided)
+  //   hasDescription=true → skip Compass scrape, run script gen + TTS
+  //   else                → full chain: Compass scrape + script gen + TTS
   const skipScriptGen = typeof providedScript === "string" && providedScript.trim().length > 0;
+  const hasDescription =
+    !skipScriptGen &&
+    typeof providedDescription === "string" &&
+    providedDescription.trim().length > 0;
 
-  if (!skipScriptGen) {
+  if (!skipScriptGen && !hasDescription) {
     if (
       !compassUrl ||
       typeof compassUrl !== "string" ||
       !compassUrl.match(/^https?:\/\/(www\.)?compass\.com\//i)
     ) {
       return res.status(400).json({
-        error: "compassUrl must be a valid compass.com URL",
+        error:
+          "One of compassUrl (compass.com URL), description, or script is required",
       });
     }
   }
@@ -67,17 +82,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Voice-only regeneration — use the script the client already has.
     script = providedScript.trim();
   } else {
-    // ── Step 1: Scrape Compass ──
+    // ── Step 1: Resolve description ──
     let description: string;
-    try {
-      const scrapeResult = await scrapeCompassDescription(compassUrl, null);
-      description = scrapeResult.description;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return res.status(422).json({
-        error: msg,
-        hint: "Try pasting the description manually",
-      });
+
+    if (hasDescription) {
+      // Caller supplied description directly — skip Compass scrape entirely.
+      description = (providedDescription as string).trim();
+    } else {
+      // Full chain: scrape Compass for description.
+      try {
+        const scrapeResult = await scrapeCompassDescription(compassUrl, null);
+        description = scrapeResult.description;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return res.status(422).json({
+          error: msg,
+          hint: "Try pasting the description manually",
+        });
+      }
     }
 
     // ── Step 2: Generate script ──
