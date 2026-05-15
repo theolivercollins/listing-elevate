@@ -254,7 +254,12 @@ export interface AIResearchSource { url: string; title: string; snippet?: string
 export interface AIChatOptions {
   templateId?: string | null;
   includeRecentPosts?: boolean;
-  research?: boolean;
+  /**
+   * "auto"   — Ally decides per turn (default)
+   * "always" — research every turn
+   * "never"  — never research
+   */
+  researchMode?: "auto" | "always" | "never";
   attachments?: AIAttachment[];
 }
 export interface AIChatResponse {
@@ -286,7 +291,7 @@ export async function aiChat(
       current_html: currentHtml,
       template_id: opts.templateId ?? null,
       include_recent_posts: opts.includeRecentPosts === true,
-      research: opts.research === true,
+      research_mode: opts.researchMode ?? "auto",
       attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
     }),
   });

@@ -107,7 +107,7 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
       const r = await aiChat(args.historyForApi, html, {
         templateId: null,
         includeRecentPosts: true,
-        research: useResearch,
+        researchMode: useResearch ? "always" : "auto",
       });
       return { r };
     },
@@ -263,11 +263,9 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                 <div className="text-sm font-medium">Improve with Ally</div>
                 <div className="text-[11px] text-muted-foreground">
                   {contextLabel ?? "Suggestions apply to this post"}
-                  {useResearch && (
-                    <span className="ml-1 inline-flex items-center gap-0.5 text-primary">
-                      · <Globe className="ml-0.5 h-2.5 w-2.5" /> research
-                    </span>
-                  )}
+                  <span className={`ml-1 inline-flex items-center gap-0.5 ${useResearch ? "text-primary" : "text-muted-foreground"}`}>
+                    · <Globe className="ml-0.5 h-2.5 w-2.5" /> {useResearch ? "research always-on" : "research: auto"}
+                  </span>
                 </div>
               </div>
               {totalCostCents > 0 && (
@@ -425,10 +423,10 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                       />
                       <div className="flex-1 text-sm">
                         <div className="flex items-center gap-1.5">
-                          <Globe className="h-3.5 w-3.5" /> Research with Gemini
+                          <Globe className="h-3.5 w-3.5" /> Always research
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          Pull current facts + sources from the web before drafting.
+                          Off: Ally auto-detects when fresh data is needed. On: Gemini every turn.
                         </div>
                       </div>
                     </label>
