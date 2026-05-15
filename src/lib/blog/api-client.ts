@@ -250,6 +250,11 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
 
 // AI multi-turn chat — builds a post conversationally.
 export interface AIChatMessage { role: "user" | "assistant"; content: string; }
+export interface AIChatOptions {
+  templateId?: string | null;
+  includeRecentPosts?: boolean;
+  attachments?: AIAttachment[];
+}
 export interface AIChatResponse {
   reply: string;
   body_html: string;
@@ -260,11 +265,18 @@ export interface AIChatResponse {
 export async function aiChat(
   messages: AIChatMessage[],
   currentHtml: string,
+  opts: AIChatOptions = {},
 ): Promise<AIChatResponse> {
   const res = await fetch("/api/blog/ai/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ messages, current_html: currentHtml }),
+    body: JSON.stringify({
+      messages,
+      current_html: currentHtml,
+      template_id: opts.templateId ?? null,
+      include_recent_posts: opts.includeRecentPosts === true,
+      attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
+    }),
   });
   return asJson(res);
 }
