@@ -43,13 +43,29 @@ export interface AssembleVideoParams {
   transition?: ClipTransition;
   /** Background music. Creatomate honors this; Shotstack currently ignores it. */
   music?: AssemblyMusic | null;
+  /** Optional voiceover narration mixed over the timeline. Creatomate
+   *  honors this; Shotstack currently ignores it. When present, the music
+   *  track ducks to `voiceover.duckMusicTo` so narration sits on top. */
+  voiceover?: AssemblyVoiceover | null;
 }
 
 export interface AssemblyMusic {
   /** Public URL Creatomate can fetch (mp3/m4a/wav). */
   url: string;
-  /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays. */
+  /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays.
+   *  When voiceover is present, the caller passes a smaller value (≈0.06)
+   *  via duckMusicTo on AssemblyVoiceover so narration dominates. */
   volume?: number;
+}
+
+export interface AssemblyVoiceover {
+  /** Public URL Creatomate can fetch (mp3 from Supabase Storage signed URL). */
+  url: string;
+  /** Volume 0..1. Default 1.0 — voiceover is the primary audio. */
+  volume?: number;
+  /** Music ducks to this volume when voiceover is present. Default 0.06
+   *  (very subtle bed). Ignored if no music is also passed. */
+  duckMusicTo?: number;
 }
 
 export interface AssemblyJob {

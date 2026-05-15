@@ -85,7 +85,7 @@ export async function createProperty(
     soldPrice?: string;
   },
   onProgress?: (uploaded: number, total: number) => void,
-): Promise<{ id: string; status: string; photoCount: number }> {
+): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
   const tempId = crypto.randomUUID();
   const total = data.photos.length;
   let uploaded = 0;
@@ -147,8 +147,15 @@ export async function createProperty(
     console.warn(`Only ${uploadedPaths.length}/${total} photos uploaded successfully`);
   }
 
-  // API call is instant — just sends paths + metadata
-  const result = await apiFetch<{ id: string; status: string; photoCount: number }>('/api/properties', {
+  // API call is instant — just sends paths + metadata.
+  // Returns { property, checkoutUrl } — client should redirect to checkoutUrl.
+  // The pipeline fires from the Stripe webhook (checkout.session.completed),
+  // NOT from here.
+  const result = await apiFetch<{
+    property: { id: string; status: string };
+    checkoutUrl: string;
+    photoCount: number;
+  }>('/api/properties', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -172,17 +179,18 @@ export async function createProperty(
     }),
   });
 
-  // Trigger pipeline in a separate long-running function (fire-and-forget)
-  triggerPipeline(result.id);
-
   return result;
 }
 
 export async function createPropertyFromDrive(data: {
   address: string; price: number; bedrooms: number; bathrooms: number;
   listing_agent: string; brokerage: string; driveLink: string;
-}): Promise<{ id: string; status: string; photoCount: number }> {
-  const result = await apiFetch<{ id: string; status: string; photoCount: number }>('/api/properties', {
+}): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
+  const result = await apiFetch<{
+    property: { id: string; status: string };
+    checkoutUrl: string;
+    photoCount: number;
+  }>('/api/properties', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -196,15 +204,16 @@ export async function createPropertyFromDrive(data: {
     }),
   });
 
-  // Trigger pipeline in a separate long-running function (fire-and-forget)
-  triggerPipeline(result.id);
-
+  // Pipeline fires from webhook — do NOT call triggerPipeline here.
   return result;
 }
 
-// Fire-and-forget: triggers the pipeline in a separate 300s function
-function triggerPipeline(propertyId: string) {
-  fetch(`/api/pipeline/${propertyId}`, { method: 'POST' }).catch(() => {});
+/**
+ * Re-create a Stripe Checkout Session for a pending_payment property.
+ * Call this when the user cancelled and wants to retry payment.
+ */
+export async function resumeCheckout(propertyId: string): Promise<{ checkoutUrl: string }> {
+  return apiFetch(`/api/properties/${propertyId}/resume-checkout`, { method: 'POST' });
 }
 
 export async function rerunProperty(id: string): Promise<void> {

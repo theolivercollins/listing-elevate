@@ -141,6 +141,22 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // rating-based learning loop are the real quality levers. QA was
     // adding more bugs than it prevented.
 
+    // Stage 3.7: Voiceover — only fires when properties.add_voiceover is
+    // true. Generates a duration-aware narration via Claude, synthesizes
+    // it through ElevenLabs (the user's cloned voice if they paid the
+    // $125 setup, otherwise the default voice), and writes the audio URL
+    // back to properties.voiceover_audio_url. runAssembly reads it later.
+    // Non-fatal: any failure logs + returns null so the rest of the
+    // pipeline still delivers a video (silent or music-only).
+    try {
+      const { runVoiceover } = await import("./voiceover/generate.js");
+      await runVoiceover(propertyId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await log(propertyId, "scripting", "warn",
+        `Voiceover stage failed (non-fatal): ${msg}`);
+    }
+
     // Stage 4: Generate — fire-and-forget submission only. The cron
     // backstop at api/cron/poll-scenes.ts handles ALL polling, clip
     // collection, AND assembly invocation, so this function can exit
@@ -1120,7 +1136,17 @@ export async function runAssembly(propertyId: string): Promise<void> {
           })
         : null;
 
-      const assembleParams = { clips: clipInputs, overlays, music };
+      // Voiceover — only present when add_voiceover was true on the order
+      // AND runVoiceover synthesized + uploaded an mp3 in stage 3.7. When
+      // present, the music track ducks to ~6% so the narration dominates.
+      const voiceoverUrl = property.voiceover_audio_url ?? null;
+      const voiceover = voiceoverUrl ? { url: voiceoverUrl } : null;
+      if (voiceover) {
+        await log(propertyId, "assembly", "info",
+          "Voiceover narration mixed onto timeline (music ducked)");
+      }
+
+      const assembleParams = { clips: clipInputs, overlays, music, voiceover };
 
       // Render both aspect ratios sequentially. Each render typically takes
       // 30–90s. Kept sequential to stay under the 300s function budget.

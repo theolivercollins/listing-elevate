@@ -30,6 +30,7 @@ import {
   Image as ImageIcon,
   Newspaper,
   LayoutTemplate,
+  Music2,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -207,6 +208,21 @@ export function TopNav() {
             ))}
             <DevelopmentNav />
             <BlogNav />
+            <NavLink
+              to="/dashboard/music"
+              className={({ isActive }) =>
+                `relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic ${
+                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                } ${
+                  isActive
+                    ? "after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground"
+                    : ""
+                }`
+              }
+            >
+              <Music2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              Music
+            </NavLink>
             {dashboardNav.slice(-1).map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}

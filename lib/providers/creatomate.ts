@@ -98,7 +98,7 @@ const CLOSING_OVERLAY_DURATION = 4.0;
 export function buildCreatomateTimeline(
   params: AssembleVideoParams,
 ): CreatomateRenderScript {
-  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music } = params;
+  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music, voiceover } = params;
 
   if (clips.length === 0) {
     throw new Error("buildCreatomateTimeline: clips array is empty");
@@ -322,8 +322,11 @@ export function buildCreatomateTimeline(
     : [];
 
   // Background music — single audio element trimmed to the timeline
-  // duration, ducked to a low volume (~18%) so it sits under overlays
-  // and any future voiceover track. Fades in/out for polish.
+  // duration. When voiceover is present, music ducks to ~6% so the
+  // narration dominates; otherwise the regular ~18% ambient bed.
+  const musicVolume = voiceover?.url
+    ? (voiceover.duckMusicTo ?? 0.06)
+    : (music?.volume ?? 0.18);
   const musicElements: CreatomateElement[] = music?.url
     ? [
         {
@@ -335,10 +338,30 @@ export function buildCreatomateTimeline(
           // Creatomate accepts numeric `volume` 0..1 or a percentage string.
           // We pass a percentage string for readability in the rendered
           // RenderScript JSON.
-          volume: `${Math.round((music.volume ?? 0.18) * 100)}%`,
+          volume: `${Math.round(musicVolume * 100)}%`,
           animations: [
             { type: "fade", time: "start", duration: "1.0", fade: true },
             { type: "fade", time: "end", duration: "1.5", fade: false },
+          ],
+        },
+      ]
+    : [];
+
+  // Voiceover narration — sits on its own track above music. Full volume
+  // by default; the music track ducks (above) so the narrator is clear.
+  // Half-second fade in / one-second fade out so the cut isn't abrupt.
+  const voiceoverElements: CreatomateElement[] = voiceover?.url
+    ? [
+        {
+          type: "audio",
+          source: voiceover.url,
+          track: 6,
+          time: 0,
+          duration: totalDuration,
+          volume: `${Math.round((voiceover.volume ?? 1.0) * 100)}%`,
+          animations: [
+            { type: "fade", time: "start", duration: "0.5", fade: true },
+            { type: "fade", time: "end", duration: "1.0", fade: false },
           ],
         },
       ]
@@ -362,6 +385,7 @@ export function buildCreatomateTimeline(
       closingAgent,
       ...logoElements,
       ...musicElements,
+      ...voiceoverElements,
     ],
   };
 }

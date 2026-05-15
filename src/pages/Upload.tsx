@@ -28,6 +28,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty } from "@/lib/api";
 import { SiteNav } from "@/v2/components/SiteNav";
+import { useAuth } from "@/lib/auth";
+import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import "@/v2/styles/v2.css";
 
 interface UploadedFile {
@@ -48,6 +50,10 @@ const STEPS = ["Style", "Add-ons", "Property", "Photos"] as const;
 type StepId = 0 | 1 | 2 | 3;
 
 const Upload = () => {
+  // ─── auth ───
+  const { user, profile, loading: authLoading } = useAuth();
+  const { openLogin } = useLoginDialog();
+
   // ─── form state ───
   const [step, setStep] = useState<StepId>(0);
   const [address, setAddress] = useState("");
@@ -155,9 +161,17 @@ const Upload = () => {
   const isLifeCycle = selectedPackage === "life_cycle";
   const basePrice = selectedDur ? (isLifeCycle ? selectedDur.lifeCyclePrice : selectedDur.price) : 0;
   const orientationExtra = isLifeCycle ? 0 : (orientations.find((o) => o.id === selectedOrientation)?.extra || 0);
-  const voiceoverExtra = addVoiceover ? 15 : 0;
+  // Voiceover pricing: default voice = $10/video. Voice clone = $125 one-time
+  // setup PLUS $10/video (the cloned voice still needs ElevenLabs synthesis
+  // each render). If the user already has a clone on file, skip the $125.
+  const voiceoverExtra = addVoiceover ? 10 : 0;
   const customExtra = addCustomRequest ? 15 : 0;
-  const voiceCloneExtra = addVoiceClone ? 15 : 0;
+  const VOICE_CLONE_SETUP = 125;
+  const VOICE_CLONE_PER_VIDEO = 10;
+  const hasExistingClone = profile?.voice_clone_status === 'ready' || !!profile?.elevenlabs_voice_id;
+  const voiceCloneExtra = addVoiceClone
+    ? (hasExistingClone ? VOICE_CLONE_PER_VIDEO : VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO)
+    : 0;
   const totalPrice = basePrice + orientationExtra + voiceoverExtra + customExtra + voiceCloneExtra;
 
   const needsDaysOnMarket = selectedPackage === "just_pended" || selectedPackage === "just_closed";
@@ -178,7 +192,7 @@ const Upload = () => {
   const step3Valid = files.length >= 10;
   const stepValidity = [step0Valid, step1Valid, step2Valid, step3Valid] as const;
   const canAdvance = stepValidity[step];
-  const canSubmit = stepValidity.every(Boolean);
+  const canSubmit = stepValidity.every(Boolean) && !!user;
 
   // ─── files ───
   const handleFiles = useCallback(
@@ -222,7 +236,11 @@ const Upload = () => {
           selectedPackage,
           selectedDuration,
           selectedOrientation,
-          addVoiceover,
+          // Voice clone implies voiceover (the cloned voice IS the narration
+          // for this video). The two toggles are mutually exclusive in the
+          // form, so OR-ing here just normalizes for the backend pipeline,
+          // which keys voiceover generation off add_voiceover.
+          addVoiceover: addVoiceover || addVoiceClone,
           addVoiceClone,
           addCustomRequest,
           customRequestText,
@@ -231,8 +249,8 @@ const Upload = () => {
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
-      setTrackingId(result.id);
-      setSubmitted(true);
+      // Redirect to Stripe Checkout. The success_url lands at /upload/success.
+      window.location.href = result.checkoutUrl;
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit property");
     } finally {
@@ -518,6 +536,8 @@ const Upload = () => {
                         },
                         icon: Mic,
                         label: "AI voiceover",
+                        priceLabel: "+ $10",
+                        subPriceLabel: null,
                         desc: "Studio-quality narration generated from a script tailored to the listing.",
                       },
                       {
@@ -528,13 +548,21 @@ const Upload = () => {
                         },
                         icon: Mic,
                         label: "Voice clone",
-                        desc: "Use a sample of your own voice. Setup happens after submission.",
+                        priceLabel: hasExistingClone
+                          ? `+ $${VOICE_CLONE_PER_VIDEO}`
+                          : `+ $${VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO}`,
+                        subPriceLabel: hasExistingClone
+                          ? `Voice clone on file — $${VOICE_CLONE_SETUP} setup waived`
+                          : `$${VOICE_CLONE_SETUP} one-time setup + $${VOICE_CLONE_PER_VIDEO}/video`,
+                        desc: "Narrate every video in your own voice. Our team will reach out within one business day to schedule a 15-minute recording session — your clone is then used on this video and every future order.",
                       },
                       {
                         active: addCustomRequest,
                         toggle: () => setAddCustomRequest(!addCustomRequest),
                         icon: Sparkles,
                         label: "Custom request",
+                        priceLabel: "+ $15",
+                        subPriceLabel: null,
                         desc: "Specific shots, music, or pacing notes for the production team.",
                       },
                     ].map((addon) => {
@@ -559,9 +587,12 @@ const Upload = () => {
                           <div className="min-w-0 flex-1">
                             <div className="flex items-baseline justify-between gap-3">
                               <h3 className="text-base font-semibold tracking-[-0.01em]">{addon.label}</h3>
-                              <span className="tabular text-xs text-muted-foreground">+ $15</span>
+                              <span className="tabular text-xs text-muted-foreground">{addon.priceLabel}</span>
                             </div>
                             <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">{addon.desc}</p>
+                            {addon.subPriceLabel && (
+                              <p className="mt-1 tabular text-[11px] text-muted-foreground/80">{addon.subPriceLabel}</p>
+                            )}
                           </div>
                         </button>
                       );
@@ -822,6 +853,29 @@ const Upload = () => {
                 {submitError && (
                   <div className="border border-destructive/40 bg-destructive/10 p-5">
                     <p className="text-xs text-destructive">{submitError}</p>
+                  </div>
+                )}
+
+                {/* Sign-in prompt — shown on the final step when not authenticated */}
+                {!authLoading && !user && (
+                  <div className="flex items-center justify-between gap-6 border border-border p-5">
+                    <p className="text-xs text-muted-foreground">
+                      Sign in to finalise your order — your voice clone, presets, and order history are saved to your account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openLogin}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "var(--le-accent)", color: "var(--le-accent-fg)",
+                        border: "none", borderRadius: 4,
+                        padding: "8px 16px", fontSize: 12, fontWeight: 500,
+                        cursor: "pointer", whiteSpace: "nowrap",
+                        fontFamily: "var(--le-font-sans)",
+                      }}
+                    >
+                      Sign in
+                    </button>
                   </div>
                 )}
               </motion.div>

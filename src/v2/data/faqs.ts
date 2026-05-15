@@ -33,7 +33,7 @@ const FAQS: Faq[] = [
   {
     id: "voiceover",
     question: "Can I add voiceover?",
-    answer: "Yes — generated voiceover is $15, or your own voice cloned (via a 30-second sample) is $25. Included free on the five-pack.",
+    answer: "Yes — AI voiceover is $10 per video using a studio voice. To narrate in your own voice, the one-time voice clone setup is $125 (we use a 30-second sample) and then $10 per video forever after.",
   },
 ];
 

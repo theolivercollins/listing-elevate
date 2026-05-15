@@ -11,6 +11,7 @@ import type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 } from "./types.js";
 import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
 
@@ -26,6 +27,7 @@ export type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 };
 
 let client: SupabaseClient | null = null;
@@ -58,6 +60,11 @@ export async function createProperty(data: {
   custom_request_text?: string | null;
   days_on_market?: number | null;
   sold_price?: number | null;
+  // Stripe billing — migration 058
+  status?: string;
+  stripe_payment_status?: string;
+  // Auth — populated on POST /api/properties when user is signed in.
+  submitted_by?: string;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")
@@ -370,6 +377,63 @@ function hashString(s: string): string {
   return h.toString(16);
 }
 
+// ── User Profiles ──
+
+/**
+ * Return the voice-clone state for a given user. Returns null values when
+ * the user has no profile row (shouldn't happen after first login, but
+ * callers must handle it).
+ */
+export async function getUserVoiceClone(
+  userId: string
+): Promise<{ voice_id: string | null; status: string }> {
+  const { data, error } = await getSupabase()
+    .from("user_profiles")
+    .select("elevenlabs_voice_id, voice_clone_status")
+    .eq("user_id", userId)
+    .single();
+  if (error) throw error;
+  return {
+    voice_id: (data as Pick<UserProfile, "elevenlabs_voice_id">).elevenlabs_voice_id,
+    status: (data as Pick<UserProfile, "voice_clone_status">).voice_clone_status,
+  };
+}
+
+/**
+ * Write voice-clone fields on user_profiles. Uses the service-role client
+ * (same as all other db.ts helpers) so this can be called from pipeline
+ * workers that run outside the browser auth context.
+ */
+export async function setUserVoiceClone(
+  userId: string,
+  fields: {
+    voice_id?: string;
+    status: UserProfile["voice_clone_status"];
+    sample_url?: string;
+    paid_cents?: number;
+  }
+): Promise<void> {
+  const update: Record<string, unknown> = {
+    voice_clone_status: fields.status,
+    updated_at: new Date().toISOString(),
+  };
+  if (fields.voice_id !== undefined) update.elevenlabs_voice_id = fields.voice_id;
+  if (fields.sample_url !== undefined) update.voice_clone_sample_url = fields.sample_url;
+  if (fields.paid_cents !== undefined) {
+    update.voice_clone_paid_cents = fields.paid_cents;
+    update.voice_clone_paid_at = new Date().toISOString();
+  }
+  if (fields.status === "enrolling" || fields.status === "ready") {
+    // Set created_at on first transition into an active clone lifecycle state.
+    update.voice_clone_created_at = new Date().toISOString();
+  }
+  const { error } = await getSupabase()
+    .from("user_profiles")
+    .update(update)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 // Detailed cost event captured from a real API response (tokens, credits,
 // provider units). Sum of cost_events.cost_cents for a property should
 // exactly match properties.total_cost_cents.
@@ -382,8 +446,8 @@ export async function recordCostEvent(event: {
    */
   propertyId: string | null;
   sceneId?: string | null;
-  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
+  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision" | "voiceover";
+  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "elevenlabs";
   unitsConsumed?: number;
   unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
   costCents: number;

@@ -1,4 +1,5 @@
 export type PropertyStatus =
+  | "pending_payment"
   | "queued"
   | "analyzing"
   | "scripting"
@@ -119,6 +120,43 @@ export interface Property {
   custom_request_text: string | null;
   days_on_market: number | null;
   sold_price: number | null;
+  // ElevenLabs voiceover outputs — pipeline-written, not set at order creation.
+  voiceover_script: string | null;
+  voiceover_audio_url: string | null;
+  voiceover_voice_id_used: string | null;
+  voiceover_chars: number | null;
+  voiceover_duration_seconds: number | null;
+  // Stripe billing — added migration 058.
+  stripe_session_id: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_payment_status: "unpaid" | "pending" | "paid" | "refunded" | "failed" | "cancelled";
+  stripe_paid_at: string | null;
+  stripe_amount_cents: number | null;
+}
+
+export interface UserProfile {
+  id: string;
+  user_id: string;
+  role: "admin" | "user";
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  email: string | null;
+  brokerage: string | null;
+  logo_url: string | null;
+  colors: Record<string, string> | null;
+  presets: unknown[] | null;
+  created_at: string;
+  updated_at: string;
+  // ElevenLabs voice-clone state — added migration 056.
+  elevenlabs_voice_id: string | null;
+  voice_clone_status: "none" | "enrolling" | "ready" | "failed";
+  voice_clone_created_at: string | null;
+  voice_clone_paid_cents: number | null;
+  voice_clone_paid_at: string | null;
+  voice_clone_sample_url: string | null;
+  // Stripe — added migration 058.
+  stripe_customer_id: string | null;
 }
 
 export interface Photo {

@@ -40,3 +40,14 @@ You are working on **Listing Elevate**, a fully-autonomous real-estate listing-v
 ## Authoritative consolidation spec
 
 `docs/specs/2026-05-05-listing-elevate-consolidation-design.md` — the design that put this CLAUDE.md + governance system in place. Read on first session post-2026-05-05 to understand the topology.
+
+## Self-service unblock policy (added 2026-05-14)
+
+**Never make Oliver do work you can do yourself.** Before pausing to ask, exhaust these in order:
+
+1. **Credentials live in `docs/CREDENTIALS.md`.** Any API key, secret, password, or service URL you need is there. `grep -i` it before asking. If it's missing, ask Oliver to add it to that file (don't ask for the value in chat — it should land in the credentials doc so future sessions find it too).
+2. **Use the MCP servers.** Available MCPs: **Supabase** (apply migrations, run SQL, list tables, get logs/advisors), **Vercel** (auth, deploy ops), **Gamma** (presentations). For Supabase ops always prefer the MCP over CLI/dashboard. If you need an MCP that isn't installed (Stripe, GitHub, Slack, Linear, etc.), tell Oliver the exact MCP package name and what you'll use it for — don't ask him to do the operation manually.
+3. **Use provider REST APIs directly.** When no MCP exists (e.g. Stripe webhooks, ElevenLabs voice management), call the API yourself with `curl` + the secret from credentials.md. Don't ask Oliver to click through a dashboard for something an HTTP call can do.
+4. **Only escalate to Oliver when you genuinely cannot proceed** — the work needs a decision he hasn't made, requires a physical action (recording a voice sample), or hits a destructive operation gated by his "no destructive ops without permission" rule (git push, prod deploy, schema drop).
+
+When you do escalate, propose the answer first and ask for ratification rather than asking him to think from scratch.
