@@ -323,7 +323,7 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-[data-theme="dark"] .le-img-placeholder {
+.dark .le-img-placeholder {
   background-image: repeating-linear-gradient(
     135deg,
     transparent 0 8px,
@@ -469,7 +469,7 @@
 }
 .le-dash-shell.is-collapsed { --sidebar-w: 72px; }
 
-[data-theme="dark"] .le-dash-shell {
+.dark .le-dash-shell {
   --bg:       #050710;
   --surface:  #0b0f1c;
   --ink:      #f4f5fb;
@@ -506,7 +506,7 @@
   z-index: 30;
   transition: padding .3s cubic-bezier(.2,.8,.2,1);
 }
-[data-theme="dark"] .le-dash-sidebar {
+.dark .le-dash-sidebar {
   background: rgba(11, 15, 28, 0.75);
 }
 .le-dash-shell.is-collapsed .le-dash-sidebar { padding: 16px 8px; }
@@ -542,8 +542,8 @@
   font: inherit;
 }
 .le-workspace-switch:hover { background: rgba(11,11,16,0.05); border-color: rgba(11,11,16,0.1); }
-[data-theme="dark"] .le-workspace-switch { background: rgba(255,255,255,0.04); }
-[data-theme="dark"] .le-workspace-switch:hover { background: rgba(255,255,255,0.07); }
+.dark .le-workspace-switch { background: rgba(255,255,255,0.04); }
+.dark .le-workspace-switch:hover { background: rgba(255,255,255,0.07); }
 .le-ws-avatar {
   width: 26px; height: 26px;
   background: var(--ink); color: var(--surface);
@@ -591,7 +591,7 @@
   overflow: visible;
 }
 .le-nav-item:hover { background: rgba(11,11,16,0.05); color: var(--ink); }
-[data-theme="dark"] .le-nav-item:hover { background: rgba(255,255,255,0.06); }
+.dark .le-nav-item:hover { background: rgba(255,255,255,0.06); }
 .le-nav-item.is-active {
   background: var(--ink);
   color: var(--surface);
@@ -833,7 +833,7 @@
   background: rgba(11,11,16,0.025);
   border-radius: var(--radius-sm);
 }
-[data-theme="dark"] .le-card-flat { background: rgba(255,255,255,0.03); }
+.dark .le-card-flat { background: rgba(255,255,255,0.03); }
 .le-card-strong {
   background: var(--surface);
   border-radius: var(--radius);
@@ -906,7 +906,7 @@
   text-decoration: none;
 }
 .le-btn-dark:hover { background: #1a1a22; }
-[data-theme="dark"] .le-btn-dark:hover { background: #2a2c34; }
+.dark .le-btn-dark:hover { background: #2a2c34; }
 
 .le-ai-banner {
   display: flex; align-items: center; gap: 16px;
@@ -942,7 +942,7 @@
   background: rgba(11,11,16,0.04);
   border-radius: 999px;
 }
-[data-theme="dark"] .le-seg { background: rgba(255,255,255,0.06); }
+.dark .le-seg { background: rgba(255,255,255,0.06); }
 .le-seg-item {
   padding: 6px 14px; border-radius: 999px; border: none;
   background: transparent; color: var(--muted);

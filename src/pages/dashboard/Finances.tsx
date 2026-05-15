@@ -5,6 +5,7 @@ import { SAMPLE_DAILY, SAMPLE_FINANCE_ROWS } from "@/components/dashboard/sample
 import {
   fetchCostBreakdown,
   fetchDailyStats,
+  fetchStatsOverview,
   type CostBreakdown,
   type CostBreakdownRow,
 } from "@/lib/api";
@@ -61,6 +62,13 @@ function sampleRows(): BreakdownRow[] {
   }));
 }
 
+// ─── Delta helper ─────────────────────────────────────────────────
+// Returns percentage change rounded to 1 dp, or undefined if either value is 0.
+function pctDelta(current: number, previous: number): number | undefined {
+  if (previous === 0) return undefined;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 // ─── Finances page ────────────────────────────────────────────────
 const TABS = ["provider", "model", "scope", "stage"] as const;
 type Tab = (typeof TABS)[number];
@@ -68,34 +76,84 @@ type Tab = (typeof TABS)[number];
 export default function Finances() {
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [overviewAvgCents, setOverviewAvgCents] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>("provider");
 
   useEffect(() => {
-    fetchDailyStats(14)
+    // Fetch 30 days so we can compare current-14 vs prior-14 for MTD delta
+    fetchDailyStats(30)
       .then(({ stats }) => setDailyStats(stats))
       .catch(() => {/* fall back to sample */});
     fetchCostBreakdown()
       .then(setCostBreakdown)
       .catch(() => {/* fall back to sample */});
+    fetchStatsOverview()
+      .then(({ avgCostPerVideoCents }) => setOverviewAvgCents(avgCostPerVideoCents))
+      .catch(() => {/* fall back to derived */});
   }, []);
 
   // ── derive display data ──────────────────────────────────────────
-  const dailyForUI = dailyStats.length > 0 ? dailyStats : SAMPLE_DAILY;
+  const liveDailyAvailable = dailyStats.length > 0;
 
-  // daily cost values: DailyStat uses total_cost_cents; SAMPLE_DAILY uses cost
-  const costSeries = dailyStats.length > 0
-    ? dailyStats.map((d) => d.total_cost_cents)
+  // cost series for sparkline (last 14 days)
+  const costSeries = liveDailyAvailable
+    ? dailyStats.slice(-14).map((d) => d.total_cost_cents)
     : SAMPLE_DAILY.map((d) => d.cost);
 
-  const totalSpend = costSeries.reduce((s, c) => s + c, 0);
+  // total for chart header (last-14 slice)
+  const totalSpend14 = costSeries.reduce((s, c) => s + c, 0);
 
-  // KPI: avg cost per video from live data, else sample-derived
-  const avgPerVideo = dailyStats.length > 0
-    ? (() => {
-        const totalVideos = dailyStats.reduce((s, d) => s + d.properties_completed, 0);
-        return totalVideos > 0 ? Math.round(totalSpend / totalVideos) : 0;
-      })()
-    : 84200; // $842 in cents — matches prototype
+  // ── KPI: Spend · MTD ────────────────────────────────────────────
+  // Sum month.cents across all byProvider rows; delta = last-14 vs prior-14 from daily.
+  const mtdCents = (() => {
+    if (costBreakdown?.byProvider?.length) {
+      return costBreakdown.byProvider.reduce((s, r) => s + r.month.cents, 0);
+    }
+    // fallback: use dailyStats total if available
+    if (liveDailyAvailable) return dailyStats.slice(-14).reduce((s, d) => s + d.total_cost_cents, 0);
+    return SAMPLE_DAILY.reduce((s, d) => s + d.cost, 0);
+  })();
+
+  // Delta for MTD: compare last-14 days vs prior-14 days from DAILY
+  const mtdDelta = (() => {
+    if (!liveDailyAvailable) return undefined;
+    const last14 = dailyStats.slice(-14).reduce((s, d) => s + d.total_cost_cents, 0);
+    const prior14 = dailyStats.slice(-28, -14).reduce((s, d) => s + d.total_cost_cents, 0);
+    if (prior14 === 0) {
+      // Only 14 days available — split into halves
+      const half = Math.floor(dailyStats.length / 2);
+      const recentHalf = dailyStats.slice(half).reduce((s, d) => s + d.total_cost_cents, 0);
+      const earlierHalf = dailyStats.slice(0, half).reduce((s, d) => s + d.total_cost_cents, 0);
+      return pctDelta(recentHalf, earlierHalf);
+    }
+    return pctDelta(last14, prior14);
+  })();
+
+  // ── KPI: Avg / video ────────────────────────────────────────────
+  // Prefer overview API's avgCostPerVideoCents; fall back to deriving from daily.
+  const avgPerVideo = (() => {
+    if (overviewAvgCents !== null && overviewAvgCents > 0) return overviewAvgCents;
+    if (liveDailyAvailable) {
+      const last14 = dailyStats.slice(-14);
+      const totalVideos = last14.reduce((s, d) => s + d.properties_completed, 0);
+      const totalCost = last14.reduce((s, d) => s + d.total_cost_cents, 0);
+      return totalVideos > 0 ? Math.round(totalCost / totalVideos) : 0;
+    }
+    return 84200; // $842 in cents — sample fallback
+  })();
+
+  // Delta for avg/video: current 7-day avg vs prior 7-day avg
+  const avgVideoDelta = (() => {
+    if (!liveDailyAvailable) return undefined;
+    function weekAvg(slice: DailyStat[]): number {
+      const vids = slice.reduce((s, d) => s + d.properties_completed, 0);
+      const cost = slice.reduce((s, d) => s + d.total_cost_cents, 0);
+      return vids > 0 ? cost / vids : 0;
+    }
+    const recent7 = weekAvg(dailyStats.slice(-7));
+    const prior7 = weekAvg(dailyStats.slice(-14, -7));
+    return pctDelta(recent7, prior7);
+  })();
 
   // ── breakdown rows keyed by tab ──────────────────────────────────
   function getRows(): BreakdownRow[] {
@@ -111,8 +169,34 @@ export default function Finances() {
   }
   const rows = getRows();
 
-  // top driver for KPI card
-  const topDriver = rows.length > 0 ? rows.reduce((a, b) => (a.share > b.share ? a : b)).name : "—";
+  // ── KPI: Top driver ─────────────────────────────────────────────
+  // Use byProvider specifically (tab-independent) for a stable "top driver".
+  const topDriverRow = (() => {
+    if (costBreakdown?.byProvider?.length) {
+      const totalMonth = costBreakdown.byProvider.reduce((s, r) => s + r.month.cents, 0) || 1;
+      return costBreakdown.byProvider
+        .map((r) => ({ key: r.key, share: Math.round((r.month.cents / totalMonth) * 100) }))
+        .reduce((a, b) => (a.share > b.share ? a : b));
+    }
+    // fallback: use current tab rows
+    if (rows.length > 0) {
+      return rows.map((r) => ({ key: r.name, share: r.share })).reduce((a, b) => (a.share > b.share ? a : b));
+    }
+    return null;
+  })();
+
+  const topDriverValue = topDriverRow
+    ? topDriverRow.key.charAt(0).toUpperCase() + topDriverRow.key.slice(1)
+    : "—";
+  const topDriverSub = topDriverRow ? `${topDriverRow.share}% of total spend` : "no data";
+
+  // Reconcile button handler — surfaces the CLI command
+  function handleReconcile() {
+    const since = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const cmd = `Run: npx tsx scripts/cost-reconcile.ts --since ${since}`;
+    console.info(cmd);
+    window.alert(cmd);
+  }
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -121,31 +205,27 @@ export default function Finances() {
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Spend · MTD"
-          value={fmtCents(totalSpend)}
-          sub="vs $1.84k budget"
-          delta={-12.4}
+          value={fmtCents(mtdCents)}
+          sub="vs prior period"
+          delta={mtdDelta}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="Avg / video"
           value={fmtCents(avgPerVideo)}
-          sub="-$0.18 from last week"
-          delta={-2.1}
+          sub="vs prior 7 days"
+          delta={avgVideoDelta}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="Top driver"
-          value={topDriver}
-          sub={`${rows[0]?.share ?? 0}% of total spend`}
-          delta={4.2}
-          deltaPositiveIsGood={false}
+          value={topDriverValue}
+          sub={topDriverSub}
         />
         <KpiCard
           label="Reconcile drift"
-          value="2.1%"
-          sub="under 5% threshold"
-          delta={-0.4}
-          deltaPositiveIsGood={false}
+          value="—"
+          sub="reconcile script not run today"
         />
       </section>
 
@@ -168,9 +248,10 @@ export default function Finances() {
                 fontWeight: 600,
                 letterSpacing: "-0.02em",
                 color: "var(--ink)",
+                fontVariantNumeric: "tabular-nums",
               }}
             >
-              {fmtCents(totalSpend)} · last 14 days
+              {fmtCents(totalSpend14)} · last 14 days
             </h3>
           </div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
@@ -227,6 +308,7 @@ export default function Finances() {
           </div>
           <button
             className="le-btn-ghost"
+            onClick={handleReconcile}
             style={{
               display: "inline-flex",
               alignItems: "center",

@@ -1,7 +1,7 @@
 import { useState, useEffect, type CSSProperties } from "react";
-import type { Property, Scene } from "@/lib/types";
-import { fetchProperties, fetchProperty, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
-import { HealthCard, StatusPill, PropertyThumb, Card, SectionTitle, fmtRel } from "@/components/dashboard/primitives";
+import type { Property, Scene, DailyStat } from "@/lib/types";
+import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
+import { HealthCard, StatusPill, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { SAMPLE_PROPERTIES, SAMPLE_STAGES, SAMPLE_REVIEW_SCENES } from "@/components/dashboard/sample-data";
 import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
@@ -226,6 +226,9 @@ function ReviewCard({
 const Pipeline = () => {
   const [propsByStage, setPropsByStage] = useState<Record<string, SampleProperty[]>>({});
   const [reviewScenes, setReviewScenes] = useState<(SampleReviewScene & { propertyAddress?: string })[]>([]);
+  const [allLiveProps, setAllLiveProps] = useState<Property[]>([]);
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [avgProcessingMs, setAvgProcessingMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"kanban" | "timeline">("kanban");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -234,15 +237,27 @@ const Pipeline = () => {
     let cancelled = false;
     const load = async () => {
       try {
-        // Fetch all stage buckets in parallel
+        // Fetch all stage buckets + overview + daily stats in parallel
         const stageFetches = SAMPLE_STAGES.map((s) =>
           fetchProperties({ status: s.key, limit: 50 }),
         );
-        const stageResults = await Promise.all(stageFetches);
+        const [stageResults, overviewRes, dailyRes] = await Promise.all([
+          Promise.all(stageFetches),
+          fetchStatsOverview().catch(() => null),
+          fetchDailyStats(14).catch(() => null),
+        ]);
         if (cancelled) return;
 
         const allLive: Property[] = stageResults.flatMap((r) => r.properties);
         const totalLive = allLive.length;
+        setAllLiveProps(allLive);
+
+        if (overviewRes?.avgProcessingMs != null) {
+          setAvgProcessingMs(overviewRes.avgProcessingMs);
+        }
+        if (dailyRes?.stats) {
+          setDailyStats(dailyRes.stats);
+        }
 
         let displayProps: SampleProperty[];
         if (totalLive === 0) {
@@ -293,6 +308,22 @@ const Pipeline = () => {
               // skip individual property errors
             }
           }
+          // If no scene-level data found, fall back to property-level cards
+          if (liveScenes.length === 0 && reviewRes.properties.length > 0) {
+            reviewRes.properties.forEach((prop, idx) => {
+              liveScenes.push({
+                id: prop.id,
+                property: prop.address,
+                propertyAddress: prop.address,
+                scene_number: idx + 1,
+                status: "needs_review",
+                confidence: 0.5,
+                provider: "kling",
+                prompt: "Review required — no scene detail available.",
+                issues: ["Manual review required"],
+              });
+            });
+          }
           setReviewScenes(liveScenes);
         }
       } catch {
@@ -326,6 +357,45 @@ const Pipeline = () => {
   const allProps = Object.values(propsByStage).flat();
   const inFlight = allProps.filter((p) => !["complete", "queued", "needs_review"].includes(p.status)).length;
 
+  // ── Avg stage time delta: today vs avg of last week ───────────────────────
+  const avgStageDisplay = avgProcessingMs != null ? fmtDuration(avgProcessingMs) : "—";
+  let avgStageDelta: number | undefined = undefined;
+  if (dailyStats.length >= 2) {
+    const lastStat = dailyStats[dailyStats.length - 1];
+    const todayAvg = lastStat?.avg_processing_time_ms ?? 0;
+    const weekSlice = dailyStats.slice(-8, -1);
+    const weekVals = weekSlice.map((d) => d.avg_processing_time_ms ?? 0).filter((v) => v > 0);
+    if (weekVals.length > 0 && todayAvg > 0) {
+      const lastWeekAvg = weekVals.reduce((s, v) => s + v, 0) / weekVals.length;
+      if (lastWeekAvg > 0) {
+        avgStageDelta = ((todayAvg - lastWeekAvg) / lastWeekAvg) * 100;
+      }
+    }
+  }
+
+  // ── Auto-resolved 24h: completed in last 24h vs previous 24h ─────────────
+  const now = Date.now();
+  const H24 = 24 * 60 * 60 * 1000;
+  const autoResolved24h = allLiveProps.filter(
+    (p) => p.status === "complete" && now - new Date(p.updated_at).getTime() < H24,
+  ).length;
+  const autoResolvedPrev24h = allLiveProps.filter(
+    (p) =>
+      p.status === "complete" &&
+      now - new Date(p.updated_at).getTime() >= H24 &&
+      now - new Date(p.updated_at).getTime() < 2 * H24,
+  ).length;
+  let autoResolvedDelta: number | undefined = undefined;
+  if (allLiveProps.length > 0) {
+    const prev = Math.max(autoResolvedPrev24h, 1);
+    autoResolvedDelta = ((autoResolved24h - autoResolvedPrev24h) / prev) * 100;
+  }
+
+  // ── Manual review delta: current vs 24h ago (needs_review is "now") ───────
+  const manualReviewCount = reviewScenes.length;
+  // We can't easily compute "was" from static snapshot; leave delta undefined when no live data
+  const manualReviewDelta: number | undefined = undefined;
+
   if (loading) {
     return (
       <div className="le-fade-up" style={{ display: "flex", justifyContent: "center", padding: "96px 0" }}>
@@ -343,9 +413,27 @@ const Pipeline = () => {
       {/* ── 1. Health row (4-up) ── */}
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <HealthCard label="In flight" value={inFlight} icon="pipeline" tone="accent" />
-        <HealthCard label="Avg stage time" value="6m 18s" icon="clock" tone="neutral" delta={-12} />
-        <HealthCard label="Auto-resolved 24h" value="38" icon="sparkles" tone="good" delta={22} />
-        <HealthCard label="Manual review" value={reviewScenes.length} icon="alert" tone="warn" />
+        <HealthCard
+          label="Avg stage time"
+          value={avgStageDisplay}
+          icon="clock"
+          tone="neutral"
+          delta={avgStageDelta}
+        />
+        <HealthCard
+          label="Auto-resolved 24h"
+          value={allLiveProps.length > 0 ? autoResolved24h : 0}
+          icon="sparkles"
+          tone="good"
+          delta={autoResolvedDelta}
+        />
+        <HealthCard
+          label="Manual review"
+          value={manualReviewCount}
+          icon="alert"
+          tone="warn"
+          delta={manualReviewDelta}
+        />
       </section>
 
       {/* ── 2. Kanban section ── */}

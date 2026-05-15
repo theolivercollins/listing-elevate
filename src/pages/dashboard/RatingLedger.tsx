@@ -1,27 +1,95 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Star, ImageOff, FilmIcon, ExternalLink, MessageSquare, MessageSquareOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { fetchRatingLedger, type LedgerRow, type LedgerSurface } from "@/lib/ratingLedgerApi";
+import { PageHeading, KpiCard, Card, fmtRel } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 
 type SurfaceFilter = LedgerSurface | "all";
 type CommentFilter = "any" | "with" | "without";
 type MinRatingFilter = "any" | "2" | "3" | "4" | "5";
 
-const SURFACE_CHIP: Record<LedgerSurface, { label: string; classes: string }> = {
-  legacy_lab: { label: "Legacy Lab", classes: "bg-slate-400/15 text-slate-700 dark:text-slate-300" },
-  listings_lab: { label: "Listings Lab", classes: "bg-sky-400/15 text-sky-700 dark:text-sky-300" },
-  prod: { label: "Production", classes: "bg-emerald-400/15 text-emerald-700 dark:text-emerald-300" },
-};
-
 const PAGE_SIZE = 50;
 
+// ─── surface colour map ───────────────────────────────────────────
+const SURFACE_STYLE: Record<LedgerSurface, { label: string; color: string; bg: string }> = {
+  legacy_lab:   { label: "Legacy Lab",    color: "var(--muted)",  bg: "rgba(11,11,16,0.05)" },
+  listings_lab: { label: "Listings Lab",  color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
+  prod:         { label: "Production",    color: "var(--good)",   bg: "rgba(47,138,85,0.10)" },
+};
+
+// ─── retrieval tone helpers ───────────────────────────────────────
+const RETRIEVAL_STYLE: Record<"ready" | "partial" | "missing", { label: string; color: string; bg: string }> = {
+  ready:   { label: "Ready",   color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
+  partial: { label: "Partial", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
+  missing: { label: "Missing", color: "var(--bad)",  bg: "rgba(196,74,74,0.10)" },
+};
+
+// ─── inline star row ─────────────────────────────────────────────
+function StarRow({ value }: { value: number | null }) {
+  const v = value ?? 0;
+  return (
+    <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <svg key={i} width={12} height={12} viewBox="0 0 24 24" fill={i <= v ? "var(--ink)" : "transparent"} stroke={i <= v ? "var(--ink)" : "var(--line)"} strokeWidth={1.8} strokeLinejoin="round">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 6.91-1.01z"/>
+        </svg>
+      ))}
+      <span style={{ marginLeft: 6, fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{v}/5</span>
+    </span>
+  );
+}
+
+// ─── select chip ─────────────────────────────────────────────────
+const SELECT_STYLE: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "8px 10px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line)",
+  background: "var(--surface)",
+  fontSize: 12.5,
+  fontFamily: "var(--le-font-sans)",
+  color: "var(--ink-2)",
+  cursor: "pointer",
+  appearance: "none" as const,
+  WebkitAppearance: "none" as const,
+};
+
+function FilterChip({
+  icon,
+  children,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="le-card-flat"
+      style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 10px" }}
+    >
+      {icon}
+      {children}
+    </div>
+  );
+}
+
+// ─── ghost button styles ──────────────────────────────────────────
+const GHOST_BTN: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "7px 12px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--line)",
+  background: "transparent",
+  color: "var(--ink-2)",
+  fontSize: 12.5,
+  fontWeight: 500,
+  cursor: "pointer",
+  fontFamily: "var(--le-font-sans)",
+};
+
+// ─── main component ───────────────────────────────────────────────
 export default function RatingLedger() {
   const [rows, setRows] = useState<LedgerRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -93,145 +161,251 @@ export default function RatingLedger() {
   }, [rows, showOnlyDisagreements]);
 
   const hasMore = offset + rows.length < total;
+  const showingFrom = total === 0 ? 0 : offset + 1;
+  const showingTo = Math.min(offset + rows.length, total);
 
   return (
-    <div className="space-y-10">
-      <div>
-        <span className="label text-muted-foreground">— Transparency</span>
-        <h2 className="mt-3 text-2xl font-semibold tracking-[-0.02em]">Rating ledger</h2>
-        <p className="mt-3 max-w-2xl text-sm text-muted-foreground">
-          Every rating you've ever given, linked to its source image, the clip it produced, the SKU
-          that rendered it, and whether it's currently feeding retrieval. Three surfaces unified:
-          legacy Prompt Lab, Phase 2.8 Listings Lab, and production scene_ratings.
-        </p>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
-      {/* Summary strip */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryTile label="Legacy Lab" value={counts.legacy_lab} hint="prompt_lab_iterations" />
-        <SummaryTile label="Listings Lab" value={counts.listings_lab} hint="prompt_lab_listing_scene_iterations" />
-        <SummaryTile label="Production" value={counts.prod} hint="scene_ratings" />
-      </div>
+      {/* Page heading */}
+      <PageHeading
+        eyebrow="Lab · Quality"
+        title="Rating ledger"
+        sub="Every rated iteration across legacy Lab, Listings Lab, and production scenes. Filter by surface, SKU, rating, or comment to spot routing wins and regressions."
+      />
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={surface} onValueChange={(v) => setSurface(v as SurfaceFilter)}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="All surfaces" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All surfaces</SelectItem>
-            <SelectItem value="legacy_lab">Legacy Lab</SelectItem>
-            <SelectItem value="listings_lab">Listings Lab</SelectItem>
-            <SelectItem value="prod">Production</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={sku} onValueChange={setSku}>
-          <SelectTrigger className="w-[220px]">
-            <SelectValue placeholder="All SKUs" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All SKUs</SelectItem>
-            {skuOptions.map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={minRating} onValueChange={(v) => setMinRating(v as MinRatingFilter)}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Any rating" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any rating</SelectItem>
-            <SelectItem value="2">2★ and up</SelectItem>
-            <SelectItem value="3">3★ and up</SelectItem>
-            <SelectItem value="4">4★ and up</SelectItem>
-            <SelectItem value="5">5★ only</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={comment} onValueChange={(v) => setComment(v as CommentFilter)}>
-          <SelectTrigger className="w-[170px]">
-            <SelectValue placeholder="Comment" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="any">Any comment</SelectItem>
-            <SelectItem value="with">With comment</SelectItem>
-            <SelectItem value="without">No comment</SelectItem>
-          </SelectContent>
-        </Select>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground select-none">
-          <input
-            type="checkbox"
-            checked={showOnlyDisagreements}
-            onChange={(e) => setShowOnlyDisagreements(e.target.checked)}
-            className="h-3.5 w-3.5"
-          />
-          Disagreements only
-        </label>
-        <div className="ml-auto text-xs text-muted-foreground">
-          {loading ? "Loading…" : `${total} row${total === 1 ? "" : "s"}`}
+      {/* KPI strip */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+        <KpiCard
+          label="Total ratings"
+          value={total || rows.length}
+          sub="all surfaces combined"
+          delta={null}
+        />
+        <KpiCard
+          label="Legacy Lab"
+          value={counts.legacy_lab}
+          sub="prompt_lab_iterations"
+          delta={null}
+        />
+        <KpiCard
+          label="Listings Lab"
+          value={counts.listings_lab}
+          sub="listing_scene_iterations"
+          delta={null}
+        />
+        <KpiCard
+          label="Production"
+          value={counts.prod}
+          sub="scene_ratings"
+          delta={null}
+        />
+      </section>
+
+      {/* Filter bar */}
+      <Card padding={20}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+
+          {/* Surface filter */}
+          <FilterChip icon={<Icon name="filter" size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />}>
+            <select
+              value={surface}
+              onChange={(e) => setSurface(e.target.value as SurfaceFilter)}
+              style={SELECT_STYLE}
+            >
+              <option value="all">All surfaces</option>
+              <option value="legacy_lab">Legacy Lab</option>
+              <option value="listings_lab">Listings Lab</option>
+              <option value="prod">Production</option>
+            </select>
+            <Icon name="chevron-down" size={11} style={{ color: "var(--muted)", flexShrink: 0, pointerEvents: "none" }} />
+          </FilterChip>
+
+          {/* SKU filter */}
+          <FilterChip icon={<Icon name="cube" size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />}>
+            <select
+              value={sku}
+              onChange={(e) => setSku(e.target.value)}
+              style={SELECT_STYLE}
+            >
+              <option value="all">All SKUs</option>
+              {skuOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <Icon name="chevron-down" size={11} style={{ color: "var(--muted)", flexShrink: 0, pointerEvents: "none" }} />
+          </FilterChip>
+
+          {/* Min rating filter */}
+          <FilterChip icon={<Icon name="sliders" size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />}>
+            <select
+              value={minRating}
+              onChange={(e) => setMinRating(e.target.value as MinRatingFilter)}
+              style={SELECT_STYLE}
+            >
+              <option value="any">Any rating</option>
+              <option value="2">2+ stars</option>
+              <option value="3">3+ stars</option>
+              <option value="4">4+ stars</option>
+              <option value="5">5 stars only</option>
+            </select>
+            <Icon name="chevron-down" size={11} style={{ color: "var(--muted)", flexShrink: 0, pointerEvents: "none" }} />
+          </FilterChip>
+
+          {/* Comment filter */}
+          <FilterChip icon={<Icon name="search" size={13} style={{ color: "var(--muted)", flexShrink: 0 }} />}>
+            <select
+              value={comment}
+              onChange={(e) => setComment(e.target.value as CommentFilter)}
+              style={SELECT_STYLE}
+            >
+              <option value="any">Any comment</option>
+              <option value="with">With comment</option>
+              <option value="without">No comment</option>
+            </select>
+            <Icon name="chevron-down" size={11} style={{ color: "var(--muted)", flexShrink: 0, pointerEvents: "none" }} />
+          </FilterChip>
+
+          {/* Disagreements toggle */}
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              fontSize: 12.5,
+              color: "var(--ink-2)",
+              userSelect: "none",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={showOnlyDisagreements}
+              onChange={(e) => setShowOnlyDisagreements(e.target.checked)}
+              style={{ accentColor: "var(--accent)", cursor: "pointer" }}
+            />
+            Disagreements only
+          </label>
+
+          {/* Row count */}
+          <div style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+            {loading ? "Loading…" : `${total} row${total === 1 ? "" : "s"}`}
+          </div>
         </div>
-      </div>
+      </Card>
 
+      {/* Error */}
       {error && (
-        <div className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid rgba(196,74,74,0.3)",
+            background: "rgba(196,74,74,0.05)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          {error}
+        </div>
       )}
 
-      {/* Table */}
-      <div className="border border-border bg-background">
-        <div className="hidden items-center gap-4 border-b border-border/60 bg-secondary/30 px-4 py-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground md:grid md:grid-cols-[96px_140px_160px_110px_1fr_140px_120px_80px_120px]">
-          <span>Image</span>
-          <span>Clip</span>
-          <span>SKU</span>
-          <span>Rating</span>
-          <span>Reasons + comment</span>
-          <span>Listing / scene</span>
-          <span>Surface</span>
-          <span>Judge</span>
-          <span>Retrieval</span>
+      {/* Table card */}
+      <Card padding={0} style={{ overflow: "hidden" }}>
+
+        {/* Column header */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "72px 1fr 130px 140px 1fr 110px 90px",
+            gap: 16,
+            padding: "10px 18px",
+            borderBottom: "1px solid var(--line)",
+            alignItems: "center",
+          }}
+        >
+          <span className="le-d-label">Thumb</span>
+          <span className="le-d-label">Iteration</span>
+          <span className="le-d-label">SKU</span>
+          <span className="le-d-label">Rating</span>
+          <span className="le-d-label">Comment</span>
+          <span className="le-d-label">When</span>
+          <span className="le-d-label">Clip</span>
         </div>
-        {loading && rows.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+
+        {/* Loading */}
+        {loading && (
+          <div style={{ padding: "64px 0", display: "flex", justifyContent: "center", alignItems: "center" }}>
+            <svg
+              width={22}
+              height={22}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--muted)"
+              strokeWidth={2}
+              strokeLinecap="round"
+              style={{ animation: "spin 1s linear infinite" }}
+            >
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+            </svg>
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
-        ) : visibleRows.length === 0 ? (
-          <div className="p-10 text-center text-sm text-muted-foreground">
-            {showOnlyDisagreements ? "No disagreements found in this page." : "No rated rows match these filters yet."}
+        )}
+
+        {/* Empty state */}
+        {!loading && visibleRows.length === 0 && (
+          <div style={{ padding: "64px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            {showOnlyDisagreements
+              ? "No disagreements found in this page."
+              : "No rated iterations match this filter."}
           </div>
-        ) : (
-          <div className="divide-y divide-border/60">
-            {visibleRows.map((row) => (
-              <LedgerRowView key={`${row.surface}-${row.iteration_id}`} row={row} />
+        )}
+
+        {/* Rows */}
+        {!loading && visibleRows.length > 0 && (
+          <div>
+            {visibleRows.map((row, i) => (
+              <LedgerTableRow
+                key={`${row.surface}-${row.iteration_id}`}
+                row={row}
+                isLast={i === visibleRows.length - 1}
+              />
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Pagination */}
       {total > PAGE_SIZE && (
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground">
-            Rows {total === 0 ? 0 : offset + 1}–{Math.min(offset + rows.length, total)} of {total}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+            Showing {showingFrom}–{showingTo} of {total}
+          </span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              className="le-btn-ghost"
+              style={{
+                ...GHOST_BTN,
+                opacity: offset === 0 || loading ? 0.4 : 1,
+                cursor: offset === 0 || loading ? "not-allowed" : "pointer",
+              }}
               disabled={offset === 0 || loading}
               onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
             >
               Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
+            </button>
+            <button
+              className="le-btn-ghost"
+              style={{
+                ...GHOST_BTN,
+                opacity: !hasMore || loading ? 0.4 : 1,
+                cursor: !hasMore || loading ? "not-allowed" : "pointer",
+              }}
               disabled={!hasMore || loading}
               onClick={() => setOffset(offset + PAGE_SIZE)}
             >
               Next
-            </Button>
+            </button>
           </div>
         </div>
       )}
@@ -239,240 +413,244 @@ export default function RatingLedger() {
   );
 }
 
-function SummaryTile({ label, value, hint }: { label: string; value: number; hint: string }) {
-  return (
-    <div className="border border-border/60 bg-background p-4">
-      <div className="label text-muted-foreground">{label}</div>
-      <div className="mt-2 text-2xl font-semibold tabular-nums">{value}</div>
-      <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">{hint}</div>
-    </div>
-  );
-}
+// ─── table row ────────────────────────────────────────────────────
+function LedgerTableRow({ row, isLast }: { row: LedgerRow; isLast: boolean }) {
+  const [hovered, setHovered] = useState(false);
 
-function LedgerRowView({ row }: { row: LedgerRow }) {
-  const chip = SURFACE_CHIP[row.surface];
+  const surfaceStyle = SURFACE_STYLE[row.surface];
+
+  // retrieval tone
+  let retrievalTone: "ready" | "partial" | "missing";
+  if (row.has_embedding && row.has_model_used) {
+    retrievalTone = "ready";
+  } else if (row.has_embedding && !row.has_model_used) {
+    retrievalTone = "partial";
+  } else {
+    retrievalTone = "missing";
+  }
+  const retrievalStyle = RETRIEVAL_STYLE[retrievalTone];
+
+  // display id: order_id preferred, fallback to iteration_id slice
+  const displayId = row.order_id ?? (row.iteration_id ? row.iteration_id.slice(0, 8) : "—");
+
   return (
-    <div className="grid items-start gap-4 px-4 py-4 md:grid-cols-[96px_140px_160px_110px_1fr_140px_120px_80px_120px]">
-      <ImageThumb url={row.source_image_url} />
-      <ClipThumb url={row.clip_url} />
-      <div className="space-y-1 text-xs">
-        <SkuChip sku={row.sku} provider={row.provider} />
-        {row.order_id && (
-          <div className="font-mono text-[10px] tracking-[0.08em] text-muted-foreground tabular-nums">
-            {row.order_id}
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "72px 1fr 130px 140px 1fr 110px 90px",
+        gap: 16,
+        padding: "14px 18px",
+        borderBottom: isLast ? "none" : "1px solid var(--line-2)",
+        alignItems: "center",
+        background: hovered ? "rgba(11,11,16,0.02)" : "transparent",
+        transition: "background .15s",
+      }}
+    >
+      {/* Thumb */}
+      <div>
+        {row.source_image_url ? (
+          <a href={row.source_image_url} target="_blank" rel="noreferrer">
+            <img
+              src={row.source_image_url}
+              alt="source"
+              loading="lazy"
+              style={{
+                width: 56,
+                height: 40,
+                objectFit: "cover",
+                borderRadius: "var(--radius-sm)",
+                display: "block",
+                border: "1px solid var(--line-2)",
+              }}
+            />
+          </a>
+        ) : (
+          <div
+            style={{
+              width: 56,
+              height: 40,
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(11,11,16,0.05)",
+              display: "grid",
+              placeItems: "center",
+              color: "var(--muted-2)",
+              border: "1px dashed var(--line)",
+            }}
+          >
+            <Icon name="image" size={14} />
           </div>
         )}
-        <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
-          {new Date(row.rated_at).toLocaleDateString(undefined, {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })}
+      </div>
+
+      {/* Iteration meta */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums", marginBottom: 4 }}>
+          {displayId}
+        </div>
+        <span
+          style={{
+            display: "inline-block",
+            padding: "2px 8px",
+            borderRadius: "var(--radius-pill)",
+            background: surfaceStyle.bg,
+            color: surfaceStyle.color,
+            fontSize: 10.5,
+            fontWeight: 500,
+          }}
+        >
+          {surfaceStyle.label}
+        </span>
+        {row.listing_name && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--muted)",
+              marginTop: 4,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {row.listing_name}
+          </div>
+        )}
+      </div>
+
+      {/* SKU */}
+      <div style={{ minWidth: 0 }}>
+        {row.sku ? (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 7px",
+              borderRadius: "var(--radius-sm)",
+              background: "rgba(11,11,16,0.05)",
+              border: "1px solid var(--line-2)",
+              fontSize: 11,
+              fontFamily: "var(--le-font-mono)",
+              color: "var(--ink-2)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: "100%",
+            }}
+          >
+            {row.sku}
+          </span>
+        ) : row.provider ? (
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>{row.provider}</span>
+        ) : (
+          <span style={{ fontSize: 11, color: "var(--muted-2)" }}>—</span>
+        )}
+        {/* retrieval indicator */}
+        <div style={{ marginTop: 4 }}>
+          <span
+            style={{
+              display: "inline-block",
+              padding: "2px 6px",
+              borderRadius: "var(--radius-pill)",
+              background: retrievalStyle.bg,
+              color: retrievalStyle.color,
+              fontSize: 10,
+              fontWeight: 500,
+            }}
+          >
+            {retrievalStyle.label}
+          </span>
         </div>
       </div>
-      <Stars rating={row.rating} />
-      <div className="min-w-0 space-y-2 text-xs">
+
+      {/* Rating */}
+      <div>
+        {row.rating == null ? (
+          <span style={{ fontSize: 11.5, color: "var(--muted-2)" }}>unrated</span>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <StarRow value={row.rating} />
+            {row.judge_rating_overall != null && (() => {
+              const delta = Math.abs(row.rating - row.judge_rating_overall);
+              const color = delta <= 1 ? "var(--muted)" : delta === 2 ? "var(--warn)" : "var(--bad)";
+              return (
+                <span style={{ fontSize: 10.5, color, fontVariantNumeric: "tabular-nums" }}>
+                  Judge {row.judge_rating_overall}/5{delta >= 2 ? ` · D${delta}` : ""}
+                </span>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+
+      {/* Comment */}
+      <div style={{ minWidth: 0 }}>
+        {row.user_comment ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--ink-2)",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical" as const,
+              overflow: "hidden",
+              lineHeight: 1.45,
+            }}
+          >
+            {row.user_comment}
+          </div>
+        ) : (
+          <span style={{ fontSize: 12, color: "var(--muted-2)" }}>—</span>
+        )}
         {row.rating_reasons && row.rating_reasons.length > 0 && (
-          <div className="flex flex-wrap gap-1">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
             {row.rating_reasons.map((tag) => (
               <span
                 key={tag}
-                className="border border-border bg-secondary/40 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                style={{
+                  padding: "2px 6px",
+                  borderRadius: "var(--radius-pill)",
+                  border: "1px solid var(--line-2)",
+                  fontSize: 10,
+                  color: "var(--muted)",
+                  background: "rgba(11,11,16,0.03)",
+                }}
               >
                 {tag}
               </span>
             ))}
           </div>
         )}
-        {row.user_comment ? (
-          <div className="flex items-start gap-1.5 text-muted-foreground">
-            <MessageSquare className="mt-0.5 h-3 w-3 shrink-0" />
-            <span className="line-clamp-3">{row.user_comment}</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
-            <MessageSquareOff className="h-3 w-3" />
-            <span>no comment</span>
-          </div>
-        )}
       </div>
-      <div className="min-w-0 text-xs">
-        <div className="truncate font-medium">{row.listing_name ?? "—"}</div>
-        {row.scene_id && (
-          <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.18em] text-muted-foreground/60">
-            scene {row.scene_id.slice(0, 8)}
-          </div>
-        )}
+
+      {/* When */}
+      <div style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+        {fmtRel(row.rated_at)}
       </div>
+
+      {/* Clip link */}
       <div>
-        <span
-          className={`inline-flex items-center border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${chip.classes}`}
-        >
-          {chip.label}
-        </span>
+        {row.clip_url ? (
+          <a
+            href={row.clip_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 12,
+              color: "var(--accent)",
+              textDecoration: "none",
+              fontWeight: 500,
+            }}
+          >
+            <Icon name="external" size={13} />
+            Open
+          </a>
+        ) : (
+          <span style={{ fontSize: 12, color: "var(--muted-2)" }}>—</span>
+        )}
       </div>
-      <JudgeCell humanRating={row.rating} judgeRating={row.judge_rating_overall} />
-      <RetrievalChip row={row} />
-    </div>
-  );
-}
-
-function JudgeCell({ humanRating, judgeRating }: { humanRating: number | null; judgeRating: number | null }) {
-  if (judgeRating == null) {
-    return <span className="text-[11px] text-muted-foreground/40 tabular-nums">—</span>;
-  }
-
-  const delta = humanRating != null ? Math.abs(humanRating - judgeRating) : null;
-
-  let colorClass = "text-muted-foreground";
-  let title = `Judge: ${judgeRating}/5`;
-  if (delta != null) {
-    if (delta <= 1) {
-      colorClass = "text-muted-foreground";
-      title += ` · Δ${delta} (agreement)`;
-    } else if (delta === 2) {
-      colorClass = "text-amber-600 dark:text-amber-400";
-      title += ` · Δ${delta} (caution)`;
-    } else {
-      colorClass = "text-red-600 dark:text-red-400";
-      title += ` · Δ${delta} (strong disagreement)`;
-    }
-  }
-
-  return (
-    <span
-      className={`text-[11px] tabular-nums font-medium ${colorClass}`}
-      title={title}
-    >
-      {judgeRating}/5
-      {delta != null && delta >= 2 && (
-        <span className="ml-1 text-[9px] opacity-70">Δ{delta}</span>
-      )}
-    </span>
-  );
-}
-
-function ImageThumb({ url }: { url: string | null }) {
-  if (!url) {
-    return (
-      <div className="flex h-16 w-24 items-center justify-center border border-dashed border-border/60 bg-secondary/20 text-muted-foreground/40">
-        <ImageOff className="h-4 w-4" />
-      </div>
-    );
-  }
-  return (
-    <a href={url} target="_blank" rel="noreferrer" className="block">
-      <img
-        src={url}
-        alt="source"
-        loading="lazy"
-        className="h-16 w-24 object-cover border border-border/60"
-      />
-    </a>
-  );
-}
-
-function ClipThumb({ url }: { url: string | null }) {
-  if (!url) {
-    return (
-      <div className="flex h-20 w-36 items-center justify-center border border-dashed border-border/60 bg-secondary/20 text-muted-foreground/40">
-        <FilmIcon className="h-4 w-4" />
-      </div>
-    );
-  }
-  return (
-    <div className="relative">
-      <video
-        src={url}
-        muted
-        playsInline
-        preload="metadata"
-        controls
-        className="h-20 w-36 border border-border/60 bg-black object-cover"
-      />
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="absolute right-1 top-1 rounded-sm bg-black/60 p-1 text-white/80 transition hover:text-white"
-        title="Open clip in new tab"
-      >
-        <ExternalLink className="h-3 w-3" />
-      </a>
-    </div>
-  );
-}
-
-function SkuChip({ sku, provider }: { sku: string | null; provider: string | null }) {
-  if (!sku && !provider) {
-    return <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground/40">no SKU</span>;
-  }
-  return (
-    <span className="inline-flex items-center border border-border bg-secondary/30 px-1.5 py-0.5 font-mono text-[11px]">
-      {sku ?? provider}
-    </span>
-  );
-}
-
-function Stars({ rating }: { rating: number | null }) {
-  if (rating == null) {
-    return <span className="text-[11px] text-muted-foreground/50">unrated</span>;
-  }
-  return (
-    <div className="flex items-center gap-0.5" aria-label={`${rating} of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={`h-3.5 w-3.5 ${
-            i <= rating ? "fill-foreground text-foreground" : "text-muted-foreground/30"
-          }`}
-          strokeWidth={1.5}
-        />
-      ))}
-    </div>
-  );
-}
-
-function RetrievalChip({ row }: { row: LedgerRow }) {
-  // Production + legacy Lab surface don't carry a per-SKU model_used on the
-  // row itself — they record only the provider family. That's a coverage gap,
-  // not a bug; amber reflects "signal reaches retrieval (embedding) but SKU
-  // routing can't use it yet."
-  const { has_embedding, has_model_used, surface } = row;
-  let tone: "ready" | "partial" | "missing";
-  let label: string;
-  let detail: string;
-
-  if (has_embedding && has_model_used) {
-    tone = "ready";
-    label = "Ready";
-    detail = "embedding + SKU";
-  } else if (has_embedding && !has_model_used) {
-    tone = "partial";
-    label = "Partial";
-    detail = surface === "prod" ? "provider only" : "no SKU captured";
-  } else {
-    tone = "missing";
-    label = "Missing";
-    detail = "no embedding";
-  }
-
-  const classes =
-    tone === "ready"
-      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300"
-      : tone === "partial"
-      ? "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300"
-      : "border-red-400/40 bg-red-400/10 text-red-700 dark:text-red-300";
-
-  return (
-    <div className="space-y-1">
-      <span className={`inline-flex items-center border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${classes}`}>
-        {label}
-      </span>
-      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">{detail}</div>
-      {row.recipe_id && (
-        <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">recipe ✓</div>
-      )}
     </div>
   );
 }

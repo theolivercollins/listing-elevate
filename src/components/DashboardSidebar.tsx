@@ -103,17 +103,6 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
         )}
       </Link>
 
-      {!collapsed && (
-        <button type="button" className="le-workspace-switch">
-          <span className="le-ws-avatar">R</span>
-          <span className="le-ws-info">
-            <span className="le-ws-name">Recasi</span>
-            <span className="le-ws-sub">Production</span>
-          </span>
-          <Icon name="chevron-down" size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
-        </button>
-      )}
-
       <nav className="le-sidebar-nav" aria-label="Dashboard navigation">
         {SECTIONS.map((section) => (
           <div className="le-sidebar-section" key={section.label}>

@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { Property, DailyStat } from "@/lib/types";
+import type { CostBreakdown } from "@/lib/api";
 import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import {
   PageHeading,
   KpiCard,
@@ -38,6 +40,36 @@ function todayLabel() {
   return `Today · ${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
 
+function greeting(name: string): string {
+  const h = new Date().getHours();
+  const salutation = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return `${salutation}, ${name}.`;
+}
+
+function deriveName(firstName: string | null | undefined, email: string | null | undefined): string {
+  if (firstName?.trim()) return firstName.trim();
+  if (email) {
+    const local = email.split("@")[0];
+    if (local) return local.charAt(0).toUpperCase() + local.slice(1);
+  }
+  return "there";
+}
+
+function subHeadline(completedToday: number, inFlight: number, needsReview: number): string {
+  const flightStr = `${inFlight} in flight`;
+  const reviewStr = needsReview === 0
+    ? "All scenes passed automated QC."
+    : `${needsReview} ${needsReview === 1 ? "scene needs" : "scenes need"} a decision.`;
+
+  if (completedToday === 0) {
+    return `No deliveries yet today. ${inFlight === 0 ? "Nothing in flight." : `${flightStr}.`} ${reviewStr}`;
+  }
+  const deliveryStr = completedToday === 1
+    ? "1 video delivered overnight"
+    : `${completedToday} videos delivered overnight`;
+  return `${deliveryStr}, ${flightStr}. ${reviewStr}`;
+}
+
 // ─── adapter: live Property → sample-compatible shape ────────────────────────
 interface UIProperty {
   id: string;
@@ -46,6 +78,7 @@ interface UIProperty {
   photos: number;
   agent: string;
   created_at: number;
+  updated_at: number;
   progress: number;
   thumb_hue: number;
 }
@@ -70,6 +103,7 @@ function adaptLiveProp(p: Property): UIProperty {
     photos: p.photo_count ?? 0,
     agent: p.listing_agent ?? "—",
     created_at: new Date(p.created_at).getTime(),
+    updated_at: new Date(p.updated_at).getTime(),
     progress: STATUS_PROGRESS[p.status] ?? 0,
     // Deterministic hue from id characters
     thumb_hue: 200 + ((p.id.charCodeAt(0) ?? 0) * 23) % 160,
@@ -78,18 +112,85 @@ function adaptLiveProp(p: Property): UIProperty {
 
 const IN_FLIGHT_STATUSES = new Set(["ingesting", "analyzing", "scripting", "generating", "qc", "assembling"]);
 
+// ─── derived activity ─────────────────────────────────────────────────────────
+interface ActivityEntry {
+  kind: "complete" | "review" | "provider" | "upload" | "cost";
+  title: string;
+  sub: string;
+  time: string;
+}
+
+function deriveActivity(props: UIProperty[]): ActivityEntry[] {
+  const items: ActivityEntry[] = [];
+
+  // Recent completes
+  const completes = [...props]
+    .filter((p) => p.status === "complete")
+    .sort((a, b) => b.updated_at - a.updated_at)
+    .slice(0, 3);
+  for (const p of completes) {
+    items.push({ kind: "complete", title: "Video delivered", sub: p.address, time: fmtRel(p.updated_at) });
+  }
+
+  // Recent needs_review
+  const reviews = props.filter((p) => p.status === "needs_review").slice(0, 2);
+  for (const p of reviews) {
+    items.push({ kind: "review", title: "Manual review queued", sub: p.address, time: fmtRel(p.updated_at) });
+  }
+
+  // Most recent intake
+  const newest = [...props].sort((a, b) => b.created_at - a.created_at)[0];
+  if (newest) {
+    items.push({
+      kind: "upload",
+      title: "New listing intake",
+      sub: `${newest.address} · ${newest.photos} photos`,
+      time: fmtRel(newest.created_at),
+    });
+  }
+
+  return items;
+}
+
+// ─── sparkline: weekly buckets from completed properties ──────────────────────
+function agentSparkline(agentName: string, allProps: Property[]): number[] {
+  const now = Date.now();
+  const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const buckets = Array<number>(12).fill(0);
+  for (const p of allProps) {
+    if (p.status !== "complete" || p.listing_agent !== agentName) continue;
+    const age = now - new Date(p.updated_at).getTime();
+    const weekIndex = Math.floor(age / WEEK_MS);
+    if (weekIndex >= 0 && weekIndex < 12) {
+      buckets[11 - weekIndex] += 1;
+    }
+  }
+  // If all zeros fall back to a flat derived series
+  const total = buckets.reduce((s, v) => s + v, 0);
+  if (total === 0) {
+    const videoCount = allProps.filter((p) => p.listing_agent === agentName && p.status === "complete").length;
+    const base = Math.max(1, Math.floor(videoCount / 12));
+    return Array.from({ length: 12 }, (_, i) => base + (i % 3));
+  }
+  return buckets;
+}
+
 interface OverviewProps {
   showAIBanner?: boolean;
 }
 
 const Overview = ({ showAIBanner = true }: OverviewProps) => {
+  const { user, profile } = useAuth();
   const [allProps, setAllProps] = useState<Property[]>([]);
   const [dailyStatsData, setDailyStatsData] = useState<DailyStat[]>([]);
   const [stats, setStats] = useState<{
     completedToday: number;
     inPipeline: number;
+    needsReview: number;
     successRate: number;
+    avgProcessingMs: number;
   } | null>(null);
+  const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
   const [chartRange, setChartRange] = useState<"7d" | "14d" | "30d">("14d");
   const [loading, setLoading] = useState(true);
 
@@ -97,9 +198,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [allRes, dailyRes, overviewRes] = await Promise.all([
+        const [allRes, dailyRes, overviewRes, cbRes] = await Promise.all([
           fetchProperties({ limit: 100 }),
-          fetchDailyStats(14),
+          fetchDailyStats(30),
           fetchStatsOverview(),
           fetchCostBreakdown().catch(() => null),
         ]);
@@ -107,6 +208,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         setAllProps(allRes.properties);
         setDailyStatsData(dailyRes.stats);
         setStats(overviewRes);
+        setCostBreakdown(cbRes);
       } catch {
         // fall through — sample data will be used
       } finally {
@@ -121,19 +223,29 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   const propsForUI: UIProperty[] =
     allProps.length > 0
       ? allProps.map(adaptLiveProp)
-      : SAMPLE_PROPERTIES;
+      : SAMPLE_PROPERTIES.map((p) => ({
+          id: p.id,
+          address: p.address,
+          status: p.status,
+          photos: p.photos,
+          agent: p.agent,
+          created_at: p.created_at,
+          updated_at: p.created_at,
+          progress: p.progress,
+          thumb_hue: p.thumb_hue,
+        }));
+
+  const DAILY = dailyStatsData.length > 0 ? dailyStatsData : null;
 
   const dailyForUI =
-    dailyStatsData.length > 0
-      ? dailyStatsData.map((d) => ({
+    DAILY
+      ? DAILY.map((d) => ({
           date: d.date,
           cost: d.total_cost_cents ?? 0,
           videos: d.properties_completed ?? 0,
           sla: 90,
         }))
       : SAMPLE_DAILY;
-
-  const activityForUI = SAMPLE_ACTIVITY;
 
   const inProgressForUI = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).slice(0, 5);
 
@@ -156,12 +268,57 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   // ── KPI metrics ──────────────────────────────────────────────────────────
   const rangeLen = chartRange === "7d" ? 7 : chartRange === "30d" ? 30 : 14;
   const last7Cost = dailyForUI.slice(-7).reduce((s, d) => s + d.cost, 0);
-  const prev7Cost = dailyForUI.slice(0, 7).reduce((s, d) => s + d.cost, 0);
+  const prev7Cost = dailyForUI.slice(-14, -7).reduce((s, d) => s + d.cost, 0);
   const costDelta = prev7Cost > 0 ? ((last7Cost - prev7Cost) / prev7Cost) * 100 : 0;
 
   const inFlightCount = propsForUI.filter((p) => IN_FLIGHT_STATUSES.has(p.status)).length;
-  const deliveredToday = stats?.completedToday ?? propsForUI.filter((p) => p.status === "complete").length;
-  const qcPassRate = stats?.successRate != null ? (stats.successRate * 100).toFixed(1) + "%" : "94.3%";
+  const completedToday = stats?.completedToday ?? 0;
+  const needsReviewCount = stats?.needsReview ?? propsForUI.filter((p) => p.status === "needs_review").length;
+
+  // Delivered today delta: (today - prev day) / max(prev, 1)
+  const prevDayCompleted = DAILY && DAILY.length >= 2
+    ? (DAILY[DAILY.length - 2]?.properties_completed ?? 0)
+    : null;
+  let deliveredDelta: number | null = null;
+  if (prevDayCompleted !== null) {
+    if (prevDayCompleted === 0 && completedToday === 0) {
+      deliveredDelta = null;
+    } else if (prevDayCompleted === 0 && completedToday > 0) {
+      deliveredDelta = 100;
+    } else {
+      deliveredDelta = ((completedToday - prevDayCompleted) / prevDayCompleted) * 100;
+    }
+  }
+
+  // QC pass rate: stats.successRate or compute from DAILY last7 vs prev7
+  let qcPassRate: string;
+  let qcDelta: number | null = null;
+  if (stats?.successRate != null) {
+    qcPassRate = (stats.successRate * 100).toFixed(1) + "%";
+    // delta: last7 success rate vs prev7 from DAILY
+    if (DAILY && DAILY.length >= 14) {
+      const calcRate = (slice: DailyStat[]) => {
+        const c = slice.reduce((s, d) => s + (d.properties_completed ?? 0), 0);
+        const f = slice.reduce((s, d) => s + (d.properties_failed ?? 0), 0);
+        const total = c + f;
+        return total > 0 ? c / total : null;
+      };
+      const last7Rate = calcRate(DAILY.slice(-7));
+      const prev7Rate = calcRate(DAILY.slice(-14, -7));
+      if (last7Rate !== null && prev7Rate !== null && prev7Rate > 0) {
+        qcDelta = ((last7Rate - prev7Rate) / prev7Rate) * 100;
+      } else if (last7Rate !== null && prev7Rate === null) {
+        qcDelta = null;
+      }
+    }
+  } else if (DAILY && DAILY.length > 0) {
+    const c = DAILY.slice(-7).reduce((s, d) => s + (d.properties_completed ?? 0), 0);
+    const f = DAILY.slice(-7).reduce((s, d) => s + (d.properties_failed ?? 0), 0);
+    const total = c + f;
+    qcPassRate = total > 0 ? ((c / total) * 100).toFixed(1) + "%" : "—";
+  } else {
+    qcPassRate = "—";
+  }
 
   // ── chart slice based on range ────────────────────────────────────────────
   const chartData = dailyForUI.slice(-rangeLen);
@@ -171,6 +328,32 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     ? Math.round(dailyForUI.reduce((s, d) => s + d.sla, 0) / dailyForUI.length)
     : 91;
   const slaMof = Math.round((avgSla / 100) * 156);
+
+  // ── Activity feed ─────────────────────────────────────────────────────────
+  const derivedActivity = allProps.length > 0 ? deriveActivity(propsForUI) : [];
+  const activityForUI = derivedActivity.length >= 3 ? derivedActivity : SAMPLE_ACTIVITY;
+
+  // ── Provider mix ──────────────────────────────────────────────────────────
+  const cbProviders = costBreakdown?.byProvider ?? [];
+  const totalMonthCents = cbProviders.reduce((s, r) => s + (r.month?.cents ?? 0), 0);
+  const providerMixForUI = totalMonthCents > 0
+    ? cbProviders
+        .filter((r) => (r.month?.cents ?? 0) > 0)
+        .map((r) => ({
+          provider: r.key,
+          value: Math.round(((r.month?.cents ?? 0) / totalMonthCents) * 100),
+        }))
+        .sort((a, b) => b.value - a.value)
+    : SAMPLE_PROVIDER_MIX;
+
+  const VIDEO_PROVIDERS = new Set(["runway", "kling", "luma", "runway gen-4", "kling 2.0", "luma ray2"]);
+  const totalScenesGenerated = totalMonthCents > 0
+    ? cbProviders
+        .filter((r) => VIDEO_PROVIDERS.has(r.key.toLowerCase()))
+        .reduce((s, r) => s + (r.month?.events ?? 0), 0)
+    : null;
+
+  const userName = deriveName(profile?.first_name, user?.email);
 
   if (loading) {
     return (
@@ -186,8 +369,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       {/* ── Page heading ─────────────────────────────────────────────── */}
       <PageHeading
         eyebrow={todayLabel()}
-        title="Good morning, Oliver."
-        sub={`${deliveredToday} videos delivered overnight, ${inFlightCount} still in flight. Two scenes need a decision — both already routed to manual review.`}
+        title={greeting(userName)}
+        sub={subHeadline(completedToday, inFlightCount, needsReviewCount)}
         actions={
           <>
             <button type="button" className="le-btn-ghost">
@@ -209,9 +392,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <KpiCard
           label="Delivered today"
-          value={String(deliveredToday)}
-          sub="6 hours ago"
-          delta={18.4}
+          value={String(completedToday)}
+          sub={completedToday === 0 ? "none yet today" : `${completedToday === 1 ? "1 video" : `${completedToday} videos`} today`}
+          delta={deliveredDelta}
         />
         <KpiCard
           label="In production"
@@ -229,8 +412,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <KpiCard
           label="QC pass rate"
           value={qcPassRate}
-          sub="38 manual, rest auto"
-          delta={1.2}
+          sub={`${needsReviewCount} manual, rest auto`}
+          delta={qcDelta}
         />
       </section>
 
@@ -376,10 +559,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <span className="le-d-label">Provider mix · 30d</span>
           <h3 style={{ margin: "6px 0 18px", fontSize: 16, fontWeight: 600, letterSpacing: "-0.015em", color: "var(--ink)" }}>
-            1,284 scenes generated
+            {totalScenesGenerated !== null
+              ? `${totalScenesGenerated.toLocaleString()} scenes generated`
+              : "1,284 scenes generated"}
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {SAMPLE_PROVIDER_MIX.map((p) => (
+            {providerMixForUI.map((p) => (
               <div key={p.provider}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
@@ -403,44 +588,52 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             </button>
           </div>
           <div>
-            {agentsForUI.map((a, i) => (
-              <div
-                key={a.name}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "auto 1.6fr 1fr 1fr 1fr 100px",
-                  gap: 14,
-                  alignItems: "center",
-                  padding: "12px 4px",
-                  borderTop: i === 0 ? "none" : "1px solid var(--line-2)",
-                }}
-              >
-                <span style={{ fontSize: 12, color: "var(--muted-2)", fontWeight: 600, width: 18, fontVariantNumeric: "tabular-nums" }}>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 30, height: 30, borderRadius: 99,
-                    background: `linear-gradient(135deg, hsl(${210 + i * 22}, 8%, 56%), hsl(${230 + i * 30}, 8%, 38%))`,
-                    display: "grid", placeItems: "center",
-                    color: "#fff", fontWeight: 600, fontSize: 10.5,
-                  }}>
-                    {a.name.split(" ").map((s) => s[0]).join("")}
+            {agentsForUI.map((a, i) => {
+              const sparkData = allProps.length > 0
+                ? agentSparkline(a.name, allProps)
+                : (() => {
+                    const base = Math.max(1, Math.floor(a.videos / 12));
+                    return Array.from({ length: 12 }, (_, j) => base + (j % 3));
+                  })();
+              return (
+                <div
+                  key={a.name}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1.6fr 1fr 1fr 1fr 100px",
+                    gap: 14,
+                    alignItems: "center",
+                    padding: "12px 4px",
+                    borderTop: i === 0 ? "none" : "1px solid var(--line-2)",
+                  }}
+                >
+                  <span style={{ fontSize: 12, color: "var(--muted-2)", fontWeight: 600, width: 18, fontVariantNumeric: "tabular-nums" }}>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: 99,
+                      background: `linear-gradient(135deg, hsl(${210 + i * 22}, 8%, 56%), hsl(${230 + i * 30}, 8%, 38%))`,
+                      display: "grid", placeItems: "center",
+                      color: "#fff", fontWeight: 600, fontSize: 10.5,
+                    }}>
+                      {a.name.split(" ").map((s) => s[0]).join("")}
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{a.name}</span>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{a.name}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{a.company}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
+                    {a.videos}
+                  </span>
+                  <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
+                    {fmtCents(a.spend)}
+                  </span>
+                  <div style={{ width: 100, marginLeft: "auto" }}>
+                    <Sparkline data={sparkData} color="var(--ink)" height={26} />
+                  </div>
                 </div>
-                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{a.company}</span>
-                <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
-                  {a.videos}
-                </span>
-                <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
-                  {fmtCents(a.spend)}
-                </span>
-                <div style={{ width: 100, marginLeft: "auto" }}>
-                  <Sparkline data={[3, 5, 4, 6, 7, 5, 8, 9, 8, 11, 10, 12]} color="var(--ink)" height={26} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
