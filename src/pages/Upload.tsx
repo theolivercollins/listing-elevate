@@ -1,8 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   ArrowRight,
   ArrowLeft,
@@ -20,26 +17,57 @@ import {
   RectangleVertical,
   RectangleHorizontal,
   Square,
-  Camera,
   Check,
   Search,
+  Image,
+  Clock,
+  Box,
+  User,
 } from "lucide-react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty, generateVoiceoverPreview, lookupMls } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
-import "@/v2/styles/v2.css";
+import "@/v3/styles/glass.css";
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
-  { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",    gender: "male" as const,   description: "Natural, conversational" },
-  { id: "dtSEyYGNJqjrtBArPCVZ", name: "Jack",    gender: "male" as const,   description: "Deep, commanding narrator" },
-  { id: "F7hCTbeEDbm7osolS21j", name: "Amanda",  gender: "female" as const, description: "Warm, polished, informative" },
-  { id: "kdmDKE6EkgrWrrykO9Qt", name: "Jessica", gender: "female" as const, description: "Young, conversational, natural" },
+  {
+    id: "UgBBYS2sOqTuMpoF3BR0",
+    name: "Mark",
+    gender: "Male" as const,
+    description: "Natural, conversational",
+  },
+  {
+    id: "dtSEyYGNJqjrtBArPCVZ",
+    name: "Jack",
+    gender: "Male" as const,
+    description: "Deep, commanding narrator",
+  },
+  {
+    id: "F7hCTbeEDbm7osolS21j",
+    name: "Amanda",
+    gender: "Female" as const,
+    description: "Warm, polished, informative",
+  },
+  {
+    id: "kdmDKE6EkgrWrrykO9Qt",
+    name: "Jessica",
+    gender: "Female" as const,
+    description: "Young, conversational, natural",
+  },
 ];
 
 interface UploadedFile {
@@ -51,14 +79,72 @@ interface UploadedFile {
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const stepFade: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: EASE } },
-  exit: { opacity: 0, y: -24, transition: { duration: 0.4, ease: EASE } },
+  hidden: { opacity: 0, y: 16 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.5, ease: EASE },
+  },
+  exit: { opacity: 0, y: -12, transition: { duration: 0.35, ease: EASE } },
 };
 
 // Step order: Style → Property → Add-ons → Photos
-const STEPS = ["Style", "Property", "Add-ons", "Photos"] as const;
+const STEPS = [
+  { label: "Style", sub: "Type · duration · format" },
+  { label: "Property", sub: "Address & details" },
+  { label: "Add-ons", sub: "Voiceover · custom requests" },
+  { label: "Photos", sub: "10–60 high-resolution" },
+] as const;
+
 type StepId = 0 | 1 | 2 | 3;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Primitive components
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface SectionCardProps {
+  label?: string;
+  title: string;
+  sub?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}
+
+function SectionCard({ label, title, sub, right, children }: SectionCardProps) {
+  return (
+    <section className="g-section-card">
+      <div className="g-section-head">
+        <div>
+          {label && <span className="g-label" style={{ fontSize: 12 }}>{label}</span>}
+          <h2 className="g-section-title">{title}</h2>
+          {sub && <p className="g-section-sub">{sub}</p>}
+        </div>
+        {right}
+      </div>
+      <div className="g-section-body">{children}</div>
+    </section>
+  );
+}
+
+interface FieldProps {
+  label: string;
+  full?: boolean;
+  half?: boolean;
+  children: React.ReactNode;
+}
+
+function Field({ label, full, half, children }: FieldProps) {
+  return (
+    <div className={`g-form-field${full ? " full" : ""}${half ? " half" : ""}`}>
+      <label className="g-form-label">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main component
+// ─────────────────────────────────────────────────────────────────────────────
 
 const Upload = () => {
   // ─── auth ───
@@ -106,7 +192,10 @@ const Upload = () => {
   const [trackingId, setTrackingId] = useState("");
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<{
+    uploaded: number;
+    total: number;
+  } | null>(null);
 
   // ─── presets ───
   const [showSavePreset, setShowSavePreset] = useState(false);
@@ -181,7 +270,11 @@ const Upload = () => {
       if (r.description) setCompassDescription(r.description);
       setMlsFilled(true);
     } catch (e) {
-      setMlsError(e instanceof Error ? e.message : "Couldn't find this address on MLS — fill in details manually.");
+      setMlsError(
+        e instanceof Error
+          ? e.message
+          : "Couldn't find this address on MLS — fill in details manually.",
+      );
     } finally {
       setMlsLookingUp(false);
     }
@@ -200,10 +293,16 @@ const Upload = () => {
 
   // ─── catalog ───
   const packages = [
-    { id: "just_listed", name: "Just Listed", desc: "New to market", icon: Home },
-    { id: "just_pended", name: "Just Pended", desc: "Under contract", icon: Flame },
-    { id: "just_closed", name: "Just Closed", desc: "Successful close", icon: Trophy },
-    { id: "life_cycle", name: "Life Cycle", desc: "Three-video series", icon: Layers, badge: "Best value" },
+    { id: "just_listed", name: "Just Listed", desc: "New to market", Icon: Home },
+    { id: "just_pended", name: "Just Pended", desc: "Under contract", Icon: Flame },
+    { id: "just_closed", name: "Just Closed", desc: "Successful close", Icon: Trophy },
+    {
+      id: "life_cycle",
+      name: "Life Cycle",
+      desc: "Three-video series",
+      Icon: Layers,
+      badge: "Best value",
+    },
   ];
 
   const durations = [
@@ -212,36 +311,63 @@ const Upload = () => {
     { id: "60s", label: "60", price: 175, lifeCyclePrice: 190 },
   ];
 
-  // Horizontal is primary (index 0); vertical and both are coming soon.
+  // Horizontal is primary; vertical and both are coming soon.
   const orientations = [
-    { id: "horizontal", label: "Horizontal", ratio: "16:9", icon: RectangleHorizontal, extra: 0 },
-    { id: "vertical", label: "Vertical", ratio: "9:16", icon: RectangleVertical, extra: 0, comingSoon: true },
-    { id: "both", label: "Both", ratio: "9:16 + 16:9", icon: Square, extra: 10, comingSoon: true },
+    {
+      id: "horizontal",
+      label: "Horizontal",
+      ratio: "16:9",
+      Icon: RectangleHorizontal,
+      extra: 0,
+    },
+    {
+      id: "vertical",
+      label: "Vertical",
+      ratio: "9:16",
+      Icon: RectangleVertical,
+      extra: 0,
+      comingSoon: true,
+    },
+    {
+      id: "both",
+      label: "Both",
+      ratio: "9:16 + 16:9",
+      Icon: Square,
+      extra: 10,
+      comingSoon: true,
+    },
   ];
 
   const selectedDur = durations.find((d) => d.id === selectedDuration);
   const isLifeCycle = selectedPackage === "life_cycle";
-  const basePrice = selectedDur ? (isLifeCycle ? selectedDur.lifeCyclePrice : selectedDur.price) : 0;
-  const orientationExtra = isLifeCycle ? 0 : (orientations.find((o) => o.id === selectedOrientation)?.extra || 0);
-  // Voiceover pricing: default voice = $10/video. Voice clone = $125 one-time
-  // setup PLUS $10/video (the cloned voice still needs ElevenLabs synthesis
-  // each render). If the user already has a clone on file, skip the $125.
+  const basePrice = selectedDur
+    ? isLifeCycle
+      ? selectedDur.lifeCyclePrice
+      : selectedDur.price
+    : 0;
+  const orientationExtra = isLifeCycle
+    ? 0
+    : orientations.find((o) => o.id === selectedOrientation)?.extra || 0;
   const voiceoverExtra = addVoiceover ? 10 : 0;
   const customExtra = addCustomRequest ? 15 : 0;
   const VOICE_CLONE_SETUP = 125;
   const VOICE_CLONE_PER_VIDEO = 10;
-  const hasExistingClone = profile?.voice_clone_status === 'ready' || !!profile?.elevenlabs_voice_id;
+  const hasExistingClone =
+    profile?.voice_clone_status === "ready" || !!profile?.elevenlabs_voice_id;
   const voiceCloneExtra = addVoiceClone
-    ? (hasExistingClone ? VOICE_CLONE_PER_VIDEO : VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO)
+    ? hasExistingClone
+      ? VOICE_CLONE_PER_VIDEO
+      : VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO
     : 0;
-  const totalPrice = basePrice + orientationExtra + voiceoverExtra + customExtra + voiceCloneExtra;
+  const totalPrice =
+    basePrice + orientationExtra + voiceoverExtra + customExtra + voiceCloneExtra;
 
-  const needsDaysOnMarket = selectedPackage === "just_pended" || selectedPackage === "just_closed";
+  const needsDaysOnMarket =
+    selectedPackage === "just_pended" || selectedPackage === "just_closed";
   const needsSoldPrice = selectedPackage === "just_closed";
 
-  // ─── per-step validity (new order: 0=Style, 1=Property, 2=Add-ons, 3=Photos) ───
+  // ─── per-step validity (0=Style, 1=Property, 2=Add-ons, 3=Photos) ───
   const step0Valid = !!(selectedPackage && selectedDuration && selectedOrientation);
-  // Step 1 = Property
   const step1Valid = !!(
     address &&
     price &&
@@ -252,7 +378,6 @@ const Upload = () => {
     (!needsDaysOnMarket || daysOnMarket) &&
     (!needsSoldPrice || soldPrice)
   );
-  // Step 2 = Add-ons
   const step2Valid = !addCustomRequest || customRequestText.trim().length > 0;
   const step3Valid = files.length >= 10;
   const stepValidity = [step0Valid, step1Valid, step2Valid, step3Valid] as const;
@@ -267,10 +392,16 @@ const Upload = () => {
   // ─── files ───
   const handleFiles = useCallback(
     (newFiles: FileList | File[]) => {
-      const accepted = Array.from(newFiles).filter((f) => /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name));
+      const accepted = Array.from(newFiles).filter((f) =>
+        /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name),
+      );
       const remaining = 60 - files.length;
       const toAdd = accepted.slice(0, remaining);
-      const mapped = toAdd.map((f) => ({ file: f, preview: URL.createObjectURL(f), id: crypto.randomUUID() }));
+      const mapped = toAdd.map((f) => ({
+        file: f,
+        preview: URL.createObjectURL(f),
+        id: crypto.randomUUID(),
+      }));
       setFiles((prev) => [...prev, ...mapped]);
     },
     [files.length],
@@ -286,7 +417,9 @@ const Upload = () => {
 
   const totalSize = files.reduce((sum, f) => sum + f.file.size, 0);
   const formatSize = (bytes: number) =>
-    bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    bytes < 1024 * 1024
+      ? `${(bytes / 1024).toFixed(0)} KB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
   // ─── voiceover generation ───
   const handleGenerateVoiceover = async () => {
@@ -297,7 +430,6 @@ const Upload = () => {
       !!lastUsedVoiceId &&
       selectedVoiceId !== lastUsedVoiceId;
 
-    // Need either a cached MLS description, a Compass URL, or an existing script to re-render
     if (!isVoiceOnlyRerender && !compassDescription && !compassUrl) return;
 
     const durationSec = parseInt(selectedDuration.replace(/s$/, ""), 10);
@@ -312,19 +444,32 @@ const Upload = () => {
     if (isVoiceOnlyRerender) {
       setVoiceoverStage("Recording the new voiceover…");
     } else {
-      setVoiceoverStage(compassDescription ? "Writing your script…" : "Reading your listing…");
-      const t1 = setTimeout(() => setVoiceoverStage("Writing your script…"), compassDescription ? 0 : 12_000);
-      const t2 = setTimeout(() => setVoiceoverStage("Recording the voiceover…"), compassDescription ? 10_000 : 22_000);
-      const t3 = setTimeout(() => setVoiceoverStage("Almost done…"), compassDescription ? 25_000 : 38_000);
-      clearStages = () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+      setVoiceoverStage(
+        compassDescription ? "Writing your script…" : "Reading your listing…",
+      );
+      const t1 = setTimeout(
+        () => setVoiceoverStage("Writing your script…"),
+        compassDescription ? 0 : 12_000,
+      );
+      const t2 = setTimeout(
+        () => setVoiceoverStage("Recording the voiceover…"),
+        compassDescription ? 10_000 : 22_000,
+      );
+      const t3 = setTimeout(
+        () => setVoiceoverStage("Almost done…"),
+        compassDescription ? 25_000 : 38_000,
+      );
+      clearStages = () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     }
 
     try {
       const result = await generateVoiceoverPreview({
         voiceId: selectedVoiceId,
         durationSec,
-        // When MLS description is cached, pass it directly and skip Compass scrape.
-        // Otherwise fall back to compassUrl (manual path).
         ...(isVoiceOnlyRerender
           ? { compassUrl, script: voiceoverScript! }
           : compassDescription
@@ -372,10 +517,12 @@ const Upload = () => {
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
-      // Redirect to Stripe Checkout. The success_url lands at /upload/success.
+      // Redirect to Stripe Checkout. success_url lands at /upload/success.
       window.location.href = result.checkoutUrl;
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to submit property");
+      setSubmitError(
+        err instanceof Error ? err.message : "Failed to submit property",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -392,49 +539,105 @@ const Upload = () => {
   // ─── success ───
   if (submitted) {
     return (
-      <div className="flex min-h-screen flex-col" style={{ background: "var(--le-bg)", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
-        <div className="flex flex-1 items-center justify-center px-6 py-24">
+      <div
+        className="glass-page"
+        style={{ display: "flex", minHeight: "100vh", flexDirection: "column" }}
+      >
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "96px 24px",
+          }}
+        >
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.9, ease: EASE }}
-            className="w-full max-w-md text-center"
+            style={{ width: "100%", maxWidth: 420, textAlign: "center" }}
           >
             <motion.div
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.15, duration: 0.8, ease: EASE }}
-              className="mx-auto mb-10 flex h-20 w-20 items-center justify-center border border-accent/40 bg-accent/10 text-accent"
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: "50%",
+                background: "rgba(47, 138, 85, 0.1)",
+                border: "1px solid rgba(47, 138, 85, 0.3)",
+                display: "grid",
+                placeItems: "center",
+                margin: "0 auto 36px",
+                color: "var(--good)",
+              }}
             >
-              <CheckCircle2 className="h-9 w-9" strokeWidth={1.5} />
+              <CheckCircle2 size={32} strokeWidth={1.5} />
             </motion.div>
-            <span className="label text-muted-foreground">— In production</span>
-            <h1 className="display-md mt-5">
+            <p className="g-label" style={{ marginBottom: 12 }}>In production</p>
+            <h1
+              style={{
+                margin: 0,
+                fontSize: 40,
+                fontWeight: 600,
+                letterSpacing: "-0.03em",
+                color: "var(--ink)",
+                lineHeight: 1.1,
+              }}
+            >
               Your video
               <br />
               is in motion.
             </h1>
-            <p className="mt-6 text-sm leading-relaxed text-muted-foreground">
-              {files.length} photos received. Estimated delivery in 72 hours. We'll email you when it's ready.
+            <p
+              style={{
+                marginTop: 20,
+                fontSize: 14,
+                color: "var(--muted)",
+                lineHeight: 1.6,
+              }}
+            >
+              {files.length} photos received. Estimated delivery in 72 hours.
+              We'll email you when it's ready.
             </p>
-            <div className="mt-12 border border-border">
-              <div className="flex items-center justify-between border-b border-border px-6 py-4">
-                <span className="label text-muted-foreground">Tracking</span>
-                <span className="tabular text-xs font-semibold text-foreground">{trackingId.slice(0, 8)}</span>
-              </div>
-              <div className="flex items-center justify-between px-6 py-4">
-                <span className="label text-muted-foreground">Total</span>
-                <span className="tabular text-base font-semibold text-foreground">${totalPrice}</span>
+            <div
+              className="g-order-card"
+              style={{ marginTop: 36, textAlign: "left" }}
+            >
+              <div className="g-order-lines">
+                <div className="g-order-line">
+                  <div className="g-order-line-label">Tracking</div>
+                  <div className="g-order-line-val g-tabular">
+                    {trackingId.slice(0, 8)}
+                  </div>
+                </div>
+                <div className="g-order-line">
+                  <div className="g-order-line-label">Total</div>
+                  <div className="g-order-line-val g-tabular">${totalPrice}</div>
+                </div>
               </div>
             </div>
-            <Button size="lg" className="mt-8 w-full" onClick={() => navigate(`/status/${trackingId}`)}>
-              Track production
-              <ArrowRight className="h-4 w-4" />
-            </Button>
+            <button
+              className="g-cta-primary"
+              style={{ width: "100%", marginTop: 20, justifyContent: "center" }}
+              onClick={() => navigate(`/status/${trackingId}`)}
+            >
+              Track production <ArrowRight size={14} />
+            </button>
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="mt-6 text-xs text-muted-foreground underline underline-offset-4 transition-colors hover:text-foreground"
+              style={{
+                marginTop: 16,
+                fontSize: 12,
+                color: "var(--muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textDecoration: "underline",
+              }}
             >
               Submit another listing
             </button>
@@ -444,867 +647,1096 @@ const Upload = () => {
     );
   }
 
-  // ─── main ───
-  return (
-    <div className="flex min-h-screen flex-col" style={{ background: "var(--le-bg)", color: "var(--le-text)", fontFamily: "var(--le-font-sans)", paddingTop: 80 }}>
-      <SiteNav showSectionLinks={false} solid />
-      {/* Step header */}
-      <div style={{ borderBottom: "1px solid var(--le-border)" }}>
-        <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-8 md:px-12">
-          <div>
-            <h1 style={{ fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
-              {step === 0 && "Create a New Video"}
-              {step === 1 && "Property Details"}
-              {step === 2 && "Add Upgrades"}
-              {step === 3 && "Upload Your Photos"}
-            </h1>
-          </div>
-          {hasPresets && (
-            <button
-              type="button"
-              onClick={handleUseLastPreset}
-              className="hidden items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground md:flex"
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> Use last preset
-            </button>
-          )}
-        </div>
+  // ─── derived label helpers ───
+  const selectedPkgName =
+    packages.find((p) => p.id === selectedPackage)?.name ?? "";
+  const selectedOriLabel =
+    orientations.find((o) => o.id === selectedOrientation)?.label ?? "";
 
-        {/* Step rail */}
-        <div className="mx-auto max-w-[1080px] px-8 pb-6 md:px-12">
-          <div className="flex items-center gap-3">
-            {STEPS.map((label, i) => {
+  // ─── main render ───
+  return (
+    <div
+      className="glass-page"
+      style={{ display: "flex", flexDirection: "column", minHeight: "100vh", paddingTop: 80 }}
+    >
+      {/* Fixed background layers */}
+      <div className="glass-bg-base" aria-hidden />
+
+      <SiteNav showSectionLinks={false} solid />
+
+      {/* Content wrapper above background */}
+      <div style={{ position: "relative", zIndex: 2, flex: 1 }}>
+        {/* Page heading */}
+        <div style={{ padding: "32px 36px 0" }}>
+          <div className="g-page-heading">
+            <div>
+              <span className="g-page-eyebrow">
+                Step {step + 1} of 4 — {STEPS[step].label}
+              </span>
+              <h1 className="g-page-h1">New listing</h1>
+              <p className="g-page-sub">
+                Configure the video, attach property details, and upload photos.
+                The pipeline picks up automatically the moment you submit.
+              </p>
+            </div>
+            <div className="g-page-actions">
+              {hasPresets && (
+                <button
+                  type="button"
+                  className="g-btn-ghost"
+                  onClick={handleUseLastPreset}
+                >
+                  <RotateCcw size={13} /> Use last preset
+                </button>
+              )}
+              {step === 0 && step0Valid && (
+                <button
+                  type="button"
+                  className="g-btn-ghost"
+                  onClick={() => setShowSavePreset(true)}
+                >
+                  <Bookmark size={13} /> Save preset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Step rail */}
+          <div className="g-step-rail">
+            {STEPS.map((s, i) => {
               const active = i === step;
               const done = i < step;
+              const reachable =
+                i <= step || stepValidity.slice(0, i).every(Boolean);
               return (
                 <button
-                  key={label}
+                  key={s.label}
                   type="button"
+                  className={`g-step-pip${active ? " active" : ""}${done ? " done" : ""}`}
+                  disabled={!reachable}
                   onClick={() => {
-                    if (i < step || (i === step + 1 && canAdvance)) setStep(i as StepId);
+                    if (reachable) setStep(i as StepId);
                   }}
-                  className="group flex flex-1 flex-col items-start gap-2 text-left"
                 >
-                  <span className="flex items-center gap-2">
-                    <span
-                      className="tabular text-[10px] font-medium"
-                      style={{ color: active || done ? "var(--le-text)" : "var(--le-text-faint)" }}
-                    >
-                      0{i + 1}
-                    </span>
-                    <span
-                      className="text-[11px] font-medium uppercase tracking-[0.18em] transition-colors"
-                      style={{ color: active ? "var(--le-text)" : done ? "var(--le-text-muted)" : "var(--le-text-faint)" }}
-                    >
-                      {label}
-                    </span>
-                    {done && <Check className="h-3 w-3 text-accent" />}
-                  </span>
-                  <span
-                    style={{
-                      height: 1,
-                      width: "100%",
-                      transition: "background 0.7s",
-                      background: active ? "var(--le-text)" : done ? "var(--le-text-faint)" : "var(--le-border)",
-                    }}
-                  />
+                  <div className="g-step-pip-num">
+                    {done ? (
+                      <Check size={12} strokeWidth={2.2} />
+                    ) : (
+                      <span>{String(i + 1).padStart(2, "0")}</span>
+                    )}
+                  </div>
+                  <div className="g-step-pip-meta">
+                    <div className="g-step-pip-label">{s.label}</div>
+                    <div className="g-step-pip-sub">{s.sub}</div>
+                  </div>
                 </button>
               );
             })}
           </div>
         </div>
-      </div>
 
-      {/* Step body */}
-      <div className="flex-1 overflow-x-hidden">
-        <div className="mx-auto max-w-[1080px] px-8 py-16 md:px-12 md:py-24">
-          <AnimatePresence mode="wait">
-            {/* ─── Step 0 — Style ─── */}
-            {step === 0 && (
-              <motion.div key="step-0" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
-                {/* Package */}
-                <section>
-                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Video Type</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-2" style={{ background: "var(--le-border)" }}>
-                    {packages.map((pkg) => {
-                      const Icon = pkg.icon;
-                      const sel = selectedPackage === pkg.id;
-                      return (
-                        <button
-                          key={pkg.id}
-                          type="button"
-                          onClick={() => setSelectedPackage(pkg.id)}
-                          className="group relative flex items-start gap-5 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
-                        >
-                          <span
-                            className={`flex h-12 w-12 shrink-0 items-center justify-center border transition-colors duration-500 ${
-                              sel ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground group-hover:border-foreground/40"
-                            }`}
-                          >
-                            <Icon className="h-5 w-5" strokeWidth={1.5} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline gap-3">
-                              <h3 className="text-base font-semibold tracking-[-0.01em]">{pkg.name}</h3>
-                              {pkg.badge && (
-                                <span className="label text-accent">— {pkg.badge}</span>
-                              )}
-                            </div>
-                            <p className="mt-1.5 text-xs text-muted-foreground">{pkg.desc}</p>
-                          </div>
-                          {sel && <Check className="h-4 w-4 text-foreground" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* Duration */}
-                <section>
-                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Duration</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
-                    {durations.map((d) => {
-                      const sel = selectedDuration === d.id;
-                      const p = isLifeCycle ? d.lifeCyclePrice : d.price;
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => setSelectedDuration(d.id)}
-                          className="group flex items-end justify-between p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
-                        >
-                          <div>
-                            <div className="flex items-baseline gap-1">
-                              <span className="tabular text-4xl font-semibold tracking-[-0.03em]">{d.label}</span>
-                              <span className="text-xs text-muted-foreground">sec</span>
-                            </div>
-                            {isLifeCycle && (
-                              <span className="label mt-3 inline-block text-accent">— Bundle save $25</span>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <span className="tabular text-base font-semibold">${p}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-
-                {/* Orientation */}
-                <section>
-                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Select Format</h2>
-                  <div className="mt-8 grid gap-px md:grid-cols-3" style={{ background: "var(--le-border)" }}>
-                    {orientations.map((o) => {
-                      const Icon = o.icon;
-                      const sel = selectedOrientation === o.id;
-                      const isComingSoon = "comingSoon" in o && o.comingSoon;
-                      return (
-                        <button
-                          key={o.id}
-                          type="button"
-                          onClick={() => { if (!isComingSoon) setSelectedOrientation(o.id); }}
-                          disabled={isComingSoon}
-                          className="group flex items-center justify-between p-6 text-left transition-all duration-500 ease-cinematic disabled:cursor-not-allowed disabled:opacity-50"
-                          style={{ background: sel ? "var(--le-bg-elev)" : "var(--le-bg)" }}
-                        >
-                          <div className="flex items-center gap-5">
-                            <span
-                              className={`flex h-12 w-12 items-center justify-center border ${
-                                sel ? "border-foreground text-foreground" : "border-border text-muted-foreground group-hover:border-foreground/40"
-                              }`}
-                            >
-                              <Icon className="h-5 w-5" strokeWidth={1.5} />
-                            </span>
-                            <div>
-                              <div className="text-base font-semibold tracking-[-0.01em]">{o.label}</div>
-                              <div className="tabular text-[11px] text-muted-foreground">{o.ratio}</div>
-                            </div>
-                          </div>
-                          {isComingSoon ? (
-                            <span className="label text-accent">— Soon</span>
-                          ) : (
-                            <>
-                              {o.extra > 0 && !isLifeCycle && (
-                                <span className="tabular text-xs text-muted-foreground">+${o.extra}</span>
-                              )}
-                              {o.extra > 0 && isLifeCycle && (
-                                <span className="label text-accent">— Included</span>
-                              )}
-                            </>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              </motion.div>
-            )}
-
-            {/* ─── Step 1 — Property ─── */}
-            {step === 1 && (
-              <motion.div key="step-1" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
-                <section>
-                  <div className="space-y-8">
-                    {/* Address + Find on MLS button */}
-                    <div>
-                      <Label className="label text-muted-foreground">Address</Label>
-                      <AddressAutocomplete
-                        value={address}
-                        onChange={(val) => {
-                          setAddress(val);
-                          // Reset MLS state when address changes
-                          if (mlsFilled) handleMlsReset();
-                        }}
-                        placeholder="208 Berry Street, Brooklyn, NY"
-                        className="mt-3"
-                      />
-                      {/* Find on MLS — appears after 5+ chars */}
-                      {address.trim().length >= 5 && (
-                        <div className="mt-3 flex items-center gap-3">
-                          {mlsFilled ? (
-                            <span className="flex items-center gap-2 text-[11px] font-medium text-green-600">
-                              <Check className="h-3.5 w-3.5" />
-                              Found on MLS ✓
-                              <button
-                                type="button"
-                                onClick={handleMlsReset}
-                                className="ml-1 text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
-                              >
-                                (reset)
-                              </button>
-                            </span>
-                          ) : mlsLookingUp ? (
-                            <span className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-                              Searching MLS for this address…
-                            </span>
-                          ) : (
+        {/* Two-pane layout */}
+        <div style={{ padding: "0 36px 48px" }}>
+          <div className="g-upload-layout">
+            {/* Left: step content */}
+            <div className="g-upload-main">
+              <AnimatePresence mode="wait">
+                {/* ─── Step 0 — Style ─── */}
+                {step === 0 && (
+                  <motion.div
+                    key="step-0"
+                    variants={stepFade}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    style={{ display: "flex", flexDirection: "column", gap: 16 }}
+                  >
+                    {/* Video type */}
+                    <SectionCard
+                      label="Video type"
+                      title="What's the moment?"
+                      sub="Picks the script template, beat structure, and pacing recipe."
+                    >
+                      <div className="g-card-grid-2">
+                        {packages.map((pkg) => {
+                          const sel = selectedPackage === pkg.id;
+                          return (
                             <button
+                              key={pkg.id}
                               type="button"
-                              onClick={handleMlsLookup}
-                              disabled={mlsLookingUp}
-                              className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-accent underline underline-offset-4 hover:text-accent/80 transition-colors"
+                              className={`g-choice-card${sel ? " selected" : ""}`}
+                              onClick={() => setSelectedPackage(pkg.id)}
                             >
-                              <Search className="h-3.5 w-3.5" />
-                              Find on MLS
+                              <span className={`g-choice-icon${sel ? " on" : ""}`}>
+                                <pkg.Icon size={16} strokeWidth={sel ? 1.9 : 1.6} />
+                              </span>
+                              <div className="g-choice-meta">
+                                <div className="g-choice-title-row">
+                                  <span className="g-choice-title">{pkg.name}</span>
+                                  {pkg.badge && (
+                                    <span className="g-choice-badge">{pkg.badge}</span>
+                                  )}
+                                </div>
+                                <div className="g-choice-sub">{pkg.desc}</div>
+                              </div>
+                              <span className={`g-choice-check${sel ? " on" : ""}`}>
+                                {sel && <Check size={12} strokeWidth={2.4} />}
+                              </span>
                             </button>
+                          );
+                        })}
+                      </div>
+                    </SectionCard>
+
+                    {/* Duration */}
+                    <SectionCard
+                      label="Duration"
+                      title="How long should it run?"
+                      sub={
+                        isLifeCycle
+                          ? "Life Cycle bundles three videos at the chosen length."
+                          : "Pricing scales with run-time."
+                      }
+                    >
+                      <div className="g-card-grid-3">
+                        {durations.map((d) => {
+                          const sel = selectedDuration === d.id;
+                          const p = isLifeCycle ? d.lifeCyclePrice : d.price;
+                          return (
+                            <button
+                              key={d.id}
+                              type="button"
+                              className={`g-duration-tile${sel ? " selected" : ""}`}
+                              onClick={() => setSelectedDuration(d.id)}
+                            >
+                              <div className="g-duration-num">
+                                <span className="g-duration-val">{d.label}</span>
+                                <span className="g-duration-unit">sec</span>
+                              </div>
+                              <div className="g-duration-foot">
+                                <span className="g-tabular">${p}</span>
+                                {isLifeCycle && (
+                                  <span className="g-duration-save">Saves $25</span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </SectionCard>
+
+                    {/* Orientation / format */}
+                    <SectionCard label="Format" title="Aspect ratio">
+                      <div className="g-card-grid-3">
+                        {orientations.map((o) => {
+                          const sel = selectedOrientation === o.id;
+                          const isComingSoon = "comingSoon" in o && o.comingSoon;
+                          return (
+                            <button
+                              key={o.id}
+                              type="button"
+                              className={`g-orient-tile${sel ? " selected" : ""}${isComingSoon ? " soon" : ""}`}
+                              disabled={isComingSoon}
+                              onClick={() => {
+                                if (!isComingSoon) setSelectedOrientation(o.id);
+                              }}
+                            >
+                              <div className={`g-orient-glyph ${o.id}`} />
+                              <div className="g-orient-meta">
+                                <div className="g-orient-label">{o.label}</div>
+                                <div className="g-orient-ratio">{o.ratio}</div>
+                              </div>
+                              {isComingSoon ? (
+                                <span className="g-orient-soon">Soon</span>
+                              ) : o.extra > 0 && !isLifeCycle ? (
+                                <span className="g-orient-extra g-tabular">
+                                  +${o.extra}
+                                </span>
+                              ) : sel ? (
+                                <span className="g-orient-check">
+                                  <Check size={12} strokeWidth={2.2} />
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </SectionCard>
+                  </motion.div>
+                )}
+
+                {/* ─── Step 1 — Property ─── */}
+                {step === 1 && (
+                  <motion.div
+                    key="step-1"
+                    variants={stepFade}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <SectionCard
+                      label="Property"
+                      title="Listing details"
+                      sub="Auto-fills from MLS when the address resolves."
+                    >
+                      <div className="g-form-grid">
+                        {/* Address */}
+                        <Field label="Address" full>
+                          <div className="g-input-wrap">
+                            <AddressAutocomplete
+                              value={address}
+                              onChange={(val) => {
+                                setAddress(val);
+                                if (mlsFilled) handleMlsReset();
+                              }}
+                              placeholder="208 Berry Street, Brooklyn, NY 11211"
+                            />
+                          </div>
+                          {address.trim().length >= 5 && (
+                            <div className="g-mls-trigger">
+                              {mlsFilled ? (
+                                <span className="g-mls-success">
+                                  <Check size={12} strokeWidth={2.4} />
+                                  Found on MLS
+                                  <button
+                                    type="button"
+                                    className="g-mls-reset"
+                                    onClick={handleMlsReset}
+                                  >
+                                    reset
+                                  </button>
+                                </span>
+                              ) : mlsLookingUp ? (
+                                <span className="g-mls-loading">
+                                  <span className="g-mls-spinner" />
+                                  Searching MLS…
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="g-mls-btn"
+                                  onClick={handleMlsLookup}
+                                  disabled={mlsLookingUp}
+                                >
+                                  <Search size={12} />
+                                  Find on MLS
+                                </button>
+                              )}
+                              {mlsError && !mlsLookingUp && (
+                                <span className="g-mls-error">{mlsError}</span>
+                              )}
+                            </div>
                           )}
-                          {mlsError && !mlsLookingUp && (
-                            <span className="text-[11px] text-red-500">{mlsError}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                        </Field>
 
-                    <div className="grid gap-6 md:grid-cols-4">
-                      <div>
-                        <Label className="label text-muted-foreground">Price</Label>
-                        <div className="relative mt-3">
-                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
-                            $
-                          </span>
-                          <Input
-                            type="number"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            placeholder="2,400,000"
-                            className="tabular pl-7"
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <Label className="label text-muted-foreground">Bedrooms</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={bedrooms}
-                          onChange={(e) => setBedrooms(e.target.value)}
-                          placeholder="3"
-                          className="tabular mt-3"
-                        />
-                      </div>
-                      <div>
-                        <Label className="label text-muted-foreground">Bathrooms</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          step={0.5}
-                          value={bathrooms}
-                          onChange={(e) => setBathrooms(e.target.value)}
-                          placeholder="2.5"
-                          className="tabular mt-3"
-                        />
-                      </div>
-                      <div>
-                        <Label className="label text-muted-foreground">Sqft</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          value={sqft}
-                          onChange={(e) => setSqft(e.target.value)}
-                          placeholder="1,850"
-                          className="tabular mt-3"
-                        />
-                      </div>
-                    </div>
+                        {/* Numeric fields */}
+                        <Field label="List price">
+                          <div className="g-input-wrap">
+                            <span className="g-input-leading-sym">$</span>
+                            <input
+                              type="number"
+                              value={price}
+                              onChange={(e) => setPrice(e.target.value)}
+                              placeholder="2,400,000"
+                              className="g-input g-tabular has-leading"
+                            />
+                          </div>
+                        </Field>
 
-                    <div>
-                      <Label className="label text-muted-foreground">Listing agent</Label>
-                      <Input
-                        value={agent}
-                        onChange={(e) => setAgent(e.target.value)}
-                        placeholder="Jane Smith"
-                        className="mt-3"
-                      />
-                    </div>
-
-                    {needsDaysOnMarket && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.5, ease: EASE }}
-                        className="grid gap-6 md:grid-cols-2"
-                      >
-                        <div>
-                          <Label className="label text-muted-foreground">Days on market</Label>
-                          <Input
+                        <Field label="Bedrooms">
+                          <input
                             type="number"
                             min={0}
-                            value={daysOnMarket}
-                            onChange={(e) => setDaysOnMarket(e.target.value)}
-                            placeholder="14"
-                            className="tabular mt-3"
+                            value={bedrooms}
+                            onChange={(e) => setBedrooms(e.target.value)}
+                            placeholder="3"
+                            className="g-input g-tabular"
                           />
-                        </div>
+                        </Field>
+
+                        <Field label="Bathrooms">
+                          <input
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            value={bathrooms}
+                            onChange={(e) => setBathrooms(e.target.value)}
+                            placeholder="2.5"
+                            className="g-input g-tabular"
+                          />
+                        </Field>
+
+                        <Field label="Square feet">
+                          <input
+                            type="number"
+                            min={0}
+                            value={sqft}
+                            onChange={(e) => setSqft(e.target.value)}
+                            placeholder="1,850"
+                            className="g-input g-tabular"
+                          />
+                        </Field>
+
+                        <Field label="Listing agent" full>
+                          <input
+                            value={agent}
+                            onChange={(e) => setAgent(e.target.value)}
+                            placeholder="Jane Smith"
+                            className="g-input"
+                          />
+                        </Field>
+
+                        {needsDaysOnMarket && (
+                          <Field label="Days on market">
+                            <input
+                              type="number"
+                              min={0}
+                              value={daysOnMarket}
+                              onChange={(e) => setDaysOnMarket(e.target.value)}
+                              placeholder="14"
+                              className="g-input g-tabular"
+                            />
+                          </Field>
+                        )}
+
                         {needsSoldPrice && (
-                          <div>
-                            <Label className="label text-muted-foreground">Sold price</Label>
-                            <div className="relative mt-3">
-                              <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm text-muted-foreground/60">
-                                $
-                              </span>
-                              <Input
+                          <Field label="Sold price">
+                            <div className="g-input-wrap">
+                              <span className="g-input-leading-sym">$</span>
+                              <input
                                 type="number"
                                 value={soldPrice}
                                 onChange={(e) => setSoldPrice(e.target.value)}
                                 placeholder="2,500,000"
-                                className="tabular pl-7"
+                                className="g-input g-tabular has-leading"
                               />
                             </div>
-                          </div>
+                          </Field>
                         )}
-                      </motion.div>
-                    )}
-                  </div>
-                </section>
-              </motion.div>
-            )}
+                      </div>
+                    </SectionCard>
+                  </motion.div>
+                )}
 
-            {/* ─── Step 2 — Add-ons ─── */}
-            {step === 2 && (
-              <motion.div key="step-2" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-12">
-                <section>
-                  <h2 className="text-xl font-semibold tracking-[-0.01em]">Optional Upgrades</h2>
-                  <p className="mt-2 max-w-md text-sm text-muted-foreground">
-                    Each add-on is optional. Voice clone and AI voiceover are mutually exclusive — pick one or neither.
-                  </p>
-
-                  <div className="mt-10 grid gap-px" style={{ background: "var(--le-border)" }}>
-                    {/* AI voiceover */}
-                    {(() => {
-                      const active = addVoiceover;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = !addVoiceover;
-                            setAddVoiceover(next);
-                            if (next) setAddVoiceClone(false);
-                            if (!next) {
-                              setSelectedVoiceId(null);
-                              setCompassUrl("");
-                              setVoiceoverPreviewUrl(null);
-                              setVoiceoverScript(null);
-                              setVoiceoverError(null);
-                              // Note: compassDescription is intentionally NOT cleared here —
-                              // it was populated by MLS lookup and may be re-used if voiceover is re-enabled.
-                            }
-                          }}
-                          className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
+                {/* ─── Step 2 — Add-ons ─── */}
+                {step === 2 && (
+                  <motion.div
+                    key="step-2"
+                    variants={stepFade}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <SectionCard
+                      label="Add-ons"
+                      title="Optional upgrades"
+                      sub="Voice clone and AI voiceover are mutually exclusive — pick one or neither."
+                    >
+                      <div className="g-addons-stack">
+                        {/* AI voiceover */}
+                        <div
+                          className={`g-addon-row${addVoiceover ? " active" : ""}`}
                         >
-                          <span
-                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
-                              active
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border text-muted-foreground group-hover:border-foreground/40"
-                            }`}
-                          >
-                            <Mic className="h-4 w-4" strokeWidth={1.5} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-3">
-                              <h3 className="text-base font-semibold tracking-[-0.01em]">AI voiceover</h3>
-                              <span className="tabular text-xs text-muted-foreground">+ $15</span>
-                            </div>
-                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
-                              Studio-quality narration generated from a script tailored to the listing.
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })()}
-
-                    {/* Voice clone — active (billed via Stripe) */}
-                    {(() => {
-                      const active = addVoiceClone;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            // Voice clone and voiceover are mutually exclusive.
-                            if (!addVoiceClone) setAddVoiceover(false);
-                            setAddVoiceClone(!addVoiceClone);
-                          }}
-                          className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
-                        >
-                          <span
-                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
-                              active
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border text-muted-foreground group-hover:border-foreground/40"
-                            }`}
-                          >
-                            <Mic className="h-4 w-4" strokeWidth={1.5} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-3">
-                              <h3 className="text-base font-semibold tracking-[-0.01em]">Voice clone</h3>
-                              <span className="tabular text-xs text-muted-foreground">
-                                {hasExistingClone
-                                  ? `+ $${VOICE_CLONE_PER_VIDEO}`
-                                  : `+ $${VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO}`}
-                              </span>
-                            </div>
-                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
-                              Narrate every video in your own voice. Our team will reach out within one business day to schedule a 15-minute recording session — your clone is then used on this video and every future order.
-                            </p>
-                            <p className="mt-1 tabular text-[11px] text-muted-foreground/80">
-                              {hasExistingClone
-                                ? `Voice clone on file — $${VOICE_CLONE_SETUP} setup waived`
-                                : `$${VOICE_CLONE_SETUP} one-time setup + $${VOICE_CLONE_PER_VIDEO}/video`}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })()}
-
-                    {/* Custom request */}
-                    {(() => {
-                      const active = addCustomRequest;
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setAddCustomRequest(!addCustomRequest)}
-                          className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
-                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
-                        >
-                          <span
-                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
-                              active
-                                ? "border-foreground bg-foreground text-background"
-                                : "border-border text-muted-foreground group-hover:border-foreground/40"
-                            }`}
-                          >
-                            <Sparkles className="h-4 w-4" strokeWidth={1.5} />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-baseline justify-between gap-3">
-                              <h3 className="text-base font-semibold tracking-[-0.01em]">Custom request</h3>
-                              <span className="tabular text-xs text-muted-foreground">+ $15</span>
-                            </div>
-                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
-                              Specific shots, music, or pacing notes for the production team.
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })()}
-                  </div>
-
-                  <AnimatePresence>
-                    {addVoiceover && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.5, ease: EASE }}
-                        className="overflow-hidden"
-                      >
-                        <div className="mt-6 space-y-6 border border-border p-6">
-                          <div>
-                            <Label className="label text-muted-foreground">Choose a voice</Label>
-                            <div className="mt-4 grid grid-cols-2 gap-3">
-                              {VOICE_CATALOG.map((v) => (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  onClick={() => setSelectedVoiceId(v.id)}
-                                  className={`flex flex-col gap-1 border p-4 text-left transition-colors duration-300 ${
-                                    selectedVoiceId === v.id
-                                      ? "border-foreground bg-foreground/5"
-                                      : "border-border hover:border-foreground/30"
-                                  }`}
-                                >
-                                  <span className="text-sm font-semibold tracking-[-0.01em]">{v.name}</span>
-                                  <span className="text-xs text-muted-foreground capitalize">{v.gender} · {v.description}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                          {compassDescription ? (
-                            <div className="flex items-center gap-2 rounded-none border border-green-600/30 bg-green-600/5 px-4 py-3 text-[11px] font-medium text-green-700">
-                              <Check className="h-3.5 w-3.5 shrink-0" />
-                              Using listing details from MLS ✓
-                            </div>
-                          ) : (
-                            <div>
-                              <Label className="label text-muted-foreground">Compass listing URL</Label>
-                              <Input
-                                value={compassUrl}
-                                onChange={(e) => {
-                                  setCompassUrl(e.target.value);
-                                  setVoiceoverPreviewUrl(null);
-                                  setVoiceoverScript(null);
-                                }}
-                                placeholder="https://www.compass.com/listing/..."
-                                className="mt-3"
-                              />
-                            </div>
-                          )}
-                          <Button
+                          <button
                             type="button"
-                            variant="outline"
-                            disabled={
-                              !selectedVoiceId ||
-                              !selectedDuration ||
-                              voiceoverGenerating ||
-                              (!voiceoverScript && !compassDescription && !compassUrl)
-                            }
-                            onClick={handleGenerateVoiceover}
-                            className="w-full"
+                            className="g-addon-head"
+                            onClick={() => {
+                              const next = !addVoiceover;
+                              setAddVoiceover(next);
+                              if (next) setAddVoiceClone(false);
+                              if (!next) {
+                                setSelectedVoiceId(null);
+                                setCompassUrl("");
+                                setVoiceoverPreviewUrl(null);
+                                setVoiceoverScript(null);
+                                setVoiceoverError(null);
+                              }
+                            }}
                           >
-                            {voiceoverGenerating ? (
-                              <><Loader2 className="mr-2 h-4 w-4 animate-spin" strokeWidth={1.5} /> Generating…</>
-                            ) : voiceoverScript && lastUsedVoiceId && selectedVoiceId !== lastUsedVoiceId ? (
-                              <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Try this voice</>
-                            ) : (
-                              <><Mic className="mr-2 h-4 w-4" strokeWidth={1.5} /> Generate voiceover</>
-                            )}
-                          </Button>
-                          {voiceoverGenerating && voiceoverStage && (
-                            <div className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-4 py-3">
-                              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" strokeWidth={1.5} />
-                              <span className="text-sm text-foreground">{voiceoverStage}</span>
+                            <span
+                              className={`g-addon-icon${addVoiceover ? " on" : ""}`}
+                            >
+                              <Mic size={14} strokeWidth={1.6} />
+                            </span>
+                            <div className="g-addon-meta">
+                              <div className="g-addon-title-row">
+                                <span className="g-addon-title">AI voiceover</span>
+                                <span className="g-addon-price">+ $10 / video</span>
+                              </div>
+                              <p className="g-addon-desc">
+                                Studio-quality narration generated from a script
+                                tailored to the listing.
+                              </p>
                             </div>
-                          )}
-                          {voiceoverError && (
-                            <p className="text-xs text-red-500">{voiceoverError}</p>
-                          )}
-                          {voiceoverPreviewUrl && voiceoverScript && (
-                            <div className="space-y-4">
-                              <audio controls src={voiceoverPreviewUrl} className="w-full" />
-                              <blockquote className="border-l-2 border-border pl-4 text-sm leading-relaxed text-muted-foreground italic">
-                                {voiceoverScript}
-                              </blockquote>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => {
-                                  setVoiceoverPreviewUrl(null);
-                                  setVoiceoverScript(null);
-                                  setLastUsedVoiceId(null);
-                                }}
-                                className="text-xs text-muted-foreground"
-                              >
-                                <RotateCcw className="mr-1.5 h-3 w-3" strokeWidth={1.5} />
-                                Regenerate
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                            <span
+                              className={`g-addon-switch${addVoiceover ? " on" : ""}`}
+                            >
+                              <span className="g-addon-switch-knob" />
+                            </span>
+                          </button>
 
-                  <AnimatePresence>
-                    {addCustomRequest && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.5, ease: EASE }}
-                        className="overflow-hidden"
+                          <AnimatePresence>
+                            {addVoiceover && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.4, ease: EASE }}
+                                style={{ overflow: "hidden" }}
+                              >
+                                <div className="g-addon-body">
+                                  {/* Voice picker */}
+                                  <div className="g-voice-grid">
+                                    {VOICE_CATALOG.map((v) => {
+                                      const sel = selectedVoiceId === v.id;
+                                      return (
+                                        <button
+                                          key={v.id}
+                                          type="button"
+                                          className={`g-voice-tile${sel ? " selected" : ""}`}
+                                          onClick={() => setSelectedVoiceId(v.id)}
+                                        >
+                                          <div className="g-voice-tile-head">
+                                            <span className="g-voice-name">
+                                              {v.name}
+                                            </span>
+                                            <span className="g-voice-gender">
+                                              {v.gender}
+                                            </span>
+                                          </div>
+                                          <div className="g-voice-desc">
+                                            {v.description}
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Compass URL or MLS cached notice */}
+                                  {compassDescription ? (
+                                    <div className="g-mls-cached-notice">
+                                      <Check size={12} strokeWidth={2.4} />
+                                      Using listing details from MLS
+                                    </div>
+                                  ) : (
+                                    <Field
+                                      label="Compass listing URL"
+                                      full
+                                    >
+                                      <input
+                                        value={compassUrl}
+                                        onChange={(e) => {
+                                          setCompassUrl(e.target.value);
+                                          setVoiceoverPreviewUrl(null);
+                                          setVoiceoverScript(null);
+                                        }}
+                                        placeholder="https://www.compass.com/listing/..."
+                                        className="g-input"
+                                        style={{ marginTop: 8 }}
+                                      />
+                                    </Field>
+                                  )}
+
+                                  {/* Generate button */}
+                                  <button
+                                    type="button"
+                                    className="g-cta-primary"
+                                    style={{
+                                      marginTop: 14,
+                                      width: "100%",
+                                      justifyContent: "center",
+                                    }}
+                                    disabled={
+                                      !selectedVoiceId ||
+                                      !selectedDuration ||
+                                      voiceoverGenerating ||
+                                      (!voiceoverScript &&
+                                        !compassDescription &&
+                                        !compassUrl)
+                                    }
+                                    onClick={handleGenerateVoiceover}
+                                  >
+                                    {voiceoverGenerating ? (
+                                      <>
+                                        <Loader2
+                                          size={14}
+                                          strokeWidth={1.6}
+                                          className="g-spin"
+                                        />{" "}
+                                        Generating…
+                                      </>
+                                    ) : voiceoverScript &&
+                                      lastUsedVoiceId &&
+                                      selectedVoiceId !== lastUsedVoiceId ? (
+                                      <>
+                                        <Mic size={14} strokeWidth={1.6} /> Try
+                                        this voice
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Mic size={14} strokeWidth={1.6} /> Generate
+                                        voiceover
+                                      </>
+                                    )}
+                                  </button>
+
+                                  {/* Stage indicator */}
+                                  {voiceoverGenerating && voiceoverStage && (
+                                    <div className="g-vo-stage">
+                                      <Loader2
+                                        size={14}
+                                        strokeWidth={1.6}
+                                        className="g-spin"
+                                        style={{ color: "var(--accent)" }}
+                                      />
+                                      {voiceoverStage}
+                                    </div>
+                                  )}
+
+                                  {/* Error */}
+                                  {voiceoverError && (
+                                    <p className="g-vo-error">{voiceoverError}</p>
+                                  )}
+
+                                  {/* Result */}
+                                  {voiceoverPreviewUrl && voiceoverScript && (
+                                    <div className="g-vo-result">
+                                      <audio
+                                        controls
+                                        src={voiceoverPreviewUrl}
+                                        className="g-vo-audio"
+                                      />
+                                      <blockquote className="g-vo-script">
+                                        {voiceoverScript}
+                                      </blockquote>
+                                      <button
+                                        type="button"
+                                        className="g-vo-regen"
+                                        onClick={() => {
+                                          setVoiceoverPreviewUrl(null);
+                                          setVoiceoverScript(null);
+                                          setLastUsedVoiceId(null);
+                                        }}
+                                      >
+                                        <RotateCcw size={12} strokeWidth={1.6} />
+                                        Regenerate
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+
+                        {/* Voice clone */}
+                        <div
+                          className={`g-addon-row${addVoiceClone ? " active" : ""}`}
+                        >
+                          <button
+                            type="button"
+                            className="g-addon-head"
+                            onClick={() => {
+                              if (!addVoiceClone) setAddVoiceover(false);
+                              setAddVoiceClone(!addVoiceClone);
+                            }}
+                          >
+                            <span
+                              className={`g-addon-icon${addVoiceClone ? " on" : ""}`}
+                            >
+                              <User size={14} strokeWidth={1.6} />
+                            </span>
+                            <div className="g-addon-meta">
+                              <div className="g-addon-title-row">
+                                <span className="g-addon-title">Voice clone</span>
+                                <span className="g-addon-price g-tabular">
+                                  {hasExistingClone
+                                    ? `+ $${VOICE_CLONE_PER_VIDEO}`
+                                    : `+ $${VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO}`}
+                                </span>
+                              </div>
+                              <p className="g-addon-desc">
+                                Narrate every video in your own voice. We'll
+                                schedule a 15-minute recording session within one
+                                business day.
+                              </p>
+                              <p className="g-addon-note">
+                                {hasExistingClone
+                                  ? `Voice clone on file — $${VOICE_CLONE_SETUP} setup waived`
+                                  : `$${VOICE_CLONE_SETUP} one-time setup + $${VOICE_CLONE_PER_VIDEO}/video`}
+                              </p>
+                            </div>
+                            <span
+                              className={`g-addon-switch${addVoiceClone ? " on" : ""}`}
+                            >
+                              <span className="g-addon-switch-knob" />
+                            </span>
+                          </button>
+                        </div>
+
+                        {/* Custom request */}
+                        <div
+                          className={`g-addon-row${addCustomRequest ? " active" : ""}`}
+                        >
+                          <button
+                            type="button"
+                            className="g-addon-head"
+                            onClick={() => setAddCustomRequest(!addCustomRequest)}
+                          >
+                            <span
+                              className={`g-addon-icon${addCustomRequest ? " on" : ""}`}
+                            >
+                              <Sparkles size={14} strokeWidth={1.6} />
+                            </span>
+                            <div className="g-addon-meta">
+                              <div className="g-addon-title-row">
+                                <span className="g-addon-title">
+                                  Custom request
+                                </span>
+                                <span className="g-addon-price g-tabular">
+                                  + $15
+                                </span>
+                              </div>
+                              <p className="g-addon-desc">
+                                Specific shots, music cues, or pacing notes routed
+                                to the production team.
+                              </p>
+                            </div>
+                            <span
+                              className={`g-addon-switch${addCustomRequest ? " on" : ""}`}
+                            >
+                              <span className="g-addon-switch-knob" />
+                            </span>
+                          </button>
+
+                          <AnimatePresence>
+                            {addCustomRequest && (
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                transition={{ duration: 0.4, ease: EASE }}
+                                style={{ overflow: "hidden" }}
+                              >
+                                <div className="g-addon-body">
+                                  <textarea
+                                    value={customRequestText}
+                                    onChange={(e) =>
+                                      setCustomRequestText(e.target.value)
+                                    }
+                                    placeholder="e.g. lead with the kitchen island, golden hour exteriors at the end, prefer mellow piano over pop."
+                                    className="g-custom-text"
+                                    rows={4}
+                                  />
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    </SectionCard>
+                  </motion.div>
+                )}
+
+                {/* ─── Step 3 — Photos ─── */}
+                {step === 3 && (
+                  <motion.div
+                    key="step-3"
+                    variants={stepFade}
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                  >
+                    <SectionCard
+                      label="Photos"
+                      title="Upload 10–60 property photos"
+                      sub="JPG, PNG, HEIC, WebP. Mix exteriors, interiors, and detail shots. More variety = more cinematic compositions."
+                      right={
+                        <div className="g-photo-counter">
+                          <span className="g-photo-counter-val">{files.length}</span>
+                          <span className="g-photo-counter-divider">/</span>
+                          <span className="g-photo-counter-max">60</span>
+                        </div>
+                      }
+                    >
+                      {/* Drop zone */}
+                      <div
+                        className={`g-dropzone${isDragging ? " dragging" : ""}`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setIsDragging(true);
+                        }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setIsDragging(false);
+                          handleFiles(e.dataTransfer.files);
+                        }}
+                        onClick={() => fileInputRef.current?.click()}
                       >
-                        <div className="mt-6">
-                          <Label className="label text-muted-foreground">Custom notes</Label>
-                          <textarea
-                            value={customRequestText}
-                            onChange={(e) => setCustomRequestText(e.target.value)}
-                            placeholder="Specific shots, music style, pacing preferences, brand language…"
-                            rows={5}
-                            className="mt-3 flex min-h-[120px] w-full rounded-none border border-border bg-transparent px-4 py-3 text-sm transition-colors placeholder:text-muted-foreground/60 focus-visible:border-accent focus-visible:outline-none"
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          multiple
+                          accept=".jpg,.jpeg,.png,.heic,.webp"
+                          style={{ display: "none" }}
+                          onChange={(e) =>
+                            e.target.files && handleFiles(e.target.files)
+                          }
+                        />
+                        <input
+                          ref={folderInputRef}
+                          type="file"
+                          {...({
+                            webkitdirectory: "",
+                            directory: "",
+                          } as React.HTMLAttributes<HTMLInputElement>)}
+                          style={{ display: "none" }}
+                          onChange={(e) =>
+                            e.target.files && handleFiles(e.target.files)
+                          }
+                        />
+                        <div className="g-dropzone-icon">
+                          <Image size={20} strokeWidth={1.6} />
+                        </div>
+                        <div className="g-dropzone-text">
+                          <div className="g-dropzone-title">Drop photos to upload</div>
+                          <div className="g-dropzone-sub">
+                            or click to browse files
+                          </div>
+                        </div>
+                        <div className="g-dropzone-foot">
+                          <span>JPG · PNG · HEIC · WebP</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              folderInputRef.current?.click();
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              color: "var(--ink-2)",
+                              fontSize: 11,
+                              fontWeight: 500,
+                              fontFamily: "inherit",
+                              textDecoration: "underline",
+                            }}
+                          >
+                            Import folder
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="g-photo-progress">
+                        <div className="g-photo-progress-bar">
+                          <div
+                            className="g-photo-progress-fill"
+                            style={{
+                              width: `${Math.min(100, (files.length / 10) * 100)}%`,
+                            }}
                           />
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </section>
-              </motion.div>
-            )}
+                        <div className="g-photo-progress-meta">
+                          <span>
+                            {files.length >= 10 ? (
+                              <span className="g-photo-progress-good">
+                                <Check size={12} strokeWidth={2.4} />
+                                Minimum reached
+                              </span>
+                            ) : (
+                              `${10 - files.length} more to reach minimum`
+                            )}
+                          </span>
+                          <span className="g-tabular">{formatSize(totalSize)}</span>
+                        </div>
+                      </div>
 
-            {/* ─── Step 3 — Photos ─── */}
-            {step === 3 && (
-              <motion.div key="step-3" variants={stepFade} initial="hidden" animate="visible" exit="exit" className="space-y-10">
-                <section>
-                  <div className="flex items-baseline justify-between">
-                    <div>
-                      <p className="max-w-md text-sm text-muted-foreground">
-                        Drop or browse 10 to 60 high-resolution images. JPG, PNG, HEIC, or WebP.
-                      </p>
-                    </div>
-                    {files.length > 0 && (
-                      <div className="text-right">
-                        <span className="tabular block text-2xl font-semibold tracking-[-0.02em]">{files.length}</span>
-                        <span className="label text-muted-foreground">{formatSize(totalSize)}</span>
+                      {/* Thumbnails */}
+                      {files.length > 0 && (
+                        <div className="g-photo-grid">
+                          <AnimatePresence>
+                            {files.map((f) => (
+                              <motion.div
+                                key={f.id}
+                                initial={{ opacity: 0, scale: 0.85 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={{ opacity: 0, scale: 0.85 }}
+                                transition={{ duration: 0.35, ease: EASE }}
+                                className="g-photo-tile"
+                              >
+                                <div className="g-photo-thumb">
+                                  <img src={f.preview} alt="" />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="g-photo-remove"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeFile(f.id);
+                                  }}
+                                  aria-label="Remove photo"
+                                >
+                                  <X size={11} strokeWidth={2.2} />
+                                </button>
+                              </motion.div>
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      )}
+                    </SectionCard>
+
+                    {/* Submit error */}
+                    {submitError && (
+                      <div className="g-submit-error">{submitError}</div>
+                    )}
+
+                    {/* Sign-in prompt */}
+                    {!authLoading && !user && (
+                      <div className="g-signin-prompt">
+                        <p className="g-signin-text">
+                          Sign in to finalise your order — your voice clone, presets,
+                          and order history are saved to your account.
+                        </p>
+                        <button
+                          type="button"
+                          className="g-cta-primary"
+                          onClick={openLogin}
+                        >
+                          Sign in
+                        </button>
                       </div>
                     )}
-                  </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  {/* Drop zone */}
-                  <div
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setIsDragging(true);
+              {/* Step nav */}
+              <div className="g-step-nav">
+                <button
+                  type="button"
+                  className="g-btn-ghost"
+                  disabled={step === 0 || submitting}
+                  onClick={back}
+                  style={{ opacity: step === 0 ? 0.4 : 1 }}
+                >
+                  <ArrowLeft size={13} /> Back
+                </button>
+
+                <div className="g-step-nav-status">
+                  <span
+                    className="g-step-nav-dot"
+                    style={{
+                      background: canAdvance
+                        ? "var(--good)"
+                        : "var(--muted-2)",
                     }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setIsDragging(false);
-                      handleFiles(e.dataTransfer.files);
-                    }}
-                    onClick={() => fileInputRef.current?.click()}
-                    className="relative mt-10 flex aspect-[16/7] cursor-pointer items-center justify-center border-2 border-dashed text-center transition-all duration-500 ease-cinematic"
-                    style={{ borderColor: isDragging ? "var(--le-text)" : "var(--le-border-strong)", background: isDragging ? "var(--le-bg-sunken)" : "var(--le-bg-elev)" }}
+                  />
+                  {canAdvance ? "Ready" : "Missing required fields"}
+                </div>
+
+                {step < 3 ? (
+                  <button
+                    type="button"
+                    className="g-cta-primary"
+                    disabled={!canAdvance}
+                    onClick={next}
+                    style={{ opacity: canAdvance ? 1 : 0.5 }}
                   >
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept=".jpg,.jpeg,.png,.heic,.webp"
-                      className="hidden"
-                      onChange={(e) => e.target.files && handleFiles(e.target.files)}
-                    />
-                    <input
-                      ref={folderInputRef}
-                      type="file"
-                      {...({ webkitdirectory: "", directory: "" } as React.HTMLAttributes<HTMLInputElement>)}
-                      className="hidden"
-                      onChange={(e) => e.target.files && handleFiles(e.target.files)}
-                    />
-                    <div>
-                      <Camera className="mx-auto h-8 w-8 text-muted-foreground" strokeWidth={1.5} />
-                      <p className="mt-5 text-base font-semibold tracking-[-0.01em]">Drop photos to upload</p>
-                      <p className="mt-1 text-xs text-muted-foreground">or click to browse files</p>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          folderInputRef.current?.click();
-                        }}
-                        className="mt-6 text-[11px] font-medium uppercase tracking-[0.15em] text-accent underline underline-offset-4 hover:text-accent/80"
-                      >
-                        Or import an entire folder
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Progress */}
-                  {files.length > 0 && files.length < 10 && (
-                    <div className="mt-6 flex items-center gap-4">
-                      <div className="h-px flex-1 overflow-hidden bg-border">
-                        <motion.div
-                          className="h-full bg-foreground"
-                          animate={{ width: `${(files.length / 10) * 100}%` }}
-                          transition={{ duration: 0.5, ease: EASE }}
-                        />
-                      </div>
-                      <span className="tabular label text-accent">{10 - files.length} more required</span>
-                    </div>
-                  )}
-
-                  {/* Thumbnails */}
-                  {files.length > 0 && (
-                    <div className="mt-8 grid grid-cols-4 gap-1 sm:grid-cols-6 md:grid-cols-8">
-                      <AnimatePresence>
-                        {files.map((f) => (
-                          <motion.div
-                            key={f.id}
-                            initial={{ opacity: 0, scale: 0.85 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.85 }}
-                            transition={{ duration: 0.4, ease: EASE }}
-                            className="group relative aspect-square overflow-hidden bg-secondary"
-                          >
-                            <img src={f.preview} alt="" className="h-full w-full object-cover" />
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeFile(f.id);
-                              }}
-                              className="absolute inset-0 flex items-center justify-center bg-black/70 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                              aria-label="Remove photo"
-                            >
-                              <X className="h-3.5 w-3.5 text-white" />
-                            </button>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-                    </div>
-                  )}
-                </section>
-
-                {submitError && (
-                  <div className="border border-destructive/40 bg-destructive/10 p-5">
-                    <p className="text-xs text-destructive">{submitError}</p>
-                  </div>
-                )}
-
-                {/* Sign-in prompt — shown on the final step when not authenticated */}
-                {!authLoading && !user && (
-                  <div className="flex items-center justify-between gap-6 border border-border p-5">
-                    <p className="text-xs text-muted-foreground">
-                      Sign in to finalise your order — your voice clone, presets, and order history are saved to your account.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={openLogin}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 6,
-                        background: "var(--le-accent)", color: "var(--le-accent-fg)",
-                        border: "none", borderRadius: 4,
-                        padding: "8px 16px", fontSize: 12, fontWeight: 500,
-                        cursor: "pointer", whiteSpace: "nowrap",
-                        fontFamily: "var(--le-font-sans)",
-                      }}
-                    >
-                      Sign in
-                    </button>
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-
-      {/* Sticky footer */}
-      <div className="sticky bottom-0 z-30 backdrop-blur-xl" style={{ borderTop: "1px solid var(--le-border)", background: "var(--le-bg)" }}>
-        <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-5 md:px-12">
-          <div className="flex items-center gap-8">
-            <div>
-              <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>Total</span>
-              <div style={{ fontFamily: "var(--le-font-sans)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)" }}>${totalPrice}</div>
-            </div>
-            {step === 0 && step0Valid && (
-              <button
-                type="button"
-                onClick={() => setShowSavePreset(true)}
-                className="hidden items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:text-foreground md:flex"
-              >
-                <Bookmark className="h-3.5 w-3.5" /> Save as preset
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3">
-            {step > 0 && (
-              <button
-                type="button"
-                onClick={back}
-                disabled={submitting}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  background: "transparent", color: submitting ? "var(--le-text-faint)" : "var(--le-text)",
-                  border: "1px solid var(--le-border-strong)", borderRadius: 4,
-                  padding: "10px 16px", fontSize: 13, fontWeight: 500,
-                  cursor: submitting ? "not-allowed" : "pointer",
-                  fontFamily: "var(--le-font-sans)",
-                }}
-              >
-                <ArrowLeft style={{ width: 14, height: 14 }} /> Back
-              </button>
-            )}
-            {step < 3 ? (
-              <button
-                type="button"
-                onClick={next}
-                disabled={!canAdvance}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  background: !canAdvance ? "var(--le-border-strong)" : "var(--le-accent)",
-                  color: "var(--le-accent-fg)", border: "none", borderRadius: 4,
-                  padding: "10px 20px", fontSize: 13, fontWeight: 500,
-                  cursor: !canAdvance ? "not-allowed" : "pointer",
-                  fontFamily: "var(--le-font-sans)",
-                }}
-              >
-                Continue <ArrowRight style={{ width: 14, height: 14 }} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={!canSubmit || submitting}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  background: !canSubmit || submitting ? "var(--le-border-strong)" : "var(--le-accent)",
-                  color: "var(--le-accent-fg)", border: "none", borderRadius: 4,
-                  padding: "12px 24px", fontSize: 14, fontWeight: 500,
-                  cursor: !canSubmit || submitting ? "not-allowed" : "pointer",
-                  fontFamily: "var(--le-font-sans)",
-                }}
-              >
-                {submitting ? (
-                  <><Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
-                  {uploadProgress ? `${uploadProgress.uploaded} / ${uploadProgress.total}` : "Submitting…"}</>
+                    Continue <ArrowRight size={13} />
+                  </button>
                 ) : (
-                  <>Generate video <ArrowRight style={{ width: 16, height: 16 }} /></>
+                  <button
+                    type="button"
+                    className="g-cta-primary"
+                    disabled={!canSubmit || submitting}
+                    onClick={handleSubmit}
+                    style={{ opacity: canSubmit && !submitting ? 1 : 0.5 }}
+                  >
+                    {submitting ? (
+                      <>
+                        <Loader2 size={14} strokeWidth={1.6} className="g-spin" />
+                        {uploadProgress
+                          ? `${uploadProgress.uploaded} / ${uploadProgress.total}`
+                          : "Submitting…"}
+                      </>
+                    ) : (
+                      <>
+                        Submit listing <ArrowRight size={13} />
+                      </>
+                    )}
+                  </button>
                 )}
-              </button>
-            )}
+              </div>
+            </div>
+
+            {/* Right: order summary */}
+            <aside className="g-order-rail">
+              <div className="g-order-card">
+                <div className="g-order-head">
+                  <span className="g-label" style={{ fontSize: 11.5 }}>
+                    Order summary
+                  </span>
+                  <h3 className="g-order-title">
+                    {selectedPkgName || "—"}
+                  </h3>
+                  <div className="g-order-sub">
+                    {selectedDuration ?? "—"}{" "}
+                    {selectedOriLabel ? `· ${selectedOriLabel}` : ""}
+                    {isLifeCycle ? " · 3 videos" : ""}
+                  </div>
+                </div>
+
+                {/* Property thumb */}
+                <div className="g-order-thumb">
+                  <div
+                    className="g-order-thumb-art"
+                    style={{
+                      background: `linear-gradient(135deg, hsl(${(address.length * 13) % 360}, 14%, 72%), hsl(${((address.length * 13) + 40) % 360}, 16%, 46%))`,
+                    }}
+                  >
+                    <svg
+                      width="28"
+                      height="28"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="rgba(255,255,255,0.9)"
+                      strokeWidth="1.4"
+                    >
+                      <path d="M3 11l9-7 9 7v9a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2z" />
+                    </svg>
+                  </div>
+                  <div className="g-order-thumb-meta">
+                    <div className="g-order-address">{address || "—"}</div>
+                    <div className="g-order-specs">
+                      {bedrooms || "—"} bd · {bathrooms || "—"} ba ·{" "}
+                      {sqft ? `${sqft} sqft` : "— sqft"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Line items */}
+                <div className="g-order-lines">
+                  {basePrice > 0 && (
+                    <div className="g-order-line">
+                      <div className="g-order-line-label">
+                        {selectedPkgName || "Package"}{" "}
+                        {selectedDuration ? `· ${selectedDuration}` : ""}
+                      </div>
+                      <div className="g-order-line-val">${basePrice}</div>
+                    </div>
+                  )}
+                  {orientationExtra > 0 && (
+                    <div className="g-order-line">
+                      <div className="g-order-line-label">
+                        {selectedOriLabel} format
+                      </div>
+                      <div className="g-order-line-val">+${orientationExtra}</div>
+                    </div>
+                  )}
+                  {addVoiceover && (
+                    <div className="g-order-line">
+                      <div className="g-order-line-label">AI voiceover</div>
+                      <div className="g-order-line-val">+${voiceoverExtra}</div>
+                    </div>
+                  )}
+                  {addVoiceClone && (
+                    <div className="g-order-line">
+                      <div className="g-order-line-label">
+                        <div>Voice clone</div>
+                        {!hasExistingClone && (
+                          <div className="g-order-line-sub">setup + first render</div>
+                        )}
+                      </div>
+                      <div className="g-order-line-val">+${voiceCloneExtra}</div>
+                    </div>
+                  )}
+                  {addCustomRequest && (
+                    <div className="g-order-line">
+                      <div className="g-order-line-label">Custom request</div>
+                      <div className="g-order-line-val">+${customExtra}</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Total */}
+                <div className="g-order-total">
+                  <span>Total</span>
+                  <span className="g-order-total-val g-tabular">${totalPrice}</span>
+                </div>
+
+                {/* Meta rows */}
+                <div className="g-order-meta">
+                  <div className="g-order-meta-row">
+                    <span className="g-order-meta-icon">
+                      <Image size={13} />
+                    </span>
+                    <span className="g-order-meta-label">Photos</span>
+                    <span className="g-order-meta-val">{files.length} attached</span>
+                  </div>
+                  <div className="g-order-meta-row">
+                    <span className="g-order-meta-icon">
+                      <Clock size={13} />
+                    </span>
+                    <span className="g-order-meta-label">Delivery</span>
+                    <span className="g-order-meta-val">~ 72 hours</span>
+                  </div>
+                  <div className="g-order-meta-row">
+                    <span className="g-order-meta-icon">
+                      <Box size={13} />
+                    </span>
+                    <span className="g-order-meta-label">Pipeline</span>
+                    <span className="g-order-meta-val">Auto-route</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Operator note */}
+              <div className="g-order-help">
+                <div className="g-order-help-title">Note</div>
+                <p className="g-order-help-body">
+                  Submission charges the agent's card on file. The pipeline kicks
+                  off the moment Stripe confirms — no manual action needed.
+                </p>
+              </div>
+            </aside>
           </div>
         </div>
       </div>
 
       {/* Save preset dialog */}
       <Dialog open={showSavePreset} onOpenChange={setShowSavePreset}>
-        <DialogContent className="max-w-sm rounded-none">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold tracking-[-0.01em]">
+            <DialogTitle style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.015em" }}>
               {presetSaved ? "Saved." : "Save as preset"}
             </DialogTitle>
           </DialogHeader>
           {presetSaved ? (
-            <div className="flex flex-col items-center gap-4 py-6">
-              <div className="flex h-12 w-12 items-center justify-center border border-accent/40 bg-accent/10 text-accent">
-                <CheckCircle2 className="h-5 w-5" strokeWidth={1.5} />
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 16,
+                padding: "24px 0",
+              }}
+            >
+              <div
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "50%",
+                  background: "rgba(47, 138, 85, 0.1)",
+                  border: "1px solid rgba(47, 138, 85, 0.3)",
+                  display: "grid",
+                  placeItems: "center",
+                  color: "var(--good)",
+                }}
+              >
+                <CheckCircle2 size={22} strokeWidth={1.5} />
               </div>
             </div>
           ) : (
