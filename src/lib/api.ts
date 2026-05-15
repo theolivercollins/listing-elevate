@@ -73,9 +73,12 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 export async function generateVoiceoverPreview(data: {
   voiceId: string;
   durationSec: number;
-  compassUrl: string;
+  /** Full chain: Compass scrape + script gen + TTS. Required if neither script nor description is provided. */
+  compassUrl?: string;
   /** When set, skips Compass scrape + Claude script and only re-runs TTS. */
   script?: string;
+  /** When set, skips Compass scrape and passes description directly to Claude script gen + TTS. */
+  description?: string;
 }): Promise<{ audioUrl: string; script: string; voice: { id: string; name: string } }> {
   return apiFetch('/api/voiceover/preview', {
     method: 'POST',
@@ -342,5 +345,30 @@ export async function scrapeMls(url: string): Promise<MlsScrapeResult> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ url }),
+  });
+}
+
+export interface MlsLookupResult {
+  source: 'redfin' | 'realtor';
+  address: string;
+  price: number | null;
+  bedrooms: number | null;
+  bathrooms: number | null;
+  sqft: number | null;
+  agent: string | null;
+  description: string | null;
+  listingUrl: string | null;
+}
+
+/**
+ * Look up MLS listing details by address.
+ * Tries Redfin first, falls back to Realtor.com.
+ * Throws (with hint message) if both sources fail.
+ */
+export async function lookupMls(address: string): Promise<MlsLookupResult> {
+  return apiFetch('/api/properties/lookup-mls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ address }),
   });
 }
