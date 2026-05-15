@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { KpiCard, StatusPill, PropertyThumb, Card, fmtCents, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { fetchProperties } from "@/lib/api";
+import { fetchProperties, archiveProperty, rerunProperty, updatePropertyStatus } from "@/lib/api";
 import type { Property } from "@/lib/types";
 
 // ─── view-model ────────────────────────────────────────────────────
@@ -40,6 +41,10 @@ function addressLine1(addr: string) {
 }
 function addressLine2(addr: string) {
   return addr.split(",").slice(1).join(",").trim();
+}
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // ─── inline styles ─────────────────────────────────────────────────
@@ -90,6 +95,21 @@ const selBtn: React.CSSProperties = {
   fontFamily: "var(--le-font-sans)",
 };
 
+const selBtnDanger: React.CSSProperties = {
+  ...selBtn,
+  background: "rgba(239,68,68,0.25)",
+  color: "#fca5a5",
+};
+
+// ─── bulk action types ─────────────────────────────────────────────
+
+type BulkAction = "archive" | "rerun" | "delivered";
+
+interface ConfirmState {
+  action: BulkAction;
+  ids: string[];
+}
+
 // ─── main component ────────────────────────────────────────────────
 
 const Properties = () => {
@@ -100,6 +120,11 @@ const Properties = () => {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<"all" | "active" | "complete" | "review">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // bulk op state
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; label: string } | null>(null);
 
   // ── fetch ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -213,6 +238,109 @@ const Properties = () => {
       prev.size === filtered.length ? new Set() : new Set(filtered.map((p) => p.id)),
     );
   }, [filtered]);
+
+  // ── bulk action helpers ───────────────────────────────────────────
+  const requestBulk = useCallback((action: BulkAction) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    // Skip confirm modal for single selection
+    if (ids.length === 1) {
+      void executeBulk(action, ids);
+    } else {
+      setConfirm({ action, ids });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
+
+  const actionLabel = (action: BulkAction) => {
+    if (action === "archive") return "Archive";
+    if (action === "rerun") return "Re-run pipeline";
+    return "Mark delivered";
+  };
+
+  const executeBulk = async (action: BulkAction, ids: string[]) => {
+    setConfirm(null);
+    setBulkRunning(true);
+
+    const verbIng = action === "archive" ? "Archiving" : action === "rerun" ? "Re-running" : "Marking delivered";
+
+    // Optimistic UI — update local state immediately
+    if (action === "archive") {
+      setRawProperties((prev) =>
+        prev.filter((p) => !ids.includes(p.id))
+      );
+    } else if (action === "rerun") {
+      setRawProperties((prev) =>
+        prev.map((p) => ids.includes(p.id) ? { ...p, status: "queued" as const } : p)
+      );
+    } else if (action === "delivered") {
+      setRawProperties((prev) =>
+        prev.map((p) => ids.includes(p.id) ? { ...p, status: "delivered" as const } : p)
+      );
+    }
+
+    // Clear selection upfront
+    setSelected(new Set());
+
+    const rollback = new Map<string, string>();
+    const succeeded: string[] = [];
+    const failed: string[] = [];
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      setBulkProgress({ done: i, total: ids.length, label: `${verbIng} ${i + 1} of ${ids.length}…` });
+
+      // Capture original status for rollback
+      const original = rawProperties.find((p) => p.id === id);
+      if (original) rollback.set(id, original.status);
+
+      try {
+        if (action === "archive") {
+          await archiveProperty(id);
+        } else if (action === "rerun") {
+          await rerunProperty(id);
+        } else {
+          await updatePropertyStatus(id, "delivered");
+        }
+        succeeded.push(id);
+      } catch {
+        failed.push(id);
+        // Roll back this specific property
+        if (rollback.has(id)) {
+          const origStatus = rollback.get(id)!;
+          if (action === "archive") {
+            // Put it back in the list
+            setRawProperties((prev) => {
+              const already = prev.find((p) => p.id === id);
+              if (already) return prev;
+              const restored = rawProperties.find((p) => p.id === id);
+              return restored ? [...prev, restored] : prev;
+            });
+          } else {
+            setRawProperties((prev) =>
+              prev.map((p) => p.id === id ? { ...p, status: origStatus as Property["status"] } : p)
+            );
+          }
+        }
+      }
+
+      // Small stagger to avoid hammering the API (skip after last item)
+      if (i < ids.length - 1) await sleep(120);
+    }
+
+    setBulkProgress(null);
+    setBulkRunning(false);
+
+    // Toast summary
+    const verb = action === "archive" ? "archived" : action === "rerun" ? "queued for re-run" : "marked delivered";
+    if (failed.length === 0) {
+      toast.success(`${succeeded.length} ${succeeded.length === 1 ? "listing" : "listings"} ${verb}.`);
+    } else if (succeeded.length === 0) {
+      toast.error(`All ${failed.length} operations failed.`);
+    } else {
+      toast.warning(`${succeeded.length} succeeded, ${failed.length} failed.`);
+    }
+  };
 
   // ── tab button ───────────────────────────────────────────────────
   const TabBtn = ({
@@ -405,7 +533,7 @@ const Properties = () => {
         )}
       </Card>
 
-      {/* Floating selection bar */}
+      {/* Floating bulk action bar */}
       {selected.size > 0 && (
         <div
           style={{
@@ -423,43 +551,184 @@ const Properties = () => {
             gap: 14,
             boxShadow: "0 24px 60px -20px rgba(11,18,32,0.5)",
             whiteSpace: "nowrap",
+            opacity: bulkRunning ? 0.7 : 1,
+            pointerEvents: bulkRunning ? "none" : undefined,
+            transition: "opacity .2s",
           }}
         >
-          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Selected: {selected.size}</span>
-          <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.18)", flexShrink: 0 }} />
-          <button style={selBtn}>
-            <Icon name="retry" size={13} />
-            Rerun
-          </button>
-          <button style={selBtn}>
-            <Icon name="upload" size={13} />
-            Export
-          </button>
-          <button style={selBtn}>
-            <Icon name="x" size={13} />
-            Delete
+          {bulkProgress ? (
+            <span style={{ fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{
+                width: 14, height: 14, borderRadius: "50%",
+                border: "2px solid rgba(255,255,255,0.3)",
+                borderTopColor: "#fff",
+                animation: "spin 0.8s linear infinite",
+                flexShrink: 0,
+                display: "inline-block",
+              }} />
+              {bulkProgress.label}
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                {selected.size} selected
+              </span>
+              <span style={{ width: 1, height: 18, background: "rgba(255,255,255,0.18)", flexShrink: 0 }} />
+              <button
+                style={selBtn}
+                onClick={() => requestBulk("rerun")}
+              >
+                <Icon name="retry" size={13} />
+                Re-run
+              </button>
+              <button
+                style={selBtn}
+                onClick={() => requestBulk("delivered")}
+              >
+                <Icon name="delivered" size={13} />
+                Mark delivered
+              </button>
+              <button
+                style={selBtnDanger}
+                onClick={() => requestBulk("archive")}
+              >
+                <Icon name="archive" size={13} />
+                Archive
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  background: "#fff",
+                  color: "var(--ink)",
+                  border: "none",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "var(--le-font-sans)",
+                }}
+              >
+                Discard
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Confirmation modal */}
+      {confirm && (
+        <ConfirmModal
+          action={confirm.action}
+          count={confirm.ids.length}
+          label={actionLabel(confirm.action)}
+          onConfirm={() => executeBulk(confirm.action, confirm.ids)}
+          onCancel={() => setConfirm(null)}
+        />
+      )}
+
+      {/* Spinner keyframe */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+};
+
+// ─── ConfirmModal ──────────────────────────────────────────────────
+
+function ConfirmModal({
+  action,
+  count,
+  label,
+  onConfirm,
+  onCancel,
+}: {
+  action: BulkAction;
+  count: number;
+  label: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const isDestructive = action === "archive";
+
+  const body =
+    action === "archive"
+      ? `${count} ${count === 1 ? "listing" : "listings"} will be moved to archived status. No data is deleted.`
+      : action === "rerun"
+      ? `${count} ${count === 1 ? "listing" : "listings"} will be reset and re-queued. Existing scenes and logs will be cleared.`
+      : `${count} ${count === 1 ? "listing" : "listings"} will be marked as delivered.`;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 80,
+        background: "rgba(11,18,32,0.45)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        backdropFilter: "blur(4px)",
+      }}
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 20,
+          padding: "28px 32px",
+          width: 400,
+          maxWidth: "calc(100vw - 40px)",
+          boxShadow: "0 32px 80px -20px rgba(11,18,32,0.3)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}>
+          {label} {count} {count === 1 ? "listing" : "listings"}?
+        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)", lineHeight: 1.5 }}>
+          {body}
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "9px 18px",
+              borderRadius: 10,
+              border: "1px solid rgba(15,24,60,0.12)",
+              background: "transparent",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+              color: "var(--ink-2)",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            Cancel
           </button>
           <button
-            onClick={() => setSelected(new Set())}
+            onClick={onConfirm}
             style={{
-              padding: "8px 14px",
+              padding: "9px 18px",
               borderRadius: 10,
-              background: "#fff",
-              color: "var(--ink)",
               border: "none",
-              fontSize: 12.5,
+              background: isDestructive ? "rgb(239,68,68)" : "var(--ink)",
+              color: "#fff",
+              fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",
               fontFamily: "var(--le-font-sans)",
             }}
           >
-            Discard
+            {label}
           </button>
         </div>
-      )}
+      </div>
     </div>
   );
-};
+}
 
 // ─── PropertyRow ───────────────────────────────────────────────────
 

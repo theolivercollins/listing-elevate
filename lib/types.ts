@@ -8,7 +8,9 @@ export type PropertyStatus =
   | "assembling"
   | "complete"
   | "failed"
-  | "needs_review";
+  | "needs_review"
+  | "archived"
+  | "delivered";
 
 export type RoomType =
   | "kitchen"

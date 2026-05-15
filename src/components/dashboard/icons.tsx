@@ -40,7 +40,9 @@ export type IconName =
   | "cmd"
   | "sparkles"
   | "external"
-  | "logo";
+  | "logo"
+  | "archive"
+  | "delivered";
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, "name"> {
   name: IconName;
@@ -347,6 +349,22 @@ export function Icon({ name, size = 18, strokeWidth = 1.6, style, ...rest }: Ico
           <path d="M14 4h6v6" />
           <path d="M20 4l-9 9" />
           <path d="M14 12v6H5V8h6" />
+        </svg>
+      );
+    case "archive":
+      return (
+        <svg {...common}>
+          <path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2H3z" />
+          <path d="M3 7v13a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V7" />
+          <path d="M9 12h6" />
+        </svg>
+      );
+    case "delivered":
+      return (
+        <svg {...common}>
+          <path d="M20 7H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+          <path d="M16 3H8l-2 4h12z" />
+          <path d="m9 13 2 2 4-4" />
         </svg>
       );
     default:
