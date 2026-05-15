@@ -242,6 +242,18 @@ export async function rerunProperty(id: string): Promise<void> {
   triggerPipeline(id);
 }
 
+export async function archiveProperty(id: string): Promise<void> {
+  await apiFetch(`/api/properties/${id}/archive`, { method: 'POST' });
+}
+
+export async function updatePropertyStatus(id: string, status: string): Promise<void> {
+  await apiFetch(`/api/properties/${id}/status`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status }),
+  });
+}
+
 export async function fetchLogs(params?: {
   page?: number; limit?: number; stage?: string; level?: string; property_id?: string;
 }): Promise<{ logs: (PipelineLog & { properties?: { address: string } })[]; total: number; page: number; totalPages: number }> {
