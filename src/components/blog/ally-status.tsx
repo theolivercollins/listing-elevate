@@ -107,11 +107,17 @@ export function AutoGrowTextarea({
       placeholder={placeholder}
       rows={minRows}
       disabled={disabled}
-      // Inline minHeight: 0 to override shadcn Textarea's baseline; we're not
-      // using the shadcn component to keep this fully under our control.
-      style={{ minHeight: 0, maxHeight, overflowY: "hidden", resize: "none" }}
+      // Inline outline/box-shadow none — Chrome's :focus-visible outline beats
+      // Tailwind's `outline-none` (which renders a transparent ring for a11y).
+      // The outer pill already shows a primary border on focus-within, so
+      // the textarea itself shouldn't draw any focus chrome.
+      style={{
+        minHeight: 0, maxHeight, overflowY: "hidden", resize: "none",
+        outline: "none", boxShadow: "none", border: "none",
+      }}
       className={[
-        "w-full bg-transparent border-0 outline-none placeholder:text-muted-foreground/60 focus-visible:ring-0 focus-visible:ring-offset-0",
+        "w-full bg-transparent placeholder:text-muted-foreground/60",
+        "focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0",
         small ? "px-1 py-1 text-xs" : "px-1 py-1.5 text-sm",
         "disabled:cursor-not-allowed disabled:opacity-50",
       ].join(" ")}
