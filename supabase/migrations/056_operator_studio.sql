@@ -24,7 +24,7 @@ create table if not exists clients (
 create table if not exists property_previews (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references properties(id) on delete cascade,
-  token text not null unique,
+  token text not null,
   created_at timestamptz not null default now(),
   expires_at timestamptz,
   viewed_count integer not null default 0,
@@ -50,6 +50,9 @@ alter table properties
 
 create index if not exists idx_properties_order_mode_client on properties(order_mode, client_id) where order_mode = 'operator';
 
+-- No policies on the three operator_studio tables below: access is service-role only.
+-- JWT-authenticated clients are deny-all by design. The /preview/:token public route reads
+-- via the service role inside the API handler (see api/preview/[token].ts) — not via PostgREST.
 alter table clients enable row level security;
 alter table property_previews enable row level security;
 alter table property_revision_notes enable row level security;
