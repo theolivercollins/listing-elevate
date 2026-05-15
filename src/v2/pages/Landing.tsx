@@ -1,4 +1,5 @@
 import "@/v2/styles/v2.css";
+import { useNavigate } from "react-router-dom";
 import { Hero } from "@/v2/components/landing/Hero";
 import { Process } from "@/v2/components/landing/Process";
 import { MarketComparison } from "@/v2/components/landing/MarketComparison";
@@ -8,6 +9,7 @@ import { FounderOffer } from "@/v2/components/landing/FounderOffer";
 import { FAQ } from "@/v2/components/landing/FAQ";
 import { FinalCTA } from "@/v2/components/landing/FinalCTA";
 import { Footer } from "@/v2/components/landing/Footer";
+import { MarketingAllyChat } from "@/components/marketing/MarketingAllyChat";
 
 /**
  * Landing — composes the dark editorial surface top-to-bottom.
@@ -29,6 +31,9 @@ import { Footer } from "@/v2/components/landing/Footer";
  *   9. Footer             (ported)
  */
 export default function Landing() {
+  const navigate = useNavigate();
+  const handleGetStarted = () => navigate("/?login=1");
+
   return (
     <div
       data-testid="v2-landing-root"
@@ -52,6 +57,9 @@ export default function Landing() {
       <FAQ />
       <FinalCTA />
       <Footer />
+      {import.meta.env.VITE_HOMEPAGE_ALLY_ENABLED === "true" && (
+        <MarketingAllyChat onGetStarted={handleGetStarted} />
+      )}
     </div>
   );
 }
