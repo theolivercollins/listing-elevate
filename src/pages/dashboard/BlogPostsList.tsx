@@ -31,7 +31,7 @@ export default function BlogPostsList() {
   const [q, setQ] = useState("");
   const navigate = useNavigate();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["blog-posts-list", state, q],
     queryFn: () => listPosts({
       state: state === "all" ? undefined : state,
@@ -140,8 +140,19 @@ export default function BlogPostsList() {
           <tbody>
             {isLoading ? (
               <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">Loading…</td></tr>
+            ) : isError ? (
+              <tr><td colSpan={7} className="p-4 text-center">
+                <div className="text-sm text-destructive">Failed to load posts: {(error as any)?.message ?? String(error)}</div>
+                <button onClick={() => refetch()} className="mt-2 text-xs underline text-muted-foreground">Retry</button>
+              </td></tr>
             ) : posts.length === 0 ? (
-              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">No posts</td></tr>
+              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">
+                {state === "all" && !q ? (
+                  <>No posts yet — click <span className="font-medium">New post</span> to start.</>
+                ) : (
+                  <>No posts match {state !== "all" && <span className="font-mono">state={state}</span>} {q && <span>title contains "{q}"</span>}. Try the <button onClick={() => { setState("all"); setQ(""); }} className="underline">All</button> filter.</>
+                )}
+              </td></tr>
             ) : posts.map(p => (
               <tr key={p.id} className="border-t hover:bg-muted/20">
                 <td className="p-3"><Link to={`/dashboard/blog/posts/${p.id}`} className="font-medium underline-offset-2 hover:underline">{p.title}</Link></td>
