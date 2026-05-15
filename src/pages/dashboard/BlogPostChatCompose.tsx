@@ -26,13 +26,9 @@ import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import {
   AllyThinking, AllySkeleton, AllyShimmerOverlay, AutoGrowTextarea,
 } from "@/components/blog/ally-status";
+import { dailyStarters } from "@/components/blog/ally-starters";
 
-const STARTERS = [
-  "Punta Gorda May market update — inventory up 4%, median $385K",
-  "5 reasons to list this fall in Charlotte County",
-  "Neighborhood spotlight: Burnt Store Isles",
-  "How rising rates affect Punta Gorda buyers right now",
-];
+const STARTERS = dailyStarters(4);
 
 const MAX_ATTACHMENTS = 5;
 const MAX_FILE_BYTES = 3_500_000;

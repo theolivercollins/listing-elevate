@@ -25,8 +25,11 @@ const MAX_TEMPLATE_CHARS = 30_000;
 const MAX_TEXT_ATTACHMENT = 100 * 1024;
 const MAX_ATTACHMENT_BASE64 = 4 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
-const RECENT_POSTS_LIMIT = 5;
-const RECENT_POST_EXCERPT_CHARS = 800;
+const RECENT_POSTS_LIMIT = 5; // legacy — unused after archive rewrite
+const RECENT_POST_EXCERPT_CHARS = 800; // legacy — unused after archive rewrite
+const ARCHIVE_CATALOG_LIMIT = 50;
+const ARCHIVE_TOP_EXCERPTS = 8;
+const ARCHIVE_EXCERPT_CHARS = 1100;
 
 interface ChatMessage { role: "user" | "assistant"; content: string; }
 interface Attachment {
@@ -240,10 +243,33 @@ function parseSections(text: string) {
   };
 }
 
+function scorePostForQuery(p: any, userWords: Set<string>): number {
+  const tokenise = (s: string) => (s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+  let score = 0;
+  // Title hits weighted heavily — that's the primary signal for "our X post".
+  for (const w of tokenise(String(p.title ?? ""))) if (userWords.has(w)) score += 3;
+  for (const w of tokenise(String(p.category_label ?? ""))) if (userWords.has(w)) score += 2;
+  for (const w of tokenise(String(p.meta_title ?? ""))) if (userWords.has(w)) score += 1;
+  if (Array.isArray(p.meta_tags)) {
+    for (const tag of p.meta_tags) {
+      for (const w of tokenise(String(tag))) if (userWords.has(w)) score += 1;
+    }
+  }
+  // Recency bonus — newer posts edge out older ones at equal topical score.
+  // 0–5 points scaling down over 150 days.
+  const t = p.updated_at ? new Date(p.updated_at).getTime() : 0;
+  if (t) {
+    const ageDays = (Date.now() - t) / 86_400_000;
+    score += Math.max(0, 5 - Math.min(5, ageDays / 30));
+  }
+  return score;
+}
+
 async function buildSystemPrompt(opts: {
   supabase: any;
   templateId: string | null;
   includeRecentPosts: boolean;
+  latestUserMessage: string;
 }): Promise<string> {
   let prompt = BASE_SYSTEM_PROMPT;
 
@@ -259,19 +285,54 @@ async function buildSystemPrompt(opts: {
   if (opts.includeRecentPosts) {
     const { data: posts } = await opts.supabase
       .from("blog_posts")
-      .select("title, body_html, external_post_url, category_label, updated_at")
+      .select("title, body_html, external_post_url, category_label, updated_at, meta_tags, meta_title")
       .eq("active", true).eq("state", "live")
       .order("updated_at", { ascending: false })
-      .limit(RECENT_POSTS_LIMIT);
+      .limit(ARCHIVE_CATALOG_LIMIT);
+
     if (Array.isArray(posts) && posts.length > 0) {
-      const examples = posts.map((p: any, i: number) => {
-        const html = String(p.body_html ?? "").slice(0, RECENT_POST_EXCERPT_CHARS);
+      // Topical-match scoring against the latest user message; falls back to
+      // pure recency when the user hasn't said anything topical yet.
+      const userWords = new Set(opts.latestUserMessage.toLowerCase().match(/[a-z0-9]+/g) ?? []);
+      const ranked = posts
+        .map((p: any) => ({ p, score: scorePostForQuery(p, userWords) }))
+        .sort((a, b) => b.score - a.score);
+      const topExcerpts = ranked.slice(0, ARCHIVE_TOP_EXCERPTS).map((x) => x.p);
+
+      // Full catalog — every post as a one-liner. Lets Ally know what exists
+      // even if a particular post didn't make the topical top-N.
+      const catalog = posts.map((p: any, i: number) => {
+        const url = p.external_post_url || "(not yet published)";
+        const cat = p.category_label || "Uncategorized";
+        const date = String(p.updated_at ?? "").slice(0, 10);
+        return `[${i + 1}] "${p.title}" · ${cat} · ${date} · ${url}`;
+      }).join("\n");
+
+      // Detailed excerpts for the topically-most-relevant posts.
+      const excerpts = topExcerpts.map((p: any) => {
+        const html = String(p.body_html ?? "").slice(0, ARCHIVE_EXCERPT_CHARS);
         const url = p.external_post_url ? `URL: ${p.external_post_url}` : "URL: (not yet published)";
         const cat = p.category_label ? `Category: ${p.category_label}` : "";
-        const meta = [url, cat].filter(Boolean).join(" · ");
-        return `### Recent post ${i + 1} — "${p.title}"\n${meta}\nExcerpt:\n${html}`;
-      }).join("\n\n");
-      prompt += `\n\nTHE HELGEMO TEAM'S RECENT PUBLISHED POSTS — match this voice, depth, and structural rhythm. When relevant, LINK TO these posts inline using their URL (e.g. <a href="URL">our latest market update</a>) and reference their data instead of inventing your own. For example, a neighborhood spotlight should cite the most recent Market Update post if one exists. Don't link to posts whose URL is "(not yet published)".\n\n${examples}`;
+        return `### "${p.title}"\n${url} · ${cat}\n\n${html}`;
+      }).join("\n\n---\n\n");
+
+      prompt += `
+
+=== THE HELGEMO TEAM'S BLOG ARCHIVE — YOU HAVE FULL ACCESS ===
+
+The posts below ARE the URLs. You do NOT need to "access" or "fetch" anything — the content is already in your context. NEVER say things like "I can't access external URLs" or "I don't have internet access". When the user references "our market update", "our recent posts", "the spotlight we did", etc. — look in the catalog below, find the matching post, quote its numbers, and LINK TO IT using its URL.
+
+Always link to relevant team posts inline using their URL (e.g. <a href="URL">our latest market update</a>). Reference their data verbatim — don't invent stats when a team post already has the number.
+
+A neighborhood spotlight should ALWAYS cite the most recent Market Update post if one exists. A buyer-guide post should link to relevant home-search FAQs if any. Cross-link aggressively — it's good for SEO and the team's traffic.
+
+ARCHIVE CATALOG (${posts.length} live posts on the team's site):
+${catalog}
+
+DETAILED EXCERPTS — ranked by relevance to this turn's request:
+
+${excerpts}
+`;
     }
   }
 
@@ -390,6 +451,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     supabase,
     templateId: b.template_id ?? null,
     includeRecentPosts: b.include_recent_posts === true,
+    latestUserMessage: latestUserContent,
   });
   if (research) {
     const sourcesText = research.sources.length

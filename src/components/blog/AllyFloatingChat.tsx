@@ -106,59 +106,7 @@ function summariseChanges(patch: FormPatch): string {
   return bits.slice(0, -1).join(", ") + ", and " + bits.slice(-1);
 }
 
-// ---------------------------------------------------------------------------
-// Persistence — keyed by postId. Stores the chat thread + proposals + research
-// sources + research-mode + cost so reopening the panel resumes where you
-// left off. Attachments are NOT persisted (they're one-shot per turn and would
-// blow the localStorage budget). Schema is versioned so we can migrate later.
-// ---------------------------------------------------------------------------
-
-interface PersistedChat {
-  v: 1;
-  messages: Array<AIChatMessage & { suggestResearch?: boolean; queued?: boolean }>;
-  proposals: ProposalCard[];
-  sources: AIResearchSource[];
-  totalCostCents: number;
-  useResearch: boolean;
-}
-
-const STORAGE_PREFIX = "ally-chat:";
-const MAX_PERSISTED_MESSAGES = 60;
-
-function storageKey(postId: string) {
-  return `${STORAGE_PREFIX}${postId}`;
-}
-
-function loadPersisted(postId: string): PersistedChat | null {
-  if (!postId || typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(storageKey(postId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed?.v !== 1 || !Array.isArray(parsed.messages)) return null;
-    return parsed as PersistedChat;
-  } catch {
-    return null;
-  }
-}
-
-function savePersisted(postId: string, state: PersistedChat) {
-  if (!postId || typeof window === "undefined") return;
-  try {
-    const trimmed: PersistedChat = {
-      ...state,
-      messages: state.messages.slice(-MAX_PERSISTED_MESSAGES),
-    };
-    window.localStorage.setItem(storageKey(postId), JSON.stringify(trimmed));
-  } catch {
-    // Quota exceeded or storage disabled — silently skip; chat still works in-memory.
-  }
-}
-
-function clearPersisted(postId: string) {
-  if (!postId || typeof window === "undefined") return;
-  try { window.localStorage.removeItem(storageKey(postId)); } catch { /* ignore */ }
-}
+import { loadPersisted, savePersisted, clearPersisted } from "./ally-storage";
 
 export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, contextLabel }: Props) {
   const [open, setOpen] = useState(false);
