@@ -2,7 +2,10 @@
 
 **Date:** 2026-05-15
 **Author:** Oliver + Claude (Opus 4.7) with Gemini 2.5 Pro second-opinion pass
-**Status:** approved → implementation pending on `feat/operator-studio`
+**Status:** approved (v2 — re-phased after Gemini adversarial review) → implementation pending on `feat/operator-studio`
+
+## Revision history
+- **v1 → v2 (2026-05-15):** Gemini adversarial review surfaced that v1's Phase 1 produced unbranded videos with no in-tool delivery loop and no efficient revision path — i.e. a technical exercise, not a usable internal tool. Re-carved phases: brand-kit injection (was F/P2), preview-link delivery (was H/P2), and inline clip swap (was G/P3) are pulled into Phase 1; full `playbooks` CRUD/UI is pushed to Phase 2 (Phase 1 stores the column but no UI). Also: explicit token-generation utility task, dedicated invoice-data integration test, explicit unique index on `property_previews.token`.
 
 ## Problem
 
