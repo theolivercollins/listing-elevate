@@ -117,7 +117,7 @@ function UserMenu({
 
   const handleAccount = () => {
     setOpen(false);
-    navigate("/account/profile");
+    navigate("/dashboard/account/profile");
   };
 
   const menu = open && (
@@ -179,7 +179,7 @@ function UserMenu({
     <div ref={ref} style={{ position: "relative" }}>
       <div className="le-sidebar-user">
         <Link
-          to="/account/profile"
+          to="/dashboard/account/profile"
           className="le-sidebar-user-avatar"
           style={{ textDecoration: "none", color: "inherit" }}
           aria-label="Account & profile"
@@ -187,7 +187,7 @@ function UserMenu({
           {initials}
         </Link>
         <Link
-          to="/account/profile"
+          to="/dashboard/account/profile"
           className="le-sidebar-user-info"
           style={{ textDecoration: "none", color: "inherit", minWidth: 0 }}
         >

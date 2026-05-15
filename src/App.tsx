@@ -14,10 +14,9 @@ import Presets from "./pages/Presets";
 import Status from "./pages/Status";
 import AuthCallback from "./pages/AuthCallback";
 import { LoginDialogProvider } from "@/v2/components/auth/LoginDialogContext";
-import Account from "./pages/Account";
-import AccountProperties from "./pages/account/Properties";
-import AccountBilling from "./pages/account/Billing";
-import AccountProfile from "./pages/account/Profile";
+import DashboardAccountProfile from "./pages/dashboard/account/Profile";
+import DashboardAccountBilling from "./pages/dashboard/account/Billing";
+import DashboardAccountListings from "./pages/dashboard/account/Listings";
 import Dashboard from "./pages/Dashboard";
 import DashboardOverview from "./pages/dashboard/Overview";
 import DashboardPipeline from "./pages/dashboard/Pipeline";
@@ -75,16 +74,16 @@ const App = () => (
                 <Route path="/status/:id" element={<Status />} />
                 <Route path="/preview/:token" element={<PreviewPage />} />
 
+                {/* Backwards-compat redirects for old /account/* bookmarks */}
+                <Route path="/account" element={<Navigate to="/dashboard/account/profile" replace />} />
+                <Route path="/account/profile" element={<Navigate to="/dashboard/account/profile" replace />} />
+                <Route path="/account/billing" element={<Navigate to="/dashboard/account/billing" replace />} />
+                <Route path="/account/properties" element={<Navigate to="/dashboard/account/listings" replace />} />
+
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/presets" element={<Presets />} />
-                  <Route path="/account" element={<Account />}>
-                    <Route index element={<Navigate to="properties" replace />} />
-                    <Route path="properties" element={<AccountProperties />} />
-                    <Route path="billing" element={<AccountBilling />} />
-                    <Route path="profile" element={<AccountProfile />} />
-                  </Route>
                 </Route>
 
                 {/* Admin routes */}
@@ -123,6 +122,12 @@ const App = () => (
                     <Route path="studio/clients" element={<StudioClients />} />
                     <Route path="studio/clients/:id" element={<StudioClientEdit />} />
                     <Route path="studio/properties/:id" element={<StudioPropertyCommandCenter />} />
+                    <Route path="account">
+                      <Route index element={<Navigate to="profile" replace />} />
+                      <Route path="profile" element={<DashboardAccountProfile />} />
+                      <Route path="billing" element={<DashboardAccountBilling />} />
+                      <Route path="listings" element={<DashboardAccountListings />} />
+                    </Route>
                   </Route>
                 </Route>
 
