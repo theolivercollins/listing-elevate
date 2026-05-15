@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import "@/v2/styles/v2.css";
 
 const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -163,7 +163,7 @@ const Pipeline = () => {
                   <span style={{ ...EYEBROW, color: "#fff" }}>
                     <span style={{ color: "rgba(255,255,255,0.45)" }}>0{idx + 1}</span> {stage.label}
                   </span>
-                  <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>{props.length}</span>
+                  <span className="text-xs" style={{ fontFamily: "var(--le-font-sans)", color: "rgba(255,255,255,0.55)" }}>{props.length}</span>
                 </div>
                 <div className="flex-1 space-y-2">
                   {props.length === 0 ? (
@@ -229,9 +229,9 @@ const Pipeline = () => {
                 </div>
                 <div>
                   <div className="flex items-baseline gap-3">
-                    <span className="text-xs font-semibold" style={{ fontFamily: "var(--le-font-mono)", color: "#fff" }}>Scene {scene.scene_number}</span>
+                    <span className="text-xs font-semibold" style={{ fontFamily: "var(--le-font-sans)", color: "#fff" }}>Scene {scene.scene_number}</span>
                     <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>{scene.status.replace(/_/g, " ")}</span>
-                    <span className="text-[11px]" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
+                    <span className="text-[11px]" style={{ fontFamily: "var(--le-font-sans)", color: "rgba(255,255,255,0.55)" }}>
                       Confidence {(scene.qc_confidence * 100).toFixed(0)}%
                     </span>
                   </div>

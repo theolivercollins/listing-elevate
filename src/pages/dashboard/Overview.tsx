@@ -20,7 +20,7 @@ import { motion } from "framer-motion";
 import "@/v2/styles/v2.css";
 
 const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -44,7 +44,7 @@ const SECTION_H3: CSSProperties = {
   margin: 0,
 };
 const MONO_VALUE: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 24,
   fontWeight: 600,
   letterSpacing: "-0.02em",
@@ -272,7 +272,7 @@ const Overview = () => {
               <span style={EYEBROW}>— Spend</span>
               <h3 className="mt-3" style={SECTION_H3}>14-day trend</h3>
             </div>
-            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
+            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-sans)" }}>
               {formatCents(last7Cost + prev7Cost)} total
             </span>
           </div>
@@ -288,13 +288,13 @@ const Overview = () => {
                 <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-sans)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-sans)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
@@ -374,7 +374,7 @@ const Overview = () => {
                 <div key={row.key}>
                   <div className="flex items-baseline justify-between">
                     <span style={{ ...EYEBROW, color: "#fff" }}>{row.label}</span>
-                    <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
+                    <span className="text-xs" style={{ fontFamily: "var(--le-font-sans)", color: "rgba(255,255,255,0.55)" }}>
                       {row.count} · {pct.toFixed(0)}%
                     </span>
                   </div>
@@ -405,7 +405,7 @@ const Overview = () => {
               <span style={EYEBROW}>— Throughput</span>
               <h3 className="mt-3" style={SECTION_H3}>Videos delivered</h3>
             </div>
-            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-mono)" }}>
+            <span className="tabular text-xs text-muted-foreground" style={{ fontFamily: "var(--le-font-sans)" }}>
               {last7Videos} this week
             </span>
           </div>
@@ -415,13 +415,13 @@ const Overview = () => {
                 <CartesianGrid strokeDasharray="0" stroke="rgba(220,230,255,0.09)" vertical={false} />
                 <XAxis
                   dataKey="date"
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-sans)" }}
                   tickLine={false}
                   axisLine={false}
                   tickFormatter={(v) => v.slice(5)}
                 />
                 <YAxis
-                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-mono)" }}
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.45)", fontFamily: "var(--le-font-sans)" }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
@@ -578,7 +578,7 @@ const Overview = () => {
             {/* Footer nudge */}
             <p className="border-t border-border px-6 py-4 text-[11px] text-muted-foreground/60">
               Numbers look off? Run{" "}
-              <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[10px]">
+              <code className="rounded bg-secondary px-1 py-0.5 font-sans text-[10px]">
                 npx tsx scripts/cost-reconcile.ts --since &lt;date&gt;
               </code>{" "}
               and cross-check against your provider invoices. Drift &gt;5% should be investigated before high-volume work.

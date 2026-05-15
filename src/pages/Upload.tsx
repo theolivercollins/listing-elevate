@@ -311,7 +311,7 @@ const Upload = () => {
       <div style={{ borderBottom: "1px solid var(--le-border)" }}>
         <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-8 md:px-12">
           <div>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>— New listing</span>
+            <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>— New listing</span>
             <h1 style={{ marginTop: 12, fontSize: "clamp(22px, 3vw, 30px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>
               {step === 0 && "Define the cut."}
               {step === 1 && "Refine with add-ons."}
@@ -835,8 +835,8 @@ const Upload = () => {
         <div className="mx-auto flex max-w-[1080px] items-center justify-between gap-6 px-8 py-5 md:px-12">
           <div className="flex items-center gap-8">
             <div>
-              <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>Total</span>
-              <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)" }}>${totalPrice}</div>
+              <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase" as const, color: "var(--le-text-muted)" }}>Total</span>
+              <div style={{ fontFamily: "var(--le-font-sans)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--le-text)" }}>${totalPrice}</div>
             </div>
             {step === 0 && step0Valid && (
               <button

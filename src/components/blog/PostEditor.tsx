@@ -121,7 +121,7 @@ export function PostEditor({
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="block w-full resize-y border-0 bg-background p-4 font-mono text-xs leading-relaxed focus:outline-none"
+          className="block w-full resize-y border-0 bg-background p-4 font-sans text-xs leading-relaxed focus:outline-none"
           spellCheck={false}
           style={{ minHeight }}
         />

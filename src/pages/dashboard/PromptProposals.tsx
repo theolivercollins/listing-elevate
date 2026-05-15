@@ -5,10 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
+const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
 const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
 const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
-const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-mono)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
+const BADGE: CSSProperties = { display: "inline-flex", alignItems: "center", borderRadius: 0, fontFamily: "var(--le-font-sans)", fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" };
 import {
   listProposals,
   reviewProposal,
@@ -273,7 +273,7 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
           {proposal.proposed_diff && (
             <div>
               <div className="label text-muted-foreground">Proposed diff</div>
-              <pre className="mt-2 max-h-96 overflow-auto rounded border border-border bg-muted/30 p-3 text-xs leading-relaxed font-mono">
+              <pre className="mt-2 max-h-96 overflow-auto rounded border border-border bg-muted/30 p-3 text-xs leading-relaxed font-sans">
                 {proposal.proposed_diff}
               </pre>
             </div>
@@ -285,7 +285,7 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
                 {buckets.map((b, i) => (
                   <div key={i} className="border border-border p-3 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-mono">
+                      <span className="font-sans">
                         {b.bucket.room} / {b.bucket.camera_movement} / {b.bucket.provider}
                       </span>
                       <span className="tabular">

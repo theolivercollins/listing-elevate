@@ -11,7 +11,7 @@ import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const eyebrowStyle: React.CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
@@ -162,7 +162,7 @@ export default function Login() {
             color: "rgba(255,255,255,0.55)",
             textDecoration: "none",
             fontSize: 12,
-            fontFamily: "var(--le-font-mono)",
+            fontFamily: "var(--le-font-sans)",
             letterSpacing: "0.1em",
             position: "relative",
             zIndex: 1,
@@ -303,7 +303,7 @@ export default function Login() {
                 <Label
                   htmlFor="email"
                   style={{
-                    fontFamily: "var(--le-font-mono)",
+                    fontFamily: "var(--le-font-sans)",
                     fontSize: 10,
                     letterSpacing: "0.22em",
                     textTransform: "uppercase",
@@ -351,7 +351,7 @@ export default function Login() {
                     <Label
                       htmlFor="password"
                       style={{
-                        fontFamily: "var(--le-font-mono)",
+                        fontFamily: "var(--le-font-sans)",
                         fontSize: 10,
                         letterSpacing: "0.22em",
                         textTransform: "uppercase",
@@ -508,7 +508,7 @@ export default function Login() {
             fontSize: 11,
             color: "rgba(255,255,255,0.32)",
             marginTop: 48,
-            fontFamily: "var(--le-font-mono)",
+            fontFamily: "var(--le-font-sans)",
           }}
         >
           © 2026 Listing Elevate

@@ -46,7 +46,7 @@ export default function MarketDomination() {
             className="p-8"
             style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
           >
-            <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               {item.step}
             </span>
             <span className="text-[15px] font-semibold block mb-3" style={{ color: WHITE }}>
@@ -211,7 +211,7 @@ export default function MarketDomination() {
                 className="flex items-center justify-between"
               >
                 <span className="text-[12px]" style={{ color: DIM }}>{item.label}</span>
-                <span className="text-[12px] font-medium tabular-nums" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>{item.value}</span>
+                <span className="text-[12px] font-medium tabular-nums" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>{item.value}</span>
               </motion.div>
             ))}
           </div>

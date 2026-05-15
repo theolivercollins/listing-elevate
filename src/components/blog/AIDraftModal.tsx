@@ -134,7 +134,7 @@ export function AIDraftModal({ open, onClose, onSubmit }: Props) {
               <div className="space-y-1">
                 {attachments.map((a, i) => (
                   <div key={i} className="flex items-center gap-2 rounded border bg-muted/30 px-2 py-1 text-xs">
-                    <span className="font-mono">{a.kind === "pdf" ? "📎" : a.kind === "image" ? "🖼" : "📋"}</span>
+                    <span className="font-sans">{a.kind === "pdf" ? "📎" : a.kind === "image" ? "🖼" : "📋"}</span>
                     <span className="truncate flex-1">{a.filename}</span>
                     <span className="text-muted-foreground">{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
                     <Button type="button" variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={() => removeAttachment(i)}>×</Button>
@@ -163,7 +163,7 @@ export function AIDraftModal({ open, onClose, onSubmit }: Props) {
               onChange={(e) => setPasteData(e.target.value)}
               placeholder={'Or paste raw data:\n\nMedian price: $385K (+3.2% YoY)\nDays on market: 28\nInventory: 1,847 active listings'}
               rows={4}
-              className="font-mono text-xs"
+              className="font-sans text-xs"
             />
             <p className="text-xs text-muted-foreground">
               Files are sent to Anthropic&apos;s API for content generation. Don&apos;t include private/PII data.

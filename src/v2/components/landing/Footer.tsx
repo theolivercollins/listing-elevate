@@ -34,7 +34,7 @@ export function Footer() {
         <span>Terms</span>
         <span>Privacy</span>
       </div>
-      <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 11 }}>
+      <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 11 }}>
         © 2026 Listing Elevate, Inc.
       </span>
     </footer>

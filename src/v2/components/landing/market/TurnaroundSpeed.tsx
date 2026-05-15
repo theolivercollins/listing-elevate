@@ -106,7 +106,7 @@ function TimelineTrack({
                     className="text-[12px] sm:text-[11px] tabular-nums font-semibold shrink-0"
                     style={{
                       color: isActive ? (isElevate ? WHITE : DIM) : DIMMER,
-                      fontFamily: "'JetBrains Mono', monospace",
+                      fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
                       transition: "color 0.4s ease-out",
                     }}
                   >
@@ -222,7 +222,7 @@ export default function TurnaroundSpeed() {
           <TimelineTrack steps={ELEVATE_STEPS} progress={progress} isElevate={true} />
 
           <div className="mt-4 sm:mt-5">
-            <span className="text-[9px] sm:text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[9px] sm:text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Source: Fotober Real Estate Video Pricing (2025)
             </span>
           </div>

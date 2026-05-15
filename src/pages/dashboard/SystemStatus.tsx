@@ -230,7 +230,7 @@ function ProviderSummarySection({ rows }: { rows: SystemStatusResponse["provider
           key={`${r.provider}|${r.stage}`}
           className="grid grid-cols-[120px_140px_80px_90px_90px_90px_1fr] items-center gap-x-3 border-b border-border/50 py-1.5 text-xs tabular-nums"
         >
-          <div className="font-mono font-medium">{r.provider}</div>
+          <div className="font-sans font-medium">{r.provider}</div>
           <div className="text-muted-foreground">{r.stage}</div>
           <div className="text-right">{r.count_24h}</div>
           <div className="text-right">{fmtDollars(r.cost_cents_24h)}</div>
@@ -284,7 +284,7 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
           {affinity.rules.map((r) => (
             <div key={r.camera_movement} className="border border-border bg-background px-4 py-3 text-sm">
               <div className="flex items-center gap-2">
-                <span className="font-mono font-medium">{r.camera_movement}</span>
+                <span className="font-sans font-medium">{r.camera_movement}</span>
                 <span className={`rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${
                   r.confidence === "high_empirical" ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                   : r.confidence === "medium_empirical" ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
@@ -358,8 +358,8 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
                 onClick={() => toggle(e.id)}
                 className="grid w-full grid-cols-[110px_90px_110px_90px_1fr_24px] items-center gap-x-3 px-3 py-1.5 text-left hover:bg-accent/30"
               >
-                <span className="font-mono text-muted-foreground">{fmtTime(e.created_at)}</span>
-                <span className="font-mono font-medium">{e.provider}</span>
+                <span className="font-sans text-muted-foreground">{fmtTime(e.created_at)}</span>
+                <span className="font-sans font-medium">{e.provider}</span>
                 <span className="text-muted-foreground">{e.stage}</span>
                 <span className="text-right font-medium tabular-nums">{fmtDollars(e.cost_cents ?? 0)}</span>
                 <span className="truncate text-muted-foreground">
@@ -369,7 +369,7 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
               </button>
               {isOpen && (
                 <div className="border-t border-border px-3 py-3 text-[11px]">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 font-sans">
                     <span className="text-muted-foreground">units:</span><span>{e.units_consumed ?? "—"} {e.unit_type ?? ""}</span>
                     <span className="text-muted-foreground">cost:</span><span>{fmtDollars(e.cost_cents ?? 0)}</span>
                   </div>
@@ -385,7 +385,7 @@ function LiveFeedSection({ events }: { events: SystemStatusEvent[] }) {
                   )}
                   <div className="mt-2">
                     <div className="text-muted-foreground">metadata:</div>
-                    <pre className="mt-1 overflow-x-auto rounded bg-muted/40 p-2 font-mono text-[10px] leading-relaxed">
+                    <pre className="mt-1 overflow-x-auto rounded bg-muted/40 p-2 font-sans text-[10px] leading-relaxed">
                       {JSON.stringify(e.metadata ?? {}, null, 2)}
                     </pre>
                   </div>
@@ -432,7 +432,7 @@ function KillSwitchSection({ flags, onReload }: { flags: SystemStatusFlag[]; onR
               f.value ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-background"
             }`}
           >
-            <span className="font-mono font-medium">{f.name}</span>
+            <span className="font-sans font-medium">{f.name}</span>
             <span className={`rounded px-2 py-0.5 text-[10px] uppercase tracking-wider ${
               f.value ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
                       : "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
@@ -497,20 +497,20 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
           {filtered.map((r) => (
             <div key={r.iteration_id} className="border border-border bg-background px-3 py-2 text-xs">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                <span className="font-sans text-[10px] tabular-nums text-muted-foreground">
                   {new Date(r.created_at).toLocaleString()}
                 </span>
                 {r.order_id && (
                   <Link
                     to={`/dashboard/development/prompt-lab/${r.session_id ?? ""}`}
-                    className="font-mono text-[10px] tabular-nums text-muted-foreground hover:text-foreground underline"
+                    className="font-sans text-[10px] tabular-nums text-muted-foreground hover:text-foreground underline"
                     title="Open session"
                   >
                     {r.order_id}
                   </Link>
                 )}
                 {r.model_used && (
-                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <span className="rounded bg-muted/60 px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground">
                     {r.model_used}
                   </span>
                 )}

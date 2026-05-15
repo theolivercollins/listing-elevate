@@ -43,7 +43,7 @@ const Settings = () => {
                     type={showKeys[provider] ? "text" : "password"}
                     placeholder={`Enter ${provider} API key...`}
                     defaultValue="sk-••••••••••••••••"
-                    className="font-mono pr-10"
+                    className="font-sans pr-10"
                   />
                   <Button
                     variant="ghost"
@@ -73,7 +73,7 @@ const Settings = () => {
           {["Runway", "Kling", "Luma"].map((provider, i) => (
             <div key={provider} className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Badge variant="secondary" className="font-mono text-xs">{i + 1}</Badge>
+                <Badge variant="secondary" className="font-sans text-xs">{i + 1}</Badge>
                 <span className="text-sm font-medium">{provider}</span>
               </div>
               <Switch defaultChecked={i < 2} />
@@ -92,21 +92,21 @@ const Settings = () => {
           <div className="space-y-3">
             <div className="flex justify-between">
               <Label>QC Confidence Threshold</Label>
-              <span className="font-mono text-sm text-muted-foreground">{qcThreshold[0].toFixed(2)}</span>
+              <span className="font-sans text-sm text-muted-foreground">{qcThreshold[0].toFixed(2)}</span>
             </div>
             <Slider value={qcThreshold} onValueChange={setQcThreshold} min={0} max={1} step={0.05} />
           </div>
           <div className="space-y-3">
             <div className="flex justify-between">
               <Label>Max Retries per Clip</Label>
-              <span className="font-mono text-sm text-muted-foreground">{maxRetries[0]}</span>
+              <span className="font-sans text-sm text-muted-foreground">{maxRetries[0]}</span>
             </div>
             <Slider value={maxRetries} onValueChange={setMaxRetries} min={1} max={5} step={1} />
           </div>
           <div className="space-y-3">
             <div className="flex justify-between">
               <Label>Auto-Approve Threshold</Label>
-              <span className="font-mono text-sm text-muted-foreground">{autoApprove[0].toFixed(2)}</span>
+              <span className="font-sans text-sm text-muted-foreground">{autoApprove[0].toFixed(2)}</span>
             </div>
             <Slider value={autoApprove} onValueChange={setAutoApprove} min={0} max={1} step={0.05} />
           </div>
@@ -122,11 +122,11 @@ const Settings = () => {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>Daily Budget Cap ($)</Label>
-            <Input type="number" defaultValue="50" className="font-mono" />
+            <Input type="number" defaultValue="50" className="font-sans" />
           </div>
           <div className="space-y-2">
             <Label>Email Alert Threshold ($)</Label>
-            <Input type="number" defaultValue="40" className="font-mono" />
+            <Input type="number" defaultValue="40" className="font-sans" />
           </div>
           <Button onClick={() => handleSave("Cost alerts")} className="w-full">Save</Button>
         </CardContent>
@@ -141,14 +141,14 @@ const Settings = () => {
           <div className="space-y-3">
             <div className="flex justify-between">
               <Label>Default Clip Duration</Label>
-              <span className="font-mono text-sm text-muted-foreground">{clipDuration[0].toFixed(1)}s</span>
+              <span className="font-sans text-sm text-muted-foreground">{clipDuration[0].toFixed(1)}s</span>
             </div>
             <Slider value={clipDuration} onValueChange={setClipDuration} min={2} max={5} step={0.5} />
           </div>
           <div className="space-y-3">
             <div className="flex justify-between">
               <Label>Transition Duration</Label>
-              <span className="font-mono text-sm text-muted-foreground">{transitionDuration[0].toFixed(1)}s</span>
+              <span className="font-sans text-sm text-muted-foreground">{transitionDuration[0].toFixed(1)}s</span>
             </div>
             <Slider value={transitionDuration} onValueChange={setTransitionDuration} min={0.1} max={1} step={0.1} />
           </div>
@@ -183,7 +183,7 @@ const Settings = () => {
             <div key={track.name} className="flex items-center justify-between border border-border rounded-lg p-3">
               <div>
                 <p className="text-sm font-medium">{track.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{track.duration}</p>
+                <p className="text-xs text-muted-foreground font-sans">{track.duration}</p>
               </div>
               <Badge variant="secondary">{track.mood}</Badge>
             </div>
@@ -215,7 +215,7 @@ const Settings = () => {
           ))}
           <div className="space-y-2 pt-2 border-t border-border">
             <Label>Webhook URL</Label>
-            <Input placeholder="https://..." className="font-mono" />
+            <Input placeholder="https://..." className="font-sans" />
           </div>
           <Button onClick={() => handleSave("Notifications")} className="w-full">Save</Button>
         </CardContent>

@@ -19,7 +19,7 @@ export default function Account() {
       <div style={{ borderBottom: "1px solid var(--le-border)" }}>
         <div className="mx-auto flex max-w-[1280px] items-end justify-between gap-6 px-8 pb-6 pt-12 md:px-12">
           <div>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)" }}>— Account</span>
+            <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--le-text-muted)" }}>— Account</span>
             <h1 style={{ marginTop: 12, fontSize: "clamp(28px, 4vw, 40px)", fontWeight: 500, letterSpacing: "-0.035em", color: "var(--le-text)", fontFamily: "var(--le-font-sans)" }}>Your studio</h1>
           </div>
         </div>
