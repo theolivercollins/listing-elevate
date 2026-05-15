@@ -1,16 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
 import {
-  ArrowUp, Brain, Check, Eye, FileText, Globe, Image as ImageIcon, Loader2, MessageSquare,
+  ArrowUp, Brain, Check, Eye, FileText, Globe, Image as ImageIcon,
   Paperclip, Plus, RotateCcw, Sparkles, Trash2, Wand2, X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   aiChat, listAllyMemories, deleteAllyMemory,
   type AIChatMessage, type AIResearchSource,
@@ -390,11 +388,16 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             exit={{ opacity: 0, scale: 0.85, y: 12 }}
             transition={{ type: "spring", stiffness: 320, damping: 22 }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-primary-foreground shadow-lg ring-1 ring-black/10 hover:shadow-xl"
+            className="le-btn-dark"
+            style={{
+              position: "fixed", bottom: 20, right: 20, zIndex: 50,
+              padding: "10px 18px", borderRadius: 999,
+              boxShadow: "var(--shadow-lg)", fontSize: 13.5,
+            }}
             aria-label="Improve with Ally"
           >
-            <Sparkles className="h-4 w-4" />
-            <span className="text-sm font-medium">Improve with Ally</span>
+            <Sparkles style={{ width: 15, height: 15 }} />
+            <span style={{ fontWeight: 600 }}>Improve with Ally</span>
           </motion.button>
         )}
       </AnimatePresence>
@@ -408,22 +411,28 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 12 }}
             transition={{ type: "spring", stiffness: 320, damping: 26 }}
-            className="fixed bottom-5 right-5 z-50 flex flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl ring-1 ring-black/10"
-            style={{ width: "min(440px, calc(100vw - 24px))", height: "min(640px, calc(100vh - 100px))" }}
+            className="le-card-strong"
+            style={{
+              position: "fixed", bottom: 20, right: 20, zIndex: 50,
+              display: "flex", flexDirection: "column", overflow: "hidden",
+              width: "min(440px, calc(100vw - 24px))",
+              height: "min(640px, calc(100vh - 100px))",
+              borderRadius: 20,
+            }}
           >
-            <div className="flex items-center gap-2 border-b bg-background/95 px-3 py-2.5 backdrop-blur">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <div className="flex-1 leading-tight">
-                <div className="text-sm font-medium">Improve with Ally</div>
-                <div className="text-[11px] text-muted-foreground">
+            <div style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--line)", background: "rgba(255,255,255,0.97)", padding: "10px 12px", backdropFilter: "blur(8px)" }}>
+              <Sparkles style={{ width: 15, height: 15, color: "var(--accent)", flexShrink: 0 }} />
+              <div style={{ flex: 1, lineHeight: 1.3 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>Improve with Ally</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
                   {contextLabel ?? "Suggestions apply to this post"}
-                  <span className={`ml-1 inline-flex items-center gap-0.5 ${useResearch ? "text-primary" : "text-muted-foreground"}`}>
-                    · <Globe className="ml-0.5 h-2.5 w-2.5" /> {useResearch ? "research always-on" : "research: auto"}
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: useResearch ? "var(--accent)" : "var(--muted)" }}>
+                    · <Globe style={{ marginLeft: 2, width: 10, height: 10 }} /> {useResearch ? "research always-on" : "research: auto"}
                   </span>
                 </div>
               </div>
               {totalCostCents > 0 && (
-                <span className="hidden text-[10px] text-muted-foreground sm:inline">
+                <span style={{ fontSize: 10, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums", display: "none" }} className="sm:inline">
                   ${(totalCostCents / 100).toFixed(3)}
                 </span>
               )}
@@ -431,40 +440,47 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    className="relative rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    style={{ position: "relative", borderRadius: 6, padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
+                    className="hover:bg-muted hover:!text-foreground"
                     aria-label="Ally's memory"
                     title={memories.length ? `Ally remembers ${memories.length} note${memories.length === 1 ? "" : "s"}` : "Ally's memory"}
                   >
-                    <Brain className="h-3.5 w-3.5" />
+                    <Brain style={{ width: 14, height: 14 }} />
                     {memories.length > 0 && (
-                      <span className="absolute -right-0.5 -top-0.5 inline-flex h-3.5 min-w-[14px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-medium text-primary-foreground">
+                      <span style={{
+                        position: "absolute", right: -2, top: -2,
+                        display: "inline-flex", height: 14, minWidth: 14, alignItems: "center", justifyContent: "center",
+                        borderRadius: 999, background: "var(--ink)", padding: "0 3px",
+                        fontSize: 9, fontWeight: 600, color: "#fff",
+                      }}>
                         {memories.length}
                       </span>
                     )}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 p-2">
-                  <div className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">
+                  <div style={{ marginBottom: 8, padding: "0 4px", fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>
                     Ally remembers ({memories.length})
                   </div>
                   {memories.length === 0 ? (
-                    <div className="px-2 py-3 text-xs text-muted-foreground">
+                    <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--muted)" }}>
                       Tell Ally to remember something — e.g. "from now on use Brian as the default author" — and it'll show up here.
                     </div>
                   ) : (
-                    <ul className="max-h-72 space-y-1 overflow-y-auto">
+                    <ul style={{ maxHeight: 288, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
                       {memories.map((m) => (
-                        <li key={m.id} className="group flex items-start gap-2 rounded-md p-2 hover:bg-muted">
-                          <span className="flex-1 text-xs leading-snug">{m.content}</span>
+                        <li key={m.id} className="group" style={{ display: "flex", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: 8 }}>
+                          <span style={{ flex: 1, fontSize: 12, lineHeight: 1.4 }}>{m.content}</span>
                           <button
                             type="button"
                             onClick={() => delMemory.mutate(m.id)}
                             disabled={delMemory.isPending}
-                            className="invisible rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:visible"
+                            style={{ borderRadius: 6, padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", opacity: 0 }}
+                            className="group-hover:!opacity-100 hover:!bg-[rgba(196,74,74,0.1)] hover:!text-[var(--bad)]"
                             aria-label="Forget this"
                             title="Forget this"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 style={{ width: 12, height: 12 }} />
                           </button>
                         </li>
                       ))}
@@ -476,36 +492,39 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                 <button
                   type="button"
                   onClick={resetChat}
-                  className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  style={{ borderRadius: 6, padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
+                  className="hover:bg-muted"
                   aria-label="Reset conversation"
                   title="Reset this conversation"
                 >
-                  <RotateCcw className="h-3.5 w-3.5" />
+                  <RotateCcw style={{ width: 14, height: 14 }} />
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className="rounded p-1 hover:bg-muted"
+                style={{ borderRadius: 6, padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--ink)" }}
+                className="hover:bg-muted"
                 aria-label="Close"
               >
-                <X className="h-4 w-4" />
+                <X style={{ width: 15, height: 15 }} />
               </button>
             </div>
 
-            <div ref={scrollerRef} className="flex-1 space-y-2.5 overflow-y-auto px-3 py-3">
+            <div ref={scrollerRef} className="flex-1 overflow-y-auto" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: 10 }}>
               {empty && (
-                <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
                     Ask Ally to tweak this post. I'll propose changes; you Apply what you like.
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {STARTERS.map((s) => (
                       <button
                         key={s}
                         type="button"
                         onClick={() => send(s)}
-                        className="rounded-full border bg-background px-2.5 py-1 text-[11px] text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                        className="le-btn-ghost"
+                        style={{ fontSize: 11.5, padding: "5px 12px" }}
                       >
                         {s}
                       </button>
@@ -515,25 +534,40 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               )}
 
               {messages.map((m, i) => (
-                <div key={i} className="space-y-1">
+                <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <motion.div
                     initial={{ opacity: 0, y: 4 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.15 }}
-                    className={
+                    style={
                       m.role === "user"
-                        ? `ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-primary px-3 py-1.5 text-xs text-primary-foreground ${m.queued ? "opacity-70 ring-1 ring-primary-foreground/30" : ""}`
-                        : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3 py-1.5 text-xs ${m.pending ? "italic text-muted-foreground" : ""}`
+                        ? {
+                            marginLeft: "auto", maxWidth: "88%", whiteSpace: "pre-wrap",
+                            borderRadius: "16px 16px 4px 16px",
+                            background: "var(--ink)", padding: "8px 12px",
+                            fontSize: 12.5, color: "var(--surface)",
+                            opacity: m.queued ? 0.7 : 1,
+                            outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
+                          }
+                        : {
+                            maxWidth: "88%", whiteSpace: "pre-wrap",
+                            borderRadius: "16px 16px 16px 4px",
+                            background: "var(--surface)", padding: "8px 12px",
+                            fontSize: 12.5, color: m.pending ? "var(--muted)" : "var(--ink)",
+                            fontStyle: m.pending ? "italic" : "normal",
+                            border: "1px solid var(--line)",
+                            boxShadow: "var(--shadow-sm)",
+                          }
                     }
                   >
-                    <div className="flex items-center gap-1.5">
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       {m.role === "assistant" && m.pending ? (
                         <AllyThinking active research={useResearch} size="sm" />
                       ) : (
                         <span>{m.content}</span>
                       )}
                       {m.queued && (
-                        <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
+                        <span style={{ marginLeft: 4, borderRadius: 999, background: "rgba(255,255,255,0.18)", padding: "2px 6px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                           queued
                         </span>
                       )}
@@ -546,9 +580,10 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       transition={{ duration: 0.15, delay: 0.05 }}
                       onClick={enableResearchAndRetry}
                       disabled={chat.isPending}
-                      className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-2.5 py-1 text-[11px] text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                      className="le-btn-ghost"
+                      style={{ fontSize: 11.5, padding: "5px 10px", color: "var(--accent)", opacity: chat.isPending ? 0.5 : 1 }}
                     >
-                      <Globe className="h-3 w-3" /> Search the web &amp; retry
+                      <Globe style={{ width: 11, height: 11 }} /> Search the web &amp; retry
                     </motion.button>
                   )}
                 </div>
@@ -560,83 +595,83 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   initial={{ opacity: 0, scale: 0.97 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ duration: 0.15 }}
-                  className={`rounded-xl border p-2.5 text-xs ${
-                    card.applied
-                      ? "border-emerald-500/60 bg-emerald-500/10 text-foreground"
-                      : "border-primary/30 bg-primary/5"
-                  }`}
+                  style={{
+                    borderRadius: 14, padding: 12,
+                    border: card.applied ? "1px solid rgba(47,138,85,0.4)" : "1px solid rgba(42,111,219,0.2)",
+                    background: card.applied ? "rgba(47,138,85,0.07)" : "rgba(42,111,219,0.04)",
+                    fontSize: 12,
+                  }}
                 >
-                  <div className={`mb-2 flex items-center gap-1.5 font-medium ${card.applied ? "text-emerald-700 dark:text-emerald-300" : ""}`}>
+                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontWeight: 600, color: card.applied ? "var(--good)" : "var(--ink)" }}>
                     {card.applied ? (
                       <>
-                        <Check className="h-3.5 w-3.5" />
+                        <Check style={{ width: 13, height: 13 }} />
                         Applied — {card.changedSummary}. Scroll up to review.
                       </>
                     ) : (
                       <>
-                        <Wand2 className="h-3.5 w-3.5 text-primary" />
+                        <Wand2 style={{ width: 13, height: 13, color: "var(--accent)" }} />
                         Proposed changes — {card.changedSummary}
                       </>
                     )}
                   </div>
-                  {/* Bullet list of what Ally actually changed, if she shared one. */}
                   {card.changesNarrative && (
-                    <ul className="mb-2 space-y-0.5 text-[11px] leading-snug text-foreground/80">
+                    <ul style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 2, fontSize: 11, lineHeight: 1.4, color: "var(--ink-2)" }}>
                       {card.changesNarrative
                         .split("\n")
                         .map((line) => line.replace(/^[-*•]\s*/, "").trim())
                         .filter(Boolean)
                         .slice(0, 8)
                         .map((bullet, i) => (
-                          <li key={i} className="flex gap-1.5">
-                            <span className="text-muted-foreground">•</span>
+                          <li key={i} style={{ display: "flex", gap: 6 }}>
+                            <span style={{ color: "var(--muted)" }}>•</span>
                             <span>{bullet}</span>
                           </li>
                         ))}
                     </ul>
                   )}
                   {!card.applied && (
-                    <div className="flex flex-wrap gap-1.5">
-                      <Button size="sm" className="h-7 px-2 text-xs" onClick={() => applyProposal(card)}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      <button type="button" className="le-btn-dark" style={{ fontSize: 11.5, padding: "5px 12px" }} onClick={() => applyProposal(card)}>
                         Apply
-                      </Button>
+                      </button>
                       {(card.patch.body_html !== undefined || card.patch.title !== undefined) && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs"
+                        <button
+                          type="button"
+                          className="le-btn-ghost"
+                          style={{ fontSize: 11.5, padding: "5px 10px" }}
                           onClick={() => setDiffCard(card)}
                         >
-                          <Eye className="mr-1 h-3 w-3" /> See the diff
-                        </Button>
+                          <Eye style={{ width: 11, height: 11, marginRight: 4 }} /> See the diff
+                        </button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
+                      <button
+                        type="button"
+                        className="le-btn-ghost"
+                        style={{ fontSize: 11.5, padding: "5px 10px" }}
                         onClick={() => dismissProposal(card)}
                       >
                         Dismiss
-                      </Button>
+                      </button>
                     </div>
                   )}
                 </motion.div>
               ))}
 
               {sources.length > 0 && (
-                <div className="rounded-md border bg-muted/30 p-2 text-[11px]">
-                  <div className="mb-1 flex items-center gap-1 font-medium text-muted-foreground">
-                    <Globe className="h-3 w-3" /> Sources · {sources.length}
+                <div style={{ borderRadius: 12, border: "1px solid var(--line)", background: "rgba(11,11,16,0.02)", padding: 10, fontSize: 11 }}>
+                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 4, fontWeight: 500, color: "var(--muted)" }}>
+                    <Globe style={{ width: 11, height: 11 }} /> Sources · {sources.length}
                   </div>
-                  <ol className="space-y-0.5">
+                  <ol style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                     {sources.slice(0, 5).map((s, i) => (
-                      <li key={s.url} className="flex items-start gap-1">
-                        <span className="text-muted-foreground">[{i + 1}]</span>
+                      <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
+                        <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="line-clamp-1 text-primary underline-offset-2 hover:underline"
+                          style={{ color: "var(--accent)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                           title={s.url}
                         >
                           {s.title}
@@ -649,61 +684,62 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             </div>
 
             {/* Composer */}
-            <div className="border-t bg-background/95 px-3 py-2 backdrop-blur">
+            <div style={{ borderTop: "1px solid var(--line)", background: "rgba(255,255,255,0.97)", padding: "8px 12px 10px", backdropFilter: "blur(8px)" }}>
               {attachments.length > 0 && (
-                <div className="mb-1.5 flex flex-wrap gap-1">
+                <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {attachments.map((a, i) => (
-                    <div key={i} className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5 text-[10px]">
-                      {a.kind === "pdf" ? <FileText className="h-2.5 w-2.5" /> : a.kind === "image" ? <ImageIcon className="h-2.5 w-2.5" /> : <FileText className="h-2.5 w-2.5" />}
-                      <span className="max-w-[120px] truncate">{a.filename}</span>
-                      <span className="text-muted-foreground">{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: 999, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "3px 8px", fontSize: 10.5 }}>
+                      {a.kind === "pdf" ? <FileText style={{ width: 10, height: 10 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 10, height: 10 }} /> : <FileText style={{ width: 10, height: 10 }} />}
+                      <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
+                      <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
                       <button
                         type="button"
                         onClick={() => setAttachments((p) => p.filter((_, idx) => idx !== i))}
-                        className="rounded p-0.5 hover:bg-background"
+                        style={{ borderRadius: 4, padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
                         aria-label="Remove attachment"
                       >
-                        <X className="h-2.5 w-2.5" />
+                        <X style={{ width: 10, height: 10 }} />
                       </button>
                     </div>
                   ))}
                 </div>
               )}
-              <div className="flex items-end gap-1.5 rounded-2xl border bg-background px-2 py-1.5 shadow-sm transition focus-within:border-primary/40">
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: 16, border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)]">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="ghost" size="sm" className="h-7 w-7 shrink-0 rounded-full p-0">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
+                    <button type="button" style={{ width: 28, height: 28, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+                      <Plus style={{ width: 13, height: 13 }} />
+                    </button>
                   </PopoverTrigger>
                   <PopoverContent align="start" className="w-72 p-2">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={attachments.length >= MAX_ATTACHMENTS}
-                      className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50"
+                      style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: 8, padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)", opacity: attachments.length >= MAX_ATTACHMENTS ? 0.5 : 1 }}
+                      className="hover:bg-muted"
                     >
-                      <Paperclip className="h-4 w-4" />
-                      <div className="flex-1">
+                      <Paperclip style={{ width: 14, height: 14 }} />
+                      <div style={{ flex: 1 }}>
                         <div>Attach file</div>
-                        <div className="text-xs text-muted-foreground">
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
                           PDF, image, CSV, .txt · up to {MAX_ATTACHMENTS} · 3 MB each · one-shot per turn
                         </div>
                       </div>
                     </button>
-                    <div className="my-1 border-t" />
-                    <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-muted">
+                    <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+                    <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: "8px 8px" }} className="hover:bg-muted">
                       <input
                         type="checkbox"
                         checked={useResearch}
                         onChange={(e) => setUseResearch(e.target.checked)}
-                        className="mt-0.5"
+                        style={{ marginTop: 2 }}
                       />
-                      <div className="flex-1 text-sm">
-                        <div className="flex items-center gap-1.5">
-                          <Globe className="h-3.5 w-3.5" /> Always research
+                      <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <Globe style={{ width: 13, height: 13 }} /> Always research
                         </div>
-                        <div className="text-xs text-muted-foreground">
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
                           Off: Ally auto-detects when fresh data is needed. On: Gemini every turn.
                         </div>
                       </div>
@@ -729,17 +765,18 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   small
                 />
 
-                <Button
+                <button
                   type="button"
                   onClick={() => send(input)}
                   disabled={!input.trim() && attachments.length === 0}
-                  className="h-7 w-7 shrink-0 rounded-full p-0"
+                  className="le-btn-dark"
+                  style={{ width: 28, height: 28, padding: 0, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: (!input.trim() && attachments.length === 0) ? 0.4 : 1 }}
                   title={chat.isPending ? "Queue for next" : "Send"}
                 >
-                  <ArrowUp className="h-3.5 w-3.5" />
-                </Button>
+                  <ArrowUp style={{ width: 13, height: 13 }} />
+                </button>
               </div>
-              <div className="mt-1 px-1 text-[10px] text-muted-foreground">
+              <div style={{ marginTop: 5, paddingLeft: 4, fontSize: 10, color: "var(--muted-2)" }}>
                 Enter to send · changes are advisory — click Save above to persist.
               </div>
             </div>
@@ -748,54 +785,54 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
       </AnimatePresence>
       <Dialog open={!!diffCard} onOpenChange={(v) => { if (!v) setDiffCard(null); }}>
         <DialogContent className="max-w-6xl gap-0 p-0">
-          <DialogHeader className="border-b px-5 py-3">
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Eye className="h-4 w-4 text-primary" /> See the change
+          <DialogHeader style={{ borderBottom: "1px solid var(--line)", padding: "12px 20px" }}>
+            <DialogTitle style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
+              <Eye style={{ width: 15, height: 15, color: "var(--accent)" }} /> See the change
               {diffCard && (
-                <span className="text-xs font-normal text-muted-foreground">
+                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>
                   · {diffCard.changedSummary}
                 </span>
               )}
             </DialogTitle>
           </DialogHeader>
           {diffCard && (
-            <div className="flex flex-col">
+            <div style={{ display: "flex", flexDirection: "column" }}>
               {diffCard.changesNarrative && (
-                <div className="border-b bg-muted/30 px-5 py-3">
-                  <div className="mb-1.5 text-xs font-medium text-muted-foreground">What Ally changed</div>
-                  <ul className="space-y-0.5 text-sm leading-snug">
+                <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.02)", padding: "12px 20px" }}>
+                  <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>What Ally changed</div>
+                  <ul style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 13.5, lineHeight: 1.5 }}>
                     {diffCard.changesNarrative
                       .split("\n")
                       .map((line) => line.replace(/^[-*•]\s*/, "").trim())
                       .filter(Boolean)
                       .map((bullet, i) => (
-                        <li key={i} className="flex gap-2">
-                          <span className="text-muted-foreground">•</span>
-                          <span>{bullet}</span>
+                        <li key={i} style={{ display: "flex", gap: 8 }}>
+                          <span style={{ color: "var(--muted)" }}>•</span>
+                          <span style={{ color: "var(--ink)" }}>{bullet}</span>
                         </li>
                       ))}
                   </ul>
                 </div>
               )}
               {(diffCard.beforeTitle !== diffCard.afterTitle) && (
-                <div className="grid grid-cols-2 gap-0 border-b text-sm">
-                  <div className="border-r px-5 py-3">
-                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Title — current</div>
-                    <div className="rounded bg-rose-50 px-2 py-1 text-rose-900 dark:bg-rose-950/40 dark:text-rose-100">
-                      {diffCard.beforeTitle || <em className="text-muted-foreground">(empty)</em>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid var(--line)", fontSize: 13.5 }}>
+                  <div style={{ borderRight: "1px solid var(--line)", padding: "12px 20px" }}>
+                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Title — current</div>
+                    <div style={{ borderRadius: 8, background: "rgba(196,74,74,0.08)", padding: "6px 10px", color: "var(--bad)" }}>
+                      {diffCard.beforeTitle || <em style={{ color: "var(--muted)" }}>(empty)</em>}
                     </div>
                   </div>
-                  <div className="px-5 py-3">
-                    <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Title — proposed</div>
-                    <div className="rounded bg-emerald-50 px-2 py-1 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-100">
+                  <div style={{ padding: "12px 20px" }}>
+                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Title — proposed</div>
+                    <div style={{ borderRadius: 8, background: "rgba(47,138,85,0.08)", padding: "6px 10px", color: "var(--good)" }}>
                       {diffCard.afterTitle}
                     </div>
                   </div>
                 </div>
               )}
-              <div className="grid grid-cols-2 gap-0" style={{ height: "65vh" }}>
-                <div className="flex min-h-0 flex-col border-r">
-                  <div className="border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", height: "65vh" }}>
+                <div style={{ display: "flex", minHeight: 0, flexDirection: "column", borderRight: "1px solid var(--line)" }}>
+                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
                     Current draft
                   </div>
                   <HtmlPreview
@@ -803,8 +840,8 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                     style={{ width: "100%", height: "100%", flex: 1, border: "none", display: "block" }}
                   />
                 </div>
-                <div className="flex min-h-0 flex-col">
-                  <div className="border-b bg-muted/40 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <div style={{ display: "flex", minHeight: 0, flexDirection: "column" }}>
+                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
                     Proposed
                   </div>
                   <HtmlPreview
@@ -813,12 +850,12 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   />
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2 border-t px-5 py-3">
-                <Button variant="ghost" onClick={() => setDiffCard(null)}>Close</Button>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line)", padding: "12px 20px" }}>
+                <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "7px 14px" }} onClick={() => setDiffCard(null)}>Close</button>
                 {!diffCard.applied && (
-                  <Button onClick={() => { applyProposal(diffCard); setDiffCard(null); }}>
+                  <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "7px 14px" }} onClick={() => { applyProposal(diffCard); setDiffCard(null); }}>
                     Apply this change
-                  </Button>
+                  </button>
                 )}
               </div>
             </div>
