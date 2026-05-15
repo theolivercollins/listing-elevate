@@ -17,6 +17,8 @@ export interface UserProfile {
   presets: unknown[];
   created_at: string;
   updated_at: string;
+  voice_clone_status?: "none" | "requested" | "enrolling" | "ready" | "failed" | null;
+  elevenlabs_voice_id?: string | null;
 }
 
 interface AuthContextType {

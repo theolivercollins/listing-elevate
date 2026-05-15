@@ -30,6 +30,8 @@ import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty, generateVoiceoverPreview, scrapeMls } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { SiteNav } from "@/v2/components/SiteNav";
+import { useAuth } from "@/lib/auth";
+import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import "@/v2/styles/v2.css";
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
@@ -59,6 +61,10 @@ const STEPS = ["Style", "Property", "Add-ons", "Photos"] as const;
 type StepId = 0 | 1 | 2 | 3;
 
 const Upload = () => {
+  // ─── auth ───
+  const { user, profile, loading: authLoading } = useAuth();
+  const { openLogin } = useLoginDialog();
+
   // ─── form state ───
   const [step, setStep] = useState<StepId>(0);
   const [address, setAddress] = useState("");
@@ -204,9 +210,17 @@ const Upload = () => {
   const isLifeCycle = selectedPackage === "life_cycle";
   const basePrice = selectedDur ? (isLifeCycle ? selectedDur.lifeCyclePrice : selectedDur.price) : 0;
   const orientationExtra = isLifeCycle ? 0 : (orientations.find((o) => o.id === selectedOrientation)?.extra || 0);
-  const voiceoverExtra = addVoiceover ? 15 : 0;
+  // Voiceover pricing: default voice = $10/video. Voice clone = $125 one-time
+  // setup PLUS $10/video (the cloned voice still needs ElevenLabs synthesis
+  // each render). If the user already has a clone on file, skip the $125.
+  const voiceoverExtra = addVoiceover ? 10 : 0;
   const customExtra = addCustomRequest ? 15 : 0;
-  const voiceCloneExtra = addVoiceClone ? 15 : 0;
+  const VOICE_CLONE_SETUP = 125;
+  const VOICE_CLONE_PER_VIDEO = 10;
+  const hasExistingClone = profile?.voice_clone_status === 'ready' || !!profile?.elevenlabs_voice_id;
+  const voiceCloneExtra = addVoiceClone
+    ? (hasExistingClone ? VOICE_CLONE_PER_VIDEO : VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO)
+    : 0;
   const totalPrice = basePrice + orientationExtra + voiceoverExtra + customExtra + voiceCloneExtra;
 
   const needsDaysOnMarket = selectedPackage === "just_pended" || selectedPackage === "just_closed";
@@ -229,7 +243,7 @@ const Upload = () => {
   const step3Valid = files.length >= 10;
   const stepValidity = [step0Valid, step1Valid, step2Valid, step3Valid] as const;
   const canAdvance = stepValidity[step];
-  const canSubmit = stepValidity.every(Boolean);
+  const canSubmit = stepValidity.every(Boolean) && !!user;
 
   // Auto-select horizontal orientation (only available option for now)
   useEffect(() => {
@@ -337,8 +351,8 @@ const Upload = () => {
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
-      setTrackingId(result.id);
-      setSubmitted(true);
+      // Redirect to Stripe Checkout. The success_url lands at /upload/success.
+      window.location.href = result.checkoutUrl;
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to submit property");
     } finally {
@@ -821,27 +835,50 @@ const Upload = () => {
                       );
                     })()}
 
-                    {/* Voice clone — coming soon */}
-                    <div
-                      className="flex items-start gap-6 p-6 opacity-50 cursor-not-allowed"
-                      style={{ background: "var(--le-bg)" }}
-                    >
-                      <span className="mt-1 flex h-10 w-10 shrink-0 items-center justify-center border border-border text-muted-foreground">
-                        <Mic className="h-4 w-4" strokeWidth={1.5} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <h3 className="text-base font-semibold tracking-[-0.01em]">Voice clone</h3>
-                            <span className="label text-accent">— Coming soon</span>
+                    {/* Voice clone — active (billed via Stripe) */}
+                    {(() => {
+                      const active = addVoiceClone;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Voice clone and voiceover are mutually exclusive.
+                            if (!addVoiceClone) setAddVoiceover(false);
+                            setAddVoiceClone(!addVoiceClone);
+                          }}
+                          className="group flex items-start gap-6 p-6 text-left transition-all duration-500 ease-cinematic"
+                          style={{ background: active ? "var(--le-bg-elev)" : "var(--le-bg)" }}
+                        >
+                          <span
+                            className={`mt-1 flex h-10 w-10 shrink-0 items-center justify-center border transition-colors duration-500 ${
+                              active
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border text-muted-foreground group-hover:border-foreground/40"
+                            }`}
+                          >
+                            <Mic className="h-4 w-4" strokeWidth={1.5} />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <h3 className="text-base font-semibold tracking-[-0.01em]">Voice clone</h3>
+                              <span className="tabular text-xs text-muted-foreground">
+                                {hasExistingClone
+                                  ? `+ $${VOICE_CLONE_PER_VIDEO}`
+                                  : `+ $${VOICE_CLONE_SETUP + VOICE_CLONE_PER_VIDEO}`}
+                              </span>
+                            </div>
+                            <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
+                              Narrate every video in your own voice. Our team will reach out within one business day to schedule a 15-minute recording session — your clone is then used on this video and every future order.
+                            </p>
+                            <p className="mt-1 tabular text-[11px] text-muted-foreground/80">
+                              {hasExistingClone
+                                ? `Voice clone on file — $${VOICE_CLONE_SETUP} setup waived`
+                                : `$${VOICE_CLONE_SETUP} one-time setup + $${VOICE_CLONE_PER_VIDEO}/video`}
+                            </p>
                           </div>
-                          <span className="tabular text-xs text-muted-foreground">+ $15</span>
-                        </div>
-                        <p className="mt-2 max-w-md text-xs leading-relaxed text-muted-foreground">
-                          Use a sample of your own voice. Setup happens after submission.
-                        </p>
-                      </div>
-                    </div>
+                        </button>
+                      );
+                    })()}
 
                     {/* Custom request */}
                     {(() => {
@@ -1116,6 +1153,29 @@ const Upload = () => {
                 {submitError && (
                   <div className="border border-destructive/40 bg-destructive/10 p-5">
                     <p className="text-xs text-destructive">{submitError}</p>
+                  </div>
+                )}
+
+                {/* Sign-in prompt — shown on the final step when not authenticated */}
+                {!authLoading && !user && (
+                  <div className="flex items-center justify-between gap-6 border border-border p-5">
+                    <p className="text-xs text-muted-foreground">
+                      Sign in to finalise your order — your voice clone, presets, and order history are saved to your account.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={openLogin}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: "var(--le-accent)", color: "var(--le-accent-fg)",
+                        border: "none", borderRadius: 4,
+                        padding: "8px 16px", fontSize: 12, fontWeight: 500,
+                        cursor: "pointer", whiteSpace: "nowrap",
+                        fontFamily: "var(--le-font-sans)",
+                      }}
+                    >
+                      Sign in
+                    </button>
                   </div>
                 )}
               </motion.div>
