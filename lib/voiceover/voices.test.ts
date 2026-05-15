@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import { VOICES, getVoice, isValidVoiceId, WORD_BUDGET } from "./voices.js";
 
 describe("VOICES catalog", () => {
-  it("exports exactly 2 voices", () => {
-    expect(VOICES).toHaveLength(2);
+  it("exports exactly 4 voices", () => {
+    expect(VOICES).toHaveLength(4);
   });
 
   it("each voice has required fields", () => {
@@ -15,11 +15,11 @@ describe("VOICES catalog", () => {
     }
   });
 
-  it("catalog gender split matches design (currently 2 male)", () => {
+  it("catalog gender split matches design (2 male, 2 female)", () => {
     const males = VOICES.filter((v) => v.gender === "male");
     const females = VOICES.filter((v) => v.gender === "female");
     expect(males).toHaveLength(2);
-    expect(females).toHaveLength(0);
+    expect(females).toHaveLength(2);
   });
 
   it("getVoice returns correct voice by id", () => {
