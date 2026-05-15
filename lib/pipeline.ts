@@ -955,8 +955,15 @@ async function runQCForScene(
 
 // ─── STAGE 6: ASSEMBLY ─────────────────────────────────────────
 
-export async function runAssembly(propertyId: string): Promise<void> {
-  await updatePropertyStatus(propertyId, "assembling");
+// Internal assembly step — shared by runAssembly (pipeline path) and
+// rerunAssembly (manual clip-swap path). The `reason` flag is threaded
+// into cost_events metadata so the ledger can distinguish pipeline-driven
+// renders from operator-triggered re-renders.
+async function runAssemblyStep(
+  propertyId: string,
+  opts: { reason?: "pipeline" | "manual_rerun" } = {},
+): Promise<void> {
+  const reason = opts.reason ?? "pipeline";
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
@@ -1224,6 +1231,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
           output_duration_seconds: horizontalDuration,
           render_time_ms: horizontalResult.renderTimeMs ?? null,
           job_id: horizontalJob.jobId,
+          reason,
         },
       });
 
@@ -1271,6 +1279,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
             output_duration_seconds: verticalDuration,
             render_time_ms: verticalResult.renderTimeMs ?? null,
             job_id: verticalJob.jobId,
+            reason,
           },
         });
       }
@@ -1360,6 +1369,54 @@ export async function runAssembly(propertyId: string): Promise<void> {
   );
   // Silence unused baseline var (kept for potential future delta logging)
   void totalProcessingMsBase;
+}
+
+// ─── PUBLIC ASSEMBLY WRAPPERS ──────────────────────────────────
+
+/**
+ * Called by the poll-scenes cron when all scenes have settled. Sets
+ * `assembling` status then delegates to runAssemblyStep.
+ */
+export async function runAssembly(propertyId: string): Promise<void> {
+  await updatePropertyStatus(propertyId, "assembling");
+  await runAssemblyStep(propertyId, { reason: "pipeline" });
+}
+
+/**
+ * Re-run ONLY the assembly stage for a property whose clips are already
+ * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
+ * or when no completed scenes exist.
+ */
+export async function rerunAssembly(propertyId: string): Promise<void> {
+  const { data: property } = await getSupabase()
+    .from("properties")
+    .select("*")
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  if (!property) {
+    throw new Error(`Property not found: ${propertyId}`);
+  }
+
+  const midPipelineStatuses = ["queued", "analyzing", "scripting", "generating", "qc"];
+  if (midPipelineStatuses.includes(property.status as string)) {
+    throw new Error(
+      `Cannot rerun assembly while pipeline is in ${property.status as string}`,
+    );
+  }
+
+  // Verify at least one completed (qc_pass) scene with a clip URL exists.
+  const scenes = await getScenesForProperty(propertyId);
+  const completedScenes = scenes.filter(
+    (s) => s.status === "qc_pass" && s.clip_url,
+  );
+  if (completedScenes.length === 0) {
+    throw new Error("No completed scenes — nothing to assemble");
+  }
+
+  await updatePropertyStatus(propertyId, "assembling");
+  await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
+  await runAssemblyStep(propertyId, { reason: "manual_rerun" });
 }
 
 function formatPrice(price: number): string {
