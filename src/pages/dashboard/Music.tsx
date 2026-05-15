@@ -370,7 +370,7 @@ export default function MusicLibrary() {
         <div className="py-16 text-center text-muted-foreground text-sm">
           {allTracks.length === 0
             ? "No music yet — upload your first track."
-            : "No active tracks — check "Show inactive" to see archived tracks."}
+            : "No active tracks — check 'Show inactive' to see archived tracks."}
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
