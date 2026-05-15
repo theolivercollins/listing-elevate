@@ -54,7 +54,16 @@ export default function BlogPostsList() {
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Blog posts</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Blog posts</h1>
+          <Link
+            to="/dashboard/blog/ally-history"
+            className="inline-flex items-center gap-1 rounded-md border bg-background px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            title="Browse your Ally conversation history"
+          >
+            <MessageSquare className="h-3 w-3" /> Ally history
+          </Link>
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button>
