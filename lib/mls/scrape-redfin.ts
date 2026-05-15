@@ -1,11 +1,27 @@
 /**
- * Redfin listing scraper using the free first-party apify/web-scraper actor.
+ * Redfin listing scraper using the tri_angle/redfin-detail Apify actor.
  *
- * The epctex/redfin-scraper actor requires a paid rental (x402) — this
- * replacement uses apify/web-scraper (Puppeteer, compute-only billing) with
- * RESIDENTIAL proxy group to bypass Redfin CloudFront blocking.
+ * tri_angle/redfin-detail accepts { addresses: ["123 Main St, City, ST"] }
+ * directly — it searches Redfin internally and returns the full structured
+ * listing payload. No pageFunction, no proxy config, no fragile selectors.
  *
- * Cost: ~1¢/call (compute-only, no rental fee).
+ * Confirmed working 2026-05-15 for "470 Sorrento Ct, Punta Gorda, FL 33950"
+ * — returned price=$899,000, beds=3, baths=2, sqft=1823, full description,
+ * listing agent.
+ *
+ * Output field paths (verified empirically):
+ *   addressSectionInfo.priceInfo.amount                       → price
+ *   addressSectionInfo.beds                                   → bedrooms
+ *   addressSectionInfo.baths                                  → bathrooms
+ *   addressSectionInfo.sqFt.value                             → sqft
+ *   addressSectionInfo.streetAddress.assembledAddress +
+ *     city/state/zip                                          → address
+ *   addressSectionInfo.url (relative)                         → listingUrl
+ *   mainHouseInfo.listingAgents[0].agentInfo.agentName        → agent
+ *   mainHouseInfo.marketingRemarks[0].marketingRemark         → description
+ *
+ * Cost: tri_angle/redfin-detail is rented (already paid in Oliver's account).
+ * We record 1¢ per call as a placeholder; reconcile against Apify invoice.
  */
 
 import { ApifyClient } from "apify-client";
@@ -23,77 +39,32 @@ export interface RedfinScrapeResult {
   listingUrl: string | null;
 }
 
-function toNum(val: unknown): number | null {
-  if (val == null) return null;
-  const n = Number(String(val).replace(/[^0-9.]/g, ""));
-  return isNaN(n) || n <= 0 ? null : n;
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&rsquo;/g, "’")
+    .replace(/&lsquo;/g, "‘")
+    .replace(/&rdquo;/g, "”")
+    .replace(/&ldquo;/g, "“")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/<[^>]+>/g, "");
 }
 
-function toStr(val: unknown): string | null {
-  if (typeof val !== "string") return null;
-  const s = val.trim();
-  return s.length > 0 ? s : null;
+function toNum(v: unknown): number | null {
+  if (typeof v === "number" && isFinite(v) && v > 0) return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace(/[^0-9.]/g, ""));
+    return isNaN(n) || n <= 0 ? null : n;
+  }
+  return null;
 }
-
-// pageFunction is passed as a string to apify/web-scraper.
-// It navigates from a Redfin search-results page to the first listing detail
-// page and extracts structured data via data-rf-test-id selectors.
-const REDFIN_PAGE_FUNCTION = /* js */ `
-async function pageFunction(context) {
-  const { request, log, enqueueRequest } = context;
-  const loadedUrl = request.loadedUrl || request.url || location.href;
-  log.info('Loaded: ' + loadedUrl);
-
-  // Detail page → extract and return.
-  if (loadedUrl.includes('/home/')) {
-    await new Promise(r => setTimeout(r, 800));
-    const grab = (selectors) => {
-      for (const s of selectors) {
-        const el = document.querySelector(s);
-        if (el && el.textContent && el.textContent.trim()) return el.textContent.trim();
-      }
-      return null;
-    };
-    return {
-      url: loadedUrl,
-      addressText: grab(['[data-rf-test-id="abp-streetLine"]', 'h1[data-rf-test-id="address"]', 'h1']),
-      priceText: grab(['[data-rf-test-id="abp-price"] .statsValue', '[data-rf-test-id="abp-price"]', 'div[class*="Price"]']),
-      bedsText: grab(['[data-rf-test-id="abp-beds"] .statsValue', '[data-rf-test-id="abp-beds"]']),
-      bathsText: grab(['[data-rf-test-id="abp-baths"] .statsValue', '[data-rf-test-id="abp-baths"]']),
-      sqftText: grab(['[data-rf-test-id="abp-sqFt"] .statsValue', '[data-rf-test-id="abp-sqFt"]']),
-      descriptionText: grab(['[data-rf-test-id="listingRemarks"]', '[data-rf-test-id="listing-description"]', '#marketing-remarks', '.remarks']),
-      agentText: grab(['[data-rf-test-id="agent-info-name"]', '[data-rf-test-id="listingAgent-name"]', '.agent-name']),
-    };
-  }
-
-  // Search/landing page → find first listing card, enqueue it.
-  await new Promise(r => setTimeout(r, 2500)); // let React hydrate
-  const candidates = [
-    'a.HomeCardContainer__link',
-    'a[data-rf-test-id="basicNode-homeCard"]',
-    'a[href*="/home/"]',
-    'a.bp-Homecard',
-  ];
-  let href = null;
-  for (const sel of candidates) {
-    const a = document.querySelector(sel);
-    if (a && a.href) { href = a.href; break; }
-  }
-  if (href) {
-    log.info('Enqueueing detail: ' + href);
-    await enqueueRequest({ url: href });
-  } else {
-    log.warning('No listing link found on search page');
-  }
-  return null; // don't emit the search page as a dataset item
-}
-`;
 
 /**
- * Scrape Redfin for a property by address.
- *
- * @param address    Full street address, city, state (e.g. "123 Main St, Austin, TX")
- * @param propertyId Owning property UUID for cost_events; pass null for pre-order calls.
+ * Scrape Redfin for a property by address using tri_angle/redfin-detail.
  */
 export async function scrapeRedfinByAddress(
   address: string,
@@ -108,37 +79,15 @@ export async function scrapeRedfinByAddress(
   let errorMsg: string | undefined;
 
   try {
-    const run = await client.actor("apify/web-scraper").call(
-      {
-        startUrls: [
-          {
-            url: `https://www.redfin.com/?location=${encodeURIComponent(address)}`,
-          },
-        ],
-        pageFunction: REDFIN_PAGE_FUNCTION,
-        proxyConfiguration: {
-          useApifyProxy: true,
-          apifyProxyGroups: ["RESIDENTIAL"],
-        },
-        maxRequestsPerCrawl: 2, maxPagesPerCrawl: 2,
-        maxPagesPerCrawl: 2,
-        pageLoadTimeoutSecs: 60,
-        maxScrollHeightPixels: 0,
-        initialCookies: [],
-        preNavigationHooks: `[
-          async ({ page }) => {
-            await page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-          }
-        ]`,
-      },
-      { waitSecs: 120 },
+    const run = await client.actor("tri_angle/redfin-detail").call(
+      { addresses: [address] },
+      { waitSecs: 180 },
     );
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
-    const first = items[0] as Record<string, unknown> | undefined;
+    const item = items[0] as Record<string, unknown> | undefined;
 
-    if (!first) {
-      // Actor ran but no results — not a hard error; caller treats as no-data
+    if (!item) {
       await recordCostEvent({
         propertyId,
         stage: "scripting",
@@ -146,21 +95,39 @@ export async function scrapeRedfinByAddress(
         unitsConsumed: 1,
         unitType: "compute_units",
         costCents: 1,
-        metadata: { source: "redfin", actor: "apify/web-scraper", address, result: "no_items" },
+        metadata: { source: "redfin", actor: "tri_angle/redfin-detail", address, result: "no_items" },
       }).catch((e) => console.error("[mls/scrape-redfin] cost_event insert failed:", e));
       return null;
     }
 
+    const addrInfo = (item.addressSectionInfo ?? {}) as Record<string, unknown>;
+    const mainInfo = (item.mainHouseInfo ?? {}) as Record<string, unknown>;
+    const street = ((addrInfo.streetAddress as Record<string, unknown>)?.assembledAddress as string) ?? "";
+    const city = (addrInfo.city as string) ?? "";
+    const state = (addrInfo.state as string) ?? "";
+    const zip = (addrInfo.zip as string) ?? "";
+    const fullAddress = [street, [city, state].filter(Boolean).join(", "), zip].filter(Boolean).join(", ");
+
+    const remarks = mainInfo.marketingRemarks as Array<{ marketingRemark?: string }> | undefined;
+    const rawDesc = remarks?.[0]?.marketingRemark ?? null;
+    const description = rawDesc ? decodeEntities(rawDesc).trim() : null;
+
+    const agents = mainInfo.listingAgents as Array<{ agentInfo?: { agentName?: string } }> | undefined;
+    const agent = agents?.[0]?.agentInfo?.agentName?.trim() || null;
+
+    const relativeUrl = addrInfo.url as string | undefined;
+    const listingUrl = relativeUrl ? `https://www.redfin.com${relativeUrl}` : null;
+
     result = {
       source: "redfin",
-      address,
-      price: toNum(first.priceText),
-      bedrooms: toNum(first.bedsText),
-      bathrooms: toNum(first.bathsText),
-      sqft: toNum(first.sqftText),
-      agent: toStr(first.agentText),
-      description: toStr(first.descriptionText),
-      listingUrl: toStr(first.url),
+      address: fullAddress || address,
+      price: toNum((addrInfo.priceInfo as Record<string, unknown>)?.amount),
+      bedrooms: toNum(addrInfo.beds),
+      bathrooms: toNum(addrInfo.baths),
+      sqft: toNum((addrInfo.sqFt as Record<string, unknown>)?.value),
+      agent,
+      description,
+      listingUrl,
     };
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : String(err);
@@ -172,7 +139,7 @@ export async function scrapeRedfinByAddress(
       unitsConsumed: 1,
       unitType: "compute_units",
       costCents: 0,
-      metadata: { source: "redfin", actor: "apify/web-scraper", address, error: errorMsg },
+      metadata: { source: "redfin", actor: "tri_angle/redfin-detail", address, error: errorMsg },
     }).catch((e) => console.error("[mls/scrape-redfin] cost_event insert failed:", e));
 
     throw new Error(`Redfin scrape failed: ${errorMsg}`);
@@ -187,9 +154,10 @@ export async function scrapeRedfinByAddress(
     costCents: 1,
     metadata: {
       source: "redfin",
-      actor: "apify/web-scraper",
+      actor: "tri_angle/redfin-detail",
       address,
       hasDescription: !!result?.description,
+      hasAgent: !!result?.agent,
       listingUrl: result?.listingUrl,
     },
   }).catch((e) => console.error("[mls/scrape-redfin] cost_event insert failed:", e));
