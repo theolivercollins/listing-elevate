@@ -74,7 +74,9 @@ export default function BlogPostChatCompose() {
   // Messages keep an optional `pending` flag for the optimistic placeholder
   // bubble that appears the instant the user hits send. Once the real reply
   // comes back, the trailing pending message gets replaced in place.
-  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; suggestResearch?: boolean })[]>([]);
+  // Transient flags: pending (in-flight assistant placeholder), queued (user
+  // message waiting its turn), suggestResearch (server-side hint).
+  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; queued?: boolean; suggestResearch?: boolean })[]>([]);
   const [pendingActions, setPendingActions] = useState<PendingActionCard[]>([]);
   const [input, setInput] = useState("");
   const [totalCostCents, setTotalCostCents] = useState(0);
@@ -198,17 +200,47 @@ export default function BlogPostChatCompose() {
     const t = text.trim();
     if (!t) return;
     setInput("");
-    // Optimistic: show the user message + Ally's placeholder INSTANTLY so the
-    // input feels responsive. Real reply replaces the placeholder on success.
+
+    // Already running? Queue it — appears in thread with "queued" badge and
+    // auto-fires when the current turn finishes.
+    if (chat.isPending) {
+      setMessages((prev) => [...prev, { role: "user", content: t, queued: true }]);
+      return;
+    }
+
     const userMsg: AIChatMessage = { role: "user", content: t };
     const placeholder = { role: "assistant" as const, content: nextPlaceholder(), pending: true };
     const historyForApi: AIChatMessage[] = [
-      ...messages.filter((m) => !m.pending).map(({ role, content }) => ({ role, content })),
+      ...messages.filter((m) => !m.pending && !m.queued).map(({ role, content }) => ({ role, content })),
       userMsg,
     ];
     setMessages((prev) => [...prev.filter((m) => !m.pending), userMsg, placeholder]);
     chat.mutate({ historyForApi });
   }
+
+  // Promote the first queued message + fire when the current turn ends.
+  useEffect(() => {
+    if (chat.isPending) return;
+    const firstQueuedIdx = messages.findIndex((m) => m.queued);
+    if (firstQueuedIdx === -1) return;
+
+    const historyForApi: AIChatMessage[] = messages
+      .slice(0, firstQueuedIdx + 1)
+      .filter((m) => !m.pending && !m.queued)
+      .map(({ role, content }) => ({ role, content }))
+      .concat({ role: "user", content: messages[firstQueuedIdx].content });
+
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.queued);
+      if (idx === -1) return prev;
+      const copy = prev.slice();
+      copy[idx] = { ...copy[idx], queued: false };
+      copy.splice(idx + 1, 0, { role: "assistant", content: nextPlaceholder(), pending: true });
+      return copy;
+    });
+    setTimeout(() => chat.mutate({ historyForApi }), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.isPending]);
 
   // -- post mutations ----------------------------------------------------------
 
@@ -323,7 +355,8 @@ export default function BlogPostChatCompose() {
   // -- derived -----------------------------------------------------------------
 
   const hasThread = messages.length > 0 || chat.isPending;
-  const canSend = (input.trim().length > 0 || attachments.length > 0) && !chat.isPending;
+  // Stay sendable while a turn is in flight — sends queue instead.
+  const canSend = input.trim().length > 0 || attachments.length > 0;
   const selectedTemplate = useMemo(
     () => templates.find((t) => t.id === templateId) ?? null,
     [templates, templateId],
@@ -450,13 +483,18 @@ export default function BlogPostChatCompose() {
                         initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
                         className={
                           m.role === "user"
-                            ? "ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm"
+                            ? `ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm ${m.queued ? "opacity-70 ring-1 ring-primary-foreground/30" : ""}`
                             : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm ${m.pending ? "italic text-muted-foreground" : ""}`
                         }
                       >
                         <div className="flex items-center gap-2">
                           {m.role === "assistant" && m.pending && <AllyPulse size={13} />}
                           <span>{m.pending ? liveStatus : m.content}</span>
+                          {m.queued && (
+                            <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                              queued
+                            </span>
+                          )}
                         </div>
                       </motion.div>
                       {m.role === "assistant" && m.suggestResearch && !useResearch && (
@@ -874,8 +912,13 @@ function Composer({
           value={input}
           onChange={onInputChange}
           onSend={onSend}
-          placeholder={big ? "Ask anything — describe the post, paste numbers, attach a market report…" : "Ask for tweaks, paste numbers, say 'publish it'…"}
-          disabled={isPending}
+          placeholder={
+            isPending
+              ? "Type to queue a follow-up while Ally finishes…"
+              : big
+                ? "Ask anything — describe the post, paste numbers, attach a market report…"
+                : "Ask for tweaks, paste numbers, say 'publish it'…"
+          }
           minRows={big ? 2 : 1}
           maxHeight={big ? 180 : 140}
         />
@@ -883,8 +926,9 @@ function Composer({
         <Button
           type="button" onClick={onSend} disabled={!canSend}
           className="h-9 w-9 shrink-0 rounded-full p-0"
+          title={isPending ? "Queue for next" : "Send"}
         >
-          {isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+          <ArrowUp className="h-4 w-4" />
         </Button>
       </div>
 

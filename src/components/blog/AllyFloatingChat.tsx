@@ -96,7 +96,11 @@ function summariseChanges(patch: FormPatch): string {
 export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLabel }: Props) {
   const [open, setOpen] = useState(false);
   const [diffCard, setDiffCard] = useState<ProposalCard | null>(null);
-  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; suggestResearch?: boolean })[]>([]);
+  // Messages support three transient flags:
+  //   pending  — assistant placeholder while waiting for a response
+  //   queued   — user message waiting its turn (sent while another was in-flight)
+  //   suggestResearch — backend flag for "want to research?"
+  const [messages, setMessages] = useState<(AIChatMessage & { pending?: boolean; queued?: boolean; suggestResearch?: boolean })[]>([]);
   const [proposals, setProposals] = useState<ProposalCard[]>([]);
   const [input, setInput] = useState("");
   const [useResearch, setUseResearch] = useState(false);
@@ -202,16 +206,49 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
     const t = text.trim();
     if (!t) return;
     setInput("");
+
+    // If a turn is in flight, queue the message: it appears in the thread
+    // with a "queued" badge and auto-fires as soon as the current turn lands.
+    if (chat.isPending) {
+      setMessages((prev) => [...prev, { role: "user", content: t, queued: true }]);
+      return;
+    }
+
     const userMsg: AIChatMessage = { role: "user", content: t };
-    // Pending message starts blank — `useAllyStatus` drives the live text.
     const placeholder = { role: "assistant" as const, content: "", pending: true };
     const historyForApi: AIChatMessage[] = [
-      ...messages.filter((m) => !m.pending).map(({ role, content }) => ({ role, content })),
+      ...messages.filter((m) => !m.pending && !m.queued).map(({ role, content }) => ({ role, content })),
       userMsg,
     ];
     setMessages((prev) => [...prev.filter((m) => !m.pending), userMsg, placeholder]);
     chat.mutate({ historyForApi });
   }
+
+  // When the current turn finishes, promote the first queued message and fire it.
+  useEffect(() => {
+    if (chat.isPending) return;
+    const firstQueuedIdx = messages.findIndex((m) => m.queued);
+    if (firstQueuedIdx === -1) return;
+
+    const historyForApi: AIChatMessage[] = messages
+      .slice(0, firstQueuedIdx + 1)
+      .filter((m) => !m.pending && !m.queued)
+      .map(({ role, content }) => ({ role, content }))
+      // Add the queued message at the end (it was filtered out as queued).
+      .concat({ role: "user", content: messages[firstQueuedIdx].content });
+
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.queued);
+      if (idx === -1) return prev;
+      const copy = prev.slice();
+      copy[idx] = { ...copy[idx], queued: false };
+      copy.splice(idx + 1, 0, { role: "assistant", content: "", pending: true });
+      return copy;
+    });
+    // Defer mutate to next tick so React commits the setMessages first.
+    setTimeout(() => chat.mutate({ historyForApi }), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.isPending]);
 
   const liveStatus = useAllyStatus(chat.isPending, useResearch);
 
@@ -331,13 +368,18 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                     transition={{ duration: 0.15 }}
                     className={
                       m.role === "user"
-                        ? "ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+                        ? `ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-primary px-3 py-1.5 text-xs text-primary-foreground ${m.queued ? "opacity-70 ring-1 ring-primary-foreground/30" : ""}`
                         : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-muted px-3 py-1.5 text-xs ${m.pending ? "italic text-muted-foreground" : ""}`
                     }
                   >
                     <div className="flex items-center gap-1.5">
                       {m.role === "assistant" && m.pending && <AllyPulse size={11} />}
                       <span>{m.pending ? liveStatus : m.content}</span>
+                      {m.queued && (
+                        <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide">
+                          queued
+                        </span>
+                      )}
                     </div>
                   </motion.div>
                   {m.role === "assistant" && m.suggestResearch && !useResearch && (
@@ -482,8 +524,7 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                   value={input}
                   onChange={setInput}
                   onSend={() => send(input)}
-                  placeholder="Ask Ally to tweak this post…"
-                  disabled={chat.isPending}
+                  placeholder={chat.isPending ? "Type to queue a follow-up…" : "Ask Ally to tweak this post…"}
                   minRows={1}
                   maxHeight={110}
                   small
@@ -492,10 +533,11 @@ export function AllyFloatingChat({ currentBodyHtml, current, onApply, contextLab
                 <Button
                   type="button"
                   onClick={() => send(input)}
-                  disabled={!input.trim() || chat.isPending}
+                  disabled={!input.trim()}
                   className="h-7 w-7 shrink-0 rounded-full p-0"
+                  title={chat.isPending ? "Queue for next" : "Send"}
                 >
-                  {chat.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+                  <ArrowUp className="h-3.5 w-3.5" />
                 </Button>
               </div>
               <div className="mt-1 px-1 text-[10px] text-muted-foreground">
