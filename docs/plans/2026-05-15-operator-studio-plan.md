@@ -64,7 +64,7 @@ Each phase ends on a green branch; merge `feat/operator-studio` → `dev` → `s
 **Notes on conventions the executing agent must verify and follow (do NOT invent new patterns):**
 - **Data-fetching:** look at how `Properties.tsx`, `Pipeline.tsx`, `Finances.tsx` fetch admin data. If they use TanStack Query / SWR / a hooks library, use the same. If they use raw `fetch` in `useEffect`, do that. **Do not unilaterally introduce a new data layer in Phase 1.** If the existing pattern is painful, log it for Phase 2 cleanup; don't fork the codebase.
 - **Storage uploads:** the existing `Upload.tsx` already uploads photos to the `property-photos` bucket. Reuse that helper; if it's inlined in `Upload.tsx`, extract it into `src/lib/upload-helper.ts` (or whatever path matches existing structure) as part of Task 13 and use it from both places.
-- **Supabase service client:** the existing service-role client is `getSupabase()` from `lib/client.ts` (NOT `getSupabase()` from `lib/supabase/service.ts` — that does not exist). Every code block in this plan that imports `serviceClient` must be rewritten as `import { getSupabase } from '../client'` (or appropriate relative path) and call `getSupabase()`. Tests should mock `lib/client.ts` accordingly.
+- **Supabase service client:** the existing service-role client is `getSupabase()` from `lib/client.ts` (NOT `serviceClient()` from `lib/supabase/service.ts` — that does not exist). Every code block in this plan that imports `serviceClient` must be rewritten as `import { getSupabase } from '<correct relative path to lib/client>'` and call `getSupabase()`. Tests should mock `lib/client.ts` accordingly (mock target is `lib/client`, NOT `lib/supabase/service`).
 - **Pipeline trigger:** there is NO server-side `triggerPipeline` helper today — `src/lib/api.ts` defines a client-side fire-and-forget that POSTs `/api/pipeline/:id`. For the operator ingest flow, `manualIngest` should NOT trigger the pipeline itself. Instead, the admin ingest endpoint returns `{ property_id }` and the React page (`StudioNew.tsx`) does the same client-side `fetch('/api/pipeline/:id', { method: 'POST' })` after redirect. This matches the existing customer flow exactly.
 - **`requireAdmin`:** confirmed at `lib/auth.ts:75`. Signature returns `null` on 401/403 (the endpoint should then early-return without writing its own response).
 
@@ -375,7 +375,7 @@ This is the most critical correctness path in Phase 1 — wrong math means wrong
 ```ts
 // lib/operator-studio/__tests__/invoice-data.integration.test.ts
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { serviceClient } from '../../supabase/service';
+import { getSupabase } from '../../client';
 import { buildInvoice } from '../invoice-data';
 
 const RUN = process.env.LE_RUN_INTEGRATION === 'true';
@@ -551,7 +551,7 @@ export async function archiveClient(id: string): Promise<ClientRow> {
 }
 ```
 
-(Test mocks `serviceClient` and asserts the call chain. Same shape as Task 8 below; reuse the mock pattern.)
+(Test mocks `getSupabase` from `lib/client` and asserts the call chain. Same shape as Task 8 below; reuse the mock pattern.)
 
 ---
 
@@ -704,7 +704,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { rerunAssembly } from '../pipeline';
 
 // Mock service client + assembly submitter
-vi.mock('../supabase/service', () => ({ serviceClient: () => ({
+vi.mock('../client', () => ({ getSupabase: () => ({
   from: (t: string) => ({
     select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'p1', status: 'complete' }, error: null }) }) }),
     update: () => ({ eq: () => Promise.resolve({ error: null }) }),
@@ -813,7 +813,7 @@ import handler from '../preview-link';
 const requireAdmin = vi.fn().mockResolvedValue({ id: 'u1', role: 'admin' });
 const insertReturning = vi.fn();
 vi.mock('../../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => requireAdmin(...a) }));
-vi.mock('../../../../../../lib/supabase/service', () => ({ serviceClient: () => ({ from: () => ({ insert: () => ({ select: () => ({ single: () => insertReturning() }) }) }) }) }));
+vi.mock('../../../../../../lib/client', () => ({ getSupabase: () => ({ from: () => ({ insert: () => ({ select: () => ({ single: () => insertReturning() }) }) }) }) }));
 const mockRes = () => ({ status: vi.fn().mockReturnThis(), json: vi.fn().mockReturnThis() });
 beforeEach(() => insertReturning.mockReset());
 
