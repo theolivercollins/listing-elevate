@@ -543,7 +543,7 @@ export default function BlogPostDetailPage() {
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
 
-      <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={(img) => setForm({ ...form, image: img })} />
+      <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={(img) => setForm({ ...form, image: img })} selectedId={form.image?.id ?? null} />
 
       <AIDraftModal
         open={aiOpen}
