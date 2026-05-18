@@ -15,6 +15,8 @@
     { "handle": "filesystem" },
     { "src": "/api/properties/([^/]+)/status", "dest": "/api/properties/[id]/status?id=$1" },
     { "src": "/api/properties/([^/]+)/rerun", "dest": "/api/properties/[id]/rerun?id=$1" },
+    { "src": "/api/properties/([^/]+)/archive", "dest": "/api/properties/[id]/archive?id=$1" },
+    { "src": "/api/properties/([^/]+)/resume-checkout", "dest": "/api/properties/[id]/resume-checkout?id=$1" },
     { "src": "/api/properties/([^/]+)", "dest": "/api/properties/[id]?id=$1" },
     { "src": "/api/scenes/([^/]+)/approve", "dest": "/api/scenes/[id]/approve?id=$1" },
     { "src": "/api/scenes/([^/]+)/retry", "dest": "/api/scenes/[id]/retry?id=$1" },
