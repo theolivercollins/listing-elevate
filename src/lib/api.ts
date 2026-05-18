@@ -118,7 +118,14 @@ export async function createProperty(
     voiceoverPreviewUrl?: string;
   },
   onProgress?: (uploaded: number, total: number) => void,
-): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
+): Promise<{
+  property: { id: string; status: string };
+  /** Stripe Checkout URL — absent when the order was bypassed (owner test). */
+  checkoutUrl?: string;
+  /** True when the server skipped Stripe (owner allowlist). Client should jump straight to /upload/success. */
+  bypassed?: boolean;
+  photoCount: number;
+}> {
   const tempId = crypto.randomUUID();
   const total = data.photos.length;
   let uploaded = 0;
@@ -186,7 +193,8 @@ export async function createProperty(
   // NOT from here.
   const result = await apiFetch<{
     property: { id: string; status: string };
-    checkoutUrl: string;
+    checkoutUrl?: string;
+    bypassed?: boolean;
     photoCount: number;
   }>('/api/properties', {
     method: 'POST',
@@ -220,10 +228,16 @@ export async function createProperty(
 export async function createPropertyFromDrive(data: {
   address: string; price: number; bedrooms: number; bathrooms: number;
   listing_agent: string; brokerage: string; driveLink: string;
-}): Promise<{ property: { id: string; status: string }; checkoutUrl: string; photoCount: number }> {
+}): Promise<{
+  property: { id: string; status: string };
+  checkoutUrl?: string;
+  bypassed?: boolean;
+  photoCount: number;
+}> {
   const result = await apiFetch<{
     property: { id: string; status: string };
-    checkoutUrl: string;
+    checkoutUrl?: string;
+    bypassed?: boolean;
     photoCount: number;
   }>('/api/properties', {
     method: 'POST',
