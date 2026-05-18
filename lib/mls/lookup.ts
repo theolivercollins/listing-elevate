@@ -11,6 +11,16 @@ import { scrapeRealtorByAddress, type RealtorScrapeResult } from "./scrape-realt
 
 export type MlsLookupResult = RedfinScrapeResult | RealtorScrapeResult;
 
+// Sentinel thrown when the upstream scraper provider isn't configured. The
+// API endpoint catches this and returns a clean 503 with a fill-in-manually
+// hint instead of leaking the env-var name to the customer.
+export class MlsProviderUnconfiguredError extends Error {
+  constructor() {
+    super("MLS provider not configured");
+    this.name = "MlsProviderUnconfiguredError";
+  }
+}
+
 function hasMeaningfulData(result: MlsLookupResult | null): boolean {
   if (!result) return false;
   return result.price !== null || result.bedrooms !== null || result.description !== null;
@@ -28,6 +38,14 @@ export async function lookupMlsByAddress(
   address: string,
   propertyId: string | null,
 ): Promise<MlsLookupResult> {
+  // Fail fast + cleanly if the underlying scraper provider isn't configured.
+  // Both scrapers use the same Apify token; checking once here avoids two
+  // identical 500s and lets the API layer return a friendly 503.
+  if (!process.env.APIFY_API_TOKEN) {
+    console.error("[mls/lookup] APIFY_API_TOKEN env var not set — MLS auto-fill disabled");
+    throw new MlsProviderUnconfiguredError();
+  }
+
   let redfinError: Error | undefined;
   let realtorError: Error | undefined;
 

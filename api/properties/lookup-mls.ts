@@ -10,7 +10,7 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "../../lib/auth.js";
-import { lookupMlsByAddress } from "../../lib/mls/lookup.js";
+import { lookupMlsByAddress, MlsProviderUnconfiguredError } from "../../lib/mls/lookup.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
@@ -30,6 +30,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await lookupMlsByAddress(address.trim(), null);
     return res.status(200).json(result);
   } catch (err) {
+    // Provider not configured (missing APIFY_API_TOKEN, etc) — return a clean
+    // 503 with a fill-in-manually hint, no env-var name leak.
+    if (err instanceof MlsProviderUnconfiguredError) {
+      return res.status(503).json({
+        error: "MLS auto-fill is temporarily unavailable.",
+        hint: "Fill in the property details manually for now.",
+      });
+    }
     const message = err instanceof Error ? err.message : "MLS lookup failed";
     console.error("[lookup-mls] error:", message);
     return res.status(422).json({
