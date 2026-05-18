@@ -9,7 +9,9 @@ import {
   formatLineItemsForOrder,
   sumLineItemsCents,
 } from '../../lib/billing/stripe.js';
+import { isOwnerBypassEligible } from '../../lib/billing/owner-bypass.js';
 import { requireAuth } from '../../lib/auth.js';
+import { runPipeline } from '../../lib/pipeline.js';
 import type { Property } from '../../lib/types.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -222,6 +224,69 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       { hasExistingVoiceClone },
     );
     const amountCents = sumLineItemsCents(lineItems);
+
+    // Owner test-bypass: skip Stripe entirely for allowlisted admin emails.
+    // Mirrors the side effects of the checkout.session.completed webhook so
+    // the pipeline fires the same way it would after a real payment.
+    const bypass = isOwnerBypassEligible({
+      email: auth.user.email,
+      role: auth.profile.role,
+    });
+
+    if (bypass) {
+      const nowIso = new Date().toISOString();
+      await supabase
+        .from('properties')
+        .update({
+          status: 'queued',
+          stripe_session_id: null,
+          stripe_amount_cents: 0,
+          stripe_payment_status: 'paid',
+          stripe_paid_at: nowIso,
+          updated_at: nowIso,
+        })
+        .eq('id', property.id);
+
+      // If this order included voice-clone setup, comp it on user_profiles
+      // (mirrors the webhook's idempotent update with cost=0).
+      if (addVoiceClone && !hasExistingVoiceClone) {
+        const { data: existingProfile } = await supabase
+          .from('user_profiles')
+          .select('voice_clone_paid_at')
+          .eq('user_id', auth.user.id)
+          .maybeSingle();
+        if (!existingProfile?.voice_clone_paid_at) {
+          await supabase
+            .from('user_profiles')
+            .update({
+              voice_clone_paid_cents: 0,
+              voice_clone_paid_at: nowIso,
+              updated_at: nowIso,
+            })
+            .eq('user_id', auth.user.id);
+        }
+      }
+
+      console.log(
+        `[api/properties] Owner bypass for ${auth.user.email} — property ${property.id} comped (would have been ${amountCents}¢). Firing pipeline...`,
+      );
+      // Fire pipeline like the webhook does — async, errors captured inside.
+      runPipeline(property.id).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[api/properties] runPipeline error for ${property.id}:`, msg);
+      });
+
+      return res.status(201).json({
+        property: { ...property, stripe_amount_cents: 0, stripe_payment_status: 'paid' },
+        bypassed: true,
+        photoCount,
+        _debug: {
+          receivedPhotoPaths: Array.isArray(photoPaths) ? photoPaths.length : typeof photoPaths,
+          receivedDriveLink: !!driveLink,
+          tempId: tempId || null,
+        },
+      });
+    }
 
     // Create Stripe Checkout Session.
     const origin = resolveOrigin(req);

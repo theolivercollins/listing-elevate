@@ -517,7 +517,16 @@ const Upload = () => {
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
+      // Owner-bypass path: server already marked the property paid and fired
+      // the pipeline. Skip Stripe and go straight to the success page.
+      if (result.bypassed) {
+        window.location.href = `/upload/success?property_id=${result.property.id}&bypass=1`;
+        return;
+      }
       // Redirect to Stripe Checkout. success_url lands at /upload/success.
+      if (!result.checkoutUrl) {
+        throw new Error("Server did not return a checkout URL");
+      }
       window.location.href = result.checkoutUrl;
     } catch (err) {
       setSubmitError(
