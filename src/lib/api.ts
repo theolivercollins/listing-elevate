@@ -265,6 +265,13 @@ export async function resumeCheckout(propertyId: string): Promise<{ checkoutUrl:
   return apiFetch(`/api/properties/${propertyId}/resume-checkout`, { method: 'POST' });
 }
 
+// Fire-and-forget: triggers the pipeline in a separate 300s function.
+// The rerun reset endpoint deliberately doesn't launch the pipeline itself,
+// so the client kicks it off here once the reset returns.
+function triggerPipeline(propertyId: string) {
+  fetch(`/api/pipeline/${propertyId}`, { method: 'POST' }).catch(() => {});
+}
+
 export async function rerunProperty(id: string): Promise<void> {
   await apiFetch(`/api/properties/${id}/rerun`, { method: 'POST' });
   triggerPipeline(id);
