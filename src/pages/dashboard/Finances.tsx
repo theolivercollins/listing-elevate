@@ -86,18 +86,18 @@ const EXCLUDED_FROM_DOLLARS = new Set<TokenProvider>(["anthropic"]);
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const PROVIDERS: { id: TokenProvider; label: string }[] = [
+  { id: "atlas", label: "Atlas" },
   { id: "runway", label: "Runway" },
   { id: "kling", label: "Kling" },
-  { id: "luma", label: "Luma" },
   { id: "anthropic", label: "Claude" },
   { id: "openai", label: "OpenAI" },
   { id: "other", label: "Other" },
 ];
 
 const PROVIDER_COLORS: Record<TokenProvider, string> = {
+  atlas: "#f97316",
   runway: "#6366f1",
   kling: "#22d3ee",
-  luma: "#f97316",
   anthropic: "#d97706",
   openai: "#10b981",
   other: "#64748b",
@@ -115,7 +115,6 @@ const ALL_PROVIDERS = [
   "google",
   "higgsfield",
   "kling",
-  "luma",
   "openai",
   "openrouter",
   "runway",
@@ -137,7 +136,6 @@ const ALL_PROVIDER_LABELS: Record<AllProvider, string> = {
   google: "Google",
   higgsfield: "Higgsfield",
   kling: "Kling",
-  luma: "Luma",
   openai: "OpenAI",
   openrouter: "OpenRouter",
   runway: "Runway",

@@ -29,12 +29,6 @@ describe("formatRowSku", () => {
     expect(r.has_model_used).toBe(false);
   });
 
-  it("maps legacy luma rows to luma-ray2", () => {
-    const r = formatRowSku({ modelUsed: null, provider: "luma" });
-    expect(r.sku).toBe("luma-ray2");
-    expect(r.has_model_used).toBe(false);
-  });
-
   it("prefers captured model_used over provider-native fallback", () => {
     const r = formatRowSku({ modelUsed: "kling-v2-native", provider: "kling" });
     expect(r.sku).toBe("kling-v2-native");
