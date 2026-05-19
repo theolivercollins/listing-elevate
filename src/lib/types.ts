@@ -58,7 +58,7 @@ export interface Scene {
   prompt: string;
   duration_seconds: number;
   status: SceneStatus;
-  provider: "runway" | "kling" | "luma";
+  provider: "runway" | "kling" | "atlas";
   generation_cost_cents: number;
   generation_time_ms: number;
   clip_url: string | null;
@@ -130,7 +130,7 @@ export interface CostEvent {
   id: string;
   scene_id: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly";
-  provider: "anthropic" | "runway" | "kling" | "luma";
+  provider: "anthropic" | "runway" | "kling" | "atlas";
   units_consumed: number | null;
   unit_type: "tokens" | "credits" | "kling_units" | null;
   cost_cents: number;
@@ -138,7 +138,7 @@ export interface CostEvent {
   created_at: string;
 }
 
-export type TokenProvider = "runway" | "kling" | "luma" | "anthropic" | "openai" | "other";
+export type TokenProvider = "runway" | "kling" | "atlas" | "anthropic" | "openai" | "other";
 
 export interface TokenPurchase {
   id: string;

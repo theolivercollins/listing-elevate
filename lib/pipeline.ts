@@ -71,6 +71,7 @@ import {
   MAX_PER_ROOM_TYPE,
   REQUIRED_ROOM_TYPES,
 } from "./pipeline/selection.js";
+import { tryClaimPipelineRun } from "./pipeline-claim.js";
 
 // Used by analyzer batching; keep here since it's only a concern of this file.
 const BATCH_SIZE = 8;
@@ -101,14 +102,22 @@ recordPromptRevisionIfChanged("style-guide", STYLE_GUIDE_SYSTEM),
 
 export async function runPipeline(propertyId: string): Promise<void> {
   try {
-    // Stamp the run start so downstream processing_time_ms calculations
-    // measure this RUN, not the property's original creation date. Without
-    // this, rerun properties show bogus "737 minutes processing" numbers
-    // because the cron was computing Date.now() - property.created_at.
-    await getSupabase()
-      .from("properties")
-      .update({ pipeline_started_at: new Date().toISOString() })
-      .eq("id", propertyId);
+    // Atomic pipeline-run claim — prevents the duplicate-execution race that
+    // shipped duplicate scenes on the 13fe5a96 rerun (2026-05-18). The Re-run
+    // UI fires triggerPipeline as fire-and-forget; any second POST (browser
+    // retry, double-click, second tab) lands a parallel runPipeline before
+    // the first has progressed past 'queued'. The CAS pattern below — update
+    // properties SET status='analyzing', pipeline_started_at=NOW() WHERE id=?
+    // AND status IN (queued, failed, needs_review) — returns the matched row
+    // exactly once; the loser sees 0 rows and bails. Side effect: stamps
+    // pipeline_started_at so downstream processing_time_ms measures this
+    // RUN, not the property's original creation date.
+    const claimed = await tryClaimPipelineRun(getSupabase(), propertyId);
+    if (!claimed) {
+      await log(propertyId, "intake", "warn",
+        "Pipeline already in flight or in a non-rerunnable state; ignoring duplicate runPipeline() invocation");
+      return;
+    }
 
     // Pull operator-context fields so every log line in this run carries them.
     // Distinguishes operator-mode work (order_mode='operator', client_id set)

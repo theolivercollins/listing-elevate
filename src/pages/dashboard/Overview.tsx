@@ -353,7 +353,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         .sort((a, b) => b.value - a.value)
     : SAMPLE_PROVIDER_MIX;
 
-  const VIDEO_PROVIDERS = new Set(["runway", "kling", "luma", "runway gen-4", "kling 2.0", "luma ray2"]);
+  const VIDEO_PROVIDERS = new Set(["atlas", "runway", "kling", "runway gen-4", "kling 2.0", "kling 2.6 pro"]);
   const totalScenesGenerated = totalMonthCents > 0
     ? cbProviders
         .filter((r) => VIDEO_PROVIDERS.has(r.key.toLowerCase()))

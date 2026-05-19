@@ -190,17 +190,15 @@ export const SAMPLE_ACTIVITY: SampleActivity[] = [
 ];
 
 export const SAMPLE_PROVIDER_MIX = [
-  { provider: "Runway Gen-4", value: 42 },
+  { provider: "Atlas (Kling 2.6 Pro)", value: 60 },
   { provider: "Kling 2.0", value: 28 },
-  { provider: "Luma Ray2", value: 18 },
   { provider: "Anthropic", value: 8 },
   { provider: "Other", value: 4 },
 ];
 
 export const SAMPLE_FINANCE_ROWS = [
-  { provider: "Runway Gen-4", today: 284000, week: 1842000, month: 7124000, events: 412, share: 38 },
+  { provider: "Atlas (Kling 2.6 Pro)", today: 396000, week: 2665000, month: 10364000, events: 632, share: 55 },
   { provider: "Kling 2.0", today: 182000, week: 1421000, month: 5683000, events: 380, share: 30 },
-  { provider: "Luma Ray2", today: 112000, week: 823000, month: 3240000, events: 220, share: 17 },
   { provider: "Anthropic", today: 48000, week: 342000, month: 1482000, events: 1842, share: 8 },
   { provider: "Gemini", today: 24000, week: 182000, month: 724000, events: 980, share: 4 },
   { provider: "Shotstack", today: 18000, week: 114000, month: 486000, events: 156, share: 3 },
@@ -224,9 +222,9 @@ export const SAMPLE_LOG_LINES = [
 export const SAMPLE_SERVICES = [
   { name: "Pipeline orchestrator", status: "up" as const, latency: "42ms", uptime: "99.98%" },
   { name: "Anthropic API", status: "up" as const, latency: "240ms", uptime: "99.94%" },
-  { name: "Runway Gen-4", status: "up" as const, latency: "1.2s", uptime: "99.91%" },
-  { name: "Kling 2.0", status: "degraded" as const, latency: "3.4s", uptime: "99.62%" },
-  { name: "Luma Ray2", status: "up" as const, latency: "980ms", uptime: "99.97%" },
+  { name: "Atlas Cloud", status: "up" as const, latency: "1.0s", uptime: "99.95%" },
+  { name: "Runway Gen-4 (failover)", status: "up" as const, latency: "1.2s", uptime: "99.91%" },
+  { name: "Kling 2.0 (failover)", status: "degraded" as const, latency: "3.4s", uptime: "99.62%" },
   { name: "Shotstack", status: "up" as const, latency: "612ms", uptime: "99.99%" },
   { name: "Supabase", status: "up" as const, latency: "28ms", uptime: "99.99%" },
   { name: "Vercel functions", status: "up" as const, latency: "18ms", uptime: "99.98%" },
