@@ -14,7 +14,7 @@ See also:
 
 ## Right now
 
-**2026-05-20 (latest): Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, not pushed. Migration 058 NOT applied to prod yet (waiting on Oliver). Resend env var NOT set in prod yet (waiting on Oliver).**
+**2026-05-20 (latest): Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Send target is Sendy (the team's existing self-hosted SES-backed bulk mailer). Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, PR #82 open against `main`. Migration 058 NOT applied to prod yet (waiting on Oliver). Sendy env vars NOT set in prod yet (waiting on Oliver).**
 
 ### Email composer (end-to-end Ally flow)
 
@@ -36,13 +36,15 @@ The team's previous workflow was: Claude Co-work → Stripo (visual builder) →
 - **Schema**: namespaced envelope mirrors blog chat. New tags: `<email_subject>` (≤90 chars), `<email_preheader>` (≤100 chars), `<email_body>` (full HTML), `<email_from_name>`, `<email_from_email>`, `<email_audience>`, `<email_action>` (`send | save_draft | test_send`). Reuses `<reply>`, `<changes_summary>`, `<ally_suggest_research>`, `<ally_remember>` unchanged.
 - **Reuses entire blog stack**: ally-memory + source-allowlist + Gemini research (auto/always/never) + team archive injection + per-post chat localStorage (with prefix `ally-email-chat:` to avoid collision) + attachments (PDF/image/text). Zero duplication — every infrastructure improvement to Ally helps both surfaces.
 - **Source post mode**: `email-chat` accepts an optional `source_post_id` body field. When present, the post's title + body_html + external_post_url are injected as a SOURCE POST block so Ally can convert/excerpt/reference it in the email.
-- **Cost stages**: `blog_email_ai` (chat), `blog_email_from_post` (one-shot), `blog_email_send` (Resend).
+- **Cost stages**: `blog_email_ai` (chat), `blog_email_from_post` (one-shot), `blog_email_send` (Sendy).
 
-### Send pipeline
+### Send pipeline — Sendy
 
-- **`POST /api/blog/emails/[id]/send`** — calls Resend. State transitions: `draft → sending → sent | failed`. Records `sent_at`, `sent_to[]`, `send_provider_message_id`. Recipients come from request body `{ to: string[] }` override or row's `recipients_json`. Validates each address. Records cost at 0.04 cents/recipient (`Math.ceil(recipients.length * 0.04)`).
-- **`POST /api/blog/emails/[id]/test`** — body `{ to: string }`. Prepends `[TEST] ` to subject. Doesn't mutate state. Records cost.
-- **Env vars needed in prod** (not yet set — Oliver greenlights): `RESEND_API_KEY`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`.
+The team already has a self-hosted Sendy install hooked up to Amazon SES, with subscriber lists curated for sphere / past clients / new leads. LE doesn't replicate any of that — it just calls Sendy's `POST /api/campaigns/create.php` to fire a campaign at one or more pre-existing lists.
+
+- **`POST /api/blog/emails/[id]/send`** — body `{ list_ids: string[] }` overrides the row's `recipients_json` (semantics changed: `recipients_json` now stores Sendy list IDs, not email addresses). Form-urlencoded POST to Sendy with `send_campaign=1`. Sendy returns plain text (not JSON) — happy paths include the string `"Campaign created"`, `"now sending"`, `"queued"`, or a campaign URL. Any other response is surfaced verbatim as a 502 error. State transitions: `draft / ready → sending → sent | failed`. Stores Sendy's campaign URL as `send_provider_message_id`, list IDs in `sent_to[]`. Records cost at 0.04¢/list (accounting line; real per-email SES cost ~0.01¢, reconciled monthly vs invoice).
+- **`POST /api/blog/emails/[id]/test`** — body `{ list_id?: string }`. Sendy has no single-recipient primitive, so we fire a campaign at a small dedicated "Tests" list (env-default `SENDY_TEST_LIST_ID`, body override available). Prepends `[TEST] ` to subject. Doesn't mutate email state. Records cost.
+- **Env vars needed in prod** (not yet set — Oliver greenlights): `SENDY_URL`, `SENDY_API_KEY`, `SENDY_BRAND_ID`, `SENDY_TEST_LIST_ID`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`, `DEFAULT_EMAIL_REPLY_TO` (optional).
 
 ### Database — migration 058 (NOT applied yet)
 
@@ -97,16 +99,16 @@ Sub-routes (`/send`, `/test`) come BEFORE the bare `[id]` catch to prevent shado
 ### Gates (waiting on Oliver)
 
 1. **Apply migration 058** to Supabase prod via MCP. Touches no existing tables. Rollback: `drop table emails; drop table email_templates;`.
-2. **Set Resend env vars** in Vercel prod: `RESEND_API_KEY`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`. Without these, `/send` returns 500.
+2. **Set Sendy env vars** in Vercel prod: `SENDY_URL`, `SENDY_API_KEY`, `SENDY_BRAND_ID`, `SENDY_TEST_LIST_ID`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`, `DEFAULT_EMAIL_REPLY_TO` (optional). Without these, `/send` returns 500 with a config error.
 3. **Open PR** from `worktree-blog-post-fix-2` to `main` (or push the branch to GitHub first).
 
 ### Open follow-ups (post-merge)
 
-- Wire Cindy (or any specific recipient) as a saved audience preset on the site row
-- Wire test send default to the signed-in admin's email instead of typing it each time
-- Move email send to a `email_jobs` async queue (like `blog_jobs`) instead of inline — current send is synchronous and times out on >50 recipients
+- Wire saved-audience presets per site (map "Sphere", "Past clients", "New leads" → Sendy list IDs in a `site_audiences` table) so the user doesn't paste list IDs each time
+- Fetch Sendy lists via `/api/lists/get-lists.php` and present them as a checkbox group instead of free-text list ID input
+- Move email send to an `email_jobs` async queue (like `blog_jobs`) instead of inline if Sendy ever rate-limits or campaigns take >10s to queue
 - Persist user's last-used builder vs chat tab per email
-- Click tracking (Resend supports a `tracking` flag, not yet wired)
+- Click + open tracking — Sendy tracks both natively; surface the stats inline on the email detail after send
 
 ---
 

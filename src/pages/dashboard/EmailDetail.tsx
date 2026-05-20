@@ -130,8 +130,11 @@ export default function EmailDetail() {
   });
 
   const doTestSend = useMutation({
-    mutationFn: () => testSendEmail(id!, testEmail),
-    onSuccess: () => { toast.success(`Test sent to ${testEmail}`); setTestDialogOpen(false); },
+    mutationFn: () => testSendEmail(id!, testEmail.trim() || undefined),
+    onSuccess: () => {
+      toast.success(testEmail ? `Test sent to list ${testEmail}` : "Test sent to default test list");
+      setTestDialogOpen(false);
+    },
     onError: (e: any) => toast.error(`Test send failed: ${e?.message ?? e}`),
   });
 
@@ -343,14 +346,18 @@ export default function EmailDetail() {
             </div>
 
             <div>
-              <Label className="text-xs">Recipients (one per line)</Label>
+              <Label className="text-xs">Sendy list IDs (one per line)</Label>
               <Textarea
                 value={form.recipients}
                 onChange={(e) => setForm({ ...form, recipients: e.target.value })}
-                placeholder="email@example.com"
+                placeholder="alphanumeric list ID from Sendy"
                 rows={4}
-                className="font-mono text-xs"
+                className="text-xs"
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Send target is Sendy. Paste one list ID per line — find IDs in the Sendy admin
+                under Lists & subscribers.
+              </p>
             </div>
 
             {templates.length > 0 && (
@@ -412,20 +419,24 @@ export default function EmailDetail() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div>
-              <Label className="text-xs">Send to</Label>
+              <Label className="text-xs">Sendy test list ID (optional)</Label>
               <Input
-                type="email"
+                type="text"
                 value={testEmail}
                 onChange={(e) => setTestEmail(e.target.value)}
-                placeholder="you@example.com"
+                placeholder="leave blank to use SENDY_TEST_LIST_ID"
                 autoFocus
               />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Tests are sent as a Sendy campaign to a small "Tests" list. Leave blank to use the
+                default list configured via the SENDY_TEST_LIST_ID env var.
+              </p>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setTestDialogOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => doTestSend.mutate()}
-                disabled={!testEmail || doTestSend.isPending}
+                disabled={doTestSend.isPending}
               >
                 {doTestSend.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
                 Send test

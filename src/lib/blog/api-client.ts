@@ -429,8 +429,8 @@ export async function deleteEmail(id: string): Promise<{ ok: true }> {
 }
 export async function sendEmail(
   id: string,
-  opts?: { to?: string[] }
-): Promise<{ ok: true; message_id: string | null }> {
+  opts?: { list_ids?: string[] }
+): Promise<{ ok: true; message_id: string | null; sent_to_list_ids: string[]; sendy_response: string }> {
   const res = await fetch(`/api/blog/emails/${id}/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
@@ -438,11 +438,14 @@ export async function sendEmail(
   });
   return asJson(res);
 }
-export async function testSendEmail(id: string, to: string): Promise<{ ok: true }> {
-  const res = await fetch(`/api/blog/emails/${id}/test-send`, {
+export async function testSendEmail(
+  id: string,
+  listId?: string,
+): Promise<{ ok: true; message_id: string | null; sent_to_list_id: string; subject: string; sendy_response: string }> {
+  const res = await fetch(`/api/blog/emails/${id}/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
-    body: JSON.stringify({ to }),
+    body: JSON.stringify(listId ? { list_id: listId } : {}),
   });
   return asJson(res);
 }
