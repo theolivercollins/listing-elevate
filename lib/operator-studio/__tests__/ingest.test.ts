@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const insertProperty = vi.fn();
 const insertPhotos = vi.fn();
 const insertRevisionNote = vi.fn();
+const selectClient = vi.fn();
 
 vi.mock('../../client', () => ({
   getSupabase: () => ({
@@ -13,6 +14,9 @@ vi.mock('../../client', () => ({
       };
       if (table === 'photos') return { insert: insertPhotos };
       if (table === 'property_revision_notes') return { insert: insertRevisionNote };
+      if (table === 'clients') return {
+        select: () => ({ eq: () => ({ maybeSingle: selectClient }) }),
+      };
       throw new Error(`unexpected table: ${table}`);
     },
   }),
@@ -25,9 +29,10 @@ beforeEach(() => {
   insertProperty.mockReset().mockReturnValue({ select: () => ({ single: () => Promise.resolve({ data: { id: 'new-prop-id' }, error: null }) }) });
   insertPhotos.mockReset().mockResolvedValue({ data: null, error: null });
   insertRevisionNote.mockReset().mockResolvedValue({ data: null, error: null });
+  selectClient.mockReset().mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty' }, error: null });
 });
 
-const baseInput: ManualIngestInput = {
+const baseInput: ManualIngestInput & { submitted_by: string } = {
   client_id: 'c1',
   address: '123 Oak St',
   bedrooms: 3,
@@ -36,6 +41,7 @@ const baseInput: ManualIngestInput = {
   price: 750000,
   photo_storage_paths: Array(8).fill('p.jpg'),
   director_notes: null,
+  submitted_by: 'admin-user-id',
 };
 
 describe('manualIngest', () => {
@@ -57,6 +63,31 @@ describe('manualIngest', () => {
       address: '123 Oak St',
       status: 'queued',
       photo_count: 8,
+      submitted_by: 'admin-user-id',
+      listing_agent: 'Jane Agent',
+      brokerage: 'Acme Realty',
+    }));
+  });
+
+  it('extracts message from PostgrestError-shaped objects instead of "[object Object]"', async () => {
+    insertProperty.mockReset().mockReturnValue({
+      select: () => ({
+        single: () => Promise.resolve({
+          data: null,
+          error: { message: 'null value in column "listing_agent"', code: '23502', details: 'col is NOT NULL', hint: 'check constraint' },
+        }),
+      }),
+    });
+    await expect(manualIngest(baseInput)).rejects.toThrow(/listing_agent.*23502/i);
+  });
+
+  it('falls back to "Operator" when there is no client', async () => {
+    selectClient.mockResolvedValue({ data: null, error: null });
+    await manualIngest({ ...baseInput, client_id: null });
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      client_id: null,
+      listing_agent: 'Operator',
+      brokerage: null,
     }));
   });
 

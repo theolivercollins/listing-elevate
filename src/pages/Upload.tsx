@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty, generateVoiceoverPreview, lookupMls } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
+import { digitsOnly, formatNumber } from "@/lib/format";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
@@ -624,7 +625,7 @@ const Upload = () => {
                 </div>
                 <div className="g-order-line">
                   <div className="g-order-line-label">Total</div>
-                  <div className="g-order-line-val g-tabular">${totalPrice}</div>
+                  <div className="g-order-line-val g-tabular">${totalPrice.toLocaleString()}</div>
                 </div>
               </div>
             </div>
@@ -943,9 +944,10 @@ const Upload = () => {
                           <div className="g-input-wrap">
                             <span className="g-input-leading-sym">$</span>
                             <input
-                              type="number"
-                              value={price}
-                              onChange={(e) => setPrice(e.target.value)}
+                              type="text"
+                              inputMode="numeric"
+                              value={price ? formatNumber(Number(price)) : ""}
+                              onChange={(e) => setPrice(digitsOnly(e.target.value))}
                               placeholder="2,400,000"
                               className="g-input g-tabular has-leading"
                             />
@@ -977,10 +979,10 @@ const Upload = () => {
 
                         <Field label="Square feet">
                           <input
-                            type="number"
-                            min={0}
-                            value={sqft}
-                            onChange={(e) => setSqft(e.target.value)}
+                            type="text"
+                            inputMode="numeric"
+                            value={sqft ? formatNumber(Number(sqft)) : ""}
+                            onChange={(e) => setSqft(digitsOnly(e.target.value))}
                             placeholder="1,850"
                             className="g-input g-tabular"
                           />
@@ -1013,9 +1015,10 @@ const Upload = () => {
                             <div className="g-input-wrap">
                               <span className="g-input-leading-sym">$</span>
                               <input
-                                type="number"
-                                value={soldPrice}
-                                onChange={(e) => setSoldPrice(e.target.value)}
+                                type="text"
+                                inputMode="numeric"
+                                value={soldPrice ? formatNumber(Number(soldPrice)) : ""}
+                                onChange={(e) => setSoldPrice(digitsOnly(e.target.value))}
                                 placeholder="2,500,000"
                                 className="g-input g-tabular has-leading"
                               />
@@ -1621,7 +1624,7 @@ const Upload = () => {
                     <div className="g-order-address">{address || "—"}</div>
                     <div className="g-order-specs">
                       {bedrooms || "—"} bd · {bathrooms || "—"} ba ·{" "}
-                      {sqft ? `${sqft} sqft` : "— sqft"}
+                      {sqft ? `${formatNumber(Number(sqft))} sqft` : "— sqft"}
                     </div>
                   </div>
                 </div>
@@ -1673,7 +1676,7 @@ const Upload = () => {
                 {/* Total */}
                 <div className="g-order-total">
                   <span>Total</span>
-                  <span className="g-order-total-val g-tabular">${totalPrice}</span>
+                  <span className="g-order-total-val g-tabular">${totalPrice.toLocaleString()}</span>
                 </div>
 
                 {/* Meta rows */}

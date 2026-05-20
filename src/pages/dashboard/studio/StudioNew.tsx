@@ -5,12 +5,14 @@ import {
   type ChangeEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authedFetch } from "@/lib/api";
-import { Loader2, Image, X, ArrowRight } from 'lucide-react';
+import { authedFetch, lookupMls } from "@/lib/api";
+import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
+import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
+import { digitsOnly, formatNumber } from '@/lib/format';
 
 const MIN_PHOTOS = 5;
 
@@ -114,9 +116,13 @@ const StudioNew = () => {
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
   const [squareFootage, setSquareFootage] = useState('');
-  const [price, setPrice] = useState('');
+  const [price, setPrice] = useState('');                    // stores raw digits ("2400000")
   const [directorNotes, setDirectorNotes] = useState('');
   const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  // ─── MLS lookup state ───
+  const [mlsLooking, setMlsLooking] = useState(false);
+  const [mlsMsg, setMlsMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   // ─── submit state ───
   const [submitting, setSubmitting] = useState(false);
@@ -160,6 +166,34 @@ const StudioNew = () => {
       if (removed) URL.revokeObjectURL(removed.preview);
       return prev.filter((f) => f.id !== id);
     });
+  };
+
+  // ─── MLS lookup by address (Apify/Redfin chain) ───
+  const handleMlsLookup = async () => {
+    if (!address.trim()) {
+      setMlsMsg({ kind: 'warn', text: 'Enter or pick an address first.' });
+      return;
+    }
+    setMlsLooking(true);
+    setMlsMsg(null);
+    try {
+      const r = await lookupMls(address.trim());
+      if (r.price != null) setPrice(String(r.price));
+      if (r.bedrooms != null) setBedrooms(String(r.bedrooms));
+      if (r.bathrooms != null) setBathrooms(String(r.bathrooms));
+      if (r.sqft != null) setSquareFootage(String(r.sqft));
+      setMlsMsg({ kind: 'ok', text: `Matched via ${r.source}. Review and edit before submitting.` });
+    } catch (err) {
+      setMlsMsg({
+        kind: 'err',
+        text:
+          err instanceof Error
+            ? err.message
+            : "Couldn't find this address on MLS — fill in details manually.",
+      });
+    } finally {
+      setMlsLooking(false);
+    }
   };
 
   // ─── submit ───
@@ -248,16 +282,52 @@ const StudioNew = () => {
               </p>
             </div>
 
-            {/* Address */}
+            {/* Address — Google Places Autocomplete + MLS lookup */}
             <div>
               <FieldLabel required>Address</FieldLabel>
-              <input
-                className="studio-input"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="208 Berry Street, Brooklyn, NY"
-                required
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+                <div style={{ flex: 1 }}>
+                  <AddressAutocomplete
+                    value={address}
+                    onChange={(formatted) => {
+                      setAddress(formatted);
+                      setMlsMsg(null);
+                    }}
+                    className="studio-input"
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="studio-btn-ghost"
+                  onClick={handleMlsLookup}
+                  disabled={mlsLooking || !address.trim()}
+                  style={{ whiteSpace: 'nowrap', padding: '10px 14px', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  title="Look up property details by address"
+                >
+                  {mlsLooking ? (
+                    <Loader2 size={13} className="studio-spinner" />
+                  ) : (
+                    <Search size={13} strokeWidth={2} />
+                  )}
+                  Lookup MLS
+                </button>
+              </div>
+              {mlsMsg && (
+                <p
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11.5,
+                    color:
+                      mlsMsg.kind === 'ok'
+                        ? 'var(--le-good)'
+                        : mlsMsg.kind === 'warn'
+                          ? 'var(--le-warn)'
+                          : 'var(--le-bad)',
+                  }}
+                >
+                  {mlsMsg.text}
+                </p>
+              )}
             </div>
 
             {/* Bedrooms / bathrooms */}
@@ -288,18 +358,17 @@ const StudioNew = () => {
               </div>
             </div>
 
-            {/* Square footage / price */}
+            {/* Square footage / price — comma-formatted */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <FieldLabel>Square footage</FieldLabel>
                 <input
                   className="studio-input studio-tabnum"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={squareFootage}
-                  onChange={(e) => setSquareFootage(e.target.value)}
-                  placeholder="1850"
+                  type="text"
+                  inputMode="numeric"
+                  value={squareFootage ? formatNumber(Number(squareFootage)) : ''}
+                  onChange={(e) => setSquareFootage(digitsOnly(e.target.value))}
+                  placeholder="1,850"
                 />
               </div>
               <div>
@@ -320,12 +389,11 @@ const StudioNew = () => {
                   </span>
                   <input
                     className="studio-input studio-tabnum"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    placeholder="2400000"
+                    type="text"
+                    inputMode="numeric"
+                    value={price ? formatNumber(Number(price)) : ''}
+                    onChange={(e) => setPrice(digitsOnly(e.target.value))}
+                    placeholder="2,400,000"
                     style={{ paddingLeft: 26 }}
                   />
                 </div>
