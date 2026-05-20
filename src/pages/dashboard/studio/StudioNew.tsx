@@ -127,13 +127,13 @@ const StudioNew = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const isValid = address.trim() && clientId && files.length >= MIN_PHOTOS;
+  const isValid = address.trim() && files.length >= MIN_PHOTOS;
 
   // Step indicator — which conceptual step the user is on
-  // Step 0: client + address (required)
+  // Step 0: address (required); client is optional, no longer gates step 0
   // Step 1: property details + notes
   // Step 2: photos
-  const currentStep = !clientId || !address.trim() ? 0 : files.length < MIN_PHOTOS ? 1 : 2;
+  const currentStep = !address.trim() ? 0 : files.length < MIN_PHOTOS ? 1 : 2;
   const FORM_STEPS = ['Client & address', 'Details & notes', 'Photos'];
 
   // ─── file handling ───
@@ -239,10 +239,13 @@ const StudioNew = () => {
         <div className="studio-card" style={{ padding: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* Client picker */}
+            {/* Client picker (optional) */}
             <div>
-              <FieldLabel required>Client</FieldLabel>
-              <ClientPicker value={clientId} onChange={setClientId} includeNone={false} />
+              <FieldLabel>Client</FieldLabel>
+              <ClientPicker value={clientId} onChange={setClientId} includeNone={true} />
+              <p style={{ marginTop: 6, fontSize: 11.5, color: 'var(--le-muted)' }}>
+                Leave blank for personal / no-client renders. Brand-kit injection is skipped when there's no client.
+              </p>
             </div>
 
             {/* Address */}
@@ -534,11 +537,9 @@ const StudioNew = () => {
                 <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
                   {!address.trim()
                     ? 'Address required'
-                    : !clientId
-                      ? 'Client required'
-                      : files.length < MIN_PHOTOS
-                        ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
-                        : ''}
+                    : files.length < MIN_PHOTOS
+                      ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                      : ''}
                 </span>
               )}
               <button
