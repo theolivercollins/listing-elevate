@@ -33,6 +33,19 @@ export type ManualIngestInput = {
   price: number | null;
   photo_storage_paths: string[];
   director_notes: string | null;
+
+  listing_agent?: string | null;
+  brokerage?: string | null;
+
+  selected_package?: 'just_listed' | 'just_pended' | 'just_closed' | 'life_cycle' | null;
+  selected_duration?: 15 | 30 | 60 | null;
+  selected_orientation?: 'horizontal' | 'vertical' | 'both' | null;
+  add_voiceover?: boolean;
+  add_voice_clone?: boolean;
+  add_custom_request?: boolean;
+  custom_request_text?: string | null;
+  days_on_market?: number | null;
+  sold_price?: number | null;
 };
 
 export type RevisionNoteRow = {

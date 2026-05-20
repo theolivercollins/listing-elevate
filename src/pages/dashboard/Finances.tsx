@@ -1097,8 +1097,8 @@ export default function Finances() {
                   </div>
                   {row.purchasedUnits > 0 && (
                     <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
-                      <span>{row.spentUnits.toFixed(0)} units used</span>
-                      <span>{row.purchasedUnits.toFixed(0)} units bought</span>
+                      <span>{Math.round(row.spentUnits).toLocaleString()} units used</span>
+                      <span>{Math.round(row.purchasedUnits).toLocaleString()} units bought</span>
                     </div>
                   )}
                 </div>
