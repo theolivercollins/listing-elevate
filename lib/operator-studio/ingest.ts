@@ -22,14 +22,27 @@ export async function manualIngest(input: ManualIngestInput): Promise<string> {
     address,
     bedrooms,
     bathrooms,
-    square_footage: _square_footage, // not a column on properties — accepted for future migration
+    square_footage: _square_footage, // properties has no square_footage column; dropped silently
     price,
     photo_storage_paths,
     director_notes,
+    selected_package,
+    selected_duration,
+    selected_orientation,
+    add_voiceover,
+    add_voice_clone,
+    add_custom_request,
+    custom_request_text,
+    days_on_market,
+    sold_price,
+    mls_source,
   } = input;
 
   if (photo_storage_paths.length < 5) {
     throw new Error('At least 5 photos are required to ingest a property.');
+  }
+  if (!address || !address.trim()) {
+    throw new Error('Address is required.');
   }
 
   const supabase = getSupabase();
@@ -39,14 +52,23 @@ export async function manualIngest(input: ManualIngestInput): Promise<string> {
     .from('properties')
     .insert({
       order_mode: 'operator',
-      client_id,
-      ingest_source: 'manual',
+      client_id: client_id ?? null,
+      ingest_source: mls_source ? 'mls' : 'manual',
       address,
       bedrooms,
       bathrooms,
       price,
       photo_count: photo_storage_paths.length,
       status: 'queued',
+      selected_package: selected_package ?? null,
+      selected_duration: selected_duration ?? null,
+      selected_orientation: selected_orientation ?? null,
+      add_voiceover: !!add_voiceover,
+      add_voice_clone: !!add_voice_clone,
+      add_custom_request: !!add_custom_request,
+      custom_request_text: custom_request_text ?? null,
+      days_on_market: days_on_market ?? null,
+      sold_price: sold_price ?? null,
     })
     .select()
     .single();

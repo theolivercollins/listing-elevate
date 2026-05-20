@@ -5,13 +5,18 @@ import {
   type ChangeEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Image, X, ArrowRight } from 'lucide-react';
+import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
+import { AddressAutocomplete, type AddressDetails } from '@/components/studio/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 
 const MIN_PHOTOS = 5;
+
+type Pkg = 'just_listed' | 'just_pended' | 'just_closed' | 'life_cycle';
+type Duration = 15 | 30 | 60;
+type Orientation = 'horizontal' | 'vertical' | 'both';
 
 interface UploadedFile {
   file: File;
@@ -36,11 +41,44 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
   );
 }
 
+function SegButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1,
+        padding: '8px 10px',
+        borderRadius: 8,
+        border: active ? '1px solid rgba(11,11,16,0.18)' : '1px solid var(--le-line)',
+        background: active ? 'var(--le-surface-2)' : 'var(--le-surface)',
+        fontFamily: 'inherit',
+        fontSize: 12.5,
+        fontWeight: active ? 600 : 500,
+        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
+        cursor: 'pointer',
+        transition: 'background 0.15s, border-color 0.15s',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
 const StudioNew = () => {
   const navigate = useNavigate();
 
   // ─── form state ───
   const [address, setAddress] = useState('');
+  const [addressDetails, setAddressDetails] = useState<AddressDetails | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
@@ -48,6 +86,20 @@ const StudioNew = () => {
   const [price, setPrice] = useState('');
   const [directorNotes, setDirectorNotes] = useState('');
   const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  // ─── add-on state (mirrors customer Upload.tsx) ───
+  const [selectedPackage, setSelectedPackage] = useState<Pkg>('just_listed');
+  const [selectedDuration, setSelectedDuration] = useState<Duration>(30);
+  const [selectedOrientation, setSelectedOrientation] = useState<Orientation>('horizontal');
+  const [addVoiceover, setAddVoiceover] = useState(false);
+  const [addVoiceClone, setAddVoiceClone] = useState(false);
+  const [customRequest, setCustomRequest] = useState('');
+  const [daysOnMarket, setDaysOnMarket] = useState('');
+  const [soldPrice, setSoldPrice] = useState('');
+
+  // ─── MLS lookup state ───
+  const [mlsLooking, setMlsLooking] = useState(false);
+  const [mlsMsg, setMlsMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   // ─── submit state ───
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +110,55 @@ const StudioNew = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  const isValid = address.trim() && clientId && files.length >= MIN_PHOTOS;
+  const isValid = address.trim() && files.length >= MIN_PHOTOS;
+  const showLifecycleFields = selectedPackage === 'just_pended' || selectedPackage === 'just_closed' || selectedPackage === 'life_cycle';
+
+  // ─── MLS lookup ───
+  const lookupMls = async () => {
+    if (!address.trim()) {
+      setMlsMsg({ kind: 'warn', text: 'Enter or pick an address first.' });
+      return;
+    }
+    setMlsLooking(true);
+    setMlsMsg(null);
+    try {
+      const r = await fetch('/api/admin/studio/mls-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.status === 501) {
+        setMlsMsg({
+          kind: 'warn',
+          text: 'MLS lookup not configured (set RENTCAST_API_KEY). You can still enter details manually.',
+        });
+        return;
+      }
+      if (!r.ok) {
+        setMlsMsg({
+          kind: 'err',
+          text: data.detail ?? data.error ?? `${r.status} ${r.statusText}`,
+        });
+        return;
+      }
+      if (typeof data.bedrooms === 'number') setBedrooms(String(data.bedrooms));
+      if (typeof data.bathrooms === 'number') setBathrooms(String(data.bathrooms));
+      if (typeof data.square_footage === 'number') setSquareFootage(String(data.square_footage));
+      if (typeof data.price === 'number') setPrice(String(data.price));
+      if (typeof data.matched_address === 'string' && data.matched_address) {
+        setAddress(data.matched_address);
+      }
+      setMlsMsg({ kind: 'ok', text: `Matched via ${data.source}. Review and edit before submitting.` });
+    } catch (err) {
+      setMlsMsg({
+        kind: 'err',
+        text: err instanceof Error ? err.message : 'MLS lookup failed',
+      });
+    } finally {
+      setMlsLooking(false);
+    }
+  };
 
   // ─── file handling ───
   const handleFiles = useCallback(
@@ -121,6 +221,16 @@ const StudioNew = () => {
           price: price ? Number(price) : null,
           photo_storage_paths: photoPaths,
           director_notes: directorNotes.trim() || null,
+          selected_package: selectedPackage,
+          selected_duration: selectedDuration,
+          selected_orientation: selectedOrientation,
+          add_voiceover: addVoiceover,
+          add_voice_clone: addVoiceClone,
+          add_custom_request: customRequest.trim().length > 0,
+          custom_request_text: customRequest.trim() || null,
+          days_on_market: showLifecycleFields && daysOnMarket ? Number(daysOnMarket) : null,
+          sold_price: showLifecycleFields && soldPrice ? Number(soldPrice) : null,
+          mls_source: addressDetails?.place_id ? 'google_places' : null,
         }),
       });
 
@@ -146,7 +256,7 @@ const StudioNew = () => {
         <div>
           <span className="studio-page-eyebrow">Studio · new listing</span>
           <h1 className="studio-page-h1">New listing</h1>
-          <p className="studio-page-sub">Pick a client, drop in photos, send the pipeline.</p>
+          <p className="studio-page-sub">Optional client, drop in photos, configure the order, send the pipeline.</p>
         </div>
       </div>
 
@@ -156,27 +266,66 @@ const StudioNew = () => {
       {/* ─── Form ─── */}
       <form
         onSubmit={handleSubmit}
-        style={{ maxWidth: 680, display: 'flex', flexDirection: 'column', gap: 0 }}
+        style={{ maxWidth: 720, display: 'flex', flexDirection: 'column', gap: 0 }}
       >
         <div className="studio-card" style={{ padding: 24 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* Client picker */}
+            {/* Client picker (optional) */}
             <div>
-              <FieldLabel required>Client</FieldLabel>
-              <ClientPicker value={clientId} onChange={setClientId} includeNone={false} />
+              <FieldLabel>Client</FieldLabel>
+              <ClientPicker value={clientId} onChange={setClientId} includeNone={true} />
+              <p style={{ marginTop: 6, fontSize: 11.5, color: 'var(--le-muted)' }}>
+                Leave blank for personal / no-client renders. Brand-kit injection is skipped when there's no client.
+              </p>
             </div>
 
-            {/* Address */}
+            {/* Address — Google Places Autocomplete + MLS lookup */}
             <div>
               <FieldLabel required>Address</FieldLabel>
-              <input
-                className="studio-input"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="208 Berry Street, Brooklyn, NY"
-                required
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <AddressAutocomplete
+                    value={address}
+                    onChange={setAddress}
+                    onPick={(d) => {
+                      setAddressDetails(d);
+                      setMlsMsg(null);
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className="studio-btn-ghost"
+                  onClick={lookupMls}
+                  disabled={mlsLooking || !address.trim()}
+                  style={{ whiteSpace: 'nowrap', padding: '10px 14px' }}
+                  title="Look up property details by address"
+                >
+                  {mlsLooking ? (
+                    <Loader2 size={13} className="studio-spinner" />
+                  ) : (
+                    <Search size={13} strokeWidth={2} />
+                  )}
+                  <span style={{ marginLeft: 6 }}>Lookup MLS</span>
+                </button>
+              </div>
+              {mlsMsg && (
+                <p
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11.5,
+                    color:
+                      mlsMsg.kind === 'ok'
+                        ? 'var(--le-good)'
+                        : mlsMsg.kind === 'warn'
+                          ? 'var(--le-warn)'
+                          : 'var(--le-bad)',
+                  }}
+                >
+                  {mlsMsg.text}
+                </p>
+              )}
             </div>
 
             {/* Bedrooms / bathrooms */}
@@ -251,21 +400,143 @@ const StudioNew = () => {
               </div>
             </div>
 
+            {/* Package */}
+            <div>
+              <FieldLabel>Package</FieldLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+                {(['just_listed', 'just_pended', 'just_closed', 'life_cycle'] as const).map((p) => (
+                  <SegButton key={p} active={selectedPackage === p} onClick={() => setSelectedPackage(p)}>
+                    {p === 'just_listed' ? 'Just Listed' : p === 'just_pended' ? 'Just Pended' : p === 'just_closed' ? 'Just Closed' : 'Life Cycle'}
+                  </SegButton>
+                ))}
+              </div>
+            </div>
+
+            {/* Lifecycle-only fields */}
+            {showLifecycleFields && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <FieldLabel>Days on market</FieldLabel>
+                  <input
+                    className="studio-input studio-tabnum"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={daysOnMarket}
+                    onChange={(e) => setDaysOnMarket(e.target.value)}
+                    placeholder="14"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Sold price ($)</FieldLabel>
+                  <div style={{ position: 'relative' }}>
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: 12,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: 13.5,
+                        color: 'var(--le-muted)',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      $
+                    </span>
+                    <input
+                      className="studio-input studio-tabnum"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={soldPrice}
+                      onChange={(e) => setSoldPrice(e.target.value)}
+                      placeholder="2250000"
+                      style={{ paddingLeft: 26 }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Duration + Orientation */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <FieldLabel>Duration</FieldLabel>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {([15, 30, 60] as const).map((d) => (
+                    <SegButton key={d} active={selectedDuration === d} onClick={() => setSelectedDuration(d)}>
+                      {d}s
+                    </SegButton>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <FieldLabel>Orientation</FieldLabel>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {(['horizontal', 'vertical', 'both'] as const).map((o) => (
+                    <SegButton key={o} active={selectedOrientation === o} onClick={() => setSelectedOrientation(o)}>
+                      {o === 'horizontal' ? '16:9' : o === 'vertical' ? '9:16' : 'Both'}
+                    </SegButton>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Voiceover add-ons */}
+            <div>
+              <FieldLabel>Voiceover</FieldLabel>
+              <p style={{ margin: '0 0 8px 0', fontSize: 11.5, color: 'var(--le-muted)' }}>
+                AI voiceover and voice clone are mutually exclusive — pick one or neither.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <SegButton
+                  active={addVoiceover}
+                  onClick={() => {
+                    setAddVoiceover((v) => !v);
+                    if (!addVoiceover) setAddVoiceClone(false);
+                  }}
+                >
+                  AI voiceover
+                </SegButton>
+                <SegButton
+                  active={addVoiceClone}
+                  onClick={() => {
+                    setAddVoiceClone((v) => !v);
+                    if (!addVoiceClone) setAddVoiceover(false);
+                  }}
+                >
+                  Voice clone
+                </SegButton>
+              </div>
+            </div>
+
+            {/* Custom request */}
+            <div>
+              <FieldLabel>Custom request</FieldLabel>
+              <textarea
+                className="studio-textarea"
+                value={customRequest}
+                onChange={(e) => setCustomRequest(e.target.value)}
+                placeholder="Anything else the pipeline should know — required shots, brand language, music vibe…"
+                rows={3}
+              />
+            </div>
+
             {/* Director notes */}
             <div>
-              <FieldLabel>Director notes</FieldLabel>
+              <FieldLabel>Director notes (internal)</FieldLabel>
               <textarea
                 className="studio-textarea"
                 value={directorNotes}
                 onChange={(e) => setDirectorNotes(e.target.value)}
-                placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
-                rows={4}
+                placeholder="Operator-only notes that show up on the Property Command Center, not sent to the director model."
+                rows={3}
               />
             </div>
 
             {/* Photo dropzone */}
             <div>
-              <FieldLabel>Photos</FieldLabel>
+              <FieldLabel required>Photos</FieldLabel>
               <div
                 className={'studio-dropzone' + (isDragging ? ' dragging' : '')}
                 style={{
@@ -456,11 +727,9 @@ const StudioNew = () => {
                 <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
                   {!address.trim()
                     ? 'Address required'
-                    : !clientId
-                      ? 'Client required'
-                      : files.length < MIN_PHOTOS
-                        ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
-                        : ''}
+                    : files.length < MIN_PHOTOS
+                      ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                      : ''}
                 </span>
               )}
               <button
