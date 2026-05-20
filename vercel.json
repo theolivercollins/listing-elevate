@@ -46,6 +46,10 @@
     { "src": "/api/blog/posts/([^/]+)", "dest": "/api/blog/posts/[id]?id=$1" },
     { "src": "/api/blog/images/([^/]+)", "dest": "/api/blog/images/[id]?id=$1" },
     { "src": "/api/blog/templates/([^/]+)", "dest": "/api/blog/templates/[id]?id=$1" },
+    { "src": "/api/blog/email-templates/([^/]+)", "dest": "/api/blog/email-templates/[id]?id=$1" },
+    { "src": "/api/blog/emails/([^/]+)/send", "dest": "/api/blog/emails/[id]/send?id=$1" },
+    { "src": "/api/blog/emails/([^/]+)/test", "dest": "/api/blog/emails/[id]/test?id=$1" },
+    { "src": "/api/blog/emails/([^/]+)", "dest": "/api/blog/emails/[id]?id=$1" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/(.*)", "dest": "/index.html" }

@@ -43,6 +43,10 @@ import BlogAllyHistory from "./pages/dashboard/BlogAllyHistory";
 import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
 import BlogTemplates from "./pages/dashboard/BlogTemplates";
 import BlogTemplateDetail from "./pages/dashboard/BlogTemplateDetail";
+import EmailsList from "./pages/dashboard/EmailsList";
+import EmailDetail from "./pages/dashboard/EmailDetail";
+import EmailTemplates from "./pages/dashboard/EmailTemplates";
+import EmailTemplateDetail from "./pages/dashboard/EmailTemplateDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -107,6 +111,12 @@ const App = () => (
                     <Route path="blog/templates" element={<BlogTemplates />} />
                     <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
                     <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
+                    <Route path="blog/emails" element={<EmailsList />} />
+                    <Route path="blog/emails/new" element={<EmailDetail />} />
+                    <Route path="blog/emails/:id" element={<EmailDetail />} />
+                    <Route path="blog/email-templates" element={<EmailTemplates />} />
+                    <Route path="blog/email-templates/new" element={<EmailTemplateDetail />} />
+                    <Route path="blog/email-templates/:id" element={<EmailTemplateDetail />} />
                     <Route path="finances" element={<DashboardFinances />} />
                     <Route path="settings" element={<DashboardSettings />} />
                   </Route>

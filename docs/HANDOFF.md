@@ -14,7 +14,103 @@ See also:
 
 ## Right now
 
-**2026-05-15 (latest, PRs #50-#70 over one long session): Built "Ally" — the blog AI editor that runs the entire post-creation + improvement workflow. The blog system went from "publish endpoint works" to a full AI-first product surface in one session.**
+**2026-05-20 (latest): Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, not pushed. Migration 058 NOT applied to prod yet (waiting on Oliver). Resend env var NOT set in prod yet (waiting on Oliver).**
+
+### Email composer (end-to-end Ally flow)
+
+The team's previous workflow was: Claude Co-work → Stripo (visual builder) → send to Cindy. This whole loop is replaced by:
+
+- **`/dashboard/blog/emails`** — list of all emails (drafts, ready, sent), with state filters and "New email" + "New from blog post" entry points
+- **`/dashboard/blog/emails/new?chat=1`** — `EmailChatCompose` — full-page chat with Ally to draft an email from scratch, exact mirror of `BlogPostChatCompose`. Sidebar shows subject, preheader, from name/email, audience as Ally fills them.
+- **`/dashboard/blog/emails/[id]`** — detail page with two tabs:
+  - **Visual Builder** — `EmailDesigner` wraps `react-email-editor` (Unlayer MIT). Full drag-and-drop editor in an iframe. `loadDesign(design_json)` resumes, `exportHtml()` produces `{design, html}` which we persist as `design_json` + `body_html`.
+  - **Ally Chat** — `AllyEmailFloatingChat` widget; same Brain icon / memory popover / proposal cards / "See diff" dialog as the blog `AllyFloatingChat`, but proposals patch email fields (subject, preheader, body, from, audience).
+- **`/dashboard/blog/email-templates`** + **`/dashboard/blog/email-templates/[id]`** — drag-and-drop email template library. Templates store `design_json` + `body_html` + defaults (subject, preheader, from name/email, audience). "Use template" on a new email copies the template's design_json into the new row, then opens in the builder.
+- **Blog → email handoff** — `BlogPostDetail` has a new "Send as email" action button → calls `aiEmailFromPost(post_id)` one-shot endpoint → creates a draft email + navigates to its detail page. Replaces the manual copy-paste-into-Stripo step.
+
+### Ally's email brain
+
+- **Model**: same `claude-sonnet-4-6` as blog chat
+- **Endpoint**: `POST /api/blog/ai/email-chat` (multi-turn) + `POST /api/blog/ai/email-from-post` (one-shot conversion)
+- **System prompt**: `lib/blog-engine/ally-email-prompt.ts` exports `BASE_EMAIL_SYSTEM_PROMPT`. Strict email-safe HTML rules: table-based layout (role="presentation"), max-width 600px, inline CSS only (no `<style>` blocks — Gmail strips them), bulletproof CTA buttons (table-cell + bgcolor + padding + anchor), Helvetica/Arial fallback stack, hero `<img>` placeholder, footer with `{{UNSUBSCRIBE_URL}}`. Brand colors: `#0A2540` for headers, `#E97316` for CTAs. No `<script>`, `<iframe>`, `<form>`, `<link>`.
+- **Schema**: namespaced envelope mirrors blog chat. New tags: `<email_subject>` (≤90 chars), `<email_preheader>` (≤100 chars), `<email_body>` (full HTML), `<email_from_name>`, `<email_from_email>`, `<email_audience>`, `<email_action>` (`send | save_draft | test_send`). Reuses `<reply>`, `<changes_summary>`, `<ally_suggest_research>`, `<ally_remember>` unchanged.
+- **Reuses entire blog stack**: ally-memory + source-allowlist + Gemini research (auto/always/never) + team archive injection + per-post chat localStorage (with prefix `ally-email-chat:` to avoid collision) + attachments (PDF/image/text). Zero duplication — every infrastructure improvement to Ally helps both surfaces.
+- **Source post mode**: `email-chat` accepts an optional `source_post_id` body field. When present, the post's title + body_html + external_post_url are injected as a SOURCE POST block so Ally can convert/excerpt/reference it in the email.
+- **Cost stages**: `blog_email_ai` (chat), `blog_email_from_post` (one-shot), `blog_email_send` (Resend).
+
+### Send pipeline
+
+- **`POST /api/blog/emails/[id]/send`** — calls Resend. State transitions: `draft → sending → sent | failed`. Records `sent_at`, `sent_to[]`, `send_provider_message_id`. Recipients come from request body `{ to: string[] }` override or row's `recipients_json`. Validates each address. Records cost at 0.04 cents/recipient (`Math.ceil(recipients.length * 0.04)`).
+- **`POST /api/blog/emails/[id]/test`** — body `{ to: string }`. Prepends `[TEST] ` to subject. Doesn't mutate state. Records cost.
+- **Env vars needed in prod** (not yet set — Oliver greenlights): `RESEND_API_KEY`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`.
+
+### Database — migration 058 (NOT applied yet)
+
+`supabase/migrations/058_emails.sql` creates two tables:
+
+- **`email_templates`** — site-scoped, soft-delete (active=false). Columns: name, description, `design_json` (Unlayer schema), `body_html`, thumbnail_url, default_subject, default_preheader, default_from_name, default_from_email, default_audience, metadata, timestamps. Mirrors `blog_templates`.
+- **`emails`** — site-scoped, soft-delete. FK to optional `template_id` (set null) and optional `source_post_id` (set null — so the original blog post can be deleted without orphaning the email). State CHECK constraint: `draft | ready | sending | sent | failed`. Columns include subject, preheader, from_name, from_email, reply_to, audience, recipients_json (jsonb array), design_json, body_html, body_text, send_provider, send_provider_message_id, sent_to (text[]), sent_at, send_error, authored ('manual' | 'auto'), cost_usd_cents, metadata, timestamps.
+- Indexes: `emails(site_id, state, updated_at desc) where active=true`, `emails(source_post_id) where source_post_id is not null`, `email_templates(site_id, active) where active=true`.
+
+**Action item**: apply via Supabase MCP when Oliver greenlights. Single dev/staging/prod project — applying = applying to prod.
+
+### Library choice (the open-source question)
+
+Picked **`react-email-editor` (Unlayer)** for v1:
+- MIT-licensed React wrapper, drop-in component
+- Drag-and-drop editor with templates, custom blocks, merge tags
+- `exportHtml()` returns `{design, html}`; `loadDesign(json)` restores
+- Free for embedded use, no API key
+- Battle-tested by major SaaS products
+
+Storage schema (`design_json` jsonb + `body_html` text) is library-agnostic. If we ever need pure-self-hosted (the editor UI is loaded from Unlayer's CDN even though the wrapper is MIT), swap to **GrapesJS + grapesjs-mjml** without changing the database — just remap the `design_json` schema. The migration path is one-component.
+
+### vercel.json — 4 new route rewrites
+
+Right after `blog/templates/[id]`:
+
+```
+{ "src": "/api/blog/email-templates/([^/]+)", "dest": "/api/blog/email-templates/[id]?id=$1" },
+{ "src": "/api/blog/emails/([^/]+)/send", "dest": "/api/blog/emails/[id]/send?id=$1" },
+{ "src": "/api/blog/emails/([^/]+)/test", "dest": "/api/blog/emails/[id]/test?id=$1" },
+{ "src": "/api/blog/emails/([^/]+)", "dest": "/api/blog/emails/[id]?id=$1" }
+```
+
+Sub-routes (`/send`, `/test`) come BEFORE the bare `[id]` catch to prevent shadowing.
+
+### Key files (email build)
+
+- `supabase/migrations/058_emails.sql`
+- `api/blog/email-templates/index.ts`, `[id].ts`
+- `api/blog/emails/index.ts`, `[id].ts`, `[id]/send.ts`, `[id]/test.ts`
+- `api/blog/ai/email-chat.ts`, `email-from-post.ts`
+- `lib/blog-engine/ally-email-prompt.ts`
+- `lib/blog-engine/cost.ts` — added 3 new cost stages
+- `src/lib/blog/types.ts`, `api-client.ts` — extended with email types + client functions
+- `src/components/blog/EmailDesigner.tsx` — Unlayer wrapper, forwardRef for imperative exportHtml
+- `src/components/blog/AllyEmailFloatingChat.tsx` — port of AllyFloatingChat
+- `src/components/blog/ally-email-storage.ts` — per-email localStorage chat persistence
+- `src/pages/dashboard/EmailsList.tsx`, `EmailDetail.tsx`, `EmailChatCompose.tsx`, `EmailTemplates.tsx`, `EmailTemplateDetail.tsx`
+- `src/App.tsx` — 6 new routes; `src/components/TopNav.tsx` — Email links in BlogNav dropdown
+- `src/pages/dashboard/BlogPostDetail.tsx` — "Send as email" button
+
+### Gates (waiting on Oliver)
+
+1. **Apply migration 058** to Supabase prod via MCP. Touches no existing tables. Rollback: `drop table emails; drop table email_templates;`.
+2. **Set Resend env vars** in Vercel prod: `RESEND_API_KEY`, `DEFAULT_EMAIL_FROM_NAME`, `DEFAULT_EMAIL_FROM_EMAIL`. Without these, `/send` returns 500.
+3. **Open PR** from `worktree-blog-post-fix-2` to `main` (or push the branch to GitHub first).
+
+### Open follow-ups (post-merge)
+
+- Wire Cindy (or any specific recipient) as a saved audience preset on the site row
+- Wire test send default to the signed-in admin's email instead of typing it each time
+- Move email send to a `email_jobs` async queue (like `blog_jobs`) instead of inline — current send is synchronous and times out on >50 recipients
+- Persist user's last-used builder vs chat tab per email
+- Click tracking (Resend supports a `tracking` flag, not yet wired)
+
+---
+
+**2026-05-15 (PRs #50-#70): Built "Ally" — the blog AI editor that runs the entire post-creation + improvement workflow. The blog system went from "publish endpoint works" to a full AI-first product surface in one session.**
 
 ### What Ally is, end to end
 

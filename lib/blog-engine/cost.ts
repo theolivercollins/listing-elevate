@@ -9,7 +9,10 @@ export type BlogCostStage =
   | "blog_image_tag"
   | "blog_correction_distill"
   | "blog_publish_browser"
-  | "blog_ai_draft";
+  | "blog_ai_draft"
+  | "blog_email_ai"
+  | "blog_email_from_post"
+  | "blog_email_send";
 
 export interface BlogCostInput {
   stage: BlogCostStage;

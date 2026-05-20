@@ -13,7 +13,14 @@ import type {
   AIDraftResult,
   AnalyzeTemplateResult,
   Taxonomy,
+  EmailTemplate,
+  EmailListItem,
+  EmailDetail,
+  CreateEmailInput,
+  UpdateEmailInput,
+  AIEmailChatResponse,
 } from "./types";
+import type { AIAttachment } from "./types";
 
 async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession();
@@ -329,3 +336,158 @@ export async function analyzeTemplate(body_html: string): Promise<AnalyzeTemplat
   });
   return asJson(res);
 }
+
+// ---------------------------------------------------------------------------
+// Email Templates
+// ---------------------------------------------------------------------------
+export async function listEmailTemplates(): Promise<{ templates: EmailTemplate[] }> {
+  const res = await fetch("/api/blog/email-templates", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function getEmailTemplate(id: string): Promise<{ template: EmailTemplate }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function createEmailTemplate(input: {
+  name: string;
+  description?: string | null;
+  design_json?: any;
+  body_html?: string;
+  default_subject?: string | null;
+  default_preheader?: string | null;
+  default_from_name?: string | null;
+  default_from_email?: string | null;
+  default_audience?: string | null;
+}): Promise<{ id: string }> {
+  const res = await fetch("/api/blog/email-templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+export async function updateEmailTemplate(id: string, patch: Partial<{
+  name: string;
+  description: string | null;
+  design_json: any;
+  body_html: string;
+  default_subject: string | null;
+  default_preheader: string | null;
+  default_from_name: string | null;
+  default_from_email: string | null;
+  default_audience: string | null;
+  active: boolean;
+}>): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+export async function deleteEmailTemplate(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+
+// ---------------------------------------------------------------------------
+// Emails
+// ---------------------------------------------------------------------------
+export async function listEmails(
+  params: { state?: string; q?: string; limit?: number } = {}
+): Promise<{ emails: EmailListItem[] }> {
+  const qs = new URLSearchParams();
+  if (params.state) qs.set("state", params.state);
+  if (params.q) qs.set("q", params.q);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(`/api/blog/emails?${qs.toString()}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function getEmail(id: string): Promise<{ email: EmailDetail }> {
+  const res = await fetch(`/api/blog/emails/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function createEmail(input: CreateEmailInput): Promise<{ id: string }> {
+  const res = await fetch("/api/blog/emails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+export async function updateEmail(id: string, patch: UpdateEmailInput): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/emails/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+export async function deleteEmail(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/emails/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+export async function sendEmail(
+  id: string,
+  opts?: { to?: string[] }
+): Promise<{ ok: true; message_id: string | null }> {
+  const res = await fetch(`/api/blog/emails/${id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(opts ?? {}),
+  });
+  return asJson(res);
+}
+export async function testSendEmail(id: string, to: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/emails/${id}/test-send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ to }),
+  });
+  return asJson(res);
+}
+
+// ---------------------------------------------------------------------------
+// Ally Email AI
+// ---------------------------------------------------------------------------
+export async function aiEmailChat(
+  messages: AIChatMessage[],
+  currentBodyHtml: string,
+  opts: {
+    researchMode?: "auto" | "always" | "never";
+    attachments?: AIAttachment[];
+    sourcePostId?: string | null;
+  } = {}
+): Promise<AIEmailChatResponse> {
+  const res = await fetch("/api/blog/ai/email-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      messages,
+      current_html: currentBodyHtml,
+      research_mode: opts.researchMode ?? "auto",
+      attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
+      source_post_id: opts.sourcePostId ?? null,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function aiEmailFromPost(postId: string): Promise<{
+  subject: string;
+  preheader: string;
+  body_html: string;
+  from_name: string;
+  from_email: string;
+  audience: string;
+  cost_cents: number;
+  model: string;
+}> {
+  const res = await fetch("/api/blog/ai/email-from-post", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ post_id: postId }),
+  });
+  return asJson(res);
+}
+
