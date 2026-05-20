@@ -2131,8 +2131,12 @@ function IterationCard({
 }) {
   const [rating, setRating] = useState<number | null>(iteration.rating);
   const [tags, setTags] = useState<string[]>(iteration.tags ?? []);
+  // Single feedback textarea — used by both "Save" (writes user_comment) and
+  // "Save and refine" (writes user_comment AND fires refine with the same text
+  // as the chat_instruction). Replaced the earlier two-textarea layout where
+  // "Notes" and "What should change?" were separate boxes — operators kept
+  // typing the rationale in the wrong one. (2026-05-20)
   const [comment, setComment] = useState(iteration.user_comment ?? "");
-  const [chat, setChat] = useState("");
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   // Auto-save feedback so operator feedback can't be lost — normal typing
@@ -2632,52 +2636,44 @@ function IterationCard({
               </div>
             </div>
 
-            {/* Notes */}
+            {/* Feedback — single textarea, two buttons.
+                Save: writes to user_comment only (no new iteration).
+                Save and refine: writes user_comment AND fires refine with the
+                same text as chat_instruction → creates a refined iteration.
+                The Refine endpoint requires chat_instruction to be non-empty,
+                so Save-and-refine is disabled when the textarea is empty. */}
             <div>
-              <span className="le-d-label">Notes (optional)</span>
+              <span className="le-d-label">
+                Feedback (optional){!isLatest && <span style={{ color: "var(--muted-2)", fontWeight: 400 }}> · Save and refine will branch from this iteration</span>}
+              </span>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 onBlur={() => flushSave(false)}
-                placeholder="Anything you want to remember about this iteration"
-                style={{ ...TEXTAREA_STYLE, marginTop: 8, minHeight: 60 }}
-              />
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                className="le-btn-ghost"
-                onClick={() => onRate({ rating, tags, comment })}
-                disabled={rating_saving || (rating === null && tags.length === 0 && !comment.trim())}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (rating_saving || (rating === null && tags.length === 0 && !comment.trim())) ? 0.5 : 1 }}
-              >
-                {rating_saving ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <Star style={{ width: 12, height: 12 }} />}
-                Save rating
-              </button>
-            </div>
-
-            {/* Refine */}
-            <div>
-              <span className="le-d-label">
-                What should change?{!isLatest && <span style={{ color: "var(--muted-2)", fontWeight: 400 }}> (will branch from this iteration)</span>}
-              </span>
-              <textarea
-                value={chat}
-                onChange={(e) => setChat(e.target.value)}
-                placeholder="e.g. 'the dolly is too fast, make it slower' or 'use reveal past the island corner instead of push_in'"
+                placeholder="What did/didn't work? e.g. 'the dolly is too fast, make it slower' — Save and refine uses this as the change instruction"
                 style={{ ...TEXTAREA_STYLE, marginTop: 8, minHeight: 80 }}
               />
-              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+              <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                <button
+                  type="button"
+                  className="le-btn-ghost"
+                  onClick={() => onRate({ rating, tags, comment })}
+                  disabled={rating_saving || (rating === null && tags.length === 0 && !comment.trim())}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (rating_saving || (rating === null && tags.length === 0 && !comment.trim())) ? 0.5 : 1 }}
+                >
+                  {rating_saving ? <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" /> : <Star style={{ width: 12, height: 12 }} />}
+                  Save
+                </button>
                 <button
                   type="button"
                   className="le-btn-dark"
-                  onClick={() => onRefine({ rating, tags, comment, chatInstruction: chat })}
-                  disabled={!chat.trim() || refining}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (!chat.trim() || refining) ? 0.5 : 1 }}
+                  onClick={() => onRefine({ rating, tags, comment, chatInstruction: comment })}
+                  disabled={!comment.trim() || refining}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, opacity: (!comment.trim() || refining) ? 0.5 : 1 }}
+                  title="Save the feedback AND generate a refined iteration using this text as the change instruction"
                 >
                   {refining ? <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" /> : <Sparkles style={{ width: 13, height: 13 }} />}
-                  Refine → new iteration
+                  Save and refine
                 </button>
               </div>
             </div>
