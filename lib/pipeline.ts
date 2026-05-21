@@ -57,6 +57,8 @@ import { fetchPropertyBranding } from "./assembly/branding.js";
 import { selectMusicTrackForProperty } from "./assembly/music.js";
 import { resolveTemplateId } from "./assembly/template-resolver.js";
 import { buildTemplateModifications } from "./assembly/template-modifications.js";
+import { brandKitFromClient, mergeBrandVars } from "./operator-studio/brand-kit.js";
+import type { ClientRow } from "./types/operator-studio.js";
 import {
   analyzePhotoWithGemini,
   type ExtendedPhotoAnalysis,
@@ -69,6 +71,7 @@ import {
   MAX_PER_ROOM_TYPE,
   REQUIRED_ROOM_TYPES,
 } from "./pipeline/selection.js";
+import { tryClaimPipelineRun } from "./pipeline-claim.js";
 
 // Used by analyzer batching; keep here since it's only a concern of this file.
 const BATCH_SIZE = 8;
@@ -99,16 +102,43 @@ recordPromptRevisionIfChanged("style-guide", STYLE_GUIDE_SYSTEM),
 
 export async function runPipeline(propertyId: string): Promise<void> {
   try {
-    // Stamp the run start so downstream processing_time_ms calculations
-    // measure this RUN, not the property's original creation date. Without
-    // this, rerun properties show bogus "737 minutes processing" numbers
-    // because the cron was computing Date.now() - property.created_at.
-    await getSupabase()
-      .from("properties")
-      .update({ pipeline_started_at: new Date().toISOString() })
-      .eq("id", propertyId);
+    // Atomic pipeline-run claim — prevents the duplicate-execution race that
+    // shipped duplicate scenes on the 13fe5a96 rerun (2026-05-18). The Re-run
+    // UI fires triggerPipeline as fire-and-forget; any second POST (browser
+    // retry, double-click, second tab) lands a parallel runPipeline before
+    // the first has progressed past 'queued'. The CAS pattern below — update
+    // properties SET status='analyzing', pipeline_started_at=NOW() WHERE id=?
+    // AND status IN (queued, failed, needs_review) — returns the matched row
+    // exactly once; the loser sees 0 rows and bails. Side effect: stamps
+    // pipeline_started_at so downstream processing_time_ms measures this
+    // RUN, not the property's original creation date.
+    const claimed = await tryClaimPipelineRun(getSupabase(), propertyId);
+    if (!claimed) {
+      await log(propertyId, "intake", "warn",
+        "Pipeline already in flight or in a non-rerunnable state; ignoring duplicate runPipeline() invocation");
+      return;
+    }
 
-    await log(propertyId, "intake", "info", "Pipeline started");
+    // Pull operator-context fields so every log line in this run carries them.
+    // Distinguishes operator-mode work (order_mode='operator', client_id set)
+    // from customer self-serve runs in production logs. Pure read — no behavior fork.
+    let orderMode: string | null = null;
+    let clientId: string | null = null;
+    try {
+      const { data: propCtx } = await getSupabase()
+        .from("properties")
+        .select("order_mode, client_id")
+        .eq("id", propertyId)
+        .maybeSingle();
+      orderMode = (propCtx as { order_mode?: string | null } | null)?.order_mode ?? null;
+      clientId = (propCtx as { client_id?: string | null } | null)?.client_id ?? null;
+    } catch {
+      // Best-effort; never block a pipeline run on context read.
+    }
+    // Shared log context threaded through every top-level log call in this run.
+    const opCtx: Record<string, unknown> = { order_mode: orderMode, client_id: clientId };
+
+    await log(propertyId, "intake", "info", "Pipeline started", opCtx);
     // Best-effort prompt changelog snapshot (no-op if unchanged).
     snapshotPromptRevisions();
 
@@ -117,10 +147,10 @@ export async function runPipeline(propertyId: string): Promise<void> {
     const photos = await getPhotosForProperty(propertyId);
     if (photos.length < 5) {
       await updatePropertyStatus(propertyId, "failed");
-      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`);
+      await log(propertyId, "intake", "error", `Only ${photos.length} photos. Need at least 5.`, opCtx);
       return;
     }
-    await log(propertyId, "intake", "info", `${photos.length} photos ready`);
+    await log(propertyId, "intake", "info", `${photos.length} photos ready`, opCtx);
 
     // Stage 2: Analyze
     await runAnalysis(propertyId, photos);
@@ -149,7 +179,7 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // all scenes have settled it calls runAssembly(propertyId).
     await runGenerationSubmit(propertyId);
     await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron will collect clips + assemble.");
+      "All scenes submitted to providers. Cron will collect clips + assemble.", opCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
@@ -953,8 +983,15 @@ async function runQCForScene(
 
 // ─── STAGE 6: ASSEMBLY ─────────────────────────────────────────
 
-export async function runAssembly(propertyId: string): Promise<void> {
-  await updatePropertyStatus(propertyId, "assembling");
+// Internal assembly step — shared by runAssembly (pipeline path) and
+// rerunAssembly (manual clip-swap path). The `reason` flag is threaded
+// into cost_events metadata so the ledger can distinguish pipeline-driven
+// renders from operator-triggered re-renders.
+async function runAssemblyStep(
+  propertyId: string,
+  opts: { reason?: "pipeline" | "manual_rerun" } = {},
+): Promise<void> {
+  const reason = opts.reason ?? "pipeline";
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
@@ -1139,7 +1176,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
       // The duration-fit pass usually already keeps us at ≤8; this is
       // defense-in-depth.
       const templateClipInputs = clipInputs.slice(0, 8);
-      const templateMods = templateId
+      let templateMods = templateId
         ? buildTemplateModifications({
             address: property.address,
             selectedPackage: property.selected_package,
@@ -1147,8 +1184,39 @@ export async function runAssembly(propertyId: string): Promise<void> {
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
             clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
+            voiceoverUrl: (property as Record<string, unknown>).voiceover_url as string | null | undefined,
           })
         : null;
+
+      // Operator-flow brand injection: when a property belongs to a client,
+      // fetch the client's brand kit and merge Brand.* keys into the
+      // modifications payload. No-op when client_id is null (customer flow)
+      // or when brand fields are unpopulated. Creatomate silently ignores
+      // keys for placeholders that don't exist in the template — the template
+      // must have Brand.* variables added in the Creatomate dashboard for the
+      // values to render visibly. See docs/specs/2026-05-15-operator-studio-design.md.
+      if (templateMods && property.client_id) {
+        const { data: clientRow } = await getSupabase()
+          .from('clients')
+          .select('*')
+          .eq('id', property.client_id)
+          .maybeSingle();
+        if (clientRow) {
+          const brand = brandKitFromClient(
+            clientRow as ClientRow,
+            { brokerage: property.brokerage ?? null },
+          );
+          templateMods = mergeBrandVars(templateMods, brand);
+          await log(propertyId, "assembly", "info",
+            `Brand kit injected for client ${property.client_id}`,
+            {
+              client_id: property.client_id,
+              has_logo: brand.logo_url != null,
+              has_primary: brand.primary_hex != null,
+              has_agent_headshot: brand.agent_headshot_url != null,
+            });
+        }
+      }
 
       const assembleParams = { clips: clipInputs, overlays, music };
 
@@ -1192,6 +1260,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
           output_duration_seconds: horizontalDuration,
           render_time_ms: horizontalResult.renderTimeMs ?? null,
           job_id: horizontalJob.jobId,
+          reason,
         },
       });
 
@@ -1239,6 +1308,7 @@ export async function runAssembly(propertyId: string): Promise<void> {
             output_duration_seconds: verticalDuration,
             render_time_ms: verticalResult.renderTimeMs ?? null,
             job_id: verticalJob.jobId,
+            reason,
           },
         });
       }
@@ -1328,6 +1398,54 @@ export async function runAssembly(propertyId: string): Promise<void> {
   );
   // Silence unused baseline var (kept for potential future delta logging)
   void totalProcessingMsBase;
+}
+
+// ─── PUBLIC ASSEMBLY WRAPPERS ──────────────────────────────────
+
+/**
+ * Called by the poll-scenes cron when all scenes have settled. Sets
+ * `assembling` status then delegates to runAssemblyStep.
+ */
+export async function runAssembly(propertyId: string): Promise<void> {
+  await updatePropertyStatus(propertyId, "assembling");
+  await runAssemblyStep(propertyId, { reason: "pipeline" });
+}
+
+/**
+ * Re-run ONLY the assembly stage for a property whose clips are already
+ * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
+ * or when no completed scenes exist.
+ */
+export async function rerunAssembly(propertyId: string): Promise<void> {
+  const { data: property } = await getSupabase()
+    .from("properties")
+    .select("*")
+    .eq("id", propertyId)
+    .maybeSingle();
+
+  if (!property) {
+    throw new Error(`Property not found: ${propertyId}`);
+  }
+
+  const midPipelineStatuses = ["queued", "analyzing", "scripting", "generating", "qc"];
+  if (midPipelineStatuses.includes(property.status as string)) {
+    throw new Error(
+      `Cannot rerun assembly while pipeline is in ${property.status as string}`,
+    );
+  }
+
+  // Verify at least one completed (qc_pass) scene with a clip URL exists.
+  const scenes = await getScenesForProperty(propertyId);
+  const completedScenes = scenes.filter(
+    (s) => s.status === "qc_pass" && s.clip_url,
+  );
+  if (completedScenes.length === 0) {
+    throw new Error("No completed scenes — nothing to assemble");
+  }
+
+  await updatePropertyStatus(propertyId, "assembling");
+  await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
+  await runAssemblyStep(propertyId, { reason: "manual_rerun" });
 }
 
 function formatPrice(price: number): string {

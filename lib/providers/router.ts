@@ -64,33 +64,35 @@ export function resolveDecision(input: ResolveDecisionInput): ProviderDecision {
 // return ProviderDecision.
 
 export interface ProviderDecision {
-  provider: VideoProvider;            // "kling" | "atlas" | "runway" | "luma"
+  provider: VideoProvider;            // "atlas" | "kling" | "runway" | "higgsfield"
   modelKey?: string;                   // atlas SKU key; undefined → use env default
   fallback?: ProviderDecision;
 }
 
 // ─── PRODUCTION ROUTING TABLE ────────────────────────────────────────────────
 //
+// Lab-parity routing: production picks the SAME SKU Prompt Lab uses by default
+// (Atlas kling-v2-6-pro = V1_DEFAULT_SKU). Native Kling and Runway are kept as
+// movement-specific failovers, not primaries. This closes the quality gap
+// between Lab iterations and customer renders that surfaced on the 13fe5a96
+// rerun (2026-05-18) — native Kling v2 looked visibly worse than the Lab-
+// rendered iterations Oliver had been reviewing.
+//
 // Priority rules:
 //
-//   1. PAIRED SCENES: scenes with end_photo_id ALWAYS route to atlas +
-//      kling-v2-1-pair via selectProviderForScene(). This rule is outside the
-//      table — it short-circuits before movement is consulted.
+//   1. PAIRED SCENES (end_photo_id set): atlas + kling-v2-1-pair. Short-
+//      circuits in selectProviderForScene() before movement is consulted.
 //
-//   2. NATIVE KLING FIRST for interior shots (pre-paid credits → $0 cash).
-//      On 402 / insufficient-credit, failover to atlas kling-v2-master
-//      (same v2-master semantics, billed via Atlas cash balance).
+//   2. ALL OTHER SCENES: atlas + kling-v2-6-pro (Lab default). Failover
+//      branches by movement:
+//        - drone / exterior (RUNWAY_MOVEMENTS) → Runway gen4_turbo
+//        - interior (INTERIOR_MOVEMENTS) → native Kling (free pre-paid credits)
+//        - unknown / null → no failover
 //
-//   3. RUNWAY for exterior / drone / closeup shots (its strength; pending
-//      Phase B validation).
-//
-// ⚠️  PENDING PHASE B VALIDATION — every row below reflects Oliver's
-// pre-Phase-B intuition. Phase B produces lib/providers/router-table.ts
-// with evidence-based (room × movement) rows; when that lands this table
-// is replaced by a lookup into router-table.ts.
+// Failover only fires on a permanent Atlas error in the current attempt; see
+// runGenerationSubmit's `excluded` tracking.
 
-// Interior movements — native Kling v2 first, Atlas v2-master on credit fail.
-// Pending Phase B validation.
+// Interior movements: Atlas primary, native Kling failover.
 const INTERIOR_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "push_in",
   "orbit",
@@ -102,29 +104,18 @@ const INTERIOR_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "rack_focus",
 ]);
 
-// Exterior / drone / closeup — Runway preferred (its strength per Oliver's
-// intuition); Atlas generic as failover. Pending Phase B validation.
+// Drone / exterior / closeup movements: Atlas primary, Runway failover.
 const RUNWAY_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "drone_push_in",
   "top_down",
   "feature_closeup",
 ]);
 
-// Reused fallback decisions:
-
-// Atlas kling-v2-master: equivalent semantics to native Kling v2-master,
-// billed as cash via Atlas. Used as the credit-exhaustion failover for
-// interior shots.
-const ATLAS_V2_MASTER_FALLBACK: ProviderDecision = {
+// Lab-parity primary decision — Atlas + V1_DEFAULT_SKU, used as the bottom of
+// every fallback chain (last resort when everything else is excluded).
+const LAB_PARITY_PRIMARY: ProviderDecision = {
   provider: "atlas",
-  modelKey: "kling-v2-master",
-  fallback: undefined, // terminal
-};
-
-// Generic Atlas fallback for Runway failures (exteriors/drone). Uses whatever
-// ATLAS_VIDEO_MODEL env var is set (currently kling-v2-6-pro).
-const ATLAS_GENERIC_FALLBACK: ProviderDecision = {
-  provider: "atlas",
+  modelKey: V1_DEFAULT_SKU,
   fallback: undefined, // terminal
 };
 
@@ -147,33 +138,34 @@ function resolveMovementDecision(
   if (preference && !excluded.includes(preference)) {
     return {
       provider: preference,
-      fallback: excluded.length === 0 ? ATLAS_V2_MASTER_FALLBACK : undefined,
+      fallback: excluded.length === 0 ? LAB_PARITY_PRIMARY : undefined,
     };
   }
 
-  const runwayExcluded = excluded.includes("runway");
-  const klingExcluded = excluded.includes("kling");
-
-  if (movement && RUNWAY_MOVEMENTS.has(movement)) {
-    // Exterior / drone / closeup: Runway first (pending Phase B validation).
-    if (!runwayExcluded) {
-      return { provider: "runway", fallback: ATLAS_GENERIC_FALLBACK };
-    }
-    return ATLAS_GENERIC_FALLBACK;
+  // Compute the movement-specific failover (Runway for drone niche, native
+  // Kling for interior efficiency). Skipped if that provider already failed
+  // this attempt or there's no natural failover for the movement.
+  const drone = !!movement && RUNWAY_MOVEMENTS.has(movement);
+  const interior = !!movement && INTERIOR_MOVEMENTS.has(movement);
+  let movementFailover: ProviderDecision | undefined;
+  if (drone && !excluded.includes("runway")) {
+    movementFailover = { provider: "runway", fallback: undefined };
+  } else if (interior && !excluded.includes("kling")) {
+    movementFailover = { provider: "kling", fallback: undefined };
   }
 
-  if (movement && INTERIOR_MOVEMENTS.has(movement)) {
-    // Interior: native Kling first — pre-paid credits, $0 cash cost.
-    // On 402 / credit-exhaustion, failover to Atlas kling-v2-master.
-    // Pending Phase B validation.
-    if (!klingExcluded) {
-      return { provider: "kling", fallback: ATLAS_V2_MASTER_FALLBACK };
-    }
-    return ATLAS_V2_MASTER_FALLBACK;
+  // Lab parity: Atlas kling-v2-6-pro primary for everything.
+  if (!excluded.includes("atlas")) {
+    return {
+      provider: "atlas",
+      modelKey: V1_DEFAULT_SKU,
+      fallback: movementFailover,
+    };
   }
 
-  // Unknown / null / legacy movement — default to Atlas env SKU.
-  return { provider: "atlas", fallback: undefined };
+  // Atlas already failed this attempt — fall through to movement-specific
+  // provider as primary, or last-resort Atlas if no failover is available.
+  return movementFailover ?? LAB_PARITY_PRIMARY;
 }
 
 // ─── PROVIDER INSTANTIATION ─────────────────────────────────────────────────
@@ -192,7 +184,7 @@ export function buildProviderFromDecision(decision: ProviderDecision): IVideoPro
     case "runway":
       return new RunwayProvider();
     default:
-      // luma / higgsfield / unknown — fall back to Atlas (always available).
+      // higgsfield / unknown — fall back to Atlas (always available).
       return new AtlasProvider();
   }
 }

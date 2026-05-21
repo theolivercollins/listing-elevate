@@ -1,4 +1,4 @@
-export type PropertyStatus = "queued" | "analyzing" | "scripting" | "generating" | "qc" | "assembling" | "complete" | "failed" | "needs_review";
+export type PropertyStatus = "queued" | "analyzing" | "scripting" | "generating" | "qc" | "assembling" | "complete" | "failed" | "needs_review" | "archived" | "delivered";
 export type SceneStatus = "pending" | "generating" | "qc_pass" | "qc_soft_reject" | "qc_hard_reject" | "retry_1" | "retry_2" | "failed" | "needs_review";
 export type LogLevel = "info" | "warn" | "error" | "debug";
 export type PipelineStage = "intake" | "analysis" | "scripting" | "generation" | "qc" | "assembly" | "delivery";
@@ -58,7 +58,7 @@ export interface Scene {
   prompt: string;
   duration_seconds: number;
   status: SceneStatus;
-  provider: "runway" | "kling" | "luma";
+  provider: "runway" | "kling" | "atlas";
   generation_cost_cents: number;
   generation_time_ms: number;
   clip_url: string | null;
@@ -130,7 +130,7 @@ export interface CostEvent {
   id: string;
   scene_id: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly";
-  provider: "anthropic" | "runway" | "kling" | "luma";
+  provider: "anthropic" | "runway" | "kling" | "atlas";
   units_consumed: number | null;
   unit_type: "tokens" | "credits" | "kling_units" | null;
   cost_cents: number;
@@ -138,7 +138,7 @@ export interface CostEvent {
   created_at: string;
 }
 
-export type TokenProvider = "runway" | "kling" | "luma" | "anthropic" | "openai" | "other";
+export type TokenProvider = "runway" | "kling" | "atlas" | "anthropic" | "openai" | "other";
 
 export interface TokenPurchase {
   id: string;
@@ -168,6 +168,22 @@ export interface RevenueEntry {
   property_id: string | null;
   amount_cents: number;
   note: string | null;
+}
+
+export type BillingPeriod = "monthly" | "yearly";
+export type SubscriptionStatus = "active" | "paused" | "cancelled";
+
+export interface Subscription {
+  id: string;
+  provider: string;
+  amount_cents: number;
+  billing_period: BillingPeriod;
+  started_at: string;
+  next_charge_at: string;
+  status: SubscriptionStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DailyStat {

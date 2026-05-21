@@ -370,67 +370,87 @@ export default function BlogPostChatCompose() {
   return (
     <div className="flex h-[calc(100vh-72px)] flex-col">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b bg-background px-5 py-3">
+      <div
+        style={{
+          display: "flex", alignItems: "center", gap: 12,
+          borderBottom: "1px solid var(--line)", background: "var(--surface)",
+          padding: "10px 20px", flexShrink: 0,
+        }}
+      >
         <button
           type="button"
           onClick={() => navigate("/dashboard/blog/posts")}
-          className="-ml-1 inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            padding: "6px 10px", borderRadius: 999,
+            border: "1px solid var(--line)", background: "transparent",
+            color: "var(--muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+            fontFamily: "var(--le-font-sans)",
+          }}
         >
-          <ChevronLeft className="h-3.5 w-3.5" /> Posts
+          <ChevronLeft style={{ width: 13, height: 13 }} /> Posts
         </button>
-        <div className="flex items-center gap-2 text-sm">
-          <MessageSquare className="h-4 w-4 text-primary" />
-          <span className="font-medium">New post · Chat with Ally</span>
-          <span className="hidden text-xs text-muted-foreground md:inline">
-            {selectedTemplate ? <>· template <span className="font-medium">{selectedTemplate.name}</span></>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <MessageSquare style={{ width: 15, height: 15, color: "var(--accent)" }} />
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+            New post · Chat with Ally
+          </span>
+          <span style={{ fontSize: 12, color: "var(--muted)", display: "none" }} className="md:inline">
+            {selectedTemplate ? <>· template <span style={{ fontWeight: 600 }}>{selectedTemplate.name}</span></>
               : includeRecentPosts ? <>· style-matched to recent posts</>
               : <>· free-form</>}
             {useResearch ? (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-primary">
-                · <Globe className="ml-0.5 h-3 w-3" /> research always-on
+              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)" }}>
+                · <Globe style={{ marginLeft: 2, width: 11, height: 11 }} /> research always-on
               </span>
             ) : (
-              <span className="ml-1 inline-flex items-center gap-0.5 text-muted-foreground">
-                · <Globe className="ml-0.5 h-3 w-3" /> research: auto
+              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--muted)" }}>
+                · <Globe style={{ marginLeft: 2, width: 11, height: 11 }} /> research: auto
               </span>
             )}
           </span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           {totalCostCents > 0 && (
-            <span className="text-xs text-muted-foreground">${(totalCostCents / 100).toFixed(3)}</span>
+            <span style={{ fontSize: 11, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
+              ${(totalCostCents / 100).toFixed(3)}
+            </span>
           )}
           <button
             type="button"
             onClick={() => setShowFields((v) => !v)}
-            className="hidden rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted md:inline-block"
+            className="le-btn-ghost"
+            style={{ fontSize: 12, padding: "6px 12px" }}
           >
             {showFields ? "Hide fields" : "Show fields"}
           </button>
-          <Button
-            variant="outline"
-            size="sm"
+          <button
+            type="button"
             onClick={() => createDraft.mutate(form)}
             disabled={createDraft.isPending || !form.body_html.trim()}
+            className="le-btn-ghost"
+            style={{ fontSize: 12, padding: "6px 12px" }}
           >
-            {createDraft.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+            {createDraft.isPending && <Loader2 style={{ width: 13, height: 13, marginRight: 4, animation: "spin 1s linear infinite" }} />}
             Save draft
-          </Button>
-          <Button
-            size="sm"
+          </button>
+          <button
+            type="button"
             onClick={() => createPublish.mutate(form)}
             disabled={createPublish.isPending || !form.body_html.trim()}
+            className="le-btn-dark"
+            style={{ fontSize: 12, padding: "6px 12px" }}
           >
-            {createPublish.isPending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+            {createPublish.isPending && <Loader2 style={{ width: 13, height: 13, marginRight: 4, animation: "spin 1s linear infinite" }} />}
             Publish now
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Body — chat on left, preview-dominant fields on right (Claude-artifact ratio) */}
       <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[2fr_3fr]" : "md:grid-cols-1"} grid-cols-1`}>
         {/* CHAT COLUMN */}
-        <div className="relative flex min-h-0 flex-col bg-background">
+        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, #f3f3f5)" }}>
           <AnimatePresence mode="wait">
             {!hasThread && pendingActions.length === 0 ? (
               <motion.div
@@ -441,7 +461,11 @@ export default function BlogPostChatCompose() {
                 transition={{ duration: 0.25 }}
                 className="flex flex-1 flex-col items-center justify-center px-6"
               >
-                <h2 className="mb-8 text-center text-2xl font-semibold tracking-tight md:text-3xl">
+                <h2 style={{
+                  marginBottom: 32, textAlign: "center",
+                  fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600,
+                  letterSpacing: "-0.025em", color: "var(--ink)", lineHeight: 1.1,
+                }}>
                   Ready when you are.
                 </h2>
                 <Composer
@@ -453,14 +477,16 @@ export default function BlogPostChatCompose() {
                   onFilePick={() => fileInputRef.current?.click()}
                   templates={templates} templateId={templateId} onTemplateChange={setTemplateId}
                   includeRecentPosts={includeRecentPosts} onIncludeRecentPostsChange={setIncludeRecentPosts}
+                  useResearch={useResearch} onUseResearchChange={setUseResearch}
                 />
-                <div className="mt-5 flex max-w-xl flex-wrap justify-center gap-2">
+                <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8, maxWidth: 560 }}>
                   {STARTERS.map((s) => (
                     <button
                       key={s} type="button" onClick={() => send(s)}
-                      className="rounded-full border bg-background px-3 py-1.5 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                      className="le-btn-ghost"
+                      style={{ fontSize: 12, padding: "7px 14px" }}
                     >
-                      <Sparkles className="mr-1 inline h-3 w-3" />
+                      <Sparkles style={{ marginRight: 6, width: 11, height: 11, display: "inline" }} />
                       {s}
                     </button>
                   ))}
@@ -472,15 +498,31 @@ export default function BlogPostChatCompose() {
                 initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}
                 className="flex flex-1 flex-col min-h-0"
               >
-                <div ref={scrollerRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-5">
+                <div ref={scrollerRef} className="flex-1 overflow-y-auto px-5 py-5" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   {messages.map((m, i) => (
-                    <div key={i} className="space-y-1.5">
+                    <div key={i} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <motion.div
                         initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}
-                        className={
+                        style={
                           m.role === "user"
-                            ? `ml-auto max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-primary px-3.5 py-2 text-sm text-primary-foreground shadow-sm ${m.queued ? "opacity-70 ring-1 ring-primary-foreground/30" : ""}`
-                            : `max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-muted px-3.5 py-2 text-sm ${m.pending ? "italic text-muted-foreground" : ""}`
+                            ? {
+                                marginLeft: "auto", maxWidth: "88%", whiteSpace: "pre-wrap",
+                                borderRadius: "18px 18px 6px 18px",
+                                background: "var(--ink)", padding: "10px 14px",
+                                fontSize: 13.5, color: "var(--surface)",
+                                boxShadow: "0 1px 3px rgba(11,11,16,0.12)",
+                                opacity: m.queued ? 0.7 : 1,
+                                outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
+                              }
+                            : {
+                                maxWidth: "88%", whiteSpace: "pre-wrap",
+                                borderRadius: "18px 18px 18px 6px",
+                                background: "var(--surface)", padding: "10px 14px",
+                                fontSize: 13.5, color: m.pending ? "var(--muted)" : "var(--ink)",
+                                fontStyle: m.pending ? "italic" : "normal",
+                                border: "1px solid var(--line)",
+                                boxShadow: "0 1px 2px rgba(11,11,16,0.04)",
+                              }
                         }
                       >
                         <div className="flex items-center gap-2">
@@ -490,7 +532,10 @@ export default function BlogPostChatCompose() {
                             <span>{m.content}</span>
                           )}
                           {m.queued && (
-                            <span className="ml-1 rounded-full bg-primary-foreground/20 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide">
+                            <span style={{
+                              marginLeft: 6, borderRadius: 999, background: "rgba(255,255,255,0.18)",
+                              padding: "2px 7px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em",
+                            }}>
                               queued
                             </span>
                           )}
@@ -503,9 +548,10 @@ export default function BlogPostChatCompose() {
                           transition={{ duration: 0.15, delay: 0.05 }}
                           onClick={enableResearchAndRetry}
                           disabled={chat.isPending}
-                          className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                          className="le-btn-ghost"
+                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--accent)" }}
                         >
-                          <Globe className="h-3 w-3" /> Search the web &amp; retry
+                          <Globe style={{ width: 12, height: 12 }} /> Search the web &amp; retry
                         </motion.button>
                       )}
                     </div>
@@ -515,34 +561,39 @@ export default function BlogPostChatCompose() {
                     <motion.div
                       key={card.id}
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
-                      className="max-w-[88%] rounded-xl border border-primary/30 bg-primary/5 p-3 text-sm"
+                      style={{
+                        maxWidth: "88%", borderRadius: 16, border: "1px solid rgba(42,111,219,0.25)",
+                        background: "rgba(42,111,219,0.05)", padding: 14,
+                      }}
                     >
-                      <div className="mb-2 font-medium">
+                      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink)" }}>
                         {card.kind === "publish" ? "Publish this post to Sierra?" : "Save this as a draft?"}
                       </div>
-                      <div className="mb-3 space-y-0.5 text-xs text-muted-foreground">
-                        <div><span className="font-medium text-foreground">{card.snapshot.title || "Untitled"}</span></div>
+                      <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div><span style={{ fontWeight: 600, color: "var(--ink-2)" }}>{card.snapshot.title || "Untitled"}</span></div>
                         {card.snapshot.author_label && <div>by {card.snapshot.author_label}</div>}
                         {card.snapshot.category_label && <div>in {card.snapshot.category_label}</div>}
                       </div>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          type="button"
+                          className="le-btn-dark"
+                          style={{ fontSize: 12, padding: "6px 14px" }}
                           onClick={() => confirmAction(card)}
                           disabled={createDraft.isPending || createPublish.isPending}
                         >
                           {card.kind === "publish" ? "Publish now" : "Save draft"}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => cancelAction(card)}>
+                        </button>
+                        <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "6px 12px" }} onClick={() => cancelAction(card)}>
                           Cancel
-                        </Button>
+                        </button>
                       </div>
                     </motion.div>
                   ))}
 
                 </div>
 
-                <div className="border-t bg-background/95 px-5 pb-4 pt-3 backdrop-blur">
+                <div style={{ borderTop: "1px solid var(--line)", background: "rgba(255,255,255,0.95)", padding: "12px 20px 16px", backdropFilter: "blur(8px)" }}>
                   <Composer
                     input={input} onInputChange={setInput}
                     onSend={() => send(input)} canSend={canSend} isPending={chat.isPending}
@@ -572,16 +623,17 @@ export default function BlogPostChatCompose() {
         {showFields && (
           <motion.div
             initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }}
-            className="flex min-h-0 flex-col border-l bg-muted/10"
+            style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--line)", background: "var(--surface)" }}
+            className="min-h-0"
           >
-            <div className="flex items-center justify-between border-b bg-background px-4 py-2">
-              <div className="text-xs font-medium">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "var(--surface)", padding: "10px 16px" }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>
                 Post details
-                <span className="ml-2 text-muted-foreground">{filledFieldsCount}/8 filled</span>
+                <span style={{ marginLeft: 8, color: "var(--muted)", fontWeight: 500 }}>{filledFieldsCount}/8 filled</span>
               </div>
-              <Button type="button" size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setShowPreview((v) => !v)}>
+              <button type="button" className="le-btn-ghost" style={{ fontSize: 11.5, padding: "5px 10px" }} onClick={() => setShowPreview((v) => !v)}>
                 {showPreview ? "Hide preview" : "Show preview"}
-              </Button>
+              </button>
             </div>
 
             {/* Split the sidebar: fields on top, preview pinned below at ~50%
@@ -623,7 +675,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.author_label}
                     onChange={(e) => setForm({ ...form, author_label: e.target.value })}
-                    className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.authors.filter((a) => a.label && !a.label.toLowerCase().startsWith("select")).map((a) => (
@@ -635,7 +687,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.category_label}
                     onChange={(e) => setForm({ ...form, category_label: e.target.value })}
-                    className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                    style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.categories.filter((c) => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map((c) => (
@@ -670,19 +722,19 @@ export default function BlogPostChatCompose() {
 
               {sources.length > 0 && (
                 <div>
-                  <Label className="mb-1 flex items-center gap-1 text-xs">
-                    <Globe className="h-3 w-3" /> Research sources
-                    <span className="font-normal text-muted-foreground">· {sources.length}</span>
-                  </Label>
-                  <ol className="space-y-1 rounded-md border bg-background p-2 text-xs">
+                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>
+                    <Globe style={{ width: 12, height: 12 }} /> Research sources
+                    <span style={{ fontWeight: 400 }}>· {sources.length}</span>
+                  </div>
+                  <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 10px", fontSize: 12 }}>
                     {sources.map((s, i) => (
-                      <li key={s.url} className="flex items-start gap-1.5">
-                        <span className="text-muted-foreground">[{i + 1}]</span>
+                      <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                        <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="line-clamp-2 text-primary underline-offset-2 hover:underline"
+                          style={{ color: "var(--accent)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                           title={s.url}
                         >
                           {s.title}
@@ -696,36 +748,53 @@ export default function BlogPostChatCompose() {
             </div>
 
             {showPreview && (
-              <div className="relative flex min-h-0 flex-col border-t bg-white">
-                <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
-                  <div className="flex items-center gap-1">
+              <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "#fff" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.025)", padding: "6px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
                       onClick={() => setPreviewMode("rendered")}
-                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${previewMode === "rendered" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"}`}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
+                        background: previewMode === "rendered" ? "var(--surface)" : "transparent",
+                        color: previewMode === "rendered" ? "var(--ink)" : "var(--muted)",
+                        boxShadow: previewMode === "rendered" ? "var(--shadow-sm)" : "none",
+                      }}
                       title="Rendered preview"
                     >
-                      <Eye className="h-3 w-3" /> Preview
+                      <Eye style={{ width: 11, height: 11 }} /> Preview
                     </button>
                     <button
                       type="button"
                       onClick={() => setPreviewMode("source")}
-                      className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${previewMode === "source" ? "bg-background text-foreground shadow-sm" : "hover:bg-background/50"}`}
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
+                        background: previewMode === "source" ? "var(--surface)" : "transparent",
+                        color: previewMode === "source" ? "var(--ink)" : "var(--muted)",
+                        boxShadow: previewMode === "source" ? "var(--shadow-sm)" : "none",
+                      }}
                       title="HTML source"
                     >
-                      <Code2 className="h-3 w-3" /> Source
+                      <Code2 style={{ width: 11, height: 11 }} /> Source
                     </button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "var(--muted)" }}>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
                     <button
                       type="button"
                       onClick={openPreviewInNewTab}
                       disabled={!form.body_html}
-                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-background/50 disabled:opacity-40"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
+                        background: "transparent", color: "var(--muted)",
+                        opacity: !form.body_html ? 0.4 : 1,
+                      }}
                       title="Open in new tab"
                     >
-                      <ExternalLink className="h-3 w-3" /> Open
+                      <ExternalLink style={{ width: 11, height: 11 }} /> Open
                     </button>
                   </div>
                 </div>
@@ -759,6 +828,7 @@ export default function BlogPostChatCompose() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onSelect={(img) => setForm({ ...form, image: img })}
+        selectedId={form.image?.id ?? null}
       />
     </div>
   );
@@ -772,12 +842,12 @@ function Field({
 }: { label: string; filled?: boolean; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between">
-        <Label className="text-xs">{label}</Label>
+      <div style={{ marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>{label}</Label>
         {filled && (
           <motion.span
             initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.15 }}
-            className="text-[10px] text-emerald-600"
+            style={{ fontSize: 10, color: "var(--good)", fontWeight: 500 }}
           >
             ✓ filled
           </motion.span>
@@ -820,86 +890,87 @@ function Composer({
   useResearch, onUseResearchChange,
 }: ComposerProps) {
   return (
-    <div className={`mx-auto w-full ${big ? "max-w-2xl" : ""}`}>
+    <div style={{ marginLeft: "auto", marginRight: "auto", width: "100%", maxWidth: big ? 640 : undefined }}>
       {attachments.length > 0 && (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+        <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {attachments.map((a, i) => (
-            <div key={i} className="flex items-center gap-1.5 rounded-full border bg-muted/40 px-2.5 py-1 text-xs">
-              {a.kind === "pdf" ? <FileText className="h-3 w-3" /> : a.kind === "image" ? <ImageIcon className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
-              <span className="max-w-[160px] truncate">{a.filename}</span>
-              <span className="text-muted-foreground">{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
-              <button onClick={() => onRemoveAttachment(i)} className="ml-0.5 rounded p-0.5 hover:bg-background" aria-label="Remove">
-                <X className="h-3 w-3" />
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: 999, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "4px 10px", fontSize: 11.5 }}>
+              {a.kind === "pdf" ? <FileText style={{ width: 11, height: 11 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 11, height: 11 }} /> : <FileText style={{ width: 11, height: 11 }} />}
+              <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
+              <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: 4, padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }} aria-label="Remove">
+                <X style={{ width: 11, height: 11 }} />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex items-end gap-2 rounded-2xl border bg-background px-3 py-2 shadow-sm transition focus-within:border-primary/40 focus-within:shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: 20, border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="h-9 w-9 shrink-0 rounded-full p-0">
-              <Plus className="h-4 w-4" />
-            </Button>
+            <button type="button" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+              <Plus style={{ width: 15, height: 15 }} />
+            </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 p-2">
             <button
               type="button" onClick={onFilePick}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-muted"
+              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: 8, padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)" }}
+              className="hover:bg-muted"
             >
-              <Paperclip className="h-4 w-4" />
-              <div className="flex-1">
+              <Paperclip style={{ width: 15, height: 15 }} />
+              <div style={{ flex: 1 }}>
                 <div>Attach file</div>
-                <div className="text-xs text-muted-foreground">PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
               </div>
             </button>
-            <div className="my-1 border-t" />
-            <div className="px-2 py-1.5">
-              <div className="mb-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-                <LayoutTemplate className="h-3.5 w-3.5" /> Template
+            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+            <div style={{ padding: "6px 8px" }}>
+              <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+                <LayoutTemplate style={{ width: 13, height: 13 }} /> Template
               </div>
               <select
                 value={templateId}
                 onChange={(e) => onTemplateChange(e.target.value)}
-                className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+                style={{ display: "block", width: "100%", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">— None —</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
-              <div className="mt-1 text-[11px] text-muted-foreground">AI fills the template's sections.</div>
+              <div style={{ marginTop: 5, fontSize: 11, color: "var(--muted-2)" }}>AI fills the template's sections.</div>
             </div>
-            <div className="my-1 border-t" />
-            <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-muted">
+            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
                 checked={includeRecentPosts}
                 onChange={(e) => onIncludeRecentPostsChange(e.target.checked)}
-                className="mt-0.5"
+                style={{ marginTop: 2 }}
               />
-              <div className="flex-1 text-sm">
-                <div className="flex items-center gap-1.5">
-                  <Wand2 className="h-3.5 w-3.5" /> Match recent posts
+              <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Wand2 style={{ width: 13, height: 13 }} /> Match recent posts
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
                   Style + depth of your last 5 published posts.
                 </div>
               </div>
             </label>
-            <label className="flex cursor-pointer items-start gap-2 rounded-md px-2 py-2 hover:bg-muted">
+            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
                 checked={useResearch}
                 onChange={(e) => onUseResearchChange(e.target.checked)}
-                className="mt-0.5"
+                style={{ marginTop: 2 }}
               />
-              <div className="flex-1 text-sm">
-                <div className="flex items-center gap-1.5">
-                  <Globe className="h-3.5 w-3.5" /> Always research
+              <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <Globe style={{ width: 13, height: 13 }} /> Always research
                 </div>
-                <div className="text-xs text-muted-foreground">
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
                   Off: Ally only searches when your request needs fresh data (current rates, market stats, recent news). On: Gemini grounding every turn.
                 </div>
               </div>
@@ -922,16 +993,17 @@ function Composer({
           maxHeight={big ? 180 : 140}
         />
 
-        <Button
+        <button
           type="button" onClick={onSend} disabled={!canSend}
-          className="h-9 w-9 shrink-0 rounded-full p-0"
+          className="le-btn-dark"
+          style={{ width: 34, height: 34, padding: 0, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: !canSend ? 0.4 : 1 }}
           title={isPending ? "Queue for next" : "Send"}
         >
-          <ArrowUp className="h-4 w-4" />
-        </Button>
+          <ArrowUp style={{ width: 15, height: 15 }} />
+        </button>
       </div>
 
-      <div className="mt-1.5 px-1 text-[11px] text-muted-foreground">
+      <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11, color: "var(--muted-2)" }}>
         Enter to send · Shift+Enter for a new line · Say "publish it" or "save as draft" to ship.
       </div>
     </div>

@@ -10,14 +10,15 @@ import { TopNav } from "@/components/TopNav";
 import Index from "./pages/Index";
 import V2Landing from "./v2/pages/Landing";
 import Upload from "./pages/Upload";
+import UploadSuccess from "./pages/UploadSuccess";
+import UploadCancelled from "./pages/UploadCancelled";
 import Presets from "./pages/Presets";
 import Status from "./pages/Status";
 import AuthCallback from "./pages/AuthCallback";
 import { LoginDialogProvider } from "@/v2/components/auth/LoginDialogContext";
-import Account from "./pages/Account";
-import AccountProperties from "./pages/account/Properties";
-import AccountBilling from "./pages/account/Billing";
-import AccountProfile from "./pages/account/Profile";
+import DashboardAccountProfile from "./pages/dashboard/account/Profile";
+import DashboardAccountBilling from "./pages/dashboard/account/Billing";
+import DashboardAccountListings from "./pages/dashboard/account/Listings";
 import Dashboard from "./pages/Dashboard";
 import DashboardOverview from "./pages/dashboard/Overview";
 import DashboardPipeline from "./pages/dashboard/Pipeline";
@@ -26,7 +27,9 @@ import PropertyDetail from "./pages/dashboard/PropertyDetail";
 import DashboardLogs from "./pages/dashboard/Logs";
 import DashboardFinances from "./pages/dashboard/Finances";
 import DashboardSettings from "./pages/dashboard/Settings";
+import DashboardUsers from "./pages/dashboard/Users";
 import DashboardDevelopment from "./pages/dashboard/Development";
+import DashboardLearning from "./pages/dashboard/Learning";
 import DashboardPromptLab from "./pages/dashboard/PromptLab";
 import DashboardPromptLabRecipes from "./pages/dashboard/PromptLabRecipes";
 import DashboardPromptProposals from "./pages/dashboard/PromptProposals";
@@ -47,6 +50,12 @@ import EmailsList from "./pages/dashboard/EmailsList";
 import EmailDetail from "./pages/dashboard/EmailDetail";
 import EmailTemplates from "./pages/dashboard/EmailTemplates";
 import EmailTemplateDetail from "./pages/dashboard/EmailTemplateDetail";
+import StudioHome from "./pages/dashboard/studio/StudioHome";
+import StudioNew from "./pages/dashboard/studio/StudioNew";
+import StudioClients from "./pages/dashboard/studio/Clients";
+import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
+import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
+import PreviewPage from "./pages/preview/PreviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -70,17 +79,22 @@ const App = () => (
                 <Route path="/login" element={<Navigate to="/?login=1" replace />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
+                <Route path="/preview/:token" element={<PreviewPage />} />
+
+                {/* Backwards-compat redirects for old /account/* bookmarks */}
+                <Route path="/account" element={<Navigate to="/dashboard/account/profile" replace />} />
+                <Route path="/account/profile" element={<Navigate to="/dashboard/account/profile" replace />} />
+                <Route path="/account/billing" element={<Navigate to="/dashboard/account/billing" replace />} />
+                <Route path="/account/properties" element={<Navigate to="/dashboard/account/listings" replace />} />
+
+                {/* Stripe Checkout redirect targets — public so Stripe can land here */}
+                <Route path="/upload/success" element={<UploadSuccess />} />
+                <Route path="/upload/cancelled" element={<UploadCancelled />} />
 
                 {/* Authenticated user routes */}
                 <Route element={<RequireAuth />}>
                   <Route path="/upload" element={<Upload />} />
                   <Route path="/presets" element={<Presets />} />
-                  <Route path="/account" element={<Account />}>
-                    <Route index element={<Navigate to="properties" replace />} />
-                    <Route path="properties" element={<AccountProperties />} />
-                    <Route path="billing" element={<AccountBilling />} />
-                    <Route path="profile" element={<AccountProfile />} />
-                  </Route>
                 </Route>
 
                 {/* Admin routes */}
@@ -92,6 +106,7 @@ const App = () => (
                     <Route path="properties/:id" element={<PropertyDetail />} />
                     <Route path="logs" element={<DashboardLogs />} />
                     <Route path="development" element={<DashboardDevelopment />} />
+                    <Route path="development/learning" element={<DashboardLearning />} />
                     <Route path="development/prompt-lab" element={<DashboardPromptLab />} />
                     <Route path="development/prompt-lab/recipes" element={<DashboardPromptLabRecipes />} />
                     <Route path="development/prompt-lab/:sessionId" element={<DashboardPromptLab />} />
@@ -118,7 +133,19 @@ const App = () => (
                     <Route path="blog/email-templates/new" element={<EmailTemplateDetail />} />
                     <Route path="blog/email-templates/:id" element={<EmailTemplateDetail />} />
                     <Route path="finances" element={<DashboardFinances />} />
+                    <Route path="users" element={<DashboardUsers />} />
                     <Route path="settings" element={<DashboardSettings />} />
+                    <Route path="studio" element={<StudioHome />} />
+                    <Route path="studio/new" element={<StudioNew />} />
+                    <Route path="studio/clients" element={<StudioClients />} />
+                    <Route path="studio/clients/:id" element={<StudioClientEdit />} />
+                    <Route path="studio/properties/:id" element={<StudioPropertyCommandCenter />} />
+                    <Route path="account">
+                      <Route index element={<Navigate to="profile" replace />} />
+                      <Route path="profile" element={<DashboardAccountProfile />} />
+                      <Route path="billing" element={<DashboardAccountBilling />} />
+                      <Route path="listings" element={<DashboardAccountListings />} />
+                    </Route>
                   </Route>
                 </Route>
 

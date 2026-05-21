@@ -25,7 +25,6 @@ export interface LedgerSkuResult {
 const PROVIDER_NATIVE_SKU: Record<string, string> = {
   kling: "kling-v2-native",
   runway: "runway-gen-4-turbo",
-  luma: "luma-ray2",
 };
 
 export function formatRowSku(input: LedgerSkuInput): LedgerSkuResult {
