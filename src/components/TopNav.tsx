@@ -30,6 +30,7 @@ import {
   Image as ImageIcon,
   Newspaper,
   LayoutTemplate,
+  Mail,
   Clapperboard,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
@@ -130,6 +131,17 @@ function BlogNav() {
         <DropdownMenuItem asChild>
           <Link to="/dashboard/blog/templates" className="cursor-pointer">
             <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Templates
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/dashboard/blog/emails" className="cursor-pointer">
+            <Mail className="mr-2 h-3.5 w-3.5" /> Emails
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/dashboard/blog/email-templates" className="cursor-pointer">
+            <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Email templates
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>

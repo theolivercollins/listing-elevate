@@ -194,6 +194,9 @@ importers:
       react-dom:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
+      react-email-editor:
+        specifier: ^1.8.0
+        version: 1.8.0(react@18.3.1)
       react-hook-form:
         specifier: ^7.61.1
         version: 7.74.0(react@18.3.1)
@@ -2289,6 +2292,9 @@ packages:
     resolution: {integrity: sha512-LdDNl6C5iJExcM0Yh0PwAIBb9PrSiCsWamF/JyEZawm3kFDnRoaq3LGE4bpyRao/fWeGKKyw7icx0YxrLFC5Cg==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
+  '@unlayer/types@1.410.0':
+    resolution: {integrity: sha512-vwjBjOJzpHbkaarA5SL8XBCgE6wvj3AtkuWSplqbpwtbggmWZbxagAmpUhMTXAJwiaVhsxa9jsTRZJEK8ls3Uw==}
+
   '@vercel/build-utils@13.20.0':
     resolution: {integrity: sha512-Jd29k42KSCRKOs+oSSVthw4xSjZBK3pUDG6AZl95/TsvIDNwRkjI2Nvs1ZcYDJdeLR346PQdWReFJGqkf/tb6A==}
 
@@ -3848,6 +3854,12 @@ packages:
     resolution: {integrity: sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw==}
     peerDependencies:
       react: ^18.3.1
+
+  react-email-editor@1.8.0:
+    resolution: {integrity: sha512-wauG/fES4k3VueIYVvsnxL+6+AAOw8oG3r1QlQclnC2aErpsjJSDmYgQRmDBhkts0QTKJf4uPiXOd3OxPv50OA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>=15'
 
   react-hook-form@7.74.0:
     resolution: {integrity: sha512-yR6wHr99p9wFv686jhRWVSFhUvDvNbdUf2dKlbno8/VKOCuoNobDGC6S+M2dua9A9Yo8vpcrp8assIYbsZCQ9g==}
@@ -6293,6 +6305,8 @@ snapshots:
       '@typescript-eslint/types': 8.59.1
       eslint-visitor-keys: 5.0.1
 
+  '@unlayer/types@1.410.0': {}
+
   '@vercel/build-utils@13.20.0':
     dependencies:
       '@vercel/python-analysis': 0.11.0
@@ -7983,6 +7997,11 @@ snapshots:
       loose-envify: 1.4.0
       react: 18.3.1
       scheduler: 0.23.2
+
+  react-email-editor@1.8.0(react@18.3.1):
+    dependencies:
+      '@unlayer/types': 1.410.0
+      react: 18.3.1
 
   react-hook-form@7.74.0(react@18.3.1):
     dependencies:

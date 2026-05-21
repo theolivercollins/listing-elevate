@@ -16,6 +16,7 @@ import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
   listTemplates, getTemplate, getTaxonomy, generateAIDraft, setHold,
+  aiEmailFromPost, createEmail,
 } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -24,7 +25,7 @@ import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Loader2, MessageSquare, Pause, Play, Sparkles, Trash2 } from "lucide-react";
+import { Eye, Loader2, Mail, MessageSquare, Pause, Play, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "on-hold" | "readonly";
@@ -298,6 +299,32 @@ export default function BlogPostDetailPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  // "Send as email" — converts the post body to an email draft via Ally then
+  // navigates to the new email detail page.
+  const sendAsEmail = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("Post not yet saved");
+      const result = await aiEmailFromPost(id);
+      const { id: emailId } = await createEmail({
+        subject: result.subject,
+        preheader: result.preheader,
+        body_html: result.body_html,
+        from_name: result.from_name,
+        from_email: result.from_email,
+        audience: result.audience,
+        source_post_id: id,
+        authored: "auto",
+        initial_state: "draft",
+      });
+      return emailId;
+    },
+    onSuccess: (emailId) => {
+      toast.success("Email draft created");
+      navigate(`/dashboard/blog/emails/${emailId}`);
+    },
+    onError: (e: any) => toast.error(`Email conversion failed: ${e?.message ?? e}`),
+  });
+
   if (!isCompose && isLoading) return (
     <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
       <div style={{ width: 24, height: 24, borderRadius: 99, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
@@ -523,6 +550,20 @@ export default function BlogPostDetailPage() {
         <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px", opacity: !form.body_html.trim() ? 0.4 : 1 }} onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
           <Eye style={{ width: 14, height: 14, marginRight: 6 }} /> Preview
         </button>
+        {!isCompose && (
+          <button
+            type="button"
+            onClick={() => sendAsEmail.mutate()}
+            disabled={sendAsEmail.isPending || !form.body_html.trim()}
+            title="Convert this post to an email draft using Ally"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
+          >
+            {sendAsEmail.isPending
+              ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+              : <Mail style={{ width: 14, height: 14 }} />}
+            Send as email
+          </button>
+        )}
         {!isCompose && (
           <button
             type="button"
