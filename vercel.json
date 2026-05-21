@@ -57,6 +57,7 @@
     { "src": "/api/admin/studio/properties/([^/]+)/notes", "dest": "/api/admin/studio/properties/[id]/notes?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)", "dest": "/api/admin/studio/properties/[id]?id=$1" },
     { "src": "/api/admin/studio/clients/([^/]+)", "dest": "/api/admin/studio/clients/[id]?id=$1" },
+    { "src": "/api/preview/([^/]+)", "dest": "/api/preview/[token]?token=$1" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
     { "src": "/(.*)", "dest": "/index.html" }
