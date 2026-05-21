@@ -1,5 +1,5 @@
 import { getSupabase } from '../client.js';
-import { generatePreviewToken } from './preview-tokens';
+import { generatePreviewToken } from './preview-tokens.js';
 
 export async function createPreviewLink(propertyId: string, expiresAt: string | null = null) {
   const token = generatePreviewToken();

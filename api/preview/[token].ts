@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { isWellFormedToken } from '../../lib/operator-studio/preview-tokens';
-import { fetchByToken, recordPreviewView, insertClientNote } from '../../lib/operator-studio/preview';
+import { isWellFormedToken } from '../../lib/operator-studio/preview-tokens.js';
+import { fetchByToken, recordPreviewView, insertClientNote } from '../../lib/operator-studio/preview.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = String(req.query.token ?? '');

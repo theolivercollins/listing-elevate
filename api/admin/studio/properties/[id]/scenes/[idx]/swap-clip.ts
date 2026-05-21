@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../../../../../../lib/auth.js';
-import { swapClip } from '../../../../../../lib/operator-studio/clip-swap.js';
+import { requireAdmin } from '../../../../../../../lib/auth.js';
+import { swapClip } from '../../../../../../../lib/operator-studio/clip-swap.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
