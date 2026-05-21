@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-20 PM (Ally email composer — drag-and-drop builder + Sendy send + blog→email handoff; PR #82)
+Last updated: 2026-05-21 (Ally email composer LIVE on prod — migration 058 applied, Sendy env vars set, prod deploy `20na2j3o3` shipped)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,9 @@ See also:
 
 ## Right now
 
-**2026-05-20 (latest): Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Send target is Sendy (the team's existing self-hosted SES-backed bulk mailer). Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, PR #82 open against `main`. Migration 058 NOT applied to prod yet (waiting on Oliver). Sendy env vars NOT set in prod yet (waiting on Oliver).**
+**2026-05-21 (latest): Ally email composer is LIVE on listingelevate.com. PR #82 merged to main 2026-05-21 00:13 UTC (commit `4460d55`). Migration 058 applied to Supabase prod (`email_templates` + `emails` tables created via MCP). 5 env vars set in Vercel prod (`SENDY_URL=https://sendy.helgemoteam.com`, `SENDY_API_KEY=Odt...VOB`, `SENDY_BRAND_ID=1` (assumed; verify in Sendy admin), `DEFAULT_EMAIL_FROM_NAME="The Helgemo Team"`, `DEFAULT_EMAIL_FROM_EMAIL=brianh@helgemoteam.com`). Prod redeploy `listingelevate-20na2j3o3-recasi.vercel.app` shipped 2026-05-21 ~15:36 UTC; all 3 new API routes verified live (`/api/blog/emails`, `/api/blog/email-templates`, `/api/blog/emails/[id]` all return 401-on-no-auth = routes resolved). `/dashboard/blog/emails` returns 200. Test send vs the Sendy install NOT yet performed — that's the only remaining smoke test before Oliver can use it end-to-end.**
+
+**Operational gotcha discovered**: PR #82 merge did NOT auto-deploy to Vercel prod. Vercel GitHub integration appears to not auto-deploy on every main push (or it was disabled). When merging email-affecting code to main in the future, manually trigger `vercel deploy --prod --archive=tgz` from a checkout that has the new code. The first manual deploy (`oya5ml80l`) accidentally used the listing-elevate top-level checkout (was on a different branch `feat/voiceover-pipeline-redfin-fe`) and shipped stale code — the second deploy (`20na2j3o3`) used the worktree which actually had the merged email files. **Lesson**: always run `git log --oneline -1` and verify branch + commit before `vercel --prod`; the cwd's git state determines what ships, not the merge state on GitHub.
 
 ### Email composer (end-to-end Ally flow)
 
