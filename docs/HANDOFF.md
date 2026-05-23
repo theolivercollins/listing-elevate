@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-14 (Creatomate Just Listed #01 rev-2: 1080p/30fps template + per-duration env scheme + vertical-aware resolver)
+Last updated: 2026-05-23 (v1.1 Seedance push-in + FFmpeg speed-ramp polish — opt-in pipeline_mode, Atlas-routed, v2.1 paired untouched)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,13 @@ See also:
 
 ## Right now
 
-**2026-05-14 (latest): Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
+**2026-05-23 (latest): v1.1 Seedance push-in pipeline + FFmpeg speed-ramp polish — opt-in toggle on every order.** New `properties.pipeline_mode` column (`v1` | `v1.1`, default `v1`, CHECK constraint live in prod). When set to `v1.1`, every non-paired clip routes to the new `seedance-pro-pushin` Atlas SKU (Bytedance Seedance, env-overridable slug via `SEEDANCE_ATLAS_SLUG`, default `bytedance/seedance-pro/image-to-video`, 14¢/sec placeholder); the scene's prompt is overridden at render time to a stable "slow push in" directive via `forceSeedancePushInPrompt` (stored prompt unmutated for audit). After each Seedance clip downloads in `api/cron/poll-scenes.ts`, `applySpeedRampToBuffer` runs a 3-segment FFmpeg `trim`+`setpts`+`concat` filter that slows the first and last 0.5s of the clip to 0.8× — subtle cinematic "breathe" feel on the head and tail. On any ramp failure: log warn and ship the raw clip rather than failing the scene. **Paired scenes always still use Kling 2.1 (`kling-v2-1-pair`) regardless of mode — v2.1 logic untouched.** UI toggle lives in the Upload form Step 2 (Property). Fallback chain: Seedance permanent fail → Atlas `kling-v2-6-pro`. Migration 062 applied to prod via Management API. Tests: 37/37 green across `router.v1.1`, `ffmpeg.speed-ramp`, plus the 9 existing router + 12 atlas tests unchanged. Branch `feat/v1-1-seedance-pushin` cascaded directly to `main` per Oliver's authorization.
+
+**Before this can render a real clip on prod:** confirm `SEEDANCE_ATLAS_SLUG` is correct for the Atlas catalog (default guess may be `bytedance/seedance-pro/image-to-video`; if Atlas hosts it under a different path, set the env var). Validate the 14¢/sec price against the first Atlas invoice; adjust `priceCentsPerSecond` in `lib/providers/atlas.ts`.
+
+---
+
+**2026-05-14: Creatomate Just Listed #01 rev-2 — 15s template wired end-to-end through the pipeline.** Oliver redesigned the Just Listed template (canvas → 1920×1080, 30fps; added Audio-Music slot; renamed all text placeholders to `*-Intro` / `*-Mid` / `*-Final` convention; designed for 15s only — 30s + 60s templates pending). Code-side rewrite to match: new mapper keys, duration-suffixed env vars, vertical-aware resolver. PR #46 (`feat/creatomate-template-rev2`) cascaded `dev → staging → main`.
 
 **Diagnosis (the actual user-facing problem before the fix):** every Creatomate template render was coming out 1280×720 at 24fps with no text overlays. Three root causes, all empirically verified with three live `/v2/renders` API calls:
 
