@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -17,6 +18,7 @@ import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
 export type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -58,6 +60,7 @@ export async function createProperty(data: {
   custom_request_text?: string | null;
   days_on_market?: number | null;
   sold_price?: number | null;
+  pipeline_mode?: PipelineMode;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")
@@ -383,9 +386,9 @@ export async function recordCostEvent(event: {
   propertyId: string | null;
   sceneId?: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
+  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "seedance";
   unitsConsumed?: number;
-  unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
+  unitType?: "tokens" | "credits" | "kling_units" | "renders" | "seconds" | null;
   costCents: number;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
