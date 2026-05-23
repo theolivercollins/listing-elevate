@@ -54,7 +54,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       tempId, photoPaths, driveLink,
       selectedPackage, selectedDuration, selectedOrientation,
       addVoiceover, addVoiceClone, addCustomRequest, customRequestText,
-      daysOnMarket, soldPrice,
+      daysOnMarket, soldPrice, pipeline_mode,
     } = req.body;
 
     console.log('POST /api/properties body:', JSON.stringify({
@@ -103,6 +103,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       sold_price: typeof soldPrice === 'number'
         ? soldPrice
         : (soldPrice ? parseInt(soldPrice, 10) : null),
+      ...(pipeline_mode === 'v1.1' ? { pipeline_mode: 'v1.1' as const } : {}),
     });
 
     const supabase = getSupabase();

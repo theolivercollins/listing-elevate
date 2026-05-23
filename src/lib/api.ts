@@ -83,6 +83,7 @@ export async function createProperty(
     customRequestText?: string;
     daysOnMarket?: string;
     soldPrice?: string;
+    pipelineMode?: 'v1' | 'v1.1';
   },
   onProgress?: (uploaded: number, total: number) => void,
 ): Promise<{ id: string; status: string; photoCount: number }> {
@@ -169,6 +170,7 @@ export async function createProperty(
       customRequestText: data.customRequestText ?? null,
       daysOnMarket: data.daysOnMarket ?? null,
       soldPrice: data.soldPrice ?? null,
+      pipeline_mode: data.pipelineMode ?? 'v1',
     }),
   });
 
@@ -299,4 +301,15 @@ export async function skipScene(id: string): Promise<void> {
 
 export async function fetchSystemPrompts(): Promise<{ analysis: string; director: string; qc: string }> {
   return apiFetch('/api/admin/prompts');
+}
+
+export async function updatePropertyPipelineMode(
+  id: string,
+  pipeline_mode: 'v1' | 'v1.1',
+): Promise<Property> {
+  return apiFetch(`/api/properties/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pipeline_mode }),
+  });
 }
