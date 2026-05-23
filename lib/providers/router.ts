@@ -1,4 +1,5 @@
 import type { RoomType, VideoProvider, CameraMovement } from "../db.js";
+import type { PipelineMode } from "../types.js";
 import type { IVideoProvider } from "./provider.interface.js";
 import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
@@ -227,8 +228,10 @@ export function selectProviderForScene(
     preference: VideoProvider | null;
   },
   excluded: VideoProvider[] = [],
+  mode: PipelineMode = "v1",
 ): ProviderDecision {
-  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair.
+  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair (v2.1 model).
+  // This rule wins over pipeline_mode — v1.1 never replaces the paired path.
   // If atlas itself is excluded, fall through to the movement table
   // as best-effort (better to try something than nothing).
   if (scene.endPhotoId && !excluded.includes("atlas")) {
@@ -239,7 +242,48 @@ export function selectProviderForScene(
     };
   }
 
+  // v1.1 — Seedance push-in for every non-paired scene, routed through
+  // Atlas (Seedance is hosted as an Atlas SKU; no separate provider).
+  // Falls back to the default V1 Atlas SKU if the Seedance render hits
+  // a permanent error (e.g. capacity / model outage). Skips when atlas
+  // is already excluded mid-failover — there's no other home for Seedance.
+  if (mode === "v1.1" && !excluded.includes("atlas")) {
+    return {
+      provider: "atlas",
+      modelKey: "seedance-pro-pushin",
+      fallback: {
+        provider: "atlas",
+        modelKey: V1_DEFAULT_SKU,
+        fallback: undefined,
+      },
+    };
+  }
+
   return resolveMovementDecision(scene.roomType, scene.movement, scene.preference, excluded);
+}
+
+// ─── SEEDANCE PROMPT NORMALIZATION ───────────────────────────────────────────
+//
+// Seedance under v1.1 only ever does push-in. The scene's stored prompt may
+// contain orbit/parallax/tilt language carried over from the v1 prompt grader
+// — strip that and prepend a stable push-in directive at render time. The
+// stored scene.prompt is NOT mutated; this is render-time only so the audit
+// trail in the DB stays human-authored.
+
+const MOVEMENT_VERB_PATTERN =
+  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
+
+export function stripMovementVerbs(prompt: string): string {
+  return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
+const SEEDANCE_PUSHIN_PREAMBLE =
+  "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
+
+export function forceSeedancePushInPrompt(originalPrompt: string): string {
+  const stripped = stripMovementVerbs(originalPrompt);
+  if (!stripped) return SEEDANCE_PUSHIN_PREAMBLE;
+  return `${SEEDANCE_PUSHIN_PREAMBLE} ${stripped}`;
 }
 
 /**

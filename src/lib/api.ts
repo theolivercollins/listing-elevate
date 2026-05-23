@@ -116,6 +116,7 @@ export async function createProperty(
     soldPrice?: string;
     /** Preview MP3 URL from /api/voiceover/preview — persisted to property on create. */
     voiceoverPreviewUrl?: string;
+    pipelineMode?: 'v1' | 'v1.1';
   },
   onProgress?: (uploaded: number, total: number) => void,
 ): Promise<{
@@ -218,6 +219,7 @@ export async function createProperty(
       daysOnMarket: data.daysOnMarket ?? null,
       soldPrice: data.soldPrice ?? null,
       voiceoverPreviewUrl: data.voiceoverPreviewUrl ?? null,
+      pipeline_mode: data.pipelineMode ?? 'v1',
     }),
   });
 
@@ -444,5 +446,17 @@ export async function inviteUser(email: string): Promise<{ ok: boolean; userId: 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email }),
+  });
+}
+
+// ─── v1.1: per-property Seedance push-in toggle ─────────────────
+export async function updatePropertyPipelineMode(
+  id: string,
+  pipeline_mode: 'v1' | 'v1.1',
+): Promise<Property> {
+  return apiFetch(`/api/properties/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pipeline_mode }),
   });
 }

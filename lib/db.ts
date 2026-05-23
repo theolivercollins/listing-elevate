@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -18,6 +19,7 @@ import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
 export type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -65,6 +67,8 @@ export async function createProperty(data: {
   stripe_payment_status?: string;
   // Auth — populated on POST /api/properties when user is signed in.
   submitted_by?: string;
+  // v1.1 Seedance push-in toggle — migration 062.
+  pipeline_mode?: PipelineMode;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")

@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-20 PM (Ally email composer — drag-and-drop builder + Sendy send + blog→email handoff; PR #82)
+Last updated: 2026-05-23 (v1.1 Seedance push-in + FFmpeg speed-ramp polish — opt-in pipeline_mode, Atlas-routed, v2.1 paired untouched)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,13 @@ See also:
 
 ## Right now
 
-**2026-05-20 (latest): Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Send target is Sendy (the team's existing self-hosted SES-backed bulk mailer). Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, PR #82 open against `main`. Migration 058 NOT applied to prod yet (waiting on Oliver). Sendy env vars NOT set in prod yet (waiting on Oliver).**
+**2026-05-23 (latest): v1.1 Seedance push-in pipeline + FFmpeg speed-ramp polish — opt-in toggle on every order.** New `properties.pipeline_mode` column (`v1` | `v1.1`, default `v1`, CHECK constraint live in prod). When set to `v1.1`, every non-paired clip routes to the new `seedance-pro-pushin` Atlas SKU (Bytedance Seedance, env-overridable slug via `SEEDANCE_ATLAS_SLUG`, default `bytedance/seedance-pro/image-to-video`, 14¢/sec placeholder); the scene's prompt is overridden at render time to a stable "slow push in" directive via `forceSeedancePushInPrompt` (stored prompt unmutated for audit). After each Seedance clip downloads in `api/cron/poll-scenes.ts`, `applySpeedRampToBuffer` runs a 3-segment FFmpeg `trim`+`setpts`+`concat` filter that slows the first and last 0.5s of the clip to 0.8× — subtle cinematic "breathe" feel on the head and tail. On any ramp failure: log warn and ship the raw clip rather than failing the scene. **Paired scenes always still use Kling 2.1 (`kling-v2-1-pair`) regardless of mode — v2.1 logic untouched.** UI toggle lives in the Upload form Step 1 (Property) as a Pipeline field. Fallback chain: Seedance permanent fail → Atlas `kling-v2-6-pro`. Migration 062 applied to prod via Management API. Tests: 37/37 green across `router.v1.1`, `ffmpeg.speed-ramp`, plus the 9 existing router + 12 atlas tests unchanged. Branch `feat/v1-1-seedance-pushin` cascaded directly to `main` per Oliver's authorization.
+
+**Before this can render a real clip on prod:** confirm `SEEDANCE_ATLAS_SLUG` is correct for the Atlas catalog (default guess `bytedance/seedance-pro/image-to-video`; if Atlas hosts it under a different path, set the env var on Vercel prod). Validate the 14¢/sec price against the first Atlas invoice; adjust `priceCentsPerSecond` in `lib/providers/atlas.ts`.
+
+---
+
+**2026-05-20: Email composer — replacing Stripo + Claude Co-work with Ally + open-source drag-and-drop. Send target is Sendy (the team's existing self-hosted SES-backed bulk mailer). Blog → email handoff wired. On feature branch `worktree-blog-post-fix-2`, PR #82 open against `main`. Migration 058 NOT applied to prod yet (waiting on Oliver). Sendy env vars NOT set in prod yet (waiting on Oliver).**
 
 ### Email composer (end-to-end Ally flow)
 

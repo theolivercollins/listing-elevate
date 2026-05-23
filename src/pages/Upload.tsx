@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   ArrowRight,
   ArrowLeft,
@@ -170,6 +172,7 @@ const Upload = () => {
   const [addCustomRequest, setAddCustomRequest] = useState(false);
   const [customRequestText, setCustomRequestText] = useState("");
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [pipelineMode, setPipelineMode] = useState<'v1' | 'v1.1'>('v1');
 
   // ─── voiceover panel state ───
   const [selectedVoiceId, setSelectedVoiceId] = useState<string | null>(null);
@@ -515,6 +518,7 @@ const Upload = () => {
           daysOnMarket,
           soldPrice,
           voiceoverPreviewUrl: voiceoverPreviewUrl ?? undefined,
+          pipelineMode,
         },
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
@@ -1025,6 +1029,60 @@ const Upload = () => {
                             </div>
                           </Field>
                         )}
+
+                        {/* v1.1 — Seedance push-in pipeline toggle */}
+                        <Field label="Pipeline" full>
+                          <RadioGroup
+                            value={pipelineMode}
+                            onValueChange={(v) => setPipelineMode(v as 'v1' | 'v1.1')}
+                            className="mt-2 space-y-0"
+                            style={{ gap: 0 }}
+                          >
+                            <label
+                              htmlFor="pipeline-v1"
+                              className="flex cursor-pointer items-start gap-4 border border-border p-5 transition-colors duration-300 hover:bg-[var(--le-bg-elev)]"
+                              style={{ background: pipelineMode === 'v1' ? 'var(--le-bg-elev)' : 'var(--le-bg)', marginBottom: 1 }}
+                            >
+                              <RadioGroupItem id="pipeline-v1" value="v1" className="mt-0.5 shrink-0" />
+                              <div>
+                                <span
+                                  className="block text-sm font-medium tracking-[-0.01em]"
+                                  style={{ fontFamily: 'var(--le-font-sans)', color: 'var(--le-text)' }}
+                                >
+                                  Default (v1)
+                                </span>
+                                <span
+                                  className="mt-1 block text-xs leading-relaxed"
+                                  style={{ fontFamily: 'var(--le-font-sans)', color: 'var(--le-text-muted)' }}
+                                >
+                                  Mixed-movement routing across Kling, Runway, and Atlas.
+                                </span>
+                              </div>
+                            </label>
+
+                            <label
+                              htmlFor="pipeline-v1-1"
+                              className="flex cursor-pointer items-start gap-4 border border-border p-5 transition-colors duration-300 hover:bg-[var(--le-bg-elev)]"
+                              style={{ background: pipelineMode === 'v1.1' ? 'var(--le-bg-elev)' : 'var(--le-bg)' }}
+                            >
+                              <RadioGroupItem id="pipeline-v1-1" value="v1.1" className="mt-0.5 shrink-0" />
+                              <div>
+                                <span
+                                  className="block text-sm font-medium tracking-[-0.01em]"
+                                  style={{ fontFamily: 'var(--le-font-sans)', color: 'var(--le-text)' }}
+                                >
+                                  Experimental v1.1 — Seedance push-in
+                                </span>
+                                <span
+                                  className="mt-1 block text-xs leading-relaxed"
+                                  style={{ fontFamily: 'var(--le-font-sans)', color: 'var(--le-text-muted)' }}
+                                >
+                                  Every clip is a slow push-in with a subtle slow-in / slow-out polish. Paired scenes still use Kling 2.1 start+end-frame.
+                                </span>
+                              </div>
+                            </label>
+                          </RadioGroup>
+                        </Field>
                       </div>
                     </SectionCard>
                   </motion.div>

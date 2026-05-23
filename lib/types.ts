@@ -83,6 +83,8 @@ export type SceneStatus =
 
 export type VideoProvider = "runway" | "kling" | "higgsfield" | "atlas";
 
+export type PipelineMode = "v1" | "v1.1";
+
 export type LogStage =
   | "intake"
   | "analysis"
@@ -137,6 +139,8 @@ export interface Property {
   stripe_payment_status: "unpaid" | "pending" | "paid" | "refunded" | "failed" | "cancelled";
   stripe_paid_at: string | null;
   stripe_amount_cents: number | null;
+  // v1.1 Seedance push-in toggle — added migration 062.
+  pipeline_mode: PipelineMode;
 }
 
 export interface UserProfile {

@@ -85,6 +85,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       addVoiceover, addVoiceClone, addCustomRequest, customRequestText,
       daysOnMarket, soldPrice,
       voiceoverPreviewUrl,
+      pipeline_mode,
     } = req.body;
 
     console.log('POST /api/properties body:', JSON.stringify({
@@ -138,6 +139,8 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       stripe_payment_status: 'unpaid',
       // Bind property to the authenticated user.
       submitted_by: auth.user.id,
+      // v1.1 Seedance push-in toggle — only set when explicitly opted-in.
+      ...(pipeline_mode === 'v1.1' ? { pipeline_mode: 'v1.1' as const } : {}),
     });
 
     const supabase = getSupabase();

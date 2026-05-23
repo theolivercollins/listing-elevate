@@ -2,6 +2,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import * as path from "path";
 import * as fs from "fs/promises";
+import * as os from "os";
+import * as crypto from "crypto";
 
 const exec = promisify(execFile);
 
@@ -185,4 +187,100 @@ function escapeFFmpegText(text: string): string {
     .replace(/:/g, "\\:")
     .replace(/\[/g, "\\[")
     .replace(/\]/g, "\\]");
+}
+
+// ---------------------------------------------------------------------------
+// Speed-ramp utilities (added for v1.1 Seedance push-in)
+// ---------------------------------------------------------------------------
+
+interface SpeedRampOpts {
+  /** Duration (seconds) of the head/tail segments to slow down. Default 0.5 */
+  rampSeconds?: number;
+  /** Playback speed factor for head/tail (< 1 = slower). Default 0.8 */
+  rampFactor?: number;
+}
+
+/**
+ * Apply a gentle speed ramp to the first and last `rampSeconds` of a video
+ * by slowing them to `rampFactor`× normal speed via trim+setpts+concat.
+ *
+ * Expected output duration: inputDuration + 2 * rampSeconds * (1/rampFactor - 1)
+ * e.g. 5s clip, rampSeconds=0.5, rampFactor=0.8 → 5.25s
+ */
+export async function applySpeedRamp(
+  inputPath: string,
+  outputPath: string,
+  opts: SpeedRampOpts = {}
+): Promise<void> {
+  const RS = opts.rampSeconds ?? 0.5;
+  const RF = opts.rampFactor ?? 0.8;
+
+  // Probe input duration
+  const { stdout: probeOut } = await exec("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    inputPath,
+  ]);
+  const inputDuration = parseFloat(probeOut.trim());
+
+  if (inputDuration < 2 * RS + 0.1) {
+    throw new Error("clip too short for speed ramp");
+  }
+
+  const DUR = inputDuration;
+  const rs = RS.toFixed(3);
+  const rf = RF.toFixed(3);
+  const dur = DUR.toFixed(3);
+  const durMinusRs = (DUR - RS).toFixed(3);
+
+  // Build 3-segment filter:
+  // [head] = first RS seconds, slowed to 1/RF× speed (larger timestamps = slower)
+  // [mid]  = middle unchanged, reset PTS to 0
+  // [tail] = last RS seconds, slowed to 1/RF× speed, reset PTS to 0
+  //
+  // After trim, each segment's STARTPTS equals the first retained frame's PTS.
+  // We must subtract STARTPTS before dividing so each segment starts at t=0,
+  // then the concat filter handles the timeline offset automatically.
+  const filterComplex = [
+    `[0:v]trim=0:${rs},setpts=PTS/RF[head]`,
+    `[0:v]trim=${rs}:${durMinusRs},setpts=PTS-STARTPTS[mid]`,
+    `[0:v]trim=${durMinusRs}:${dur},setpts=(PTS-STARTPTS)/${rf}[tail]`,
+    `[head][mid][tail]concat=n=3:v=1[out]`,
+  ].join(";").replace(/RF/g, rf);
+
+  await exec("ffmpeg", [
+    "-i", inputPath,
+    "-filter_complex", filterComplex,
+    "-map", "[out]",
+    "-c:v", "libx264",
+    "-preset", "fast",
+    "-pix_fmt", "yuv420p",
+    "-an",
+    "-y",
+    outputPath,
+  ]);
+}
+
+/**
+ * Convenience wrapper: accepts a video buffer, writes to a tmp file,
+ * applies the speed ramp, and returns the resulting buffer.
+ * Both temp files are cleaned up in a finally block.
+ */
+export async function applySpeedRampToBuffer(
+  buf: Buffer,
+  opts: SpeedRampOpts = {}
+): Promise<Buffer> {
+  const uuid = crypto.randomUUID();
+  const inPath = path.join(os.tmpdir(), `seedance-ramp-in-${uuid}.mp4`);
+  const outPath = path.join(os.tmpdir(), `seedance-ramp-out-${uuid}.mp4`);
+
+  await fs.writeFile(inPath, buf);
+  try {
+    await applySpeedRamp(inPath, outPath, opts);
+    return await fs.readFile(outPath);
+  } finally {
+    await fs.unlink(inPath).catch(() => {});
+    await fs.unlink(outPath).catch(() => {});
+  }
 }
