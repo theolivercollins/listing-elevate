@@ -78,7 +78,7 @@ export type SceneStatus =
   | "failed"
   | "needs_review";
 
-export type VideoProvider = "runway" | "kling" | "luma" | "higgsfield" | "atlas" | "seedance";
+export type VideoProvider = "runway" | "kling" | "luma" | "higgsfield" | "atlas";
 
 export type PipelineMode = "v1" | "v1.1";
 

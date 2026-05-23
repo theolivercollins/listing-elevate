@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   selectProviderForScene,
   forceSeedancePushInPrompt,
@@ -6,21 +6,8 @@ import {
   V1_DEFAULT_SKU,
   getEnabledProviders,
 } from "../router.js";
+import { ATLAS_MODELS } from "../atlas.js";
 import type { RoomType, CameraMovement } from "../../types.js";
-
-// Ensure Seedance constructor doesn't blow up on import paths if anyone
-// flips a switch. Router itself never instantiates providers.
-const ORIGINAL_REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN;
-beforeAll(() => {
-  process.env.REPLICATE_API_TOKEN = "test-token";
-});
-afterAll(() => {
-  if (ORIGINAL_REPLICATE_TOKEN === undefined) {
-    delete process.env.REPLICATE_API_TOKEN;
-  } else {
-    process.env.REPLICATE_API_TOKEN = ORIGINAL_REPLICATE_TOKEN;
-  }
-});
 
 const baseScene = {
   endPhotoId: null as string | null,
@@ -30,13 +17,18 @@ const baseScene = {
 };
 
 describe("selectProviderForScene — v1.1 mode", () => {
-  it("routes unpaired scenes to seedance when mode='v1.1'", () => {
+  it("routes unpaired scenes to atlas+seedance-pro-pushin when mode='v1.1'", () => {
     const decision = selectProviderForScene(baseScene, [], "v1.1");
-    expect(decision.provider).toBe("seedance");
-    expect(decision.modelKey).toBe("seedance-1-pro-pushin");
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe("seedance-pro-pushin");
   });
 
-  it("seedance decision has an Atlas v1 fallback", () => {
+  it("seedance Atlas SKU is registered in ATLAS_MODELS", () => {
+    expect(ATLAS_MODELS["seedance-pro-pushin"]).toBeDefined();
+    expect(ATLAS_MODELS["seedance-pro-pushin"].endFrameField).toBeNull();
+  });
+
+  it("v1.1 decision has an Atlas v1 fallback", () => {
     const decision = selectProviderForScene(baseScene, [], "v1.1");
     expect(decision.fallback?.provider).toBe("atlas");
     expect(decision.fallback?.modelKey).toBe(V1_DEFAULT_SKU);
@@ -50,19 +42,19 @@ describe("selectProviderForScene — v1.1 mode", () => {
     expect(decision.modelKey).toBe("kling-v2-1-pair");
   });
 
-  it("v1 mode does not change existing routing", () => {
+  it("v1 mode does not route to the Seedance SKU", () => {
     const decision = selectProviderForScene(baseScene, [], "v1");
-    expect(decision.provider).not.toBe("seedance");
+    expect(decision.modelKey).not.toBe("seedance-pro-pushin");
   });
 
-  it("default mode (no arg) is v1 — does not route to seedance", () => {
+  it("default mode (no arg) is v1 — does not route to Seedance SKU", () => {
     const decision = selectProviderForScene(baseScene, []);
-    expect(decision.provider).not.toBe("seedance");
+    expect(decision.modelKey).not.toBe("seedance-pro-pushin");
   });
 
-  it("skips seedance when it's already excluded (mid-failover)", () => {
-    const decision = selectProviderForScene(baseScene, ["seedance"], "v1.1");
-    expect(decision.provider).not.toBe("seedance");
+  it("skips v1.1 path when atlas is already excluded (mid-failover)", () => {
+    const decision = selectProviderForScene(baseScene, ["atlas"], "v1.1");
+    expect(decision.modelKey).not.toBe("seedance-pro-pushin");
   });
 });
 
@@ -120,9 +112,12 @@ describe("stripMovementVerbs (regex sanity)", () => {
   });
 });
 
-describe("getEnabledProviders — seedance gate", () => {
-  it("includes 'seedance' when REPLICATE_API_TOKEN is set", () => {
+describe("getEnabledProviders — v1.1 needs atlas", () => {
+  it("v1.1 piggy-backs on Atlas; no Seedance-specific env gate", () => {
+    // Seedance is routed via Atlas, so the only credential v1.1 needs is the
+    // Atlas key. We don't assert atlas is present in CI; we just assert that
+    // there is no longer a Seedance-specific entry leaking through.
     const enabled = getEnabledProviders();
-    expect(enabled).toContain("seedance");
+    expect(enabled).not.toContain("seedance" as never);
   });
 });

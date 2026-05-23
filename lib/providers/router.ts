@@ -4,7 +4,6 @@ import type { IVideoProvider } from "./provider.interface.js";
 import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
 import { RunwayProvider } from "./runway.js";
-import { SeedanceProvider } from "./seedance.js";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "./atlas.js";
 import { pickArm, type ThompsonDecision, type BucketArms } from "./thompson-router.js";
 
@@ -193,8 +192,6 @@ export function buildProviderFromDecision(decision: ProviderDecision): IVideoPro
       return new KlingProvider();
     case "runway":
       return new RunwayProvider();
-    case "seedance":
-      return new SeedanceProvider();
     default:
       // luma / higgsfield / unknown — fall back to Atlas (always available).
       return new AtlasProvider();
@@ -253,14 +250,15 @@ export function selectProviderForScene(
     };
   }
 
-  // v1.1 — Seedance push-in for every non-paired scene. Falls back to the
-  // default V1 Atlas SKU if Seedance has a permanent failure (e.g. provider
-  // outage) so a v1.1 property doesn't dead-end. Skips when seedance is
-  // already in the excluded list (mid-failover).
-  if (mode === "v1.1" && !excluded.includes("seedance")) {
+  // v1.1 — Seedance push-in for every non-paired scene, routed through
+  // Atlas (Seedance is hosted as an Atlas SKU; no separate provider).
+  // Falls back to the default V1 Atlas SKU if the Seedance render hits
+  // a permanent error (e.g. capacity / model outage). Skips when atlas
+  // is already excluded mid-failover — there's no other home for Seedance.
+  if (mode === "v1.1" && !excluded.includes("atlas")) {
     return {
-      provider: "seedance",
-      modelKey: "seedance-1-pro-pushin",
+      provider: "atlas",
+      modelKey: "seedance-pro-pushin",
       fallback: {
         provider: "atlas",
         modelKey: V1_DEFAULT_SKU,
@@ -417,6 +415,5 @@ export function getEnabledProviders(): VideoProvider[] {
   if (process.env.ATLASCLOUD_API_KEY) enabled.push("atlas");
   if (process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY) enabled.push("kling");
   if (process.env.RUNWAY_API_KEY) enabled.push("runway");
-  if (process.env.REPLICATE_API_TOKEN) enabled.push("seedance");
   return enabled;
 }

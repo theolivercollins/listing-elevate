@@ -36,7 +36,7 @@ export interface GenerationResult {
   videoUrl?: string;
   costCents?: number;
   providerUnits?: number;
-  providerUnitType?: "credits" | "kling_units" | "tokens" | "seconds";
+  providerUnitType?: "credits" | "kling_units" | "tokens";
   error?: string;
 }
 

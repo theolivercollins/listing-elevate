@@ -850,11 +850,11 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         pipelineMode,
       );
       const provider = buildProviderFromDecision(decision);
-      // v1.1: when seedance is selected, strip movement verbs from the scene
-      // prompt and prepend the stable push-in directive. We do NOT mutate
-      // scene.prompt in the DB — the override is render-time only so the
-      // audit trail remains the human-authored prompt.
-      const renderPrompt = decision.provider === "seedance"
+      // v1.1: when the Seedance Atlas SKU is selected, strip movement verbs
+      // from the scene prompt and prepend the stable push-in directive. We do
+      // NOT mutate scene.prompt in the DB — the override is render-time only
+      // so the audit trail remains the human-authored prompt.
+      const renderPrompt = decision.modelKey === "seedance-pro-pushin"
         ? forceSeedancePushInPrompt(scene.prompt)
         : scene.prompt;
       try {
