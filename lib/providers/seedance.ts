@@ -4,6 +4,7 @@ import type {
   GenerationJob,
   GenerationResult,
 } from "./provider.interface.js";
+import type { VideoProvider } from "../types.js";
 
 // TODO(oliver): run `curl https://api.replicate.com/v1/models/bytedance/seedance-1-pro`
 // and paste the latest version SHA here to pin the model version.
@@ -13,11 +14,7 @@ const SEEDANCE_VERSION_SHA =
 const SEEDANCE_CENTS_PER_SECOND = 12;
 
 export class SeedanceProvider implements IVideoProvider {
-  // NOTE: 'seedance' is not yet in the VideoProvider union in lib/types.ts.
-  // The coordinator step will add it; use-site errors in poll-scenes.ts etc.
-  // will resolve then. Cast via `as any` to avoid TS2322 on the class field.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  name = "seedance" as any;
+  name: VideoProvider = "seedance";
   private apiKey: string;
   private lastDurationSeconds = 5;
 
@@ -87,7 +84,6 @@ export class SeedanceProvider implements IVideoProvider {
         status: "complete",
         videoUrl: data.output[0],
         providerUnits: durationSeconds,
-        // @ts-expect-error pending 'seconds' addition to providerUnitType union in coordinator step
         providerUnitType: "seconds",
         costCents: Math.round(durationSeconds * SEEDANCE_CENTS_PER_SECOND),
       };

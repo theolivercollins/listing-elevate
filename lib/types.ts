@@ -78,7 +78,9 @@ export type SceneStatus =
   | "failed"
   | "needs_review";
 
-export type VideoProvider = "runway" | "kling" | "luma" | "higgsfield" | "atlas";
+export type VideoProvider = "runway" | "kling" | "luma" | "higgsfield" | "atlas" | "seedance";
+
+export type PipelineMode = "v1" | "v1.1";
 
 export type LogStage =
   | "intake"
@@ -119,6 +121,7 @@ export interface Property {
   custom_request_text: string | null;
   days_on_market: number | null;
   sold_price: number | null;
+  pipeline_mode: PipelineMode;
 }
 
 export interface Photo {

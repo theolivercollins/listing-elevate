@@ -48,7 +48,7 @@ import {
   renderPerPhotoBlock,
 } from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
-import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "./providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
 import { orderScenesForAssembly } from "./assembly/scene-ordering.js";
@@ -785,9 +785,14 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
   const scenes = await getScenesForProperty(propertyId);
   const supabase = getSupabase();
 
+  // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
+  // on legacy properties created before migration 062.
+  const property = await getProperty(propertyId);
+  const pipelineMode = property.pipeline_mode ?? "v1";
+
   const GENERATION_CONCURRENCY = parseInt(process.env.GENERATION_CONCURRENCY ?? "4", 10);
   await log(propertyId, "generation", "info",
-    `Submitting ${scenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel`);
+    `Submitting ${scenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel${pipelineMode === "v1.1" ? " (mode=v1.1 seedance push-in)" : ""}`);
 
   const submitScene = async (scene: typeof scenes[number]) => {
     // Get the source photo once. Providers share the same source image,
@@ -842,13 +847,21 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
           preference,
         },
         excluded,
+        pipelineMode,
       );
       const provider = buildProviderFromDecision(decision);
+      // v1.1: when seedance is selected, strip movement verbs from the scene
+      // prompt and prepend the stable push-in directive. We do NOT mutate
+      // scene.prompt in the DB — the override is render-time only so the
+      // audit trail remains the human-authored prompt.
+      const renderPrompt = decision.provider === "seedance"
+        ? forceSeedancePushInPrompt(scene.prompt)
+        : scene.prompt;
       try {
         const genJob = await provider.generateClip({
           sourceImage,
           sourceImageUrl: photoUrl,
-          prompt: scene.prompt,
+          prompt: renderPrompt,
           durationSeconds: scene.duration_seconds,
           aspectRatio: "16:9",
           endImageUrl: scene.end_image_url ?? undefined,

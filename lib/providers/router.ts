@@ -1,8 +1,10 @@
 import type { RoomType, VideoProvider, CameraMovement } from "../db.js";
+import type { PipelineMode } from "../types.js";
 import type { IVideoProvider } from "./provider.interface.js";
 import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
 import { RunwayProvider } from "./runway.js";
+import { SeedanceProvider } from "./seedance.js";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "./atlas.js";
 import { pickArm, type ThompsonDecision, type BucketArms } from "./thompson-router.js";
 
@@ -191,6 +193,8 @@ export function buildProviderFromDecision(decision: ProviderDecision): IVideoPro
       return new KlingProvider();
     case "runway":
       return new RunwayProvider();
+    case "seedance":
+      return new SeedanceProvider();
     default:
       // luma / higgsfield / unknown — fall back to Atlas (always available).
       return new AtlasProvider();
@@ -235,8 +239,10 @@ export function selectProviderForScene(
     preference: VideoProvider | null;
   },
   excluded: VideoProvider[] = [],
+  mode: PipelineMode = "v1",
 ): ProviderDecision {
-  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair.
+  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair (v2.1 model).
+  // This rule wins over pipeline_mode — v1.1 never replaces the paired path.
   // If atlas itself is excluded, fall through to the movement table
   // as best-effort (better to try something than nothing).
   if (scene.endPhotoId && !excluded.includes("atlas")) {
@@ -247,7 +253,47 @@ export function selectProviderForScene(
     };
   }
 
+  // v1.1 — Seedance push-in for every non-paired scene. Falls back to the
+  // default V1 Atlas SKU if Seedance has a permanent failure (e.g. provider
+  // outage) so a v1.1 property doesn't dead-end. Skips when seedance is
+  // already in the excluded list (mid-failover).
+  if (mode === "v1.1" && !excluded.includes("seedance")) {
+    return {
+      provider: "seedance",
+      modelKey: "seedance-1-pro-pushin",
+      fallback: {
+        provider: "atlas",
+        modelKey: V1_DEFAULT_SKU,
+        fallback: undefined,
+      },
+    };
+  }
+
   return resolveMovementDecision(scene.roomType, scene.movement, scene.preference, excluded);
+}
+
+// ─── SEEDANCE PROMPT NORMALIZATION ───────────────────────────────────────────
+//
+// Seedance under v1.1 only ever does push-in. The scene's stored prompt may
+// contain orbit/parallax/tilt language carried over from the v1 prompt grader
+// — strip that and prepend a stable push-in directive at render time. The
+// stored scene.prompt is NOT mutated; this is render-time only so the audit
+// trail in the DB stays human-authored.
+
+const MOVEMENT_VERB_PATTERN =
+  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
+
+export function stripMovementVerbs(prompt: string): string {
+  return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
+const SEEDANCE_PUSHIN_PREAMBLE =
+  "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
+
+export function forceSeedancePushInPrompt(originalPrompt: string): string {
+  const stripped = stripMovementVerbs(originalPrompt);
+  if (!stripped) return SEEDANCE_PUSHIN_PREAMBLE;
+  return `${SEEDANCE_PUSHIN_PREAMBLE} ${stripped}`;
 }
 
 /**
@@ -371,5 +417,6 @@ export function getEnabledProviders(): VideoProvider[] {
   if (process.env.ATLASCLOUD_API_KEY) enabled.push("atlas");
   if (process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY) enabled.push("kling");
   if (process.env.RUNWAY_API_KEY) enabled.push("runway");
+  if (process.env.REPLICATE_API_TOKEN) enabled.push("seedance");
   return enabled;
 }
