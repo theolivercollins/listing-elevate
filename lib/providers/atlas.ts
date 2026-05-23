@@ -87,15 +87,14 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     priceCentsPerSecond: 10,     // $0.095/s
     priceCentsPerClip: 48,       // $0.475 for 5s
   },
-  // v1.1 pipeline mode (added 2026-05-23) — push-in only via Atlas.
-  // Atlas slug is env-overridable so we can chase Bytedance's release
-  // train ("seedance-1-pro", "seedance-2-pro", etc.) without code
-  // changes. Default targets the latest Bytedance entry on Atlas.
-  // ⚠️  Price is a placeholder; verify against the first Atlas invoice
-  // before high-volume use. Marked higher than Kling v2-6-pro to be
-  // conservative.
+  // v1.1 pipeline mode (added 2026-05-23) — Bytedance Seedance 2.0 push-in via Atlas.
+  // Slug confirmed by Oliver 2026-05-23: bytedance/seedance-2.0/image-to-video.
+  // SEEDANCE_ATLAS_SLUG env var still honored as an escape hatch (chasing the
+  // next release train without a code change) but no longer required.
+  // ⚠️  Price is a placeholder; verify against the first Atlas invoice before
+  // high-volume use. Marked higher than Kling v2-6-pro to be conservative.
   "seedance-pro-pushin": {
-    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-pro/image-to-video",
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
     endFrameField: null,         // Seedance has no start+end-frame support
     allowedDurations: [5, 10],
     priceCentsPerSecond: 14,     // ⚠️  placeholder — verify against invoice
