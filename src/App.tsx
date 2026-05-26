@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -55,10 +55,16 @@ import StudioNew from "./pages/dashboard/studio/StudioNew";
 import StudioClients from "./pages/dashboard/studio/Clients";
 import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
+import { StudioLayout } from "./components/dashboard/StudioLayout";
 import PreviewPage from "./pages/preview/PreviewPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
+
+function StudioRedirect({ to }: { to: string }) {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/dashboard/studio/${to}/${id ?? ""}`} replace />;
+}
 
 const App = () => (
   <ThemeProvider>
@@ -118,28 +124,62 @@ const App = () => (
                     <Route path="development/lab/new" element={<DashboardLabListingNew />} />
                     <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
                     <Route path="rating-ledger" element={<DashboardRatingLedger />} />
-                    <Route path="blog/posts" element={<BlogPostsList />} />
-                    <Route path="blog/posts/new" element={<BlogPostDetail />} />
-                    <Route path="blog/posts/:id" element={<BlogPostDetail />} />
-                    <Route path="blog/ally-history" element={<BlogAllyHistory />} />
-                    <Route path="blog/images" element={<BlogImageLibrary />} />
-                    <Route path="blog/templates" element={<BlogTemplates />} />
-                    <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
-                    <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
-                    <Route path="blog/emails" element={<EmailsList />} />
-                    <Route path="blog/emails/new" element={<EmailDetail />} />
-                    <Route path="blog/emails/:id" element={<EmailDetail />} />
-                    <Route path="blog/email-templates" element={<EmailTemplates />} />
-                    <Route path="blog/email-templates/new" element={<EmailTemplateDetail />} />
-                    <Route path="blog/email-templates/:id" element={<EmailTemplateDetail />} />
                     <Route path="finances" element={<DashboardFinances />} />
                     <Route path="users" element={<DashboardUsers />} />
                     <Route path="settings" element={<DashboardSettings />} />
-                    <Route path="studio" element={<StudioHome />} />
-                    <Route path="studio/new" element={<StudioNew />} />
-                    <Route path="studio/clients" element={<StudioClients />} />
-                    <Route path="studio/clients/:id" element={<StudioClientEdit />} />
-                    <Route path="studio/properties/:id" element={<StudioPropertyCommandCenter />} />
+
+                    {/* Unified Studio: video + blog + email under one tab */}
+                    <Route path="studio" element={<StudioLayout />}>
+                      <Route index element={<Navigate to="video" replace />} />
+
+                      {/* Video sub-tab */}
+                      <Route path="video" element={<StudioHome />} />
+                      <Route path="video/new" element={<StudioNew />} />
+                      <Route path="video/clients" element={<StudioClients />} />
+                      <Route path="video/clients/:id" element={<StudioClientEdit />} />
+                      <Route path="video/properties/:id" element={<StudioPropertyCommandCenter />} />
+
+                      {/* Blog sub-tab */}
+                      <Route path="blog" element={<Navigate to="posts" replace />} />
+                      <Route path="blog/posts" element={<BlogPostsList />} />
+                      <Route path="blog/posts/new" element={<BlogPostDetail />} />
+                      <Route path="blog/posts/:id" element={<BlogPostDetail />} />
+                      <Route path="blog/ally-history" element={<BlogAllyHistory />} />
+                      <Route path="blog/images" element={<BlogImageLibrary />} />
+                      <Route path="blog/templates" element={<BlogTemplates />} />
+                      <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
+                      <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
+
+                      {/* Email sub-tab */}
+                      <Route path="email" element={<Navigate to="messages" replace />} />
+                      <Route path="email/messages" element={<EmailsList />} />
+                      <Route path="email/messages/new" element={<EmailDetail />} />
+                      <Route path="email/messages/:id" element={<EmailDetail />} />
+                      <Route path="email/templates" element={<EmailTemplates />} />
+                      <Route path="email/templates/new" element={<EmailTemplateDetail />} />
+                      <Route path="email/templates/:id" element={<EmailTemplateDetail />} />
+                    </Route>
+
+                    {/* Redirects from pre-consolidation URLs */}
+                    <Route path="studio/new" element={<Navigate to="/dashboard/studio/video/new" replace />} />
+                    <Route path="studio/clients" element={<Navigate to="/dashboard/studio/video/clients" replace />} />
+                    <Route path="studio/clients/:id" element={<StudioRedirect to="video/clients" />} />
+                    <Route path="studio/properties/:id" element={<StudioRedirect to="video/properties" />} />
+                    <Route path="blog" element={<Navigate to="/dashboard/studio/blog/posts" replace />} />
+                    <Route path="blog/posts" element={<Navigate to="/dashboard/studio/blog/posts" replace />} />
+                    <Route path="blog/posts/new" element={<Navigate to="/dashboard/studio/blog/posts/new" replace />} />
+                    <Route path="blog/posts/:id" element={<StudioRedirect to="blog/posts" />} />
+                    <Route path="blog/ally-history" element={<Navigate to="/dashboard/studio/blog/ally-history" replace />} />
+                    <Route path="blog/images" element={<Navigate to="/dashboard/studio/blog/images" replace />} />
+                    <Route path="blog/templates" element={<Navigate to="/dashboard/studio/blog/templates" replace />} />
+                    <Route path="blog/templates/new" element={<Navigate to="/dashboard/studio/blog/templates/new" replace />} />
+                    <Route path="blog/templates/:id" element={<StudioRedirect to="blog/templates" />} />
+                    <Route path="blog/emails" element={<Navigate to="/dashboard/studio/email/messages" replace />} />
+                    <Route path="blog/emails/new" element={<Navigate to="/dashboard/studio/email/messages/new" replace />} />
+                    <Route path="blog/emails/:id" element={<StudioRedirect to="email/messages" />} />
+                    <Route path="blog/email-templates" element={<Navigate to="/dashboard/studio/email/templates" replace />} />
+                    <Route path="blog/email-templates/new" element={<Navigate to="/dashboard/studio/email/templates/new" replace />} />
+                    <Route path="blog/email-templates/:id" element={<StudioRedirect to="email/templates" />} />
                     <Route path="account">
                       <Route index element={<Navigate to="profile" replace />} />
                       <Route path="profile" element={<DashboardAccountProfile />} />

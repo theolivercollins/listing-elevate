@@ -82,7 +82,7 @@ export default function EmailTemplateDetail() {
     onSuccess: (r) => {
       toast.success(isNew ? "Created" : "Saved");
       qc.invalidateQueries({ queryKey: ["email-templates"] });
-      if (isNew) navigate(`/dashboard/blog/email-templates/${(r as any).id}`);
+      if (isNew) navigate(`/dashboard/studio/email/templates/${(r as any).id}`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e?.message ?? e}`),
   });
@@ -107,7 +107,7 @@ export default function EmailTemplateDetail() {
         <div className="flex-1">
           <h1 className="text-lg font-semibold">{isNew ? "New email template" : `Edit: ${name}`}</h1>
         </div>
-        <Button variant="outline" onClick={() => navigate("/dashboard/blog/email-templates")}>Cancel</Button>
+        <Button variant="outline" onClick={() => navigate("/dashboard/studio/email/templates")}>Cancel</Button>
         <Button onClick={handleSave} disabled={save.isPending}>
           {save.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
           Save

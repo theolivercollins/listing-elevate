@@ -138,7 +138,7 @@ const Clients = () => {
           <button
             type="button"
             className="studio-cta-primary"
-            onClick={() => navigate('/dashboard/studio/clients/new')}
+            onClick={() => navigate('/dashboard/studio/video/clients/new')}
           >
             <Plus size={13} strokeWidth={2} />
             Add client
@@ -184,7 +184,7 @@ const Clients = () => {
             }}
           >
             <p style={{ fontSize: 14, color: 'var(--le-muted)', margin: 0 }}>No clients yet.</p>
-            <Link to="/dashboard/studio/clients/new" className="studio-cta-primary">
+            <Link to="/dashboard/studio/video/clients/new" className="studio-cta-primary">
               <Plus size={13} strokeWidth={2} />
               Add the first one
             </Link>
@@ -202,11 +202,11 @@ const Clients = () => {
                 key={client.id}
                 className="studio-table-row"
                 style={{ gridTemplateColumns: gridColumns, cursor: 'pointer' }}
-                onClick={() => navigate(`/dashboard/studio/clients/${client.id}`)}
+                onClick={() => navigate(`/dashboard/studio/video/clients/${client.id}`)}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') navigate(`/dashboard/studio/clients/${client.id}`);
+                  if (e.key === 'Enter' || e.key === ' ') navigate(`/dashboard/studio/video/clients/${client.id}`);
                 }}
               >
                 {/* Avatar / initial */}
@@ -300,7 +300,7 @@ const Clients = () => {
                   role="presentation"
                 >
                   <Link
-                    to={`/dashboard/studio/clients/${client.id}`}
+                    to={`/dashboard/studio/video/clients/${client.id}`}
                     className="studio-btn-ghost"
                     style={{ fontSize: 11.5, padding: '5px 10px', gap: 5 }}
                     aria-label={`Edit ${client.name}`}

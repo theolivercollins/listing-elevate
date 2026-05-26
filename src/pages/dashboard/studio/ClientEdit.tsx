@@ -220,7 +220,7 @@ const ClientEdit = () => {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? `${res.status} ${res.statusText}`);
       }
-      navigate('/dashboard/studio/clients');
+      navigate('/dashboard/studio/video/clients');
     } catch (err) {
       setUploadingFiles(false);
       setSubmitError(err instanceof Error ? err.message : 'Failed to save client');
@@ -236,7 +236,7 @@ const ClientEdit = () => {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? `${res.status} ${res.statusText}`);
       }
-      navigate('/dashboard/studio/clients');
+      navigate('/dashboard/studio/video/clients');
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Failed to archive client');
     }
@@ -309,7 +309,7 @@ const ClientEdit = () => {
           <button
             type="button"
             className="studio-btn-ghost"
-            onClick={() => navigate('/dashboard/studio/clients')}
+            onClick={() => navigate('/dashboard/studio/video/clients')}
           >
             <ArrowLeft size={13} strokeWidth={1.6} />
             Cancel

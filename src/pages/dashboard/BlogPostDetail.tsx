@@ -233,7 +233,7 @@ export default function BlogPostDetailPage() {
       initial_state: "awaiting_approval",
       authored: "manual",
     } as CreatePostInput),
-    onSuccess: (r) => { toast.success("Saved as draft"); navigate(`/dashboard/blog/posts/${r.id}`); },
+    onSuccess: (r) => { toast.success("Saved as draft"); navigate(`/dashboard/studio/blog/posts/${r.id}`); },
     onError: (e: any) => toast.error(`Save failed: ${e.message}`),
   });
 
@@ -243,7 +243,7 @@ export default function BlogPostDetailPage() {
       initial_state: "publish_due",
       authored: "manual",
     } as CreatePostInput),
-    onSuccess: (r) => { toast.success("Publishing — should be live within 60s"); navigate(`/dashboard/blog/posts/${r.id}`); },
+    onSuccess: (r) => { toast.success("Publishing — should be live within 60s"); navigate(`/dashboard/studio/blog/posts/${r.id}`); },
     onError: (e: any) => toast.error(`Publish failed: ${e.message}`),
   });
 
@@ -284,7 +284,7 @@ export default function BlogPostDetailPage() {
 
   const reject = useMutation({
     mutationFn: () => rejectPost(id!),
-    onSuccess: () => { toast.success("Rejected"); navigate("/dashboard/blog/posts"); },
+    onSuccess: () => { toast.success("Rejected"); navigate("/dashboard/studio/blog/posts"); },
     onError: (e: any) => toast.error(`Reject failed: ${e.message}`),
   });
 
@@ -320,7 +320,7 @@ export default function BlogPostDetailPage() {
     },
     onSuccess: (emailId) => {
       toast.success("Email draft created");
-      navigate(`/dashboard/blog/emails/${emailId}`);
+      navigate(`/dashboard/studio/email/messages/${emailId}`);
     },
     onError: (e: any) => toast.error(`Email conversion failed: ${e?.message ?? e}`),
   });
@@ -581,7 +581,7 @@ export default function BlogPostDetailPage() {
         postId={id ?? null}
         postTitle={form.title || post?.title || ""}
         hasSierraCopy={!!post?.external_post_id}
-        onSuccess={() => navigate("/dashboard/blog/posts")}
+        onSuccess={() => navigate("/dashboard/studio/blog/posts")}
       />
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}

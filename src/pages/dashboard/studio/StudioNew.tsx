@@ -241,7 +241,7 @@ const StudioNew = () => {
 
       const { property_id } = await res.json();
       fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
-      navigate(`/dashboard/studio/properties/${property_id}`);
+      navigate(`/dashboard/studio/video/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');
     } finally {

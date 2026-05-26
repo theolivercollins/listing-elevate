@@ -21,7 +21,7 @@ interface SidebarSection {
 
 const SECTIONS: SidebarSection[] = [
   {
-    label: "Studio",
+    label: "Workspace",
     items: [
       { to: "/dashboard", label: "Overview", icon: "grid", end: true },
       { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
@@ -34,15 +34,9 @@ const SECTIONS: SidebarSection[] = [
     items: [
       {
         to: "/dashboard/studio",
-        label: "Video studio",
+        label: "Studio",
         icon: "play",
-        match: (p) => p.startsWith("/dashboard/studio"),
-      },
-      {
-        to: "/dashboard/blog/posts",
-        label: "Blog creator",
-        icon: "image",
-        match: (p) => p.startsWith("/dashboard/blog"),
+        match: (p) => p.startsWith("/dashboard/studio") || p.startsWith("/dashboard/blog"),
       },
       { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
       { to: "/dashboard/logs", label: "Logs", icon: "logs" },
