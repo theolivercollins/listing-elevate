@@ -22,6 +22,7 @@ import { pollUntilComplete, type IVideoProvider } from "./providers/provider.int
 import { KlingProvider } from "./providers/kling.js";
 import { RunwayProvider } from "./providers/runway.js";
 import { AtlasProvider, type V1AtlasSku } from "./providers/atlas.js";
+import { VeoProvider } from "./providers/veo.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "./embeddings.js";
 import { recordCostEvent } from "./db.js";
 import type { RoomType, CameraMovement } from "./types.js";
@@ -641,12 +642,22 @@ export async function submitLabRender(params: {
    *  The push-in prompt override and Atlas routing only apply when the resolved
    *  SKU is specifically 'seedance-pro-pushin'. */
   pipelineVersion?: "v1" | "v1.1" | null;
+  /**
+   * Per-render resolution override from the UI quality dropdown. Threads
+   * through to the provider's generateClip call so Atlas/Veo receives the
+   * explicit resolution value. When absent, each provider uses its descriptor
+   * default (Seedance: '1080p'; Kling: fixed in-model).
+   */
+  resolution?: string | null;
 }): Promise<{
   jobId: string;
   provider: string;
   sku: V1AtlasSku;
   thompson?: ThompsonDecision;
   staticSku: V1AtlasSku;
+  /** Effective resolution that was forwarded to the provider. Null when the
+   *  render used a fixed-res model and no override was supplied. */
+  resolutionUsed: string | null;
 }> {
   let provider: IVideoProvider;
   let resolvedSku: V1AtlasSku;
@@ -675,8 +686,43 @@ export async function submitLabRender(params: {
       durationSeconds: params.scene.duration_seconds >= 7 ? 10 : 5,
       aspectRatio: "16:9",
       modelOverride: SEEDANCE_SKU,
+      // Thread the UI quality dropdown override (or default to descriptor's value).
+      resolution: (params.resolution as "480p" | "720p" | "1080p" | "4k") ?? undefined,
     });
-    return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, staticSku };
+    return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, staticSku, resolutionUsed: params.resolution ?? "1080p" };
+  }
+
+  // ── Lane B: Veo 3.1 Preview path ─────────────────────────────────────────
+  // Veo is a first-class IVideoProvider (not Atlas). Route direct to the
+  // Gemini API when the SKU is 'veo-3-1-preview'.
+  //
+  // Key differences from Atlas / Seedance:
+  //   - No forceSeedancePushInPrompt — Veo has its own prompt style; let the
+  //     director prompt through unchanged.
+  //   - No Atlas-specific overrides (modelOverride, negative_prompt, etc.).
+  //   - Thompson sampling doesn't run (single-SKU, no router exploration).
+  //   - Duration clamped to 8s inside VeoProvider (Veo max is 8s).
+  //   - Speed-ramp is skipped in poll-lab-renders for Veo clips (4K large;
+  //     ramp applied at concat time only).
+  if (params.sku === ("veo-3-1-preview" as V1AtlasSku)) {
+    const VEO_SKU = "veo-3-1-preview" as V1AtlasSku;
+    resolvedSku = VEO_SKU;
+    staticSku = VEO_SKU;
+    provider = new VeoProvider();
+    const veoImg = await fetch(params.imageUrl);
+    if (!veoImg.ok) throw new Error(`Failed to fetch source image for Veo: ${veoImg.status}`);
+    const veoSourceImage = Buffer.from(await veoImg.arrayBuffer());
+    const veoJob = await provider.generateClip({
+      sourceImage: veoSourceImage,
+      sourceImageUrl: params.imageUrl,
+      prompt: params.scene.prompt,    // no push-in wrap for Veo
+      durationSeconds: params.scene.duration_seconds >= 7 ? 8 : 5,
+      aspectRatio: "16:9",
+      // resolution field not yet on GenerateClipParams (Lane A); VeoProvider
+      // defaults to 4k. TODO: thread through once Lane A lands the field.
+    });
+    const veoResolutionUsed = params.resolution ?? "4k";
+    return { jobId: veoJob.jobId, provider: provider.name, sku: resolvedSku, staticSku, resolutionUsed: veoResolutionUsed };
   }
 
   if (params.providerOverride === "kling" || params.providerOverride === "runway") {
@@ -733,22 +779,26 @@ export async function submitLabRender(params: {
     durationSeconds: params.scene.duration_seconds >= 7 ? 10 : 5,
     aspectRatio: "16:9",
     endImageUrl: params.endImageUrl ?? undefined,
+    // Thread the UI quality dropdown override through to the provider body.
+    resolution: (params.resolution as "480p" | "720p" | "1080p" | "4k") ?? undefined,
   });
-  return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, thompson, staticSku };
+  return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, thompson, staticSku, resolutionUsed: params.resolution ?? null };
 }
 
 export async function finalizeLabRender(params: {
   iterationId: string;
   sessionId: string;
-  provider: "kling" | "runway" | "atlas";
+  provider: "kling" | "runway" | "atlas" | "veo";
   providerTaskId: string;
 }): Promise<{ done: boolean; clipUrl?: string; costCents?: number; error?: string }> {
-  // Atlas finalization uses AtlasProvider; legacy kling/runway use the
-  // named-provider helper. AtlasProvider.checkStatus handles all Atlas SKUs.
+  // Atlas finalization uses AtlasProvider; Veo uses VeoProvider; legacy
+  // kling/runway use the named-provider helper.
   const providerImpl: IVideoProvider =
     params.provider === "atlas"
       ? new AtlasProvider()
-      : getProviderByName(params.provider as "kling" | "runway");
+      : params.provider === "veo"
+        ? new VeoProvider()
+        : getProviderByName(params.provider as "kling" | "runway");
 
   const result = await providerImpl.checkStatus(params.providerTaskId);
   if (result.status === "processing") return { done: false };
@@ -940,4 +990,44 @@ export async function getNextIterationNumber(sessionId: string): Promise<number>
     .limit(1);
   const last = data?.[0]?.iteration_number ?? 0;
   return last + 1;
+}
+
+// ─── Qualitative model feedback retrieval (migration 070) ─────────────────────
+//
+// Returns recent feedback rows for a given model + pipeline_version combo.
+// Used by the director context (per-photo-retrieval.ts) to surface operator
+// notes alongside structured rating signal.
+//
+// MVP: most-recent N by created_at. Vector search is a v2 nice-to-have —
+// when `embedding` is provided and a future RPC is wired up, swap the body
+// to a cosine similarity query here. For now, the embedding parameter is
+// accepted but not used (kept for API stability).
+//
+// Version isolation is strict: v1 feedback is NEVER shown under v1.1 and
+// vice versa. Enforced by the `.eq("pipeline_version", opts.pipelineVersion)` filter.
+
+export async function retrieveRecentModelFeedback(
+  modelUsed: string,
+  opts: { pipelineVersion: string; limit?: number; embedding?: number[] }
+): Promise<Array<{ comment: string; created_at: string }>> {
+  // Note: `opts.embedding` is accepted for future vector-search use but the
+  // MVP implementation ignores it in favour of date-ordered retrieval.
+  const { getSupabase } = await import("./client.js");
+  const supabase = getSupabase();
+  const limit = opts.limit ?? 5;
+
+  const { data, error } = await supabase
+    .from("prompt_lab_model_feedback")
+    .select("comment, created_at")
+    .eq("model_used", modelUsed)
+    .eq("pipeline_version", opts.pipelineVersion)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+
+  return (data as Array<{ comment: string; created_at: string }>).map((r) => ({
+    comment: r.comment,
+    created_at: r.created_at,
+  }));
 }

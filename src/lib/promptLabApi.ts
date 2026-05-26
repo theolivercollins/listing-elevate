@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import type { JudgeRubricResult } from "../../lib/prompts/judge-rubric.js";
-import type { PromptLabAssembly } from "../../lib/types.js";
+import type { PromptLabAssembly, PromptLabModelFeedback } from "../../lib/types.js";
 
 export interface LabSession {
   id: string;
@@ -172,11 +172,17 @@ export function rateIteration(body: {
 export function renderIteration(
   iterationId: string,
   provider?: "kling" | "runway" | null,
-  sku?: string | null
+  sku?: string | null,
+  resolution?: string | null,
 ): Promise<LabIteration & { renderError?: string }> {
   return fetchJSON("/api/admin/prompt-lab/render", {
     method: "POST",
-    body: JSON.stringify({ iteration_id: iterationId, provider: provider ?? null, sku: sku ?? undefined }),
+    body: JSON.stringify({
+      iteration_id: iterationId,
+      provider: provider ?? null,
+      sku: sku ?? undefined,
+      resolution: resolution ?? undefined,
+    }),
   });
 }
 
@@ -254,6 +260,52 @@ export async function listAssemblies(sessionId: string): Promise<PromptLabAssemb
 }
 
 export type { PromptLabAssembly };
+
+// ─── Model Feedback API ───────────────────────────────────────────────────────
+
+export { type PromptLabModelFeedback };
+
+/**
+ * Returns all qualitative feedback rows for one iteration, ordered ASC by
+ * created_at. Used by ModelFeedbackPanel on mount.
+ */
+export function listIterationFeedback(iterationId: string): Promise<PromptLabModelFeedback[]> {
+  return fetchJSON(
+    `/api/admin/prompt-lab/model-feedback?iteration_id=${encodeURIComponent(iterationId)}`
+  );
+}
+
+/**
+ * Creates a new feedback row for an iteration. The server fills the
+ * denormalized fields (session_id, model_used, pipeline_version,
+ * resolution_used, author) from the parent iteration row and auth context.
+ */
+export function createIterationFeedback(
+  iterationId: string,
+  comment: string
+): Promise<PromptLabModelFeedback> {
+  return fetchJSON("/api/admin/prompt-lab/model-feedback", {
+    method: "POST",
+    body: JSON.stringify({ iteration_id: iterationId, comment }),
+  });
+}
+
+/**
+ * Returns recent feedback for a given model + pipeline_version, newest first.
+ * Used by the aggregate model-level view (future) and retrieval debugging.
+ */
+export function listRecentModelFeedback(
+  model: string,
+  pipelineVersion: string,
+  limit?: number
+): Promise<PromptLabModelFeedback[]> {
+  const parts = [
+    `model=${encodeURIComponent(model)}`,
+    `pipeline_version=${encodeURIComponent(pipelineVersion)}`,
+  ];
+  if (limit != null) parts.push(`limit=${limit}`);
+  return fetchJSON(`/api/admin/prompt-lab/model-feedback?${parts.join("&")}`);
+}
 
 export function overrideJudgeRating(
   iterationId: string,

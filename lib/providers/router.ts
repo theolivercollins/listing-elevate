@@ -4,6 +4,7 @@ import type { IVideoProvider } from "./provider.interface.js";
 import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
 import { RunwayProvider } from "./runway.js";
+import { VeoProvider } from "./veo.js";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "./atlas.js";
 import { pickArm, type ThompsonDecision, type BucketArms } from "./thompson-router.js";
 
@@ -184,6 +185,10 @@ export function buildProviderFromDecision(decision: ProviderDecision): IVideoPro
       return new KlingProvider();
     case "runway":
       return new RunwayProvider();
+    case "veo":
+      // Lane B (2026-05-26): Veo 3.1 Preview — Premium 4K SKU.
+      // Routes direct to the Gemini API; does NOT go through Atlas.
+      return new VeoProvider();
     default:
       // higgsfield / unknown — fall back to Atlas (always available).
       return new AtlasProvider();
@@ -407,5 +412,8 @@ export function getEnabledProviders(): VideoProvider[] {
   if (process.env.ATLASCLOUD_API_KEY) enabled.push("atlas");
   if (process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY) enabled.push("kling");
   if (process.env.RUNWAY_API_KEY) enabled.push("runway");
+  // Lane B (2026-05-26): Veo uses the same GEMINI_API_KEY as the photo
+  // analyzer. No extra credential — just gate on key presence.
+  if (process.env.GEMINI_API_KEY) enabled.push("veo");
   return enabled;
 }
