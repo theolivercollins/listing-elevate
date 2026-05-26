@@ -199,7 +199,7 @@ export interface RetrievedRecipe {
 
 export async function retrieveSimilarIterations(
   embedding: number[],
-  opts: { minRating?: number; limit?: number; sessionId?: string } = {}
+  opts: { minRating?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedExemplar[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -213,6 +213,9 @@ export async function retrieveSimilarIterations(
       text_weight: TEXT_WEIGHT,
       image_weight: IMAGE_WEIGHT,
     } : {}),
+    // v1/v1.1 isolation — when provided, RPC scopes the lab+prod+listing
+    // UNION to a single pipeline_version. Undefined/null = legacy unscoped.
+    ...(opts.pipelineVersion ? { p_pipeline_version: opts.pipelineVersion } : {}),
   });
   if (error || !data) return [];
   return (data as Array<{
@@ -263,7 +266,7 @@ export async function retrieveSimilarIterations(
 
 export async function retrieveSimilarLosers(
   embedding: number[],
-  opts: { maxRating?: number; limit?: number; sessionId?: string } = {}
+  opts: { maxRating?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedExemplar[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -277,6 +280,8 @@ export async function retrieveSimilarLosers(
       text_weight: TEXT_WEIGHT,
       image_weight: IMAGE_WEIGHT,
     } : {}),
+    // v1/v1.1 isolation — see retrieveSimilarIterations.
+    ...(opts.pipelineVersion ? { p_pipeline_version: opts.pipelineVersion } : {}),
   });
   if (error || !data) return [];
   return (data as Array<{

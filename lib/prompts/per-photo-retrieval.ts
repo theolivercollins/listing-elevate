@@ -140,10 +140,15 @@ export async function fetchPerPhotoRetrievalBundle(params: {
     retrieveSimilarIterations(embedding, {
       minRating: 4,
       limit: opts.exemplarLimit ?? 5,
+      // v1/v1.1 isolation — scope winner exemplars to the requesting
+      // pipeline so v1.1 5★ Lab iterations don't leak into v1 director
+      // prompts (and vice versa).
+      ...(pipelineVersion ? { pipelineVersion } : {}),
     }),
     retrieveSimilarLosers(embedding, {
       maxRating: 2,
       limit: opts.loserLimit ?? 3,
+      ...(pipelineVersion ? { pipelineVersion } : {}),
     }),
   ]);
 
