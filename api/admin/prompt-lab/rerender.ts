@@ -48,14 +48,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { source_iteration_id, provider, sku: skuParam } = (req.body ?? {}) as {
+  const { source_iteration_id, provider, sku: skuParam, resolution: resolutionParam } = (req.body ?? {}) as {
     source_iteration_id?: string;
     provider?: "kling" | "runway";
     sku?: string | null;
+    resolution?: string | null;
   };
   if (!source_iteration_id || !provider) {
     return res.status(400).json({ error: "source_iteration_id and provider required" });
   }
+
+  // Validate resolution if provided — must be in the known set.
+  const VALID_RESOLUTIONS = ["480p", "720p", "1080p", "4k"] as const;
+  if (resolutionParam != null && !(VALID_RESOLUTIONS as readonly string[]).includes(resolutionParam)) {
+    return res.status(400).json({
+      error: `resolution="${resolutionParam}" is not valid. Must be one of: ${VALID_RESOLUTIONS.join(", ")}`,
+    });
+  }
+  const resolution = resolutionParam ?? null;
 
   // Validate sku if explicitly provided — accept both V1 and V1.1 catalogs.
   // Pipeline version is fetched below; both are allowed here and the v1.1
@@ -135,13 +145,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? null
       : provider;
 
-    const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku } = await submitLabRender({
+    const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku, resolutionUsed } = await submitLabRender({
       imageUrl,
       scene,
       roomType,
       providerOverride: effectiveProviderOverride,
       sku: effectiveSku,
       pipelineVersion,
+      resolution,
     });
 
     // Audit A C2: Atlas POST has already fired (account charged). Retry the
@@ -158,6 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             model_used: resolvedSku,
             sku_source: "captured_at_render",
             pipeline_version: pipelineVersion,
+            resolution_used: resolutionUsed,
           })
           .eq("id", newIteration.id)
           .select()

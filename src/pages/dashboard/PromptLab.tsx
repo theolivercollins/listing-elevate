@@ -1394,7 +1394,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
     navigate("/dashboard/development/prompt-lab");
   }
 
-  async function handleRender(iterationId: string, provider?: "kling" | "runway" | null, sku?: SkuChoice | null) {
+  async function handleRender(iterationId: string, provider?: "kling" | "runway" | null, sku?: SkuChoice | null, resolution?: string) {
     setBusy(`render-${iterationId}`);
     setError(null);
     try {
@@ -1402,7 +1402,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
       // already set provider="kling"/"runway" before calling onRender. Drop the
       // sku param so the server uses the providerOverride path (not an Atlas SKU).
       const sendSku: V1AtlasSku | null = sku && !isNativeProviderSku(sku) ? (sku as V1AtlasSku) : null;
-      const result = await renderIteration(iterationId, provider ?? null, sendSku);
+      const result = await renderIteration(iterationId, provider ?? null, sendSku, resolution ?? null);
       if (result.renderError) setError(`Render failed: ${result.renderError}`);
       await reload();
     } catch (e) {
@@ -1715,7 +1715,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
                   isLatest={it.id === latest?.id}
                   isV11={isV11}
                   busy={busy}
-                  onRender={(provider, sku) => handleRender(it.id, provider, sku)}
+                  onRender={(provider, sku, resolution) => handleRender(it.id, provider, sku, resolution)}
                   onRefine={(p) => handleRefine(it.id, p)}
                   onRate={(p) => handleRate(it.id, p)}
                   onRerender={(provider) => handleRerender(it.id, provider)}

@@ -121,7 +121,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   const rows = (data ?? []) as PendingRow[];
 
   for (const row of rows) {
-    if (!row.provider || !["kling", "runway", "atlas"].includes(row.provider)) {
+    if (!row.provider || !["kling", "runway", "atlas", "veo"].includes(row.provider)) {
       results.push({ id: row.id, phase: "finalize", status: "skip: unknown provider" });
       continue;
     }
@@ -141,7 +141,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       const outcome = await finalizeLabRender({
         iterationId: row.id,
         sessionId: row.session_id,
-        provider: row.provider as "kling" | "runway" | "atlas",
+        provider: row.provider as "kling" | "runway" | "atlas" | "veo",
         providerTaskId: row.provider_task_id,
       });
       if (!outcome.done) {
@@ -190,8 +190,10 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       }
 
       // Speed-ramp polish: applies only to Seedance push-in renders (model_used=
-      // 'seedance-pro-pushin'). Other v1.1 SKUs (Kling 3, Runway, etc.) download
+      // 'seedance-pro-pushin'). Other v1.1 SKUs (Kling 3, Runway, Veo, etc.) download
       // raw — their clips don't need the speed-ramp treatment.
+      // Veo 4K clips are especially large; the assembly stage applies ramp at
+      // concat time so we don't pay the FFmpeg cost twice (Lane B, 2026-05-26).
       // On ramp failure, log the error and fall through to the raw clip (same
       // pattern as api/cron/poll-scenes.ts). finalizeLabRender already persisted
       // the clip to storage and returned the public URL; we need the raw buffer

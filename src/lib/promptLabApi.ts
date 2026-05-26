@@ -172,11 +172,17 @@ export function rateIteration(body: {
 export function renderIteration(
   iterationId: string,
   provider?: "kling" | "runway" | null,
-  sku?: string | null
+  sku?: string | null,
+  resolution?: string | null,
 ): Promise<LabIteration & { renderError?: string }> {
   return fetchJSON("/api/admin/prompt-lab/render", {
     method: "POST",
-    body: JSON.stringify({ iteration_id: iterationId, provider: provider ?? null, sku: sku ?? undefined }),
+    body: JSON.stringify({
+      iteration_id: iterationId,
+      provider: provider ?? null,
+      sku: sku ?? undefined,
+      resolution: resolution ?? undefined,
+    }),
   });
 }
 
