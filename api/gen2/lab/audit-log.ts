@@ -4,52 +4,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/db.js";
-
-// TODO: import { fetchAuditTrail } from "../../../lib/gen2-v21/telemetry/index.js";
-// Stub until telemetry subagent ships:
-async function fetchAuditTrail(
-  labelId: string,
-  supabase: ReturnType<typeof getSupabase>
-): Promise<{
-  label: Record<string, unknown>;
-  hash_match_a: boolean;
-  hash_match_b: boolean;
-  prediction_record: Record<string, unknown> | null;
-  outcome_record: Record<string, unknown> | null;
-}> {
-  // Minimal stub: fetch label + cross-check against persisted predictions
-  const { data: label, error } = await supabase
-    .from("gen2_pair_labels")
-    .select("*")
-    .eq("label_id", labelId)
-    .single();
-
-  if (error || !label) {
-    throw new Error(`Label ${labelId} not found`);
-  }
-
-  const { data: prediction } = await supabase
-    .from("gen2_apprentice_predictions")
-    .select("*")
-    .eq("candidate_id", label.candidate_id ?? "")
-    .maybeSingle();
-
-  const { data: outcome } = await supabase
-    .from("gen2_render_outcomes")
-    .select("*")
-    .eq("pair_label_id", labelId)
-    .maybeSingle();
-
-  // Hash match flags: compare stored thumbnail_hash against any later re-fetch
-  // Full implementation in telemetry subagent — here we emit true as placeholder
-  return {
-    label: label as Record<string, unknown>,
-    hash_match_a: true, // TODO: implement hash verification in telemetry/audit-log.ts
-    hash_match_b: true,
-    prediction_record: prediction as Record<string, unknown> | null,
-    outcome_record: outcome as Record<string, unknown> | null,
-  };
-}
+import { fetchAuditTrail } from "../../../lib/gen2-v21/telemetry/index.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (process.env.GEN2_V21_ENABLED !== "true") {
@@ -72,7 +27,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
 
   try {
-    const trail = await fetchAuditTrail(label_id, supabase);
+    const trail = await fetchAuditTrail(supabase, label_id);
     return res.status(200).json(trail);
   } catch (err) {
     console.error("[audit-log] error:", err);

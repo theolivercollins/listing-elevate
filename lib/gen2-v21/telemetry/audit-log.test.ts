@@ -123,10 +123,9 @@ describe("audit-log", () => {
 
     const trail = await fetchAuditTrail(sb, "lbl-001");
 
-    // The fingerprint for "https://cdn.example.com/photos/a.jpg" is "/photos/a.jpg"
-    // which matches thumbnail_hash_a = "/photos/a.jpg"
-    expect(trail.hash_match_a).toBe(true);
-    expect(trail.hash_match_b).toBe(true);
+    // hash_match deferred to v0.5 — returns null for now (hashes stored verbatim from client)
+    expect(trail.hash_match_a).toBe(null);
+    expect(trail.hash_match_b).toBe(null);
     expect(trail.label_id).toBe("lbl-001");
   });
 
@@ -163,8 +162,9 @@ describe("audit-log", () => {
 
     const trail = await fetchAuditTrail(sb, "lbl-001");
 
-    expect(trail.hash_match_a).toBe(false); // /photos/different-a.jpg ≠ /photos/original-a.jpg
-    expect(trail.hash_match_b).toBe(false); // no URL → false
+    // hash_match deferred to v0.5 — returns null regardless of URL differences
+    expect(trail.hash_match_a).toBe(null);
+    expect(trail.hash_match_b).toBe(null);
   });
 
   it("fetchAuditTrail: throws when label not found", async () => {

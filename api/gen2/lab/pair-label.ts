@@ -5,17 +5,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/db.js";
-import type { Verdict, TransitionTag } from "../../../lib/gen2-v21/types.js";
-
-// TODO: import { shouldRetrain, trainAndPersist } from "../../../lib/gen2-v21/picker/index.js";
-// Stubs until picker subagent ships:
-async function shouldRetrain(_totalLabels: number): Promise<boolean> {
-  // Trigger every 10 labels
-  return _totalLabels > 0 && _totalLabels % 10 === 0;
-}
-async function trainAndPersist(_listingId: string): Promise<void> {
-  console.warn("TODO: picker subagent not yet integrated — import from lib/gen2-v21/picker/index.js");
-}
+import type { Verdict, TransitionTag, PickerFeatures } from "../../../lib/gen2-v21/types.js";
+import { shouldRetrain, trainAndPersist } from "../../../lib/gen2-v21/picker/index.js";
 
 interface PairLabelBody {
   listing_id?: string;
@@ -130,9 +121,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .eq("listing_id", body.listing_id!);
 
     const totalLabels = count ?? 0;
-    if (await shouldRetrain(totalLabels)) {
+
+    // Fetch the label count at the time of the last trained model
+    const { data: lastModel } = await supabase
+      .from("gen2_picker_models")
+      .select("label_count_at_train")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const lastTrainedAtCount = (lastModel?.label_count_at_train as number | null) ?? 0;
+
+    if (shouldRetrain(totalLabels, lastTrainedAtCount)) {
       // Fire-and-forget retrain — don't block the response
-      trainAndPersist(body.listing_id!).catch((err) =>
+      // trainAndPersist expects (supabase, labelsQuery) where labelsQuery returns LabelRow[]
+      const capturedSupabase = supabase;
+      trainAndPersist(capturedSupabase as Parameters<typeof trainAndPersist>[0], async () => {
+        const { data } = await capturedSupabase
+          .from("gen2_pair_labels")
+          .select("label_id, listing_id, features_blob, target");
+        return (data ?? []) as Array<{
+          label_id: string;
+          listing_id: string;
+          features_blob: PickerFeatures;
+          target: 0 | 1;
+        }>;
+      }).catch((err) =>
         console.error("[pair-label] picker retrain failed:", err)
       );
     }

@@ -39,19 +39,20 @@ export async function logLabelEvent(
 export interface AuditTrailRow extends PairLabel {
   photo_a_url: string | null;
   photo_b_url: string | null;
-  hash_match_a: boolean;
-  hash_match_b: boolean;
+  /** null until v0.5 hash verification (server-side re-download) is implemented */
+  hash_match_a: boolean | null;
+  /** null until v0.5 hash verification (server-side re-download) is implemented */
+  hash_match_b: boolean | null;
 }
 
 /**
- * Fetches a label by ID and computes hash integrity flags.
- * hash_match_a/b are true when the stored thumbnail hash matches
- * the hash derivable from the current photo URL (paranoia check —
- * confirms the photos haven't been swapped or re-uploaded since labeling).
+ * Fetches a label by ID and returns hash integrity flags.
  *
- * Hash derivation: we compute a simple URL-based fingerprint from the
- * photo URLs stored in gen2_pair_candidates (joined via photo_a_id/photo_b_id).
- * If the candidate row no longer exists, both flags default to false.
+ * hash_match deferred to v0.5 — for v0, hashes are stored verbatim from client;
+ * verification requires server-side re-download. See spec section "Audit log".
+ *
+ * hash_match_a and hash_match_b are returned as null for now.
+ * v0.5 will implement true hash verification via image re-download.
  */
 export async function fetchAuditTrail(
   supabase: SupabaseClient,
@@ -82,37 +83,13 @@ export async function fetchAuditTrail(
   const photo_a_url: string | null = candidateRow?.photo_a_url ?? null;
   const photo_b_url: string | null = candidateRow?.photo_b_url ?? null;
 
-  // Compute hash integrity: derive a fingerprint from the current URL and compare
-  // to the stored thumbnail_hash. We use a simple URL-hash so this works without
-  // re-downloading images.
-  const hashMatch = (currentUrl: string | null, storedHash: string): boolean => {
-    if (!currentUrl) return false;
-    const derived = urlFingerprint(currentUrl);
-    return derived === storedHash;
-  };
-
   return {
     ...(labelRow as PairLabel),
     photo_a_url,
     photo_b_url,
-    hash_match_a: hashMatch(photo_a_url, labelRow.thumbnail_hash_a),
-    hash_match_b: hashMatch(photo_b_url, labelRow.thumbnail_hash_b),
+    // hash_match deferred to v0.5 — for v0, hashes are stored verbatim from client;
+    // verification requires server-side re-download. See spec section "Audit log".
+    hash_match_a: null,
+    hash_match_b: null,
   };
-}
-
-/**
- * Derives a short fingerprint from a URL for hash-match comparison.
- * Extracts the path component and last query param so CDN-version changes
- * are still surfaced. This is NOT a cryptographic hash — it's a change-
- * detection heuristic to catch photo swaps.
- */
-function urlFingerprint(url: string): string {
-  try {
-    const u = new URL(url);
-    // Use pathname + last segment of search params as fingerprint seed
-    const search = u.searchParams.get("v") ?? u.searchParams.get("hash") ?? "";
-    return `${u.pathname}${search ? `?${search}` : ""}`;
-  } catch {
-    return url;
-  }
 }

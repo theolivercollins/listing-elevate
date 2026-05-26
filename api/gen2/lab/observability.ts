@@ -5,10 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/db.js";
 import type { LabMode } from "../../../lib/gen2-v21/types.js";
-
-// TODO: integrate with telemetry/rolling-accuracy.ts, telemetry/feature-importance.ts,
-//       apprentice/agreement-tracker.ts, and apprentice/mode-switcher.ts
-// once those subagents ship. Current implementation is a direct SQL aggregation.
+import { fetchTopFeatures, computeRollingAccuracy } from "../../../lib/gen2-v21/telemetry/index.js";
 
 const COLD_START_THRESHOLD = 20; // labels needed before LightGBM takes over
 
@@ -39,34 +36,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
 
   try {
-    // ── Label counts ──
-    let labelQuery = supabase
+    // ── Label counts (for apprentice agreement + totals) ──
+    let labelCountQuery = supabase
       .from("gen2_pair_labels")
-      .select("label_id, operator_verdict, apprentice_predicted_verdict, apprentice_was_wrong, source_mode, created_at", { count: "exact" });
+      .select("label_id, apprentice_predicted_verdict, apprentice_was_wrong", { count: "exact" });
 
     if (listingId) {
-      labelQuery = labelQuery.eq("listing_id", listingId);
+      labelCountQuery = labelCountQuery.eq("listing_id", listingId);
     }
 
-    const { data: allLabels, count: totalLabels } = await labelQuery
+    const { data: allLabels, count: totalLabels } = await labelCountQuery
       .order("created_at", { ascending: false })
-      .limit(200); // enough for rolling windows
+      .limit(200);
 
     const labels = allLabels ?? [];
     const total = totalLabels ?? labels.length;
 
-    // ── Rolling accuracy helper ──
-    function computeRollingAccuracy(n: number): number | null {
-      const window = labels.slice(0, n);
-      const withPrediction = window.filter((l) => l.apprentice_predicted_verdict != null);
-      if (withPrediction.length === 0) return null;
-      const correct = withPrediction.filter((l) => !l.apprentice_was_wrong).length;
-      return correct / withPrediction.length;
-    }
-
-    const rollingAccuracy20 = computeRollingAccuracy(20);
-    const rollingAccuracy50 = computeRollingAccuracy(50);
-    const rollingAccuracy100 = computeRollingAccuracy(100);
+    // ── Rolling accuracy via telemetry module ──
+    const [ra20, ra50, ra100] = await Promise.all([
+      computeRollingAccuracy(supabase, { listingId, lastN: 20 }).catch(() => null),
+      computeRollingAccuracy(supabase, { listingId, lastN: 50 }).catch(() => null),
+      computeRollingAccuracy(supabase, { listingId, lastN: 100 }).catch(() => null),
+    ]);
+    const rollingAccuracy20 = ra20 ? ra20.accuracy : null;
+    const rollingAccuracy50 = ra50 ? ra50.accuracy : null;
+    const rollingAccuracy100 = ra100 ? ra100.accuracy : null;
 
     // ── Apprentice agreement (last 20) ──
     const recentWithPrediction = labels
@@ -94,9 +88,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data: modeRows } = await modeQuery;
     const currentMode: LabMode = (modeRows?.[0]?.current_mode as LabMode) ?? "directors_cut";
 
-    // ── Top features (from latest picker model) ──
-    // TODO: fetch real feature importances from telemetry/feature-importance.ts
-    const topFeatures: Array<{ name: string; weight: number }> = [];
+    // ── Top features from latest picker model via telemetry ──
+    const featureSnapshots = await fetchTopFeatures(supabase, { activeOnly: true }).catch(() => []);
+    const latestSnapshot = featureSnapshots[featureSnapshots.length - 1];
+    const topFeatures: Array<{ name: string; weight: number }> = latestSnapshot
+      ? Object.entries(latestSnapshot.top_features).map(([name, weight]) => ({ name, weight }))
+      : [];
 
     const { data: latestModel } = await supabase
       .from("gen2_picker_models")

@@ -5,16 +5,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getPhotosForProperty, getSupabase, recordCostEvent } from "../../../lib/db.js";
-import type { PropertySceneGraph } from "../../../lib/gen2-v21/types.js";
-
-// TODO: import { extractSceneGraph } from "../../../lib/gen2-v21/scene-graph/index.js";
-// Stub until scene-graph subagent ships:
-async function extractSceneGraph(
-  photos: Awaited<ReturnType<typeof getPhotosForProperty>>,
-  listingId: string
-): Promise<PropertySceneGraph> {
-  throw new Error("TODO: scene-graph subagent not yet integrated — import from lib/gen2-v21/scene-graph/index.js");
-}
+import { extractSceneGraph } from "../../../lib/gen2-v21/scene-graph/index.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (process.env.GEN2_V21_ENABLED !== "true") {
@@ -42,7 +33,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "No photos found for listing" });
     }
 
-    const sceneGraph = await extractSceneGraph(photos, listingId);
+    // extractSceneGraph expects { id, url }[] — map from Photo[]
+    const photoRefs = photos.map((p) => ({ id: p.id, url: p.file_url }));
+    const sceneGraph = await extractSceneGraph(listingId, photoRefs);
 
     // Record Gemini cost (estimate: ~500 tokens per photo at $0.00 → track as qc/google)
     await recordCostEvent({
