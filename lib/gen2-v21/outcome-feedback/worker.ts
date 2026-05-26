@@ -186,6 +186,7 @@ async function submitWithGuardrail(
 
   const guardrailResult = await tryWithGuardrail({
     pairLabelId: outcome.pair_label_id,
+    outcomeId: outcome.outcome_id,
     photoAUrl: imageA,
     photoBUrl: imageB,
     atlasModelSlug: V21_ATLAS_SKU,
@@ -196,12 +197,18 @@ async function submitWithGuardrail(
   // Always persist the attempts audit trail into judge_reasoning
   const attemptsJson = JSON.stringify(guardrailResult.attempts);
 
+  // Roll Atlas spend (passing + failed takes) into the outcome row so
+  // cost_cents reflects every cent we burned reaching this verdict — the
+  // judge step will add its own Gemini cost on top later.
+  const rolledCostCents = (outcome.cost_cents ?? 0) + guardrailResult.totalCostCents;
+
   if (guardrailResult.ok && guardrailResult.videoUrl) {
     // Guardrail passed — skip polling (already done internally)
     await updateOutcome(supabase, outcome.outcome_id, {
       status: "rendered",
       video_url: guardrailResult.videoUrl,
       judge_reasoning: attemptsJson,
+      cost_cents: rolledCostCents,
     } as Partial<RenderOutcome>);
   } else {
     // All takes failed guardrail — record failure; orchestrator handles routing
@@ -209,6 +216,7 @@ async function submitWithGuardrail(
       status: "failed",
       completed_at: new Date().toISOString(),
       judge_reasoning: attemptsJson,
+      cost_cents: rolledCostCents,
     } as Partial<RenderOutcome>);
   }
 }

@@ -393,6 +393,13 @@ export async function recordCostEvent(event: {
    */
   propertyId: string | null;
   sceneId?: string | null;
+  /**
+   * V2.1 paired-render outcome this event belongs to. Pass when the cost
+   * was incurred inside processing of a specific gen2_render_outcomes row
+   * (Atlas takes, guardrail retries, outcome judge). Lets the rating UI and
+   * reconciler attribute Atlas spend back to the outcome that triggered it.
+   */
+  outcomeId?: string | null;
   stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision" | "voiceover";
   provider: "anthropic" | "google" | "runway" | "kling" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "apify" | "elevenlabs";
   unitsConsumed?: number;
@@ -404,6 +411,7 @@ export async function recordCostEvent(event: {
   const { error: insertErr } = await supabase.from("cost_events").insert({
     property_id: event.propertyId,
     scene_id: event.sceneId ?? null,
+    outcome_id: event.outcomeId ?? null,
     stage: event.stage,
     provider: event.provider,
     units_consumed: event.unitsConsumed ?? null,

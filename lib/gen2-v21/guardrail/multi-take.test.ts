@@ -184,6 +184,43 @@ describe("tryWithGuardrail", () => {
     }
   });
 
+  it("threads outcomeId into every cost_event and sums totalCostCents", async () => {
+    const { pollUntilComplete } = await import("../../providers/provider.interface.js");
+
+    mockGenerateClip.mockResolvedValue({ jobId: "job-outcome", estimatedSeconds: 90 });
+    (pollUntilComplete as ReturnType<typeof vi.fn>).mockResolvedValue({
+      status: "complete",
+      videoUrl: "https://cdn.example.com/output-outcome.mp4",
+      costCents: 38,
+    });
+
+    // Both attempts fail guardrail so both record cost_events
+    mockComputeLineAngularVariance.mockResolvedValue(20);
+    mockComputeTurbulenceScore.mockResolvedValue(0.9);
+
+    const { tryWithGuardrail } = await import("./multi-take.js");
+    const result = await tryWithGuardrail({
+      ...BASE_OPTS,
+      outcomeId: "outcome-xyz",
+    });
+
+    expect(mockRecordCostEvent).toHaveBeenCalledTimes(2);
+    for (const call of mockRecordCostEvent.mock.calls) {
+      expect(call[0].outcomeId).toBe("outcome-xyz");
+    }
+    // Both attempts at 38¢ each
+    expect(result.totalCostCents).toBe(76);
+  });
+
+  it("returns totalCostCents=0 when atlasModelSlug is invalid (no spend)", async () => {
+    const { tryWithGuardrail } = await import("./multi-take.js");
+    const result = await tryWithGuardrail({
+      ...BASE_OPTS,
+      atlasModelSlug: "nonexistent-model",
+    });
+    expect(result.totalCostCents).toBe(0);
+  });
+
   it("returns ok=false with reason when atlasModelSlug is not registered", async () => {
     const { tryWithGuardrail } = await import("./multi-take.js");
     const result = await tryWithGuardrail({

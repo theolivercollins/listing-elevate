@@ -253,47 +253,55 @@ export default function V21LabIndex() {
             </div>
           )}
 
-          {/* Tabs */}
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
-            <TabsList className="bg-transparent border-b border-[var(--line)] w-full justify-start rounded-none h-auto p-0 gap-0">
-              <TabsTrigger
-                value="directors_cut"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
-              >
-                Director's Cut
-              </TabsTrigger>
-              <TabsTrigger
-                value="apprentice_review"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
-              >
-                Apprentice Review
-              </TabsTrigger>
-              <TabsTrigger
-                value="observability"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
-              >
-                Observability
-              </TabsTrigger>
-            </TabsList>
+          {/* Tabs — only show after a scene graph exists; observability is always accessible */}
+          {sceneGraphExists === true ? (
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
+              <TabsList className="bg-transparent border-b border-[var(--line)] w-full justify-start rounded-none h-auto p-0 gap-0">
+                <TabsTrigger
+                  value="directors_cut"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
+                >
+                  Director's Cut
+                </TabsTrigger>
+                <TabsTrigger
+                  value="apprentice_review"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
+                >
+                  Apprentice Review
+                </TabsTrigger>
+                <TabsTrigger
+                  value="observability"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
+                >
+                  Observability
+                </TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="directors_cut" className="mt-0">
-              <Suspense fallback={tabFallback}>
-                <DirectorsCutLab listingId={selectedId} />
-              </Suspense>
-            </TabsContent>
+              <TabsContent value="directors_cut" className="mt-0">
+                <Suspense fallback={tabFallback}>
+                  <DirectorsCutLab listingId={selectedId} />
+                </Suspense>
+              </TabsContent>
 
-            <TabsContent value="apprentice_review" className="mt-4">
-              <Suspense fallback={tabFallback}>
-                <ApprenticeReview listingId={selectedId} />
-              </Suspense>
-            </TabsContent>
+              <TabsContent value="apprentice_review" className="mt-4">
+                <Suspense fallback={tabFallback}>
+                  <ApprenticeReview listingId={selectedId} />
+                </Suspense>
+              </TabsContent>
 
-            <TabsContent value="observability" className="mt-4 max-w-lg">
-              <Suspense fallback={tabFallback}>
-                <ObservabilityPanel listingId={selectedId} />
-              </Suspense>
-            </TabsContent>
-          </Tabs>
+              <TabsContent value="observability" className="mt-4 max-w-lg">
+                <Suspense fallback={tabFallback}>
+                  <ObservabilityPanel listingId={selectedId} />
+                </Suspense>
+              </TabsContent>
+            </Tabs>
+          ) : sceneGraphExists === false ? (
+            <Card className="border-[var(--line)] bg-[var(--surface)]">
+              <CardContent className="p-8 text-center text-sm text-[var(--muted)]">
+                Extract the scene graph above to start labeling pairs.
+              </CardContent>
+            </Card>
+          ) : null}
         </>
       )}
     </div>

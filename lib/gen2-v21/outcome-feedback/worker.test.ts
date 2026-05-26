@@ -32,7 +32,7 @@ function buildMockSupabase(config: {
   outcomes?: RenderOutcome[];
   rpcOutcomes?: RenderOutcome[] | null;
   labelRow?: { photo_a_id: string; photo_b_id: string } | null;
-  photos?: Array<{ photo_id: string; file_url: string }>;
+  photos?: Array<{ id: string; file_url: string }>;
   atlasSubmitOk?: boolean;
 }) {
   const tableData: Record<string, unknown[]> = {
@@ -125,35 +125,38 @@ describe("processOutstandingOutcomes", () => {
       attempts: [
         { videoUrl: "https://cdn.example.com/video.mp4", lineVariance: 1.2, turbulence: 0.1, passed: true },
       ],
+      totalCostCents: 38,
     });
 
     const supabase = buildMockSupabase({
       rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
       labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
       photos: [
-        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
-        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+        { id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
       ],
     });
 
     const result = await processOutstandingOutcomes(supabase);
     expect(result.processed).toBe(1);
     expect(result.errors).toBe(0);
-    // tryWithGuardrail was called with correct args
+    // tryWithGuardrail was called with outcomeId + correct args
     expect(mockGuardrail).toHaveBeenCalledWith(
       expect.objectContaining({
         pairLabelId: "label-1",
+        outcomeId: "out-1",
         photoAUrl: "https://cdn.example.com/a.jpg",
         photoBUrl: "https://cdn.example.com/b.jpg",
         atlasModelSlug: "kling-o3-pro",
         maxAttempts: 2,
       }),
     );
-    // Outcome updated to rendered with videoUrl
+    // Outcome updated to rendered with videoUrl + Atlas cost rolled up
     const updates = supabase._updates["gen2_render_outcomes"] ?? [];
     const renderUpdate = updates.find((u: Record<string, unknown>) => u.status === "rendered");
     expect(renderUpdate).toBeDefined();
     expect((renderUpdate as Record<string, unknown>).video_url).toBe("https://cdn.example.com/video.mp4");
+    expect((renderUpdate as Record<string, unknown>).cost_cents).toBe(38);
     // Attempts audit trail persisted in judge_reasoning
     const attemptsJson = (renderUpdate as Record<string, unknown>).judge_reasoning as string;
     const parsed = JSON.parse(attemptsJson);
@@ -171,24 +174,27 @@ describe("processOutstandingOutcomes", () => {
       ok: false,
       reason: "Guardrail failed after 2 attempt(s): lineVariance=3.80° turbulence=0.550",
       attempts: failedAttempts,
+      totalCostCents: 76,
     });
 
     const supabase = buildMockSupabase({
       rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
       labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
       photos: [
-        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
-        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+        { id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
       ],
     });
 
     const result = await processOutstandingOutcomes(supabase);
     expect(result.processed).toBe(1);
     expect(result.errors).toBe(0);
-    // Outcome updated to failed
+    // Outcome updated to failed — Atlas spend (76¢) rolled into cost_cents
+    // even though no clip passed; we still burned the money.
     const updates = supabase._updates["gen2_render_outcomes"] ?? [];
     const failUpdate = updates.find((u: Record<string, unknown>) => u.status === "failed");
     expect(failUpdate).toBeDefined();
+    expect((failUpdate as Record<string, unknown>).cost_cents).toBe(76);
     // Both attempts persisted in judge_reasoning
     const attemptsJson = (failUpdate as Record<string, unknown>).judge_reasoning as string;
     const parsed = JSON.parse(attemptsJson);
@@ -205,8 +211,8 @@ describe("processOutstandingOutcomes", () => {
       rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
       labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
       photos: [
-        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
-        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+        { id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
       ],
     });
 
@@ -270,8 +276,8 @@ describe("processOutstandingOutcomes", () => {
       ],
       labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
       photos: [
-        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
-        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+        { id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
       ],
     });
 
@@ -306,8 +312,8 @@ describe("processOutstandingOutcomes", () => {
       rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
       labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
       photos: [
-        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
-        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+        { id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
       ],
     });
 

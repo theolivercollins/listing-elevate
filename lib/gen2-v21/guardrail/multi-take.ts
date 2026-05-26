@@ -34,11 +34,23 @@ export interface MultiTakeResult {
   videoUrl?: string;
   reason?: string;
   attempts: MultiTakeAttempt[];
+  /**
+   * Sum of cost_cents recorded across all Atlas attempts (including failed
+   * submits/polls and guardrail-failed takes). Caller should add this to
+   * gen2_render_outcomes.cost_cents so the outcome row reflects total spend.
+   */
+  totalCostCents: number;
 }
 
 export interface MultiTakeOpts {
   /** Pair label ID — used in cost_events metadata for traceability. */
   pairLabelId: string;
+  /**
+   * V2.1 outcome this take belongs to. Threaded into cost_events.outcome_id
+   * so Atlas spend can be attributed back to the outcome row. Optional so
+   * non-worker callers (smoke scripts, Lab) can still invoke without one.
+   */
+  outcomeId?: string | null;
   /** URL for the start-frame photo (Photo A). */
   photoAUrl: string;
   /** URL for the end-frame photo (Photo B). */
@@ -84,6 +96,7 @@ function retryPrompt(basePrompt: string): string {
 export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeResult> {
   const {
     pairLabelId,
+    outcomeId = null,
     photoAUrl,
     photoBUrl,
     atlasModelSlug,
@@ -92,6 +105,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
   } = opts;
 
   const attempts: MultiTakeAttempt[] = [];
+  let totalCostCents = 0;
 
   const modelDescriptor = ATLAS_MODELS[atlasModelSlug];
   if (!modelDescriptor) {
@@ -99,6 +113,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
       ok: false,
       reason: `Unknown atlasModelSlug: ${atlasModelSlug}`,
       attempts,
+      totalCostCents,
     };
   }
 
@@ -129,6 +144,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
       // Record zero-cost event for the failed submission attempt
       await recordCostEventSafe({
         pairLabelId,
+        outcomeId,
         atlasModelSlug,
         attemptIndex: attempt,
         costCents: 0,
@@ -139,6 +155,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
         ok: false,
         reason: `Atlas submit failed on attempt ${attempt + 1}: ${errMsg}`,
         attempts,
+        totalCostCents,
       };
     }
 
@@ -149,11 +166,14 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
       const result = await pollUntilComplete(provider, jobId);
       if (result.status !== "complete" || !result.videoUrl) {
         const errMsg = result.error ?? "generation failed";
+        const failedCost = result.costCents ?? modelDescriptor.priceCentsPerClip;
+        totalCostCents += failedCost;
         await recordCostEventSafe({
           pairLabelId,
+          outcomeId,
           atlasModelSlug,
           attemptIndex: attempt,
-          costCents: result.costCents ?? modelDescriptor.priceCentsPerClip,
+          costCents: failedCost,
           status: "generation_failed",
           error: errMsg,
         });
@@ -161,17 +181,21 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
           ok: false,
           reason: `Atlas job failed on attempt ${attempt + 1}: ${errMsg}`,
           attempts,
+          totalCostCents,
         };
       }
       videoUrl = result.videoUrl;
       actualCostCents = result.costCents ?? atlasClipCostCents(atlasModelSlug);
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
+      const pollFailCost = modelDescriptor.priceCentsPerClip;
+      totalCostCents += pollFailCost;
       await recordCostEventSafe({
         pairLabelId,
+        outcomeId,
         atlasModelSlug,
         attemptIndex: attempt,
-        costCents: modelDescriptor.priceCentsPerClip,
+        costCents: pollFailCost,
         status: "poll_failed",
         error: errMsg,
       });
@@ -179,6 +203,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
         ok: false,
         reason: `Atlas poll failed on attempt ${attempt + 1}: ${errMsg}`,
         attempts,
+        totalCostCents,
       };
     }
 
@@ -199,10 +224,12 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
       passed,
     };
     attempts.push(attemptRecord);
+    totalCostCents += actualCostCents;
 
     // ── 4. Record cost event ─────────────────────────────────────────────────
     await recordCostEventSafe({
       pairLabelId,
+      outcomeId,
       atlasModelSlug,
       attemptIndex: attempt,
       costCents: actualCostCents,
@@ -212,7 +239,7 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
     });
 
     if (passed) {
-      return { ok: true, videoUrl, attempts };
+      return { ok: true, videoUrl, attempts, totalCostCents };
     }
 
     // If this is the last attempt, fall through to return ok=false
@@ -223,13 +250,14 @@ export async function tryWithGuardrail(opts: MultiTakeOpts): Promise<MultiTakeRe
     ? `Guardrail failed after ${maxAttempts} attempt(s): lineVariance=${last.lineVariance.toFixed(2)}° turbulence=${last.turbulence.toFixed(3)}`
     : `All ${maxAttempts} attempt(s) failed`;
 
-  return { ok: false, reason, attempts };
+  return { ok: false, reason, attempts, totalCostCents };
 }
 
 // ── Cost event helper ─────────────────────────────────────────────────────────
 
 interface CostEventMeta {
   pairLabelId: string;
+  outcomeId?: string | null;
   atlasModelSlug: string;
   attemptIndex: number;
   costCents: number;
@@ -243,6 +271,7 @@ async function recordCostEventSafe(meta: CostEventMeta): Promise<void> {
   try {
     await recordCostEvent({
       propertyId: null, // pair renders are Lab/gen2 events, not tied to a pipeline property
+      outcomeId: meta.outcomeId ?? null,
       stage: "generation",
       provider: "atlas",
       costCents: meta.costCents,
