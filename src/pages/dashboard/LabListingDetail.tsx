@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card as ShadCard, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, RefreshCw, Play, Archive, Images, ArrowLeft } from "lucide-react";
 import { NextActionBanner } from "@/components/lab/NextActionBanner";
 import { SceneCard } from "@/components/lab/SceneCard";
@@ -333,6 +335,40 @@ export default function LabListingDetail() {
           Back to listings
         </Link>
       </div>
+
+      {/* V2 Tools card */}
+      <ShadCard className="border-[var(--line)] bg-[var(--surface)]">
+        <CardHeader className="pb-3 pt-5 px-5">
+          <CardTitle className="text-sm font-semibold text-[var(--ink)]">V2 Tools</CardTitle>
+          <p className="text-xs text-[var(--muted)] mt-0.5">
+            Pair-Picker / Director&apos;s Cut / Apprentice (separate experience, same listing)
+          </p>
+        </CardHeader>
+        <CardContent className="px-5 pb-5">
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline" size="lg" className="rounded-xl">
+              <Link to={`/dashboard/development/lab/v21?listingId=${id}`}>
+                Open Pair-Picker
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="rounded-xl">
+              <Link to={`/dashboard/development/lab/v21?listingId=${id}&tab=apprentice_review`}>
+                Apprentice Review
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="rounded-xl">
+              <Link to={`/dashboard/development/lab/v21?listingId=${id}&tab=observability`}>
+                Observability
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="lg" className="rounded-xl">
+              <Link to={`/dashboard/development/lab/v21/renders?listingId=${id}`}>
+                View V2 Renders
+              </Link>
+            </Button>
+          </div>
+        </CardContent>
+      </ShadCard>
 
       {/* Stats strip */}
       <Card padding={0}>
