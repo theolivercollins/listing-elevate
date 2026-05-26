@@ -139,6 +139,13 @@ export async function trainAndPersist(
     );
   }
 
+  const distinctListings = new Set(allLabels.map((l) => l.listing_id)).size;
+  if (distinctListings < 2) {
+    throw new Error(
+      `trainAndPersist: need at least 2 labels, got ${allLabels.length}`,
+    );
+  }
+
   // Split by listing
   const { train, test } = splitByListing(allLabels);
 
@@ -155,8 +162,6 @@ export async function trainAndPersist(
 
   // Evaluate
   const accuracy_on_holdout = evaluateHoldout(model, test);
-
-  const distinctListings = new Set(allLabels.map((l) => l.listing_id)).size;
 
   // Deactivate existing active models (within a transaction via RPC, or sequentially)
   await new Promise<void>((resolve, reject) => {
