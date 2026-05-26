@@ -138,18 +138,19 @@ async function resolvePhotoPair(
 
   if (!label) return null;
 
-  const photos = await new Promise<Array<{ photo_id: string; file_url: string }>>((resolve) => {
+  // photos.id is the PK (not photos.photo_id). Select id + file_url.
+  const photos = await new Promise<Array<{ id: string; file_url: string }>>((resolve) => {
     supabase
       .from("photos")
-      .select("photo_id, file_url")
-      .in("photo_id", [label.photo_a_id, label.photo_b_id])
+      .select("id, file_url")
+      .in("id", [label.photo_a_id, label.photo_b_id])
       .then(({ data, error }: { data: unknown; error: unknown }) => {
         if (error || !data) { resolve([]); return; }
-        resolve(data as Array<{ photo_id: string; file_url: string }>);
+        resolve(data as Array<{ id: string; file_url: string }>);
       });
   });
 
-  const photoMap = Object.fromEntries(photos.map((p) => [p.photo_id, p.file_url]));
+  const photoMap = Object.fromEntries(photos.map((p) => [p.id, p.file_url]));
   const imageA = photoMap[label.photo_a_id];
   const imageB = photoMap[label.photo_b_id];
 
@@ -329,18 +330,19 @@ async function judgeOutcome(outcome: RenderOutcome, supabase: SupabaseClient): P
     return;
   }
 
-  const photos = await new Promise<Array<{ photo_id: string; file_url: string }>>((resolve) => {
+  // photos.id is the PK (not photos.photo_id). Select id + file_url.
+  const photos = await new Promise<Array<{ id: string; file_url: string }>>((resolve) => {
     supabase
       .from("photos")
-      .select("photo_id, file_url")
-      .in("photo_id", [label.photo_a_id, label.photo_b_id])
+      .select("id, file_url")
+      .in("id", [label.photo_a_id, label.photo_b_id])
       .then(({ data, error }: { data: unknown; error: unknown }) => {
         if (error || !data) { resolve([]); return; }
-        resolve(data as Array<{ photo_id: string; file_url: string }>);
+        resolve(data as Array<{ id: string; file_url: string }>);
       });
   });
 
-  const photoMap = Object.fromEntries(photos.map((p) => [p.photo_id, p.file_url]));
+  const photoMap = Object.fromEntries(photos.map((p) => [p.id, p.file_url]));
 
   const result = await judgeRenderedClip(
     outcome.video_url,
