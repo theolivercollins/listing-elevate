@@ -189,11 +189,17 @@ export function renderIteration(
 export function rerenderWithProvider(
   sourceIterationId: string,
   provider: "kling" | "runway" | "atlas",
-  sku?: string | null
+  sku?: string | null,
+  resolution?: string | null,
 ): Promise<{ iteration: LabIteration; queued?: boolean; message?: string }> {
   return fetchJSON("/api/admin/prompt-lab/rerender", {
     method: "POST",
-    body: JSON.stringify({ source_iteration_id: sourceIterationId, provider, sku: sku ?? undefined }),
+    body: JSON.stringify({
+      source_iteration_id: sourceIterationId,
+      provider,
+      sku: sku ?? undefined,
+      resolution: resolution ?? undefined,
+    }),
   });
 }
 
