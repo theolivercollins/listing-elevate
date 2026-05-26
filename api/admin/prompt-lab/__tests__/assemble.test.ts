@@ -196,7 +196,7 @@ function makeFakeClipResponse() {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-let importedHandler: (req: VercelRequest, res: VercelResponse) => Promise<void>;
+let importedHandler: (req: VercelRequest, res: VercelResponse) => Promise<VercelResponse | void>;
 
 beforeEach(async () => {
   vi.resetModules();
