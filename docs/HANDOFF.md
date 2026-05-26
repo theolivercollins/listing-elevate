@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-26 PM-2 (Dashboard chrome cleanup — top search bar removed, notifications + theme toggle folded into profile menu)
+Last updated: 2026-05-26 evening (Email editor swap — Unlayer → Easy Email; React-native, MJML output, legacy-design bridge)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,11 @@ See also:
 
 ## Right now
 
-**2026-05-26 PM-2 (latest): Dashboard chrome cleanup — top bar removed.** The dashboard `DashboardTopBar` (search input + notification bell + theme toggle) is gone. The notifications icon and dark/light mode toggle now live as rows inside the profile-icon dropdown in the bottom-left sidebar (`UserMenu` in `src/components/DashboardSidebar.tsx`). `Notifications` row shows an unread-count badge (warns + needs-review properties) and navigates to `/dashboard/logs` on click. `Light mode` / `Dark mode` row toggles via the existing `useTheme` hook; uses lucide `Sun`/`Moon` icons. Removed the full `useNotifications`/`NotificationsButton`/`DashboardTopBar` block from `src/pages/Dashboard.tsx` (Dashboard is now a 27-line shell: sidebar + `<Outlet />`, no top bar). Search was zero-functionality (input had no handler) — removed without replacement. Spec deferred since this is a UI strip. Branch `feat/dashboard-profile-menu` cascaded directly to `main`.
+**2026-05-26 evening (latest): Email editor swap — Unlayer → Easy Email.** `react-email-editor` (Unlayer, iframed, squared-off, didn't pick up our shadcn theme) is out; `easy-email-editor` v4.16.6 is in. Easy Email is React-native (no iframe, our theme reaches editor chrome) and outputs MJML (rendered to bulletproof inline HTML via `mjml-browser` at save time). `src/components/blog/EmailDesigner.tsx` was rewritten end-to-end; **public handle contract (`EmailDesignerHandle.exportHtml(cb)`) is unchanged** so `EmailDetail.tsx` and `EmailTemplateDetail.tsx` did not need to be touched. New module `src/components/blog/email-design-bridge.ts` detects Unlayer-shaped legacy `design_json` on load and wraps the stored `body_html` in a single `raw` block so existing drafts/templates remain editable (the imported block is non-decomposable, but the email renders and can be augmented with new blocks). Brand kit locked to LE Inter / `#0A2540` / `#E97316` for v1; per-tenant brand kits deferred. Deps added: `easy-email-editor`, `easy-email-extensions`, `easy-email-core`, `mjml-browser@4.18`, `@arco-design/web-react`, `react-dnd`, `react-dnd-html5-backend`. **Bundle impact**: main JS grew from 2.0 MB → 3.7 MB (gzip 547 KB → 1.1 MB) — Arco Design is 26 MB on disk. Acceptable for admin dashboard; code-splitting `EmailDesigner` behind a dynamic import in the email pages is a follow-up. **Out of scope this PR** (call out, not built): LE custom blocks (CTA / listing card / agent footer), AMP support, per-tenant brand kits, real-time collab. Spec at `docs/superpowers/specs/2026-05-26-email-editor-easy-email-design.md`. Branch `feat/email-editor-easy-email` cascaded directly to `main`.
+
+---
+
+**2026-05-26 PM-2: Dashboard chrome cleanup — top bar removed.** The dashboard `DashboardTopBar` (search input + notification bell + theme toggle) is gone. The notifications icon and dark/light mode toggle now live as rows inside the profile-icon dropdown in the bottom-left sidebar (`UserMenu` in `src/components/DashboardSidebar.tsx`). `Notifications` row shows an unread-count badge (warns + needs-review properties) and navigates to `/dashboard/logs` on click. `Light mode` / `Dark mode` row toggles via the existing `useTheme` hook; uses lucide `Sun`/`Moon` icons. Removed the full `useNotifications`/`NotificationsButton`/`DashboardTopBar` block from `src/pages/Dashboard.tsx` (Dashboard is now a 27-line shell: sidebar + `<Outlet />`, no top bar). Search was zero-functionality (input had no handler) — removed without replacement. Branch `feat/dashboard-profile-menu` cascaded directly to `main`.
 
 ---
 
