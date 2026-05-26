@@ -4,6 +4,7 @@ export const maxDuration = 120;
 
 import { getSupabase } from "../../lib/client.js";
 import { finalizeLabRender, submitLabRender } from "../../lib/prompt-lab.js";
+import { applySpeedRampToBuffer } from "../../lib/utils/ffmpeg.js";
 
 // Runs every minute per vercel.json crons.
 // Phase 1: submit queued renders when provider slots open.
@@ -16,6 +17,7 @@ interface PendingRow {
   provider_task_id: string;
   cost_cents: number | null;
   render_submitted_at: string | null;
+  pipeline_version: string | null;
 }
 
 interface QueuedRow {
@@ -108,7 +110,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   // ── Phase 2: finalize in-flight renders ──
   const { data, error } = await supabase
     .from("prompt_lab_iterations")
-    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at")
+    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at, pipeline_version")
     .not("provider_task_id", "is", null)
     .is("clip_url", null)
     .is("render_error", null)
@@ -185,10 +187,45 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         results.push({ id: row.id, phase: "finalize", status: "failed", err: outcome.error });
         continue;
       }
+
+      // v1.1 — apply FFmpeg speed-ramp polish so Lab ratings reflect the
+      // exact output the production pipeline ships. On ramp failure, log
+      // the error and fall through to the raw clip (same pattern as
+      // api/cron/poll-scenes.ts). finalizeLabRender already persisted
+      // the clip to storage and returned the public URL; we need the raw
+      // buffer to re-process, so we re-download from outcome.clipUrl.
+      // pipeline_version defaults to 'v1' for iterations created before
+      // migration 067.
+      let finalClipUrl = outcome.clipUrl ?? "";
+      const iterPipelineVersion = (row.pipeline_version ?? "v1") as string;
+      if (iterPipelineVersion === "v1.1" && outcome.clipUrl) {
+        try {
+          const rawResp = await fetch(outcome.clipUrl);
+          if (!rawResp.ok) throw new Error(`re-download failed: ${rawResp.status}`);
+          const rawBuf = Buffer.from(await rawResp.arrayBuffer());
+          const rampedBuf = await applySpeedRampToBuffer(rawBuf);
+          // Overwrite the storage object with the ramped version.
+          const rampedPath = `prompt-lab/${row.session_id}/${row.id}.mp4`;
+          const { error: upErr } = await supabase.storage
+            .from("property-videos")
+            .upload(rampedPath, rampedBuf, { contentType: "video/mp4", upsert: true });
+          if (!upErr) {
+            const { data: pub } = supabase.storage
+              .from("property-videos")
+              .getPublicUrl(rampedPath);
+            finalClipUrl = pub.publicUrl;
+          }
+        } catch (rampErr) {
+          const rampMsg = rampErr instanceof Error ? rampErr.message : String(rampErr);
+          console.warn(`[poll-lab-renders] v1.1 speed-ramp failed for iter=${row.id}, using raw clip: ${rampMsg}`);
+          // fall through — finalClipUrl stays as outcome.clipUrl
+        }
+      }
+
       await supabase
         .from("prompt_lab_iterations")
         .update({
-          clip_url: outcome.clipUrl,
+          clip_url: finalClipUrl,
           cost_cents: Math.round((row.cost_cents ?? 0) + (outcome.costCents ?? 0)),
         })
         .eq("id", row.id);
