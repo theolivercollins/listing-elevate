@@ -41,6 +41,13 @@ vi.mock("../../../../lib/prompt-lab", () => ({
 // ── Atlas SKU mock ─────────────────────────────────────────────────────────────
 vi.mock("../../../../lib/providers/atlas", () => ({
   V1_ATLAS_SKUS: ["kling-v2-6-pro", "kling-v2-master"],
+  V1_1_LAB_SKUS: [
+    "seedance-pro-pushin",
+    "kling-v3-pro",
+    "kling-v2-6-pro",
+    "kling-v2-master",
+    "runway-gen4-native",
+  ],
 }));
 
 // ── Supabase mock ──────────────────────────────────────────────────────────────
@@ -159,7 +166,7 @@ function buildSupabaseMock(
 }
 
 describe("rerender.ts — v1.1 pipeline_version override", () => {
-  it("calls submitLabRender with pipelineVersion='v1.1', providerOverride=null when session is v1.1", async () => {
+  it("calls submitLabRender with pipelineVersion='v1.1', providerOverride=null when session is v1.1 and no valid v1.1 sku supplied", async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockSubmitLabRender.mockResolvedValue({
       jobId: "atlas-job-v11",
@@ -176,8 +183,10 @@ describe("rerender.ts — v1.1 pipeline_version override", () => {
     const req = makeReq({
       body: {
         source_iteration_id: "src-iter-1",
-        provider: "kling",         // user-supplied — must be IGNORED for v1.1
-        sku: "kling-v2-6-pro",    // user-supplied — must be IGNORED for v1.1
+        provider: "kling",   // user-supplied provider — ignored for Seedance (Atlas-only)
+        // No sku supplied → v1.1 defaults to seedance-pro-pushin.
+        // (Passing a valid V1_1 sku like kling-v2-6-pro would forward it as-is —
+        // that case is covered by render-v1.1-multi-model.test.ts.)
       },
     });
     const res = makeRes();
@@ -187,9 +196,10 @@ describe("rerender.ts — v1.1 pipeline_version override", () => {
     expect(mockSubmitLabRender).toHaveBeenCalledOnce();
     const callArgs = mockSubmitLabRender.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.pipelineVersion).toBe("v1.1");
+    // No sku supplied → defaults to seedance-pro-pushin
+    expect(callArgs.sku).toBe("seedance-pro-pushin");
+    // Seedance is Atlas-only → providerOverride must be null
     expect(callArgs.providerOverride).toBeNull();
-    // sku passed to submitLabRender must be null (ignored for v1.1)
-    expect(callArgs.sku).toBeNull();
 
     // INSERT carries pipeline_version='v1.1'
     const insertRow = updates.find((u) => u._op === "insert");

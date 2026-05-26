@@ -19,7 +19,39 @@ export interface LabModelInfo {
   hidden?: boolean;
 }
 
+// ─── v1.1 SKU catalog ────────────────────────────────────────────────────────
+//
+// SKUs valid for v1.1 Lab sessions (multi-model picker).
+// Default is `seedance-pro-pushin`; the rest are modern Kling/Runway SKUs.
+// Easy to extend — add a 1-line entry here and a matching LAB_MODELS row below.
+export const V1_1_LAB_SKUS = [
+  "seedance-pro-pushin",
+  "kling-v3-pro",
+  "kling-v2-6-pro",
+  "kling-v2-master",
+  "runway-gen4-native",
+] as const;
+export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
+export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
+
+/** Returns true when `sku` is a valid v1.1 Lab SKU. */
+export function isV1_1LabSku(sku: string): sku is V1_1LabSku {
+  return (V1_1_LAB_SKUS as readonly string[]).includes(sku);
+}
+
 export const LAB_MODELS: LabModelInfo[] = [
+  // ── v1.1-specific ────────────────────────────────────────────────────────
+  {
+    key: "seedance-pro-pushin",
+    slug: "bytedance/seedance-2.0/image-to-video",
+    label: "Seedance 2.0 (push-in)",
+    shortLabel: "Seedance 2.0",
+    priceCents: 70,          // 14 ¢/s × 5s — matches atlas.ts placeholder
+    priceLabel: "$0.70",
+    supportsEndFrame: false,
+    note: "Bytedance Seedance 2.0 via Atlas. Push-in only. FFmpeg speed-ramp polish applied on download.",
+  },
+  // ── v1 SKUs ──────────────────────────────────────────────────────────────
   {
     key: "kling-v2-native",
     slug: "kling-native-v2.0",  // informational; not used by Atlas
@@ -95,4 +127,15 @@ export const LAB_MODELS: LabModelInfo[] = [
 
 export function getLabModel(key: string): LabModelInfo | undefined {
   return LAB_MODELS.find((m) => m.key === key);
+}
+
+/**
+ * Returns the ordered list of `LabModelInfo` entries for the v1.1 multi-model
+ * picker.  Order matches `V1_1_LAB_SKUS`.  Hidden models are intentionally
+ * included (none of the v1.1 SKUs are hidden, but guard for future entries).
+ */
+export function getV1_1LabModels(): LabModelInfo[] {
+  return V1_1_LAB_SKUS.map((sku) => getLabModel(sku)).filter(
+    (m): m is LabModelInfo => m !== undefined,
+  );
 }

@@ -262,6 +262,61 @@ export async function applySpeedRamp(
   ]);
 }
 
+// ---------------------------------------------------------------------------
+// Concat utility (for Director assembly in v1.1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Concatenate an ordered list of video files into a single output using
+ * ffmpeg's concat demuxer (-f concat -safe 0 -c copy).
+ *
+ * Stream-copy mode: fast, lossless, assumes all inputs share the same codec
+ * (guaranteed when all segments come from the same speed-ramp pass which
+ * produces libx264/yuv420p).
+ *
+ * @returns duration of the output file in seconds (probed via ffprobe)
+ */
+export async function concatClips(
+  orderedPaths: string[],
+  outputPath: string,
+): Promise<{ durationSeconds: number }> {
+  if (orderedPaths.length === 0) {
+    throw new Error("concatClips: orderedPaths must not be empty");
+  }
+
+  // Write a ffmpeg concat list file next to the output file
+  const listPath = outputPath + ".concat.txt";
+  const listContent = orderedPaths
+    .map((p) => `file '${p.replace(/'/g, "'\\''")}'`)
+    .join("\n");
+
+  await fs.writeFile(listPath, listContent, "utf8");
+
+  try {
+    await exec("ffmpeg", [
+      "-f", "concat",
+      "-safe", "0",
+      "-i", listPath,
+      "-c", "copy",
+      "-y",
+      outputPath,
+    ]);
+  } finally {
+    await fs.unlink(listPath).catch(() => {});
+  }
+
+  // Probe output duration
+  const { stdout: probeOut } = await exec("ffprobe", [
+    "-v", "error",
+    "-show_entries", "format=duration",
+    "-of", "default=noprint_wrappers=1:nokey=1",
+    outputPath,
+  ]);
+  const durationSeconds = parseFloat(probeOut.trim());
+
+  return { durationSeconds };
+}
+
 /**
  * Convenience wrapper: accepts a video buffer, writes to a tmp file,
  * applies the speed ramp, and returns the resulting buffer.

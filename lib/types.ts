@@ -217,6 +217,21 @@ export interface PipelineLog {
   metadata: Record<string, unknown> | null;
 }
 
+// ─── Prompt Lab assembly (migration 068) ───────────────────────────────────────
+// Matches prompt_lab_assemblies table schema exactly.
+export interface PromptLabAssembly {
+  id: string;
+  session_id: string;
+  iteration_order: string[];          // ordered array of iteration UUIDs
+  assembled_url: string | null;
+  status: "queued" | "assembling" | "complete" | "failed";
+  error: string | null;
+  duration_seconds: number | null;
+  pipeline_version: "v1" | "v1.1";
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface DailyStats {
   id: string;
   date: string;

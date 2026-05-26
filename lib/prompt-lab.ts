@@ -632,7 +632,9 @@ export async function submitLabRender(params: {
   providerOverride?: "kling" | "runway" | null;
   endImageUrl?: string | null;
   sku?: V1AtlasSku | null;
-  /** v1.1 renders bypass normal SKU routing and force Seedance push-in. */
+  /** v1.1 renders use the multi-model picker (Seedance default + Kling 3 etc.).
+   *  The push-in prompt override and Atlas routing only apply when the resolved
+   *  SKU is specifically 'seedance-pro-pushin'. */
   pipelineVersion?: "v1" | "v1.1" | null;
 }): Promise<{
   jobId: string;
@@ -646,9 +648,11 @@ export async function submitLabRender(params: {
   let thompson: ThompsonDecision | undefined;
   let staticSku: V1AtlasSku;
 
-  // v1.1 — Seedance push-in override. Short-circuits all v1 routing logic.
-  // Thompson sampling does not run for v1.1 (single SKU, no exploration to do).
-  if (params.pipelineVersion === "v1.1") {
+  // v1.1 Seedance push-in path — only when the resolved SKU is seedance-pro-pushin.
+  // Thompson sampling does not run for Seedance (single-SKU, no exploration).
+  // For other v1.1 SKUs (Kling 3, Runway, etc.), fall through to the standard
+  // routing paths below.
+  if (params.pipelineVersion === "v1.1" && params.sku === ("seedance-pro-pushin" as V1AtlasSku)) {
     const SEEDANCE_SKU = "seedance-pro-pushin" as V1AtlasSku;
     resolvedSku = SEEDANCE_SKU;
     staticSku = SEEDANCE_SKU;

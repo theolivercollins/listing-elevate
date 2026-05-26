@@ -11,7 +11,7 @@ import {
   ANALYSIS_PROMPT_HASH,
   DIRECTOR_PROMPT_HASH,
 } from "../../../lib/prompt-lab.js";
-import { V1_ATLAS_SKUS, type V1AtlasSku } from "../../../lib/providers/atlas.js";
+import { V1_ATLAS_SKUS, type V1AtlasSku, V1_1_LAB_SKUS } from "../../../lib/providers/atlas.js";
 
 // Audit A C2: wrap critical UPDATE calls that follow a remote POST (Atlas charge).
 // If the UPDATE fails, the provider has already billed us but we can't retrieve
@@ -57,12 +57,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "source_iteration_id and provider required" });
   }
 
-  // Validate sku if explicitly provided.
+  // Validate sku if explicitly provided — accept both V1 and V1.1 catalogs.
+  // Pipeline version is fetched below; both are allowed here and the v1.1
+  // resolution block below enforces V1_1_LAB_SKUS membership.
   let explicitSku: V1AtlasSku | null = null;
   if (skuParam != null) {
-    if (!(V1_ATLAS_SKUS as readonly string[]).includes(skuParam)) {
+    const allValidSkus = [...(V1_ATLAS_SKUS as readonly string[]), ...(V1_1_LAB_SKUS as readonly string[])];
+    if (!allValidSkus.includes(skuParam)) {
       return res.status(400).json({
-        error: `sku="${skuParam}" is not a valid V1 Atlas SKU. Valid: ${V1_ATLAS_SKUS.join(", ")}`,
+        error: `sku="${skuParam}" is not a recognised Lab SKU. V1: ${V1_ATLAS_SKUS.join(", ")}; V1.1: ${V1_1_LAB_SKUS.join(", ")}`,
       });
     }
     explicitSku = skuParam as V1AtlasSku;
@@ -114,20 +117,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const scene = source.director_output_json as any;
     const roomType = (source.analysis_json as any)?.room_type ?? "other";
-    // v1.1: user-supplied provider/sku are ignored entirely — Seedance push-in
-    // is the only render path. effectiveSku is passed as null so submitLabRender's
-    // pipelineVersion='v1.1' branch takes full control.
-    // v1: "rerender with same SKU" is frictionless: explicit body sku wins, else
-    // fall back to the source iteration's model_used, then null (router default).
+    // v1.1 SKU resolution:
+    //   - If user-supplied sku is in V1_1_LAB_SKUS → honour it.
+    //   - Else (missing / not in the catalog) → default to seedance-pro-pushin.
+    // v1: "rerender with same SKU" is frictionless: explicit body sku wins,
+    //     then source iteration's model_used, then null (router default).
     const effectiveSku: V1AtlasSku | null = pipelineVersion === "v1.1"
-      ? null
+      ? ((explicitSku && (V1_1_LAB_SKUS as readonly string[]).includes(explicitSku))
+          ? explicitSku
+          : ("seedance-pro-pushin" as V1AtlasSku))
       : (explicitSku ?? ((source.model_used as V1AtlasSku | null | undefined) ?? null));
+
+    // v1.1 Seedance: force Atlas by nulling providerOverride (Seedance is Atlas-only).
+    // v1.1 non-Seedance (Kling 3, etc.): let user's provider choice flow through.
+    // v1: pass user's provider choice through as before.
+    const effectiveProviderOverride = (pipelineVersion === "v1.1" && effectiveSku === ("seedance-pro-pushin" as V1AtlasSku))
+      ? null
+      : provider;
+
     const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku } = await submitLabRender({
       imageUrl,
       scene,
       roomType,
-      // v1.1: providerOverride is intentionally null — Atlas is forced internally.
-      providerOverride: pipelineVersion === "v1.1" ? null : provider,
+      providerOverride: effectiveProviderOverride,
       sku: effectiveSku,
       pipelineVersion,
     });

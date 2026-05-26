@@ -18,6 +18,7 @@ interface PendingRow {
   cost_cents: number | null;
   render_submitted_at: string | null;
   pipeline_version: string | null;
+  model_used: string | null;
 }
 
 interface QueuedRow {
@@ -110,7 +111,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   // ── Phase 2: finalize in-flight renders ──
   const { data, error } = await supabase
     .from("prompt_lab_iterations")
-    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at, pipeline_version")
+    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at, pipeline_version, model_used")
     .not("provider_task_id", "is", null)
     .is("clip_url", null)
     .is("render_error", null)
@@ -188,17 +189,16 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         continue;
       }
 
-      // v1.1 — apply FFmpeg speed-ramp polish so Lab ratings reflect the
-      // exact output the production pipeline ships. On ramp failure, log
-      // the error and fall through to the raw clip (same pattern as
-      // api/cron/poll-scenes.ts). finalizeLabRender already persisted
-      // the clip to storage and returned the public URL; we need the raw
-      // buffer to re-process, so we re-download from outcome.clipUrl.
-      // pipeline_version defaults to 'v1' for iterations created before
-      // migration 067.
+      // Speed-ramp polish: applies only to Seedance push-in renders (model_used=
+      // 'seedance-pro-pushin'). Other v1.1 SKUs (Kling 3, Runway, etc.) download
+      // raw — their clips don't need the speed-ramp treatment.
+      // On ramp failure, log the error and fall through to the raw clip (same
+      // pattern as api/cron/poll-scenes.ts). finalizeLabRender already persisted
+      // the clip to storage and returned the public URL; we need the raw buffer
+      // to re-process, so we re-download from outcome.clipUrl.
       let finalClipUrl = outcome.clipUrl ?? "";
-      const iterPipelineVersion = (row.pipeline_version ?? "v1") as string;
-      if (iterPipelineVersion === "v1.1" && outcome.clipUrl) {
+      const isSeedancePushIn = (row.model_used ?? null) === "seedance-pro-pushin";
+      if (isSeedancePushIn && outcome.clipUrl) {
         try {
           const rawResp = await fetch(outcome.clipUrl);
           if (!rawResp.ok) throw new Error(`re-download failed: ${rawResp.status}`);
