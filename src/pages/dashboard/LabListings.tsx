@@ -20,7 +20,9 @@ const LAB_STATUS_MAP: Record<string, string> = {
 const LAB_MODE_KEY = "lab_mode_version";
 type LabVersion = "v1" | "v21";
 
-// ── V1 ↔ V2.1 mode toggle ────────────────────────────────────────────
+// ── V1 ↔ V2 mode toggle ──────────────────────────────────────────────
+// V1 = original single-image Lab (this page). V2 = Kling 3 Omni pair-picker Lab (/v21).
+// V1.1 (Seedance push-in) is a per-property Upload-form toggle, not a Lab UI — not in this toggle.
 function LabVersionToggle({ current }: { current: LabVersion }) {
   const navigate = useNavigate();
 
@@ -64,7 +66,7 @@ function LabVersionToggle({ current }: { current: LabVersion }) {
               transition: "background 0.15s, color 0.15s",
             }}
           >
-            {v === "v1" ? "V1 Single-Image Lab" : "V2.1 Pair-Picker Lab"}
+            {v === "v1" ? "V1 Single-Image Lab" : "V2 Pair-Picker Lab"}
           </button>
         );
       })}
@@ -99,7 +101,7 @@ export default function LabListings() {
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      {/* V1 ↔ V2.1 mode toggle */}
+      {/* V1 ↔ V2 mode toggle */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <LabVersionToggle current="v1" />
       </div>

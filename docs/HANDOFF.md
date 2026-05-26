@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-23 PM (V2.1 pair-picker day-1 build on worktree-gen2-v21-today — NOT pushed)
+Last updated: 2026-05-23 PM (V2 pair-picker day-1 build on worktree-gen2-v21-today — pushed; migrations applied)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -14,7 +14,9 @@ See also:
 
 ## Right now
 
-**2026-05-23 PM: V2.1 pair-picker day-1 build landed on `worktree-gen2-v21-today` (NOT pushed).** 13 commits, 12.5k LOC, ~191 tests passing. Scene graph extractor (Gemini 2.5 Pro) + rule-based pair candidate generator + pure-TS LR+stump-boost picker (LightGBM stand-in) + Gemini Apprentice Labeler + DB-driven outcome-feedback worker + per-clip geometric guardrail + 97% room-confidence fall-through to V1 single-image (Kling 2.6 Pro + Seedance 2.0) + Director's Cut UI + Apprentice Review UI + Observability Panel + V1↔V2.1 toggle in Lab + new route /dashboard/development/lab/v21. Migrations 067-072 NOT applied to remote. Full spec/plan/handoff: docs/specs/2026-05-23-v21-pair-picker-design.md + docs/sessions/2026-05-23-v21-day1-handoff.md.
+**2026-05-23 PM: V2 pair-picker day-1 build pushed on `worktree-gen2-v21-today`.** Naming clarified: V1 = original single-image, V1.1 = Seedance push-in (other session, already on main), V2 = this work (Kling 3 Omni pair-picker). 16 commits, 12.5k LOC, ~191 tests passing. Scene graph extractor (Gemini 2.5 Pro) + rule-based pair candidate generator + pure-TS LR+stump-boost picker (LightGBM stand-in) + Gemini Apprentice Labeler + DB-driven outcome-feedback worker + per-clip geometric guardrail + 97% room-confidence fall-through to V1 single-image (Kling 2.6 Pro + Seedance 2.0) + Director's Cut UI + Apprentice Review UI + Observability Panel + V1↔V2 toggle in Lab + new route /dashboard/development/lab/v21. Migrations 067-072 APPLIED to LE Supabase (project vrhmaeywqsohlztoouxu). Vercel preview deploy LIVE at listingelevate-git-worktree-gen2-v21-today-recasi.vercel.app. Internal paths (`lib/gen2-v21/`, `gen2_*` tables, `/v21` route, `GEN2_V21_ENABLED` env var) kept verbatim; only user-facing labels say "V2". Full spec/plan/handoff: docs/specs/2026-05-23-v21-pair-picker-design.md + docs/sessions/2026-05-23-v21-day1-handoff.md.
+
+**Next action**: set `GEN2_V21_ENABLED=true` on Vercel preview env (gated on Oliver — either drop Vercel personal token into ~/credentials.md, or run `vercel env add` himself). Without it, V2 Lab UI loads but its API routes return 404.
 
 ---
 

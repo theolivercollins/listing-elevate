@@ -1,4 +1,4 @@
-// ApprenticeReview.tsx — V2.1 Lab: Apprentice Review mode
+// ApprenticeReview.tsx — V2 Lab: Apprentice Review mode
 // Same 3-column + filmstrip layout as Director's Cut.
 // Operator reviews apprentice-predicted labels: Agree (SPACE) or Disagree (X).
 

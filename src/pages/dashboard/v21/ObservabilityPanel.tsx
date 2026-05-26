@@ -1,4 +1,4 @@
-// ObservabilityPanel.tsx — V2.1 Lab: live observability sidebar
+// ObservabilityPanel.tsx — V2 Lab: live observability sidebar
 // Polls /api/gen2/lab/observability every 5 seconds.
 // Can also be refreshed imperatively via the `refresh()` handle (forwardRef).
 // No charting library — pure inline-div bars and sparklines.

@@ -116,7 +116,7 @@ export default function V21LabIndex() {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <PageHeading
-        eyebrow="Lab · V2.1"
+        eyebrow="Lab · V2"
         title="Pair-Picker Lab"
         sub="Select a property, extract its scene graph, then label frame pairs in Director's Cut or let the Apprentice handle routine calls."
       />
