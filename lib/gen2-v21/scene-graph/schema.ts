@@ -60,51 +60,72 @@ function assertField(obj: Record<string, unknown>, key: string, check: (v: unkno
 
 function validateVisiblePortal(raw: unknown, path: string): VisiblePortal {
   if (!isObject(raw)) throw new Error(`${path} must be an object`);
-  assertField(raw, "portal_id", isString, path);
-  assertField(raw, "from_room_id", isString, path);
-  if (raw["to_room_id"] !== null && !isString(raw["to_room_id"])) {
-    throw new Error(`Schema violation at ${path}.to_room_id: must be string or null`);
+  // Auto-generate portal_id if Gemini omitted it
+  if (!isString(raw["portal_id"])) {
+    raw["portal_id"] = `auto_${path.replace(/[^a-z0-9]/gi, "_")}_${Math.random().toString(36).slice(2, 8)}`;
   }
-  if (!isObject(raw["screen_position"])) throw new Error(`${path}.screen_position must be an object`);
+  // Coerce missing from_room_id to empty string
+  if (!isString(raw["from_room_id"])) raw["from_room_id"] = "";
+  // Coerce to_room_id: non-string non-null → null
+  if (raw["to_room_id"] !== null && !isString(raw["to_room_id"])) raw["to_room_id"] = null;
+  // Coerce missing screen_position to a default center
+  if (!isObject(raw["screen_position"])) {
+    raw["screen_position"] = { x: 0.5, y: 0.5, bbox: { x1: 0.4, y1: 0.4, x2: 0.6, y2: 0.6 } };
+  }
   const sp = raw["screen_position"] as Record<string, unknown>;
-  assertField(sp, "x", isNumber, `${path}.screen_position`);
-  assertField(sp, "y", isNumber, `${path}.screen_position`);
-  if (!isObject(sp["bbox"])) throw new Error(`${path}.screen_position.bbox must be an object`);
+  if (!isNumber(sp["x"])) sp["x"] = 0.5;
+  if (!isNumber(sp["y"])) sp["y"] = 0.5;
+  if (!isObject(sp["bbox"])) {
+    sp["bbox"] = { x1: 0.4, y1: 0.4, x2: 0.6, y2: 0.6 };
+  }
   const bbox = sp["bbox"] as Record<string, unknown>;
   for (const coord of ["x1", "y1", "x2", "y2"]) {
-    assertField(bbox, coord, isNumber, `${path}.screen_position.bbox`);
+    if (!isNumber(bbox[coord])) bbox[coord] = 0.5;
   }
+  // Coerce unknown depth estimates to "mid"
   if (!DEPTH_ESTIMATES.includes(raw["depth_estimate"] as typeof DEPTH_ESTIMATES[number])) {
-    throw new Error(`${path}.depth_estimate must be one of ${DEPTH_ESTIMATES.join("|")}`);
+    raw["depth_estimate"] = "mid";
   }
-  assertField(raw, "is_open_path", isBoolean, path);
-  assertField(raw, "confidence", isNumber, path);
+  // Coerce missing is_open_path to false
+  if (!isBoolean(raw["is_open_path"])) raw["is_open_path"] = false;
+  // Coerce missing confidence to 0.5
+  if (!isNumber(raw["confidence"])) raw["confidence"] = 0.5;
 
   return raw as unknown as VisiblePortal;
 }
 
 function validatePhotoSceneFacts(raw: unknown, path: string): PhotoSceneFacts {
   if (!isObject(raw)) throw new Error(`${path} must be an object`);
-  assertField(raw, "photo_id", isString, path);
-  assertField(raw, "room_id", isString, path);
-  assertField(raw, "room_confidence", isNumber, path);
+  if (!isString(raw["photo_id"])) raw["photo_id"] = `unknown_photo_${Math.random().toString(36).slice(2, 8)}`;
+  if (!isString(raw["room_id"])) raw["room_id"] = "unknown_room";
+  if (!isNumber(raw["room_confidence"])) raw["room_confidence"] = 0.5;
   if (raw["sub_region"] !== null && !isString(raw["sub_region"])) {
     throw new Error(`${path}.sub_region must be string or null`);
   }
+  // Coerce unknown bearing vectors to "unknown" rather than throwing.
+  // Gemini may return values like "parallel_to_wall" (without N/E/S/W suffix)
+  // or other creative variants — treat them as unknown rather than blocking extraction.
   if (!BEARING_VECTORS.includes(raw["camera_bearing_vector"] as BearingVector)) {
-    throw new Error(`${path}.camera_bearing_vector must be one of ${BEARING_VECTORS.join("|")}`);
+    raw["camera_bearing_vector"] = "unknown";
   }
+  // Coerce unknown shot types to "medium" (safe midpoint).
   if (!SHOT_TYPES.includes(raw["shot_type"] as ShotType)) {
-    throw new Error(`${path}.shot_type must be one of ${SHOT_TYPES.join("|")}`);
+    raw["shot_type"] = "medium";
   }
   if (raw["focal_subject"] !== null && !isString(raw["focal_subject"])) {
     throw new Error(`${path}.focal_subject must be string or null`);
   }
-  if (!isArray(raw["visible_features"]) || !(raw["visible_features"] as unknown[]).every(isString)) {
-    throw new Error(`${path}.visible_features must be string[]`);
+  // Coerce visible_features: ensure it's a string[] (filter out non-strings, default to [])
+  if (!isArray(raw["visible_features"])) {
+    raw["visible_features"] = [];
+  } else {
+    raw["visible_features"] = (raw["visible_features"] as unknown[]).map((f) =>
+      isString(f) ? f : isObject(f) ? JSON.stringify(f) : String(f)
+    );
   }
+  // Coerce visible_portals: ensure it's an array (default to [])
   if (!isArray(raw["visible_portals"])) {
-    throw new Error(`${path}.visible_portals must be an array`);
+    raw["visible_portals"] = [];
   }
   (raw["visible_portals"] as unknown[]).forEach((p, i) =>
     validateVisiblePortal(p, `${path}.visible_portals[${i}]`),
@@ -115,13 +136,21 @@ function validatePhotoSceneFacts(raw: unknown, path: string): PhotoSceneFacts {
 
 function validateRoomFacts(raw: unknown, path: string): RoomFacts {
   if (!isObject(raw)) throw new Error(`${path} must be an object`);
-  assertField(raw, "room_id", isString, path);
-  assertField(raw, "room_type", isString, path);
-  if (!isArray(raw["features"]) || !(raw["features"] as unknown[]).every(isString)) {
-    throw new Error(`${path}.features must be string[]`);
+  if (!isString(raw["room_id"])) raw["room_id"] = "unknown_room";
+  if (!isString(raw["room_type"])) raw["room_type"] = "unknown";
+  // Coerce features
+  if (!isArray(raw["features"])) {
+    raw["features"] = [];
+  } else {
+    raw["features"] = (raw["features"] as unknown[]).map((f) =>
+      isString(f) ? f : String(f)
+    );
   }
-  if (!isArray(raw["photo_ids"]) || !(raw["photo_ids"] as unknown[]).every(isString)) {
-    throw new Error(`${path}.photo_ids must be string[]`);
+  // Coerce photo_ids
+  if (!isArray(raw["photo_ids"])) {
+    raw["photo_ids"] = [];
+  } else {
+    raw["photo_ids"] = (raw["photo_ids"] as unknown[]).filter(isString);
   }
   return raw as unknown as RoomFacts;
 }
@@ -138,8 +167,9 @@ export function validateSceneGraph(raw: unknown): PropertySceneGraph {
   assertField(raw, "extracted_at", isString, "root");
   assertField(raw, "model_version", isString, "root");
 
+  // Coerce unknown front_orientation to "unknown"
   if (!FRONT_ORIENTATIONS.includes(raw["front_orientation"] as typeof FRONT_ORIENTATIONS[number])) {
-    throw new Error(`root.front_orientation must be one of ${FRONT_ORIENTATIONS.join("|")}`);
+    raw["front_orientation"] = "unknown";
   }
 
   if (!isArray(raw["photos"])) throw new Error("root.photos must be an array");
@@ -157,8 +187,9 @@ export function validateSceneGraph(raw: unknown): PropertySceneGraph {
     if (!isObject(es)) throw new Error(`exterior_shots[${i}] must be an object`);
     const esObj = es as Record<string, unknown>;
     assertField(esObj, "photo_id", isString, `exterior_shots[${i}]`);
+    // Coerce unknown exterior types to "front" (safe default)
     if (!EXTERIOR_TYPES.includes(esObj["type"] as typeof EXTERIOR_TYPES[number])) {
-      throw new Error(`exterior_shots[${i}].type must be one of ${EXTERIOR_TYPES.join("|")}`);
+      esObj["type"] = "front";
     }
   });
 

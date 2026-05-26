@@ -52,12 +52,36 @@ IMPORTANT:
 - Assign consistent room_ids across photos showing the same room
 - Output ONLY the JSON object matching the PropertySceneGraph schema, no markdown fences or other text`;
 
-function buildUserMessage(
+/**
+ * Fetch a photo URL and return it as a base64 inlineData part.
+ * Falls back to fileData only for gs:// URIs (Google Cloud Storage).
+ * HTTPS URLs from Supabase (or any CDN) require inlineData — Gemini's
+ * fileData.fileUri only accepts gs:// or Gemini Files API URIs.
+ */
+async function photoToInlinePart(url: string): Promise<object> {
+  if (url.startsWith("gs://")) {
+    // Google Cloud Storage URI — use fileData directly
+    return { fileData: { fileUri: url, mimeType: "image/jpeg" } };
+  }
+  // Fetch and base64-encode for all other URLs
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch photo ${url}: HTTP ${resp.status}`);
+  }
+  const buf = await resp.arrayBuffer();
+  const b64 = Buffer.from(buf).toString("base64");
+  // Detect mime from Content-Type or fall back to jpeg
+  const ct = resp.headers.get("content-type") ?? "image/jpeg";
+  const mimeType = ct.split(";")[0].trim();
+  return { inlineData: { data: b64, mimeType } };
+}
+
+async function buildUserMessage(
   listingId: string,
   photos: Array<{ id: string; url: string }>,
   now: string,
   model: string,
-): object {
+): Promise<object> {
   const photoIntro = photos
     .map((p, i) => `Photo ${i + 1} (photo_id="${p.id}")`)
     .join(", ");
@@ -75,9 +99,7 @@ Return a PropertySceneGraph JSON with:
 - exterior_shots[]`,
   };
 
-  const imageParts = photos.map((p) => ({
-    fileData: { fileUri: p.url, mimeType: "image/jpeg" },
-  }));
+  const imageParts = await Promise.all(photos.map((p) => photoToInlinePart(p.url)));
 
   return {
     role: "user",
@@ -146,7 +168,7 @@ export async function extractSceneGraph(
 
   try {
     // ── First attempt ──
-    const firstMessage = buildUserMessage(listingId, photos, now, model);
+    const firstMessage = await buildUserMessage(listingId, photos, now, model);
 
     const firstResp = await genai.models.generateContent({
       model,
