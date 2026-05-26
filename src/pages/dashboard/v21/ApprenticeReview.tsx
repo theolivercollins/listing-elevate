@@ -426,7 +426,7 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
           <div className="flex flex-col gap-2.5">
             <Button
               size="lg"
-              className="w-full gap-2 text-sm font-bold"
+              className="w-full gap-2 text-sm font-bold rounded-xl"
               disabled={posting || disagreeOpen}
               onClick={() => postLabel(false)}
               style={{
@@ -455,7 +455,7 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
               <Button
                 size="lg"
                 variant="outline"
-                className="w-full gap-2 text-sm font-semibold"
+                className="w-full gap-2 text-sm font-semibold rounded-xl"
                 disabled={posting}
                 onClick={() => {
                   setDisagreeOpen(true);
@@ -495,6 +495,7 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
                   <Button
                     variant="outline"
                     size="sm"
+                    className="rounded-xl"
                     onClick={() => {
                       setDisagreeOpen(false);
                       setDisagreeReason("");
@@ -505,6 +506,7 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
                   <Button
                     size="sm"
                     disabled={posting}
+                    className="rounded-xl"
                     onClick={() => postLabel(true, disagreeReason)}
                     style={{ background: "var(--bad)", color: "#fff", border: "none" }}
                   >

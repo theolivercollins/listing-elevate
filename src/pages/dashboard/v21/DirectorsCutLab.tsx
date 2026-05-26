@@ -399,7 +399,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         <div className="px-5 py-4 rounded-xl border border-[rgba(196,74,74,0.3)] bg-[rgba(196,74,74,0.05)] text-[var(--bad)] text-sm max-w-md text-center">
           {error}
         </div>
-        <Button variant="outline" onClick={() => fetchQueue(0, false)}>
+        <Button variant="outline" className="rounded-xl" onClick={() => fetchQueue(0, false)}>
           Retry
         </Button>
       </div>
@@ -420,7 +420,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         <div className="text-sm text-[var(--muted)]">
           {totalLabels} label{totalLabels !== 1 ? "s" : ""} recorded for this property.
         </div>
-        <Button onClick={() => fetchQueue(0, false)}>Refresh queue</Button>
+        <Button className="rounded-xl" onClick={() => fetchQueue(0, false)}>Refresh queue</Button>
       </div>
     );
   }
@@ -597,7 +597,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
                 size="lg"
                 disabled={submitting}
                 onClick={() => submitLabel("good")}
-                className="w-full gap-2 text-sm font-bold"
+                className="w-full gap-2 text-sm font-bold rounded-xl"
                 style={{
                   background: submitting ? "rgba(47,138,85,0.4)" : "var(--good)",
                   color: "#fff",
@@ -617,7 +617,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
                 size="lg"
                 disabled={submitting}
                 onClick={() => submitLabel("bad")}
-                className="w-full gap-2 text-sm font-bold"
+                className="w-full gap-2 text-sm font-bold rounded-xl"
                 style={{
                   background: submitting ? "rgba(196,74,74,0.3)" : "var(--bad)",
                   color: "#fff",

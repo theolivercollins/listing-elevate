@@ -186,7 +186,7 @@ export default function V21LabIndex() {
                     <Button
                       disabled={extracting}
                       onClick={handleExtract}
-                      className="gap-2"
+                      className="gap-2 rounded-xl"
                     >
                       {extracting && (
                         <svg className="animate-spin" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -202,7 +202,7 @@ export default function V21LabIndex() {
                       size="sm"
                       disabled={extracting}
                       onClick={handleExtract}
-                      className="gap-1.5 text-xs"
+                      className="gap-1.5 text-xs rounded-xl"
                     >
                       {extracting && (
                         <svg className="animate-spin" width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -241,7 +241,7 @@ export default function V21LabIndex() {
               </span>
               <Button
                 size="sm"
-                className="text-xs"
+                className="text-xs rounded-xl"
                 onClick={() => {
                   if (modeState.recommended_mode === "directors_cut" || modeState.recommended_mode === "apprentice_review") {
                     setActiveTab(modeState.recommended_mode);

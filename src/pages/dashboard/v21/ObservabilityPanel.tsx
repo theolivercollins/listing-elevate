@@ -275,7 +275,7 @@ const ObservabilityPanel = forwardRef<ObservabilityPanelHandle, ObservabilityPan
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-6 text-[11px] px-2 gap-1"
+                    className="h-6 text-[11px] px-2 gap-1 rounded-xl"
                     style={{ borderColor: "var(--accent)", color: "var(--accent)" }}
                     onClick={() => onSwitchMode(recommendedMode)}
                   >
