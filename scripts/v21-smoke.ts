@@ -169,24 +169,40 @@ let graphId: string | null = null;
 {
   const ctx = phase("2-extract-scene-graph");
   try {
-    console.log(`[2] Calling extractSceneGraph for ${photos.length} photos...`);
-    sceneGraph = await extractSceneGraph(propertyId!, photos);
-
-    // Persist to gen2_scene_graphs
     const supabase = getSupabase();
-    const { data: inserted, error: insErr } = await supabase
-      .from("gen2_scene_graphs")
-      .insert({
-        listing_id: propertyId,
-        payload: sceneGraph,
-        model_version: sceneGraph.model_version,
-        extracted_at: sceneGraph.extracted_at,
-      })
-      .select("listing_id")
-      .limit(1) as { data: Array<{ listing_id: string }> | null; error: unknown };
 
-    if (insErr) console.warn(`[2] scene_graph persist error (non-fatal): ${JSON.stringify(insErr)}`);
-    else graphId = (inserted?.[0]?.listing_id) ?? null;
+    // Check if a scene graph already exists in DB — reuse it to avoid
+    // paying for Gemini on every smoke re-run and to avoid non-deterministic
+    // output causing phase-3 to see 0 candidates on repeat runs.
+    const { data: existingRows } = await supabase
+      .from("gen2_scene_graphs")
+      .select("payload, listing_id")
+      .eq("listing_id", propertyId!)
+      .limit(1) as { data: Array<{ payload: unknown; listing_id: string }> | null };
+
+    if (existingRows && existingRows.length > 0) {
+      console.log(`[2] Reusing stored scene graph for ${propertyId} (skipping Gemini call)`);
+      sceneGraph = existingRows[0].payload as Awaited<ReturnType<typeof extractSceneGraph>>;
+      graphId = existingRows[0].listing_id;
+    } else {
+      console.log(`[2] No stored graph found — calling extractSceneGraph for ${photos.length} photos...`);
+      sceneGraph = await extractSceneGraph(propertyId!, photos);
+
+      // Persist to gen2_scene_graphs
+      const { data: inserted, error: insErr } = await supabase
+        .from("gen2_scene_graphs")
+        .insert({
+          listing_id: propertyId,
+          payload: sceneGraph,
+          model_version: sceneGraph.model_version,
+          extracted_at: sceneGraph.extracted_at,
+        })
+        .select("listing_id")
+        .limit(1) as { data: Array<{ listing_id: string }> | null; error: unknown };
+
+      if (insErr) console.warn(`[2] scene_graph persist error (non-fatal): ${JSON.stringify(insErr)}`);
+      else graphId = (inserted?.[0]?.listing_id) ?? null;
+    }
 
     const rooms = sceneGraph.rooms;
     const allPortals = sceneGraph.photos.flatMap((p) => p.visible_portals);
