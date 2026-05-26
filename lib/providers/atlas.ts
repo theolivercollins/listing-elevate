@@ -128,6 +128,24 @@ export type V1AtlasSku = (typeof V1_ATLAS_SKUS)[number];
 
 export const V1_DEFAULT_SKU: V1AtlasSku = "kling-v2-6-pro";
 
+// ─── v1.1 SKU ALLOW-LIST ─────────────────────────────────────────────────────
+//
+// SKUs valid for v1.1 Lab sessions (multi-model picker).  Seedance is the
+// default; the rest are modern Kling/Runway variants.  Kept in sync with
+// `V1_1_LAB_SKUS` in `src/lib/labModels.ts` (which the UI imports).
+//
+// API-layer files import from here (not from src/) so tsconfig.api.json
+// can resolve the constant without expanding its include globs.
+export const V1_1_LAB_SKUS = [
+  "seedance-pro-pushin",
+  "kling-v3-pro",
+  "kling-v2-6-pro",
+  "kling-v2-master",
+  "runway-gen4-native",
+] as const;
+export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
+export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
+
 /** Compute the expected cost in cents for a finalized Atlas render.
  *  Uses the model's per-second rate × clip duration (defaults to 5s).
  *  Returns 0 if the model key is unknown.

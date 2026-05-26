@@ -40,6 +40,13 @@ vi.mock("../../../../lib/services/end-frame", () => ({
 // ── Atlas SKU mock ────────────────────────────────────────────────────────────
 vi.mock("../../../../lib/providers/atlas", () => ({
   V1_ATLAS_SKUS: ["kling-v2-6-pro", "kling-v2-master"],
+  V1_1_LAB_SKUS: [
+    "seedance-pro-pushin",
+    "kling-v3-pro",
+    "kling-v2-6-pro",
+    "kling-v2-master",
+    "runway-gen4-native",
+  ],
 }));
 
 // ── Supabase chainable mock ───────────────────────────────────────────────────
@@ -184,6 +191,13 @@ beforeEach(async () => {
   }));
   vi.mock("../../../../lib/providers/atlas", () => ({
     V1_ATLAS_SKUS: ["kling-v2-6-pro", "kling-v2-master"],
+    V1_1_LAB_SKUS: [
+      "seedance-pro-pushin",
+      "kling-v3-pro",
+      "kling-v2-6-pro",
+      "kling-v2-master",
+      "runway-gen4-native",
+    ],
   }));
   vi.mock("../../../../lib/client", () => ({
     getSupabase: () => mockGetSupabase(),
@@ -244,8 +258,11 @@ describe("render.ts — v1.1 pipeline_version override", () => {
     mockGetSupabase.mockReturnValue(supabaseMock);
 
     const { default: handler } = await import("../render.js");
+    // Omit sku → v1.1 defaults to seedance-pro-pushin.
+    // (Sending a valid V1_1 sku like kling-v2-6-pro would forward it as-is —
+    // that case is covered by render-v1.1-multi-model.test.ts case B.)
     const req = makeReq({
-      body: { iteration_id: "iter-1", provider: "kling", sku: "kling-v2-6-pro" },
+      body: { iteration_id: "iter-1", provider: "kling" },
     });
     const res = makeRes();
     await handler(req, res as unknown as VercelResponse);
@@ -255,7 +272,8 @@ describe("render.ts — v1.1 pipeline_version override", () => {
     const callArgs = mockSubmitLabRender.mock.calls[0][0] as Record<string, unknown>;
     expect(callArgs.pipelineVersion).toBe("v1.1");
 
-    // User-supplied provider override must be nulled out for v1.1
+    // No sku → resolved to seedance; providerOverride is nulled for Seedance (Atlas-only).
+    expect(callArgs.sku).toBe("seedance-pro-pushin");
     expect(callArgs.providerOverride).toBeNull();
 
     // The update to prompt_lab_iterations must carry pipeline_version='v1.1'
