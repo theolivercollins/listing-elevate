@@ -3,7 +3,7 @@
 // Operator reviews apprentice-predicted labels: Agree (SPACE) or Disagree (X).
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApprenticePrediction, PairCandidate, PickerPrediction, Verdict, TransitionTag } from "../../../../lib/gen2-v21/types.js";
+import type { ApprenticePrediction, PairCandidate, PickerFeatures, PickerPrediction, Verdict, TransitionTag } from "../../../../lib/gen2-v21/types.js";
 
 // ─── local types ──────────────────────────────────────────────────────────────
 
@@ -16,6 +16,8 @@ interface QueueItem {
   thumbnail_hash_a: string;
   thumbnail_hash_b: string;
   scene_graph_version: string;
+  /** Pre-computed by pair-queue server — passed back on label submit for picker training. */
+  features_blob: PickerFeatures | null;
 }
 
 interface ApprenticeReviewProps {
@@ -246,6 +248,7 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
             : app.predicted_verdict;
 
         const body = {
+          candidate_id: current.candidate.candidate_id,
           listing_id: listingId,
           photo_a_id: current.candidate.photo_a_id,
           photo_b_id: current.candidate.photo_b_id,
@@ -260,6 +263,8 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
           apprentice_predicted_verdict: app.predicted_verdict,
           apprentice_was_wrong: apprenticeWasWrong,
           disagree_reason: reason ?? null,
+          // picker training data — pre-computed by pair-queue server
+          features_blob: current.features_blob ?? null,
         };
 
         const res = await fetch("/api/gen2/lab/pair-label", {

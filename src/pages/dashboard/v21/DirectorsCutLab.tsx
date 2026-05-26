@@ -6,6 +6,7 @@ import type {
   TransitionTag,
   PickerPrediction,
   ApprenticePrediction,
+  PickerFeatures,
 } from "../../../../lib/gen2-v21/types";
 
 // ─── API shapes ──────────────────────────────────────────────────────────────
@@ -22,6 +23,10 @@ interface QueueItem {
   reasoning: string;
   picker_prediction: PickerPrediction | null;
   apprentice_prediction: ApprenticePrediction | null;
+  /** Pre-computed by pair-queue server — passed back on label submit for picker training. */
+  features_blob: PickerFeatures | null;
+  /** Scene graph model version at queue time — required by pair-label API. */
+  scene_graph_version: string;
 }
 
 interface PairQueueResponse {
@@ -304,6 +309,9 @@ export default function DirectorsCutLab() {
         apprentice_predicted_verdict:
           currentItem.apprentice_prediction?.predicted_verdict ?? null,
         override_photo_b: overridePhotoB ? true : undefined,
+        // picker training data — pre-computed by pair-queue server
+        features_blob: currentItem.features_blob ?? null,
+        scene_graph_version: currentItem.scene_graph_version,
       };
 
       try {
