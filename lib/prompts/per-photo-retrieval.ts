@@ -16,6 +16,7 @@ import {
   retrieveMatchingRecipes,
   retrieveSimilarIterations,
   retrieveSimilarLosers,
+  retrieveRecentModelFeedback,
   renderRecipeBlock,
   renderExemplarBlock,
   renderLoserBlock,
@@ -85,6 +86,9 @@ export interface PerPhotoBundle {
   recipes: RetrievedRecipe[];
   exemplars: RetrievedExemplar[];
   losers: RetrievedExemplar[];
+  /** Recent operator feedback on the specific model SKU (up to 3), newest first.
+   *  Only populated when `modelSku` is passed to fetchPerPhotoRetrievalBundle. */
+  feedback: Array<{ comment: string; created_at: string }>;
 }
 
 interface FetchOpts {
@@ -103,9 +107,13 @@ export async function fetchPerPhotoRetrievalBundle(params: {
    *  v1.1 push-in recipes don't bleed into v1 renders and vice versa.
    *  Defaults to 'v1' when absent for backward compat with existing callers. */
   pipelineVersion?: string;
+  /** SKU (model) used for this render. When provided, up to 3 recent operator
+   *  feedback comments for that SKU + pipelineVersion are fetched and included
+   *  in the bundle so the director can see qualitative notes about this model. */
+  modelSku?: string;
   opts?: FetchOpts;
 }): Promise<PerPhotoBundle> {
-  const { photoId, roomType, motionHeadroom, pipelineVersion, opts = {} } = params;
+  const { photoId, roomType, motionHeadroom, pipelineVersion, modelSku, opts = {} } = params;
   const supabase = getSupabase();
 
   // Fetch the photo's image_embedding. If null, retrieval degrades to
@@ -128,10 +136,10 @@ export async function fetchPerPhotoRetrievalBundle(params: {
     }
   }
   if (!embedding) {
-    return { recipes: [], exemplars: [], losers: [] };
+    return { recipes: [], exemplars: [], losers: [], feedback: [] };
   }
 
-  const [recipesRaw, exemplars, losers] = await Promise.all([
+  const [recipesRaw, exemplars, losers, feedback] = await Promise.all([
     retrieveMatchingRecipes(embedding, roomType, {
       distanceThreshold: opts.distanceThreshold ?? 0.35,
       limit: opts.recipeLimit ?? 3,
@@ -150,24 +158,47 @@ export async function fetchPerPhotoRetrievalBundle(params: {
       limit: opts.loserLimit ?? 3,
       ...(pipelineVersion ? { pipelineVersion } : {}),
     }),
+    // Fetch up to 3 recent operator feedback comments for this SKU + pipeline.
+    // Degraded gracefully to [] when modelSku is not provided or fetch fails.
+    modelSku && pipelineVersion
+      ? retrieveRecentModelFeedback(modelSku, {
+          pipelineVersion,
+          limit: 3,
+        }).catch(() => [] as Array<{ comment: string; created_at: string }>)
+      : Promise.resolve([] as Array<{ comment: string; created_at: string }>),
   ]);
 
   const recipes = filterRecipesByMotionHeadroom(recipesRaw, motionHeadroom);
-  return { recipes, exemplars, losers };
+  return { recipes, exemplars, losers, feedback };
+}
+
+function renderFeedbackBlock(
+  feedback: Array<{ comment: string; created_at: string }>,
+  modelSku: string,
+): string {
+  if (feedback.length === 0) return "";
+  const lines = feedback.map((f) => {
+    const dateStr = f.created_at.slice(0, 10); // "2026-05-23"
+    return `- [${dateStr}] "${f.comment}"`;
+  });
+  return `\n\nRECENT OPERATOR FEEDBACK ON ${modelSku}:\n${lines.join("\n")}`;
 }
 
 export function renderPerPhotoBlock(
   photoId: string,
   bundle: PerPhotoBundle,
+  modelSku?: string,
 ): string {
-  const { recipes, exemplars, losers } = bundle;
-  if (recipes.length === 0 && exemplars.length === 0 && losers.length === 0) {
+  const { recipes, exemplars, losers, feedback } = bundle;
+  const hasFeedback = modelSku && feedback.length > 0;
+  if (recipes.length === 0 && exemplars.length === 0 && losers.length === 0 && !hasFeedback) {
     return "";
   }
   const sections = [
     renderRecipeBlock(recipes),
     renderExemplarBlock(exemplars),
     renderLoserBlock(losers),
+    hasFeedback ? renderFeedbackBlock(feedback, modelSku) : "",
   ]
     .filter(Boolean)
     .join("");

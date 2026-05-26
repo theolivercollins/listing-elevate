@@ -60,8 +60,9 @@ import { promoteRecipe } from "@/lib/recipesApi";
 import { supabase } from "@/lib/supabase";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "../../../lib/providers/router.js";
 import { surfaceAffinityForPick } from "../../../lib/providers/sku-motion-affinity.js";
-import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel } from "@/lib/labModels";
+import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel, getSupportedResolutions } from "@/lib/labModels";
 import { DirectorModal } from "@/components/lab/DirectorModal";
+import { ModelFeedbackPanel } from "@/components/lab/ModelFeedbackPanel";
 
 // Per-clip cost (5s render). Atlas SKUs match ATLAS_MODELS.priceCentsPerClip
 // in lib/providers/atlas.ts. "kling-v2-native" and "runway-gen4-native" are
@@ -2242,7 +2243,7 @@ function IterationCard({
   /** When true the session is v1.1 — hide SKU picker, camera-movement controls, and rerender buttons. */
   isV11?: boolean;
   busy: string | null;
-  onRender: (provider: "kling" | "runway" | null, sku: SkuChoice) => void;
+  onRender: (provider: "kling" | "runway" | null, sku: SkuChoice, resolution?: string) => void;
   onRefine: (payload: { rating: number | null; tags: string[]; comment: string; chatInstruction: string }) => void;
   onRate: (payload: { rating: number | null; tags: string[]; comment: string }) => void;
   onRerender: (provider: "kling" | "runway") => void;
@@ -2362,6 +2363,19 @@ function IterationCard({
     if (mu === "runway-gen4-native" || (!mu && iteration.provider === "runway")) return "runway-gen4-native";
     if (mu && (SKU_DROPDOWN_OPTIONS as readonly string[]).includes(mu)) return mu as SkuChoice;
     return V1_DEFAULT_SKU;
+  });
+
+  // v1.1 resolution picker state. Initialized to the first supported resolution
+  // for the initial SKU. When the SKU changes, reset to the new SKU's default.
+  const [resolution, setResolution] = useState<string>(() => {
+    const initialSku = isV11
+      ? (() => {
+          const mu = iteration.model_used;
+          if (mu && (V1_1_LAB_SKUS as readonly string[]).includes(mu)) return mu;
+          return V1_1_DEFAULT_SKU;
+        })()
+      : V1_1_DEFAULT_SKU;
+    return getSupportedResolutions(initialSku)[0];
   });
 
   const director = iteration.director_output_json;
@@ -2513,6 +2527,12 @@ function IterationCard({
             >
               Open clip in new tab
             </a>
+
+            {/* ── Lane C: qualitative model feedback ──────────────────────────
+                Sits flush below the video player, above judge/rating UI.
+                Do NOT move this block — Lane A owns the SKU/resolution
+                selector area at the top of the card. */}
+            <ModelFeedbackPanel iterationId={iteration.id} />
           </div>
         )}
 
@@ -2655,7 +2675,12 @@ function IterationCard({
                 <label style={{ color: "var(--muted)" }}>SKU:</label>
                 <select
                   value={sku}
-                  onChange={(e) => setSku(e.target.value as V1_1LabSku)}
+                  onChange={(e) => {
+                    const newSku = e.target.value as V1_1LabSku;
+                    setSku(newSku);
+                    // Reset resolution to the new SKU's first supported value.
+                    setResolution(getSupportedResolutions(newSku)[0]);
+                  }}
                   disabled={!renderForReal || rendering}
                   style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
                 >
@@ -2668,6 +2693,23 @@ function IterationCard({
                 <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, color: "var(--muted)" }}>
                   {v11SkuCostLabel(sku as V1_1LabSku)}
                 </span>
+
+                {/* Resolution picker — only shown when the current SKU offers >1 option */}
+                {getSupportedResolutions(sku).length > 1 && (
+                  <>
+                    <label style={{ color: "var(--muted)" }}>Quality:</label>
+                    <select
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      disabled={!renderForReal || rendering}
+                      style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                    >
+                      {getSupportedResolutions(sku).map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             )}
 
@@ -2739,10 +2781,10 @@ function IterationCard({
               disabled={!renderForReal || rendering}
               onClick={() => {
                 if (isV11) {
-                  // v1.1: pass the selected SKU to the server so it can use the right model.
+                  // v1.1: pass the selected SKU and resolution to the server.
                   // Server routes Seedance to seedance-pro-pushin with push-in override;
                   // other v1.1 SKUs render as-is with the director prompt.
-                  onRender(null, sku);
+                  onRender(null, sku, resolution);
                 } else if (isNativeKlingSku(sku as SkuChoice)) {
                   onRender("kling", sku);
                 } else if (isNativeRunwaySku(sku as SkuChoice)) {
