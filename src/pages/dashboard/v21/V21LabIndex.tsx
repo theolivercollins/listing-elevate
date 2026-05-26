@@ -39,17 +39,26 @@ async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
 const LS_PROP_KEY = "v21_last_listing_id";
 const LS_TAB_KEY = "v21_last_tab";
 
+const VALID_TABS: TabId[] = ["directors_cut", "apprentice_review", "observability"];
+
 export default function V21LabIndex() {
   // URL deep-link: /lab/v21?listingId=X overrides localStorage.
+  // URL tab: /lab/v21?tab=apprentice_review|observability|directors_cut overrides localStorage.
   const urlListingId = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search).get("listingId") ?? ""
     : "";
+  const urlTab = typeof window !== "undefined"
+    ? (new URLSearchParams(window.location.search).get("tab") as TabId | null)
+    : null;
+  const validUrlTab = urlTab && VALID_TABS.includes(urlTab) ? urlTab : null;
 
   const [listings, setListings] = useState<LabListing[] | null>(null);
   const [selectedId, setSelectedId] = useState<string>(
     () => urlListingId || localStorage.getItem(LS_PROP_KEY) || ""
   );
-  const [activeTab, setActiveTab] = useState<TabId>(() => (localStorage.getItem(LS_TAB_KEY) as TabId | null) ?? "directors_cut");
+  const [activeTab, setActiveTab] = useState<TabId>(
+    () => validUrlTab ?? (localStorage.getItem(LS_TAB_KEY) as TabId | null) ?? "directors_cut"
+  );
   const [modeState, setModeState] = useState<ModeState | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [extractError, setExtractError] = useState<string | null>(null);
