@@ -370,19 +370,13 @@ let outcomeId: string | null = null;
     console.log(`[6] Calling processOutstandingOutcomes (pending → tryWithGuardrail → Atlas Kling 3 Omni → Gemini judge)...`);
     console.log(`[6] NOTE: Worker checks GEN2_V21_ENABLED=${process.env.GEN2_V21_ENABLED}`);
 
-    // NOTE: The worker queries photos.photo_id — but the actual column is photos.id.
-    // This is a bug in worker.ts:resolvePhotoPair. We patch around it below for the
-    // smoke test by pre-loading the pair URLs directly. However, we still call the
-    // worker to exercise the full code path — it will hit the photo lookup bug and
-    // mark the outcome failed. We document this as a real bug.
-    console.log(`[6] ⚠ KNOWN BUG: worker.ts queries photos.photo_id but column is photos.id`);
-    console.log(`[6]   resolvePhotoPair will fail → outcome will be marked 'failed'`);
-    console.log(`[6]   This is a real bug in the worker — see Final Report`);
-
     const supabase = getSupabase();
     const result = await processOutstandingOutcomes(supabase);
 
     console.log(`[6] Worker result: processed=${result.processed}, errors=${result.errors}`);
+    if (result.errors > 0) {
+      console.warn(`[6] Worker reported ${result.errors} error(s) — check outcome status in phase 7`);
+    }
     pass(ctx, `processed=${result.processed}, errors=${result.errors}`);
   } catch (err) {
     fail(ctx, err);
@@ -573,13 +567,4 @@ for (const [name, result] of Object.entries(PHASES)) {
   const icon = result.status === "pass" ? "✓" : "✗";
   console.log(`    ${icon} ${name} (${result.ms}ms)${result.note ? " — " + result.note : ""}`);
 }
-console.log(`${"─".repeat(60)}`);
-
-// Bugs noted
-console.log(`  BUGS SURFACED:`);
-console.log(`    ⚠ worker.ts resolvePhotoPair queries photos.photo_id but column is photos.id`);
-console.log(`      This causes outcome to be marked 'failed' immediately instead of rendering.`);
-console.log(`      Fix: change .select("photo_id, file_url") to .select("id, file_url")`);
-console.log(`           and change photoMap key to p.id`);
-
 console.log(`${"═".repeat(60)}\n`);
