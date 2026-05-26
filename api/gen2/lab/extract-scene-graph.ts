@@ -4,7 +4,8 @@
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
-import { getPhotosForProperty, getSupabase, recordCostEvent } from "../../../lib/db.js";
+import { getSupabase, recordCostEvent } from "../../../lib/db.js";
+import { getPhotosForV21Listing } from "../../../lib/gen2-v21/photo-source.js";
 import { extractSceneGraph } from "../../../lib/gen2-v21/scene-graph/index.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -28,13 +29,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
 
   try {
-    const photos = await getPhotosForProperty(listingId);
-    if (photos.length === 0) {
+    const photoRefs = await getPhotosForV21Listing(listingId);
+    if (photoRefs.length === 0) {
       return res.status(400).json({ error: "No photos found for listing" });
     }
-
-    // extractSceneGraph expects { id, url }[] — map from Photo[]
-    const photoRefs = photos.map((p) => ({ id: p.id, url: p.file_url }));
     const sceneGraph = await extractSceneGraph(listingId, photoRefs);
 
     // Record Gemini cost (estimate: ~500 tokens per photo at $0.00 → track as qc/google)
@@ -44,8 +42,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       provider: "google",
       unitType: "tokens",
       unitsConsumed: photos.length * 500,
-      costCents: Math.round(photos.length * 0.05), // ~$0.0005/photo placeholder
-      metadata: { step: "extract-scene-graph", photo_count: photos.length, model: sceneGraph.model_version },
+      costCents: Math.round(photoRefs.length * 0.05), // ~$0.0005/photo placeholder
+      metadata: { step: "extract-scene-graph", photo_count: photoRefs.length, model: sceneGraph.model_version },
     }).catch((err) => console.error("[extract-scene-graph] cost_events insert failed:", err));
 
     // Upsert into gen2_scene_graphs

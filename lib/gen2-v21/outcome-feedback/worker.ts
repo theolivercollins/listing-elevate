@@ -116,6 +116,55 @@ async function updateOutcome(
 }
 
 /**
+ * Resolve photo URLs from either `photos` (real listings) or
+ * `prompt_lab_listing_photos` (lab listings) for a given pair of photo IDs.
+ * Tries the real photos table first; if both IDs are missing, falls back to lab.
+ */
+async function fetchPhotoUrls(
+  supabase: SupabaseClient,
+  photoAId: string,
+  photoBId: string,
+): Promise<{ imageA: string; imageB: string } | null> {
+  // Try real property photos first
+  const propertyPhotos = await new Promise<Array<{ id: string; file_url: string }>>((resolve) => {
+    supabase
+      .from("photos")
+      .select("id, file_url")
+      .in("id", [photoAId, photoBId])
+      .then(({ data, error }: { data: unknown; error: unknown }) => {
+        if (error || !data) { resolve([]); return; }
+        resolve(data as Array<{ id: string; file_url: string }>);
+      });
+  });
+
+  const propMap = Object.fromEntries(propertyPhotos.map((p) => [p.id, p.file_url]));
+  if (propMap[photoAId] && propMap[photoBId]) {
+    return { imageA: propMap[photoAId], imageB: propMap[photoBId] };
+  }
+
+  // Fall back to prompt_lab_listing_photos
+  const labPhotos = await new Promise<Array<{ id: string; image_url: string }>>((resolve) => {
+    supabase
+      .from("prompt_lab_listing_photos")
+      .select("id, image_url")
+      .in("id", [photoAId, photoBId])
+      .then(({ data, error }: { data: unknown; error: unknown }) => {
+        if (error || !data) { resolve([]); return; }
+        resolve(data as Array<{ id: string; image_url: string }>);
+      });
+  });
+
+  const labMap = Object.fromEntries(labPhotos.map((p) => [p.id, p.image_url]));
+
+  // Merge: prefer any real-photos URL we did find, then lab fallback
+  const imageA = propMap[photoAId] ?? labMap[photoAId];
+  const imageB = propMap[photoBId] ?? labMap[photoBId];
+
+  if (!imageA || !imageB) return null;
+  return { imageA, imageB };
+}
+
+/**
  * Resolve photo URLs for a pair label. Returns null if the label or photos
  * cannot be found, in which case the caller should mark the outcome failed.
  */
@@ -138,25 +187,7 @@ async function resolvePhotoPair(
 
   if (!label) return null;
 
-  // photos.id is the PK (not photos.photo_id). Select id + file_url.
-  const photos = await new Promise<Array<{ id: string; file_url: string }>>((resolve) => {
-    supabase
-      .from("photos")
-      .select("id, file_url")
-      .in("id", [label.photo_a_id, label.photo_b_id])
-      .then(({ data, error }: { data: unknown; error: unknown }) => {
-        if (error || !data) { resolve([]); return; }
-        resolve(data as Array<{ id: string; file_url: string }>);
-      });
-  });
-
-  const photoMap = Object.fromEntries(photos.map((p) => [p.id, p.file_url]));
-  const imageA = photoMap[label.photo_a_id];
-  const imageB = photoMap[label.photo_b_id];
-
-  if (!imageA || !imageB) return null;
-
-  return { imageA, imageB };
+  return fetchPhotoUrls(supabase, label.photo_a_id, label.photo_b_id);
 }
 
 /**
@@ -338,24 +369,12 @@ async function judgeOutcome(outcome: RenderOutcome, supabase: SupabaseClient): P
     return;
   }
 
-  // photos.id is the PK (not photos.photo_id). Select id + file_url.
-  const photos = await new Promise<Array<{ id: string; file_url: string }>>((resolve) => {
-    supabase
-      .from("photos")
-      .select("id, file_url")
-      .in("id", [label.photo_a_id, label.photo_b_id])
-      .then(({ data, error }: { data: unknown; error: unknown }) => {
-        if (error || !data) { resolve([]); return; }
-        resolve(data as Array<{ id: string; file_url: string }>);
-      });
-  });
-
-  const photoMap = Object.fromEntries(photos.map((p) => [p.id, p.file_url]));
+  const pair = await fetchPhotoUrls(supabase, label.photo_a_id, label.photo_b_id);
 
   const result = await judgeRenderedClip(
     outcome.video_url,
-    photoMap[label.photo_a_id] ?? outcome.video_url,
-    photoMap[label.photo_b_id] ?? outcome.video_url,
+    pair?.imageA ?? outcome.video_url,
+    pair?.imageB ?? outcome.video_url,
   );
 
   await updateOutcome(supabase, outcome.outcome_id, {

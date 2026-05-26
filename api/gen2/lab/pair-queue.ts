@@ -6,6 +6,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/db.js";
+import { getPhotosForV21Listing } from "../../../lib/gen2-v21/photo-source.js";
 import type { PairCandidate, PropertySceneGraph, PairLabel, PickerFeatures } from "../../../lib/gen2-v21/types.js";
 import { generateCandidates } from "../../../lib/gen2-v21/candidates/index.js";
 import { predictLabel } from "../../../lib/gen2-v21/apprentice/index.js";
@@ -74,16 +75,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select("label_id", { count: "exact", head: true })
       .eq("listing_id", listingId);
 
-    // Batch-fetch photo URLs for all candidate photos in this page
-    const allPhotoIds = [
-      ...new Set(ranked.flatMap((c) => [c.photo_a_id, c.photo_b_id])),
-    ];
-    const { data: photoRows } = allPhotoIds.length > 0
-      ? await supabase.from("photos").select("id, file_url").in("id", allPhotoIds)
-      : { data: [] };
-    const photoUrlMap = new Map(
-      (photoRows ?? []).map((p: { id: string; file_url: string }) => [p.id, p.file_url])
-    );
+    // Batch-fetch photo URLs for all candidate photos in this page.
+    // getPhotosForV21Listing resolves from photos (real listings) or
+    // prompt_lab_listing_photos (lab listings) transparently.
+    const listingPhotoRefs = await getPhotosForV21Listing(listingId);
+    const photoUrlMap = new Map(listingPhotoRefs.map((p) => [p.id, p.url]));
 
     /**
      * Compute features_blob server-side for a candidate.
@@ -140,17 +136,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const fewShotPhotoIds = [
       ...new Set(typedLabels.flatMap((l) => [l.photo_a_id, l.photo_b_id])),
     ];
-    // Reuse photoUrlMap where possible, supplement with any missing few-shot IDs
-    const missingFewShotIds = fewShotPhotoIds.filter((id) => !photoUrlMap.has(id));
-    if (missingFewShotIds.length > 0) {
-      const { data: extra } = await supabase
-        .from("photos")
-        .select("id, file_url")
-        .in("id", missingFewShotIds);
-      for (const p of extra ?? []) {
-        photoUrlMap.set((p as { id: string; file_url: string }).id, (p as { id: string; file_url: string }).file_url);
-      }
-    }
+    // photoUrlMap was built from getPhotosForV21Listing above (covers both sources).
+    // All photo IDs for this listing are already in the map; no supplemental fetch needed.
+    void fewShotPhotoIds; // referenced to avoid unused-var lint
 
     // Build few-shot examples for predictLabel (candidate + photos required per example)
     const fewShotExamples = typedLabels
