@@ -5,6 +5,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApprenticePrediction, PairCandidate, PickerFeatures, PickerPrediction, Verdict, TransitionTag } from "../../../../lib/gen2-v21/types.js";
 
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+
 // ─── local types ──────────────────────────────────────────────────────────────
 
 interface QueueItem {
@@ -24,68 +33,6 @@ interface ApprenticeReviewProps {
   listingId: string;
   onLabelPosted?: () => void;
 }
-
-// ─── inline style constants ───────────────────────────────────────────────────
-
-const CARD: React.CSSProperties = {
-  background: "var(--surface)",
-  borderRadius: "var(--radius)",
-  border: "1px solid var(--line)",
-  overflow: "hidden",
-};
-
-const BTN_BASE: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-  gap: 8,
-  padding: "11px 22px",
-  borderRadius: "var(--radius-pill)",
-  fontSize: 13.5,
-  fontWeight: 600,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-  border: "none",
-  transition: "opacity .15s, transform .1s",
-  letterSpacing: "-0.01em",
-};
-
-const AGREE_BTN: React.CSSProperties = {
-  ...BTN_BASE,
-  background: "var(--good, #2f8a55)",
-  color: "#fff",
-  minWidth: 160,
-};
-
-const DISAGREE_BTN: React.CSSProperties = {
-  ...BTN_BASE,
-  background: "rgba(196,74,74,0.1)",
-  color: "var(--bad, #c44a4a)",
-  border: "1px solid rgba(196,74,74,0.25)",
-  minWidth: 160,
-};
-
-const GHOST_BTN: React.CSSProperties = {
-  ...BTN_BASE,
-  background: "transparent",
-  color: "var(--ink-2)",
-  border: "1px solid var(--line)",
-};
-
-const LABEL_STYLE: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 600,
-  letterSpacing: "0.06em",
-  textTransform: "uppercase" as const,
-  color: "var(--muted)",
-  fontFamily: "var(--le-font-sans)",
-};
-
-const MONO: React.CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: 12,
-  color: "var(--ink-2)",
-};
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,75 +59,6 @@ function tagLabel(t: TransitionTag): string {
 
 function featureLabel(name: string): string {
   return name.replace(/_/g, " ");
-}
-
-// Simple inline spinner
-function Spinner() {
-  return (
-    <svg
-      width={20}
-      height={20}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="var(--muted)"
-      strokeWidth={2}
-      strokeLinecap="round"
-      style={{ animation: "spin 1s linear infinite" }}
-    >
-      <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </svg>
-  );
-}
-
-// Photo panel
-function PhotoPane({
-  label,
-  url,
-  hash,
-}: {
-  label: string;
-  url: string;
-  hash: string;
-}) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1, minWidth: 0 }}>
-      <div style={LABEL_STYLE}>{label}</div>
-      <div
-        style={{
-          ...CARD,
-          aspectRatio: "4/3",
-          overflow: "hidden",
-          background: "rgba(11,11,16,0.04)",
-          position: "relative",
-        }}
-      >
-        {url ? (
-          <img
-            src={url}
-            alt={label}
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-          />
-        ) : (
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              color: "var(--muted)",
-              fontSize: 12,
-            }}
-          >
-            No preview
-          </div>
-        )}
-      </div>
-      <div style={{ ...MONO, fontSize: 10.5, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        hash: {hash}
-      </div>
-    </div>
-  );
 }
 
 // ─── main component ───────────────────────────────────────────────────────────
@@ -263,7 +141,6 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
           apprentice_predicted_verdict: app.predicted_verdict,
           apprentice_was_wrong: apprenticeWasWrong,
           disagree_reason: reason ?? null,
-          // picker training data — pre-computed by pair-queue server
           features_blob: current.features_blob ?? null,
         };
 
@@ -292,7 +169,6 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
   // ── keyboard handler ─────────────────────────────────────────────
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // skip if focused in a textarea
       if (e.target instanceof HTMLTextAreaElement) return;
       if (e.target instanceof HTMLInputElement) return;
 
@@ -331,9 +207,18 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
   // ─── render: loading ─────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "80px 0", gap: 12 }}>
-        <Spinner />
-        <span style={{ fontSize: 13, color: "var(--muted)" }}>Loading pair queue…</span>
+      <div className="flex flex-col gap-4 p-4">
+        <Skeleton className="h-2 w-full" />
+        <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 300px 1fr" }}>
+          <Skeleton className="aspect-[4/3] w-full rounded-xl" />
+          <div className="flex flex-col gap-3">
+            <Skeleton className="h-28 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-12 w-full rounded-xl" />
+            <Skeleton className="h-12 w-full rounded-xl" />
+          </div>
+          <Skeleton className="aspect-[4/3] w-full rounded-xl" />
+        </div>
       </div>
     );
   }
@@ -341,24 +226,16 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
   // ─── render: queue empty ─────────────────────────────────────────
   if (!current) {
     return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "80px 0",
-          gap: 12,
-          textAlign: "center",
-        }}
-      >
-        <svg width={32} height={32} viewBox="0 0 24 24" fill="none" stroke="var(--good, #2f8a55)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M20 6 9 17l-5-5" />
-        </svg>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)" }}>
+      <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+        <div className="w-12 h-12 rounded-2xl bg-[rgba(47,138,85,0.1)] grid place-items-center text-[var(--good)]">
+          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M20 6 9 17l-5-5" />
+          </svg>
+        </div>
+        <div className="text-sm font-semibold text-[var(--ink)]">
           {queue.length === 0 ? "No pairs awaiting review" : `All ${queue.length} pairs reviewed`}
         </div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
+        <div className="text-xs text-[var(--muted)] max-w-xs">
           {queue.length > 0
             ? "Great work. Reload to fetch a fresh batch."
             : "The Apprentice hasn't predicted any pairs yet, or all pairs are already labeled."}
@@ -369,272 +246,226 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
 
   const app = current.apprentice;
   const picker = current.picker;
+  const progressPct = Math.min(100, Math.round((cursor / Math.max(1, queue.length)) * 100));
 
   // ─── render: main UI ─────────────────────────────────────────────
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="flex flex-col gap-4">
 
       {/* Error banner */}
       {error && (
-        <div
-          style={{
-            padding: "10px 14px",
-            borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(196,74,74,0.3)",
-            background: "rgba(196,74,74,0.05)",
-            fontSize: 13,
-            color: "var(--bad, #c44a4a)",
-          }}
-        >
+        <div className="px-4 py-3 rounded-xl border border-[rgba(196,74,74,0.3)] bg-[rgba(196,74,74,0.05)] text-sm text-[var(--bad)]">
           {error}
         </div>
       )}
 
-      {/* Progress bar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, height: 3, background: "var(--line)", borderRadius: 99, overflow: "hidden" }}>
-          <div
-            style={{
-              height: "100%",
-              width: `${Math.min(100, (cursor / Math.max(1, queue.length)) * 100)}%`,
-              background: "var(--accent, #4f6ef7)",
-              borderRadius: 99,
-              transition: "width .3s ease",
-            }}
-          />
-        </div>
-        <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
+      {/* Progress */}
+      <div className="flex items-center gap-3">
+        <Progress value={progressPct} className="flex-1 h-1" />
+        <span className="text-[11px] text-[var(--muted)] tabular-nums whitespace-nowrap">
           {cursor + 1} / {queue.length}
         </span>
       </div>
 
+      {/* Confidence pill at top */}
+      <div className="flex items-center justify-center gap-2">
+        <Badge
+          className="text-xs font-bold px-3 py-1 gap-1.5"
+          style={{
+            background:
+              app.predicted_verdict === "good"
+                ? "rgba(47,138,85,0.12)"
+                : app.predicted_verdict === "bad"
+                ? "rgba(196,74,74,0.1)"
+                : "rgba(182,128,44,0.1)",
+            color: verdictColor(app.predicted_verdict),
+            border: "none",
+          }}
+        >
+          {app.predicted_verdict === "good" ? "✓" : app.predicted_verdict === "bad" ? "✗" : "~"}
+          {verdictLabel(app.predicted_verdict)}
+        </Badge>
+        <span className="text-xs text-[var(--muted)]">
+          {confidencePct(app.confidence)} confidence · {tagLabel(app.predicted_transition_tag)}
+        </span>
+      </div>
+
       {/* 3-column layout: left photo | center | right photo */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px 1fr", gap: 16, alignItems: "start" }}>
+      <div className="grid gap-4 items-start" style={{ gridTemplateColumns: "1fr 300px 1fr" }}>
 
         {/* LEFT: Photo A */}
-        <PhotoPane
-          label="Photo A · start frame"
-          url={current.photo_a_url}
-          hash={current.thumbnail_hash_a}
-        />
-
-        {/* CENTER: apprentice reasoning + picker score + action */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-          {/* Apprentice verdict card */}
-          <div style={{ ...CARD, padding: 16 }}>
-            <div style={LABEL_STYLE}>Apprentice says</div>
-            <div
-              style={{
-                marginTop: 8,
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  padding: "3px 9px",
-                  borderRadius: 99,
-                  fontSize: 11.5,
-                  fontWeight: 700,
-                  fontFamily: "var(--le-font-sans)",
-                  background: app.predicted_verdict === "good"
-                    ? "rgba(47,138,85,0.12)"
-                    : app.predicted_verdict === "bad"
-                    ? "rgba(196,74,74,0.1)"
-                    : "rgba(182,128,44,0.1)",
-                  color: verdictColor(app.predicted_verdict),
-                }}
-              >
-                {app.predicted_verdict === "good" ? "✓" : app.predicted_verdict === "bad" ? "✗" : "~"}{" "}
-                {verdictLabel(app.predicted_verdict)}
-              </span>
-              <span
-                style={{
-                  fontSize: 11.5,
-                  color: "var(--muted)",
-                  fontFamily: "var(--le-font-sans)",
-                }}
-              >
-                type={tagLabel(app.predicted_transition_tag)}, {confidencePct(app.confidence)} confident
-              </span>
-            </div>
-
-            {/* Reasoning */}
-            <div
-              style={{
-                marginTop: 10,
-                padding: "10px 12px",
-                borderRadius: "var(--radius-sm)",
-                background: "rgba(11,11,16,0.03)",
-                border: "1px solid var(--line-2, var(--line))",
-                fontSize: 12.5,
-                color: "var(--ink-2)",
-                lineHeight: 1.55,
-                fontStyle: "italic",
-                fontFamily: "var(--le-font-sans)",
-              }}
-            >
-              "{app.reasoning}"
-            </div>
-
-            {/* Few-shot references */}
-            {app.few_shot_label_ids.length > 0 && (
-              <div style={{ marginTop: 8, fontSize: 11, color: "var(--muted)" }}>
-                Based on {app.few_shot_label_ids.length} prior label{app.few_shot_label_ids.length === 1 ? "" : "s"}
-              </div>
-            )}
+        <div className="flex flex-col gap-2">
+          <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest">
+            Photo A · start frame
           </div>
-
-          {/* Picker score card (runs in parallel — training signal) */}
-          <div style={{ ...CARD, padding: 14 }}>
-            <div style={LABEL_STYLE}>ML Picker score (training signal)</div>
-            {picker ? (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                  <span
-                    style={{
-                      fontSize: 22,
-                      fontWeight: 700,
-                      fontVariantNumeric: "tabular-nums",
-                      color: "var(--ink)",
-                      letterSpacing: "-0.02em",
-                    }}
-                  >
-                    {Math.round(picker.score * 100)}
-                  </span>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>/ 100 · {confidencePct(picker.confidence)} conf</span>
-                </div>
-
-                {picker.used_fallback_heuristic && (
-                  <div
-                    style={{
-                      marginTop: 6,
-                      fontSize: 11,
-                      color: "var(--warn, #b6802c)",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                      <line x1="12" y1="9" x2="12" y2="13" />
-                      <line x1="12" y1="17" x2="12.01" y2="17" />
-                    </svg>
-                    Heuristic fallback (cold start)
-                  </div>
-                )}
-
-                {picker.top_3_features.length > 0 && (
-                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
-                    {picker.top_3_features.map((f, i) => (
-                      <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 10.5, color: "var(--muted)", width: 130, flexShrink: 0 }}>
-                          {i + 1}. {featureLabel(f.name)}
-                        </span>
-                        <div
-                          style={{
-                            flex: 1,
-                            height: 4,
-                            background: "var(--line)",
-                            borderRadius: 99,
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${Math.min(100, Math.round(f.weight * 100))}%`,
-                              background: "var(--accent, #4f6ef7)",
-                              borderRadius: 99,
-                            }}
-                          />
-                        </div>
-                        <span style={{ fontSize: 10.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums", width: 30, textAlign: "right" }}>
-                          {Math.round(f.weight * 100)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+          <div className="rounded-xl overflow-hidden aspect-[4/3] bg-black/[0.04] relative">
+            {current.photo_a_url ? (
+              <img
+                src={current.photo_a_url}
+                alt="Photo A"
+                className="w-full h-full object-cover block"
+              />
             ) : (
-              <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--muted)" }}>
-                Picker not yet available for this pair
+              <div className="flex items-center justify-center h-full text-xs text-[var(--muted)]">
+                No preview
               </div>
             )}
           </div>
+          <div className="text-[10px] text-[var(--muted)] truncate tabular-nums">
+            hash: {current.thumbnail_hash_a}
+          </div>
+        </div>
+
+        {/* CENTER: apprentice reasoning + picker score + actions */}
+        <div className="flex flex-col gap-3">
+
+          {/* Apprentice reasoning card */}
+          <Card className="border-[var(--line)] bg-[var(--surface)]">
+            <CardHeader className="pb-2 pt-3 px-4">
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest">
+                Apprentice says
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 flex flex-col gap-2">
+              <div
+                className="px-3 py-2.5 rounded-lg text-xs italic leading-relaxed text-[var(--ink-2)]"
+                style={{ background: "rgba(11,11,16,0.03)", border: "1px solid var(--line)" }}
+              >
+                "{app.reasoning}"
+              </div>
+              {app.few_shot_label_ids.length > 0 && (
+                <div className="text-[10.5px] text-[var(--muted)]">
+                  Based on {app.few_shot_label_ids.length} prior label{app.few_shot_label_ids.length === 1 ? "" : "s"}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Picker score card */}
+          <Card className="border-[var(--line)] bg-[var(--surface)]">
+            <CardHeader className="pb-2 pt-3 px-4">
+              <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest">
+                ML Picker score
+              </div>
+            </CardHeader>
+            <CardContent className="px-4 pb-4">
+              {picker ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-[var(--ink)] tabular-nums tracking-tight">
+                      {Math.round(picker.score * 100)}
+                    </span>
+                    <span className="text-xs text-[var(--muted)]">
+                      / 100 · {confidencePct(picker.confidence)} conf
+                    </span>
+                  </div>
+                  {picker.used_fallback_heuristic && (
+                    <Badge className="self-start text-[10.5px]" style={{ background: "rgba(182,128,44,0.12)", color: "var(--warn)", border: "none" }}>
+                      Heuristic fallback
+                    </Badge>
+                  )}
+                  {picker.top_3_features.length > 0 && (
+                    <div className="flex flex-col gap-1.5 mt-1">
+                      {picker.top_3_features.map((f, i) => (
+                        <div key={f.name} className="flex items-center gap-2">
+                          <span className="text-[10px] text-[var(--muted)] w-28 flex-shrink-0 truncate">
+                            {i + 1}. {featureLabel(f.name)}
+                          </span>
+                          <div className="flex-1 h-1 bg-[var(--line)] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-[var(--accent)]"
+                              style={{ width: `${Math.min(100, Math.round(f.weight * 100))}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] text-[var(--muted)] tabular-nums w-6 text-right">
+                            {Math.round(f.weight * 100)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-xs text-[var(--muted)]">
+                  Picker not yet available for this pair
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Candidate meta */}
-          <div style={{ ...CARD, padding: 12 }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>Candidate type</span>
-                <span style={{ ...MONO, fontWeight: 600 }}>{current.candidate.candidate_type.replace(/_/g, " ")}</span>
+          <Card className="border-[var(--line)] bg-[var(--surface)]">
+            <CardContent className="px-4 py-3 flex flex-col gap-2">
+              <div className="flex justify-between">
+                <span className="text-[10.5px] text-[var(--muted)]">Candidate type</span>
+                <span className="text-[11px] font-semibold text-[var(--ink)]">
+                  {current.candidate.candidate_type.replace(/_/g, " ")}
+                </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>Heuristic score</span>
-                <span style={{ ...MONO }}>{Math.round(current.candidate.heuristic_score * 100)} / 100</span>
+              <div className="flex justify-between">
+                <span className="text-[10.5px] text-[var(--muted)]">Heuristic score</span>
+                <span className="text-[11px] tabular-nums text-[var(--ink-2)]">
+                  {Math.round(current.candidate.heuristic_score * 100)} / 100
+                </span>
               </div>
               {current.candidate.portal_id && (
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>Portal</span>
-                  <span style={{ ...MONO, fontSize: 11 }}>{current.candidate.portal_id}</span>
+                <div className="flex justify-between">
+                  <span className="text-[10.5px] text-[var(--muted)]">Portal</span>
+                  <span className="text-[10.5px] text-[var(--ink-2)]">{current.candidate.portal_id}</span>
                 </div>
               )}
-            </div>
-            {current.candidate.reasoning && (
-              <div style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.5 }}>
-                {current.candidate.reasoning}
-              </div>
-            )}
-          </div>
+              {current.candidate.reasoning && (
+                <div className="text-[11px] text-[var(--ink-2)] leading-relaxed mt-1">
+                  {current.candidate.reasoning}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Action buttons */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <button
-              type="button"
-              style={{ ...AGREE_BTN, opacity: posting ? 0.5 : 1 }}
+          <div className="flex flex-col gap-2.5">
+            <Button
+              size="lg"
+              className="w-full gap-2 text-sm font-bold"
               disabled={posting || disagreeOpen}
               onClick={() => postLabel(false)}
+              style={{
+                background: "var(--good)",
+                color: "#fff",
+                border: "none",
+                opacity: posting ? 0.5 : 1,
+              }}
             >
-              {posting ? <Spinner /> : (
-                <>
-                  <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 6 9 17l-5-5" />
-                  </svg>
-                  Agree
-                </>
+              {posting ? (
+                <svg className="animate-spin" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+              ) : (
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M20 6 9 17l-5-5" />
+                </svg>
               )}
-              <kbd
-                style={{
-                  marginLeft: 6,
-                  fontSize: 10.5,
-                  fontFamily: "var(--le-font-sans)",
-                  padding: "1px 6px",
-                  borderRadius: 4,
-                  background: "rgba(255,255,255,0.2)",
-                  letterSpacing: "0.02em",
-                }}
-              >
+              Agree
+              <kbd className="text-[10px] font-bold opacity-75 bg-white/20 rounded px-1.5 py-0.5">
                 SPACE
               </kbd>
-            </button>
+            </Button>
 
             {!disagreeOpen ? (
-              <button
-                type="button"
-                style={{ ...DISAGREE_BTN, opacity: posting ? 0.5 : 1 }}
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full gap-2 text-sm font-semibold"
                 disabled={posting}
                 onClick={() => {
                   setDisagreeOpen(true);
                   setTimeout(() => disagreeRef.current?.focus(), 40);
+                }}
+                style={{
+                  background: "rgba(196,74,74,0.07)",
+                  color: "var(--bad)",
+                  border: "1px solid rgba(196,74,74,0.25)",
+                  opacity: posting ? 0.5 : 1,
                 }}
               >
                 <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
@@ -642,96 +473,84 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
                 Disagree
-                <kbd
-                  style={{
-                    marginLeft: 6,
-                    fontSize: 10.5,
-                    fontFamily: "var(--le-font-sans)",
-                    padding: "1px 6px",
-                    borderRadius: 4,
-                    background: "rgba(196,74,74,0.15)",
-                    letterSpacing: "0.02em",
-                  }}
-                >
+                <kbd className="text-[10px] font-bold opacity-70 bg-[rgba(196,74,74,0.15)] rounded px-1.5 py-0.5">
                   X
                 </kbd>
-              </button>
+              </Button>
             ) : (
-              <div
-                style={{
-                  ...CARD,
-                  padding: 12,
-                  border: "1px solid rgba(196,74,74,0.3)",
-                  background: "rgba(196,74,74,0.03)",
-                }}
-              >
-                <div style={{ fontSize: 11.5, color: "var(--bad, #c44a4a)", marginBottom: 6, fontWeight: 600 }}>
-                  Why disagree? (optional — press Enter to submit, Esc to cancel)
+              <div className="rounded-xl border border-[rgba(196,74,74,0.3)] bg-[rgba(196,74,74,0.03)] p-3 flex flex-col gap-2">
+                <div className="text-[11.5px] font-semibold text-[var(--bad)]">
+                  Why disagree? (optional — Enter to submit, Esc to cancel)
                 </div>
-                <textarea
+                <Textarea
                   ref={disagreeRef}
                   value={disagreeReason}
                   onChange={(e) => setDisagreeReason(e.target.value)}
                   onKeyDown={onDisagreeKeyDown}
                   placeholder="e.g. wrong room, bad angle, already seen this pair…"
                   rows={2}
-                  style={{
-                    width: "100%",
-                    padding: "8px 10px",
-                    borderRadius: "var(--radius-sm)",
-                    border: "1px solid rgba(196,74,74,0.3)",
-                    background: "var(--surface)",
-                    fontSize: 12.5,
-                    fontFamily: "var(--le-font-sans)",
-                    color: "var(--ink)",
-                    outline: "none",
-                    resize: "none",
-                    boxSizing: "border-box",
-                    lineHeight: 1.5,
-                  }}
+                  className="resize-none text-sm border-[rgba(196,74,74,0.3)] focus-visible:ring-[rgba(196,74,74,0.4)]"
                 />
-                <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "flex-end" }}>
-                  <button
-                    type="button"
-                    style={{ ...GHOST_BTN, padding: "7px 12px", fontSize: 12 }}
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => {
                       setDisagreeOpen(false);
                       setDisagreeReason("");
                     }}
                   >
                     Cancel
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...DISAGREE_BTN, padding: "7px 14px", fontSize: 12, opacity: posting ? 0.5 : 1 }}
+                  </Button>
+                  <Button
+                    size="sm"
                     disabled={posting}
                     onClick={() => postLabel(true, disagreeReason)}
+                    style={{ background: "var(--bad)", color: "#fff", border: "none" }}
                   >
                     Submit disagree
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
           </div>
+
+          {/* Keyboard hint */}
+          <div className="text-[10.5px] text-[var(--muted)] text-center">
+            <kbd className="border border-[var(--line)] rounded px-1.5 py-0.5 mr-1">SPACE</kbd> Agree ·{" "}
+            <kbd className="border border-[var(--line)] rounded px-1.5 py-0.5 mr-1">X</kbd> Disagree ·{" "}
+            <kbd className="border border-[var(--line)] rounded px-1.5 py-0.5 mr-1">ESC</kbd> Cancel
+          </div>
         </div>
 
         {/* RIGHT: Photo B */}
-        <PhotoPane
-          label="Photo B · end frame"
-          url={current.photo_b_url}
-          hash={current.thumbnail_hash_b}
-        />
+        <div className="flex flex-col gap-2">
+          <div className="text-[10px] font-bold text-[var(--muted)] uppercase tracking-widest">
+            Photo B · end frame
+          </div>
+          <div className="rounded-xl overflow-hidden aspect-[4/3] bg-black/[0.04] relative">
+            {current.photo_b_url ? (
+              <img
+                src={current.photo_b_url}
+                alt="Photo B"
+                className="w-full h-full object-cover block"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-xs text-[var(--muted)]">
+                No preview
+              </div>
+            )}
+          </div>
+          <div className="text-[10px] text-[var(--muted)] truncate tabular-nums">
+            hash: {current.thumbnail_hash_b}
+          </div>
+        </div>
       </div>
 
       {/* Filmstrip */}
       <div
-        style={{
-          display: "flex",
-          gap: 6,
-          overflowX: "auto",
-          paddingBottom: 4,
-          paddingTop: 4,
-        }}
+        className="flex gap-1.5 overflow-x-auto pb-1 pt-1"
+        style={{ scrollbarWidth: "none" }}
       >
         {queue.map((item, idx) => {
           const isPast = idx < cursor;
@@ -747,22 +566,19 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
                 setDisagreeOpen(false);
                 setDisagreeReason("");
               }}
+              className="flex-shrink-0 rounded-lg overflow-hidden relative transition-all"
               style={{
-                flexShrink: 0,
-                width: 52,
-                height: 39,
-                borderRadius: "var(--radius-sm)",
+                width: 56,
+                height: 42,
                 border: isCurrent
-                  ? "2px solid var(--accent, #4f6ef7)"
+                  ? "2.5px solid var(--accent)"
                   : isPast
-                  ? "2px solid var(--good, #2f8a55)"
+                  ? "2px solid var(--good)"
                   : "1px solid var(--line)",
-                overflow: "hidden",
                 padding: 0,
                 cursor: "pointer",
                 background: "rgba(11,11,16,0.04)",
-                opacity: isFuture ? 0.5 : 1,
-                position: "relative",
+                opacity: isFuture ? 0.45 : 1,
               }}
               title={`Pair ${idx + 1}: ${item.candidate.candidate_type}`}
             >
@@ -770,20 +586,11 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
                 <img
                   src={item.photo_a_url}
                   alt={`pair ${idx + 1}`}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  className="w-full h-full object-cover block"
                 />
               )}
               {isPast && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "rgba(47,138,85,0.35)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
+                <div className="absolute inset-0 bg-[rgba(47,138,85,0.35)] flex items-center justify-center">
                   <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
                     <path d="M20 6 9 17l-5-5" />
                   </svg>
@@ -794,12 +601,6 @@ export default function ApprenticeReview({ listingId, onLabelPosted }: Apprentic
         })}
       </div>
 
-      {/* Keyboard hint */}
-      <div style={{ fontSize: 11, color: "var(--muted)", textAlign: "center" }}>
-        <kbd style={{ fontFamily: "var(--le-font-sans)", padding: "1px 6px", borderRadius: 4, border: "1px solid var(--line)", marginRight: 3 }}>SPACE</kbd> Agree ·{" "}
-        <kbd style={{ fontFamily: "var(--le-font-sans)", padding: "1px 6px", borderRadius: 4, border: "1px solid var(--line)", marginRight: 3 }}>X</kbd> Disagree ·{" "}
-        <kbd style={{ fontFamily: "var(--le-font-sans)", padding: "1px 6px", borderRadius: 4, border: "1px solid var(--line)", marginRight: 3 }}>ESC</kbd> Cancel disagree
-      </div>
     </div>
   );
 }
