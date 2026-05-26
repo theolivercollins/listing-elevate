@@ -85,6 +85,16 @@ describe("buildAtlasRequestBody", () => {
     const v3Body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v3-pro"]);
     expect(v3Body.resolution).toBeUndefined();
   });
+
+  it("forwards generate_audio=false on the Seedance SKU (real estate clips should be silent)", () => {
+    const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pro-pushin"]);
+    expect(body.generate_audio).toBe(false);
+  });
+
+  it("omits generate_audio for Kling descriptors (they don't generate audio)", () => {
+    const klingBody = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v2-master"]);
+    expect(klingBody.generate_audio).toBeUndefined();
+  });
 });
 
 describe("parseAtlasSubmitResponse", () => {

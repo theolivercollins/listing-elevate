@@ -42,6 +42,16 @@ export interface AtlasModelDescriptor {
    * Seedance has a real multi-res picker; Kling SKUs are fixed at 1080p.
    */
   supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "4k">;
+  /**
+   * Optional `generate_audio` flag forwarded to the underlying Replicate
+   * model. Only Bytedance Seedance 2.0 generates audio by default — set
+   * this to `false` on the Seedance descriptor so we get silent video.
+   * Kling/Runway etc. don't generate audio so this is a no-op there.
+   *
+   * Real-estate listing clips never want model-generated music; the
+   * assembly stage adds curated music from a separate track.
+   */
+  generateAudio?: boolean;
 }
 
 // Default clip duration in seconds for cost estimation. Atlas accepts
@@ -132,6 +142,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     resolution: "1080p",         // default; kept so legacy callers (no resolution override) get 1080p
     supportedResolutions: ["1080p", "720p", "480p"],  // Seedance natively supports all three
+    generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
     priceCentsPerSecond: 28,     // ⚠️  placeholder for 1080p tier — verify against invoice
     priceCentsPerClip: 140,      // 28 × 5
   },
@@ -212,6 +223,9 @@ export interface AtlasSubmitBody {
    *  is fixed per-SKU). Atlas passes through unrecognized fields to the
    *  model's input schema, so it's safe to send on every render. */
   resolution?: "480p" | "720p" | "1080p";
+  /** Forwarded to Seedance 2.0 to disable native audio/music generation.
+   *  Ignored by other models. */
+  generate_audio?: boolean;
 }
 
 // Kling v3-pro introduces noticeable camera shake/vibration on push-ins
@@ -254,6 +268,12 @@ export function buildAtlasRequestBody(
     // for future SKUs (Veo) but Atlas Seedance ignores it safely. Cast is safe:
     // the UI only offers values from the SKU's supportedResolutions array.
     body.resolution = effectiveResolution as "480p" | "720p" | "1080p";
+  }
+  // Forward generate_audio when the descriptor opts in (Seedance 2.0 only —
+  // kills its default music track). Atlas passes through to Replicate's
+  // Seedance input schema. Other models ignore the field.
+  if (model.generateAudio !== undefined) {
+    body.generate_audio = model.generateAudio;
   }
   return body;
 }
