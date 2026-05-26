@@ -49,6 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           director_output_json: updated.director_output_json,
           embedding: updated.embedding,
           provider: updated.provider,
+          pipeline_version: (updated as Record<string, unknown>).pipeline_version as string | null ?? null,
         },
         rating,
         promotedBy: auth.user.id,

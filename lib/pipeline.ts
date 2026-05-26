@@ -564,6 +564,16 @@ async function runScripting(propertyId: string): Promise<void> {
   // the director toward whatever recently rated highly regardless of
   // composition fit (root cause of the 2026-05-13 motion-collapse bug —
   // see docs/specs/2026-05-13-prompt-collapse-fix-design.md).
+  // Load pipeline_mode to scope recipe retrieval to the correct version.
+  // Defaults to 'v1' for properties created before migration 062/063.
+  let propertyPipelineMode: string = "v1";
+  try {
+    const prop = await getProperty(propertyId);
+    propertyPipelineMode = prop.pipeline_mode ?? "v1";
+  } catch {
+    // Non-fatal — fall through to v1 default.
+  }
+
   let learningBlock = "";
   try {
     const bundles = await Promise.all(
@@ -572,6 +582,7 @@ async function runScripting(propertyId: string): Promise<void> {
           photoId: p.id,
           roomType: p.room_type,
           motionHeadroom: p.motion_headroom ?? null,
+          pipelineVersion: propertyPipelineMode,
         }).then((bundle) => ({ photoId: p.id, bundle })),
       ),
     );

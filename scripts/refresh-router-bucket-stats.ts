@@ -58,13 +58,20 @@ async function main() {
   // prompt_lab_sessions (sessions schema has only id/created_by/image_url/
   // image_path/label/archetype/batch_label/archived/created_at). Fall back
   // to sessions.archetype only if analysis_json is absent.
+  // Exclude seedance-pro-pushin (v1.1 SKU) — v1.1 uses a single SKU with no
+  // movement variety, so there is nothing for Thompson sampling to explore.
+  // Belt-and-suspenders: resolveDecisionAsync already only considers
+  // V1_ATLAS_SKUS, so a seedance-pro-pushin stat row would be ignored at
+  // read time even if it somehow landed here. This WHERE clause defends the
+  // write path.
   const { data, error } = await supabase
     .from("prompt_lab_iterations")
     .select(
       "id, rating, model_used, director_output_json, analysis_json, session_id, prompt_lab_sessions!inner(archetype)",
     )
     .not("rating", "is", null)
-    .not("model_used", "is", null);
+    .not("model_used", "is", null)
+    .neq("model_used", "seedance-pro-pushin");
 
   if (error) {
     console.error("Query failed:", error);

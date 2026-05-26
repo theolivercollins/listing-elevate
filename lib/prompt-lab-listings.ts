@@ -268,10 +268,14 @@ export async function directListingScenes(listingId: string): Promise<void> {
   const supabase = getSupabase();
   const { data: listing } = await supabase
     .from("prompt_lab_listings")
-    .select("id")
+    .select("id, pipeline_version")
     .eq("id", listingId)
     .single();
   if (!listing) throw new Error(`Listing ${listingId} not found`);
+  // pipeline_version scopes recipe retrieval so that v1.1 renders don't
+  // see v1 recipes and vice versa. Falls back to 'v1' for rows created
+  // before migration 063.
+  const listingPipelineVersion = (listing as { id: string; pipeline_version?: string | null }).pipeline_version ?? "v1";
 
   const { data: photos } = await supabase
     .from("prompt_lab_listing_photos")
@@ -338,7 +342,7 @@ export async function directListingScenes(listingId: string): Promise<void> {
     if (!vec) continue;
     try {
       const [recipes, winners, losers] = await Promise.all([
-        retrieveMatchingRecipes(vec, pdata.room_type, { limit: 1 }),
+        retrieveMatchingRecipes(vec, pdata.room_type, { limit: 1, pipelineVersion: listingPipelineVersion }),
         retrieveSimilarIterations(vec, { minRating: 4, limit: 3 }),
         retrieveSimilarLosers(vec, { maxRating: 2, limit: 2 }),
       ]);
