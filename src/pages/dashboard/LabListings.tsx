@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Loader2, ArrowRight } from "lucide-react";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
 import { PageHeading, StatusPill, PropertyThumb, Card, fmtCents } from "@/components/dashboard/primitives";
@@ -16,6 +16,61 @@ const LAB_STATUS_MAP: Record<string, string> = {
   complete: "complete",
   failed: "failed",
 };
+
+const LAB_MODE_KEY = "lab_mode_version";
+type LabVersion = "v1" | "v21";
+
+// ── V1 ↔ V2.1 mode toggle ────────────────────────────────────────────
+function LabVersionToggle({ current }: { current: LabVersion }) {
+  const navigate = useNavigate();
+
+  function switchTo(v: LabVersion) {
+    localStorage.setItem(LAB_MODE_KEY, v);
+    if (v === "v21") {
+      navigate("/dashboard/development/lab/v21");
+    }
+    // v1 is current page — already here
+  }
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 0,
+        borderRadius: "var(--radius-pill)",
+        border: "1px solid var(--line)",
+        overflow: "hidden",
+        background: "var(--surface)",
+      }}
+    >
+      {(["v1", "v21"] as LabVersion[]).map((v) => {
+        const active = current === v;
+        return (
+          <button
+            key={v}
+            type="button"
+            onClick={() => switchTo(v)}
+            style={{
+              padding: "7px 18px",
+              border: "none",
+              background: active ? "var(--ink)" : "transparent",
+              color: active ? "var(--bg, #fff)" : "var(--muted)",
+              fontSize: 12.5,
+              fontWeight: active ? 600 : 400,
+              cursor: active ? "default" : "pointer",
+              fontFamily: "var(--le-font-sans)",
+              letterSpacing: "-0.01em",
+              transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            {v === "v1" ? "V1 Single-Image Lab" : "V2.1 Pair-Picker Lab"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function labThumbHue(id: string): number {
   let h = 0;
@@ -44,6 +99,11 @@ export default function LabListings() {
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* V1 ↔ V2.1 mode toggle */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <LabVersionToggle current="v1" />
+      </div>
+
       <PageHeading
         eyebrow="Lab · Listings"
         title="Listings lab"

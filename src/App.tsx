@@ -39,6 +39,7 @@ import DashboardSystemStatus from "./pages/dashboard/SystemStatus";
 import DashboardLabListings from "./pages/dashboard/LabListings";
 import DashboardLabListingNew from "./pages/dashboard/LabListingNew";
 import DashboardLabListingDetail from "./pages/dashboard/LabListingDetail";
+import V21LabIndex from "./pages/dashboard/v21/V21LabIndex";
 import DashboardRatingLedger from "./pages/dashboard/RatingLedger";
 import BlogPostsList from "./pages/dashboard/BlogPostsList";
 import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
@@ -116,6 +117,7 @@ const App = () => (
                     <Route path="development/system-status" element={<DashboardSystemStatus />} />
                     <Route path="development/lab" element={<DashboardLabListings />} />
                     <Route path="development/lab/new" element={<DashboardLabListingNew />} />
+                    <Route path="development/lab/v21" element={<V21LabIndex />} />
                     <Route path="development/lab/:id" element={<DashboardLabListingDetail />} />
                     <Route path="rating-ledger" element={<DashboardRatingLedger />} />
                     <Route path="blog/posts" element={<BlogPostsList />} />
