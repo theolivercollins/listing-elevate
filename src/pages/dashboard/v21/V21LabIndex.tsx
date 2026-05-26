@@ -40,8 +40,15 @@ const LS_PROP_KEY = "v21_last_listing_id";
 const LS_TAB_KEY = "v21_last_tab";
 
 export default function V21LabIndex() {
+  // URL deep-link: /lab/v21?listingId=X overrides localStorage.
+  const urlListingId = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("listingId") ?? ""
+    : "";
+
   const [listings, setListings] = useState<LabListing[] | null>(null);
-  const [selectedId, setSelectedId] = useState<string>(() => localStorage.getItem(LS_PROP_KEY) ?? "");
+  const [selectedId, setSelectedId] = useState<string>(
+    () => urlListingId || localStorage.getItem(LS_PROP_KEY) || ""
+  );
   const [activeTab, setActiveTab] = useState<TabId>(() => (localStorage.getItem(LS_TAB_KEY) as TabId | null) ?? "directors_cut");
   const [modeState, setModeState] = useState<ModeState | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -49,10 +56,22 @@ export default function V21LabIndex() {
   const [sceneGraphExists, setSceneGraphExists] = useState<boolean | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
 
-  // Load listings
+  // Load listings. If the URL-selected listing isn't in the dropdown
+  // (V2 scene graph exists for a property that isn't a prompt_lab_listing),
+  // we still keep the selection — the Tabs gate on sceneGraphExists, not on
+  // dropdown membership, so the labeling UI still works.
   useEffect(() => {
     listListings()
       .then(({ listings }) => {
+        // If URL gave us a listingId not in the dropdown, synthesize a row so
+        // the Select shows something selected instead of going blank.
+        if (urlListingId && !listings.some((l) => l.id === urlListingId)) {
+          const synthetic: LabListing = {
+            id: urlListingId,
+            name: `Property ${urlListingId.slice(0, 8)} (V2 only)`,
+          } as LabListing;
+          listings = [synthetic, ...listings];
+        }
         setListings(listings);
         if (!selectedId && listings.length > 0) {
           setSelectedId(listings[0].id);
