@@ -1,8 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock Atlas provider (fetch)
+// Mock Atlas provider (fetch) — still used by pollAtlas for submitted/polling rows
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+
+// Mock guardrail
+vi.mock("../guardrail/multi-take.js", () => ({
+  tryWithGuardrail: vi.fn(),
+}));
 
 // Mock judge
 vi.mock("./judge.js", () => ({
@@ -20,6 +25,7 @@ vi.mock("./retrain-hook.js", () => ({
 
 import { processOutstandingOutcomes } from "./worker.js";
 import type { RenderOutcome } from "../types.js";
+import { tryWithGuardrail } from "../guardrail/multi-take.js";
 
 // Helper: builds a mock Supabase client with configurable table responses
 function buildMockSupabase(config: {
@@ -101,6 +107,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.ATLASCLOUD_API_KEY = "test-atlas-key";
   process.env.GEMINI_API_KEY = "test-gemini-key";
+  process.env.GEN2_V21_ENABLED = "true";
 });
 
 describe("processOutstandingOutcomes", () => {
@@ -110,10 +117,14 @@ describe("processOutstandingOutcomes", () => {
     expect(result).toEqual({ processed: 0, errors: 0 });
   });
 
-  it("submits pending outcome to Atlas", async () => {
-    mockFetch.mockResolvedValueOnce({
+  it("pending → rendered when guardrail passes on first take", async () => {
+    const mockGuardrail = vi.mocked(tryWithGuardrail);
+    mockGuardrail.mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ code: 200, data: { id: "atlas-job-123" } }),
+      videoUrl: "https://cdn.example.com/video.mp4",
+      attempts: [
+        { videoUrl: "https://cdn.example.com/video.mp4", lineVariance: 1.2, turbulence: 0.1, passed: true },
+      ],
     });
 
     const supabase = buildMockSupabase({
@@ -128,11 +139,81 @@ describe("processOutstandingOutcomes", () => {
     const result = await processOutstandingOutcomes(supabase);
     expect(result.processed).toBe(1);
     expect(result.errors).toBe(0);
-    // Atlas endpoint was called
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("atlascloud.ai"),
-      expect.objectContaining({ method: "POST" }),
+    // tryWithGuardrail was called with correct args
+    expect(mockGuardrail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pairLabelId: "label-1",
+        photoAUrl: "https://cdn.example.com/a.jpg",
+        photoBUrl: "https://cdn.example.com/b.jpg",
+        atlasModelSlug: "kling-o3-pro",
+        maxAttempts: 2,
+      }),
     );
+    // Outcome updated to rendered with videoUrl
+    const updates = supabase._updates["gen2_render_outcomes"] ?? [];
+    const renderUpdate = updates.find((u: Record<string, unknown>) => u.status === "rendered");
+    expect(renderUpdate).toBeDefined();
+    expect((renderUpdate as Record<string, unknown>).video_url).toBe("https://cdn.example.com/video.mp4");
+    // Attempts audit trail persisted in judge_reasoning
+    const attemptsJson = (renderUpdate as Record<string, unknown>).judge_reasoning as string;
+    const parsed = JSON.parse(attemptsJson);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].passed).toBe(true);
+  });
+
+  it("pending → failed with attempts audit trail when guardrail fails both takes", async () => {
+    const mockGuardrail = vi.mocked(tryWithGuardrail);
+    const failedAttempts = [
+      { videoUrl: "https://cdn.example.com/v1.mp4", lineVariance: 4.5, turbulence: 0.6, passed: false },
+      { videoUrl: "https://cdn.example.com/v2.mp4", lineVariance: 3.8, turbulence: 0.55, passed: false },
+    ];
+    mockGuardrail.mockResolvedValueOnce({
+      ok: false,
+      reason: "Guardrail failed after 2 attempt(s): lineVariance=3.80° turbulence=0.550",
+      attempts: failedAttempts,
+    });
+
+    const supabase = buildMockSupabase({
+      rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
+      labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
+      photos: [
+        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+      ],
+    });
+
+    const result = await processOutstandingOutcomes(supabase);
+    expect(result.processed).toBe(1);
+    expect(result.errors).toBe(0);
+    // Outcome updated to failed
+    const updates = supabase._updates["gen2_render_outcomes"] ?? [];
+    const failUpdate = updates.find((u: Record<string, unknown>) => u.status === "failed");
+    expect(failUpdate).toBeDefined();
+    // Both attempts persisted in judge_reasoning
+    const attemptsJson = (failUpdate as Record<string, unknown>).judge_reasoning as string;
+    const parsed = JSON.parse(attemptsJson);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0].passed).toBe(false);
+    expect(parsed[1].passed).toBe(false);
+  });
+
+  it("GEN2_V21_ENABLED=false → no-op (returns 0/0 without touching DB)", async () => {
+    process.env.GEN2_V21_ENABLED = "false";
+    const mockGuardrail = vi.mocked(tryWithGuardrail);
+
+    const supabase = buildMockSupabase({
+      rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],
+      labelRow: { photo_a_id: "photo-a", photo_b_id: "photo-b" },
+      photos: [
+        { photo_id: "photo-a", file_url: "https://cdn.example.com/a.jpg" },
+        { photo_id: "photo-b", file_url: "https://cdn.example.com/b.jpg" },
+      ],
+    });
+
+    const result = await processOutstandingOutcomes(supabase);
+    expect(result).toEqual({ processed: 0, errors: 0 });
+    expect(mockGuardrail).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("polls Atlas and marks rendered when complete", async () => {
@@ -217,8 +298,9 @@ describe("processOutstandingOutcomes", () => {
     expect(supabase.from).toHaveBeenCalledWith("gen2_render_outcomes");
   });
 
-  it("counts errors when Atlas submit fails", async () => {
-    mockFetch.mockRejectedValueOnce(new Error("Network error"));
+  it("counts errors when guardrail throws unexpectedly", async () => {
+    const mockGuardrail = vi.mocked(tryWithGuardrail);
+    mockGuardrail.mockRejectedValueOnce(new Error("Network error"));
 
     const supabase = buildMockSupabase({
       rpcOutcomes: [{ ...BASE_OUTCOME, status: "pending" }],

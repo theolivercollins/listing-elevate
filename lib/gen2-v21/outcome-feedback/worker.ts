@@ -34,20 +34,21 @@
  * Retry cap: 2 (per round-7 — multi-take limit)
  */
 
-import { ATLAS_MODELS } from "../../providers/atlas.js";
 import type { RenderOutcome, OutcomeStatus } from "../types.js";
 import { isTerminal, isPollingState } from "./state-machine.js";
 import { judgeRenderedClip } from "./judge.js";
 import { triggerRetrainIfReady } from "./retrain-hook.js";
+import { tryWithGuardrail } from "../guardrail/multi-take.js";
 
 // Atlas SKU for V2.1 paired renders
 const V21_ATLAS_SKU = "kling-o3-pro";
-const V21_ATLAS_MODEL = ATLAS_MODELS[V21_ATLAS_SKU];
-const ATLAS_ENDPOINT = "https://api.atlascloud.ai/api/v1/model/generateVideo";
 const ATLAS_PREDICTION_BASE = "https://api.atlascloud.ai/api/v1/model/prediction";
 const TIMEOUT_MS = 20 * 60 * 1000; // 20 minutes
 const MAX_RETRIES = 2;
 const BATCH_SIZE = 5;
+
+const V21_RENDER_PROMPT =
+  "Smooth cinematic camera move from start frame to end frame. Gimbal-stable. No jitter or shake.";
 
 // Non-terminal statuses the worker picks up
 const ACTIVE_STATUSES: OutcomeStatus[] = ["pending", "submitted", "polling", "rendered", "judged"];
@@ -68,12 +69,6 @@ interface SupabaseQueryBuilder {
   limit(n: number): SupabaseQueryBuilder;
   order(col: string, opts?: { ascending: boolean }): SupabaseQueryBuilder;
   then(resolve: (res: { data: unknown; error: unknown }) => void): void;
-}
-
-function atlasHeaders(): Record<string, string> {
-  const key = process.env.ATLASCLOUD_API_KEY;
-  if (!key) throw new Error("ATLASCLOUD_API_KEY required for V2.1 worker");
-  return { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
 }
 
 async function fetchOutcomes(supabase: SupabaseClient): Promise<RenderOutcome[]> {
@@ -120,11 +115,14 @@ async function updateOutcome(
   });
 }
 
-async function submitToAtlas(
+/**
+ * Resolve photo URLs for a pair label. Returns null if the label or photos
+ * cannot be found, in which case the caller should mark the outcome failed.
+ */
+async function resolvePhotoPair(
   outcome: RenderOutcome,
   supabase: SupabaseClient,
-): Promise<void> {
-  // Look up the pair label to get source photo URLs
+): Promise<{ imageA: string; imageB: string } | null> {
   const label = await new Promise<{ photo_a_id: string; photo_b_id: string } | null>((resolve) => {
     supabase
       .from("gen2_pair_labels")
@@ -138,15 +136,8 @@ async function submitToAtlas(
       });
   });
 
-  if (!label) {
-    await updateOutcome(supabase, outcome.outcome_id, {
-      status: "failed",
-      completed_at: new Date().toISOString(),
-    } as Partial<RenderOutcome>);
-    return;
-  }
+  if (!label) return null;
 
-  // Fetch photo URLs from the photos table
   const photos = await new Promise<Array<{ photo_id: string; file_url: string }>>((resolve) => {
     supabase
       .from("photos")
@@ -162,7 +153,27 @@ async function submitToAtlas(
   const imageA = photoMap[label.photo_a_id];
   const imageB = photoMap[label.photo_b_id];
 
-  if (!imageA || !imageB) {
+  if (!imageA || !imageB) return null;
+
+  return { imageA, imageB };
+}
+
+/**
+ * pending → tryWithGuardrail → rendered (ok=true) | failed (ok=false)
+ *
+ * Replaces the old direct-Atlas submit + polling path for pending outcomes.
+ * tryWithGuardrail handles its own multi-take loop, polling, and cost_events
+ * recording per attempt. On success the outcome is immediately marked
+ * 'rendered' (no polling step needed). On failure the outcome is marked
+ * 'failed' and the attempts array is persisted to judge_reasoning for audit.
+ */
+async function submitWithGuardrail(
+  outcome: RenderOutcome,
+  supabase: SupabaseClient,
+): Promise<void> {
+  const pair = await resolvePhotoPair(outcome, supabase);
+
+  if (!pair) {
     await updateOutcome(supabase, outcome.outcome_id, {
       status: "failed",
       completed_at: new Date().toISOString(),
@@ -170,43 +181,35 @@ async function submitToAtlas(
     return;
   }
 
-  const body = {
-    model: V21_ATLAS_MODEL.slug,
-    image: imageA,
-    end_image: imageB,
-    prompt:
-      "Smooth cinematic camera move from start frame to end frame. Gimbal-stable. No jitter or shake.",
-    duration: 5,
-    negative_prompt:
-      "shaky camera, handheld, wobble, vibration, jitter, camera shake, rolling shutter, unstable motion",
-  };
+  const { imageA, imageB } = pair;
 
-  const res = await fetch(ATLAS_ENDPOINT, {
-    method: "POST",
-    headers: atlasHeaders(),
-    body: JSON.stringify(body),
+  const guardrailResult = await tryWithGuardrail({
+    pairLabelId: outcome.pair_label_id,
+    photoAUrl: imageA,
+    photoBUrl: imageB,
+    atlasModelSlug: V21_ATLAS_SKU,
+    generatePromptFn: () => V21_RENDER_PROMPT,
+    maxAttempts: 2,
   });
 
-  const parsed = (await res.json()) as {
-    code: number;
-    message?: string;
-    msg?: string;
-    data?: { id?: string } | null;
-  };
+  // Always persist the attempts audit trail into judge_reasoning
+  const attemptsJson = JSON.stringify(guardrailResult.attempts);
 
-  if (!res.ok || parsed.code !== 200) {
-    const msg = parsed.message ?? parsed.msg ?? `HTTP ${res.status}`;
-    throw new Error(`Atlas submit failed: ${msg}`);
+  if (guardrailResult.ok && guardrailResult.videoUrl) {
+    // Guardrail passed — skip polling (already done internally)
+    await updateOutcome(supabase, outcome.outcome_id, {
+      status: "rendered",
+      video_url: guardrailResult.videoUrl,
+      judge_reasoning: attemptsJson,
+    } as Partial<RenderOutcome>);
+  } else {
+    // All takes failed guardrail — record failure; orchestrator handles routing
+    await updateOutcome(supabase, outcome.outcome_id, {
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      judge_reasoning: attemptsJson,
+    } as Partial<RenderOutcome>);
   }
-
-  const atlasJobId = parsed.data?.id;
-  if (!atlasJobId) throw new Error("Atlas submit response missing data.id");
-
-  await updateOutcome(supabase, outcome.outcome_id, {
-    atlas_job_id: atlasJobId,
-    status: "submitted",
-    cost_cents: V21_ATLAS_MODEL.priceCentsPerClip,
-  } as Partial<RenderOutcome>);
 }
 
 async function pollAtlas(outcome: RenderOutcome, supabase: SupabaseClient): Promise<void> {
@@ -380,7 +383,7 @@ async function processOutcome(outcome: RenderOutcome, supabase: SupabaseClient):
 
   switch (outcome.status) {
     case "pending":
-      await submitToAtlas(outcome, supabase);
+      await submitWithGuardrail(outcome, supabase);
       break;
 
     case "submitted":
@@ -412,6 +415,11 @@ async function processOutcome(outcome: RenderOutcome, supabase: SupabaseClient):
 export async function processOutstandingOutcomes(
   supabase: SupabaseClient,
 ): Promise<{ processed: number; errors: number }> {
+  // Feature flag — allows cron to call this unconditionally; returns no-op if disabled
+  if (process.env.GEN2_V21_ENABLED !== "true") {
+    return { processed: 0, errors: 0 };
+  }
+
   let processed = 0;
   let errors = 0;
 
