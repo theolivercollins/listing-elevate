@@ -57,7 +57,9 @@ export type CandidateType =
   | "walkthrough_via_portal"
   | "wide_to_detail"
   | "aerial_to_entry"
-  | "exterior_walkaround";
+  | "exterior_walkaround"
+  /** Safety-net fallback added 2026-05-26: same-room pair that matched no typed rule. */
+  | "same_room_fallback";
 
 export interface PairCandidate {
   candidate_id: string;

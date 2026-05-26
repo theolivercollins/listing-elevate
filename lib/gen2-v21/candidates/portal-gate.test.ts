@@ -38,12 +38,16 @@ describe("portalIsWalkable", () => {
     expect(portalIsWalkable(makePortal({ is_open_path: false, confidence: 0.9 }))).toBe(false);
   });
 
-  it("returns false when confidence < 0.6", () => {
-    expect(portalIsWalkable(makePortal({ is_open_path: true, confidence: 0.55 }))).toBe(false);
+  it("returns false when confidence < 0.4 (lowered threshold 2026-05-26)", () => {
+    expect(portalIsWalkable(makePortal({ is_open_path: true, confidence: 0.35 }))).toBe(false);
   });
 
-  it("returns true at exactly 0.6 confidence", () => {
-    expect(portalIsWalkable(makePortal({ is_open_path: true, confidence: 0.6 }))).toBe(true);
+  it("returns true at exactly 0.4 confidence (lowered from 0.6 on 2026-05-26)", () => {
+    expect(portalIsWalkable(makePortal({ is_open_path: true, confidence: 0.4 }))).toBe(true);
+  });
+
+  it("returns true for confidence between 0.4 and 0.6 (previously rejected)", () => {
+    expect(portalIsWalkable(makePortal({ is_open_path: true, confidence: 0.55 }))).toBe(true);
   });
 });
 

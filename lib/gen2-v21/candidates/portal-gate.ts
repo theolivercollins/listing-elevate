@@ -3,9 +3,12 @@ import type { PhotoSceneFacts, VisiblePortal } from "../types.js";
 /**
  * Returns true if the portal represents a physically walkable path.
  * Mirrors and windows have is_open_path = false and are excluded.
+ *
+ * Threshold lowered from >= 0.6 to >= 0.4 on 2026-05-26 per operator feedback
+ * ("only 2 scenes got pairs"). Future tightening should reference labeled data.
  */
 export function portalIsWalkable(p: VisiblePortal): boolean {
-  return p.is_open_path && p.confidence >= 0.6;
+  return p.is_open_path && p.confidence >= 0.4;
 }
 
 /**
