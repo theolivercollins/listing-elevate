@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo, type CSSProperties } from "react";
 import { LabSubNav } from "@/components/dashboard/LabSubNav";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
   Loader2,
   AlertTriangle,
@@ -119,15 +119,50 @@ const RATING_TAGS = [
   "low quality",
 ];
 
+// ─── Version segmented control ───
+
+type PipelineVersion = 'v1' | 'v1.1';
+
+function VersionToggle({ version, onChange }: { version: PipelineVersion; onChange: (v: PipelineVersion) => void }) {
+  const options: Array<{ value: PipelineVersion; label: string }> = [
+    { value: 'v1', label: 'v1 — Default' },
+    { value: 'v1.1', label: 'v1.1 — Seedance' },
+  ];
+  return (
+    <div className="le-seg" style={{ marginBottom: 0, alignSelf: 'flex-start' }}>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`le-seg-item${version === opt.value ? ' is-active' : ''}`}
+          style={{ fontFamily: 'var(--le-font-sans)' }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const PromptLab = () => {
   const { sessionId } = useParams<{ sessionId?: string }>();
-  if (sessionId) return <SessionDetail sessionId={sessionId} />;
-  return <SessionList />;
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const rawV = searchParams.get('v');
+  const version: PipelineVersion = rawV === 'v1.1' ? 'v1.1' : 'v1';
+
+  function handleVersionChange(v: PipelineVersion) {
+    setSearchParams({ v }, { replace: true });
+  }
+
+  if (sessionId) return <SessionDetail sessionId={sessionId} version={version} onVersionChange={handleVersionChange} />;
+  return <SessionList version={version} onVersionChange={handleVersionChange} />;
 };
 
 // ─── List view ───
 
-function SessionList() {
+function SessionList({ version, onVersionChange }: { version: PipelineVersion; onVersionChange: (v: PipelineVersion) => void }) {
   const [sessions, setSessions] = useState<LabSession[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -140,7 +175,7 @@ function SessionList() {
 
   async function reload() {
     try {
-      const r = await listSessions({ includeArchived: showArchived });
+      const r = await listSessions({ includeArchived: showArchived, pipelineVersion: version });
       setSessions(r.sessions);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -149,7 +184,7 @@ function SessionList() {
 
   useEffect(() => {
     reload();
-  }, [showArchived]);
+  }, [showArchived, version]);
 
   useEffect(() => {
     reload();
@@ -183,6 +218,7 @@ function SessionList() {
           image_path: path,
           label: f.name.replace(/\.[^.]+$/, ""),
           batch_label: batch ?? undefined,
+          pipelineVersion: version,
         });
         createdIds.push(session.id);
         setUploadProgress({ done: i + 1, total: files.length });
@@ -226,6 +262,7 @@ function SessionList() {
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <LabSubNav />
+      <VersionToggle version={version} onChange={onVersionChange} />
       <PageHeading
         eyebrow="Lab"
         title="Prompt Lab"
@@ -258,7 +295,9 @@ function SessionList() {
             color: "var(--muted)",
           }}
         >
-          No sessions yet. Upload an image above to start.
+          {version === 'v1.1'
+            ? "No v1.1 sessions yet. Click ‘New session’ to create one — every iteration will route through Seedance 2.0 push-in with FFmpeg speed-ramp polish, separate from your v1 work."
+            : "No sessions yet. Upload an image above to start."}
         </div>
       ) : (
         <BatchGroups sessions={sessions} onReload={reload} showArchived={showArchived} setShowArchived={setShowArchived} />
@@ -1230,7 +1269,7 @@ function SessionCard({
 
 // ─── Detail view ───
 
-function SessionDetail({ sessionId }: { sessionId: string }) {
+function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: string; version: PipelineVersion; onVersionChange: (v: PipelineVersion) => void }) {
   const navigate = useNavigate();
   const [data, setData] = useState<{ session: LabSession; iterations: LabIteration[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1448,8 +1487,14 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
   const latest = iterations[iterations.length - 1];
   const totalCost = iterations.reduce((sum, it) => sum + (it.cost_cents ?? 0), 0);
 
+  // Derive version from the session itself (source of truth), falling back to
+  // the URL param. The session is locked at create time so these should agree.
+  const sessionVersion: PipelineVersion = session.pipeline_version ?? version;
+  const isV11 = sessionVersion === 'v1.1';
+
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <VersionToggle version={sessionVersion} onChange={onVersionChange} />
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <Link to="/dashboard/development/prompt-lab" title="Back to list" style={{ color: "var(--muted)", display: "inline-flex" }}>
@@ -1481,7 +1526,27 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <div>
-            <span className="le-d-label">Lab · Session</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="le-d-label">Lab · Session</span>
+              {/* Version badge — read-only. Switch version via SessionList. */}
+              <span
+                style={{
+                  borderRadius: 6,
+                  background: isV11 ? 'rgba(115,80,195,0.10)' : 'rgba(11,11,16,0.06)',
+                  padding: '2px 8px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: isV11 ? 'var(--accent)' : 'var(--muted)',
+                  fontFamily: 'var(--le-font-sans)',
+                  userSelect: 'none',
+                }}
+                title={isV11 ? 'v1.1 — Seedance push-in. To switch versions, go back to the session list.' : 'v1 — Default mixed-movement routing.'}
+              >
+                {isV11 ? 'v1.1 — Seedance push-in' : 'v1 — Default'}
+              </span>
+            </div>
             <EditableLabel
               value={session.label}
               placeholder="Untitled session"
@@ -1596,6 +1661,7 @@ function SessionDetail({ sessionId }: { sessionId: string }) {
                   key={it.id}
                   iteration={it}
                   isLatest={it.id === latest?.id}
+                  isV11={isV11}
                   busy={busy}
                   onRender={(provider, sku) => handleRender(it.id, provider, sku)}
                   onRefine={(p) => handleRefine(it.id, p)}
@@ -2111,6 +2177,7 @@ function OverridePanel({
 function IterationCard({
   iteration,
   isLatest,
+  isV11,
   busy,
   onRender,
   onRefine,
@@ -2121,6 +2188,8 @@ function IterationCard({
 }: {
   iteration: LabIteration;
   isLatest: boolean;
+  /** When true the session is v1.1 — hide SKU picker, camera-movement controls, and rerender buttons. */
+  isV11?: boolean;
   busy: string | null;
   onRender: (provider: "kling" | "runway" | null, sku: SkuChoice) => void;
   onRefine: (payload: { rating: number | null; tags: string[]; comment: string; chatInstruction: string }) => void;
@@ -2413,8 +2482,8 @@ function IterationCard({
           />
         )}
 
-        {/* Try with different provider (any iteration that has a clip or director output) */}
-        {director && (iteration.clip_url || iteration.render_error) && (
+        {/* Try with different provider — hidden on v1.1 (single SKU, no choice) */}
+        {!isV11 && director && (iteration.clip_url || iteration.render_error) && (
           <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Try with:</span>
             {(["kling", "runway"] as const)
@@ -2439,8 +2508,8 @@ function IterationCard({
           </div>
         )}
 
-        {/* Try another SKU (Atlas) */}
-        {(iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
+        {/* Try another SKU (Atlas) — hidden on v1.1 */}
+        {!isV11 && (iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
           <div style={{ marginTop: 8, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
             <span style={{ color: "var(--muted)" }}>
               {iteration.render_error ? "Retry on another SKU:" : "Try another SKU:"}
@@ -2474,6 +2543,13 @@ function IterationCard({
           <PromoteRecipeControl iteration={iteration} director={director} />
         )}
 
+        {/* v1.1 note — shown instead of the SKU picker + rerender buttons */}
+        {isV11 && director && (
+          <div style={{ marginTop: 16, borderRadius: "var(--radius-sm)", background: "rgba(115,80,195,0.06)", border: "1px solid rgba(115,80,195,0.15)", padding: "8px 12px", fontSize: 12, color: "var(--accent)", fontFamily: "var(--le-font-sans)" }}>
+            v1.1 — Seedance 2.0 push-in. Camera movement forced to push-in; speed-ramp polish applied on download.
+          </div>
+        )}
+
         {/* Render controls (latest only, not currently rendering) */}
         {isLatest && !iteration.clip_url && !iteration.provider_task_id && director && (
           <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
@@ -2490,71 +2566,79 @@ function IterationCard({
                 }}
                 style={{ accentColor: "var(--accent)", cursor: "pointer" }}
               />
-              Render for real (~$0.36–$1.11 per clip depending on SKU)
+              {isV11 ? "Render for real (Seedance 2.0 push-in)" : "Render for real (~$0.36–$1.11 per clip depending on SKU)"}
             </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
-              <label style={{ color: "var(--muted)" }}>SKU:</label>
-              <select
-                value={sku}
-                onChange={(e) => setSku(e.target.value as SkuChoice)}
-                disabled={!renderForReal || rendering}
-                style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
-              >
-                {SKU_DROPDOWN_OPTIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {V1_SKU_LABELS[s]} — {s === "kling-v2-native" ? "credits" : `≈ $${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}`}
-                  </option>
-                ))}
-              </select>
-              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
-                {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
-              </span>
-            </div>
-            <SkuAffinityHint
-              cameraMovement={(director as { camera_movement?: string } | null)?.camera_movement ?? null}
-              sku={sku}
-              onPickSuggested={(s) => setSku(s as SkuChoice)}
-            />
-            {showAdvancedProvider ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                <select
-                  value={providerChoice}
-                  onChange={(e) => setProviderChoice(e.target.value as "auto" | "kling" | "runway")}
-                  disabled={!renderForReal || rendering}
-                  style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
-                  title="Provider override. Default is Atlas (routes via your selected SKU). Kling native burns pre-paid credits instead of Atlas billing. Runway uses Gen-4 instead of Kling."
-                >
-                  <option value="auto">Atlas (default)</option>
-                  <option value="kling">Kling native</option>
-                  <option value="runway">Runway Gen-4</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => { setProviderChoice("auto"); setShowAdvancedProvider(false); }}
-                  disabled={!renderForReal || rendering}
-                  style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
-                  title="Reset to Atlas (default) and collapse"
-                >
-                  ◂
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setShowAdvancedProvider(true)}
-                disabled={!renderForReal || rendering}
-                style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
-                title="Show provider override (Kling native / Runway)"
-              >
-                Advanced ▸
-              </button>
+            {/* SKU dropdown is hidden on v1.1 — Seedance is the only option */}
+            {!isV11 && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
+                  <label style={{ color: "var(--muted)" }}>SKU:</label>
+                  <select
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value as SkuChoice)}
+                    disabled={!renderForReal || rendering}
+                    style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                  >
+                    {SKU_DROPDOWN_OPTIONS.map((s) => (
+                      <option key={s} value={s}>
+                        {V1_SKU_LABELS[s]} — {s === "kling-v2-native" ? "credits" : `≈ $${(V1_SKU_COST_CENTS[s] / 100).toFixed(2)}`}
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
+                    {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
+                  </span>
+                </div>
+                <SkuAffinityHint
+                  cameraMovement={(director as { camera_movement?: string } | null)?.camera_movement ?? null}
+                  sku={sku}
+                  onPickSuggested={(s) => setSku(s as SkuChoice)}
+                />
+                {showAdvancedProvider ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                    <select
+                      value={providerChoice}
+                      onChange={(e) => setProviderChoice(e.target.value as "auto" | "kling" | "runway")}
+                      disabled={!renderForReal || rendering}
+                      style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                      title="Provider override. Default is Atlas (routes via your selected SKU). Kling native burns pre-paid credits instead of Atlas billing. Runway uses Gen-4 instead of Kling."
+                    >
+                      <option value="auto">Atlas (default)</option>
+                      <option value="kling">Kling native</option>
+                      <option value="runway">Runway Gen-4</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { setProviderChoice("auto"); setShowAdvancedProvider(false); }}
+                      disabled={!renderForReal || rendering}
+                      style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                      title="Reset to Atlas (default) and collapse"
+                    >
+                      ◂
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvancedProvider(true)}
+                    disabled={!renderForReal || rendering}
+                    style={{ fontSize: 10, color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                    title="Show provider override (Kling native / Runway)"
+                  >
+                    Advanced ▸
+                  </button>
+                )}
+              </>
             )}
             <button
               type="button"
               className={renderForReal ? "le-btn-dark" : "le-btn-ghost"}
               disabled={!renderForReal || rendering}
               onClick={() => {
-                if (isNativeKlingSku(sku)) {
+                if (isV11) {
+                  // v1.1: server always overrides to seedance-pro-pushin; pass null provider + null sku.
+                  onRender(null, sku);
+                } else if (isNativeKlingSku(sku)) {
                   onRender("kling", sku);
                 } else if (isNativeRunwaySku(sku)) {
                   onRender("runway", sku);

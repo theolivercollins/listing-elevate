@@ -64,10 +64,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
   const { data: iteration, error: iErr } = await supabase
     .from("prompt_lab_iterations")
-    .select("*, prompt_lab_sessions(image_url)")
+    .select("*, prompt_lab_sessions(image_url, pipeline_version)")
     .eq("id", iteration_id)
     .single();
   if (iErr || !iteration) return res.status(404).json({ error: "iteration not found" });
+
+  // Read the pipeline_version from the parent session. Defaults to 'v1' for
+  // sessions created before migration 067 (ADD COLUMN IF NOT EXISTS DEFAULT 'v1').
+  const pipelineVersion: "v1" | "v1.1" =
+    ((iteration.prompt_lab_sessions as { pipeline_version?: string } | null)?.pipeline_version ?? "v1") === "v1.1"
+      ? "v1.1"
+      : "v1";
+
+  // v1.1: override the user-supplied SKU — seedance-pro-pushin is the only
+  // valid SKU for v1.1 sessions. The V1_ATLAS_SKUS validation above runs
+  // only on v1 sessions; for v1.1 the sku param is ignored entirely.
+  if (pipelineVersion === "v1.1") {
+    sku = null; // ignored — submitLabRender handles the override internally
+  }
   if (!iteration.director_output_json) {
     return res.status(400).json({ error: "iteration has no director output to render" });
   }
@@ -120,9 +134,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       imageUrl,
       scene: iteration.director_output_json,
       roomType: iteration.analysis_json?.room_type ?? "other",
-      providerOverride: providerOverride === "kling" || providerOverride === "runway" ? providerOverride : null,
+      // v1.1: providerOverride is intentionally ignored — Seedance forces Atlas.
+      providerOverride: pipelineVersion === "v1.1" ? null : (providerOverride === "kling" || providerOverride === "runway" ? providerOverride : null),
       endImageUrl,
       sku,
+      pipelineVersion,
     });
 
     // Audit A C2: Atlas POST has already fired (account charged). Retry the
@@ -138,6 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             render_error: null,
             model_used: resolvedSku,
             sku_source: "captured_at_render",
+            pipeline_version: pipelineVersion,
           })
           .eq("id", iteration_id)
           .select()

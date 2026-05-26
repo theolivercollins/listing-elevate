@@ -14,12 +14,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "GET") {
     const includeArchived = req.query.include_archived === "true";
+    const pipelineVersion = req.query.pipeline_version;
     let query = supabase
       .from("prompt_lab_sessions")
-      .select("id, created_by, image_url, image_path, label, archetype, batch_label, archived, created_at")
+      .select("id, created_by, image_url, image_path, label, archetype, batch_label, archived, created_at, pipeline_version")
       .order("created_at", { ascending: false })
       .limit(200);
     if (!includeArchived) query = query.eq("archived", false);
+    if (pipelineVersion === "v1" || pipelineVersion === "v1.1") {
+      query = query.eq("pipeline_version", pipelineVersion);
+    }
     const { data, error } = await query;
     if (error) return res.status(500).json({ error: error.message });
 
@@ -118,13 +122,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === "POST") {
-    const { image_url, image_path, label, archetype, batch_label, cell_key } = (req.body ?? {}) as {
+    const { image_url, image_path, label, archetype, batch_label, cell_key, pipeline_version } = (req.body ?? {}) as {
       image_url?: string;
       image_path?: string;
       label?: string;
       archetype?: string;
       batch_label?: string;
       cell_key?: string | null;
+      pipeline_version?: string;
     };
     if (!image_url || !image_path) {
       return res.status(400).json({ error: "image_url and image_path required" });
@@ -132,6 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cellKey = typeof cell_key === "string" && cell_key.includes("-")
       ? cell_key
       : null;
+    const resolvedPipelineVersion = pipeline_version === "v1.1" ? "v1.1" : "v1";
     const { data, error } = await supabase
       .from("prompt_lab_sessions")
       .insert({
@@ -142,6 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         archetype: archetype ?? null,
         batch_label: batch_label?.trim() || null,
         cell_key: cellKey,
+        pipeline_version: resolvedPipelineVersion,
       })
       .select()
       .single();

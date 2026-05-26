@@ -71,10 +71,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
   const { data: source, error: sErr } = await supabase
     .from("prompt_lab_iterations")
-    .select("*, prompt_lab_sessions(image_url)")
+    .select("*, prompt_lab_sessions(image_url, pipeline_version)")
     .eq("id", source_iteration_id)
     .single();
   if (sErr || !source) return res.status(404).json({ error: "source iteration not found" });
+
+  // Read pipeline_version from the parent session. Defaults to 'v1' for
+  // sessions created before migration 067.
+  const pipelineVersion: "v1" | "v1.1" =
+    ((source.prompt_lab_sessions as { pipeline_version?: string } | null)?.pipeline_version ?? "v1") === "v1.1"
+      ? "v1.1"
+      : "v1";
   if (!source.director_output_json) {
     return res.status(400).json({ error: "source iteration has no director output" });
   }
@@ -98,6 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       embedding_model: source.embedding_model ?? null,
       retrieval_metadata: source.retrieval_metadata ?? null,
       user_comment: `[rerender] Same prompt, trying ${provider} (source: iteration ${source.iteration_number})`,
+      pipeline_version: pipelineVersion,
     })
     .select()
     .single();
@@ -106,15 +114,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const scene = source.director_output_json as any;
     const roomType = (source.analysis_json as any)?.room_type ?? "other";
-    // "rerender with same SKU" is frictionless: explicit body sku wins, else
+    // v1.1: user-supplied provider/sku are ignored entirely — Seedance push-in
+    // is the only render path. effectiveSku is passed as null so submitLabRender's
+    // pipelineVersion='v1.1' branch takes full control.
+    // v1: "rerender with same SKU" is frictionless: explicit body sku wins, else
     // fall back to the source iteration's model_used, then null (router default).
-    const effectiveSku: V1AtlasSku | null = explicitSku ?? ((source.model_used as V1AtlasSku | null | undefined) ?? null);
+    const effectiveSku: V1AtlasSku | null = pipelineVersion === "v1.1"
+      ? null
+      : (explicitSku ?? ((source.model_used as V1AtlasSku | null | undefined) ?? null));
     const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku } = await submitLabRender({
       imageUrl,
       scene,
       roomType,
-      providerOverride: provider,
+      // v1.1: providerOverride is intentionally null — Atlas is forced internally.
+      providerOverride: pipelineVersion === "v1.1" ? null : provider,
       sku: effectiveSku,
+      pipelineVersion,
     });
 
     // Audit A C2: Atlas POST has already fired (account charged). Retry the
@@ -130,6 +145,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             render_error: null,
             model_used: resolvedSku,
             sku_source: "captured_at_render",
+            pipeline_version: pipelineVersion,
           })
           .eq("id", newIteration.id)
           .select()

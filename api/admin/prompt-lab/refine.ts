@@ -74,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         director_output_json: prev.director_output_json,
         embedding: prev.embedding,
         provider: prev.provider,
+        pipeline_version: (prev as Record<string, unknown>).pipeline_version as string | null ?? null,
       },
       rating: effectiveRating,
       promotedBy: auth.user.id,
@@ -99,10 +100,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (parentVec) {
     const parentRoomType = (prev.analysis_json as { room_type?: string } | null)?.room_type ?? null;
+    const parentPipelineVersion = (prev as Record<string, unknown>).pipeline_version as string | null ?? null;
     [exemplars, losers, recipes] = await Promise.all([
       retrieveSimilarIterations(parentVec, { minRating: 4, limit: 5, sessionId: prev.session_id }),
       retrieveSimilarLosers(parentVec, { maxRating: 2, limit: 3, sessionId: prev.session_id }),
-      retrieveMatchingRecipes(parentVec, parentRoomType, { sessionId: prev.session_id }),
+      retrieveMatchingRecipes(parentVec, parentRoomType, {
+        sessionId: prev.session_id,
+        ...(parentPipelineVersion ? { pipelineVersion: parentPipelineVersion } : {}),
+      }),
     ]);
   }
 

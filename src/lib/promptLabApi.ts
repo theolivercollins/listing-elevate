@@ -11,6 +11,8 @@ export interface LabSession {
   batch_label: string | null;
   archived: boolean;
   created_at: string;
+  /** Pipeline version this session was created under. v1 = legacy mixed-movement; v1.1 = Seedance push-in. */
+  pipeline_version: 'v1' | 'v1.1';
   iteration_count?: number;
   best_rating?: number | null;
   completed?: boolean;
@@ -79,6 +81,8 @@ export interface LabIteration {
   judge_error: string | null;
   judge_model: string | null;
   judge_version: string | null;
+  /** Pipeline version inherited from the parent session. */
+  pipeline_version: 'v1' | 'v1.1';
 }
 
 export type { JudgeRubricResult };
@@ -113,13 +117,20 @@ export async function uploadLabImage(file: File): Promise<{ url: string; path: s
   return { url: pub.publicUrl, path };
 }
 
-export function listSessions(opts?: { includeArchived?: boolean }): Promise<{ sessions: LabSession[] }> {
-  const params = opts?.includeArchived ? "?include_archived=true" : "";
+export function listSessions(opts?: { includeArchived?: boolean; pipelineVersion?: 'v1' | 'v1.1' }): Promise<{ sessions: LabSession[] }> {
+  const parts: string[] = [];
+  if (opts?.includeArchived) parts.push("include_archived=true");
+  if (opts?.pipelineVersion) parts.push(`pipeline_version=${encodeURIComponent(opts.pipelineVersion)}`);
+  const params = parts.length ? `?${parts.join("&")}` : "";
   return fetchJSON(`/api/admin/prompt-lab/sessions${params}`);
 }
 
-export function createSession(body: { image_url: string; image_path: string; label?: string; archetype?: string; batch_label?: string }): Promise<LabSession> {
-  return fetchJSON("/api/admin/prompt-lab/sessions", { method: "POST", body: JSON.stringify(body) });
+export function createSession(body: { image_url: string; image_path: string; label?: string; archetype?: string; batch_label?: string; pipelineVersion?: 'v1' | 'v1.1' }): Promise<LabSession> {
+  const { pipelineVersion, ...rest } = body;
+  return fetchJSON("/api/admin/prompt-lab/sessions", {
+    method: "POST",
+    body: JSON.stringify({ ...rest, ...(pipelineVersion ? { pipeline_version: pipelineVersion } : {}) }),
+  });
 }
 
 export function getSession(sessionId: string): Promise<{ session: LabSession; iterations: LabIteration[] }> {

@@ -98,9 +98,14 @@ export async function fetchPerPhotoRetrievalBundle(params: {
   photoId: string;
   roomType: string;
   motionHeadroom: Record<string, boolean> | null;
+  /** pipeline_version of the property being rendered. When supplied, recipe
+   *  retrieval is scoped to recipes tagged with the same version so that
+   *  v1.1 push-in recipes don't bleed into v1 renders and vice versa.
+   *  Defaults to 'v1' when absent for backward compat with existing callers. */
+  pipelineVersion?: string;
   opts?: FetchOpts;
 }): Promise<PerPhotoBundle> {
-  const { photoId, roomType, motionHeadroom, opts = {} } = params;
+  const { photoId, roomType, motionHeadroom, pipelineVersion, opts = {} } = params;
   const supabase = getSupabase();
 
   // Fetch the photo's image_embedding. If null, retrieval degrades to
@@ -130,6 +135,7 @@ export async function fetchPerPhotoRetrievalBundle(params: {
     retrieveMatchingRecipes(embedding, roomType, {
       distanceThreshold: opts.distanceThreshold ?? 0.35,
       limit: opts.recipeLimit ?? 3,
+      ...(pipelineVersion ? { pipelineVersion } : {}),
     }),
     retrieveSimilarIterations(embedding, {
       minRating: 4,

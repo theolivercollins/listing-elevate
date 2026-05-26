@@ -16,7 +16,7 @@ import {
 } from "./prompts/director.js";
 import { sanitizeDirectorPrompt } from "./prompts/sanitize-director.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
-import { selectProvider, resolveDecision, resolveDecisionAsync } from "./providers/router.js";
+import { selectProvider, resolveDecision, resolveDecisionAsync, forceSeedancePushInPrompt } from "./providers/router.js";
 import type { ThompsonDecision } from "./providers/thompson-router.js";
 import { pollUntilComplete, type IVideoProvider } from "./providers/provider.interface.js";
 import { KlingProvider } from "./providers/kling.js";
@@ -328,7 +328,7 @@ export async function retrieveSimilarLosers(
 export async function retrieveMatchingRecipes(
   embedding: number[],
   roomType: string | null,
-  opts: { distanceThreshold?: number; limit?: number; sessionId?: string } = {}
+  opts: { distanceThreshold?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedRecipe[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -345,7 +345,31 @@ export async function retrieveMatchingRecipes(
     } : {}),
   });
   if (error || !data) return [];
-  return data as RetrievedRecipe[];
+  const results = data as RetrievedRecipe[];
+
+  // If a pipeline version filter is requested, fetch pipeline_version for
+  // each returned recipe ID and drop any that don't match. The RPC does not
+  // expose pipeline_version in its result set, so a follow-up SELECT is
+  // required. Uses a single IN query to minimise round-trips.
+  if (opts.pipelineVersion && results.length > 0) {
+    const ids = results.map((r) => r.id);
+    const { data: versionRows } = await supabase
+      .from("prompt_lab_recipes")
+      .select("id, pipeline_version")
+      .in("id", ids);
+    if (versionRows) {
+      const versionMap = new Map<string, string>(
+        (versionRows as Array<{ id: string; pipeline_version: string }>).map(
+          (r) => [r.id, r.pipeline_version]
+        )
+      );
+      return results.filter(
+        (r) => (versionMap.get(r.id) ?? "v1") === opts.pipelineVersion
+      );
+    }
+  }
+
+  return results;
 }
 
 export function renderExemplarBlock(exemplars: RetrievedExemplar[]): string {
@@ -608,6 +632,8 @@ export async function submitLabRender(params: {
   providerOverride?: "kling" | "runway" | null;
   endImageUrl?: string | null;
   sku?: V1AtlasSku | null;
+  /** v1.1 renders bypass normal SKU routing and force Seedance push-in. */
+  pipelineVersion?: "v1" | "v1.1" | null;
 }): Promise<{
   jobId: string;
   provider: string;
@@ -619,6 +645,30 @@ export async function submitLabRender(params: {
   let resolvedSku: V1AtlasSku;
   let thompson: ThompsonDecision | undefined;
   let staticSku: V1AtlasSku;
+
+  // v1.1 — Seedance push-in override. Short-circuits all v1 routing logic.
+  // Thompson sampling does not run for v1.1 (single SKU, no exploration to do).
+  if (params.pipelineVersion === "v1.1") {
+    const SEEDANCE_SKU = "seedance-pro-pushin" as V1AtlasSku;
+    resolvedSku = SEEDANCE_SKU;
+    staticSku = SEEDANCE_SKU;
+    provider = new AtlasProvider(SEEDANCE_SKU);
+    // Prompt override: strip non-push-in verbs, prepend stable preamble.
+    // The stored scene.prompt is NOT mutated — render-time only.
+    const overriddenPrompt = forceSeedancePushInPrompt(params.scene.prompt);
+    const img = await fetch(params.imageUrl);
+    if (!img.ok) throw new Error(`Failed to fetch source image: ${img.status}`);
+    const sourceImage = Buffer.from(await img.arrayBuffer());
+    const job = await provider.generateClip({
+      sourceImage,
+      sourceImageUrl: params.imageUrl,
+      prompt: overriddenPrompt,
+      durationSeconds: params.scene.duration_seconds >= 7 ? 10 : 5,
+      aspectRatio: "16:9",
+      modelOverride: SEEDANCE_SKU,
+    });
+    return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, staticSku };
+  }
 
   if (params.providerOverride === "kling" || params.providerOverride === "runway") {
     // Escape hatch: explicit kling/runway override bypasses Atlas routing.
@@ -789,6 +839,9 @@ export async function autoPromoteIfWinning(params: {
     director_output_json: DirectorSceneOutput | null;
     embedding: unknown;
     provider: string | null;
+    /** pipeline_version from the iteration row. Defaults to 'v1' when absent
+     *  (pre-migration-063 callers or callers that haven't been updated yet). */
+    pipeline_version?: string | null;
   };
   rating: number;
   promotedBy: string;
@@ -841,6 +894,9 @@ export async function autoPromoteIfWinning(params: {
   const slug = Math.random().toString(36).slice(2, 6);
   const prefix = tier === "backup" ? "backup_" : "";
   const archetype = `${prefix}${analysis.room_type}_${director.camera_movement}_${stamp}_${slug}`;
+  // Inherit pipeline_version from the source iteration. Default to 'v1' for
+  // backward compat with pre-migration-063 callers that don't yet supply this field.
+  const pipelineVersion = iterationRow.pipeline_version ?? "v1";
   try {
     const { data: recipe } = await supabase
       .from("prompt_lab_recipes")
@@ -854,6 +910,7 @@ export async function autoPromoteIfWinning(params: {
         rating_at_promotion: rating,
         promoted_by: promotedBy,
         embedding: vec ? toPgVector(vec) : null,
+        pipeline_version: pipelineVersion,
       })
       .select("id, archetype")
       .single();
