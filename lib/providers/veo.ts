@@ -55,11 +55,14 @@ export function getCostCentsForVeo(
   return Math.ceil(durationSeconds) * perSecond;
 }
 
-// Veo max duration is 8 seconds. Values above are clamped.
+// Veo accepts 4–8 seconds inclusive. Anything outside returns HTTP 400
+// "The number value for durationSeconds is out of bound. Please provide a
+// value between 4 and 8, inclusive."
+export const VEO_MIN_DURATION_SECONDS = 4;
 export const VEO_MAX_DURATION_SECONDS = 8;
 
 function clampVeoDuration(requested: number): number {
-  return Math.min(VEO_MAX_DURATION_SECONDS, Math.max(1, Math.round(requested)));
+  return Math.min(VEO_MAX_DURATION_SECONDS, Math.max(VEO_MIN_DURATION_SECONDS, Math.round(requested)));
 }
 
 // ─── Veo operation response shapes ──────────────────────────────────────────
