@@ -22,6 +22,9 @@ interface PairLabelBody {
   model_prediction_at_time?: number | null;
   model_version_at_prediction?: string | null;
   scene_graph_version?: string;
+  /** Pre-computed PickerFeatures captured by the UI at label time. If provided,
+   *  persisted to features_blob so retrain-trigger can use it immediately. */
+  features_blob?: PickerFeatures | null;
 }
 
 const VALID_VERDICTS: Verdict[] = ["good", "bad", "tie"];
@@ -86,6 +89,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       apprentice_was_wrong = body.apprentice_predicted_verdict !== body.operator_verdict;
     }
 
+    // Derive picker training target from verdict: good→1, bad→0, tie→null (excluded from training)
+    const target: 0 | 1 | null =
+      body.operator_verdict === "good" ? 1
+      : body.operator_verdict === "bad" ? 0
+      : null;
+
     const { data: inserted, error: insertErr } = await supabase
       .from("gen2_pair_labels")
       .insert({
@@ -104,6 +113,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         apprentice_predicted_verdict: body.apprentice_predicted_verdict ?? null,
         apprentice_was_wrong,
         labeled_by: auth.user.id,
+        features_blob: body.features_blob ?? null,
+        target,
         created_at: new Date().toISOString(),
       })
       .select("label_id")
@@ -138,7 +149,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       trainAndPersist(capturedSupabase as Parameters<typeof trainAndPersist>[0], async () => {
         const { data } = await capturedSupabase
           .from("gen2_pair_labels")
-          .select("label_id, listing_id, features_blob, target");
+          .select("label_id, listing_id, features_blob, target")
+          // Exclude tie verdicts (target=null) and labels inserted before migration 074
+          // that have no features_blob — both would corrupt the training gradient.
+          .not("target", "is", null)
+          .not("features_blob", "is", null);
         return (data ?? []) as Array<{
           label_id: string;
           listing_id: string;

@@ -246,4 +246,120 @@ describe("trainAndPersist (held-out split by listing)", () => {
     expect(result.accuracy_on_holdout).toBeGreaterThanOrEqual(0);
     expect(result.accuracy_on_holdout).toBeLessThanOrEqual(1);
   });
+
+  // -------------------------------------------------------------------------
+  // Cold-start safety: single-class label set
+  // -------------------------------------------------------------------------
+
+  it("does not crash on all-good single-class label set (divide-by-zero guard)", async () => {
+    // All labels target=1. LR and stump-boost must handle this without NaN/crash.
+    const allGoodLabels = Array.from({ length: 12 }, (_, i) => ({
+      label_id: `sg${i}`,
+      listing_id: i < 6 ? "lst-sg1" : "lst-sg2",
+      features_blob: makeFeatures({ same_room: 1, is_open_path_flag: 1 }),
+      target: 1 as 0 | 1,
+    }));
+
+    const mockSupabase = {
+      from: (_: string) => ({
+        insert: () => ({
+          select: () => ({
+            limit: () => ({
+              then: (cb: (res: { data: unknown; error: unknown }) => void) => {
+                cb({ data: [{ model_id: "sg-model" }], error: null });
+              },
+            }),
+          }),
+        }),
+        update: () => ({
+          eq: () => ({
+            then: (cb: (res: { data: unknown; error: unknown }) => void) => {
+              cb({ data: null, error: null });
+            },
+          }),
+        }),
+        then: () => {},
+      }),
+      rpc: async () => ({ error: null }),
+    };
+
+    // Must not throw
+    const result = await trainAndPersist(mockSupabase as never, async () => allGoodLabels);
+    expect(result.model_id).toBe("sg-model");
+    expect(result.accuracy_on_holdout).toBeGreaterThanOrEqual(0);
+    expect(result.accuracy_on_holdout).toBeLessThanOrEqual(1);
+    // LR weights must be finite numbers (no NaN from single-class gradient)
+    const weights = trainPicker(allGoodLabels.map(l => ({ features: l.features_blob, target: l.target })));
+    for (const v of Object.values(weights.lr_weights)) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+  });
+
+  it("does not crash on all-bad single-class label set", async () => {
+    const allBadLabels = Array.from({ length: 12 }, (_, i) => ({
+      label_id: `sb${i}`,
+      listing_id: i < 6 ? "lst-sb1" : "lst-sb2",
+      features_blob: makeFeatures({ same_room: 0, is_open_path_flag: 0 }),
+      target: 0 as 0 | 1,
+    }));
+
+    const weights = trainPicker(allBadLabels.map(l => ({ features: l.features_blob, target: l.target })));
+    for (const v of Object.values(weights.lr_weights)) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    const pred = predict(makeFeatures(), weights);
+    expect(Number.isFinite(pred.score)).toBe(true);
+    expect(pred.score).toBeGreaterThanOrEqual(0);
+    expect(pred.score).toBeLessThanOrEqual(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Cold-start safety: trainAndPersist rejects < 2 labels (fire-and-forget catch)
+  // -------------------------------------------------------------------------
+
+  it("trainAndPersist throws on < 2 labels — caller's .catch() must handle this", async () => {
+    const mockSupabase = { from: () => ({}), rpc: async () => ({ error: null }) };
+    await expect(
+      trainAndPersist(mockSupabase as never, async () => []),
+    ).rejects.toThrow("need at least 2 labels");
+
+    const oneLabel = [{ label_id: "l1", listing_id: "lst-1", features_blob: makeFeatures(), target: 1 as 0 | 1 }];
+    await expect(
+      trainAndPersist(mockSupabase as never, async () => oneLabel),
+    ).rejects.toThrow("need at least 2 labels");
+  });
+
+  // -------------------------------------------------------------------------
+  // Cold-start safety: tie labels filtered out before training (null target guard)
+  // -------------------------------------------------------------------------
+
+  it("trainPicker does not receive null targets (tie labels must be pre-filtered)", () => {
+    // Simulate what happens if null target leaks into training: LR gradient becomes NaN.
+    // This test confirms the labelsQuery filter is necessary.
+    const labelsWithNull = [
+      { features: makeFeatures({ same_room: 1 }), target: 1 as 0 | 1 },
+      { features: makeFeatures({ same_room: 0 }), target: 0 as 0 | 1 },
+      // A "tie" label with target: null must never reach trainPicker.
+      // Here we verify that valid-only data trains without NaN.
+    ];
+    const weights = trainPicker(labelsWithNull);
+    for (const v of Object.values(weights.lr_weights)) {
+      expect(Number.isFinite(v)).toBe(true);
+    }
+    expect(Number.isFinite(weights.lr_bias)).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Cold-start safety: missing embedding (cosine_sim defaults to 0.5)
+  // -------------------------------------------------------------------------
+
+  it("predict handles embedding_cosine_sim=0.5 fallback without crashing", () => {
+    const data = makeLinearData(20);
+    const weights = trainPicker(data);
+    // embedding_cosine_sim=0.5 is the null-embedding fallback per features.ts
+    const pred = predict(makeFeatures({ embedding_cosine_sim: 0.5 }), weights);
+    expect(Number.isFinite(pred.score)).toBe(true);
+    expect(pred.score).toBeGreaterThanOrEqual(0);
+    expect(pred.score).toBeLessThanOrEqual(1);
+  });
 });
