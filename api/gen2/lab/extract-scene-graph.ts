@@ -1,6 +1,7 @@
-// POST /api/gen2/lab/extract-scene-graph
-// Body: { listingId: string }
-// Auth-gated. Extracts scene graph via Gemini, persists to gen2_scene_graphs.
+// /api/gen2/lab/extract-scene-graph
+// POST { listingId } — extract via Gemini + upsert to gen2_scene_graphs
+// GET  ?check=1&listingId= — return { exists: boolean }
+// Auth-gated.
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
@@ -13,20 +14,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(404).json({ error: "Not found" });
   }
 
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
   const auth = await requireAdmin(req, res);
   if (!auth) return;
+
+  const supabase = getSupabase();
+
+  // GET ?check=1&listingId=... → existence check, no extraction
+  if (req.method === "GET") {
+    const listingId = (req.query?.listingId as string | undefined) ?? "";
+    if (!listingId) {
+      return res.status(400).json({ error: "listingId is required" });
+    }
+    const { data, error } = await supabase
+      .from("gen2_scene_graphs")
+      .select("listing_id")
+      .eq("listing_id", listingId)
+      .maybeSingle();
+    if (error) {
+      console.error("[extract-scene-graph] check error:", error);
+      return res.status(500).json({ error: "Check failed" });
+    }
+    return res.status(200).json({ exists: Boolean(data) });
+  }
+
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "GET, POST");
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
   const { listingId } = (req.body ?? {}) as { listingId?: string };
   if (!listingId) {
     return res.status(400).json({ error: "listingId is required" });
   }
-
-  const supabase = getSupabase();
 
   try {
     const photoRefs = await getPhotosForV21Listing(listingId);
@@ -35,14 +54,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const sceneGraph = await extractSceneGraph(listingId, photoRefs);
 
-    // Record Gemini cost (estimate: ~500 tokens per photo at $0.00 → track as qc/google)
+    // Record Gemini cost (estimate: ~500 tokens per photo)
     await recordCostEvent({
       propertyId: listingId,
       stage: "qc",
       provider: "google",
       unitType: "tokens",
-      unitsConsumed: photos.length * 500,
-      costCents: Math.round(photoRefs.length * 0.05), // ~$0.0005/photo placeholder
+      unitsConsumed: photoRefs.length * 500,
+      costCents: Math.round(photoRefs.length * 0.05),
       metadata: { step: "extract-scene-graph", photo_count: photoRefs.length, model: sceneGraph.model_version },
     }).catch((err) => console.error("[extract-scene-graph] cost_events insert failed:", err));
 
