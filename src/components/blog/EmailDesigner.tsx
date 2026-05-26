@@ -11,14 +11,21 @@
 // state tree; the FormApi handle is stashed in a ref so exportHtml can read
 // the current values, convert IPage → MJML via JsonToMjml, then render to
 // inline HTML via mjml-browser.
+//
+// StandardLayout from easy-email-extensions wraps EmailEditor with the
+// block-library side panel + attribute panel — without it the canvas
+// renders but users have no way to drag blocks in.
 
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
 import {
   EmailEditor,
   EmailEditorProvider,
 } from "easy-email-editor";
+import { StandardLayout } from "easy-email-extensions";
 import "easy-email-editor/lib/style.css";
-import { JsonToMjml } from "easy-email-core";
+import "easy-email-extensions/lib/style.css";
+import "@arco-design/web-react/dist/css/arco.css";
+import { AdvancedType, JsonToMjml } from "easy-email-core";
 import type { IBlockData } from "easy-email-core";
 import type { FormApi, FormState } from "final-form";
 import mjml from "mjml-browser";
@@ -48,6 +55,35 @@ interface Props {
   onChange?: () => void;
   onTestSend?: () => void;
 }
+
+const DEFAULT_CATEGORIES = [
+  {
+    label: "Content",
+    active: true,
+    blocks: [
+      { type: AdvancedType.TEXT },
+      { type: AdvancedType.IMAGE },
+      { type: AdvancedType.BUTTON },
+      { type: AdvancedType.SOCIAL },
+      { type: AdvancedType.DIVIDER },
+      { type: AdvancedType.SPACER },
+      { type: AdvancedType.HERO },
+      { type: AdvancedType.WRAPPER },
+    ],
+  },
+  {
+    label: "Layout",
+    displayType: "column" as const,
+    blocks: [
+      { title: "1 column", payload: [["100%"]] },
+      { title: "2 columns", payload: [["50%", "50%"]] },
+      { title: "3 columns", payload: [["33%", "33%", "33%"]] },
+      { title: "4 columns", payload: [["25%", "25%", "25%", "25%"]] },
+      { title: "2 / 1 (66/33)", payload: [["66%", "33%"]] },
+      { title: "1 / 2 (33/66)", payload: [["33%", "66%"]] },
+    ],
+  },
+];
 
 function buildInitialValues(
   initialDesign: unknown,
@@ -140,7 +176,7 @@ const EmailDesigner = forwardRef<EmailDesignerHandle, Props>(function EmailDesig
           </Button>
         )}
         <span className="ml-auto text-xs text-muted-foreground">
-          Drag-and-drop builder powered by Easy Email · MJML output
+          Drag blocks from the left panel · MJML output for cross-client deliverability
         </span>
       </div>
 
@@ -153,7 +189,15 @@ const EmailDesigner = forwardRef<EmailDesignerHandle, Props>(function EmailDesig
         >
           {(_formState: FormState<IEmailValues>, helper: FormApi<IEmailValues>) => {
             formApiRef.current = helper;
-            return <EmailEditor />;
+            return (
+              <StandardLayout
+                compact={false}
+                showSourceCode={false}
+                categories={DEFAULT_CATEGORIES}
+              >
+                <EmailEditor />
+              </StandardLayout>
+            );
           }}
         </EmailEditorProvider>
       </div>

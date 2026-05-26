@@ -102,17 +102,29 @@ export default function EmailsList() {
         </DropdownMenu>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {STATE_FILTERS.map((f) => (
-          <Button
-            key={f.value}
-            size="sm"
-            variant={state === f.value ? "default" : "outline"}
-            onClick={() => setState(f.value)}
-          >
-            {f.label}
-          </Button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <nav
+          className="inline-flex items-center gap-1 rounded-full bg-muted/40 p-1"
+          aria-label="Email state filter"
+        >
+          {STATE_FILTERS.map((f) => {
+            const active = state === f.value;
+            return (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setState(f.value)}
+                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                  active
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </nav>
         <Input
           placeholder="Search subject…"
           value={q}
@@ -121,6 +133,13 @@ export default function EmailsList() {
         />
       </div>
 
+      {!isLoading && !isError && emails.length === 0 && state === "all" && !q ? (
+        <EmptyState
+          onChat={() => navigate("/dashboard/studio/email/messages/new?chat=1")}
+          onBlank={() => navigate("/dashboard/studio/email/messages/new")}
+          onFromPost={() => setPostPickerOpen(true)}
+        />
+      ) : (
       <div className="rounded-md border">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-left text-xs">
@@ -142,12 +161,8 @@ export default function EmailsList() {
                 <button onClick={() => refetch()} className="mt-2 text-xs underline text-muted-foreground">Retry</button>
               </td></tr>
             ) : emails.length === 0 ? (
-              <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">
-                {state === "all" && !q ? (
-                  <>No emails yet — click <span className="font-medium">New email</span> to start.</>
-                ) : (
-                  <>No emails match the current filter. <button onClick={() => { setState("all"); setQ(""); }} className="underline">Clear filters</button>.</>
-                )}
+              <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">
+                No emails match the current filter. <button onClick={() => { setState("all"); setQ(""); }} className="underline">Clear filters</button>.
               </td></tr>
             ) : emails.map((e) => (
               <tr key={e.id} className="border-t hover:bg-muted/20">
@@ -183,12 +198,82 @@ export default function EmailsList() {
           </tbody>
         </table>
       </div>
+      )}
 
       <PostPickerDialog
         open={postPickerOpen}
         onClose={() => setPostPickerOpen(false)}
         onSuccess={(emailId) => navigate(`/dashboard/studio/email/messages/${emailId}`)}
       />
+    </div>
+  );
+}
+
+function EmptyState({
+  onChat,
+  onBlank,
+  onFromPost,
+}: {
+  onChat: () => void;
+  onBlank: () => void;
+  onFromPost: () => void;
+}) {
+  const cards = [
+    {
+      title: "Chat with Ally",
+      sub: "Tell Ally what you want to say. She drafts the subject, preheader, body, and audience.",
+      icon: MessageSquare,
+      onClick: onChat,
+      cta: "Start a chat",
+    },
+    {
+      title: "Visual builder",
+      sub: "Drag-and-drop on a blank canvas. Native blocks, MJML output, brand-styled.",
+      icon: Mail,
+      onClick: onBlank,
+      cta: "Open builder",
+    },
+    {
+      title: "From a blog post",
+      sub: "Pick a recent post and Ally converts it to a matching email.",
+      icon: Sparkles,
+      onClick: onFromPost,
+      cta: "Pick a post",
+    },
+  ];
+  return (
+    <div className="rounded-2xl border bg-background/50 px-6 py-12">
+      <div className="mx-auto max-w-2xl text-center">
+        <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-muted/60">
+          <Mail className="h-5 w-5 text-muted-foreground" />
+        </div>
+        <h2 className="text-lg font-semibold">No emails yet</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Pick how you want to start your first email.
+        </p>
+      </div>
+      <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-3">
+        {cards.map((c) => {
+          const Icon = c.icon;
+          return (
+            <button
+              key={c.title}
+              type="button"
+              onClick={c.onClick}
+              className="group flex flex-col rounded-xl border bg-background p-4 text-left transition-all hover:border-foreground/30 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
+            >
+              <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-muted/60 transition-colors group-hover:bg-foreground group-hover:text-background">
+                <Icon className="h-4 w-4" />
+              </div>
+              <div className="text-sm font-semibold">{c.title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{c.sub}</div>
+              <div className="mt-3 text-xs font-medium text-foreground/80 group-hover:text-foreground">
+                {c.cta} →
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
