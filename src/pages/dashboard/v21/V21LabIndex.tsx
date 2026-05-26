@@ -1,9 +1,15 @@
 import { Suspense, lazy, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
-import { PageHeading, Card } from "@/components/dashboard/primitives";
+import { PageHeading } from "@/components/dashboard/primitives";
 import type { LabMode, ModeState } from "../../../../lib/gen2-v21/types.js";
+
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const DirectorsCutLab = lazy(() => import("./DirectorsCutLab"));
 const ApprenticeReview = lazy(() => import("./ApprenticeReview"));
@@ -12,13 +18,7 @@ const ObservabilityPanel = lazy(() => import("./ObservabilityPanel"));
 // "observability" isn't a LabMode in types, so we extend locally
 type TabId = LabMode | "observability";
 
-const TAB_ITEMS: { id: TabId; label: string }[] = [
-  { id: "directors_cut", label: "Director's Cut" },
-  { id: "apprentice_review", label: "Apprentice Review" },
-  { id: "observability", label: "Observability" },
-];
-
-// ── authedFetch helper (mirrors labListingsApi pattern) ─────────────
+// ── authedFetch helper ─────────────────────────────────────────────
 async function authedFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = init?.body ? { "Content-Type": "application/json" } : {};
@@ -113,8 +113,17 @@ export default function V21LabIndex() {
     modeState.recommended_mode !== modeState.current_mode &&
     (modeState.recommended_mode === "directors_cut" || modeState.recommended_mode === "apprentice_review");
 
+  const tabFallback = (
+    <div className="flex items-center gap-2.5 text-[var(--muted)] text-sm py-10">
+      <svg className="animate-spin" width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+        <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+      </svg>
+      Loading…
+    </div>
+  );
+
   return (
-    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div className="le-fade-up flex flex-col gap-6">
       <PageHeading
         eyebrow="Lab · V2"
         title="Pair-Picker Lab"
@@ -122,119 +131,117 @@ export default function V21LabIndex() {
       />
 
       {/* Property selector */}
-      <Card padding={20}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <label style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)", minWidth: 80 }}>
-            Property
-          </label>
-          {listings === null ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--muted)" }}>
-              <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />
-              Loading…
-            </div>
-          ) : (
-            <select
-              value={selectedId}
-              onChange={(e) => {
-                setSelectedId(e.target.value);
-                setSceneGraphExists(null);
-              }}
-              style={{
-                padding: "7px 12px",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--line)",
-                background: "var(--surface)",
-                fontSize: 13,
-                color: "var(--ink)",
-                fontFamily: "var(--le-font-sans)",
-                outline: "none",
-                minWidth: 240,
-              }}
-            >
-              <option value="" disabled>Select a listing…</option>
-              {listings.map((l) => (
-                <option key={l.id} value={l.id}>{l.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
+      <Card className="border-[var(--line)] bg-[var(--surface)]">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="text-sm font-semibold text-[var(--ink)] min-w-[80px]">
+              Property
+            </label>
+            {listings === null ? (
+              <Skeleton className="h-9 w-60 rounded-lg" />
+            ) : (
+              <Select
+                value={selectedId}
+                onValueChange={(val) => {
+                  setSelectedId(val);
+                  setSceneGraphExists(null);
+                }}
+              >
+                <SelectTrigger className="w-72 border-[var(--line)] bg-[var(--surface)] text-sm">
+                  <SelectValue placeholder="Select a listing…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listings.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       {selectedId && (
         <>
           {/* Scene graph extraction */}
-          <Card padding={20}>
-            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", marginBottom: 4 }}>Scene Graph</div>
-                <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
-                  {loadingGraph
-                    ? "Checking…"
-                    : sceneGraphExists === true
-                    ? "Scene graph extracted — ready to label pairs."
-                    : sceneGraphExists === false
-                    ? "No scene graph yet. Extract to enable pair picking."
-                    : ""}
+          <Card className="border-[var(--line)] bg-[var(--surface)]">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex-1 min-w-[200px]">
+                  <div className="text-sm font-semibold text-[var(--ink)] mb-1">Scene Graph</div>
+                  <div className="text-xs text-[var(--muted)]">
+                    {loadingGraph
+                      ? "Checking…"
+                      : sceneGraphExists === true
+                      ? "Scene graph extracted — ready to label pairs."
+                      : sceneGraphExists === false
+                      ? "No scene graph yet. Extract to enable pair picking."
+                      : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {sceneGraphExists === false && (
+                    <Button
+                      disabled={extracting}
+                      onClick={handleExtract}
+                      className="gap-2"
+                    >
+                      {extracting && (
+                        <svg className="animate-spin" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                        </svg>
+                      )}
+                      {extracting ? "Extracting…" : "Extract scene graph"}
+                    </Button>
+                  )}
+                  {sceneGraphExists === true && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={extracting}
+                      onClick={handleExtract}
+                      className="gap-1.5 text-xs"
+                    >
+                      {extracting && (
+                        <svg className="animate-spin" width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                        </svg>
+                      )}
+                      Re-extract
+                    </Button>
+                  )}
                 </div>
               </div>
-              {sceneGraphExists === false && (
-                <button
-                  type="button"
-                  className="le-btn-dark"
-                  disabled={extracting}
-                  onClick={handleExtract}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                >
-                  {extracting && <Loader2 style={{ width: 14, height: 14, animation: "spin 1s linear infinite" }} />}
-                  {extracting ? "Extracting…" : "Extract scene graph"}
-                </button>
+              {extractError && (
+                <div className="mt-3 px-3 py-2.5 rounded-xl border border-[rgba(196,74,74,0.18)] bg-[rgba(196,74,74,0.07)] text-xs text-[var(--bad)]">
+                  {extractError}
+                </div>
               )}
-              {sceneGraphExists === true && (
-                <button
-                  type="button"
-                  className="le-btn-ghost"
-                  disabled={extracting}
-                  onClick={handleExtract}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                >
-                  {extracting && <Loader2 style={{ width: 12, height: 12, animation: "spin 1s linear infinite" }} />}
-                  Re-extract
-                </button>
-              )}
-            </div>
-            {extractError && (
-              <div style={{ marginTop: 12, padding: "8px 12px", borderRadius: "var(--radius-sm)", background: "rgba(196,74,74,0.07)", border: "1px solid rgba(196,74,74,0.18)", fontSize: 12.5, color: "var(--bad)" }}>
-                {extractError}
-              </div>
-            )}
+            </CardContent>
           </Card>
 
           {/* Mode recommendation banner */}
           {modeMismatch && modeState && (
             <div
+              className="px-4 py-3 rounded-xl flex items-center gap-3 flex-wrap text-sm text-[var(--ink-2)]"
               style={{
-                padding: "12px 16px",
-                borderRadius: "var(--radius-sm)",
-                background: "rgba(var(--accent-rgb, 99, 102, 241), 0.07)",
-                border: "1px solid rgba(var(--accent-rgb, 99, 102, 241), 0.22)",
-                fontSize: 13,
-                color: "var(--ink-2)",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                flexWrap: "wrap",
+                background: "rgba(42,111,219,0.06)",
+                border: "1px solid rgba(42,111,219,0.18)",
               }}
             >
-              <span>
+              <span className="flex-1">
                 Apprentice agreement is{" "}
                 <strong>{Math.round(modeState.apprentice_agreement_rate * 100)}%</strong> across{" "}
                 {modeState.total_labels} labels — recommended mode is{" "}
-                <strong>{modeState.recommended_mode === "directors_cut" ? "Director's Cut" : "Apprentice Review"}</strong>.
+                <strong>
+                  {modeState.recommended_mode === "directors_cut" ? "Director's Cut" : "Apprentice Review"}
+                </strong>.
               </span>
-              <button
-                type="button"
-                className="le-btn-dark"
-                style={{ fontSize: 12, padding: "5px 12px" }}
+              <Button
+                size="sm"
+                className="text-xs"
                 onClick={() => {
                   if (modeState.recommended_mode === "directors_cut" || modeState.recommended_mode === "apprentice_review") {
                     setActiveTab(modeState.recommended_mode);
@@ -242,53 +249,53 @@ export default function V21LabIndex() {
                 }}
               >
                 Switch?
-              </button>
+              </Button>
             </div>
           )}
 
-          {/* Mode tabs */}
-          <div style={{ borderBottom: "1px solid var(--line)", display: "flex", gap: 0 }}>
-            {TAB_ITEMS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  padding: "10px 20px",
-                  background: "none",
-                  border: "none",
-                  borderBottom: activeTab === tab.id ? "2px solid var(--ink)" : "2px solid transparent",
-                  fontSize: 13,
-                  fontWeight: activeTab === tab.id ? 600 : 400,
-                  color: activeTab === tab.id ? "var(--ink)" : "var(--muted)",
-                  cursor: "pointer",
-                  fontFamily: "var(--le-font-sans)",
-                  marginBottom: -1,
-                  transition: "color 0.15s, border-color 0.15s",
-                }}
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabId)}>
+            <TabsList className="bg-transparent border-b border-[var(--line)] w-full justify-start rounded-none h-auto p-0 gap-0">
+              <TabsTrigger
+                value="directors_cut"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
               >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+                Director's Cut
+              </TabsTrigger>
+              <TabsTrigger
+                value="apprentice_review"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
+              >
+                Apprentice Review
+              </TabsTrigger>
+              <TabsTrigger
+                value="observability"
+                className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--ink)] data-[state=active]:bg-transparent px-5 py-2.5 text-sm font-medium data-[state=active]:font-semibold text-[var(--muted)] data-[state=active]:text-[var(--ink)]"
+              >
+                Observability
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Tab panel */}
-          <Suspense
-            fallback={
-              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13, padding: "32px 0" }}>
-                <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
-                Loading…
-              </div>
-            }
-          >
-            {activeTab === "directors_cut" && <DirectorsCutLab listingId={selectedId} />}
-            {activeTab === "apprentice_review" && <ApprenticeReview listingId={selectedId} />}
-            {activeTab === "observability" && <ObservabilityPanel listingId={selectedId} />}
-          </Suspense>
+            <TabsContent value="directors_cut" className="mt-0">
+              <Suspense fallback={tabFallback}>
+                <DirectorsCutLab listingId={selectedId} />
+              </Suspense>
+            </TabsContent>
+
+            <TabsContent value="apprentice_review" className="mt-4">
+              <Suspense fallback={tabFallback}>
+                <ApprenticeReview listingId={selectedId} />
+              </Suspense>
+            </TabsContent>
+
+            <TabsContent value="observability" className="mt-4 max-w-lg">
+              <Suspense fallback={tabFallback}>
+                <ObservabilityPanel listingId={selectedId} />
+              </Suspense>
+            </TabsContent>
+          </Tabs>
         </>
       )}
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
