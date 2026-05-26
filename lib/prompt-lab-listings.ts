@@ -343,8 +343,9 @@ export async function directListingScenes(listingId: string): Promise<void> {
     try {
       const [recipes, winners, losers] = await Promise.all([
         retrieveMatchingRecipes(vec, pdata.room_type, { limit: 1, pipelineVersion: listingPipelineVersion }),
-        retrieveSimilarIterations(vec, { minRating: 4, limit: 3 }),
-        retrieveSimilarLosers(vec, { maxRating: 2, limit: 2 }),
+        // v1/v1.1 isolation — scope winners + losers to this listing's pipeline_version.
+        retrieveSimilarIterations(vec, { minRating: 4, limit: 3, pipelineVersion: listingPipelineVersion }),
+        retrieveSimilarLosers(vec, { maxRating: 2, limit: 2, pipelineVersion: listingPipelineVersion }),
       ]);
       for (const r of recipes) if (!recipeDedupe.has(r.archetype)) recipeDedupe.set(r.archetype, r);
       for (const w of winners) if (!exemplarDedupe.has(w.id)) exemplarDedupe.set(w.id, w);
