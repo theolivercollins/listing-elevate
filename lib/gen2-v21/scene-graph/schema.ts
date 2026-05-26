@@ -99,8 +99,9 @@ function validatePhotoSceneFacts(raw: unknown, path: string): PhotoSceneFacts {
   if (!isString(raw["photo_id"])) raw["photo_id"] = `unknown_photo_${Math.random().toString(36).slice(2, 8)}`;
   if (!isString(raw["room_id"])) raw["room_id"] = "unknown_room";
   if (!isNumber(raw["room_confidence"])) raw["room_confidence"] = 0.5;
+  // Coerce sub_region: non-string non-null → null (Gemini may return objects or numbers)
   if (raw["sub_region"] !== null && !isString(raw["sub_region"])) {
-    throw new Error(`${path}.sub_region must be string or null`);
+    raw["sub_region"] = null;
   }
   // Coerce unknown bearing vectors to "unknown" rather than throwing.
   // Gemini may return values like "parallel_to_wall" (without N/E/S/W suffix)
@@ -112,8 +113,9 @@ function validatePhotoSceneFacts(raw: unknown, path: string): PhotoSceneFacts {
   if (!SHOT_TYPES.includes(raw["shot_type"] as ShotType)) {
     raw["shot_type"] = "medium";
   }
+  // Coerce focal_subject: non-string non-null → null (defensive, same as sub_region)
   if (raw["focal_subject"] !== null && !isString(raw["focal_subject"])) {
-    throw new Error(`${path}.focal_subject must be string or null`);
+    raw["focal_subject"] = null;
   }
   // Coerce visible_features: ensure it's a string[] (filter out non-strings, default to [])
   if (!isArray(raw["visible_features"])) {
