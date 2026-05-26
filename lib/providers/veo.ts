@@ -145,7 +145,6 @@ export class VeoProvider implements IVideoProvider {
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
     const { b64: imageB64, mimeType } = await this.toBase64WithMime(params);
-    const duration = clampVeoDuration(params.durationSeconds);
 
     // Honor the per-render resolution override from the v1.1 quality dropdown.
     // Falls back to "4k" since that's the reason operators pick Veo. Only
@@ -156,6 +155,18 @@ export class VeoProvider implements IVideoProvider {
       requested === "720p" || requested === "1080p" || requested === "4k"
         ? requested
         : "720p";
+
+    // Veo 3.1 duration rules (empirically verified against the live API,
+    // 2026-05-26):
+    //   - 4K renders ONLY accept durationSeconds=8. Any other value
+    //     returns HTTP 400 — including the misleading "between 4 and 8,
+    //     inclusive" message, which actually means "only 8" for 4K.
+    //   - 1080p / 720p accept 4–8 inclusive.
+    // So when resolution is 4K we force 8 regardless of what the caller
+    // requested; otherwise we clamp into the 4–8 range.
+    const duration = resolution === "4k"
+      ? VEO_MAX_DURATION_SECONDS
+      : clampVeoDuration(params.durationSeconds);
 
     const body = {
       instances: [
