@@ -73,6 +73,18 @@ describe("buildAtlasRequestBody", () => {
     );
     expect(klingLong.duration).toBe(10);
   });
+
+  it("forwards resolution='1080p' for the Seedance SKU descriptor", () => {
+    const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pro-pushin"]);
+    expect(body.resolution).toBe("1080p");
+  });
+
+  it("omits resolution for Kling descriptors (resolution is fixed in-model)", () => {
+    const klingBody = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v2-master"]);
+    expect(klingBody.resolution).toBeUndefined();
+    const v3Body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v3-pro"]);
+    expect(v3Body.resolution).toBeUndefined();
+  });
 });
 
 describe("parseAtlasSubmitResponse", () => {

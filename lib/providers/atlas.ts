@@ -21,6 +21,17 @@ export interface AtlasModelDescriptor {
   durationRange?: { min: number; max: number };
   priceCentsPerSecond: number;   // canonical per-second rate
   priceCentsPerClip: number;     // priceCentsPerSecond × 5 (standard clip)
+  /**
+   * Optional render resolution forwarded to the underlying Replicate model
+   * via the `resolution` input field. When set, Atlas passes it through to
+   * the model (Seedance accepts '480p' | '720p' | '1080p'; some Kling
+   * variants support similar fields). When unset, the model uses its own
+   * default — for Bytedance Seedance that's '720p', which observably
+   * underuses the model's native quality. Kling variants typically have
+   * a fixed output resolution baked into the model (v2 Master is 1080p,
+   * v2.6 Pro is 1080p, etc.) so this field is a no-op there.
+   */
+  resolution?: "480p" | "720p" | "1080p";
 }
 
 // Default clip duration in seconds for cost estimation. Atlas accepts
@@ -91,14 +102,21 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
   // Slug confirmed by Oliver 2026-05-23: bytedance/seedance-2.0/image-to-video.
   // SEEDANCE_ATLAS_SLUG env var still honored as an escape hatch (chasing the
   // next release train without a code change) but no longer required.
-  // ⚠️  Price is a placeholder; verify against the first Atlas invoice before
-  // high-volume use. Marked higher than Kling v2-6-pro to be conservative.
+  //
+  // Resolution forced to 1080p (2026-05-24): without an explicit resolution
+  // field Seedance defaults to 720p (observed: 5 MB / 5s ≈ 8 Mbps). Pushing
+  // to 1080p doubles file size + roughly doubles per-second cost on Replicate
+  // (the published Seedance Pro rate scales with output pixels). Worth it for
+  // customer-facing v1.1 output — the model's native quality is high enough
+  // that the extra resolution actually shows. Price bumped from 14 → 28 ¢/s
+  // to reflect 1080p tier (still a placeholder, verify against first invoice).
   "seedance-pro-pushin": {
     slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
     endFrameField: null,         // Seedance has no start+end-frame support
     allowedDurations: [5, 10],
-    priceCentsPerSecond: 14,     // ⚠️  placeholder — verify against invoice
-    priceCentsPerClip: 70,       // 14 × 5
+    resolution: "1080p",
+    priceCentsPerSecond: 28,     // ⚠️  placeholder for 1080p tier — verify against invoice
+    priceCentsPerClip: 140,      // 28 × 5
   },
 };
 
@@ -168,6 +186,11 @@ export interface AtlasSubmitBody {
   cfg_scale?: number;
   negative_prompt?: string;
   end_image?: string;
+  /** Forwarded to the underlying Replicate model when set. Seedance honors
+   *  '480p' | '720p' | '1080p'. Kling variants ignore it (their output res
+   *  is fixed per-SKU). Atlas passes through unrecognized fields to the
+   *  model's input schema, so it's safe to send on every render. */
+  resolution?: "480p" | "720p" | "1080p";
 }
 
 // Kling v3-pro introduces noticeable camera shake/vibration on push-ins
@@ -199,6 +222,11 @@ export function buildAtlasRequestBody(
   };
   if (params.endImageUrl && model.endFrameField) {
     body[model.endFrameField] = params.endImageUrl;
+  }
+  // Forward per-descriptor resolution (currently only Seedance opts in).
+  // Kling variants leave this unset and use their fixed model resolution.
+  if (model.resolution) {
+    body.resolution = model.resolution;
   }
   return body;
 }
