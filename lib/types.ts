@@ -81,7 +81,7 @@ export type SceneStatus =
   | "failed"
   | "needs_review";
 
-export type VideoProvider = "runway" | "kling" | "higgsfield" | "atlas";
+export type VideoProvider = "runway" | "kling" | "higgsfield" | "atlas" | "veo";
 
 export type PipelineMode = "v1" | "v1.1";
 
@@ -230,6 +230,22 @@ export interface PromptLabAssembly {
   pipeline_version: "v1" | "v1.1";
   created_at: string;
   completed_at: string | null;
+}
+
+// ─── Prompt Lab model feedback (migration 070) ────────────────────────────────
+// Append-only qualitative notes an operator writes under each rendered clip.
+// The `embedding` column is server-internal (backfilled async via embedTextSafe)
+// and intentionally omitted from this API-facing type.
+export interface PromptLabModelFeedback {
+  id: string;
+  iteration_id: string;
+  session_id: string;
+  model_used: string;
+  pipeline_version: string;
+  resolution_used: string | null;
+  author: string;
+  comment: string;
+  created_at: string;
 }
 
 export interface DailyStats {

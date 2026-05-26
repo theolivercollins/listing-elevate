@@ -60,8 +60,9 @@ import { promoteRecipe } from "@/lib/recipesApi";
 import { supabase } from "@/lib/supabase";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "../../../lib/providers/router.js";
 import { surfaceAffinityForPick } from "../../../lib/providers/sku-motion-affinity.js";
-import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel } from "@/lib/labModels";
+import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel, getSupportedResolutions } from "@/lib/labModels";
 import { DirectorModal } from "@/components/lab/DirectorModal";
+import { ModelFeedbackPanel } from "@/components/lab/ModelFeedbackPanel";
 
 // Per-clip cost (5s render). Atlas SKUs match ATLAS_MODELS.priceCentsPerClip
 // in lib/providers/atlas.ts. "kling-v2-native" and "runway-gen4-native" are
@@ -1393,7 +1394,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
     navigate("/dashboard/development/prompt-lab");
   }
 
-  async function handleRender(iterationId: string, provider?: "kling" | "runway" | null, sku?: SkuChoice | null) {
+  async function handleRender(iterationId: string, provider?: "kling" | "runway" | null, sku?: SkuChoice | null, resolution?: string) {
     setBusy(`render-${iterationId}`);
     setError(null);
     try {
@@ -1401,7 +1402,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
       // already set provider="kling"/"runway" before calling onRender. Drop the
       // sku param so the server uses the providerOverride path (not an Atlas SKU).
       const sendSku: V1AtlasSku | null = sku && !isNativeProviderSku(sku) ? (sku as V1AtlasSku) : null;
-      const result = await renderIteration(iterationId, provider ?? null, sendSku);
+      const result = await renderIteration(iterationId, provider ?? null, sendSku, resolution ?? null);
       if (result.renderError) setError(`Render failed: ${result.renderError}`);
       await reload();
     } catch (e) {
@@ -1461,7 +1462,12 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
     }
   }
 
-  async function handleRerender(sourceIterationId: string, provider: "kling" | "runway" | "atlas", sku?: SkuChoice | null) {
+  async function handleRerender(
+    sourceIterationId: string,
+    provider: "kling" | "runway" | "atlas",
+    sku?: SkuChoice | null,
+    resolution?: string | null,
+  ) {
     setBusy(`rerender-${sourceIterationId}`);
     setError(null);
     setSuccess(null);
@@ -1475,12 +1481,13 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
         : provider;
     const effectiveSku: V1AtlasSku | null = sku && !isNativeProviderSku(sku) ? (sku as V1AtlasSku) : null;
     try {
-      const result = await rerenderWithProvider(sourceIterationId, effectiveProvider, effectiveSku);
+      const result = await rerenderWithProvider(sourceIterationId, effectiveProvider, effectiveSku, resolution ?? null);
       if (result.queued) {
         setSuccess(result.message ?? `Queued for ${effectiveProvider}`);
       } else {
         const label = sku ? ` (${V1_SKU_LABELS[sku]})` : "";
-        setSuccess(`Re-rendering with ${effectiveProvider}${label} — new iteration created`);
+        const resLabel = resolution ? ` @ ${resolution}` : "";
+        setSuccess(`Re-rendering with ${effectiveProvider}${label}${resLabel} — new iteration created`);
       }
       await reload();
     } catch (e) {
@@ -1714,14 +1721,15 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
                   isLatest={it.id === latest?.id}
                   isV11={isV11}
                   busy={busy}
-                  onRender={(provider, sku) => handleRender(it.id, provider, sku)}
+                  onRender={(provider, sku, resolution) => handleRender(it.id, provider, sku, resolution)}
                   onRefine={(p) => handleRefine(it.id, p)}
                   onRate={(p) => handleRate(it.id, p)}
                   onRerender={(provider) => handleRerender(it.id, provider)}
-                  onRerenderWithSku={(sku) => handleRerender(
+                  onRerenderWithSku={(sku, resolution) => handleRerender(
                     it.id,
                     isNativeKlingSku(sku) ? "kling" : isNativeRunwaySku(sku) ? "runway" : "atlas",
                     sku,
+                    resolution,
                   )}
                   onJudgeOverrideSuccess={reload}
                 />
@@ -2242,11 +2250,11 @@ function IterationCard({
   /** When true the session is v1.1 — hide SKU picker, camera-movement controls, and rerender buttons. */
   isV11?: boolean;
   busy: string | null;
-  onRender: (provider: "kling" | "runway" | null, sku: SkuChoice) => void;
+  onRender: (provider: "kling" | "runway" | null, sku: SkuChoice, resolution?: string) => void;
   onRefine: (payload: { rating: number | null; tags: string[]; comment: string; chatInstruction: string }) => void;
   onRate: (payload: { rating: number | null; tags: string[]; comment: string }) => void;
   onRerender: (provider: "kling" | "runway") => void;
-  onRerenderWithSku?: (sku: SkuChoice) => void;
+  onRerenderWithSku?: (sku: SkuChoice, resolution?: string | null) => void;
   onJudgeOverrideSuccess?: () => void;
 }) {
   const [rating, setRating] = useState<number | null>(iteration.rating);
@@ -2363,6 +2371,24 @@ function IterationCard({
     if (mu && (SKU_DROPDOWN_OPTIONS as readonly string[]).includes(mu)) return mu as SkuChoice;
     return V1_DEFAULT_SKU;
   });
+
+  // v1.1 resolution picker state. Initialized to the first supported resolution
+  // for the initial SKU. When the SKU changes, reset to the new SKU's default.
+  const [resolution, setResolution] = useState<string>(() => {
+    const initialSku = isV11
+      ? (() => {
+          const mu = iteration.model_used;
+          if (mu && (V1_1_LAB_SKUS as readonly string[]).includes(mu)) return mu;
+          return V1_1_DEFAULT_SKU;
+        })()
+      : V1_1_DEFAULT_SKU;
+    return getSupportedResolutions(initialSku)[0];
+  });
+
+  // v1.1 re-render state — two-step: pick SKU → pick quality → confirm.
+  // Only one SKU's quality picker is open at a time.
+  const [pendingRerenderSku, setPendingRerenderSku] = useState<string | null>(null);
+  const [pendingRerenderResolution, setPendingRerenderResolution] = useState<string>("");
 
   const director = iteration.director_output_json;
   const analysis = iteration.analysis_json as Record<string, unknown> | null;
@@ -2513,6 +2539,12 @@ function IterationCard({
             >
               Open clip in new tab
             </a>
+
+            {/* ── Lane C: qualitative model feedback ──────────────────────────
+                Sits flush below the video player, above judge/rating UI.
+                Do NOT move this block — Lane A owns the SKU/resolution
+                selector area at the top of the card. */}
+            <ModelFeedbackPanel iterationId={iteration.id} />
           </div>
         )}
 
@@ -2594,27 +2626,125 @@ function IterationCard({
           </div>
         )}
 
-        {/* Try another SKU (v1.1 catalog) — shown on v1.1 sessions after render */}
+        {/* Re-render (v1.1 catalog) — two-step: pick SKU → pick quality → confirm */}
         {isV11 && (iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
-          <div style={{ marginTop: 8, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
-            <span style={{ color: "var(--muted)" }}>
-              {iteration.render_error ? "Retry on another SKU:" : "Try another v1.1 SKU:"}
-            </span>
-            {V1_1_LAB_SKUS
-              .filter((s) => s !== iteration.model_used)
-              .map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  className="le-btn-ghost"
-                  onClick={() => onRerenderWithSku(s)}
-                  disabled={busy === `rerender-${iteration.id}`}
-                  style={{ fontSize: 11, opacity: busy === `rerender-${iteration.id}` ? 0.5 : 1 }}
-                  title={v11SkuCostLabel(s)}
-                >
-                  {v11SkuLabel(s)}
-                </button>
-              ))}
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+              <span style={{ color: "var(--muted)" }}>
+                {iteration.render_error ? "Retry render with:" : "Re-render with:"}
+              </span>
+              {V1_1_LAB_SKUS
+                .filter((s) => s !== iteration.model_used)
+                .map((s) => {
+                  const isPending = pendingRerenderSku === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      className="le-btn-ghost"
+                      onClick={() => {
+                        if (isPending) {
+                          // Toggle off if user clicks the same SKU again.
+                          setPendingRerenderSku(null);
+                          setPendingRerenderResolution("");
+                        } else {
+                          setPendingRerenderSku(s);
+                          setPendingRerenderResolution(getSupportedResolutions(s)[0]);
+                        }
+                      }}
+                      disabled={busy === `rerender-${iteration.id}`}
+                      style={{
+                        fontSize: 11,
+                        opacity: busy === `rerender-${iteration.id}` ? 0.5 : 1,
+                        background: isPending ? "rgba(115,80,195,0.08)" : undefined,
+                        borderColor: isPending ? "var(--accent)" : undefined,
+                        color: isPending ? "var(--accent)" : undefined,
+                      }}
+                      title={v11SkuCostLabel(s)}
+                    >
+                      {v11SkuLabel(s)}
+                    </button>
+                  );
+                })}
+            </div>
+
+            {/* Inline quality picker + Confirm — appears when a SKU is selected */}
+            {pendingRerenderSku && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "10px 12px",
+                  border: "1px solid var(--accent)",
+                  borderRadius: "var(--radius-sm)",
+                  background: "rgba(115,80,195,0.04)",
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
+              >
+                <span style={{ color: "var(--ink-2)", fontSize: 12, fontFamily: "var(--le-font-sans)" }}>
+                  Re-render with <strong>{v11SkuLabel(pendingRerenderSku as V1_1LabSku)}</strong>
+                </span>
+                {getSupportedResolutions(pendingRerenderSku).length > 1 ? (
+                  <>
+                    <label style={{ color: "var(--muted)", fontSize: 12 }}>Quality:</label>
+                    <select
+                      value={pendingRerenderResolution}
+                      onChange={(e) => setPendingRerenderResolution(e.target.value)}
+                      disabled={busy === `rerender-${iteration.id}`}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: "var(--radius-sm)",
+                        border: "1px solid var(--line)",
+                        background: "var(--surface)",
+                        fontSize: 12,
+                        fontFamily: "inherit",
+                        color: "var(--ink)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {getSupportedResolutions(pendingRerenderSku).map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <span style={{ color: "var(--muted)", fontSize: 11 }}>
+                    {pendingRerenderResolution} (only option)
+                  </span>
+                )}
+                <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    className="le-btn-ghost"
+                    onClick={() => {
+                      setPendingRerenderSku(null);
+                      setPendingRerenderResolution("");
+                    }}
+                    disabled={busy === `rerender-${iteration.id}`}
+                    style={{ fontSize: 11 }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="le-btn-primary"
+                    onClick={() => {
+                      const sku = pendingRerenderSku as V1_1LabSku;
+                      const res = pendingRerenderResolution;
+                      setPendingRerenderSku(null);
+                      setPendingRerenderResolution("");
+                      onRerenderWithSku(sku, res);
+                    }}
+                    disabled={busy === `rerender-${iteration.id}` || !pendingRerenderResolution}
+                    style={{ fontSize: 11 }}
+                  >
+                    {busy === `rerender-${iteration.id}` ? "Submitting…" : "Confirm"}
+                  </button>
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2655,7 +2785,12 @@ function IterationCard({
                 <label style={{ color: "var(--muted)" }}>SKU:</label>
                 <select
                   value={sku}
-                  onChange={(e) => setSku(e.target.value as V1_1LabSku)}
+                  onChange={(e) => {
+                    const newSku = e.target.value as V1_1LabSku;
+                    setSku(newSku);
+                    // Reset resolution to the new SKU's first supported value.
+                    setResolution(getSupportedResolutions(newSku)[0]);
+                  }}
                   disabled={!renderForReal || rendering}
                   style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
                 >
@@ -2668,6 +2803,23 @@ function IterationCard({
                 <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, color: "var(--muted)" }}>
                   {v11SkuCostLabel(sku as V1_1LabSku)}
                 </span>
+
+                {/* Resolution picker — only shown when the current SKU offers >1 option */}
+                {getSupportedResolutions(sku).length > 1 && (
+                  <>
+                    <label style={{ color: "var(--muted)" }}>Quality:</label>
+                    <select
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      disabled={!renderForReal || rendering}
+                      style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                    >
+                      {getSupportedResolutions(sku).map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
             )}
 
@@ -2739,10 +2891,10 @@ function IterationCard({
               disabled={!renderForReal || rendering}
               onClick={() => {
                 if (isV11) {
-                  // v1.1: pass the selected SKU to the server so it can use the right model.
+                  // v1.1: pass the selected SKU and resolution to the server.
                   // Server routes Seedance to seedance-pro-pushin with push-in override;
                   // other v1.1 SKUs render as-is with the director prompt.
-                  onRender(null, sku);
+                  onRender(null, sku, resolution);
                 } else if (isNativeKlingSku(sku as SkuChoice)) {
                   onRender("kling", sku);
                 } else if (isNativeRunwaySku(sku as SkuChoice)) {

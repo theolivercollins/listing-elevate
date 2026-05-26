@@ -15,6 +15,12 @@ export interface LabModelInfo {
   priceCents: number;
   priceLabel: string;
   supportsEndFrame: boolean;
+  /**
+   * Ordered list of resolutions the model can produce. First entry is the
+   * UI default. When absent or single-element, the resolution picker is
+   * hidden — there's no meaningful choice to make.
+   */
+  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "4k">;
   note?: string;
   hidden?: boolean;
 }
@@ -30,6 +36,10 @@ export const V1_1_LAB_SKUS = [
   "kling-v2-6-pro",
   "kling-v2-master",
   "runway-gen4-native",
+  // Lane B (2026-05-26): Veo 3.1 Preview — Premium 4K SKU via Gemini API.
+  // Routes through VeoProvider (not Atlas). priceCents reflects 50¢/s × 5s
+  // placeholder — verify against first invoice and update.
+  "veo-3-1-preview",
 ] as const;
 export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
 export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
@@ -42,6 +52,19 @@ export function isV1_1LabSku(sku: string): sku is V1_1LabSku {
 export const LAB_MODELS: LabModelInfo[] = [
   // ── v1.1-specific ────────────────────────────────────────────────────────
   {
+    // Lane B (2026-05-26): Veo 3.1 Preview via Gemini API.
+    // priceCents = 50¢/s × 5s = 250¢. PLACEHOLDER — verify against invoice.
+    key: "veo-3-1-preview",
+    slug: "veo-3.1-generate-preview",   // informational; VeoProvider doesn't use this
+    label: "Veo 3.1 Preview (4K)",
+    shortLabel: "Veo 3.1 4K",
+    priceCents: 250,                     // ⚠️  placeholder: 50¢/s × 5s; update after invoice
+    priceLabel: "$2.50",
+    supportsEndFrame: false,             // Veo 3.1 supports last-frame but skip for MVP
+    supportedResolutions: ["4k", "1080p", "720p"],  // Veo natively produces 4K
+    note: "Google Veo 3.1 via Gemini API. Native 4K. ~5–10× more expensive than Kling — confirm pricing before high-volume use.",
+  },
+  {
     key: "seedance-pro-pushin",
     slug: "bytedance/seedance-2.0/image-to-video",
     label: "Seedance 2.0 (push-in)",
@@ -49,6 +72,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 70,          // 14 ¢/s × 5s — matches atlas.ts placeholder
     priceLabel: "$0.70",
     supportsEndFrame: false,
+    supportedResolutions: ["1080p", "720p", "480p"],  // Seedance natively supports all three
     note: "Bytedance Seedance 2.0 via Atlas. Push-in only. FFmpeg speed-ramp polish applied on download.",
   },
   // ── v1 SKUs ──────────────────────────────────────────────────────────────
@@ -60,6 +84,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 0,
     priceLabel: "free (credits)",
     supportsEndFrame: false,  // native v2.0 image-to-video doesn't pair
+    supportedResolutions: ["1080p"],  // fixed in-model
     note: "Uses your pre-paid Kling credits directly. Burn before Atlas bills. No end-frame support.",
   },
   {
@@ -70,6 +95,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 48,
     priceLabel: "$0.48",
     supportsEndFrame: true,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Newest. End-frame support. Known shake issue on single-image shots — stability prefix mitigation applied.",
   },
   {
@@ -81,6 +107,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceLabel: "$0.36",
     supportsEndFrame: true,
     hidden: true,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Like 3.0 Pro but lower quality. Hidden from picker — re-enable if ever needed.",
   },
   {
@@ -91,6 +118,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 60,              // Corrected 2026-04-20: observed $0.60/clip, was $0.30
     priceLabel: "$0.60",
     supportsEndFrame: true,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Smoothest motion for single-image shots. Current strong default for interiors.",
   },
   {
@@ -101,6 +129,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 38,
     priceLabel: "$0.38",
     supportsEndFrame: true,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Purpose-built for paired scenes (start + end photo). Can use long, detailed prompts effectively.",
   },
   {
@@ -111,6 +140,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 111,
     priceLabel: "$1.11",
     supportsEndFrame: false,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Premium quality; single-frame only (no end-frame support). Expensive — use for hero shots.",
   },
   {
@@ -121,6 +151,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 48,
     priceLabel: "$0.48",
     supportsEndFrame: true,
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
     note: "Minimal movement — tends to look static. Good for feature closeups, weak for dynamic shots.",
   },
 ];
@@ -138,4 +169,20 @@ export function getV1_1LabModels(): LabModelInfo[] {
   return V1_1_LAB_SKUS.map((sku) => getLabModel(sku)).filter(
     (m): m is LabModelInfo => m !== undefined,
   );
+}
+
+/**
+ * Returns the ordered list of resolutions the given SKU supports. First entry
+ * is the default for the UI picker. When the SKU is unknown or has no
+ * `supportedResolutions` declared, falls back to `['1080p']` (safe default:
+ * all Kling SKUs produce 1080p from the model side).
+ *
+ * The UI should hide the resolution picker when the returned array has length ≤ 1.
+ */
+export function getSupportedResolutions(sku: string): ReadonlyArray<"480p" | "720p" | "1080p" | "4k"> {
+  const model = getLabModel(sku);
+  if (model?.supportedResolutions && model.supportedResolutions.length > 0) {
+    return model.supportedResolutions;
+  }
+  return ["1080p"];
 }

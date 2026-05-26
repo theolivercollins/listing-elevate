@@ -30,8 +30,28 @@ export interface AtlasModelDescriptor {
    * underuses the model's native quality. Kling variants typically have
    * a fixed output resolution baked into the model (v2 Master is 1080p,
    * v2.6 Pro is 1080p, etc.) so this field is a no-op there.
+   *
+   * This is the descriptor-level DEFAULT. It can be overridden per-render
+   * via `GenerateClipParams.resolution` (UI quality dropdown).
    */
   resolution?: "480p" | "720p" | "1080p";
+  /**
+   * Ordered list of resolutions the underlying model can produce. First
+   * entry is the default selection in the UI. When unset or single-element,
+   * the UI hides the resolution picker (no meaningful choice to make).
+   * Seedance has a real multi-res picker; Kling SKUs are fixed at 1080p.
+   */
+  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "4k">;
+  /**
+   * Optional `generate_audio` flag forwarded to the underlying Replicate
+   * model. Only Bytedance Seedance 2.0 generates audio by default — set
+   * this to `false` on the Seedance descriptor so we get silent video.
+   * Kling/Runway etc. don't generate audio so this is a no-op there.
+   *
+   * Real-estate listing clips never want model-generated music; the
+   * assembly stage adds curated music from a separate track.
+   */
+  generateAudio?: boolean;
 }
 
 // Default clip duration in seconds for cost estimation. Atlas accepts
@@ -55,6 +75,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 10,     // $0.095/s
     priceCentsPerClip: 48,       // $0.475 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   "kling-v3-std": {
     slug: "kwaivgi/kling-v3.0-std/image-to-video",
@@ -62,6 +83,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 8,      // $0.071/s
     priceCentsPerClip: 36,       // $0.355 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   "kling-v2-6-pro": {
     slug: "kwaivgi/kling-v2.6-pro/image-to-video",
@@ -76,6 +98,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     // Atlas invoice before high-volume Phase B work.
     priceCentsPerSecond: 12,     // $0.120/s (observed — 2x our original reading; pending Atlas invoice verification)
     priceCentsPerClip: 60,       // $0.600 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   "kling-v2-1-pair": {
     slug: "kwaivgi/kling-v2.1-i2v-pro/start-end-frame",
@@ -83,6 +106,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 8,      // $0.076/s
     priceCentsPerClip: 38,       // $0.380 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   "kling-v2-master": {
     slug: "kwaivgi/kling-v2.0-i2v-master",
@@ -90,6 +114,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 23,     // $0.221/s
     priceCentsPerClip: 111,      // $1.105 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   "kling-o3-pro": {
     slug: "kwaivgi/kling-video-o3-pro/image-to-video",
@@ -97,6 +122,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 10,     // $0.095/s
     priceCentsPerClip: 48,       // $0.475 for 5s
+    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   // v1.1 pipeline mode (added 2026-05-23) — Bytedance Seedance 2.0 push-in via Atlas.
   // Slug confirmed by Oliver 2026-05-23: bytedance/seedance-2.0/image-to-video.
@@ -114,7 +140,9 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
     endFrameField: null,         // Seedance has no start+end-frame support
     allowedDurations: [5, 10],
-    resolution: "1080p",
+    resolution: "1080p",         // default; kept so legacy callers (no resolution override) get 1080p
+    supportedResolutions: ["1080p", "720p", "480p"],  // Seedance natively supports all three
+    generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
     priceCentsPerSecond: 28,     // ⚠️  placeholder for 1080p tier — verify against invoice
     priceCentsPerClip: 140,      // 28 × 5
   },
@@ -160,6 +188,10 @@ export const V1_1_LAB_SKUS = [
   "kling-v2-6-pro",
   "kling-v2-master",
   "runway-gen4-native",
+  // Lane B (2026-05-26): Veo 3.1 Preview added as Premium 4K SKU.
+  // Routes through VeoProvider, not Atlas. Validation accepts it
+  // because the combined allow-list includes it here.
+  "veo-3-1-preview",
 ] as const;
 export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
 export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
@@ -191,6 +223,9 @@ export interface AtlasSubmitBody {
    *  is fixed per-SKU). Atlas passes through unrecognized fields to the
    *  model's input schema, so it's safe to send on every render. */
   resolution?: "480p" | "720p" | "1080p";
+  /** Forwarded to Seedance 2.0 to disable native audio/music generation.
+   *  Ignored by other models. */
+  generate_audio?: boolean;
 }
 
 // Kling v3-pro introduces noticeable camera shake/vibration on push-ins
@@ -223,10 +258,22 @@ export function buildAtlasRequestBody(
   if (params.endImageUrl && model.endFrameField) {
     body[model.endFrameField] = params.endImageUrl;
   }
-  // Forward per-descriptor resolution (currently only Seedance opts in).
-  // Kling variants leave this unset and use their fixed model resolution.
-  if (model.resolution) {
-    body.resolution = model.resolution;
+  // Resolution priority: explicit per-render override (UI quality dropdown) wins
+  // over the descriptor's static default. Falls back to the descriptor's `resolution`
+  // field (currently only Seedance opts in). Kling SKUs leave this unset — their
+  // output resolution is fixed in-model and passing a value is a no-op.
+  const effectiveResolution = params.resolution ?? model.resolution;
+  if (effectiveResolution) {
+    // AtlasSubmitBody.resolution accepts '480p'|'720p'|'1080p'; '4k' is valid
+    // for future SKUs (Veo) but Atlas Seedance ignores it safely. Cast is safe:
+    // the UI only offers values from the SKU's supportedResolutions array.
+    body.resolution = effectiveResolution as "480p" | "720p" | "1080p";
+  }
+  // Forward generate_audio when the descriptor opts in (Seedance 2.0 only —
+  // kills its default music track). Atlas passes through to Replicate's
+  // Seedance input schema. Other models ignore the field.
+  if (model.generateAudio !== undefined) {
+    body.generate_audio = model.generateAudio;
   }
   return body;
 }
