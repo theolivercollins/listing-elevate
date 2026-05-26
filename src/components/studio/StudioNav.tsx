@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 
 const tabs = [
   { to: '/dashboard/studio', label: 'Queue', end: true },
-  { to: '/dashboard/studio/clients', label: 'Clients', end: false },
+  { to: '/dashboard/studio/video/clients', label: 'Clients', end: false },
 ];
 
 /**

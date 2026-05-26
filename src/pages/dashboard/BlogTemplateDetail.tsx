@@ -113,7 +113,7 @@ export default function BlogTemplateDetail() {
     onSuccess: () => {
       toast.success(isNew ? "Created" : "Saved");
       qc.invalidateQueries({ queryKey: ["blog-templates"] });
-      navigate("/dashboard/blog/templates");
+      navigate("/dashboard/studio/blog/templates");
     },
     onError: (e: unknown) => toast.error(`Save failed: ${e instanceof Error ? e.message : String(e)}`),
   });
@@ -151,7 +151,7 @@ export default function BlogTemplateDetail() {
         sub={isNew ? "Define a reusable HTML structure for blog posts." : "Update the template HTML and default field values."}
         actions={
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="le-btn-ghost" onClick={() => navigate("/dashboard/blog/templates")}>
+            <button className="le-btn-ghost" onClick={() => navigate("/dashboard/studio/blog/templates")}>
               Cancel
             </button>
             <button

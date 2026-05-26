@@ -153,19 +153,19 @@ function NewPostDropdown({
               icon="spark"
               label="Chat with AI"
               sub="Build the post by talking to Claude"
-              onClick={() => { setOpen(false); navigate("/dashboard/blog/posts/new?chat=1"); }}
+              onClick={() => { setOpen(false); navigate("/dashboard/studio/blog/posts/new?chat=1"); }}
             />
             <DropItem
               icon="sparkles"
               label="Quick AI draft"
               sub="One-shot — fill a prompt, get a draft"
-              onClick={() => { setOpen(false); navigate("/dashboard/blog/posts/new?ai=1"); }}
+              onClick={() => { setOpen(false); navigate("/dashboard/studio/blog/posts/new?ai=1"); }}
             />
             <DropItem
               icon="book"
               label="Write manually"
               sub="Blank editor — type or paste HTML"
-              onClick={() => { setOpen(false); navigate("/dashboard/blog/posts/new"); }}
+              onClick={() => { setOpen(false); navigate("/dashboard/studio/blog/posts/new"); }}
             />
 
             {/* separator */}
@@ -190,13 +190,13 @@ function NewPostDropdown({
                     key={t.id}
                     icon="branch"
                     label={t.name}
-                    onClick={() => { setOpen(false); navigate(`/dashboard/blog/posts/new?template=${t.id}`); }}
+                    onClick={() => { setOpen(false); navigate(`/dashboard/studio/blog/posts/new?template=${t.id}`); }}
                   />
                 ))}
                 {templates.length > 6 && (
                   <button
                     type="button"
-                    onClick={() => { setOpen(false); navigate("/dashboard/blog/templates"); }}
+                    onClick={() => { setOpen(false); navigate("/dashboard/studio/blog/templates"); }}
                     style={{
                       width: "100%",
                       padding: "8px 14px",
@@ -218,7 +218,7 @@ function NewPostDropdown({
                 icon="branch"
                 label="Create a template"
                 sub="Save HTML to reuse later"
-                onClick={() => { setOpen(false); navigate("/dashboard/blog/templates/new"); }}
+                onClick={() => { setOpen(false); navigate("/dashboard/studio/blog/templates/new"); }}
               />
             )}
           </div>
@@ -334,7 +334,7 @@ export default function BlogPostsList() {
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Link
-              to="/dashboard/blog/ally-history"
+              to="/dashboard/studio/blog/ally-history"
               style={ghostBtn}
               title="Browse your Ally conversation history"
             >
@@ -567,7 +567,7 @@ function PostRow({
 
   return (
     <div
-      onClick={() => navigate(`/dashboard/blog/posts/${p.id}`)}
+      onClick={() => navigate(`/dashboard/studio/blog/posts/${p.id}`)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{

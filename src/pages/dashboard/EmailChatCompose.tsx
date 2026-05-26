@@ -3,7 +3,7 @@
 // Chat-as-page email compose — direct port of BlogPostChatCompose but using
 // email-specific fields + aiEmailChat. Same hero / thread / live-preview /
 // sidebar pattern. On send/save_draft action, creates the email row and
-// navigates to /dashboard/blog/emails/:id.
+// navigates to /dashboard/studio/email/messages/:id.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -207,7 +207,7 @@ export default function EmailChatCompose() {
     }),
     onSuccess: (r) => {
       toast.success("Saved as draft");
-      navigate(`/dashboard/blog/emails/${r.id}`);
+      navigate(`/dashboard/studio/email/messages/${r.id}`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e.message}`),
   });
@@ -225,7 +225,7 @@ export default function EmailChatCompose() {
     }),
     onSuccess: (r) => {
       toast.success("Saved as ready to send");
-      navigate(`/dashboard/blog/emails/${r.id}`);
+      navigate(`/dashboard/studio/email/messages/${r.id}`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e.message}`),
   });
@@ -301,7 +301,7 @@ export default function EmailChatCompose() {
       <div className="flex items-center gap-3 border-b bg-background px-5 py-3 shrink-0">
         <button
           type="button"
-          onClick={() => navigate("/dashboard/blog/emails")}
+          onClick={() => navigate("/dashboard/studio/email/messages")}
           className="-ml-1 inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
         >
           <ChevronLeft className="h-3.5 w-3.5" /> Emails

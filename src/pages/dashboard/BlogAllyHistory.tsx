@@ -70,7 +70,7 @@ export default function BlogAllyHistory() {
           </p>
         </div>
         <div className="ml-auto">
-          <Link to="/dashboard/blog/posts">
+          <Link to="/dashboard/studio/blog/posts">
             <Button variant="outline" size="sm">All posts</Button>
           </Link>
         </div>
@@ -110,7 +110,7 @@ export default function BlogAllyHistory() {
               <div key={entry.postId} className="group rounded-md border bg-card p-4 transition hover:border-primary/40 hover:shadow-sm">
                 <div className="mb-1 flex items-start justify-between gap-2">
                   <Link
-                    to={`/dashboard/blog/posts/${entry.postId}`}
+                    to={`/dashboard/studio/blog/posts/${entry.postId}`}
                     className="line-clamp-1 flex-1 font-medium hover:underline"
                   >
                     {post?.title ?? <span className="text-muted-foreground">Deleted post · {entry.postId.slice(0, 8)}…</span>}
@@ -138,7 +138,7 @@ export default function BlogAllyHistory() {
                   </div>
                 )}
                 <div className="mt-3 flex justify-end">
-                  <Link to={`/dashboard/blog/posts/${entry.postId}`}>
+                  <Link to={`/dashboard/studio/blog/posts/${entry.postId}`}>
                     <Button variant="ghost" size="sm" className="h-7 text-xs">
                       Resume <ArrowRight className="ml-1 h-3 w-3" />
                     </Button>

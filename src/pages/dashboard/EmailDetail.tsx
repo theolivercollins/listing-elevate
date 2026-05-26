@@ -1,6 +1,6 @@
 // src/pages/dashboard/EmailDetail.tsx
 //
-// Handles both /dashboard/blog/emails/new AND /dashboard/blog/emails/:id.
+// Handles both /dashboard/studio/email/messages/new AND /dashboard/studio/email/messages/:id.
 // ?chat=1 on /new routes to EmailChatCompose instead.
 
 import { useEffect, useRef, useState } from "react";
@@ -115,7 +115,7 @@ export default function EmailDetail() {
     onSuccess: (r) => {
       toast.success("Saved");
       qc.invalidateQueries({ queryKey: ["emails-list"] });
-      navigate(`/dashboard/blog/emails/${r.id}`);
+      navigate(`/dashboard/studio/email/messages/${r.id}`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e?.message ?? e}`),
   });
@@ -194,7 +194,7 @@ export default function EmailDetail() {
               {email.sent_at && <span>Sent {new Date(email.sent_at).toLocaleString()}</span>}
               {email.source_post_id && (
                 <a
-                  href={`/dashboard/blog/posts/${email.source_post_id}`}
+                  href={`/dashboard/studio/blog/posts/${email.source_post_id}`}
                   className="underline"
                   target="_blank"
                   rel="noreferrer"

@@ -102,7 +102,9 @@ function DevelopmentNav() {
 
 function BlogNav() {
   const location = useLocation();
-  const active = location.pathname.startsWith("/dashboard/blog");
+  const active =
+    location.pathname.startsWith("/dashboard/studio/blog") ||
+    location.pathname.startsWith("/dashboard/studio/email");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -119,28 +121,28 @@ function BlogNav() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuItem asChild>
-          <Link to="/dashboard/blog/posts" className="cursor-pointer">
+          <Link to="/dashboard/studio/blog/posts" className="cursor-pointer">
             <FileText className="mr-2 h-3.5 w-3.5" /> Posts
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/dashboard/blog/images" className="cursor-pointer">
+          <Link to="/dashboard/studio/blog/images" className="cursor-pointer">
             <ImageIcon className="mr-2 h-3.5 w-3.5" /> Image library
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/dashboard/blog/templates" className="cursor-pointer">
+          <Link to="/dashboard/studio/blog/templates" className="cursor-pointer">
             <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Templates
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem asChild>
-          <Link to="/dashboard/blog/emails" className="cursor-pointer">
+          <Link to="/dashboard/studio/email/messages" className="cursor-pointer">
             <Mail className="mr-2 h-3.5 w-3.5" /> Emails
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
-          <Link to="/dashboard/blog/email-templates" className="cursor-pointer">
+          <Link to="/dashboard/studio/email/templates" className="cursor-pointer">
             <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Email templates
           </Link>
         </DropdownMenuItem>

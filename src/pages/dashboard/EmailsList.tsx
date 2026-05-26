@@ -68,7 +68,7 @@ export default function EmailsList() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
             <DropdownMenuItem
-              onClick={() => navigate("/dashboard/blog/emails/new?chat=1")}
+              onClick={() => navigate("/dashboard/studio/email/messages/new?chat=1")}
               className="cursor-pointer"
             >
               <MessageSquare className="mr-2 h-4 w-4" />
@@ -78,7 +78,7 @@ export default function EmailsList() {
               </div>
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => navigate("/dashboard/blog/emails/new")}
+              onClick={() => navigate("/dashboard/studio/email/messages/new")}
               className="cursor-pointer"
             >
               <Mail className="mr-2 h-4 w-4" />
@@ -152,7 +152,7 @@ export default function EmailsList() {
             ) : emails.map((e) => (
               <tr key={e.id} className="border-t hover:bg-muted/20">
                 <td className="p-3">
-                  <Link to={`/dashboard/blog/emails/${e.id}`} className="font-medium underline-offset-2 hover:underline">
+                  <Link to={`/dashboard/studio/email/messages/${e.id}`} className="font-medium underline-offset-2 hover:underline">
                     {e.subject || <span className="italic text-muted-foreground">Untitled</span>}
                   </Link>
                   {e.source_post_id && (
@@ -187,7 +187,7 @@ export default function EmailsList() {
       <PostPickerDialog
         open={postPickerOpen}
         onClose={() => setPostPickerOpen(false)}
-        onSuccess={(emailId) => navigate(`/dashboard/blog/emails/${emailId}`)}
+        onSuccess={(emailId) => navigate(`/dashboard/studio/email/messages/${emailId}`)}
       />
     </div>
   );

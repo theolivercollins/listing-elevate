@@ -318,7 +318,7 @@ const PropertyCommandCenter = () => {
               <>
                 <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)' }}>/</span>
                 <Link
-                  to={`/dashboard/studio/clients/${property.client_id}`}
+                  to={`/dashboard/studio/video/clients/${property.client_id}`}
                   className="studio-btn-ghost"
                   style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}
                 >
@@ -636,7 +636,7 @@ const PropertyCommandCenter = () => {
                   Brand kit incomplete — final video will not be branded
                 </p>
                 <Link
-                  to={`/dashboard/studio/clients/${property.client_id}`}
+                  to={`/dashboard/studio/video/clients/${property.client_id}`}
                   style={{
                     fontSize: 12,
                     color: 'var(--le-warn)',

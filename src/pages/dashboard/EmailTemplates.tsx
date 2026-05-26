@@ -28,7 +28,7 @@ export default function EmailTemplates() {
           Email templates{" "}
           <span className="ml-2 text-sm font-normal text-muted-foreground">{templates.length}</span>
         </h1>
-        <Link to="/dashboard/blog/email-templates/new">
+        <Link to="/dashboard/studio/email/templates/new">
           <Button><Plus className="mr-1 h-4 w-4" /> New template</Button>
         </Link>
       </div>
@@ -38,7 +38,7 @@ export default function EmailTemplates() {
       ) : templates.length === 0 ? (
         <div className="rounded-md border p-8 text-center text-muted-foreground">
           No email templates yet.{" "}
-          <Link to="/dashboard/blog/email-templates/new" className="underline">
+          <Link to="/dashboard/studio/email/templates/new" className="underline">
             Create one
           </Link>.
         </div>
@@ -72,12 +72,12 @@ export default function EmailTemplates() {
                   </div>
                 )}
                 <div className="flex gap-2 pt-2">
-                  <Link to={`/dashboard/blog/email-templates/${t.id}`}>
+                  <Link to={`/dashboard/studio/email/templates/${t.id}`}>
                     <Button size="sm" variant="outline" className="h-7 px-2 text-xs">
                       <Pencil className="mr-1 h-3 w-3" /> Edit
                     </Button>
                   </Link>
-                  <Link to={`/dashboard/blog/emails/new?template=${t.id}`}>
+                  <Link to={`/dashboard/studio/email/messages/new?template=${t.id}`}>
                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">
                       Use in email
                     </Button>

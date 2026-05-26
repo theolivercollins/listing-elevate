@@ -164,7 +164,7 @@ const StudioHome = () => {
           )}
         </div>
         <div className="studio-page-actions">
-          <Link to="/dashboard/studio/new" className="studio-cta-primary">
+          <Link to="/dashboard/studio/video/new" className="studio-cta-primary">
             <Plus size={13} strokeWidth={2} />
             New listing
           </Link>
@@ -281,7 +281,7 @@ const StudioHome = () => {
                         No listings here
                         {col.key === 'inbox' && (
                           <div style={{ marginTop: 12 }}>
-                            <Link to="/dashboard/studio/new" className="studio-btn-ghost" style={{ fontSize: 11, padding: '5px 12px' }}>
+                            <Link to="/dashboard/studio/video/new" className="studio-btn-ghost" style={{ fontSize: 11, padding: '5px 12px' }}>
                               <Plus size={11} strokeWidth={2} />
                               Add listing
                             </Link>
@@ -292,7 +292,7 @@ const StudioHome = () => {
                       rows.map((row) => (
                         <Link
                           key={row.id}
-                          to={`/dashboard/studio/properties/${row.id}`}
+                          to={`/dashboard/studio/video/properties/${row.id}`}
                           className="studio-kanban-card"
                         >
                           {/* Top row: thumb + status pill */}

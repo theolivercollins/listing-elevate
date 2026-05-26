@@ -29,7 +29,7 @@ export default function BlogTemplates() {
         title="Templates"
         sub={`${templates.length} template${templates.length === 1 ? "" : "s"} saved for reuse.`}
         actions={
-          <Link to="/dashboard/blog/templates/new" style={{ textDecoration: "none" }}>
+          <Link to="/dashboard/studio/blog/templates/new" style={{ textDecoration: "none" }}>
             <button className="le-btn-dark" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
               <Icon name="plus" size={13} />
               New template
@@ -49,7 +49,7 @@ export default function BlogTemplates() {
         <Card padding={48}>
           <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
             No templates yet.{" "}
-            <Link to="/dashboard/blog/templates/new" style={{ color: "var(--accent)", fontWeight: 500 }}>
+            <Link to="/dashboard/studio/blog/templates/new" style={{ color: "var(--accent)", fontWeight: 500 }}>
               Create one
             </Link>
             .
@@ -94,7 +94,7 @@ function TemplateCard({ t, onDelete }: { t: BlogTemplate; onDelete: () => void }
           <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>{t.description}</div>
         )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
-          <Link to={`/dashboard/blog/templates/${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
+          <Link to={`/dashboard/studio/blog/templates/${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
             <button
               className="le-btn-ghost"
               style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center", fontSize: 12 }}
@@ -103,7 +103,7 @@ function TemplateCard({ t, onDelete }: { t: BlogTemplate; onDelete: () => void }
               Edit
             </button>
           </Link>
-          <Link to={`/dashboard/blog/posts/new?template=${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
+          <Link to={`/dashboard/studio/blog/posts/new?template=${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
             <button
               className="le-btn-ghost"
               style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center", fontSize: 12 }}

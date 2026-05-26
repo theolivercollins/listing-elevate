@@ -260,7 +260,7 @@ export default function BlogPostChatCompose() {
     mutationFn: (state: FormState) => createPost(buildCreateInput(state, "awaiting_approval")),
     onSuccess: (r) => {
       toast.success("Saved as draft");
-      navigate(`/dashboard/blog/posts/${r.id}`);
+      navigate(`/dashboard/studio/blog/posts/${r.id}`);
     },
     onError: (e: any) => toast.error(`Save failed: ${e.message}`),
   });
@@ -269,7 +269,7 @@ export default function BlogPostChatCompose() {
     mutationFn: (state: FormState) => createPost(buildCreateInput(state, "publish_due")),
     onSuccess: (r) => {
       toast.success("Publishing — live within 60s");
-      navigate(`/dashboard/blog/posts/${r.id}`);
+      navigate(`/dashboard/studio/blog/posts/${r.id}`);
     },
     onError: (e: any) => toast.error(`Publish failed: ${e.message}`),
   });
@@ -379,7 +379,7 @@ export default function BlogPostChatCompose() {
       >
         <button
           type="button"
-          onClick={() => navigate("/dashboard/blog/posts")}
+          onClick={() => navigate("/dashboard/studio/blog/posts")}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "6px 10px", borderRadius: 999,
