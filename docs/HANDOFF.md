@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-05-23 (v1.1 Seedance push-in + FFmpeg speed-ramp polish — opt-in pipeline_mode, Atlas-routed, v2.1 paired untouched)
+Last updated: 2026-05-23 PM (V2.1 pair-picker day-1 build on worktree-gen2-v21-today — NOT pushed)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,10 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-05-23 PM: V2.1 pair-picker day-1 build landed on `worktree-gen2-v21-today` (NOT pushed).** 13 commits, 12.5k LOC, ~191 tests passing. Scene graph extractor (Gemini 2.5 Pro) + rule-based pair candidate generator + pure-TS LR+stump-boost picker (LightGBM stand-in) + Gemini Apprentice Labeler + DB-driven outcome-feedback worker + per-clip geometric guardrail + 97% room-confidence fall-through to V1 single-image (Kling 2.6 Pro + Seedance 2.0) + Director's Cut UI + Apprentice Review UI + Observability Panel + V1↔V2.1 toggle in Lab + new route /dashboard/development/lab/v21. Migrations 067-072 NOT applied to remote. Full spec/plan/handoff: docs/specs/2026-05-23-v21-pair-picker-design.md + docs/sessions/2026-05-23-v21-day1-handoff.md.
+
+---
 
 **2026-05-23 (latest): v1.1 Seedance push-in pipeline + FFmpeg speed-ramp polish — opt-in toggle on every order.** New `properties.pipeline_mode` column (`v1` | `v1.1`, default `v1`, CHECK constraint live in prod). When set to `v1.1`, every non-paired clip routes to the new `seedance-pro-pushin` Atlas SKU (Bytedance Seedance, env-overridable slug via `SEEDANCE_ATLAS_SLUG`, default `bytedance/seedance-pro/image-to-video`, 14¢/sec placeholder); the scene's prompt is overridden at render time to a stable "slow push in" directive via `forceSeedancePushInPrompt` (stored prompt unmutated for audit). After each Seedance clip downloads in `api/cron/poll-scenes.ts`, `applySpeedRampToBuffer` runs a 3-segment FFmpeg `trim`+`setpts`+`concat` filter that slows the first and last 0.5s of the clip to 0.8× — subtle cinematic "breathe" feel on the head and tail. On any ramp failure: log warn and ship the raw clip rather than failing the scene. **Paired scenes always still use Kling 2.1 (`kling-v2-1-pair`) regardless of mode — v2.1 logic untouched.** UI toggle lives in the Upload form Step 1 (Property) as a Pipeline field. Fallback chain: Seedance permanent fail → Atlas `kling-v2-6-pro`. Migration 062 applied to prod via Management API. Tests: 37/37 green across `router.v1.1`, `ffmpeg.speed-ramp`, plus the 9 existing router + 12 atlas tests unchanged. Branch `feat/v1-1-seedance-pushin` cascaded directly to `main` per Oliver's authorization.
 
