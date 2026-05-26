@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
+import { fetchLogs, fetchProperties } from "@/lib/api";
 import { Icon, type IconName } from "@/components/dashboard/icons";
+import { Moon, Sun } from "lucide-react";
 
 const COLLAPSED_KEY = "le-dashboard-sidebar-collapsed";
 
@@ -78,6 +81,31 @@ export interface DashboardSidebarProps {
   onToggleCollapsed: () => void;
 }
 
+function useUnreadCount(): number {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [logsRes, propsRes] = await Promise.all([
+          fetchLogs({ level: "warn", limit: 5 }).catch(() => ({ logs: [] as Array<{ level: string }> })),
+          fetchProperties({ status: "needs_review", limit: 5 }).catch(() => ({ properties: [] as Array<unknown> })),
+        ]);
+        if (cancelled) return;
+        const warns = (logsRes.logs ?? []).filter((l) => l.level === "warn" || l.level === "error").length;
+        const reviews = (propsRes.properties ?? []).length;
+        setUnread(warns + reviews);
+      } catch {
+        /* swallow — badge is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return unread;
+}
+
 function UserMenu({
   collapsed,
   initials,
@@ -93,6 +121,9 @@ function UserMenu({
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
+  const unread = useUnreadCount();
+  const isDark = theme === "dark";
 
   useEffect(() => {
     if (!open) return;
@@ -114,6 +145,11 @@ function UserMenu({
     navigate("/dashboard/account/profile");
   };
 
+  const handleNotifications = () => {
+    setOpen(false);
+    navigate("/dashboard/logs");
+  };
+
   const menu = open && (
     <div
       role="menu"
@@ -130,6 +166,46 @@ function UserMenu({
         zIndex: 1100,
       }}
     >
+      <button
+        type="button"
+        role="menuitem"
+        onClick={handleNotifications}
+        style={menuItemStyle}
+      >
+        <Icon name="bell" size={14} />
+        <span style={{ flex: 1 }}>Notifications</span>
+        {unread > 0 && (
+          <span
+            aria-label={`${unread} unread`}
+            style={{
+              minWidth: 18,
+              padding: "0 6px",
+              height: 18,
+              borderRadius: 99,
+              background: "var(--warn)",
+              color: "var(--surface)",
+              fontSize: 10.5,
+              fontWeight: 600,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {unread}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={isDark}
+        onClick={toggleTheme}
+        style={menuItemStyle}
+      >
+        {isDark ? <Sun size={14} strokeWidth={1.7} /> : <Moon size={14} strokeWidth={1.7} />}
+        <span style={{ flex: 1 }}>{isDark ? "Light mode" : "Dark mode"}</span>
+      </button>
+      <div style={{ height: 1, background: "var(--line-2)", margin: "4px 6px" }} />
       <button
         type="button"
         role="menuitem"

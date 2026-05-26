@@ -98,32 +98,61 @@ describe("VeoProvider — generateClip", () => {
     expect(parsedBody.instances[0].prompt).toBe(baseParams.prompt);
     expect(parsedBody.instances[0].image.bytesBase64Encoded).toBeDefined();
     expect(typeof parsedBody.instances[0].image.bytesBase64Encoded).toBe("string");
-    // parameters shape
+    // parameters shape — default resolution is 4k, which forces duration=8.
     expect(parsedBody.parameters).toBeDefined();
-    expect(parsedBody.parameters.durationSeconds).toBe(5);
+    expect(parsedBody.parameters.durationSeconds).toBe(8); // 4k forces 8
     expect(parsedBody.parameters.aspectRatio).toBe("16:9");
     expect(parsedBody.parameters.resolution).toBeDefined();
   });
 
-  it("clamps duration to VEO_MAX_DURATION_SECONDS (8s) when scene.durationSeconds > 8", async () => {
+  it("4K resolution forces durationSeconds=8 regardless of caller value", async () => {
+    // Empirically verified 2026-05-26 against the live Veo 3.1 API:
+    // 4K only accepts 8s; values like 5 return 400 "out of bound".
     const provider = makeProvider();
-
     const captured: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn((_url: string, opts?: RequestInit) => {
-      if (opts?.method === "POST") {
-        captured.push(JSON.parse(opts.body as string));
-      }
+      if (opts?.method === "POST") captured.push(JSON.parse(opts.body as string));
       return Promise.resolve({
         ok: true,
         status: 200,
-        json: async () => ({ name: "operations/xyz" }),
+        json: async () => ({ name: "operations/4k" }),
         arrayBuffer: async () => new ArrayBuffer(4),
       });
     }));
 
-    await provider.generateClip({ ...baseParams, durationSeconds: 20 });
-    const body = captured[0] as { parameters: { durationSeconds: number } };
-    expect(body.parameters.durationSeconds).toBeLessThanOrEqual(VEO_MAX_DURATION_SECONDS);
+    await provider.generateClip({ ...baseParams, durationSeconds: 5, resolution: "4k" });
+    const body = captured[0] as { parameters: { durationSeconds: number; resolution: string } };
+    expect(body.parameters.resolution).toBe("4k");
+    expect(body.parameters.durationSeconds).toBe(8);
+  });
+
+  it("non-4K resolutions honor and clamp the caller's duration to 4-8s", async () => {
+    const provider = makeProvider();
+    const captured: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, opts?: RequestInit) => {
+      if (opts?.method === "POST") captured.push(JSON.parse(opts.body as string));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ name: "operations/hd" }),
+        arrayBuffer: async () => new ArrayBuffer(4),
+      });
+    }));
+
+    // 5s @ 1080p passes through unchanged.
+    await provider.generateClip({ ...baseParams, durationSeconds: 5, resolution: "1080p" });
+    const a = captured[0] as { parameters: { durationSeconds: number } };
+    expect(a.parameters.durationSeconds).toBe(5);
+
+    // 20s @ 720p clamps to 8.
+    await provider.generateClip({ ...baseParams, durationSeconds: 20, resolution: "720p" });
+    const b = captured[1] as { parameters: { durationSeconds: number } };
+    expect(b.parameters.durationSeconds).toBeLessThanOrEqual(VEO_MAX_DURATION_SECONDS);
+
+    // 2s @ 720p clamps up to 4.
+    await provider.generateClip({ ...baseParams, durationSeconds: 2, resolution: "720p" });
+    const c = captured[2] as { parameters: { durationSeconds: number } };
+    expect(c.parameters.durationSeconds).toBeGreaterThanOrEqual(4);
   });
 
   it("asserts parameters.resolution === '4k' for 4K renders", async () => {
