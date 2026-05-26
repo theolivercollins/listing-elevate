@@ -188,7 +188,7 @@ export function ModelFeedbackPanel({ iterationId }: ModelFeedbackPanelProps) {
               onChange={(e) => setComment(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={submitting}
-              placeholder="e.g. "tends to over-zoom on kitchens — prefer 0.5× speed" (⌘↵ to submit)"
+              placeholder={`e.g. "tends to over-zoom on kitchens — prefer 0.5× speed" (⌘↵ to submit)`}
               rows={3}
               style={{
                 padding: "9px 12px",
