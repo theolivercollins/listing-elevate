@@ -60,13 +60,16 @@ import { promoteRecipe } from "@/lib/recipesApi";
 import { supabase } from "@/lib/supabase";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "../../../lib/providers/router.js";
 import { surfaceAffinityForPick } from "../../../lib/providers/sku-motion-affinity.js";
+import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel } from "@/lib/labModels";
+import { DirectorModal } from "@/components/lab/DirectorModal";
 
 // Per-clip cost (5s render). Atlas SKUs match ATLAS_MODELS.priceCentsPerClip
 // in lib/providers/atlas.ts. "kling-v2-native" and "runway-gen4-native" are
 // synthetic dropdown entries that route via the native Kling/Runway providers
 // (not Atlas). Runway is useful for exterior / drone / top_down shots where
 // it was historically stronger than Kling.
-type SkuChoice = V1AtlasSku | "kling-v2-native" | "runway-gen4-native";
+// V1_1LabSku covers the v1.1 catalog (Seedance, Kling v3, etc.)
+type SkuChoice = V1AtlasSku | "kling-v2-native" | "runway-gen4-native" | V1_1LabSku;
 
 const V1_SKU_COST_CENTS: Record<SkuChoice, number> = {
   "kling-v2-6-pro": 60,     // $0.60 per 5s clip (Atlas)
@@ -86,6 +89,17 @@ const SKU_DROPDOWN_OPTIONS: readonly SkuChoice[] = [
   "kling-v2-native",
   "runway-gen4-native",
 ] as const;
+
+// v1.1 SKU cost + labels — pulled from LAB_MODELS catalog.
+function v11SkuLabel(sku: V1_1LabSku): string {
+  const info = getLabModel(sku);
+  return info ? info.label : sku;
+}
+function v11SkuCostLabel(sku: V1_1LabSku): string {
+  const info = getLabModel(sku);
+  if (!info) return "";
+  return info.priceCents === 0 ? "credits" : `≈ $${(info.priceCents / 100).toFixed(2)}`;
+}
 
 // True when the selected SKU routes via the native Kling provider (not Atlas).
 // Caller submits { provider: "kling" } instead of { sku }.
@@ -1276,6 +1290,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
   const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [siblings, setSiblings] = useState<LabSession[]>([]);
+  const [directorOpen, setDirectorOpen] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -1558,6 +1573,32 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, color: "var(--muted)" }}>
+          {/* Director button — v1.1 sessions only */}
+          {isV11 && (
+            <button
+              type="button"
+              onClick={() => setDirectorOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 12px",
+                borderRadius: 8,
+                border: "1px solid var(--line)",
+                background: "var(--surface)",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--accent)",
+                fontFamily: "var(--le-font-sans)",
+                transition: "border-color 0.12s",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--accent)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--line)"; }}
+            >
+              🎬 Direct
+            </button>
+          )}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontVariantNumeric: "tabular-nums" }}>
             <DollarSign style={{ width: 12, height: 12 }} />
             ${(totalCost / 100).toFixed(3)}
@@ -1577,6 +1618,16 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
           </button>
         </div>
       </div>
+
+      {/* Director modal — v1.1 only */}
+      {isV11 && (
+        <DirectorModal
+          sessionId={sessionId}
+          iterations={iterations}
+          open={directorOpen}
+          onClose={() => setDirectorOpen(false)}
+        />
+      )}
 
       {error && (
         <div
@@ -2299,6 +2350,11 @@ function IterationCard({
   const [showAdvancedProvider, setShowAdvancedProvider] = useState(false);
   const [sku, setSku] = useState<SkuChoice>(() => {
     const mu = iteration.model_used;
+    // v1.1 iterations — restore the exact SKU if it's in the v1.1 catalog.
+    if (isV11) {
+      if (mu && (V1_1_LAB_SKUS as readonly string[]).includes(mu)) return mu as V1_1LabSku;
+      return V1_1_DEFAULT_SKU;
+    }
     // Map legacy native-kling iterations (model_used=null, provider="kling")
     // and legacy "kling-v2-native" sentinel to the dropdown's native entry.
     if (mu === "kling-v2-native" || (!mu && iteration.provider === "kling")) return "kling-v2-native";
@@ -2482,7 +2538,7 @@ function IterationCard({
           />
         )}
 
-        {/* Try with different provider — hidden on v1.1 (single SKU, no choice) */}
+        {/* Try with different provider — hidden on v1.1 (uses SKU picker instead) */}
         {!isV11 && director && (iteration.clip_url || iteration.render_error) && (
           <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>Try with:</span>
@@ -2508,7 +2564,7 @@ function IterationCard({
           </div>
         )}
 
-        {/* Try another SKU (Atlas) — hidden on v1.1 */}
+        {/* Try another SKU (v1 Atlas) — hidden on v1.1 */}
         {!isV11 && (iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
           <div style={{ marginTop: 8, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
             <span style={{ color: "var(--muted)" }}>
@@ -2538,13 +2594,37 @@ function IterationCard({
           </div>
         )}
 
+        {/* Try another SKU (v1.1 catalog) — shown on v1.1 sessions after render */}
+        {isV11 && (iteration.clip_url || iteration.render_error) && onRerenderWithSku && (
+          <div style={{ marginTop: 8, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12 }}>
+            <span style={{ color: "var(--muted)" }}>
+              {iteration.render_error ? "Retry on another SKU:" : "Try another v1.1 SKU:"}
+            </span>
+            {V1_1_LAB_SKUS
+              .filter((s) => s !== iteration.model_used)
+              .map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="le-btn-ghost"
+                  onClick={() => onRerenderWithSku(s)}
+                  disabled={busy === `rerender-${iteration.id}`}
+                  style={{ fontSize: 11, opacity: busy === `rerender-${iteration.id}` ? 0.5 : 1 }}
+                  title={v11SkuCostLabel(s)}
+                >
+                  {v11SkuLabel(s)}
+                </button>
+              ))}
+          </div>
+        )}
+
         {/* Promote to recipe (on 4+ star iterations) */}
         {typeof iteration.rating === "number" && iteration.rating >= 4 && director && (
           <PromoteRecipeControl iteration={iteration} director={director} />
         )}
 
-        {/* v1.1 note — shown instead of the SKU picker + rerender buttons */}
-        {isV11 && director && (
+        {/* v1.1 note — only shown for Seedance push-in SKU (the push-in override applies only when seedance is selected) */}
+        {isV11 && director && sku === "seedance-pro-pushin" && (
           <div style={{ marginTop: 16, borderRadius: "var(--radius-sm)", background: "rgba(115,80,195,0.06)", border: "1px solid rgba(115,80,195,0.15)", padding: "8px 12px", fontSize: 12, color: "var(--accent)", fontFamily: "var(--le-font-sans)" }}>
             v1.1 — Seedance 2.0 push-in. Camera movement forced to push-in; speed-ramp polish applied on download.
           </div>
@@ -2566,9 +2646,32 @@ function IterationCard({
                 }}
                 style={{ accentColor: "var(--accent)", cursor: "pointer" }}
               />
-              {isV11 ? "Render for real (Seedance 2.0 push-in)" : "Render for real (~$0.36–$1.11 per clip depending on SKU)"}
+              {isV11 ? `Render for real (${v11SkuLabel(sku as V1_1LabSku)})` : "Render for real (~$0.36–$1.11 per clip depending on SKU)"}
             </label>
-            {/* SKU dropdown is hidden on v1.1 — Seedance is the only option */}
+
+            {/* v1.1 SKU dropdown — shown on v1.1 sessions, populated from V1_1_LAB_SKUS */}
+            {isV11 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
+                <label style={{ color: "var(--muted)" }}>SKU:</label>
+                <select
+                  value={sku}
+                  onChange={(e) => setSku(e.target.value as V1_1LabSku)}
+                  disabled={!renderForReal || rendering}
+                  style={{ padding: "5px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)", background: "var(--surface)", fontSize: 12, fontFamily: "inherit", color: "var(--ink)", cursor: "pointer", opacity: (!renderForReal || rendering) ? 0.5 : 1 }}
+                >
+                  {V1_1_LAB_SKUS.map((s) => (
+                    <option key={s} value={s}>
+                      {v11SkuLabel(s)} — {v11SkuCostLabel(s)}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, color: "var(--muted)" }}>
+                  {v11SkuCostLabel(sku as V1_1LabSku)}
+                </span>
+              </div>
+            )}
+
+            {/* v1 SKU dropdown — shown on v1 sessions */}
             {!isV11 && (
               <>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
@@ -2586,7 +2689,7 @@ function IterationCard({
                     ))}
                   </select>
                   <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
-                    {isNativeKlingSku(sku) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku] / 100).toFixed(2)}/5s`}
+                    {isNativeKlingSku(sku as SkuChoice) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku as SkuChoice] / 100).toFixed(2)}/5s`}
                   </span>
                 </div>
                 <SkuAffinityHint
@@ -2636,11 +2739,13 @@ function IterationCard({
               disabled={!renderForReal || rendering}
               onClick={() => {
                 if (isV11) {
-                  // v1.1: server always overrides to seedance-pro-pushin; pass null provider + null sku.
+                  // v1.1: pass the selected SKU to the server so it can use the right model.
+                  // Server routes Seedance to seedance-pro-pushin with push-in override;
+                  // other v1.1 SKUs render as-is with the director prompt.
                   onRender(null, sku);
-                } else if (isNativeKlingSku(sku)) {
+                } else if (isNativeKlingSku(sku as SkuChoice)) {
                   onRender("kling", sku);
-                } else if (isNativeRunwaySku(sku)) {
+                } else if (isNativeRunwaySku(sku as SkuChoice)) {
                   onRender("runway", sku);
                 } else {
                   onRender(providerChoice === "auto" ? null : providerChoice, sku);

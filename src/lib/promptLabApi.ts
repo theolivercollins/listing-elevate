@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { JudgeRubricResult } from "../../lib/prompts/judge-rubric.js";
+import type { PromptLabAssembly } from "../../lib/types.js";
 
 export interface LabSession {
   id: string;
@@ -226,6 +227,33 @@ export function fetchBatchSelection(batchLabel: string | null): Promise<BatchSel
     body: JSON.stringify({ batch_label: batchLabel }),
   });
 }
+
+// ─── Assembly API ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/prompt-lab/assemble
+ * Assembles the given iterations (in order) into a single MP4 via FFmpeg.
+ * Returns the assembly id, the URL of the assembled video, and its duration.
+ */
+export async function assembleLab(
+  sessionId: string,
+  iterationIds: string[],
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, iteration_ids: iterationIds }),
+  });
+}
+
+/**
+ * GET /api/admin/prompt-lab/assemblies?session_id=<>
+ * Returns the most recent assemblies for the given session (newest first).
+ */
+export async function listAssemblies(sessionId: string): Promise<PromptLabAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/assemblies?session_id=${encodeURIComponent(sessionId)}`);
+}
+
+export type { PromptLabAssembly };
 
 export function overrideJudgeRating(
   iterationId: string,
