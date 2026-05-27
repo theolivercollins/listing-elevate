@@ -19,6 +19,8 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@arco-design/web-react": "^2.66.15",
     "@browserbasehq/sdk": "^2.10.0",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
     "@google/genai": "^1.50.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",
@@ -128,14 +130,5 @@
   },
   "engines": {
     "node": ">=20"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "ffmpeg-static",
-      "ffprobe-static",
-      "@swc/core",
-      "esbuild",
-      "sharp"
-    ]
   }
 }
