@@ -453,7 +453,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         listing_id: currentItem.listing_id,
         photo_a_id: currentItem.photo_a_id,
         photo_b_id: photoBId,
-        verdict,
+        operator_verdict: verdict,
         transition_tag: selectedTag,
         thumbnail_hash_a: hashA,
         thumbnail_hash_b: hashB,
@@ -477,7 +477,11 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         });
         if (!res.ok) {
           const text = await res.text().catch(() => "");
-          console.error(`Label POST failed ${res.status}: ${text}`);
+          const msg = `Label save failed (${res.status}): ${text || res.statusText}`;
+          console.error(msg);
+          setError(msg);
+          setSubmitting(false);
+          return;
         }
 
         if (verdict === "bad") {
@@ -487,6 +491,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         setTotalLabels((n) => n + 1);
         setSelectedTag(null);
         setOverridePhotoB(null);
+        setError(null);
 
         // Refresh observability stats after each label
         fetchObservability();
