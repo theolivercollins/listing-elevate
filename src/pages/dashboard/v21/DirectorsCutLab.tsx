@@ -7,10 +7,12 @@ import type {
   ApprenticePrediction,
   PickerFeatures,
 } from "../../../../lib/gen2-v21/types";
+import { ArrowLeftRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,6 +50,12 @@ interface FilmstripPhoto {
   photo_id: string;
   url: string;
   rejected?: boolean;
+}
+
+interface ObservabilityData {
+  total_labels: number;
+  labels_by_property: Record<string, number>;
+  rolling_accuracy?: { last_20: number | null; last_50: number | null; last_100: number | null };
 }
 
 interface DirectorsCutLabProps {
@@ -109,7 +117,134 @@ function FeatureBar({ name, weight }: { name: string; weight: number }) {
   );
 }
 
+// ─── ProgressStrip ────────────────────────────────────────────────────────────
+
+interface ProgressStripProps {
+  currentIdx: number;
+  queueLength: number;
+  totalLabelsForProperty: number;
+  observability: ObservabilityData | null;
+  listingId: string;
+}
+
+function ProgressStrip({
+  currentIdx,
+  queueLength,
+  totalLabelsForProperty,
+  observability,
+  listingId,
+}: ProgressStripProps) {
+  const pairX = currentIdx + 1;
+  const pairY = Math.max(queueLength, pairX);
+  const queuePct = pairY > 0 ? Math.round((pairX / pairY) * 100) : 0;
+
+  const todayLabels = observability?.labels_by_property?.[listingId] ?? null;
+  const totalLabels = observability?.total_labels ?? null;
+  const accuracy = observability?.rolling_accuracy?.last_20 ?? null;
+  const pickerActive = totalLabelsForProperty >= 10;
+  const pickerColdStartRemaining = Math.max(0, 10 - totalLabelsForProperty);
+
+  return (
+    <div
+      className="flex-shrink-0 px-4 py-2.5 border-b border-[var(--line)] bg-[var(--surface)]"
+      style={{ minHeight: 80 }}
+    >
+      <div className="flex items-start gap-3">
+        {/* Stat cards */}
+        <div className="flex items-center gap-2 flex-1 flex-wrap">
+          {/* Queue position */}
+          <Card className="border-[var(--line)] bg-black/[0.03] shadow-none flex-shrink-0">
+            <CardContent className="px-3 py-2 flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">Queue</span>
+              <span className="text-sm font-bold tabular-nums text-[var(--ink)] leading-none">
+                {pairX} / {pairY}
+              </span>
+            </CardContent>
+          </Card>
+
+          {/* Property labels */}
+          <Card className="border-[var(--line)] bg-black/[0.03] shadow-none flex-shrink-0">
+            <CardContent className="px-3 py-2 flex flex-col gap-0.5">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">This Property</span>
+              <span className="text-sm font-bold tabular-nums text-[var(--ink)] leading-none">
+                {totalLabelsForProperty} labeled
+              </span>
+            </CardContent>
+          </Card>
+
+          {/* Today's global labels */}
+          {todayLabels !== null && (
+            <Card className="border-[var(--line)] bg-black/[0.03] shadow-none flex-shrink-0">
+              <CardContent className="px-3 py-2 flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">Today</span>
+                <span className="text-sm font-bold tabular-nums text-[var(--ink)] leading-none">
+                  {todayLabels} labels
+                </span>
+              </CardContent>
+            </Card>
+          )}
+
+          {totalLabels !== null && todayLabels === null && (
+            <Card className="border-[var(--line)] bg-black/[0.03] shadow-none flex-shrink-0">
+              <CardContent className="px-3 py-2 flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">All Labels</span>
+                <span className="text-sm font-bold tabular-nums text-[var(--ink)] leading-none">
+                  {totalLabels} total
+                </span>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        {/* Progress bars column */}
+        <div className="flex flex-col gap-1.5 min-w-[180px] max-w-[240px] flex-shrink-0 pt-0.5">
+          {/* Queue progress */}
+          <div className="flex flex-col gap-0.5">
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                Queue progress
+              </span>
+              <span className="text-[10px] tabular-nums text-[var(--muted)]">{queuePct}%</span>
+            </div>
+            <Progress value={queuePct} className="h-1.5" />
+          </div>
+
+          {/* Picker cold-start or active */}
+          <div className="flex flex-col gap-0.5">
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                Picker
+              </span>
+              <span className="text-[10px] tabular-nums text-[var(--muted)]">
+                {pickerActive
+                  ? accuracy !== null
+                    ? `${Math.round(accuracy * 100)}% acc`
+                    : "active"
+                  : `${pickerColdStartRemaining} more`}
+              </span>
+            </div>
+            <Progress
+              value={pickerActive ? 100 : Math.round((totalLabelsForProperty / 10) * 100)}
+              className="h-1.5"
+              style={pickerActive ? { "--progress-bg": "var(--good)" } as React.CSSProperties : undefined}
+            />
+            <span className="text-[9px] text-[var(--muted)]">
+              {pickerActive
+                ? accuracy !== null
+                  ? `Picker active (last accuracy: ${Math.round(accuracy * 100)}%)`
+                  : "Picker active"
+                : `Picker active in ${pickerColdStartRemaining} more label${pickerColdStartRemaining !== 1 ? "s" : ""}`}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── main component ───────────────────────────────────────────────────────────
+
+type FilmstripTarget = "end" | "start";
 
 export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
   // queue
@@ -126,6 +261,9 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [overridePhotoB, setOverridePhotoB] = useState<FilmstripPhoto | null>(null);
 
+  // filmstrip target mode
+  const [filmstripTarget, setFilmstripTarget] = useState<FilmstripTarget>("end");
+
   // hashes — computed when pair changes
   const [hashA, setHashA] = useState<string>("computing");
   const [hashB, setHashB] = useState<string>("computing");
@@ -139,7 +277,24 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
   const [filmstripPhotos, setFilmstripPhotos] = useState<FilmstripPhoto[]>([]);
   const filmstripRef = useRef<HTMLDivElement>(null);
 
+  // observability
+  const [observability, setObservability] = useState<ObservabilityData | null>(null);
+
   const currentItem = queue[currentIdx] ?? null;
+
+  // ── fetch observability ──────────────────────────────────────────────────────
+
+  const fetchObservability = useCallback(async () => {
+    if (!listingId) return;
+    try {
+      const res = await authedFetch(`/api/gen2/lab/observability?listingId=${listingId}`);
+      if (!res.ok) return;
+      const data: ObservabilityData = await res.json();
+      setObservability(data);
+    } catch {
+      // non-fatal — progress strip just won't show extra stats
+    }
+  }, [listingId]);
 
   // ── fetch queue ─────────────────────────────────────────────────────────────
 
@@ -184,7 +339,8 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
 
   useEffect(() => {
     fetchQueue(0, false);
-  }, [fetchQueue]);
+    fetchObservability();
+  }, [fetchQueue, fetchObservability]);
 
   // ── build filmstrip when item changes ───────────────────────────────────────
 
@@ -242,6 +398,30 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
     };
   }, [currentItem, overridePhotoB]);
 
+  // ── swap start ↔ end (local clone only) ─────────────────────────────────────
+
+  const swapStartEnd = useCallback(() => {
+    if (!currentItem) return;
+    setQueue((prev) => {
+      const next = [...prev];
+      const old = next[currentIdx];
+      if (!old) return prev;
+      next[currentIdx] = {
+        ...old,
+        photo_a_id: old.photo_b_id,
+        photo_b_id: old.photo_a_id,
+        photo_a_url: old.photo_b_url,
+        photo_b_url: old.photo_a_url,
+        features_blob: old.features_blob
+          ? { ...old.features_blob }
+          : null,
+      };
+      return next;
+    });
+    // Clear any B-override since the pair flipped
+    setOverridePhotoB(null);
+  }, [currentItem, currentIdx]);
+
   // ── submit label ─────────────────────────────────────────────────────────────
 
   const submitLabel = useCallback(
@@ -291,6 +471,9 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         setSelectedTag(null);
         setOverridePhotoB(null);
 
+        // Refresh observability stats after each label
+        fetchObservability();
+
         const nextIdx = currentIdx + 1;
         if (nextIdx < queue.length) {
           setCurrentIdx(nextIdx);
@@ -318,6 +501,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
       totalRemaining,
       queueOffset,
       fetchQueue,
+      fetchObservability,
     ]
   );
 
@@ -343,6 +527,12 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         return;
       }
 
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        swapStartEnd();
+        return;
+      }
+
       const tagEntry = TRANSITION_TAGS.find((t) => t.key === e.key);
       if (tagEntry) {
         e.preventDefault();
@@ -352,7 +542,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
 
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [submitLabel]);
+  }, [submitLabel, swapStartEnd]);
 
   // ── derived display values ───────────────────────────────────────────────────
 
@@ -462,8 +652,17 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
           </span>
         </div>
 
+        {/* ── Progress strip ───────────────────────────────────────────────────── */}
+        <ProgressStrip
+          currentIdx={currentIdx}
+          queueLength={Math.max(queue.length, currentIdx + 1)}
+          totalLabelsForProperty={totalLabels}
+          observability={observability}
+          listingId={listingId}
+        />
+
         {/* ── Main canvas: 42% | center | 42% ─────────────────────────────────── */}
-        <div className="flex-1 grid min-h-0 overflow-hidden" style={{ gridTemplateColumns: "1fr 220px 1fr" }}>
+        <div className="flex-1 grid min-h-0 overflow-hidden relative" style={{ gridTemplateColumns: "1fr 220px 1fr" }}>
           {/* Left: photo_a */}
           <div className="bg-[#080808] flex items-center justify-center overflow-hidden relative">
             <img
@@ -475,6 +674,39 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
             <div className="absolute bottom-3 left-4 text-[10px] text-white/50 font-semibold uppercase tracking-widest pointer-events-none">
               A · Start frame
             </div>
+          </div>
+
+          {/* Swap button — absolutely centered between left and center column */}
+          <div
+            className="absolute z-20 flex flex-col items-center gap-1"
+            style={{
+              left: "calc(1fr)",
+              // Position at the left edge of the center column, centered vertically
+              top: "50%",
+              transform: "translateY(-50%)",
+              // Fine-tune: sit at the seam between photo A and the center column
+              left: "calc((100% - 220px) / 2 - 20px)",
+            }}
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  className="rounded-full w-9 h-9 bg-[var(--surface)] border-[var(--line)] shadow-sm hover:bg-[var(--canvas)]"
+                  onClick={swapStartEnd}
+                  aria-label="Swap start and end frames"
+                >
+                  <ArrowLeftRight size={14} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-[11px]">
+                Swap A ↔ B
+              </TooltipContent>
+            </Tooltip>
+            <kbd className="text-[9px] font-bold text-[var(--muted)] bg-black/[0.06] rounded px-1 py-0.5 leading-none">
+              S
+            </kbd>
           </div>
 
           {/* Center column */}
@@ -635,8 +867,8 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
               </Button>
 
               <p className="text-[10px] text-[var(--muted)] text-center leading-relaxed">
-                SPACE confirm · X reject<br />
-                1–5 tag · click filmstrip to swap B
+                SPACE confirm · X reject · S swap<br />
+                1–5 tag · click filmstrip to swap frame
               </p>
             </div>
           </div>
@@ -663,17 +895,50 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         </div>
 
         {/* ── Filmstrip ────────────────────────────────────────────────────────── */}
-        <div className="flex-shrink-0 border-t border-[var(--line)] bg-[#0e0e0e] h-[88px] flex items-center overflow-hidden">
+        <div className="flex-shrink-0 border-t border-[var(--line)] bg-[#0e0e0e] flex flex-col overflow-hidden">
+          {/* Filmstrip target toggle */}
+          <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-white/30">
+              Click thumbnail to swap:
+            </span>
+            <button
+              type="button"
+              onClick={() => setFilmstripTarget("end")}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded transition-all duration-100"
+              style={{
+                background: filmstripTarget === "end" ? "rgba(42,111,219,0.18)" : "transparent",
+                color: filmstripTarget === "end" ? "var(--accent)" : "rgba(255,255,255,0.35)",
+                border: filmstripTarget === "end" ? "1px solid rgba(42,111,219,0.4)" : "1px solid transparent",
+              }}
+            >
+              Swap end
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilmstripTarget("start")}
+              className="text-[10px] font-semibold px-2 py-0.5 rounded transition-all duration-100"
+              style={{
+                background: filmstripTarget === "start" ? "rgba(42,111,219,0.18)" : "transparent",
+                color: filmstripTarget === "start" ? "var(--accent)" : "rgba(255,255,255,0.35)",
+                border: filmstripTarget === "start" ? "1px solid rgba(42,111,219,0.4)" : "1px solid transparent",
+              }}
+            >
+              Swap start
+            </button>
+          </div>
+
           <div
             ref={filmstripRef}
-            className="flex items-center gap-1.5 px-3 overflow-x-auto h-full"
-            style={{ scrollbarWidth: "none" }}
+            className="flex items-center gap-1.5 px-3 pb-2 overflow-x-auto"
+            style={{ scrollbarWidth: "none", height: 68 }}
           >
             {filmstripPhotos.map((photo) => {
               const isCurrentB =
                 overridePhotoB
                   ? overridePhotoB.photo_id === photo.photo_id
                   : currentItem.photo_b_id === photo.photo_id;
+              const isCurrentA = currentItem.photo_a_id === photo.photo_id;
+              const isHighlighted = filmstripTarget === "end" ? isCurrentB : isCurrentA;
 
               return (
                 <Tooltip key={photo.photo_id}>
@@ -681,16 +946,33 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
                     <button
                       type="button"
                       onClick={() => {
-                        if (photo.photo_id === currentItem.photo_a_id) return;
-                        setOverridePhotoB(
-                          isCurrentB ? null : { photo_id: photo.photo_id, url: photo.url }
-                        );
+                        if (filmstripTarget === "end") {
+                          if (photo.photo_id === currentItem.photo_a_id) return;
+                          setOverridePhotoB(
+                            isCurrentB ? null : { photo_id: photo.photo_id, url: photo.url }
+                          );
+                        } else {
+                          // Swap start: mutate the queue item locally
+                          if (photo.photo_id === currentItem.photo_b_id) return;
+                          setQueue((prev) => {
+                            const next = [...prev];
+                            const old = next[currentIdx];
+                            if (!old) return prev;
+                            next[currentIdx] = {
+                              ...old,
+                              photo_a_id: photo.photo_id,
+                              photo_a_url: photo.url,
+                            };
+                            return next;
+                          });
+                          setOverridePhotoB(null);
+                        }
                       }}
                       className="flex-shrink-0 rounded-lg overflow-hidden relative transition-all duration-150"
                       style={{
-                        width: 68,
-                        height: 68,
-                        border: isCurrentB
+                        width: 60,
+                        height: 60,
+                        border: isHighlighted
                           ? "2.5px solid var(--accent)"
                           : "2px solid transparent",
                         padding: 0,
@@ -713,6 +995,13 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
                             <line x1={6} y1={6} x2={18} y2={18} />
                           </svg>
                         </div>
+                      )}
+                      {/* Label for start/end mode hints */}
+                      {isCurrentA && (
+                        <div className="absolute bottom-0.5 left-0.5 text-[8px] font-bold bg-black/60 text-white/80 rounded px-1 leading-tight">A</div>
+                      )}
+                      {isCurrentB && !overridePhotoB && (
+                        <div className="absolute bottom-0.5 right-0.5 text-[8px] font-bold bg-black/60 text-white/80 rounded px-1 leading-tight">B</div>
                       )}
                     </button>
                   </TooltipTrigger>
