@@ -57,6 +57,12 @@ const SECTIONS: SidebarSection[] = [
           p.startsWith("/dashboard/development/learning") ||
           p.startsWith("/dashboard/rating-ledger"),
       },
+      {
+        to: "/dashboard/development/lab/v21",
+        label: "Pair-Picker (V2)",
+        icon: "beaker",
+        match: (p) => p.startsWith("/dashboard/development/lab"),
+      },
       { to: "/dashboard/settings", label: "Settings", icon: "settings" },
     ],
   },
