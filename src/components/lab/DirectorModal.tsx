@@ -13,7 +13,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Reorder } from "framer-motion";
-import { X, Loader2, Play, Star, Clapperboard } from "lucide-react";
+import { X, Loader2, Play, Star, HelpCircle, Copy, Pencil, Crop, Trash2 } from "lucide-react";
 import {
   assembleLab,
   listAssemblies,
@@ -98,7 +98,66 @@ function listingIterationToLibraryItem(
   return { id: it.id, clip_url: it.clip_url, label, subLabel: subParts.join(" · ") };
 }
 
-// ─── Library card ─────────────────────────────────────────────────────────────
+// ─── Library thumbnail (grid tile) ────────────────────────────────────────────
+
+function LibraryThumbnail({ item, onClick }: { item: LibraryItem; onClick: () => void }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={`Add ${item.label} to sequence`}
+      style={{
+        position: "relative",
+        aspectRatio: "16 / 9",
+        borderRadius: 8,
+        overflow: "hidden",
+        border: `1px solid ${hovered ? "rgba(11,11,16,0.35)" : "var(--line)"}`,
+        background: "rgba(11,11,16,0.08)",
+        cursor: "pointer",
+        padding: 0,
+        transition: "border-color 0.12s, transform 0.12s",
+        transform: hovered ? "translateY(-1px)" : "none",
+        fontFamily: "var(--le-font-sans)",
+      }}
+    >
+      <video
+        src={item.clip_url}
+        muted
+        playsInline
+        preload="metadata"
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
+      />
+      {/* Add overlay on hover */}
+      {hovered && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: "linear-gradient(180deg, rgba(11,11,16,0) 40%, rgba(11,11,16,0.65) 100%)",
+            display: "flex",
+            alignItems: "flex-end",
+            padding: "6px 8px",
+            gap: 4,
+            color: "#fff",
+            fontSize: 10.5,
+            fontWeight: 600,
+            letterSpacing: "0.02em",
+          }}
+        >
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {item.label}
+          </span>
+          <span style={{ fontSize: 14, lineHeight: 1, opacity: 0.9 }}>+</span>
+        </div>
+      )}
+    </button>
+  );
+}
+
+// ─── Library card (legacy list item — kept for compact use) ───────────────────
 
 function LibraryCard({
   item,
@@ -196,83 +255,124 @@ function LibraryCard({
 function SequenceCard({
   sequenceItem,
   item,
+  index,
   onRemove,
+  onDuplicate,
 }: {
   sequenceItem: SequenceItem;
   item: LibraryItem | undefined;
+  index: number;
   onRemove: () => void;
+  onDuplicate: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const chipBtn: CSSProperties = {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    border: "none",
+    background: "rgba(0,0,0,0.55)",
+    color: "#fff",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+  };
   return (
     <Reorder.Item
       value={sequenceItem}
       id={sequenceItem.key}
-      whileDrag={{ scale: 1.05, boxShadow: "0 8px 24px rgba(11,11,16,0.18)" }}
+      whileDrag={{ scale: 1.04, boxShadow: "0 12px 30px rgba(11,11,16,0.22)" }}
       style={{ listStyle: "none" }}
     >
       <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
-          width: 96,
+          width: 192,
+          height: 108,
           flexShrink: 0,
-          border: "1px solid var(--line)",
-          borderRadius: 8,
+          borderRadius: 10,
           overflow: "hidden",
-          background: "var(--surface)",
+          background: "rgba(11,11,16,0.08)",
           cursor: "grab",
           position: "relative",
           userSelect: "none",
+          border: "1px solid var(--line)",
         }}
       >
-        <div style={{ width: 96, height: 54, background: "rgba(11,11,16,0.08)", overflow: "hidden" }}>
-          {item?.clip_url && (
-            <video
-              src={item.clip_url}
-              muted
-              playsInline
-              preload="metadata"
-              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
-            />
-          )}
-        </div>
+        {item?.clip_url && (
+          <video
+            src={item.clip_url}
+            muted
+            playsInline
+            preload="metadata"
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
+          />
+        )}
+        {/* Position number */}
         <div
           style={{
-            padding: "3px 6px 4px",
-            fontSize: 9.5,
-            color: "var(--muted)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {item?.label ?? "?"}
-        </div>
-        {/* Remove button */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          title="Remove from sequence"
-          style={{
             position: "absolute",
-            top: 3,
-            right: 3,
-            width: 18,
-            height: 18,
-            borderRadius: "50%",
-            border: "none",
-            background: "rgba(0,0,0,0.55)",
+            top: 6,
+            left: 6,
+            width: 22,
+            height: 22,
+            borderRadius: 6,
+            background: "rgba(0,0,0,0.65)",
             color: "#fff",
-            cursor: "pointer",
+            fontSize: 11,
+            fontWeight: 700,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 0,
-            lineHeight: 1,
+            fontVariantNumeric: "tabular-nums",
           }}
         >
-          <X style={{ width: 10, height: 10 }} />
-        </button>
+          {index + 1}
+        </div>
+        {/* Action chips */}
+        {hovered && (
+          <div
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              display: "inline-flex",
+              gap: 3,
+            }}
+          >
+            <button
+              type="button"
+              title="Duplicate"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
+              style={chipBtn}
+            >
+              <Copy style={{ width: 11, height: 11 }} />
+            </button>
+            <button type="button" title="Edit (coming soon)" disabled style={{ ...chipBtn, opacity: 0.4, cursor: "not-allowed" }}>
+              <Pencil style={{ width: 11, height: 11 }} />
+            </button>
+            <button type="button" title="Crop (coming soon)" disabled style={{ ...chipBtn, opacity: 0.4, cursor: "not-allowed" }}>
+              <Crop style={{ width: 11, height: 11 }} />
+            </button>
+            <button
+              type="button"
+              title="Remove"
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
+              style={chipBtn}
+            >
+              <Trash2 style={{ width: 11, height: 11 }} />
+            </button>
+          </div>
+        )}
       </div>
     </Reorder.Item>
   );
@@ -471,6 +571,36 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     setSequence((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // ─── Duplicate at index ────────────────────────────────────────────────────
+  function duplicateInSequence(index: number) {
+    setSequence((prev) => {
+      const orig = prev[index];
+      if (!orig) return prev;
+      const dup: SequenceItem = {
+        iteration_id: orig.iteration_id,
+        key: `${orig.iteration_id}-${prev.length}-${Date.now()}`,
+      };
+      const next = [...prev];
+      next.splice(index + 1, 0, dup);
+      return next;
+    });
+  }
+
+  // ─── Preferences (display-only in v1, not wired to assemble API yet) ───────
+  const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
+  const [branding, setBranding] = useState<"unbranded" | "branded" | "both">("unbranded");
+  const [libraryTab, setLibraryTab] = useState<"media" | "vfx" | "audio">("media");
+
+  // Read-only address line shown in Preferences. Real listing-address lookup
+  // is deferred; we expose the source identifier so the operator can confirm
+  // they're editing the right thing.
+  const addressLabel =
+    source.kind === "session"
+      ? `Session · ${source.sessionId.slice(0, 8)}`
+      : source.kind === "listing"
+        ? `Listing · ${source.listingId.slice(0, 8)}`
+        : `Batch · ${source.batchLabel}`;
+
   // ─── Generate ─────────────────────────────────────────────────────────────
   async function handleGenerate() {
     if (sequence.length === 0 || status === "assembling") return;
@@ -524,6 +654,59 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     (source.kind === "listing" && listingLoading) ||
     (source.kind === "batch" && batchLoading);
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
+  const sectionLabel: CSSProperties = {
+    fontSize: 10,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    color: "var(--muted)",
+  };
+
+  const segTabBase: CSSProperties = {
+    padding: "6px 12px",
+    borderRadius: 999,
+    border: "none",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "var(--le-font-sans)",
+    transition: "background 0.15s, color 0.15s",
+  };
+
+  const prefToggleGroup: CSSProperties = {
+    display: "inline-flex",
+    padding: 3,
+    background: "rgba(11,11,16,0.05)",
+    borderRadius: 10,
+    gap: 2,
+    width: "100%",
+  };
+
+  const prefToggleBtn = (active: boolean): CSSProperties => ({
+    flex: 1,
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "none",
+    background: active ? "var(--surface)" : "transparent",
+    color: active ? "var(--ink)" : "var(--muted)",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+    fontFamily: "var(--le-font-sans)",
+    boxShadow: active ? "0 1px 2px rgba(11,11,16,0.08)" : "none",
+    transition: "background 0.15s, color 0.15s",
+  });
+
+  const trackRailRow: CSSProperties = {
+    display: "flex",
+    alignItems: "center",
+    minHeight: 60,
+    paddingRight: 12,
+    fontFamily: "var(--le-font-sans)",
+  };
+
   return (
     // Backdrop
     <div
@@ -533,9 +716,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
         zIndex: 100,
         background: "rgba(0,0,0,0.72)",
         display: "flex",
-        alignItems: "center",
+        alignItems: "stretch",
         justifyContent: "center",
-        padding: 16,
+        padding: 12,
       }}
       onClick={onClose}
     >
@@ -543,12 +726,12 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: "90vw",
-          height: "90vh",
-          maxWidth: 1400,
+          width: "100%",
+          maxWidth: 1600,
+          height: "100%",
           background: "var(--surface)",
           border: "1px solid var(--line)",
-          borderRadius: "var(--radius)",
+          borderRadius: 14,
           boxShadow: "0 40px 80px -20px rgba(0,0,0,0.5)",
           display: "flex",
           flexDirection: "column",
@@ -562,22 +745,21 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "14px 20px",
+            padding: "12px 20px",
             borderBottom: "1px solid var(--line)",
             flexShrink: 0,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Clapperboard style={{ width: 16, height: 16, color: "var(--accent)" }} />
             <span
               style={{
-                fontWeight: 600,
-                fontSize: 15,
+                fontWeight: 700,
+                fontSize: 17,
                 letterSpacing: "-0.015em",
                 color: "var(--ink)",
               }}
             >
-              Direct
+              Create Video
             </span>
             <span
               style={{
@@ -608,109 +790,133 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               </span>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: "var(--muted)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 4,
-              borderRadius: 6,
-            }}
-            title="Close"
-          >
-            <X style={{ width: 16, height: 16 }} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <button
+              type="button"
+              title="Help (coming soon)"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--muted)",
+                padding: 6,
+                borderRadius: 6,
+                display: "inline-flex",
+              }}
+            >
+              <HelpCircle style={{ width: 16, height: 16 }} />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--muted)",
+                padding: 6,
+                borderRadius: 6,
+                display: "inline-flex",
+              }}
+              title="Close"
+            >
+              <X style={{ width: 16, height: 16 }} />
+            </button>
+          </div>
         </div>
 
-        {/* ── Body ── */}
+        {/* ── Top body: Library | Preview | Preferences ── */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
-          {/* ── Library (left ~35%) ── */}
+          {/* ── Library (left) ── */}
           <div
             style={{
-              width: "35%",
+              width: 320,
               flexShrink: 0,
               borderRight: "1px solid var(--line)",
-              overflowY: "auto",
               display: "flex",
               flexDirection: "column",
+              minHeight: 0,
             }}
           >
             <div
               style={{
-                padding: "12px 14px 8px",
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                padding: "12px 16px",
                 borderBottom: "1px solid var(--line-2)",
                 flexShrink: 0,
               }}
             >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "var(--muted)",
-                }}
-              >
-                {isListingLoading
-                  ? "Library — loading…"
-                  : `Library — ${library.length} rendered clip${library.length === 1 ? "" : "s"}`}
-              </span>
+              <span style={sectionLabel}>Library</span>
             </div>
+            {/* Tabs */}
             <div
               style={{
-                flex: 1,
-                overflowY: "auto",
-                padding: 12,
                 display: "flex",
-                flexDirection: "column",
-                gap: 6,
+                gap: 4,
+                padding: "8px 14px",
+                borderBottom: "1px solid var(--line-2)",
+                flexShrink: 0,
               }}
             >
-              {isListingLoading ? (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "32px 0",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    color: "var(--muted)",
-                  }}
-                >
+              {(["media", "vfx", "audio"] as const).map((tab) => {
+                const active = libraryTab === tab;
+                const enabled = tab === "media";
+                return (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => enabled && setLibraryTab(tab)}
+                    disabled={!enabled}
+                    style={{
+                      ...segTabBase,
+                      background: active ? "var(--ink)" : "transparent",
+                      color: active ? "#fff" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
+                      cursor: enabled ? "pointer" : "not-allowed",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {tab}
+                    {tab === "vfx" && (
+                      <span style={{ marginLeft: 5, padding: "1px 5px", borderRadius: 4, fontSize: 9, background: "rgba(217,70,160,0.12)", color: "rgb(217,70,160)" }}>
+                        NEW
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Thumbnail grid */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+              {libraryTab !== "media" ? (
+                <div style={{ padding: "32px 8px", textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
+                  {libraryTab === "vfx" ? "VFX library — coming soon." : "Audio library — coming soon."}
+                </div>
+              ) : isListingLoading ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "32px 0", justifyContent: "center", fontSize: 12, color: "var(--muted)" }}>
                   <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
                   Loading clips…
                 </div>
               ) : library.length === 0 ? (
-                <div
-                  style={{
-                    padding: "32px 0",
-                    textAlign: "center",
-                    fontSize: 12,
-                    color: "var(--muted)",
-                  }}
-                >
+                <div style={{ padding: "32px 8px", textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
                   No rendered clips yet. Render some iterations first.
                 </div>
               ) : (
-                library.map((item) => (
-                  <LibraryCard
-                    key={item.id}
-                    item={item}
-                    onClick={() => addToSequence(item.id)}
-                  />
-                ))
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {library.map((item) => (
+                    <LibraryThumbnail
+                      key={item.id}
+                      item={item}
+                      onClick={() => addToSequence(item.id)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           </div>
 
-          {/* ── Sequence + footer + output (right ~65%) ── */}
+          {/* ── Preview (center) ── */}
           <div
             style={{
               flex: 1,
@@ -718,175 +924,420 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               flexDirection: "column",
               overflow: "hidden",
               minWidth: 0,
+              background: "rgba(11,11,16,0.02)",
             }}
           >
-            {/* Sequence label */}
             <div
               style={{
-                padding: "12px 16px 8px",
-                borderBottom: "1px solid var(--line-2)",
-                flexShrink: 0,
-              }}
-            >
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.12em",
-                  color: "var(--muted)",
-                }}
-              >
-                Sequence — {sequence.length} clip{sequence.length === 1 ? "" : "s"}
-              </span>
-            </div>
-
-            {/* Sequence drag area */}
-            <div
-              style={{
-                flexShrink: 0,
-                overflowX: "auto",
-                overflowY: "hidden",
-                padding: "14px 16px",
-                minHeight: 108,
                 display: "flex",
                 alignItems: "center",
+                gap: 10,
+                padding: "12px 20px",
                 borderBottom: "1px solid var(--line-2)",
+                flexShrink: 0,
               }}
             >
-              {sequence.length === 0 ? (
+              <Play style={{ width: 13, height: 13, color: "var(--muted)" }} />
+              <span style={sectionLabel}>Preview</span>
+            </div>
+            <div
+              ref={outputRef}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 24,
+                minHeight: 0,
+              }}
+            >
+              {status === "complete" && assembledUrl ? (
+                <video
+                  key={assembledUrl}
+                  controls
+                  src={assembledUrl}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    borderRadius: 12,
+                    background: "#000",
+                    boxShadow: "0 20px 40px -16px rgba(0,0,0,0.35)",
+                  }}
+                />
+              ) : (
                 <div
                   style={{
+                    position: "relative",
                     width: "100%",
+                    maxWidth: 920,
+                    aspectRatio: "16 / 9",
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    background: "rgba(11,11,16,0.08)",
+                    border: "1px solid var(--line)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    border: "1px dashed var(--line)",
-                    borderRadius: 8,
-                    padding: "20px 24px",
-                    fontSize: 12,
-                    color: "var(--muted)",
-                    minHeight: 80,
                   }}
                 >
-                  Click clips from the library to add them, drag to reorder, ✕ to remove.
-                </div>
-              ) : (
-                <Reorder.Group
-                  axis="x"
-                  values={sequence}
-                  onReorder={setSequence}
-                  style={{ display: "flex", gap: 8, listStyle: "none", margin: 0, padding: 0 }}
-                >
-                  {sequence.map((item, idx) => (
-                    <SequenceCard
-                      key={item.key}
-                      sequenceItem={item}
-                      item={libraryMap.get(item.iteration_id)}
-                      onRemove={() => removeFromSequence(idx)}
-                    />
-                  ))}
-                </Reorder.Group>
-              )}
-            </div>
-
-            {/* Footer: Generate + status */}
-            <div
-              style={{
-                flexShrink: 0,
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 16px",
-                borderBottom: "1px solid var(--line-2)",
-              }}
-            >
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={sequence.length === 0 || status === "assembling"}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "8px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background:
-                    sequence.length === 0 || status === "assembling"
-                      ? "rgba(11,11,16,0.1)"
-                      : "var(--ink)",
-                  color:
-                    sequence.length === 0 || status === "assembling"
-                      ? "var(--muted)"
-                      : "var(--surface)",
-                  fontFamily: "var(--le-font-sans)",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor:
-                    sequence.length === 0 || status === "assembling" ? "not-allowed" : "pointer",
-                  transition: "background 0.15s",
-                }}
-              >
-                {status === "assembling" ? (
-                  <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />
-                ) : (
-                  <Play style={{ width: 13, height: 13 }} />
-                )}
-                {status === "assembling" ? "Assembling…" : "Generate"}
-              </button>
-              <span
-                style={{
-                  fontSize: 12,
-                  color: statusColor,
-                  fontVariantNumeric: "tabular-nums",
-                }}
-              >
-                {statusLine}
-              </span>
-            </div>
-
-            {/* Output video — shown after complete */}
-            <div ref={outputRef} style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-              {status === "complete" && assembledUrl ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   <div
                     style={{
-                      fontSize: 10,
-                      fontWeight: 600,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.12em",
-                      color: "var(--muted)",
+                      position: "absolute",
+                      top: 16,
+                      left: 16,
+                      right: 16,
+                      padding: "14px 18px",
+                      borderRadius: 10,
+                      background: "rgba(11,11,16,0.82)",
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
                     }}
                   >
-                    Output
+                    <Play style={{ width: 14, height: 14, marginTop: 2, opacity: 0.8 }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
+                        Sequence preview only
+                      </div>
+                      <div style={{ fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,0.78)" }}>
+                        {sequence.length === 0
+                          ? "Drag clips from the library into the timeline below, then click Generate."
+                          : "Click Generate to assemble the final video. The output will play here when ready."}
+                      </div>
+                    </div>
                   </div>
-                  <video
-                    key={assembledUrl}
-                    controls
-                    src={assembledUrl}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Preferences (right) ── */}
+          <div
+            style={{
+              width: 280,
+              flexShrink: 0,
+              borderLeft: "1px solid var(--line)",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "12px 16px",
+                borderBottom: "1px solid var(--line-2)",
+                flexShrink: 0,
+              }}
+            >
+              <span style={sectionLabel}>Preferences</span>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 18 }}>
+              {/* Listing address */}
+              <div>
+                <label style={{ ...sectionLabel, display: "block", marginBottom: 8 }}>Listing Address</label>
+                <div
+                  style={{
+                    padding: "9px 12px",
+                    borderRadius: 10,
+                    border: "1px solid var(--line)",
+                    background: "var(--surface)",
+                    fontSize: 12.5,
+                    color: "var(--ink-2)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={addressLabel}
+                >
+                  {addressLabel}
+                </div>
+              </div>
+
+              {/* Orientation */}
+              <div>
+                <label style={{ ...sectionLabel, display: "block", marginBottom: 8 }}>Orientation</label>
+                <div style={prefToggleGroup}>
+                  <button type="button" onClick={() => setOrientation("landscape")} style={prefToggleBtn(orientation === "landscape")}>
+                    Landscape
+                  </button>
+                  <button type="button" onClick={() => setOrientation("portrait")} style={prefToggleBtn(orientation === "portrait")}>
+                    Portrait
+                  </button>
+                </div>
+              </div>
+
+              {/* Branding */}
+              <div>
+                <label style={{ ...sectionLabel, display: "block", marginBottom: 8 }}>Branding</label>
+                <div style={prefToggleGroup}>
+                  <button type="button" onClick={() => setBranding("unbranded")} style={prefToggleBtn(branding === "unbranded")}>
+                    Unbranded
+                  </button>
+                  <button type="button" onClick={() => setBranding("branded")} style={prefToggleBtn(branding === "branded")}>
+                    Branded
+                  </button>
+                  <button type="button" onClick={() => setBranding("both")} style={prefToggleBtn(branding === "both")}>
+                    Both
+                  </button>
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted-2)" }}>
+                  Orientation + Branding are display-only in v1.1 — final video is always 16:9 unbranded.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Bottom timeline ── */}
+        <div
+          style={{
+            flexShrink: 0,
+            borderTop: "1px solid var(--line)",
+            background: "var(--surface)",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 240,
+            maxHeight: "42%",
+          }}
+        >
+          {/* Timeline header: Video tabs + Speed ramp + Generate */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "10px 16px",
+              borderBottom: "1px solid var(--line-2)",
+              flexShrink: 0,
+            }}
+          >
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {([1, 2, 3] as const).map((n) => {
+                const active = n === 1;
+                const enabled = n === 1;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    disabled={!enabled}
                     style={{
-                      maxWidth: "100%",
-                      maxHeight: 360,
-                      borderRadius: "var(--radius-sm)",
-                      border: "1px solid var(--line)",
-                      display: "block",
+                      ...segTabBase,
+                      padding: "6px 14px",
+                      borderRadius: 8,
+                      background: active ? "rgba(244,63,140,0.10)" : "transparent",
+                      color: active ? "rgb(217,70,160)" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
+                      cursor: enabled ? "pointer" : "not-allowed",
+                      borderBottom: active ? "2px solid rgb(217,70,160)" : "2px solid transparent",
+                      borderRadius: 0,
                     }}
-                  />
-                  <a
-                    href={assembledUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: 12, color: "var(--muted)", textDecoration: "underline" }}
                   >
-                    Open in new tab
-                  </a>
+                    Video {n}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                disabled
+                style={{
+                  ...segTabBase,
+                  marginLeft: 8,
+                  background: "rgba(244,63,140,0.10)",
+                  color: "rgb(217,70,160)",
+                  fontSize: 10,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  cursor: "not-allowed",
+                  opacity: 0.7,
+                }}
+                title="Speed Ramp — coming soon"
+              >
+                Speed Ramp
+              </button>
+            </div>
+
+            <div style={{ flex: 1 }} />
+
+            <span style={{ fontSize: 12, color: statusColor, fontVariantNumeric: "tabular-nums" }}>
+              {statusLine}
+            </span>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={sequence.length === 0 || status === "assembling"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "10px 18px",
+                borderRadius: 12,
+                border: "none",
+                background:
+                  sequence.length === 0 || status === "assembling"
+                    ? "rgba(11,11,16,0.1)"
+                    : "var(--ink)",
+                color:
+                  sequence.length === 0 || status === "assembling"
+                    ? "var(--muted)"
+                    : "#fff",
+                fontFamily: "var(--le-font-sans)",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor:
+                  sequence.length === 0 || status === "assembling" ? "not-allowed" : "pointer",
+                transition: "background 0.15s",
+              }}
+            >
+              {status === "assembling" ? (
+                <Loader2 style={{ width: 13, height: 13 }} className="animate-spin" />
+              ) : (
+                <Play style={{ width: 13, height: 13 }} />
+              )}
+              {status === "assembling" ? "Assembling…" : "Generate"}
+            </button>
+          </div>
+
+          {/* Tracks: rail (left) + strips (right) */}
+          <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+            {/* Rail */}
+            <div
+              style={{
+                width: 110,
+                flexShrink: 0,
+                borderRight: "1px solid var(--line-2)",
+                padding: "12px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+                background: "rgba(11,11,16,0.015)",
+              }}
+            >
+              {[
+                { label: "VIDEO", sub: `${sequence.length} ${sequence.length === 1 ? "clip" : "clips"}` },
+                { label: "VFX", sub: "None" },
+                { label: "TEXT", sub: "1 item" },
+                { label: "AUDIO", sub: "1 track" },
+              ].map((r) => (
+                <div key={r.label} style={trackRailRow}>
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "var(--ink)", letterSpacing: "0.06em" }}>
+                      {r.label}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: "var(--muted)" }}>{r.sub}</span>
+                  </div>
                 </div>
-              ) : status === "idle" || status === "failed" ? (
-                <div style={{ padding: "24px 0", fontSize: 12, color: "var(--muted-2)" }}>
-                  Assembled video will appear here after generation.
+              ))}
+            </div>
+            {/* Strips */}
+            <div style={{ flex: 1, padding: "12px 16px", overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+              {/* Video strip */}
+              <div style={{ minHeight: 116, display: "flex", alignItems: "center" }}>
+                {sequence.length === 0 ? (
+                  <div
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px dashed var(--line)",
+                      borderRadius: 10,
+                      padding: "24px",
+                      fontSize: 12,
+                      color: "var(--muted)",
+                      minHeight: 108,
+                    }}
+                  >
+                    Click clips from the library to add them to the timeline. Drag to reorder.
+                  </div>
+                ) : (
+                  <Reorder.Group
+                    axis="x"
+                    values={sequence}
+                    onReorder={setSequence}
+                    style={{ display: "flex", gap: 10, listStyle: "none", margin: 0, padding: 0, flexWrap: "nowrap" }}
+                  >
+                    {sequence.map((item, idx) => (
+                      <SequenceCard
+                        key={item.key}
+                        sequenceItem={item}
+                        item={libraryMap.get(item.iteration_id)}
+                        index={idx}
+                        onRemove={() => removeFromSequence(idx)}
+                        onDuplicate={() => duplicateInSequence(idx)}
+                      />
+                    ))}
+                  </Reorder.Group>
+                )}
+              </div>
+              {/* VFX strip (placeholder) */}
+              <div style={{ minHeight: 32, display: "flex", alignItems: "center" }}>
+                <div style={{ width: "100%", height: 28, borderRadius: 8, background: "rgba(11,11,16,0.025)", border: "1px dashed var(--line)" }} />
+              </div>
+              {/* Text strip (address overlay) */}
+              <div style={{ minHeight: 36, display: "flex", alignItems: "center" }}>
+                <div
+                  style={{
+                    width: sequence.length > 0 ? "60%" : "30%",
+                    height: 32,
+                    borderRadius: 8,
+                    background: "rgba(217,70,160,0.10)",
+                    border: "1px solid rgba(217,70,160,0.35)",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "rgb(217,70,160)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={addressLabel}
+                >
+                  {addressLabel}
                 </div>
-              ) : null}
+              </div>
+              {/* Audio strip (waveform placeholder) */}
+              <div style={{ minHeight: 40, display: "flex", alignItems: "center" }}>
+                <div
+                  style={{
+                    width: "100%",
+                    height: 36,
+                    borderRadius: 8,
+                    background: "rgba(244,63,140,0.06)",
+                    border: "1px solid rgba(244,63,140,0.20)",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 12px",
+                    gap: 1.5,
+                    overflow: "hidden",
+                  }}
+                  title="Music track placeholder"
+                >
+                  <span style={{ fontSize: 11, color: "rgb(217,70,160)", fontWeight: 600, marginRight: 8 }}>
+                    Music
+                  </span>
+                  {/* Fake waveform bars */}
+                  {Array.from({ length: 80 }).map((_, i) => {
+                    const h = 4 + Math.abs(Math.sin(i * 0.7) * 16) + Math.abs(Math.cos(i * 1.3) * 8);
+                    return (
+                      <span
+                        key={i}
+                        style={{
+                          width: 2,
+                          height: h,
+                          borderRadius: 1,
+                          background: "rgba(217,70,160,0.55)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         </div>
