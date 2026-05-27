@@ -56,13 +56,6 @@ interface LibraryItem {
   clip_url: string;
   label: string;
   subLabel: string;
-  /** 1–5 stars, or null when unrated. Used to colour-code the card border
-   *  and render a corner badge so the operator can see at-a-glance which
-   *  clips they liked / hated without clicking. */
-  rating: number | null;
-  /** Optional operator comment — when present we render a tiny message
-   *  icon on the card so the operator knows there's qualitative context. */
-  hasComment: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -80,21 +73,14 @@ function skuShortLabel(sku: string | null | undefined): string {
 function sessionIterationToLibraryItem(it: LabIteration): LibraryItem | null {
   if (!it.clip_url) return null;
   const d = it.director_output_json;
-  // Drop the "iteration_number · " prefix — operators don't think in
-  // iteration numbers; they think in shot descriptions. Show the camera
-  // movement as the primary label, with iter # only as a tiebreaker
-  // when movement is missing.
-  const label = d?.camera_movement
-    ? d.camera_movement.replace(/_/g, " ")
-    : `Iteration ${it.iteration_number}`;
-  return {
-    id: it.id,
-    clip_url: it.clip_url,
-    label,
-    subLabel: skuShortLabel(it.model_used),
-    rating: typeof it.rating === "number" ? it.rating : null,
-    hasComment: !!(it.user_comment && it.user_comment.trim().length > 0),
-  };
+  const label =
+    d?.camera_movement
+      ? `${it.iteration_number} · ${d.camera_movement.replace(/_/g, " ")}`
+      : `Iteration ${it.iteration_number}`;
+  const ratingPart =
+    typeof it.rating === "number" ? `★${it.rating}` : null;
+  const subParts = [skuShortLabel(it.model_used), ratingPart].filter(Boolean);
+  return { id: it.id, clip_url: it.clip_url, label, subLabel: subParts.join(" · ") };
 }
 
 function listingIterationToLibraryItem(
@@ -107,14 +93,9 @@ function listingIterationToLibraryItem(
   const roomType = scene?.room_type ?? "";
   // e.g. "Scene 3 · kitchen"
   const label = `Scene ${sceneNum}${roomType ? ` · ${roomType.replace(/_/g, " ")}` : ""}`;
-  return {
-    id: it.id,
-    clip_url: it.clip_url,
-    label,
-    subLabel: skuShortLabel(it.model_used),
-    rating: typeof it.rating === "number" ? it.rating : null,
-    hasComment: !!(it.user_comment && it.user_comment.trim().length > 0),
-  };
+  const ratingPart = typeof it.rating === "number" ? `★${it.rating}` : null;
+  const subParts = [skuShortLabel(it.model_used), ratingPart].filter(Boolean);
+  return { id: it.id, clip_url: it.clip_url, label, subLabel: subParts.join(" · ") };
 }
 
 // ─── Library thumbnail (grid tile) ────────────────────────────────────────────
@@ -185,22 +166,6 @@ function LibraryCard({
   item: LibraryItem;
   onClick: () => void;
 }) {
-  // Border colour reflects the operator's verdict on this clip so they
-  // can see at-a-glance which ones to grab vs avoid: green = liked
-  // (4-5★), red = disliked (1-2★), neutral = no rating or 3★.
-  const ratingTone =
-    item.rating != null && item.rating >= 4 ? "good"
-    : item.rating != null && item.rating <= 2 ? "bad"
-    : "neutral";
-  const baseBorder =
-    ratingTone === "good" ? "rgba(34,170,80,0.45)"
-    : ratingTone === "bad" ? "rgba(220,80,70,0.4)"
-    : "var(--line)";
-  const hoverBorder =
-    ratingTone === "good" ? "rgba(34,170,80,0.8)"
-    : ratingTone === "bad" ? "rgba(220,80,70,0.7)"
-    : "rgba(11,11,16,0.3)";
-
   const thumbStyle: CSSProperties = {
     width: 96,
     height: 54,
@@ -216,14 +181,14 @@ function LibraryCard({
     <button
       type="button"
       onClick={onClick}
-      title={`Add ${item.label} to sequence${item.rating != null ? ` — rated ${item.rating}★` : ""}`}
+      title={`Add ${item.label} to sequence`}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 10,
         width: "100%",
         padding: "8px 10px",
-        border: `1px solid ${baseBorder}`,
+        border: "1px solid var(--line)",
         borderRadius: 8,
         background: "var(--surface)",
         cursor: "pointer",
@@ -233,11 +198,11 @@ function LibraryCard({
       }}
       onMouseEnter={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background = "rgba(11,11,16,0.04)";
-        (e.currentTarget as HTMLButtonElement).style.borderColor = hoverBorder;
+        (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(11,11,16,0.3)";
       }}
       onMouseLeave={(e) => {
         (e.currentTarget as HTMLButtonElement).style.background = "var(--surface)";
-        (e.currentTarget as HTMLButtonElement).style.borderColor = baseBorder;
+        (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--line)";
       }}
     >
       <div style={thumbStyle}>
@@ -248,28 +213,6 @@ function LibraryCard({
           preload="metadata"
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
         />
-        {/* Rating badge — corner of the thumbnail so it's visible without
-            scanning the text label. Shows N★ or — (unrated). */}
-        <span
-          style={{
-            position: "absolute",
-            top: 3,
-            right: 3,
-            padding: "1px 5px",
-            borderRadius: 4,
-            fontSize: 9.5,
-            fontWeight: 700,
-            lineHeight: 1.3,
-            background:
-              ratingTone === "good" ? "rgba(34,170,80,0.92)"
-              : ratingTone === "bad" ? "rgba(220,80,70,0.92)"
-              : "rgba(11,11,16,0.7)",
-            color: "white",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {item.rating != null ? `${item.rating}★` : "—"}
-        </span>
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
         <div
@@ -280,15 +223,9 @@ function LibraryCard({
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
           }}
         >
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
-          {item.hasComment && (
-            <span title="Has operator feedback" style={{ flexShrink: 0, fontSize: 10, opacity: 0.55 }}>💬</span>
-          )}
+          {item.label}
         </div>
         {item.subLabel && (
           <div
@@ -519,31 +456,20 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
 
           if (cancelled) return;
 
-          // Flatten iterations across sessions. Cards prefix with the
-          // SESSION'S own label (operator-facing name) when set; otherwise
-          // fall back to a short filename slug derived from image_path.
-          // The "Session N · iter M" labeling was confusing — operators
-          // think in image names + shot types, not in indexed sessions.
+          // Flatten iterations across sessions; sort by parent session creation,
+          // then iteration_number. Session-label prefix on each card so the
+          // operator can identify "session 2 · push_in iter 3" vs "session 5 ·
+          // orbit iter 1".
           const flattened: LibraryItem[] = [];
-          sessionResults.forEach((res) => {
+          sessionResults.forEach((res, sessionIndex) => {
             if (res.status !== "fulfilled") return;
-            const { session, iterations } = res.value;
-            const friendlyName = (session.label && session.label.trim().length > 0)
-              ? session.label.trim()
-              : (() => {
-                  // Pull a short filename from the image_path:
-                  // "prompt-lab/<uid>/1700000000000-ab12cd.jpg" → "ab12cd"
-                  const seg = session.image_path?.split("/").pop() ?? "";
-                  const stem = seg.replace(/\.[a-z0-9]+$/i, "");
-                  const shortHash = stem.split("-").pop() ?? stem;
-                  return shortHash.slice(0, 8) || "Untitled";
-                })();
+            const { iterations } = res.value;
             for (const it of iterations) {
               const item = sessionIterationToLibraryItem(it);
               if (item) {
                 flattened.push({
                   ...item,
-                  label: `${friendlyName} · ${item.label}`,
+                  label: `Session ${sessionIndex + 1} · ${item.label}`,
                 });
               }
             }
@@ -922,11 +848,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 flexShrink: 0,
               }}
             >
-              <span style={sectionLabel}>
-                {isListingLoading
-                  ? "Library — loading…"
-                  : `Library — ${library.length} clip${library.length === 1 ? "" : "s"}${library.length > 6 ? " · scroll for more" : ""}`}
-              </span>
+              <span style={sectionLabel}>Library</span>
             </div>
             {/* Tabs */}
             <div
@@ -965,10 +887,8 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 );
               })}
             </div>
-            {/* Thumbnail grid — capped at ~6 visible cards (~420px), scrolls
-                past that so the modal doesn't stretch when a batch has
-                20+ iterations (Oliver flagged on Hendry Creek). */}
-            <div style={{ flex: 1, maxHeight: 420, overflowY: "auto", padding: 12 }}>
+            {/* Thumbnail grid */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
               {libraryTab !== "media" ? (
                 <div style={{ padding: "32px 8px", textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
                   {libraryTab === "vfx" ? "VFX library — coming soon." : "Audio library — coming soon."}
