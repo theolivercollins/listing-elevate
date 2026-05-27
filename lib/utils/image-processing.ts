@@ -27,19 +27,15 @@ export async function extractFramesFromClip(
 ): Promise<string[]> {
   // Use ffprobe to get duration, then extract evenly spaced frames.
   // Vercel serverless has no system ffmpeg/ffprobe — use the bundled
-  // binaries from ffmpeg-static + ffprobe-static (static-path exports,
-  // Vercel tracer can see the binary file via the package's index.js).
+  // binaries from @ffmpeg-installer + @ffprobe-installer.
   const { execFile } = await import("child_process");
   const { promisify } = await import("util");
-  const ffmpegPath = (await import("ffmpeg-static")).default;
-  const ffprobeStatic = (await import("ffprobe-static")).default;
-  if (!ffmpegPath) {
-    throw new Error("ffmpeg-static did not return a path — check pnpm install");
-  }
+  const ffmpegInstaller = (await import("@ffmpeg-installer/ffmpeg")).default;
+  const ffprobeInstaller = (await import("@ffprobe-installer/ffprobe")).default;
   const exec = promisify(execFile);
 
   // Get video duration
-  const { stdout } = await exec(ffprobeStatic.path, [
+  const { stdout } = await exec(ffprobeInstaller.path, [
     "-v", "quiet",
     "-print_format", "json",
     "-show_format",
@@ -54,7 +50,7 @@ export async function extractFramesFromClip(
   for (let i = 1; i <= frameCount; i++) {
     const timestamp = interval * i;
     const framePath = path.join(outputDir, `frame_${i}.jpg`);
-    await exec(ffmpegPath, [
+    await exec(ffmpegInstaller.path, [
       "-ss", timestamp.toString(),
       "-i", clipPath,
       "-frames:v", "1",
