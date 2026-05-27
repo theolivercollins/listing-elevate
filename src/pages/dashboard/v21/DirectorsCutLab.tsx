@@ -43,6 +43,8 @@ interface PairQueueResponse {
   total_remaining: number;
   listing_name: string;
   total_labels_for_property: number;
+  already_labeled_count: number;
+  all_property_photos: Array<{ id: string; url: string }>;
   offset: number;
 }
 
@@ -256,6 +258,8 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // all photos for this property (for full-width filmstrip)
+  const [allPropertyPhotos, setAllPropertyPhotos] = useState<Array<{ id: string; url: string }>>([]);
 
   // current pair
   const [currentIdx, setCurrentIdx] = useState(0);
@@ -326,6 +330,10 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
           setQueue(data.items);
           setCurrentIdx(0);
           setOverridePhotoB(null);
+          // Seed all-property photos from the first page response (stable across pages)
+          if (data.all_property_photos && data.all_property_photos.length > 0) {
+            setAllPropertyPhotos(data.all_property_photos);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -342,35 +350,41 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
     fetchObservability();
   }, [fetchQueue, fetchObservability]);
 
-  // ── build filmstrip when item changes ───────────────────────────────────────
+  // ── build filmstrip when item or all-property-photos changes ───────────────
+  // Render ALL property photos in the filmstrip so Oliver can pick any start/end frame.
 
   useEffect(() => {
     if (!currentItem) {
       setFilmstripPhotos([]);
       return;
     }
-    const seen = new Set<string>([currentItem.photo_a_id, currentItem.photo_b_id]);
-    const strips: FilmstripPhoto[] = [];
-    for (const item of queue) {
-      if (!seen.has(item.photo_b_id)) {
-        seen.add(item.photo_b_id);
-        strips.push({
-          photo_id: item.photo_b_id,
-          url: item.photo_b_url,
-          rejected: rejectedCandidateIds.has(item.candidate_id),
-        });
-      }
-      if (!seen.has(item.photo_a_id)) {
-        seen.add(item.photo_a_id);
-        strips.push({
-          photo_id: item.photo_a_id,
-          url: item.photo_a_url,
-          rejected: rejectedCandidateIds.has(item.candidate_id),
-        });
-      }
-    }
-    setFilmstripPhotos(strips);
-  }, [currentItem, queue, rejectedCandidateIds]);
+
+    // Use allPropertyPhotos if available; fall back to deduped queue photos
+    const source: FilmstripPhoto[] =
+      allPropertyPhotos.length > 0
+        ? allPropertyPhotos.map((p) => ({
+            photo_id: p.id,
+            url: p.url,
+            rejected: false, // property-level photos don't carry per-candidate rejection
+          }))
+        : (() => {
+            const seen = new Set<string>();
+            const strips: FilmstripPhoto[] = [];
+            for (const item of queue) {
+              if (!seen.has(item.photo_b_id)) {
+                seen.add(item.photo_b_id);
+                strips.push({ photo_id: item.photo_b_id, url: item.photo_b_url, rejected: rejectedCandidateIds.has(item.candidate_id) });
+              }
+              if (!seen.has(item.photo_a_id)) {
+                seen.add(item.photo_a_id);
+                strips.push({ photo_id: item.photo_a_id, url: item.photo_a_url, rejected: rejectedCandidateIds.has(item.candidate_id) });
+              }
+            }
+            return strips;
+          })();
+
+    setFilmstripPhotos(source);
+  }, [currentItem, allPropertyPhotos, queue, rejectedCandidateIds]);
 
   // ── compute hashes when pair changes ────────────────────────────────────────
 
@@ -474,16 +488,18 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
         // Refresh observability stats after each label
         fetchObservability();
 
-        const nextIdx = currentIdx + 1;
-        if (nextIdx < queue.length) {
-          setCurrentIdx(nextIdx);
-        } else {
-          if (totalRemaining > queueOffset) {
-            await fetchQueue(queueOffset, true);
-            setCurrentIdx(nextIdx);
-          } else {
-            setCurrentIdx(nextIdx);
-          }
+        // Splice the labeled pair out of the queue so it can't be re-shown.
+        // Keep cursor at the same index (which now points to the next item).
+        setQueue((prev) => {
+          const next = [...prev];
+          next.splice(currentIdx, 1);
+          return next;
+        });
+        // After splice, queue.length shrinks by 1. If we're now at the end,
+        // try to load more from the server.
+        const queueAfterSplice = queue.length - 1;
+        if (currentIdx >= queueAfterSplice && totalRemaining > queueOffset) {
+          await fetchQueue(queueOffset, true);
         }
       } finally {
         setSubmitting(false);
