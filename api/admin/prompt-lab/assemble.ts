@@ -9,7 +9,6 @@ export const maxDuration = 300;
 
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
-import { applySpeedRamp } from "../../../lib/utils/ffmpeg.js";
 import { concatClips } from "../../../lib/utils/ffmpeg.js";
 
 const exec = promisify(execFile);
@@ -20,7 +19,8 @@ const exec = promisify(execFile);
 // 1. Auth: admin only.
 // 2. Validate: session exists, every iteration belongs to it, every iteration has clip_url.
 // 3. Insert prompt_lab_assemblies row (status='assembling').
-// 4. For each clip: fetch → tmp file → applySpeedRamp → fallback to raw on error.
+// 4. For each clip: fetch → tmp file (no per-clip speed-ramp — dropped 2026-05-27
+//    because the head/tail ramp wasn't producing the intended cinematic breath).
 // 5. concatClips → final mp4.
 // 6. Upload to property-videos / lab/<session_id>/assembled/<assemblyId>.mp4.
 // 7. Probe final duration.
@@ -149,10 +149,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const clipUrl = it.clip_url as string;
 
       const rawPath = path.join(os.tmpdir(), `lab-assemble-${assemblyId}-${i}-raw.mp4`);
-      const rampedPath = path.join(os.tmpdir(), `lab-assemble-${assemblyId}-${i}-ramp.mp4`);
-      tmpFiles.push(rawPath, rampedPath);
+      tmpFiles.push(rawPath);
 
-      // Download clip to tmp file
+      // Download clip to tmp file. No speed-ramp — see comment block at top.
       const fetchRes = await fetch(clipUrl);
       if (!fetchRes.ok) {
         throw new Error(`failed to download clip for iteration ${itId}: HTTP ${fetchRes.status}`);
@@ -160,19 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const buf = Buffer.from(await fetchRes.arrayBuffer());
       await fs.writeFile(rawPath, buf);
 
-      // Speed-ramp — fall back to raw on failure
-      let segmentPath = rawPath;
-      try {
-        await applySpeedRamp(rawPath, rampedPath, { rampSeconds: 0.5, rampFactor: 0.8 });
-        segmentPath = rampedPath;
-      } catch (rampErr) {
-        const rampMsg = rampErr instanceof Error ? rampErr.message : String(rampErr);
-        console.warn(
-          `[assemble] speed-ramp failed for iteration ${itId} (segment ${i}): ${rampMsg} — using raw clip`,
-        );
-      }
-
-      segmentPaths.push(segmentPath);
+      segmentPaths.push(rawPath);
     }
 
     // Step 5: Concat

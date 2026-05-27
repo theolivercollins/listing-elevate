@@ -8,12 +8,6 @@
     },
     "api/admin/prompt-lab/assemble-listing.ts": {
       "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
-    },
-    "api/cron/poll-lab-renders.ts": {
-      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
-    },
-    "api/cron/poll-scenes.ts": {
-      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
     }
   },
   "crons": [
