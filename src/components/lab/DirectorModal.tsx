@@ -5,19 +5,32 @@
  * Right top: horizontal drag-to-reorder sequence.
  * Footer: Generate button + status line.
  * Bottom: assembled video output (appears after first successful assembly).
+ *
+ * Supports two sources:
+ *   source.kind === 'session'  → Sessions Lab (prompt_lab_iterations)
+ *   source.kind === 'listing'  → Listings Lab (prompt_lab_listing_scene_iterations)
  */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Reorder } from "framer-motion";
 import { X, Loader2, Play, Star, Clapperboard } from "lucide-react";
-import { assembleLab, listAssemblies, type LabIteration, type PromptLabAssembly } from "@/lib/promptLabApi";
+import {
+  assembleLab,
+  listAssemblies,
+  assembleListing,
+  listListingAssemblies,
+  type LabIteration,
+  type PromptLabAssembly,
+  type PromptLabListingAssembly,
+} from "@/lib/promptLabApi";
+import type { LabListingIteration, LabListingScene } from "@/lib/labListingsApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface DirectorModalProps {
-  sessionId: string;
-  /** All iterations in the session — the modal filters to those with clip_url. */
-  iterations: LabIteration[];
+export interface DirectorModalProps {
+  source:
+    | { kind: "session"; sessionId: string; iterations: LabIteration[] }
+    | { kind: "listing"; listingId: string };
   open: boolean;
   onClose: () => void;
 }
@@ -30,17 +43,18 @@ interface SequenceItem {
   key: string;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function iterationLabel(it: LabIteration): string {
-  const d = it.director_output_json;
-  if (d?.camera_movement) return `${it.iteration_number} · ${d.camera_movement.replace(/_/g, " ")}`;
-  return `Iteration ${it.iteration_number}`;
+// Normalized item for the library, shared between session and listing sources
+interface LibraryItem {
+  id: string;
+  clip_url: string;
+  label: string;
+  subLabel: string;
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function skuShortLabel(sku: string | null | undefined): string {
   if (!sku) return "—";
-  // Short pretty-print without the full slug path
   if (sku.includes("seedance")) return "Seedance";
   if (sku.includes("kling-v3")) return "Kling v3";
   if (sku.includes("kling-v2-6")) return "Kling v2.6";
@@ -49,13 +63,41 @@ function skuShortLabel(sku: string | null | undefined): string {
   return sku;
 }
 
+function sessionIterationToLibraryItem(it: LabIteration): LibraryItem | null {
+  if (!it.clip_url) return null;
+  const d = it.director_output_json;
+  const label =
+    d?.camera_movement
+      ? `${it.iteration_number} · ${d.camera_movement.replace(/_/g, " ")}`
+      : `Iteration ${it.iteration_number}`;
+  const ratingPart =
+    typeof it.rating === "number" ? `★${it.rating}` : null;
+  const subParts = [skuShortLabel(it.model_used), ratingPart].filter(Boolean);
+  return { id: it.id, clip_url: it.clip_url, label, subLabel: subParts.join(" · ") };
+}
+
+function listingIterationToLibraryItem(
+  it: LabListingIteration,
+  sceneMap: Map<string, LabListingScene>,
+): LibraryItem | null {
+  if (!it.clip_url) return null;
+  const scene = sceneMap.get(it.scene_id);
+  const sceneNum = scene?.scene_number ?? "?";
+  const roomType = scene?.room_type ?? "";
+  // e.g. "Scene 3 · kitchen"
+  const label = `Scene ${sceneNum}${roomType ? ` · ${roomType.replace(/_/g, " ")}` : ""}`;
+  const ratingPart = typeof it.rating === "number" ? `★${it.rating}` : null;
+  const subParts = [skuShortLabel(it.model_used), ratingPart].filter(Boolean);
+  return { id: it.id, clip_url: it.clip_url, label, subLabel: subParts.join(" · ") };
+}
+
 // ─── Library card ─────────────────────────────────────────────────────────────
 
 function LibraryCard({
-  iteration,
+  item,
   onClick,
 }: {
-  iteration: LabIteration;
+  item: LibraryItem;
   onClick: () => void;
 }) {
   const thumbStyle: CSSProperties = {
@@ -73,7 +115,7 @@ function LibraryCard({
     <button
       type="button"
       onClick={onClick}
-      title={`Add iteration ${iteration.iteration_number} to sequence`}
+      title={`Add ${item.label} to sequence`}
       style={{
         display: "flex",
         alignItems: "center",
@@ -98,32 +140,44 @@ function LibraryCard({
       }}
     >
       <div style={thumbStyle}>
-        {iteration.clip_url && (
-          <video
-            src={iteration.clip_url}
-            muted
-            playsInline
-            preload="metadata"
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
-          />
-        )}
+        <video
+          src={item.clip_url}
+          muted
+          playsInline
+          preload="metadata"
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }}
+        />
       </div>
       <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {iterationLabel(iteration)}
+        <div
+          style={{
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--ink)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {item.label}
         </div>
-        <div style={{ marginTop: 2, fontSize: 10, color: "var(--muted)", display: "flex", alignItems: "center", gap: 5 }}>
-          <span>{skuShortLabel(iteration.model_used)}</span>
-          {typeof iteration.rating === "number" && (
-            <>
-              <span style={{ color: "var(--line)" }}>·</span>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
-                <Star style={{ width: 9, height: 9, fill: "var(--ink)", color: "var(--ink)" }} />
-                {iteration.rating}
-              </span>
-            </>
-          )}
-        </div>
+        {item.subLabel && (
+          <div
+            style={{
+              marginTop: 2,
+              fontSize: 10,
+              color: "var(--muted)",
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {item.subLabel}
+          </div>
+        )}
       </div>
       <span style={{ fontSize: 18, flexShrink: 0, opacity: 0.35, lineHeight: 1 }}>+</span>
     </button>
@@ -134,11 +188,11 @@ function LibraryCard({
 
 function SequenceCard({
   sequenceItem,
-  iteration,
+  item,
   onRemove,
 }: {
   sequenceItem: SequenceItem;
-  iteration: LabIteration | undefined;
+  item: LibraryItem | undefined;
   onRemove: () => void;
 }) {
   return (
@@ -162,9 +216,9 @@ function SequenceCard({
         }}
       >
         <div style={{ width: 96, height: 54, background: "rgba(11,11,16,0.08)", overflow: "hidden" }}>
-          {iteration?.clip_url && (
+          {item?.clip_url && (
             <video
-              src={iteration.clip_url}
+              src={item.clip_url}
               muted
               playsInline
               preload="metadata"
@@ -172,13 +226,25 @@ function SequenceCard({
             />
           )}
         </div>
-        <div style={{ padding: "3px 6px 4px", fontSize: 9.5, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          #{iteration?.iteration_number ?? "?"}
+        <div
+          style={{
+            padding: "3px 6px 4px",
+            fontSize: 9.5,
+            color: "var(--muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {item?.label ?? "?"}
         </div>
         {/* Remove button */}
         <button
           type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
           title="Remove from sequence"
           style={{
             position: "absolute",
@@ -207,41 +273,122 @@ function SequenceCard({
 
 // ─── DirectorModal ────────────────────────────────────────────────────────────
 
-export function DirectorModal({ sessionId, iterations, open, onClose }: DirectorModalProps) {
-  const library = iterations.filter((it) => !!it.clip_url);
+export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
+  // ── Listing source: fetch iterations + scenes on open ──────────────────────
+  const [listingLibrary, setListingLibrary] = useState<LibraryItem[]>([]);
+  const [listingLoading, setListingLoading] = useState(false);
 
+  // ── Shared state ───────────────────────────────────────────────────────────
   const [sequence, setSequence] = useState<SequenceItem[]>([]);
   const [status, setStatus] = useState<AssembleStatus>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
 
-  // Build a quick lookup map
-  const iterMap = new Map(iterations.map((it) => [it.id, it]));
+  // Build session library from the passed-in iterations prop (session source)
+  const sessionLibrary: LibraryItem[] =
+    source.kind === "session"
+      ? source.iterations.flatMap((it) => {
+          const item = sessionIterationToLibraryItem(it);
+          return item ? [item] : [];
+        })
+      : [];
 
-  // ─── On open: fetch most-recent assembly ──────────────────────────────────
+  // The active library changes by source kind
+  const library = source.kind === "session" ? sessionLibrary : listingLibrary;
+
+  // Quick lookup map: id → LibraryItem
+  const libraryMap = new Map(library.map((item) => [item.id, item]));
+
+  // ── Fetch listing data on open ─────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
-    // Reset sequence on each open; just restore the last assembled video if present.
+    // Reset each time the modal opens
     setSequence([]);
     setStatus("idle");
     setErrorMsg(null);
 
     let cancelled = false;
-    (async () => {
-      try {
-        const assemblies: PromptLabAssembly[] = await listAssemblies(sessionId);
-        const latest = assemblies.find((a) => a.status === "complete" && a.assembled_url);
-        if (latest?.assembled_url && !cancelled) {
-          setAssembledUrl(latest.assembled_url);
-          setStatus("complete");
+
+    if (source.kind === "session") {
+      // For sessions, just load the most-recent assembly for the inline video
+      (async () => {
+        try {
+          const assemblies: PromptLabAssembly[] = await listAssemblies(source.sessionId);
+          const latest = assemblies.find((a) => a.status === "complete" && a.assembled_url);
+          if (latest?.assembled_url && !cancelled) {
+            setAssembledUrl(latest.assembled_url);
+            setStatus("complete");
+          } else if (!cancelled) {
+            setAssembledUrl(null);
+          }
+        } catch {
+          // Best-effort; don't block the modal.
         }
-      } catch {
-        // Best-effort; don't block the modal from opening.
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [open, sessionId]);
+      })();
+    } else {
+      // Listing source: fetch iterations + scenes from API, then load last assembly
+      const listingId = source.listingId;
+      setListingLoading(true);
+      setListingLibrary([]);
+      setAssembledUrl(null);
+
+      (async () => {
+        try {
+          // Parallel: fetch listing detail (scenes + iterations) + last assembly
+          const [detailRes, assemblies] = await Promise.allSettled([
+            fetch(`/api/admin/prompt-lab/listings/${listingId}`).then((r) => r.json()) as Promise<{
+              scenes: LabListingScene[];
+              iterations: LabListingIteration[];
+            }>,
+            listListingAssemblies(listingId),
+          ]);
+
+          if (!cancelled) {
+            if (detailRes.status === "fulfilled") {
+              const { scenes, iterations } = detailRes.value;
+              const sceneMap = new Map((scenes ?? []).map((s) => [s.id, s]));
+              const items = (iterations ?? []).flatMap((it) => {
+                const item = listingIterationToLibraryItem(it, sceneMap);
+                return item ? [item] : [];
+              });
+              // Sort by scene_number, then iteration_number — consistent order
+              items.sort((a, b) => {
+                const aScene = (scenes ?? []).find((s) => {
+                  const iter = (iterations ?? []).find((i) => i.id === a.id);
+                  return iter ? s.id === iter.scene_id : false;
+                });
+                const bScene = (scenes ?? []).find((s) => {
+                  const iter = (iterations ?? []).find((i) => i.id === b.id);
+                  return iter ? s.id === iter.scene_id : false;
+                });
+                return (aScene?.scene_number ?? 0) - (bScene?.scene_number ?? 0);
+              });
+              setListingLibrary(items);
+            }
+            if (assemblies.status === "fulfilled") {
+              const latestAssembly = (assemblies.value as PromptLabListingAssembly[]).find(
+                (a) => a.status === "complete" && a.assembled_url,
+              );
+              if (latestAssembly?.assembled_url) {
+                setAssembledUrl(latestAssembly.assembled_url);
+                setStatus("complete");
+              }
+            }
+          }
+        } catch {
+          // Best-effort
+        } finally {
+          if (!cancelled) setListingLoading(false);
+        }
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, source.kind === "session" ? source.sessionId : (source as { kind: "listing"; listingId: string }).listingId]);
 
   // ─── Add clip to sequence ──────────────────────────────────────────────────
   function addToSequence(iterationId: string) {
@@ -263,11 +410,19 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
     setErrorMsg(null);
     try {
       const iterationIds = sequence.map((s) => s.iteration_id);
-      const result = await assembleLab(sessionId, iterationIds);
+      let result: { assembled_url: string };
+      if (source.kind === "session") {
+        result = await assembleLab(source.sessionId, iterationIds);
+      } else {
+        result = await assembleListing(source.listingId, iterationIds);
+      }
       setAssembledUrl(result.assembled_url);
       setStatus("complete");
       // Scroll output into view
-      setTimeout(() => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 100);
+      setTimeout(
+        () => outputRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }),
+        100,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setStatus("failed");
@@ -278,16 +433,24 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
   if (!open) return null;
 
   const statusLine =
-    status === "idle" ? "Idle"
-    : status === "assembling" ? "Assembling…"
-    : status === "complete" ? "Complete"
-    : `Failed: ${errorMsg ?? "unknown error"}`;
+    status === "idle"
+      ? "Idle"
+      : status === "assembling"
+        ? "Assembling…"
+        : status === "complete"
+          ? "Complete"
+          : `Failed: ${errorMsg ?? "unknown error"}`;
 
   const statusColor =
-    status === "complete" ? "var(--good)"
-    : status === "failed" ? "var(--bad)"
-    : status === "assembling" ? "var(--accent)"
-    : "var(--muted)";
+    status === "complete"
+      ? "var(--good)"
+      : status === "failed"
+        ? "var(--bad)"
+        : status === "assembling"
+          ? "var(--accent)"
+          : "var(--muted)";
+
+  const isListingLoading = source.kind === "listing" && listingLoading;
 
   return (
     // Backdrop
@@ -334,7 +497,14 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Clapperboard style={{ width: 16, height: 16, color: "var(--accent)" }} />
-            <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: "-0.015em", color: "var(--ink)" }}>
+            <span
+              style={{
+                fontWeight: 600,
+                fontSize: 15,
+                letterSpacing: "-0.015em",
+                color: "var(--ink)",
+              }}
+            >
               Direct
             </span>
             <span
@@ -351,6 +521,20 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
             >
               v1.1
             </span>
+            {source.kind === "listing" && (
+              <span
+                style={{
+                  borderRadius: 6,
+                  background: "rgba(11,11,16,0.06)",
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  fontWeight: 500,
+                  color: "var(--muted)",
+                }}
+              >
+                Listing
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -385,22 +569,69 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
               flexDirection: "column",
             }}
           >
-            <div style={{ padding: "12px 14px 8px", borderBottom: "1px solid var(--line-2)", flexShrink: 0 }}>
-              <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)" }}>
-                Library — {library.length} rendered clip{library.length === 1 ? "" : "s"}
+            <div
+              style={{
+                padding: "12px 14px 8px",
+                borderBottom: "1px solid var(--line-2)",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
+                  color: "var(--muted)",
+                }}
+              >
+                {isListingLoading
+                  ? "Library — loading…"
+                  : `Library — ${library.length} rendered clip${library.length === 1 ? "" : "s"}`}
               </span>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-              {library.length === 0 ? (
-                <div style={{ padding: "32px 0", textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: 12,
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
+              {isListingLoading ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "32px 0",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    color: "var(--muted)",
+                  }}
+                >
+                  <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+                  Loading clips…
+                </div>
+              ) : library.length === 0 ? (
+                <div
+                  style={{
+                    padding: "32px 0",
+                    textAlign: "center",
+                    fontSize: 12,
+                    color: "var(--muted)",
+                  }}
+                >
                   No rendered clips yet. Render some iterations first.
                 </div>
               ) : (
-                library.map((it) => (
+                library.map((item) => (
                   <LibraryCard
-                    key={it.id}
-                    iteration={it}
-                    onClick={() => addToSequence(it.id)}
+                    key={item.id}
+                    item={item}
+                    onClick={() => addToSequence(item.id)}
                   />
                 ))
               )}
@@ -408,10 +639,32 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
           </div>
 
           {/* ── Sequence + footer + output (right ~65%) ── */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+          <div
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              minWidth: 0,
+            }}
+          >
             {/* Sequence label */}
-            <div style={{ padding: "12px 16px 8px", borderBottom: "1px solid var(--line-2)", flexShrink: 0 }}>
-              <span style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)" }}>
+            <div
+              style={{
+                padding: "12px 16px 8px",
+                borderBottom: "1px solid var(--line-2)",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.12em",
+                  color: "var(--muted)",
+                }}
+              >
                 Sequence — {sequence.length} clip{sequence.length === 1 ? "" : "s"}
               </span>
             </div>
@@ -457,7 +710,7 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
                     <SequenceCard
                       key={item.key}
                       sequenceItem={item}
-                      iteration={iterMap.get(item.iteration_id)}
+                      item={libraryMap.get(item.iteration_id)}
                       onRemove={() => removeFromSequence(idx)}
                     />
                   ))}
@@ -487,12 +740,19 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
                   padding: "8px 16px",
                   borderRadius: 8,
                   border: "none",
-                  background: (sequence.length === 0 || status === "assembling") ? "rgba(11,11,16,0.1)" : "var(--ink)",
-                  color: (sequence.length === 0 || status === "assembling") ? "var(--muted)" : "var(--surface)",
+                  background:
+                    sequence.length === 0 || status === "assembling"
+                      ? "rgba(11,11,16,0.1)"
+                      : "var(--ink)",
+                  color:
+                    sequence.length === 0 || status === "assembling"
+                      ? "var(--muted)"
+                      : "var(--surface)",
                   fontFamily: "var(--le-font-sans)",
                   fontSize: 13,
                   fontWeight: 600,
-                  cursor: (sequence.length === 0 || status === "assembling") ? "not-allowed" : "pointer",
+                  cursor:
+                    sequence.length === 0 || status === "assembling" ? "not-allowed" : "pointer",
                   transition: "background 0.15s",
                 }}
               >
@@ -503,7 +763,13 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
                 )}
                 {status === "assembling" ? "Assembling…" : "Generate"}
               </button>
-              <span style={{ fontSize: 12, color: statusColor, fontVariantNumeric: "tabular-nums" }}>
+              <span
+                style={{
+                  fontSize: 12,
+                  color: statusColor,
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {statusLine}
               </span>
             </div>
@@ -512,7 +778,15 @@ export function DirectorModal({ sessionId, iterations, open, onClose }: Director
             <div ref={outputRef} style={{ flex: 1, overflowY: "auto", padding: 16 }}>
               {status === "complete" && assembledUrl ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)" }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.12em",
+                      color: "var(--muted)",
+                    }}
+                  >
                     Output
                   </div>
                   <video

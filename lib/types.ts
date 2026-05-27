@@ -232,6 +232,21 @@ export interface PromptLabAssembly {
   completed_at: string | null;
 }
 
+// ─── Prompt Lab listing assembly (migration 071) ──────────────────────────────
+// Matches prompt_lab_listing_assemblies table schema exactly.
+export interface PromptLabListingAssembly {
+  id: string;
+  listing_id: string;
+  iteration_order: string[];          // ordered array of iteration UUIDs from prompt_lab_listing_scene_iterations
+  assembled_url: string | null;
+  status: "queued" | "assembling" | "complete" | "failed";
+  error: string | null;
+  duration_seconds: number | null;
+  pipeline_version: "v1" | "v1.1";
+  created_at: string;
+  completed_at: string | null;
+}
+
 // ─── Prompt Lab model feedback (migration 070) ────────────────────────────────
 // Append-only qualitative notes an operator writes under each rendered clip.
 // The `embedding` column is server-internal (backfilled async via embedTextSafe)
