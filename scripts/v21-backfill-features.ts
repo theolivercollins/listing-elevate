@@ -70,9 +70,6 @@ interface LabelRow {
   photo_a_id: string;
   photo_b_id: string;
   candidate_id: string | null;
-  candidate_type: string | null;
-  heuristic_score: number | null;
-  portal_id: string | null;
   operator_verdict: Verdict;
   features_blob: unknown;
   target: 0 | 1 | null;
@@ -123,7 +120,7 @@ console.log("");
 const { data: labels, error: labelsErr } = await supabase
   .from("gen2_pair_labels")
   .select(
-    "label_id, listing_id, photo_a_id, photo_b_id, candidate_id, candidate_type, heuristic_score, portal_id, operator_verdict, features_blob, target"
+    "label_id, listing_id, photo_a_id, photo_b_id, candidate_id, operator_verdict, features_blob, target"
   ) as { data: LabelRow[] | null; error: unknown };
 
 if (labelsErr) {
@@ -260,10 +257,10 @@ for (let i = 0; i < allLabels.length; i++) {
     // Fallback to same_room_different_angle if the label has no type stored
     // (pre-migration rows won't have candidate_type). extractFeatures reads
     // this for portal_distance logic; same_room_different_angle = 0 hops.
-    candidate_type: (label.candidate_type as PairCandidate["candidate_type"]) ?? "same_room_different_angle",
-    heuristic_score: label.heuristic_score ?? 0.5,
+    candidate_type: "same_room_different_angle" as PairCandidate["candidate_type"],
+    heuristic_score: 0.5,
     reasoning: "backfilled",
-    portal_id: label.portal_id ?? null,
+    portal_id: null,
   };
 
   // Compute fresh features
