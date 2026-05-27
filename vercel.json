@@ -2,6 +2,20 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/admin/prompt-lab/assemble.ts": {
+      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+    },
+    "api/admin/prompt-lab/assemble-listing.ts": {
+      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+    },
+    "api/cron/poll-lab-renders.ts": {
+      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+    },
+    "api/cron/poll-scenes.ts": {
+      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+    }
+  },
   "crons": [
     { "path": "/api/cron/poll-scenes", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-lab-renders", "schedule": "* * * * *" },
