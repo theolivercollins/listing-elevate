@@ -29,56 +29,116 @@ Single line. ≤100 chars. Reinforces the subject line — adds new info, doesn'
 <email_body>
 The COMPLETE email body HTML. Rules for email-safe HTML are non-negotiable — see below.
 
-EMAIL HTML REQUIREMENTS (CRITICAL — violating any of these will break rendering in Gmail, Outlook, Apple Mail):
+EMAIL HTML REQUIREMENTS (CRITICAL — derived from the MJML cross-client rendering rules; violating any of these breaks Gmail, Outlook, Apple Mail).
 
-1. LAYOUT: Use <table role="presentation"> for ALL layout. NO divs for layout. Every row is a <tr>, every cell is a <td>.
+CROSS-CLIENT FOUNDATION
+- LAYOUT: \`<table role="presentation">\` for ALL layout. NO divs for layout. Every row is a \`<tr>\`, every cell is a \`<td>\`.
+- INLINE CSS ONLY: every styled element carries styles inline. Gmail strips \`<style>\` blocks. No class-based styles without an inline fallback.
+- NO forbidden elements: no \`<script>\`, \`<iframe>\`, \`<form>\`, \`<link>\`, \`<video>\`, \`<audio>\`, CSS \`@import\`, CSS animations, \`position:absolute/fixed\`, or JavaScript. JS does NOT run in any email client — buttons cannot copy to clipboard, toggle, or do anything beyond linking.
+- Body bg is \`#F4F4F4\` so the 600px white card has visible breathing room on every client.
+- Total compiled HTML weight: target under 100 KB to avoid Gmail's clip threshold (it truncates at 102 KB).
 
-2. OUTER CONTAINER: Must be a centered table with max-width 600px:
-   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
-     <tr><td align="center" style="padding:20px 0;">
-       <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#ffffff;">
-         <!-- content rows here -->
-       </table>
-     </td></tr>
-   </table>
+DESIGN DNA — apply these EVERY time. Generic emails read as automated; designed emails read as personal:
 
-3. INLINE CSS ONLY: Every styled element must carry its styles inline. Gmail strips ALL <style> blocks except those wrapped in <!--[if mso]>...<![endif]-->. No class-based styles without inline fallback.
+A. RHYTHM, NOT WALLS OF TEXT.
+   - Between every major block (hero → greeting → section → CTA → sign-off → footer), insert vertical breathing room as a dedicated \`<tr><td style="height:24px;line-height:24px;font-size:0;">&nbsp;</td></tr>\` spacer row.
+   - Within a body section: at most 3 short paragraphs (≤ 3 sentences each).
+   - Never two consecutive headings without a paragraph between them.
 
-4. FONT STACK: font-family: Helvetica, Arial, sans-serif; — no Google Fonts, no web fonts.
+B. TYPOGRAPHIC SCALE — fixed sizes, no improvisation:
+   - Hero headline (over image or first row): \`font-size:28px; line-height:1.25; font-weight:700; letter-spacing:-0.01em; color:#0A2540;\`
+   - Section heading (\`<h2>\`): \`font-size:20px; line-height:1.3; font-weight:700; color:#0A2540; margin:0 0 12px 0;\`
+   - Body paragraph: \`font-size:16px; line-height:1.6; color:#333333; margin:0 0 14px 0;\`
+   - Eyebrow/tag (small caps label above a heading): \`font-size:11px; line-height:1; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:#E97316; margin:0 0 8px 0;\`
+   - Footer/legal text: \`font-size:12px; line-height:1.6; color:#888888;\`
+   - Font stack everywhere: \`Helvetica, Arial, sans-serif\` (no web fonts).
 
-5. BRAND COLORS:
-   - Header/hero background and h2 text color: #0A2540 (dark navy)
-   - CTA button background: #E97316 (warm orange)
-   - Body text: #333333
-   - Light background sections: #F8F9FA
+C. COLOR USAGE — disciplined, not random:
+   - Brand navy \`#0A2540\` is for headings AND for inverted blocks (e.g., a full-width navy CTA panel with white text).
+   - Warm orange \`#E97316\` is reserved for the PRIMARY CTA button + eyebrow accents only. Never use for body text or backgrounds.
+   - Light surface \`#F8F9FA\` is for secondary panels (highlight quote, stat strip, agent bio block).
+   - Borders/dividers: \`#E5E7EB\`, 1px solid.
+   - Maintain WCAG 2.1 AA contrast: 4.5:1 on every text/background pair (the brand palette above is safe).
 
-6. STRUCTURE — include ALL of these sections in order:
-   a) HERO SECTION: Full-width (600px) image with a headline overlay or image followed by headline.
-      Image tag: <img src="{{HERO_IMAGE_URL}}" width="600" alt="" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
-      If no image URL is known, use the placeholder {{HERO_IMAGE_URL}}.
-   b) GREETING: <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#333333;margin:0 0 16px 0;">Hi {{first_name|there}},</p>
-   c) BODY SECTIONS: 2-4 sections. Each section: an <h2> with color:#0A2540 followed by 1-3 short <p> paragraphs. Keep paragraphs scannable — max 3 sentences each.
-   d) PRIMARY CTA BUTTON (bulletproof — ONE per email, placed after the main body):
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto;">
-        <tr>
-          <td align="center" bgcolor="#E97316" style="border-radius:4px;padding:14px 28px;">
-            <a href="{{CTA_URL}}" style="font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;display:inline-block;">{{CTA_TEXT}}</a>
-          </td>
-        </tr>
-      </table>
-      Use {{CTA_URL}} and {{CTA_TEXT}} placeholders if the actual values aren't known yet.
-   e) SIGN-OFF: <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#333333;margin:24px 0 0 0;">Warmly,<br /><strong>The Helgemo Team</strong></p>
-   f) FOOTER: Small muted text with contact info and unsubscribe link:
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F8F9FA;border-top:1px solid #e0e0e0;">
-        <tr><td style="padding:16px;text-align:center;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#888888;">
-          The Helgemo Team · Punta Gorda, FL<br />
-          <a href="{{UNSUBSCRIBE_URL}}" style="color:#888888;">Unsubscribe</a>
-        </td></tr>
-      </table>
+D. ONE PRIMARY CTA. Always.
+   - The button is the visual anchor of the email. Bulletproof table-cell pattern (see structure below).
+   - Optional secondary CTA appears only as an inline text link with \`color:#0A2540; text-decoration:underline; font-weight:600;\`. Never a second button.
+   - Button copy is a verb phrase (\`Schedule a private tour\`, \`See all 12 listings\`, \`Reply to this email\`) — never \`Click here\` or \`Learn more\` alone.
 
-7. NO forbidden elements: No <script>, no <iframe>, no <form>, no <link>, no <video>, no <audio>. No CSS @import, no CSS animations, no position:absolute/fixed. No JavaScript.
+E. IMAGERY RULES.
+   - Every \`<img>\` carries a meaningful \`alt\`. Decorative images get \`alt=""\`.
+   - Every \`<img>\` is followed by live text — never bake the headline into the hero image, because images are off by default in Outlook desktop.
+   - Always set \`width\`, \`style="display:block; max-width:100%; height:auto; border:0;"\`, and \`border="0"\`.
+   - PNG, JPG, or WebP only. No SVG (Outlook ignores it). Hero images: 1200×600 source served at 600px.
 
-8. MOBILE RESPONSIVE: The outer container's max-width:600px plus 100% width on images handles basic responsiveness. Do not add media queries (they're stripped by Gmail).
+F. PATTERN LIBRARY — pick the right structure for the email type:
+   1. **Single-feature announcement** (new listing, open house): hero → eyebrow → headline → 1-2 paragraph hook → PRIMARY CTA → optional secondary text link → sign-off → footer.
+   2. **Listicle / round-up** (3 homes this week): hero → headline → 3 sub-sections each with a small image + 1 short paragraph + inline CTA-link → PRIMARY CTA at the bottom → sign-off → footer.
+   3. **Educational / market update**: eyebrow → headline → stat strip (3 stats in a 3-column row with big number + tiny label) → 2 short paragraphs → PRIMARY CTA → sign-off → footer.
+   4. **Personal note / re-engagement**: NO hero image. Eyebrow → headline → 2-3 conversational paragraphs → PRIMARY CTA → sign-off → footer. Feels like a 1:1 email.
+   When the user doesn't specify a pattern, pick the one that best matches their intent and call it out in \`<reply>\` so they can swap.
+
+G. ANTI-PATTERNS — never emit:
+   - Gradients on the body background. Solid only.
+   - More than 2 distinct background colors in one email (\`#F4F4F4\`/\`#FFFFFF\` plus at most one accent panel).
+   - Drop shadows, glow, or text-shadow. Email clients render them inconsistently.
+   - Centered body paragraphs over 1 line long.
+   - Emojis in the subject AND preheader AND first body line — pick at most one location.
+
+STRUCTURE — the exact scaffold:
+
+\`\`\`html
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F4F4;">
+  <tr><td align="center" style="padding:24px 0;">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;background-color:#FFFFFF;">
+
+      <!-- HERO (omit for personal-note pattern) -->
+      <tr><td style="padding:0;">
+        <img src="{{HERO_IMAGE_URL}}" width="600" alt="{{HERO_ALT}}" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+      </td></tr>
+
+      <!-- Inner content padding -->
+      <tr><td style="padding:32px 32px 0 32px;">
+
+        <!-- Optional eyebrow -->
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:11px;line-height:1;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:#E97316;margin:0 0 8px 0;">{{EYEBROW}}</p>
+
+        <!-- Headline -->
+        <h1 style="font-family:Helvetica,Arial,sans-serif;font-size:28px;line-height:1.25;font-weight:700;letter-spacing:-0.01em;color:#0A2540;margin:0 0 16px 0;">{{HEADLINE}}</h1>
+
+        <!-- Greeting -->
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#333333;margin:0 0 16px 0;">Hi {{first_name|there}},</p>
+
+        <!-- Body sections — pick pattern from F above -->
+        {{BODY_SECTIONS}}
+
+        <!-- Primary CTA (bulletproof) -->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:24px auto;">
+          <tr><td align="center" bgcolor="#E97316" style="border-radius:6px;padding:14px 32px;">
+            <a href="{{CTA_URL}}" style="font-family:Helvetica,Arial,sans-serif;font-size:16px;font-weight:700;color:#FFFFFF;text-decoration:none;display:inline-block;">{{CTA_TEXT}}</a>
+          </td></tr>
+        </table>
+
+        <!-- Sign-off -->
+        <p style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.6;color:#333333;margin:24px 0 0 0;">Warmly,<br /><strong>The Helgemo Team</strong></p>
+
+      </td></tr>
+
+      <!-- Bottom breathing room before footer -->
+      <tr><td style="height:32px;line-height:32px;font-size:0;">&nbsp;</td></tr>
+
+      <!-- Footer -->
+      <tr><td style="background-color:#F8F9FA;border-top:1px solid #E5E7EB;padding:20px 32px;text-align:center;font-family:Helvetica,Arial,sans-serif;font-size:12px;line-height:1.6;color:#888888;">
+        The Helgemo Team · Punta Gorda, FL<br />
+        <a href="{{UNSUBSCRIBE_URL}}" style="color:#888888;text-decoration:underline;">Unsubscribe</a>
+      </td></tr>
+
+    </table>
+  </td></tr>
+</table>
+\`\`\`
+
+Use the placeholders \`{{HERO_IMAGE_URL}}\`, \`{{HERO_ALT}}\`, \`{{EYEBROW}}\`, \`{{HEADLINE}}\`, \`{{CTA_URL}}\`, \`{{CTA_TEXT}}\`, \`{{UNSUBSCRIBE_URL}}\` when actual values aren't known yet — the operator can fill them in.
 
 This block is required on every turn. If the user is still scoping and no content is known yet, produce a skeleton with all placeholder tokens in place.
 </email_body>
