@@ -277,21 +277,12 @@ export async function directListingScenes(listingId: string): Promise<void> {
   // before migration 063.
   const listingPipelineVersion = (listing as { id: string; pipeline_version?: string | null }).pipeline_version ?? "v1";
 
-  const { data: photosRaw } = await supabase
+  const { data: photos } = await supabase
     .from("prompt_lab_listing_photos")
     .select("id, photo_index, image_url, analysis_json, embedding")
     .eq("listing_id", listingId)
     .order("photo_index");
-  // Supabase select() returns `unknown[]` without a generic; cast once so the
-  // downstream Maps/Records don't fight TS over `.analysis_json` etc.
-  const photos = (photosRaw ?? []) as Array<{
-    id: string;
-    photo_index: number;
-    image_url: string;
-    analysis_json: Record<string, unknown> | null;
-    embedding: unknown;
-  }>;
-  if (photos.length === 0) throw new Error(`Listing ${listingId} has no photos`);
+  if (!photos || photos.length === 0) throw new Error(`Listing ${listingId} has no photos`);
 
   // Map each photo's analysis_json into the shape buildDirectorUserPrompt
   // expects. The production director is trained on this exact layout —

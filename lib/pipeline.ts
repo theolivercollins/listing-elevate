@@ -1208,7 +1208,7 @@ async function runAssemblyStep(
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
             clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
-            voiceoverUrl: (property as unknown as Record<string, unknown>).voiceover_url as string | null | undefined,
+            voiceoverUrl: (property as Record<string, unknown>).voiceover_url as string | null | undefined,
           })
         : null;
 
@@ -1369,9 +1369,7 @@ async function runAssemblyStep(
           horizontalUrl,
           verticalUrl,
           horizontalRenderMs: horizontalResult.renderTimeMs,
-          // verticalRenderMs intentionally omitted: verticalResult is scoped
-          // to the !skipVertical branch above. Touching it from here would
-          // ReferenceError at runtime and TS2552 at build time.
+          verticalRenderMs: verticalResult.renderTimeMs,
         },
       );
     } catch (err) {
