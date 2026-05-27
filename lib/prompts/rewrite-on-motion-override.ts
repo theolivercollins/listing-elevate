@@ -14,10 +14,15 @@
 
 import type { CameraMovement } from "../types.js";
 
-const MOTION_TEMPLATES: Record<
+// Partial — the CameraMovement enum was extended with motion verbs (pull_out,
+// drone_pull_back, orbital_slow, slow_pan, etc.) after this rewriter shipped.
+// rewritePromptForNewMotion's `if (!template) return originalPrompt` already
+// handles the no-mapping case as a safe no-op, so we don't need to fabricate
+// templates for movements the validator never picks.
+const MOTION_TEMPLATES: Partial<Record<
   CameraMovement,
   { format: (subject: string) => string }
-> = {
+>> = {
   push_in: {
     format: (s) => `slow cinematic push in toward ${s}`,
   },
