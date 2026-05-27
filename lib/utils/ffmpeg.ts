@@ -1,5 +1,9 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { createGunzip } from "zlib";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
+import { createWriteStream, createReadStream } from "fs";
 import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
@@ -7,28 +11,133 @@ import * as crypto from "crypto";
 
 const exec = promisify(execFile);
 
-// Vercel serverless has no system ffmpeg/ffprobe — resolve to the bundled
-// binaries from ffmpeg-static + ffprobe-static. Lazy so unit tests and dev
-// shells that already have ffmpeg on PATH don't have to install them.
-let _ffmpegPath: string | null = null;
-let _ffprobePath: string | null = null;
+// Vercel serverless functions don't ship ffmpeg/ffprobe. We previously bundled
+// them via vercel.json includeFiles (with ffmpeg-static + ffprobe-static), but
+// the ~110 MB of binaries pushed each function bundle over Vercel's 250 MB
+// uncompressed limit and deploys started failing during the "Deploying outputs"
+// phase. Switched (2026-05-27) to fetch-on-cold-start from public CDNs into
+// /tmp, which lambdas have 512 MB of and warm-instances reuse. First cold
+// invocation pays ~2-4s extra for the download; subsequent calls are instant.
+//
+// If a system ffmpeg is on PATH (local dev shells with brew install ffmpeg),
+// we use that instead — checked via `which`. Only Vercel lambdas hit the CDN.
+
+const FFMPEG_DOWNLOAD_URL =
+  process.env.LE_FFMPEG_DOWNLOAD_URL ??
+  "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz";
+
+const FFPROBE_DOWNLOAD_URL =
+  process.env.LE_FFPROBE_DOWNLOAD_URL ??
+  "https://unpkg.com/ffprobe-static@3.1.0/bin/linux/x64/ffprobe";
+
+const TMP_FFMPEG = path.join(os.tmpdir(), "ffmpeg");
+const TMP_FFPROBE = path.join(os.tmpdir(), "ffprobe");
+
+let _ffmpegBootstrap: Promise<string> | null = null;
+let _ffprobeBootstrap: Promise<string> | null = null;
+
+async function systemBinary(name: "ffmpeg" | "ffprobe"): Promise<string | null> {
+  try {
+    const { stdout } = await exec("which", [name]);
+    const p = stdout.trim();
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadGzipped(url: string, destPath: string): Promise<void> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`download ${url} failed: HTTP ${res.status}`);
+  }
+  // Node's fetch returns a Web ReadableStream; convert to Node Readable.
+  const src = Readable.fromWeb(res.body as unknown as import("stream/web").ReadableStream);
+  await pipeline(src, createGunzip(), createWriteStream(destPath));
+}
+
+async function downloadRaw(url: string, destPath: string): Promise<void> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`download ${url} failed: HTTP ${res.status}`);
+  }
+  const src = Readable.fromWeb(res.body as unknown as import("stream/web").ReadableStream);
+  await pipeline(src, createWriteStream(destPath));
+}
+
+async function ensureBinary(opts: {
+  name: "ffmpeg" | "ffprobe";
+  tmpPath: string;
+  url: string;
+  gzipped: boolean;
+}): Promise<string> {
+  // 1. Prefer system binary on PATH (local dev shells, CI test runners).
+  const system = await systemBinary(opts.name);
+  if (system) return system;
+
+  // 2. Cached in /tmp from a previous invocation on this warm lambda.
+  if (await fileExists(opts.tmpPath)) return opts.tmpPath;
+
+  // 3. Cold start — download to /tmp. Atomic: write to .tmp then rename so
+  //    concurrent invocations don't race on a half-written binary.
+  const stagingPath = `${opts.tmpPath}.${process.pid}.${Date.now()}`;
+  try {
+    if (opts.gzipped) {
+      await downloadGzipped(opts.url, stagingPath);
+    } else {
+      await downloadRaw(opts.url, stagingPath);
+    }
+    await fs.chmod(stagingPath, 0o755);
+    await fs.rename(stagingPath, opts.tmpPath);
+  } catch (err) {
+    await fs.unlink(stagingPath).catch(() => {});
+    throw err;
+  }
+  return opts.tmpPath;
+}
 
 async function ffmpegBin(): Promise<string> {
-  if (_ffmpegPath) return _ffmpegPath;
-  const mod = await import("ffmpeg-static");
-  const p = (mod as { default: string | null }).default;
-  if (!p) throw new Error("ffmpeg-static did not return a path — check pnpm install");
-  _ffmpegPath = p;
-  return p;
+  if (!_ffmpegBootstrap) {
+    _ffmpegBootstrap = ensureBinary({
+      name: "ffmpeg",
+      tmpPath: TMP_FFMPEG,
+      url: FFMPEG_DOWNLOAD_URL,
+      gzipped: true,
+    }).catch((err) => {
+      _ffmpegBootstrap = null; // allow retry on next call
+      throw err;
+    });
+  }
+  return _ffmpegBootstrap;
 }
 
 async function ffprobeBin(): Promise<string> {
-  if (_ffprobePath) return _ffprobePath;
-  const mod = await import("ffprobe-static");
-  const p = (mod as { default: { path: string } }).default.path;
-  _ffprobePath = p;
-  return p;
+  if (!_ffprobeBootstrap) {
+    _ffprobeBootstrap = ensureBinary({
+      name: "ffprobe",
+      tmpPath: TMP_FFPROBE,
+      url: FFPROBE_DOWNLOAD_URL,
+      gzipped: false,
+    }).catch((err) => {
+      _ffprobeBootstrap = null;
+      throw err;
+    });
+  }
+  return _ffprobeBootstrap;
 }
+
+// Re-export so unused-import doesn't strip them; the streams import is used
+// only inside the helpers above. (Silence TS6133 in strict configs.)
+void createReadStream;
 
 interface AssemblyOptions {
   clips: Array<{ path: string; duration: number }>;

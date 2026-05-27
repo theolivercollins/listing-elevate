@@ -2,14 +2,6 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "functions": {
-    "api/admin/prompt-lab/assemble.ts": {
-      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
-    },
-    "api/admin/prompt-lab/assemble-listing.ts": {
-      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
-    }
-  },
   "crons": [
     { "path": "/api/cron/poll-scenes", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-lab-renders", "schedule": "* * * * *" },
