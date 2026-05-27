@@ -64,16 +64,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Generate candidates (synchronous pure function)
     const allCandidates = generateCandidates(sceneGraph);
 
+    // Fetch existing labels for this listing to filter already-labeled pairs
+    const { data: existingLabels, count: labelCount } = await supabase
+      .from("gen2_pair_labels")
+      .select("photo_a_id, photo_b_id", { count: "exact" })
+      .eq("listing_id", listingId);
+
+    // Build a Set of canonical pair keys: sort both IDs and join with "|"
+    // This makes the filter order-independent (A|B == B|A)
+    const labeledPairKeys = new Set<string>(
+      (existingLabels ?? []).map((l: { photo_a_id: string; photo_b_id: string }) => {
+        const [first, second] = [l.photo_a_id, l.photo_b_id].sort();
+        return `${first}|${second}`;
+      })
+    );
+
+    // Filter out already-labeled pairs from all candidates
+    const unlabeledCandidates = allCandidates.filter((c) => {
+      const [first, second] = [c.photo_a_id, c.photo_b_id].sort();
+      return !labeledPairKeys.has(`${first}|${second}`);
+    });
+    const alreadyLabeledCount = allCandidates.length - unlabeledCandidates.length;
+
     // Sort by heuristic_score desc, apply offset + limit
     const offset = Math.max(0, parseInt((req.query.offset as string) ?? "0", 10) || 0);
-    const sorted = allCandidates.sort((a, b) => b.heuristic_score - a.heuristic_score);
+    const sorted = unlabeledCandidates.sort((a, b) => b.heuristic_score - a.heuristic_score);
     const ranked = sorted.slice(offset, offset + limit);
-
-    // Fetch existing label count for this listing (for UI progress display)
-    const { count: labelCount } = await supabase
-      .from("gen2_pair_labels")
-      .select("label_id", { count: "exact", head: true })
-      .eq("listing_id", listingId);
 
     // Batch-fetch photo URLs for all candidate photos in this page.
     // getPhotosForV21Listing resolves from photos (real listings) or
@@ -91,6 +107,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!factsA || !factsB) return null;
       return extractFeatures(candidate, factsA, factsB, null);
     }
+
+    // Build all_property_photos for filmstrip (all photos for this listing, not just queue)
+    const allPropertyPhotos = listingPhotoRefs.map((p) => ({ id: p.id, url: p.url }));
 
     if (mode !== "apprentice_review") {
       // Directors Cut: return items with photo URLs + features_blob + picker predictions
@@ -113,9 +132,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({
         items,
-        total_remaining: Math.max(0, allCandidates.length - offset - ranked.length),
+        total_remaining: Math.max(0, unlabeledCandidates.length - offset - ranked.length),
         listing_name: listingName,
         total_labels_for_property: labelCount ?? 0,
+        already_labeled_count: alreadyLabeledCount,
+        all_property_photos: allPropertyPhotos,
         offset: offset + ranked.length,
       });
     }
@@ -188,9 +209,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({
       items,
-      total_remaining: Math.max(0, allCandidates.length - offset - ranked.length),
+      total_remaining: Math.max(0, unlabeledCandidates.length - offset - ranked.length),
       listing_name: listingName,
       total_labels_for_property: labelCount ?? 0,
+      already_labeled_count: alreadyLabeledCount,
+      all_property_photos: allPropertyPhotos,
       offset: offset + ranked.length,
     });
   } catch (err) {
