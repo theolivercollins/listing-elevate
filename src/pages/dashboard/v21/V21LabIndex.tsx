@@ -1,11 +1,11 @@
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
 import { PageHeading } from "@/components/dashboard/primitives";
 import type { LabMode, ModeState } from "../../../../lib/gen2-v21/types.js";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -64,6 +64,8 @@ export default function V21LabIndex() {
   const [extractError, setExtractError] = useState<string | null>(null);
   const [sceneGraphExists, setSceneGraphExists] = useState<boolean | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
+  // Tracks whether we've already auto-fired extract for this selectedId
+  const autoExtractFiredRef = useRef<string>("");
 
   // Load listings. If the URL-selected listing isn't in the dropdown
   // (V2 scene graph exists for a property that isn't a prompt_lab_listing),
@@ -112,11 +114,27 @@ export default function V21LabIndex() {
     if (!selectedId) return;
     setSceneGraphExists(null);
     setLoadingGraph(true);
+    // Reset auto-extract guard when selection changes
+    autoExtractFiredRef.current = "";
     authedFetch<{ exists: boolean }>(`/api/gen2/lab/extract-scene-graph?check=1&listingId=${encodeURIComponent(selectedId)}`)
       .then(({ exists }) => setSceneGraphExists(exists))
       .catch(() => setSceneGraphExists(false))
       .finally(() => setLoadingGraph(false));
   }, [selectedId]);
+
+  // Auto-fire extract when scene graph is confirmed absent
+  useEffect(() => {
+    if (
+      sceneGraphExists === false &&
+      selectedId &&
+      !extracting &&
+      autoExtractFiredRef.current !== selectedId
+    ) {
+      autoExtractFiredRef.current = selectedId;
+      handleExtract();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sceneGraphExists, selectedId]);
 
   async function handleExtract() {
     if (!selectedId) return;
@@ -187,68 +205,75 @@ export default function V21LabIndex() {
                 </SelectContent>
               </Select>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="rounded-xl text-xs"
+              asChild
+            >
+              <Link to="/dashboard/development/lab/new">+ New property</Link>
+            </Button>
           </div>
         </CardContent>
       </Card>
 
       {selectedId && (
         <>
-          {/* Scene graph extraction */}
-          <Card className="border-[var(--line)] bg-[var(--surface)]">
-            <CardContent className="p-5">
-              <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex-1 min-w-[200px]">
-                  <div className="text-sm font-semibold text-[var(--ink)] mb-1">Scene Graph</div>
-                  <div className="text-xs text-[var(--muted)]">
-                    {loadingGraph
-                      ? "Checking…"
-                      : sceneGraphExists === true
-                      ? "Scene graph extracted — ready to label pairs."
-                      : sceneGraphExists === false
-                      ? "No scene graph yet. Extract to enable pair picking."
-                      : ""}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {sceneGraphExists === false && (
-                    <Button
-                      disabled={extracting}
-                      onClick={handleExtract}
-                      className="gap-2 rounded-xl"
-                    >
-                      {extracting && (
-                        <svg className="animate-spin" width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-                          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-                        </svg>
-                      )}
-                      {extracting ? "Extracting…" : "Extract scene graph"}
-                    </Button>
-                  )}
-                  {sceneGraphExists === true && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={extracting}
-                      onClick={handleExtract}
-                      className="gap-1.5 text-xs rounded-xl"
-                    >
-                      {extracting && (
-                        <svg className="animate-spin" width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-                          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-                        </svg>
-                      )}
-                      Re-extract
-                    </Button>
-                  )}
-                </div>
-              </div>
-              {extractError && (
-                <div className="mt-3 px-3 py-2.5 rounded-xl border border-[rgba(196,74,74,0.18)] bg-[rgba(196,74,74,0.07)] text-xs text-[var(--bad)]">
-                  {extractError}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          {/* Auto-extract banner — shown while extracting or on error */}
+          {(extracting || (sceneGraphExists === false && extractError)) && (
+            <div
+              className="px-4 py-3 rounded-xl flex items-center gap-3 flex-wrap text-sm text-[var(--ink-2)]"
+              style={{
+                background: "rgba(42,111,219,0.05)",
+                border: "1px solid rgba(42,111,219,0.15)",
+              }}
+            >
+              {extracting ? (
+                <>
+                  <svg className="animate-spin shrink-0" width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                    <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                  </svg>
+                  <span className="flex-1">
+                    Extracting scene graph for this property — takes ~30 seconds and runs one Gemini call (~$0.05)…
+                  </span>
+                </>
+              ) : extractError ? (
+                <>
+                  <span className="flex-1 text-[var(--bad)]">{extractError}</span>
+                  <button
+                    type="button"
+                    className="text-xs underline underline-offset-2 text-[var(--ink-2)] hover:text-[var(--ink)] transition-colors"
+                    onClick={() => {
+                      autoExtractFiredRef.current = "";
+                      handleExtract();
+                    }}
+                  >
+                    Retry
+                  </button>
+                </>
+              ) : null}
+            </div>
+          )}
+
+          {/* Re-extract button — only shown when graph already exists */}
+          {sceneGraphExists === true && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={extracting}
+                onClick={handleExtract}
+                className="gap-1.5 text-xs rounded-xl"
+              >
+                {extracting && (
+                  <svg className="animate-spin" width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+                    <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                  </svg>
+                )}
+                Re-extract scene graph
+              </Button>
+            </div>
+          )}
 
           {/* Mode recommendation banner */}
           {modeMismatch && modeState && (
@@ -323,12 +348,11 @@ export default function V21LabIndex() {
                 </Suspense>
               </TabsContent>
             </Tabs>
-          ) : sceneGraphExists === false ? (
-            <Card className="border-[var(--line)] bg-[var(--surface)]">
-              <CardContent className="p-8 text-center text-sm text-[var(--muted)]">
-                Extract the scene graph above to start labeling pairs.
-              </CardContent>
-            </Card>
+          ) : extracting ? (
+            <div className="flex flex-col gap-3 pt-2">
+              <Skeleton className="h-10 w-full rounded-xl" />
+              <Skeleton className="h-48 w-full rounded-xl" />
+            </div>
           ) : null}
         </>
       )}
