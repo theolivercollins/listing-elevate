@@ -336,7 +336,9 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       await importedHandler(req, res as unknown as VercelResponse);
 
       expect(res._status).toBe(400);
-      expect((res._body as Record<string, unknown>).error).toMatch(/session_id required/i);
+      // After migration 072 (batch-level assemblies), the error message is
+      // "session_id or batch_label required" since either is acceptable.
+      expect((res._body as Record<string, unknown>).error).toMatch(/session_id or batch_label required/i);
     });
 
     it("returns 400 when iteration_ids is empty", async () => {

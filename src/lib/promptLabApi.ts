@@ -258,11 +258,34 @@ export async function assembleLab(
 }
 
 /**
+ * Batch-level assembly: assemble a single MP4 from iterations across MULTIPLE
+ * sessions sharing the same batch_label. Backend validates that every
+ * iteration belongs to a session whose batch_label matches.
+ */
+export async function assembleLabBatch(
+  batchLabel: string,
+  iterationIds: string[],
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble", {
+    method: "POST",
+    body: JSON.stringify({ batch_label: batchLabel, iteration_ids: iterationIds }),
+  });
+}
+
+/**
  * GET /api/admin/prompt-lab/assemblies?session_id=<>
  * Returns the most recent assemblies for the given session (newest first).
  */
 export async function listAssemblies(sessionId: string): Promise<PromptLabAssembly[]> {
   return fetchJSON(`/api/admin/prompt-lab/assemblies?session_id=${encodeURIComponent(sessionId)}`);
+}
+
+/**
+ * GET /api/admin/prompt-lab/assemblies?batch_label=<>
+ * Returns the most recent batch-level assemblies for the given batch.
+ */
+export async function listBatchAssemblies(batchLabel: string): Promise<PromptLabAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/assemblies?batch_label=${encodeURIComponent(batchLabel)}`);
 }
 
 export type { PromptLabAssembly };
