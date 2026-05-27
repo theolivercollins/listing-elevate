@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 interface Tab {
   to: string;
@@ -49,6 +49,9 @@ const STICKY: CSSProperties = {
   padding: "10px 0 12px",
   marginTop: -12,
   marginBottom: 4,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
 };
 
 const WRAP: CSSProperties = {
@@ -71,7 +74,7 @@ const ITEM_BASE: CSSProperties = {
   transition: "background .15s, color .15s",
 };
 
-export function LabSubNav() {
+export function LabSubNav({ rightSlot }: { rightSlot?: ReactNode } = {}) {
   const location = useLocation();
   return (
     <div style={STICKY}>
@@ -93,6 +96,7 @@ export function LabSubNav() {
           );
         })}
       </nav>
+      {rightSlot != null && <div style={{ flexShrink: 0 }}>{rightSlot}</div>}
     </div>
   );
 }

@@ -160,14 +160,39 @@ function VersionToggle({ version, onChange }: { version: PipelineVersion; onChan
   );
 }
 
+// ─── Route helpers ───
+// Returns a versioned path to the Prompt Lab, with or without a session id.
+function versionedLabPath(id?: string, version: string = 'v1'): string {
+  const base = id
+    ? `/dashboard/development/prompt-lab/${id}`
+    : '/dashboard/development/prompt-lab';
+  return `${base}?v=${version}`;
+}
+
+const LAB_VERSION_KEY = 'lab.pipelineVersion';
+
+function isValidVersion(v: string | null): v is PipelineVersion {
+  return v === 'v1' || v === 'v1.1';
+}
+
 const PromptLab = () => {
   const { sessionId } = useParams<{ sessionId?: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const rawV = searchParams.get('v');
-  const version: PipelineVersion = rawV === 'v1.1' ? 'v1.1' : 'v1';
+
+  // Fix 1: If no ?v= param, restore from localStorage (default v1.1).
+  useEffect(() => {
+    if (rawV !== null) return; // URL already has a version — honour it.
+    const saved = localStorage.getItem(LAB_VERSION_KEY);
+    const fallback: PipelineVersion = isValidVersion(saved) ? saved : 'v1.1';
+    setSearchParams({ v: fallback }, { replace: true });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const version: PipelineVersion = rawV === 'v1.1' ? 'v1.1' : (rawV === 'v1' ? 'v1' : 'v1.1');
 
   function handleVersionChange(v: PipelineVersion) {
+    localStorage.setItem(LAB_VERSION_KEY, v);
     setSearchParams({ v }, { replace: true });
   }
 
@@ -264,7 +289,7 @@ function SessionList({ version, onVersionChange }: { version: PipelineVersion; o
 
       // If only one uploaded, jump into its detail view.
       if (createdIds.length === 1) {
-        navigate(`/dashboard/development/prompt-lab/${createdIds[0]}`);
+        navigate(versionedLabPath(createdIds[0], version));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -276,8 +301,8 @@ function SessionList({ version, onVersionChange }: { version: PipelineVersion; o
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <LabSubNav />
-      <VersionToggle version={version} onChange={onVersionChange} />
+      {/* Fix 2: VersionToggle lives in the sticky sub-nav row so it never scrolls off-screen. */}
+      <LabSubNav rightSlot={<VersionToggle version={version} onChange={onVersionChange} />} />
       <PageHeading
         eyebrow="Lab"
         title="Prompt Lab"
@@ -315,7 +340,7 @@ function SessionList({ version, onVersionChange }: { version: PipelineVersion; o
             : "No sessions yet. Upload an image above to start."}
         </div>
       ) : (
-        <BatchGroups sessions={sessions} onReload={reload} showArchived={showArchived} setShowArchived={setShowArchived} />
+        <BatchGroups sessions={sessions} onReload={reload} showArchived={showArchived} setShowArchived={setShowArchived} version={version} />
       )}
     </div>
   );
@@ -452,7 +477,7 @@ function statusOf(s: LabSession): ShotStatus {
   return "in_progress";
 }
 
-function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { sessions: LabSession[]; onReload: () => void; showArchived: boolean; setShowArchived: (v: boolean) => void }) {
+function BatchGroups({ sessions, onReload, showArchived, setShowArchived, version }: { sessions: LabSession[]; onReload: () => void; showArchived: boolean; setShowArchived: (v: boolean) => void; version: PipelineVersion }) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<string, "all" | ShotStatus>>({});
@@ -759,7 +784,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                     </div>
                   </div>
 
-                  <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} />
+                  <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} version={version} />
 
                   {visible.length === 0 ? (
                     <div style={{ border: "1px dashed var(--line)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
@@ -771,6 +796,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
                         <SessionCard
                           key={s.id}
                           session={s}
+                          version={version}
                           isDragging={draggingId === s.id}
                           organizeMode={organizeMode}
                           selected={selectedIds.has(s.id)}
@@ -853,7 +879,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived }: { se
 // algorithm on every session in a batch so the operator can see which photos
 // would land in a real listing video and which would be skipped (and why),
 // without having to actually ship the batch through the pipeline.
-function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) {
+function ListingSelectionSection({ batchLabel, version }: { batchLabel: string | null; version: PipelineVersion }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<BatchSelectionResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -942,21 +968,21 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                   count={data.selected_count}
                   items={data.items.filter((i) => i.status === "selected")}
                   tone="positive"
-                  onOpenSession={(id) => navigate(`/dashboard/development/prompt-lab/${id}`)}
+                  onOpenSession={(id) => navigate(versionedLabPath(id, version))}
                 />
                 <SelectionColumn
                   title="Not selected"
                   count={data.not_selected_count}
                   items={data.items.filter((i) => i.status === "not_selected")}
                   tone="neutral"
-                  onOpenSession={(id) => navigate(`/dashboard/development/prompt-lab/${id}`)}
+                  onOpenSession={(id) => navigate(versionedLabPath(id, version))}
                 />
                 <SelectionColumn
                   title="Discarded"
                   count={data.discarded_count}
                   items={data.items.filter((i) => i.status === "discarded")}
                   tone="negative"
-                  onOpenSession={(id) => navigate(`/dashboard/development/prompt-lab/${id}`)}
+                  onOpenSession={(id) => navigate(versionedLabPath(id, version))}
                 />
               </div>
               {data.unanalyzed.length > 0 && (
@@ -969,7 +995,7 @@ function ListingSelectionSection({ batchLabel }: { batchLabel: string | null }) 
                       <button
                         key={u.session_id}
                         type="button"
-                        onClick={() => navigate(`/dashboard/development/prompt-lab/${u.session_id}`)}
+                        onClick={() => navigate(versionedLabPath(u.session_id, version))}
                         style={{ width: 40, height: 40, overflow: "hidden", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", cursor: "pointer", padding: 0 }}
                         title={u.label ?? ""}
                       >
@@ -1173,6 +1199,7 @@ function BatchTitle({ label, onRename }: { label: string; onRename: (v: string) 
 
 function SessionCard({
   session,
+  version,
   isDragging,
   organizeMode,
   selected,
@@ -1181,6 +1208,7 @@ function SessionCard({
   onDragEnd,
 }: {
   session: LabSession;
+  version: PipelineVersion;
   isDragging: boolean;
   organizeMode: boolean;
   selected: boolean;
@@ -1194,7 +1222,7 @@ function SessionCard({
 
   return (
     <Link
-      to={organizeMode ? "#" : `/dashboard/development/prompt-lab/${session.id}`}
+      to={organizeMode ? "#" : versionedLabPath(session.id, version)}
       onClick={organizeMode ? (e) => { e.preventDefault(); onToggleSelect(); } : undefined}
       draggable={!organizeMode}
       onDragStart={organizeMode ? undefined : (e) => {
@@ -1347,10 +1375,10 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
       if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
       if (e.key === "ArrowLeft" && prevSibling) {
         e.preventDefault();
-        navigate(`/dashboard/development/prompt-lab/${prevSibling.id}`);
+        navigate(versionedLabPath(prevSibling.id, version));
       } else if (e.key === "ArrowRight" && nextSibling) {
         e.preventDefault();
-        navigate(`/dashboard/development/prompt-lab/${nextSibling.id}`);
+        navigate(versionedLabPath(nextSibling.id, version));
       }
     }
     window.addEventListener("keydown", onKey);
@@ -1391,7 +1419,9 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
   async function handleDelete() {
     if (!confirm("Delete this session and all iterations?")) return;
     await deleteSession(sessionId);
-    navigate("/dashboard/development/prompt-lab");
+    // Fix 3(b): back to list preserving version from the session itself.
+    const deletedSessionVersion: PipelineVersion = data?.session.pipeline_version ?? version;
+    navigate(versionedLabPath(undefined, deletedSessionVersion));
   }
 
   async function handleRender(iterationId: string, provider?: "kling" | "runway" | null, sku?: SkuChoice | null, resolution?: string) {
@@ -1516,17 +1546,18 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-      <VersionToggle version={sessionVersion} onChange={onVersionChange} />
+      {/* Fix 2: VersionToggle in the sticky sub-nav row so it's always visible. */}
+      <LabSubNav rightSlot={<VersionToggle version={sessionVersion} onChange={onVersionChange} />} />
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Link to="/dashboard/development/prompt-lab" title="Back to list" style={{ color: "var(--muted)", display: "inline-flex" }}>
+          <Link to={versionedLabPath(undefined, sessionVersion)} title="Back to list" style={{ color: "var(--muted)", display: "inline-flex" }}>
             <ArrowLeft style={{ width: 16, height: 16 }} />
           </Link>
           {siblings.length > 1 && (
             <div style={{ display: "flex", alignItems: "center", gap: 4, borderLeft: "1px solid var(--line)", paddingLeft: 12 }}>
               <button
                 type="button"
-                onClick={() => prevSibling && navigate(`/dashboard/development/prompt-lab/${prevSibling.id}`)}
+                onClick={() => prevSibling && navigate(versionedLabPath(prevSibling.id, sessionVersion))}
                 disabled={!prevSibling}
                 title={prevSibling ? `Previous (←) · ${prevSibling.label ?? "Untitled"}` : "No previous session"}
                 style={{ background: "none", border: "none", cursor: prevSibling ? "pointer" : "default", color: "var(--muted)", opacity: !prevSibling ? 0.3 : 1, padding: 4 }}
@@ -1538,7 +1569,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
               </span>
               <button
                 type="button"
-                onClick={() => nextSibling && navigate(`/dashboard/development/prompt-lab/${nextSibling.id}`)}
+                onClick={() => nextSibling && navigate(versionedLabPath(nextSibling.id, sessionVersion))}
                 disabled={!nextSibling}
                 title={nextSibling ? `Next (→) · ${nextSibling.label ?? "Untitled"}` : "No next session"}
                 style={{ background: "none", border: "none", cursor: nextSibling ? "pointer" : "default", color: "var(--muted)", opacity: !nextSibling ? 0.3 : 1, padding: 4 }}
@@ -1629,8 +1660,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
       {/* Director modal — v1.1 only */}
       {isV11 && (
         <DirectorModal
-          sessionId={sessionId}
-          iterations={iterations}
+          source={{ kind: "session", sessionId: sessionId, iterations: iterations }}
           open={directorOpen}
           onClose={() => setDirectorOpen(false)}
         />

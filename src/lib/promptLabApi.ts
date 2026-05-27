@@ -1,6 +1,6 @@
 import { supabase } from "./supabase";
 import type { JudgeRubricResult } from "../../lib/prompts/judge-rubric.js";
-import type { PromptLabAssembly, PromptLabModelFeedback } from "../../lib/types.js";
+import type { PromptLabAssembly, PromptLabListingAssembly, PromptLabModelFeedback } from "../../lib/types.js";
 
 export interface LabSession {
   id: string;
@@ -266,6 +266,33 @@ export async function listAssemblies(sessionId: string): Promise<PromptLabAssemb
 }
 
 export type { PromptLabAssembly };
+
+// ─── Listing Assembly API ─────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/prompt-lab/assemble-listing
+ * Assembles the given listing iterations (in order) into a single MP4 via FFmpeg.
+ * Returns the assembly id, the URL of the assembled video, and its duration.
+ */
+export async function assembleListing(
+  listingId: string,
+  iterationIds: string[],
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble-listing", {
+    method: "POST",
+    body: JSON.stringify({ listing_id: listingId, iteration_ids: iterationIds }),
+  });
+}
+
+/**
+ * GET /api/admin/prompt-lab/listing-assemblies?listing_id=<>
+ * Returns the most recent assemblies for the given listing (newest first).
+ */
+export async function listListingAssemblies(listingId: string): Promise<PromptLabListingAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/listing-assemblies?listing_id=${encodeURIComponent(listingId)}`);
+}
+
+export type { PromptLabListingAssembly };
 
 // ─── Model Feedback API ───────────────────────────────────────────────────────
 

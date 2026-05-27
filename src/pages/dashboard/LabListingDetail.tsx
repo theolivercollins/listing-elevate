@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Loader2, RefreshCw, Play, Archive, Images, ArrowLeft } from "lucide-react";
+import { Loader2, RefreshCw, Play, Archive, Images, ArrowLeft, Clapperboard } from "lucide-react";
+import { DirectorModal } from "@/components/lab/DirectorModal";
 import { NextActionBanner } from "@/components/lab/NextActionBanner";
 import { SceneCard } from "@/components/lab/SceneCard";
 import { ShotPlanTable } from "@/components/lab/ShotPlanTable";
@@ -43,6 +44,7 @@ export default function LabListingDetail() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [directorOpen, setDirectorOpen] = useState(false);
 
   async function reload() {
     if (!id) return;
@@ -273,6 +275,16 @@ export default function LabListingDetail() {
                 <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
               )}
               Re-direct
+            </button>
+            <button
+              type="button"
+              className="le-btn-ghost"
+              onClick={() => setDirectorOpen(true)}
+              title="Open Director — assemble rendered clips into a final video"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <Clapperboard style={{ width: 13, height: 13 }} />
+              Direct
             </button>
             <button
               type="button"
@@ -564,6 +576,13 @@ export default function LabListingDetail() {
           </div>
         </>
       )}
+
+      {/* Director modal — assembles rendered listing clips into a final video */}
+      <DirectorModal
+        source={{ kind: "listing", listingId: id }}
+        open={directorOpen}
+        onClose={() => setDirectorOpen(false)}
+      />
     </div>
   );
 }
