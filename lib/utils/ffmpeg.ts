@@ -4,8 +4,17 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as crypto from "crypto";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 
 const exec = promisify(execFile);
+
+// Bundled-binary paths. On Vercel serverless functions there is no ffmpeg
+// or ffprobe on PATH — invoking the bare commands throws ENOENT. Both
+// installers ship a per-platform static binary (Linux x64 on Vercel;
+// darwin-arm64/x64 locally) via optionalDependencies.
+const FFMPEG_PATH = ffmpegInstaller.path;
+const FFPROBE_PATH = ffprobeInstaller.path;
 
 interface AssemblyOptions {
   clips: Array<{ path: string; duration: number }>;
@@ -38,7 +47,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   const normalizedPaths: string[] = [];
   for (let i = 0; i < opts.clips.length; i++) {
     const normPath = path.join(opts.outputDir, `norm_${i}.mp4`);
-    await exec("ffmpeg", [
+    await exec(FFMPEG_PATH, [
       "-i", opts.clips[i].path,
       "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
       "-r", "30",
@@ -73,7 +82,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     }
 
     const inputs = normalizedPaths.flatMap((p) => ["-i", p]);
-    await exec("ffmpeg", [
+    await exec(FFMPEG_PATH, [
       ...inputs,
       "-filter_complex", filterParts.join(";"),
       "-map", "[outv]",
@@ -92,7 +101,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
 
   if (opts.musicPath) {
     // Get video duration for audio fade
-    const { stdout } = await exec("ffprobe", [
+    const { stdout } = await exec(FFPROBE_PATH, [
       "-v", "quiet",
       "-print_format", "json",
       "-show_format",
@@ -101,7 +110,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     const videoDuration = parseFloat(JSON.parse(stdout).format.duration);
     const fadeStart = Math.max(0, videoDuration - 2);
 
-    await exec("ffmpeg", [
+    await exec(FFMPEG_PATH, [
       "-i", withTransitionsPath,
       "-i", opts.musicPath,
       "-filter_complex",
@@ -118,7 +127,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   }
 
   // Step 4: Add text overlays (opening and closing cards)
-  const { stdout: durOut } = await exec("ffprobe", [
+  const { stdout: durOut } = await exec(FFPROBE_PATH, [
     "-v", "quiet",
     "-print_format", "json",
     "-show_format",
@@ -142,7 +151,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     `drawtext=text='${escapeFFmpegText(closingLine)}':fontsize=32:fontcolor=white:borderw=2:bordercolor=black@0.6:x=(w-tw)/2:y=h-110:enable='between(t,${closingStart},${totalDuration})'`,
   ];
 
-  await exec("ffmpeg", [
+  await exec(FFMPEG_PATH, [
     "-i", videoBeforeOverlay,
     "-vf", drawFilters.join(","),
     "-c:v", "libx264",
@@ -154,7 +163,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   ]);
 
   // Step 5: Create 9:16 vertical version (center crop)
-  await exec("ffmpeg", [
+  await exec(FFMPEG_PATH, [
     "-i", horizontalPath,
     "-vf", "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920",
     "-c:v", "libx264",
@@ -216,7 +225,7 @@ export async function applySpeedRamp(
   const RF = opts.rampFactor ?? 0.8;
 
   // Probe input duration
-  const { stdout: probeOut } = await exec("ffprobe", [
+  const { stdout: probeOut } = await exec(FFPROBE_PATH, [
     "-v", "error",
     "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1",
@@ -249,7 +258,7 @@ export async function applySpeedRamp(
     `[head][mid][tail]concat=n=3:v=1[out]`,
   ].join(";").replace(/RF/g, rf);
 
-  await exec("ffmpeg", [
+  await exec(FFMPEG_PATH, [
     "-i", inputPath,
     "-filter_complex", filterComplex,
     "-map", "[out]",
@@ -293,7 +302,7 @@ export async function concatClips(
   await fs.writeFile(listPath, listContent, "utf8");
 
   try {
-    await exec("ffmpeg", [
+    await exec(FFMPEG_PATH, [
       "-f", "concat",
       "-safe", "0",
       "-i", listPath,
@@ -306,7 +315,7 @@ export async function concatClips(
   }
 
   // Probe output duration
-  const { stdout: probeOut } = await exec("ffprobe", [
+  const { stdout: probeOut } = await exec(FFPROBE_PATH, [
     "-v", "error",
     "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1",
