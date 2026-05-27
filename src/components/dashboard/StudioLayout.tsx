@@ -25,14 +25,8 @@ const TABS: Tab[] = [
   },
 ];
 
-const STICKY: CSSProperties = {
-  position: "sticky",
-  top: 76,
-  zIndex: 18,
-  background: "var(--bg)",
-  padding: "10px 0 12px",
-  marginTop: -12,
-  marginBottom: 4,
+const STRIP: CSSProperties = {
+  padding: "4px 0 20px",
 };
 
 const WRAP: CSSProperties = {
@@ -59,7 +53,7 @@ export function StudioLayout() {
   const location = useLocation();
   return (
     <>
-      <div style={STICKY}>
+      <div style={STRIP}>
         <nav style={WRAP} aria-label="Studio sub-navigation">
           {TABS.map((t) => {
             const active = t.match(location.pathname);
