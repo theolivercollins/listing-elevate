@@ -11,6 +11,7 @@ import { recordBlogCost } from "../../../lib/blog-engine/cost.js";
 import { researchTopic, type ResearchSource } from "../../../lib/blog-engine/gemini-research.js";
 import { listMemories, addMemory, memoriesAsPromptBlock, type AllyMemory } from "../../../lib/blog-engine/ally-memory.js";
 import { SOURCE_RULE_TEXT } from "../../../lib/blog-engine/source-allowlist.js";
+import { currentDateLabel } from "../../../lib/blog-engine/ally-email-prompt.js";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
@@ -287,7 +288,7 @@ async function buildSystemPrompt(opts: {
   latestUserMessage: string;
   siteId: string;
 }): Promise<string> {
-  let prompt = BASE_SYSTEM_PROMPT;
+  let prompt = `Today's date is ${currentDateLabel()}. When you write copy that references a season, month, week, or "now," use this date as the anchor — never invent or guess.\n\n${BASE_SYSTEM_PROMPT}`;
 
   // Persistent memories the user has told Ally to remember — always at the
   // top of the additional context, before template / archive, since they

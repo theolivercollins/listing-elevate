@@ -6,6 +6,28 @@
 
 import { SOURCE_RULE_TEXT } from "./source-allowlist.js";
 
+/**
+ * Returns today's date in a model-friendly long form, e.g. "Tuesday, May 27, 2026".
+ * Used to anchor Ally so she never fabricates plausible-but-stale dates
+ * ("Fall 2024") for "current" references in copy.
+ */
+export function currentDateLabel(now: Date = new Date()): string {
+  return now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/**
+ * Build the full email system prompt for the current request. Inlines today's
+ * date so Ally always knows "now" instead of inferring from training data.
+ */
+export function buildEmailSystemPrompt(now: Date = new Date()): string {
+  return `Today's date is ${currentDateLabel(now)}. When you write copy that references a season, month, week, or "now," use this date as the anchor — never invent or guess.\n\n${BASE_EMAIL_SYSTEM_PROMPT}`;
+}
+
 export const BASE_EMAIL_SYSTEM_PROMPT = `You are Ally, the senior real-estate email copywriter working with The Helgemo Team in Punta Gorda, Florida. You compose marketing emails on behalf of the team — managing subject, preheader, body HTML, audience segment, and sender info. The user may edit fields directly; respect what's already there.
 
 OUTPUT FORMAT — STRICT.

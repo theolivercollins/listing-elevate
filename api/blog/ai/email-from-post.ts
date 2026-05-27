@@ -11,7 +11,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { recordBlogCost } from "../../../lib/blog-engine/cost.js";
-import { BASE_EMAIL_SYSTEM_PROMPT } from "../../../lib/blog-engine/ally-email-prompt.js";
+import { buildEmailSystemPrompt } from "../../../lib/blog-engine/ally-email-prompt.js";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
@@ -111,7 +111,7 @@ ${bodyHtml}`;
     result = await anthropic().messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: BASE_EMAIL_SYSTEM_PROMPT,
+      system: buildEmailSystemPrompt(),
       messages,
     });
   } catch (e: any) {

@@ -14,7 +14,7 @@ import { getSupabase } from "../../../lib/client.js";
 import { recordBlogCost } from "../../../lib/blog-engine/cost.js";
 import { researchTopic, type ResearchSource } from "../../../lib/blog-engine/gemini-research.js";
 import { listMemories, addMemory, memoriesAsPromptBlock, type AllyMemory } from "../../../lib/blog-engine/ally-memory.js";
-import { BASE_EMAIL_SYSTEM_PROMPT } from "../../../lib/blog-engine/ally-email-prompt.js";
+import { buildEmailSystemPrompt } from "../../../lib/blog-engine/ally-email-prompt.js";
 
 let _anthropic: Anthropic | null = null;
 function anthropic(): Anthropic {
@@ -185,7 +185,7 @@ async function buildSystemPrompt(opts: {
   siteId: string;
   sourcePost?: { title: string; body_html: string; external_post_url: string | null } | null;
 }): Promise<string> {
-  let prompt = BASE_EMAIL_SYSTEM_PROMPT;
+  let prompt = buildEmailSystemPrompt();
 
   // Persistent memories — always first, before archive / source post.
   const memories = await listMemories(opts.supabase, opts.siteId);
