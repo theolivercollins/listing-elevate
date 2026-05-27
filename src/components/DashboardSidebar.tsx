@@ -36,10 +36,26 @@ const SECTIONS: SidebarSection[] = [
     label: "Ops",
     items: [
       {
-        to: "/dashboard/studio",
-        label: "Studio",
+        to: "/dashboard/studio/video",
+        label: "Video",
         icon: "play",
-        match: (p) => p.startsWith("/dashboard/studio") || p.startsWith("/dashboard/blog"),
+        match: (p) => p === "/dashboard/studio" || p.startsWith("/dashboard/studio/video"),
+      },
+      {
+        to: "/dashboard/studio/blog/posts",
+        label: "Blog",
+        icon: "book",
+        match: (p) =>
+          p.startsWith("/dashboard/studio/blog") || p.startsWith("/dashboard/blog"),
+      },
+      {
+        to: "/dashboard/studio/email/messages",
+        label: "Email",
+        icon: "delivered",
+        match: (p) =>
+          p.startsWith("/dashboard/studio/email") ||
+          p.startsWith("/dashboard/blog/emails") ||
+          p.startsWith("/dashboard/blog/email-templates"),
       },
       { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
       { to: "/dashboard/logs", label: "Logs", icon: "logs" },

@@ -55,7 +55,6 @@ import StudioNew from "./pages/dashboard/studio/StudioNew";
 import StudioClients from "./pages/dashboard/studio/Clients";
 import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
-import { StudioLayout } from "./components/dashboard/StudioLayout";
 import PreviewPage from "./pages/preview/PreviewPage";
 import NotFound from "./pages/NotFound";
 
@@ -128,18 +127,18 @@ const App = () => (
                     <Route path="users" element={<DashboardUsers />} />
                     <Route path="settings" element={<DashboardSettings />} />
 
-                    {/* Unified Studio: video + blog + email under one tab */}
-                    <Route path="studio" element={<StudioLayout />}>
+                    {/* Video / Blog / Email — three separate sidebar tabs, URLs preserved */}
+                    <Route path="studio">
                       <Route index element={<Navigate to="video" replace />} />
 
-                      {/* Video sub-tab */}
+                      {/* Video */}
                       <Route path="video" element={<StudioHome />} />
                       <Route path="video/new" element={<StudioNew />} />
                       <Route path="video/clients" element={<StudioClients />} />
                       <Route path="video/clients/:id" element={<StudioClientEdit />} />
                       <Route path="video/properties/:id" element={<StudioPropertyCommandCenter />} />
 
-                      {/* Blog sub-tab */}
+                      {/* Blog */}
                       <Route path="blog" element={<Navigate to="posts" replace />} />
                       <Route path="blog/posts" element={<BlogPostsList />} />
                       <Route path="blog/posts/new" element={<BlogPostDetail />} />
@@ -150,7 +149,7 @@ const App = () => (
                       <Route path="blog/templates/new" element={<BlogTemplateDetail />} />
                       <Route path="blog/templates/:id" element={<BlogTemplateDetail />} />
 
-                      {/* Email sub-tab */}
+                      {/* Email */}
                       <Route path="email" element={<Navigate to="messages" replace />} />
                       <Route path="email/messages" element={<EmailsList />} />
                       <Route path="email/messages/new" element={<EmailDetail />} />
