@@ -196,13 +196,13 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 10px 18px;
+  padding: 10px 16px;
   background: var(--le-ink);
   color: #fff;
   border: none;
-  border-radius: var(--le-radius-pill);
+  border-radius: var(--le-radius-sm);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   font-family: inherit;
