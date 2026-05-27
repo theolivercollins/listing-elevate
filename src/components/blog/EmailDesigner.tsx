@@ -56,10 +56,143 @@ interface Props {
   onTestSend?: () => void;
 }
 
+// LE brand tokens — keep in sync with lib/blog-engine/ally-email-prompt.ts
+const LE_BRAND = {
+  navy: "#0A2540",
+  orange: "#E97316",
+  body: "#333333",
+  muted: "#888888",
+  surface: "#FFFFFF",
+  panel: "#F8F9FA",
+  line: "#E5E7EB",
+  font: "Helvetica, Arial, sans-serif",
+};
+
 const DEFAULT_CATEGORIES = [
   {
-    label: "Content",
+    label: "Listing Elevate",
     active: true,
+    blocks: [
+      {
+        title: "LE eyebrow",
+        type: AdvancedType.TEXT,
+        payload: {
+          attributes: {
+            "font-family": LE_BRAND.font,
+            "font-size": "11px",
+            "line-height": "1",
+            "font-weight": "600",
+            "letter-spacing": "0.12em",
+            "text-transform": "uppercase",
+            color: LE_BRAND.orange,
+            padding: "0px 25px",
+          },
+          data: { value: { content: "NEW LISTING" } },
+        },
+      },
+      {
+        title: "LE headline",
+        type: AdvancedType.TEXT,
+        payload: {
+          attributes: {
+            "font-family": LE_BRAND.font,
+            "font-size": "28px",
+            "line-height": "1.25",
+            "font-weight": "700",
+            "letter-spacing": "-0.01em",
+            color: LE_BRAND.navy,
+            padding: "8px 25px 16px 25px",
+          },
+          data: { value: { content: "Your headline goes here" } },
+        },
+      },
+      {
+        title: "LE body text",
+        type: AdvancedType.TEXT,
+        payload: {
+          attributes: {
+            "font-family": LE_BRAND.font,
+            "font-size": "16px",
+            "line-height": "1.6",
+            color: LE_BRAND.body,
+            padding: "0px 25px 14px 25px",
+          },
+          data: {
+            value: {
+              content:
+                "Write a short, scannable paragraph here — three sentences max. Keep it warm, specific, and locally grounded.",
+            },
+          },
+        },
+      },
+      {
+        title: "LE primary CTA",
+        type: AdvancedType.BUTTON,
+        payload: {
+          attributes: {
+            "font-family": LE_BRAND.font,
+            "background-color": LE_BRAND.orange,
+            color: LE_BRAND.surface,
+            "font-size": "16px",
+            "font-weight": "700",
+            "border-radius": "6px",
+            "inner-padding": "14px 32px",
+            padding: "16px 25px",
+            href: "#",
+          },
+          data: { value: { content: "Schedule a private tour" } },
+        },
+      },
+      {
+        title: "LE hero image",
+        type: AdvancedType.IMAGE,
+        payload: {
+          attributes: {
+            src: "https://placehold.co/1200x600/0A2540/FFFFFF?text=Listing+photo",
+            alt: "Listing hero",
+            width: "600px",
+            padding: "0px",
+            "fluid-on-mobile": "true",
+          },
+        },
+      },
+      {
+        title: "LE divider",
+        type: AdvancedType.DIVIDER,
+        payload: {
+          attributes: {
+            "border-color": LE_BRAND.line,
+            "border-width": "1px",
+            "border-style": "solid",
+            padding: "8px 25px",
+          },
+        },
+      },
+      {
+        title: "LE footer note",
+        type: AdvancedType.TEXT,
+        payload: {
+          attributes: {
+            "font-family": LE_BRAND.font,
+            "font-size": "12px",
+            "line-height": "1.6",
+            color: LE_BRAND.muted,
+            align: "center",
+            "container-background-color": LE_BRAND.panel,
+            padding: "20px 25px",
+          },
+          data: {
+            value: {
+              content:
+                'The Helgemo Team · Punta Gorda, FL<br /><a href="{{UNSUBSCRIBE_URL}}" style="color:#888888;text-decoration:underline;">Unsubscribe</a>',
+            },
+          },
+        },
+      },
+    ],
+  },
+  {
+    label: "Content",
     blocks: [
       { type: AdvancedType.TEXT },
       { type: AdvancedType.IMAGE },
