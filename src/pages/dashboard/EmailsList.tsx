@@ -1,50 +1,286 @@
 // src/pages/dashboard/EmailsList.tsx
+//
+// Mirror of BlogPostsList.tsx structure — same page-heading, KPI strip,
+// Card-wrapped table, tab pills with counts, custom v3-token dropdown,
+// div-grid rows, and matching empty state. Visual parity is intentional
+// so the Email tab feels like part of the same product as Blog.
+
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  listEmails, listPosts, deleteEmail, aiEmailFromPost, createEmail,
+  listEmails,
+  listPosts,
+  deleteEmail,
+  aiEmailFromPost,
+  createEmail,
 } from "@/lib/blog/api-client";
 import type { EmailState } from "@/lib/blog/types";
-import {
-  ChevronDown, Loader2, Mail, MessageSquare, Plus, Sparkles, Trash2,
-} from "lucide-react";
+import { PageHeading, KpiCard, Card } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import React from "react";
+
+// ─── constants ────────────────────────────────────────────────────────────────
 
 const STATE_FILTERS: Array<{ label: string; value: EmailState | "all" }> = [
-  { label: "All", value: "all" },
-  { label: "Draft", value: "draft" },
-  { label: "Ready", value: "ready" },
-  { label: "Sent", value: "sent" },
+  { label: "All",    value: "all"    },
+  { label: "Draft",  value: "draft"  },
+  { label: "Ready",  value: "ready"  },
+  { label: "Sent",   value: "sent"   },
   { label: "Failed", value: "failed" },
 ];
 
+// ─── inline styles (v3 tokens) ────────────────────────────────────────────────
+
+const tabBtnBase: React.CSSProperties = {
+  padding: "8px 14px",
+  borderRadius: 999,
+  border: "none",
+  fontSize: 12.5,
+  fontWeight: 600,
+  cursor: "pointer",
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  transition: "background .2s",
+  fontFamily: "var(--le-font-sans)",
+};
+
+// ─── StatePill ────────────────────────────────────────────────────────────────
+
+const STATE_PILL_MAP: Record<string, { label: string; color: string; bg: string }> = {
+  draft:   { label: "Draft",   color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
+  ready:   { label: "Ready",   color: "var(--ink-2)", bg: "rgba(15,24,60,0.06)"   },
+  sending: { label: "Sending", color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
+  sent:    { label: "Sent",    color: "var(--good)",  bg: "rgba(47,138,85,0.10)"  },
+  failed:  { label: "Failed",  color: "var(--bad)",   bg: "rgba(196,74,74,0.10)"  },
+};
+
+function StatePill({ state }: { state: EmailState }) {
+  const s =
+    STATE_PILL_MAP[state] ?? { label: state, color: "var(--muted)", bg: "rgba(11,11,16,0.06)" };
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 5,
+        padding: "3px 8px",
+        borderRadius: 99,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.01em",
+        background: s.bg,
+        color: s.color,
+        fontFamily: "var(--le-font-sans)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span
+        style={{
+          width: 5,
+          height: 5,
+          borderRadius: "50%",
+          background: s.color,
+          flexShrink: 0,
+        }}
+      />
+      {s.label}
+    </span>
+  );
+}
+
+// ─── "New email" dropdown (native, v3 tokens — matches Blog's NewPostDropdown) ─
+
+function NewEmailDropdown({
+  navigate,
+  onPickFromPost,
+}: {
+  navigate: ReturnType<typeof useNavigate>;
+  onPickFromPost: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((p) => !p)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "10px 16px",
+          borderRadius: 12,
+          border: "none",
+          background: "var(--ink)",
+          color: "#fff",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+          fontFamily: "var(--le-font-sans)",
+        }}
+      >
+        <Icon name="plus" size={15} strokeWidth={2.2} />
+        New email
+        <Icon name="chevron-down" size={13} strokeWidth={2} />
+      </button>
+
+      {open && (
+        <>
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 49 }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 8px)",
+              right: 0,
+              zIndex: 50,
+              minWidth: 280,
+              background: "#fff",
+              borderRadius: 14,
+              boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
+              border: "1px solid rgba(15,24,60,0.06)",
+              overflow: "hidden",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            <DropItem
+              icon="spark"
+              label="Chat with Ally"
+              sub="Build the email by talking to Ally"
+              onClick={() => {
+                setOpen(false);
+                navigate("/dashboard/studio/email/messages/new?chat=1");
+              }}
+            />
+            <DropItem
+              icon="image"
+              label="Visual builder"
+              sub="Blank drag-and-drop editor"
+              onClick={() => {
+                setOpen(false);
+                navigate("/dashboard/studio/email/messages/new");
+              }}
+            />
+            <div style={{ height: 1, background: "rgba(15,24,60,0.05)", margin: "4px 0" }} />
+            <DropItem
+              icon="sparkles"
+              label="New from blog post"
+              sub="AI converts a post to an email"
+              onClick={() => {
+                setOpen(false);
+                onPickFromPost();
+              }}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function DropItem({
+  icon,
+  label,
+  sub,
+  onClick,
+}: {
+  icon: React.ComponentProps<typeof Icon>["name"];
+  label: string;
+  sub?: string;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        padding: "10px 14px",
+        background: hovered ? "rgba(15,24,60,0.03)" : "transparent",
+        border: "none",
+        cursor: "pointer",
+        textAlign: "left",
+        fontFamily: "var(--le-font-sans)",
+        transition: "background .15s",
+      }}
+    >
+      <div
+        style={{
+          marginTop: 1,
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          background: "rgba(15,24,60,0.04)",
+          display: "grid",
+          placeItems: "center",
+          color: "var(--ink-2)",
+          flexShrink: 0,
+        }}
+      >
+        <Icon name={icon} size={14} strokeWidth={1.6} />
+      </div>
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{label}</div>
+        {sub && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>{sub}</div>}
+      </div>
+    </button>
+  );
+}
+
+// ─── main page ────────────────────────────────────────────────────────────────
+
 export default function EmailsList() {
-  const [state, setState] = useState<EmailState | "all">("all");
+  const [activeState, setActiveState] = useState<EmailState | "all">("all");
   const [q, setQ] = useState("");
   const [postPickerOpen, setPostPickerOpen] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["emails-list", state, q],
-    queryFn: () => listEmails({
-      state: state === "all" ? undefined : state,
-      q: q || undefined,
-      limit: 100,
-    }),
+    queryKey: ["emails-list", activeState, q],
+    queryFn: () =>
+      listEmails({
+        state: activeState === "all" ? undefined : activeState,
+        q: q || undefined,
+        limit: 100,
+      }),
   });
 
   const emails = data?.emails ?? [];
+
+  // KPI counts (always reflect ALL emails, not just current filter)
+  const allEmails = data?.emails ?? [];
+  const draftCount = allEmails.filter((e) => e.state === "draft").length;
+  const sentCount = allEmails.filter((e) => e.state === "sent").length;
+  const failedCount = allEmails.filter((e) => e.state === "failed").length;
+
+  // Tab counts based on current filter
+  const tabCounts: Record<EmailState | "all", number> = {
+    all: emails.length,
+    draft: emails.filter((e) => e.state === "draft").length,
+    ready: emails.filter((e) => e.state === "ready").length,
+    sending: emails.filter((e) => e.state === "sending").length,
+    sent: emails.filter((e) => e.state === "sent").length,
+    failed: emails.filter((e) => e.state === "failed").length,
+  };
 
   const delEmail = useMutation({
     mutationFn: (id: string) => deleteEmail(id),
@@ -56,149 +292,231 @@ export default function EmailsList() {
   });
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Emails</h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button>
-              <Plus className="mr-1 h-4 w-4" /> New email
-              <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            <DropdownMenuItem
-              onClick={() => navigate("/dashboard/studio/email/messages/new?chat=1")}
-              className="cursor-pointer"
-            >
-              <MessageSquare className="mr-2 h-4 w-4" />
-              <div className="flex flex-col">
-                <span>Chat with Ally</span>
-                <span className="text-xs text-muted-foreground">Build the email by talking to Ally</span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => navigate("/dashboard/studio/email/messages/new")}
-              className="cursor-pointer"
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              <div className="flex flex-col">
-                <span>Visual builder</span>
-                <span className="text-xs text-muted-foreground">Blank drag-and-drop editor</span>
-              </div>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => setPostPickerOpen(true)}
-              className="cursor-pointer"
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              <div className="flex flex-col">
-                <span>New from blog post</span>
-                <span className="text-xs text-muted-foreground">AI converts a post to an email</span>
-              </div>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Page heading */}
+      <PageHeading
+        eyebrow="Content"
+        title="Emails"
+        sub="Compose, preview, and send marketing emails."
+        actions={
+          <NewEmailDropdown
+            navigate={navigate}
+            onPickFromPost={() => setPostPickerOpen(true)}
+          />
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <nav
-          className="inline-flex items-center gap-1 rounded-full bg-muted/40 p-1"
-          aria-label="Email state filter"
+      {/* KPI strip */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+        <KpiCard label="Total emails" value={allEmails.length} />
+        <KpiCard label="Drafts" value={draftCount} />
+        <KpiCard label="Sent" value={sentCount} />
+        <KpiCard label="Failed" value={failedCount} />
+      </section>
+
+      {/* Table card */}
+      <Card padding={20}>
+        {/* Toolbar */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: 16,
+            flexWrap: "wrap",
+          }}
         >
-          {STATE_FILTERS.map((f) => {
-            const active = state === f.value;
-            return (
-              <button
-                key={f.value}
-                type="button"
-                onClick={() => setState(f.value)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-                  active
-                    ? "bg-foreground text-background shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </nav>
-        <Input
-          placeholder="Search subject…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          className="max-w-xs"
-        />
-      </div>
+          {/* Tab pills */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            {STATE_FILTERS.map((f) => {
+              const active = activeState === f.value;
+              return (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => setActiveState(f.value)}
+                  style={{
+                    ...tabBtnBase,
+                    background: active ? "var(--ink)" : "transparent",
+                    color: active ? "#fff" : "var(--muted)",
+                  }}
+                >
+                  {f.label}
+                  <span
+                    style={{
+                      fontVariantNumeric: "tabular-nums",
+                      fontSize: 10,
+                      padding: "1px 6px",
+                      borderRadius: 99,
+                      background: active ? "rgba(255,255,255,0.18)" : "rgba(15,24,60,0.05)",
+                    }}
+                  >
+                    {tabCounts[f.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
 
-      {!isLoading && !isError && emails.length === 0 && state === "all" && !q ? (
-        <EmptyState
-          onChat={() => navigate("/dashboard/studio/email/messages/new?chat=1")}
-          onBlank={() => navigate("/dashboard/studio/email/messages/new")}
-          onFromPost={() => setPostPickerOpen(true)}
-        />
-      ) : (
-      <div className="rounded-md border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs">
-            <tr>
-              <th className="p-3">Subject</th>
-              <th>State</th>
-              <th>Audience</th>
-              <th>Updated</th>
-              <th>Cost</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={6} className="p-4 text-center text-muted-foreground">Loading…</td></tr>
-            ) : isError ? (
-              <tr><td colSpan={6} className="p-4 text-center">
-                <div className="text-sm text-destructive">Failed to load: {(error as any)?.message ?? String(error)}</div>
-                <button onClick={() => refetch()} className="mt-2 text-xs underline text-muted-foreground">Retry</button>
-              </td></tr>
-            ) : emails.length === 0 ? (
-              <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">
-                No emails match the current filter. <button onClick={() => { setState("all"); setQ(""); }} className="underline">Clear filters</button>.
-              </td></tr>
-            ) : emails.map((e) => (
-              <tr key={e.id} className="border-t hover:bg-muted/20">
-                <td className="p-3">
-                  <Link to={`/dashboard/studio/email/messages/${e.id}`} className="font-medium underline-offset-2 hover:underline">
-                    {e.subject || <span className="italic text-muted-foreground">Untitled</span>}
-                  </Link>
-                  {e.source_post_id && (
-                    <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">from post</span>
+          <div style={{ flex: 1 }} />
+
+          {/* Search */}
+          <div
+            className="le-card-flat"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 12px",
+              minWidth: 240,
+            }}
+          >
+            <Icon name="search" size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
+            <input
+              placeholder="Search subject…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              style={{
+                flex: 1,
+                border: "none",
+                outline: "none",
+                background: "transparent",
+                fontSize: 12.5,
+                fontFamily: "var(--le-font-sans)",
+                color: "var(--ink)",
+              }}
+            />
+            {q && (
+              <button
+                type="button"
+                onClick={() => setQ("")}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "var(--muted)",
+                  lineHeight: 0,
+                  padding: 0,
+                }}
+              >
+                <Icon name="x" size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Column header */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 100px 120px 110px 80px 60px",
+            gap: 12,
+            padding: "8px 14px",
+            borderBottom: "1px solid var(--line)",
+            alignItems: "center",
+          }}
+        >
+          <span className="le-d-label">Subject</span>
+          <span className="le-d-label">State</span>
+          <span className="le-d-label">Audience</span>
+          <span className="le-d-label">Updated</span>
+          <span className="le-d-label" style={{ textAlign: "right" }}>Cost</span>
+          <span />
+        </div>
+
+        {/* Body */}
+        {isLoading ? (
+          <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            Loading…
+          </div>
+        ) : isError ? (
+          <div style={{ padding: "48px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: "var(--bad)" }}>
+              Failed to load emails: {(error as any)?.message ?? String(error)}
+            </div>
+            <button
+              type="button"
+              onClick={() => refetch()}
+              style={{
+                marginTop: 10,
+                fontSize: 12,
+                color: "var(--muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                textDecoration: "underline",
+                fontFamily: "var(--le-font-sans)",
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : emails.length === 0 ? (
+          <div style={{ padding: "56px 0", textAlign: "center" }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 12,
+                background: "rgba(15,24,60,0.04)",
+                display: "grid",
+                placeItems: "center",
+                color: "var(--muted)",
+                margin: "0 auto 14px",
+              }}
+            >
+              <Icon name="delivered" size={20} strokeWidth={1.4} />
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", marginBottom: 6 }}>
+              {activeState === "all" && !q ? "No emails yet" : "No emails match your filters"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 360, margin: "0 auto" }}>
+              {activeState === "all" && !q ? (
+                "Click New email to start composing your first email."
+              ) : (
+                <>
+                  {activeState !== "all" && (
+                    <span>
+                      State: <strong>{activeState}</strong>.{" "}
+                    </span>
                   )}
-                </td>
-                <td><EmailStatePill state={e.state} /></td>
-                <td className="text-xs text-muted-foreground">{e.audience ?? "—"}</td>
-                <td className="text-xs text-muted-foreground">{new Date(e.updated_at).toLocaleString()}</td>
-                <td className="text-xs">${(e.cost_usd_cents / 100).toFixed(2)}</td>
-                <td className="pr-3">
-                  <div className="flex items-center justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!window.confirm("Delete this email?")) return;
-                        delEmail.mutate(e.id);
-                      }}
-                      aria-label="Delete email"
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      )}
+                  {q && <span>Subject contains "{q}". </span>}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveState("all");
+                      setQ("");
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "var(--accent)",
+                      fontSize: 13,
+                      fontFamily: "var(--le-font-sans)",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          emails.map((e) => (
+            <EmailRow
+              key={e.id}
+              e={e}
+              onDelete={() => {
+                if (!window.confirm("Delete this email?")) return;
+                delEmail.mutate(e.id);
+              }}
+              navigate={navigate}
+            />
+          ))
+        )}
+      </Card>
 
       <PostPickerDialog
         open={postPickerOpen}
@@ -209,88 +527,116 @@ export default function EmailsList() {
   );
 }
 
-function EmptyState({
-  onChat,
-  onBlank,
-  onFromPost,
+// ─── EmailRow ────────────────────────────────────────────────────────────────
+
+function EmailRow({
+  e,
+  onDelete,
+  navigate,
 }: {
-  onChat: () => void;
-  onBlank: () => void;
-  onFromPost: () => void;
+  e: any;
+  onDelete: () => void;
+  navigate: ReturnType<typeof useNavigate>;
 }) {
-  const cards = [
-    {
-      title: "Chat with Ally",
-      sub: "Tell Ally what you want to say. She drafts the subject, preheader, body, and audience.",
-      icon: MessageSquare,
-      onClick: onChat,
-      cta: "Start a chat",
-    },
-    {
-      title: "Visual builder",
-      sub: "Drag-and-drop on a blank canvas. Native blocks, MJML output, brand-styled.",
-      icon: Mail,
-      onClick: onBlank,
-      cta: "Open builder",
-    },
-    {
-      title: "From a blog post",
-      sub: "Pick a recent post and Ally converts it to a matching email.",
-      icon: Sparkles,
-      onClick: onFromPost,
-      cta: "Pick a post",
-    },
-  ];
+  const [hovered, setHovered] = useState(false);
+
   return (
-    <div className="rounded-2xl border bg-background/50 px-6 py-12">
-      <div className="mx-auto max-w-2xl text-center">
-        <div className="mx-auto mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-muted/60">
-          <Mail className="h-5 w-5 text-muted-foreground" />
+    <div
+      onClick={() => navigate(`/dashboard/studio/email/messages/${e.id}`)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "2fr 100px 120px 110px 80px 60px",
+        gap: 12,
+        padding: "12px 14px",
+        borderBottom: "1px solid rgba(15,24,60,0.04)",
+        alignItems: "center",
+        cursor: "pointer",
+        background: hovered ? "rgba(15,24,60,0.02)" : "transparent",
+        transition: "background .15s",
+      }}
+    >
+      {/* Subject */}
+      <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--ink)",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            minWidth: 0,
+          }}
+        >
+          {e.subject || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Untitled</span>}
         </div>
-        <h2 className="text-lg font-semibold">No emails yet</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Pick how you want to start your first email.
-        </p>
+        {e.source_post_id && (
+          <span
+            style={{
+              fontSize: 10,
+              padding: "2px 6px",
+              borderRadius: 99,
+              background: "rgba(15,24,60,0.05)",
+              color: "var(--muted)",
+              flexShrink: 0,
+            }}
+          >
+            from post
+          </span>
+        )}
       </div>
-      <div className="mx-auto mt-8 grid max-w-3xl gap-3 sm:grid-cols-3">
-        {cards.map((c) => {
-          const Icon = c.icon;
-          return (
-            <button
-              key={c.title}
-              type="button"
-              onClick={c.onClick}
-              className="group flex flex-col rounded-xl border bg-background p-4 text-left transition-all hover:border-foreground/30 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-foreground/20"
-            >
-              <div className="mb-3 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-muted/60 transition-colors group-hover:bg-foreground group-hover:text-background">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div className="text-sm font-semibold">{c.title}</div>
-              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{c.sub}</div>
-              <div className="mt-3 text-xs font-medium text-foreground/80 group-hover:text-foreground">
-                {c.cta} →
-              </div>
-            </button>
-          );
-        })}
+
+      {/* State */}
+      <div><StatePill state={e.state} /></div>
+
+      {/* Audience */}
+      <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {e.audience ?? "—"}
+      </div>
+
+      {/* Updated */}
+      <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>
+        {new Date(e.updated_at).toLocaleDateString()}
+      </div>
+
+      {/* Cost */}
+      <div style={{ fontSize: 12, color: "var(--ink-2)", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+        ${(e.cost_usd_cents / 100).toFixed(2)}
+      </div>
+
+      {/* Actions */}
+      <div
+        style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}
+        onClick={(ev) => ev.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete email"
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--muted)",
+            display: "grid",
+            placeItems: "center",
+            padding: 4,
+            borderRadius: 6,
+          }}
+          onMouseEnter={(ev) => (ev.currentTarget.style.color = "var(--bad)")}
+          onMouseLeave={(ev) => (ev.currentTarget.style.color = "var(--muted)")}
+        >
+          <Icon name="x" size={14} />
+        </button>
       </div>
     </div>
   );
 }
 
-function EmailStatePill({ state }: { state: EmailState }) {
-  const color =
-    state === "sent" ? "bg-green-100 text-green-800" :
-    state === "failed" ? "bg-red-100 text-red-800" :
-    state === "ready" ? "bg-blue-100 text-blue-800" :
-    state === "sending" ? "bg-amber-100 text-amber-800" :
-    "bg-muted text-muted-foreground";
-  return <span className={`inline-block rounded px-2 py-0.5 text-xs ${color}`}>{state}</span>;
-}
+// ─── Post picker dialog (unchanged from prior — keeps the AI-from-post flow) ──
 
-// ---------------------------------------------------------------------------
-// Post picker dialog — pick a recent post and convert it to an email via AI.
-// ---------------------------------------------------------------------------
 interface PostPickerProps {
   open: boolean;
   onClose: () => void;
@@ -337,7 +683,7 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" /> Convert blog post to email
+            <Icon name="sparkles" size={16} /> Convert blog post to email
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -358,14 +704,47 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
             </select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose} disabled={convert.isPending}>Cancel</Button>
-            <Button
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={convert.isPending}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 10,
+                border: "1px solid rgba(15,24,60,0.08)",
+                background: "rgba(255,255,255,0.6)",
+                color: "var(--ink-2)",
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: "pointer",
+                fontFamily: "var(--le-font-sans)",
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
               onClick={() => convert.mutate()}
               disabled={!selectedPostId || convert.isPending}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                borderRadius: 12,
+                border: "none",
+                background: "var(--ink)",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: !selectedPostId || convert.isPending ? "not-allowed" : "pointer",
+                opacity: !selectedPostId || convert.isPending ? 0.5 : 1,
+                fontFamily: "var(--le-font-sans)",
+              }}
             >
-              {convert.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Sparkles className="mr-1 h-4 w-4" />}
+              {convert.isPending ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Icon name="sparkles" size={13} />}
               Convert to email
-            </Button>
+            </button>
           </div>
         </div>
       </DialogContent>
