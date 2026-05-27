@@ -1207,12 +1207,11 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     style={{
                       ...segTabBase,
                       padding: "6px 14px",
-                      borderRadius: 8,
+                      borderRadius: 0,
                       background: active ? "rgba(244,63,140,0.10)" : "transparent",
                       color: active ? "rgb(217,70,160)" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
                       cursor: enabled ? "pointer" : "not-allowed",
                       borderBottom: active ? "2px solid rgb(217,70,160)" : "2px solid transparent",
-                      borderRadius: 0,
                     }}
                   >
                     Video {n}
