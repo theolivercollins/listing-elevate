@@ -4,16 +4,16 @@
   "outputDirectory": "dist",
   "functions": {
     "api/admin/prompt-lab/assemble.ts": {
-      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
     },
     "api/admin/prompt-lab/assemble-listing.ts": {
-      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
     },
     "api/cron/poll-lab-renders.ts": {
-      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
     },
     "api/cron/poll-scenes.ts": {
-      "includeFiles": "node_modules/@ff{mpeg,probe}-installer/linux-x64/**"
+      "includeFiles": "node_modules/{ffmpeg-static/ffmpeg,ffprobe-static/bin/linux/x64/ffprobe}"
     }
   },
   "crons": [
