@@ -82,11 +82,14 @@ async function sha256Hex(url: string): Promise<string> {
 }
 
 const TRANSITION_TAGS: Array<{ tag: TransitionTag; label: string; key: string }> = [
-  { tag: "push_in",       label: "Push-in",      key: "1" },
-  { tag: "walk_through",  label: "Walk-through",  key: "2" },
-  { tag: "reveal",        label: "Reveal",        key: "3" },
-  { tag: "orbit",         label: "Orbit",         key: "4" },
-  { tag: "drone_descent", label: "Drone-descent", key: "5" },
+  { tag: "push_in",       label: "Push-in",       key: "1" },
+  { tag: "pull_out",      label: "Pull-out",       key: "2" },
+  { tag: "parallax",      label: "Parallax",       key: "3" },
+  { tag: "reveal",        label: "Reveal",         key: "4" },
+  { tag: "orbit",         label: "Orbit",          key: "5" },
+  { tag: "walk_through",  label: "Walk-through",   key: "6" },
+  { tag: "drone_descent", label: "Drone-descent",  key: "7" },
+  { tag: "drone_ascent",  label: "Drone-ascent",   key: "8" },
 ];
 
 // ─── FeatureBar ───────────────────────────────────────────────────────────────
@@ -884,7 +887,7 @@ export default function DirectorsCutLab({ listingId }: DirectorsCutLabProps) {
 
               <p className="text-[10px] text-[var(--muted)] text-center leading-relaxed">
                 SPACE confirm · X reject · S swap<br />
-                1–5 tag · click filmstrip to swap frame
+                1–8 tag · click filmstrip to swap frame
               </p>
             </div>
           </div>

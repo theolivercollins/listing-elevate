@@ -74,7 +74,7 @@ export interface PairCandidate {
 
 // Labels
 export type Verdict = "good" | "bad" | "tie";
-export type TransitionTag = "push_in" | "walk_through" | "reveal" | "orbit" | "drone_descent" | null;
+export type TransitionTag = "push_in" | "pull_out" | "parallax" | "reveal" | "orbit" | "walk_through" | "drone_descent" | "drone_ascent" | null;
 
 export interface PairLabel {
   label_id: string;

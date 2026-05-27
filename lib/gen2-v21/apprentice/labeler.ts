@@ -86,7 +86,7 @@ function buildUserPrompt(
       `  Reasoning: ${candidate.reasoning}\n` +
       `  Photo A URL: ${photoA.url}\n` +
       `  Photo B URL: ${photoB.url}\n` +
-      `\nReturn JSON only: { "predicted_verdict": "good"|"bad"|"tie", "predicted_transition_tag": "push_in"|"walk_through"|"reveal"|"orbit"|"drone_descent"|null, "confidence": 0..1, "reasoning": "..." }`,
+      `\nReturn JSON only: { "predicted_verdict": "good"|"bad"|"tie", "predicted_transition_tag": "push_in"|"pull_out"|"parallax"|"reveal"|"orbit"|"walk_through"|"drone_descent"|"drone_ascent"|null, "confidence": 0..1, "reasoning": "..." }`,
   );
   return parts.join("\n");
 }
@@ -171,10 +171,13 @@ export async function predictLabel(
     const validVerdicts: Verdict[] = ["good", "bad", "tie"];
     const validTags: Array<TransitionTag> = [
       "push_in",
-      "walk_through",
+      "pull_out",
+      "parallax",
       "reveal",
       "orbit",
+      "walk_through",
       "drone_descent",
+      "drone_ascent",
       null,
     ];
     const predicted_verdict: Verdict = validVerdicts.includes(parsed.predicted_verdict)
