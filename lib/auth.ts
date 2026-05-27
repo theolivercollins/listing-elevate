@@ -31,10 +31,16 @@ export async function verifyAuth(
   const token = authHeader.slice(7);
   const supabase = getSupabase();
 
+  // Cast to `any` because Vercel's serverless tsc resolves @supabase/supabase-js's
+  // bundled .d.ts to the SupabaseAuthClient declaration that extends `AuthClient`
+  // (a `typeof GoTrueClient` const). The class-extends-const chain confuses tsc
+  // in Vercel's build env even though local tsc resolves it fine. getUser exists
+  // at runtime regardless. See: build dpl_5FYy9Xmx9JRF32m4pcbuT4xC1EaU.
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } = await (supabase.auth as any).getUser(token);
   if (error || !user) return null;
 
   // Fetch or create profile

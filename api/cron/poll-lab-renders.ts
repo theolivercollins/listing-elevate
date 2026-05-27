@@ -4,7 +4,6 @@ export const maxDuration = 120;
 
 import { getSupabase } from "../../lib/client.js";
 import { finalizeLabRender, submitLabRender } from "../../lib/prompt-lab.js";
-import { applySpeedRampToBuffer } from "../../lib/utils/ffmpeg.js";
 
 // Runs every minute per vercel.json crons.
 // Phase 1: submit queued renders when provider slots open.
@@ -189,40 +188,11 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         continue;
       }
 
-      // Speed-ramp polish: applies only to Seedance push-in renders (model_used=
-      // 'seedance-pro-pushin'). Other v1.1 SKUs (Kling 3, Runway, Veo, etc.) download
-      // raw — their clips don't need the speed-ramp treatment.
-      // Veo 4K clips are especially large; the assembly stage applies ramp at
-      // concat time so we don't pay the FFmpeg cost twice (Lane B, 2026-05-26).
-      // On ramp failure, log the error and fall through to the raw clip (same
-      // pattern as api/cron/poll-scenes.ts). finalizeLabRender already persisted
-      // the clip to storage and returned the public URL; we need the raw buffer
-      // to re-process, so we re-download from outcome.clipUrl.
-      let finalClipUrl = outcome.clipUrl ?? "";
-      const isSeedancePushIn = (row.model_used ?? null) === "seedance-pro-pushin";
-      if (isSeedancePushIn && outcome.clipUrl) {
-        try {
-          const rawResp = await fetch(outcome.clipUrl);
-          if (!rawResp.ok) throw new Error(`re-download failed: ${rawResp.status}`);
-          const rawBuf = Buffer.from(await rawResp.arrayBuffer());
-          const rampedBuf = await applySpeedRampToBuffer(rawBuf);
-          // Overwrite the storage object with the ramped version.
-          const rampedPath = `prompt-lab/${row.session_id}/${row.id}.mp4`;
-          const { error: upErr } = await supabase.storage
-            .from("property-videos")
-            .upload(rampedPath, rampedBuf, { contentType: "video/mp4", upsert: true });
-          if (!upErr) {
-            const { data: pub } = supabase.storage
-              .from("property-videos")
-              .getPublicUrl(rampedPath);
-            finalClipUrl = pub.publicUrl;
-          }
-        } catch (rampErr) {
-          const rampMsg = rampErr instanceof Error ? rampErr.message : String(rampErr);
-          console.warn(`[poll-lab-renders] v1.1 speed-ramp failed for iter=${row.id}, using raw clip: ${rampMsg}`);
-          // fall through — finalClipUrl stays as outcome.clipUrl
-        }
-      }
+      // Speed-ramp polish removed 2026-05-27. The previous code re-downloaded
+      // Seedance push-in clips and re-uploaded a head/tail-slowed version, but
+      // the effect wasn't producing the intended cinematic breath. Crons no
+      // longer touch ffmpeg — clip stays as finalizeLabRender uploaded it.
+      const finalClipUrl = outcome.clipUrl ?? "";
 
       await supabase
         .from("prompt_lab_iterations")

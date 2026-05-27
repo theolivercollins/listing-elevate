@@ -1,20 +1,143 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { createGunzip } from "zlib";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
+import { createWriteStream, createReadStream } from "fs";
 import * as path from "path";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as crypto from "crypto";
-import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
-import ffprobeInstaller from "@ffprobe-installer/ffprobe";
 
 const exec = promisify(execFile);
 
-// Bundled-binary paths. On Vercel serverless functions there is no ffmpeg
-// or ffprobe on PATH — invoking the bare commands throws ENOENT. Both
-// installers ship a per-platform static binary (Linux x64 on Vercel;
-// darwin-arm64/x64 locally) via optionalDependencies.
-const FFMPEG_PATH = ffmpegInstaller.path;
-const FFPROBE_PATH = ffprobeInstaller.path;
+// Vercel serverless functions don't ship ffmpeg/ffprobe. We previously bundled
+// them via vercel.json includeFiles (with ffmpeg-static + ffprobe-static), but
+// the ~110 MB of binaries pushed each function bundle over Vercel's 250 MB
+// uncompressed limit and deploys started failing during the "Deploying outputs"
+// phase. Switched (2026-05-27) to fetch-on-cold-start from public CDNs into
+// /tmp, which lambdas have 512 MB of and warm-instances reuse. First cold
+// invocation pays ~2-4s extra for the download; subsequent calls are instant.
+//
+// If a system ffmpeg is on PATH (local dev shells with brew install ffmpeg),
+// we use that instead — checked via `which`. Only Vercel lambdas hit the CDN.
+
+const FFMPEG_DOWNLOAD_URL =
+  process.env.LE_FFMPEG_DOWNLOAD_URL ??
+  "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz";
+
+const FFPROBE_DOWNLOAD_URL =
+  process.env.LE_FFPROBE_DOWNLOAD_URL ??
+  "https://unpkg.com/ffprobe-static@3.1.0/bin/linux/x64/ffprobe";
+
+const TMP_FFMPEG = path.join(os.tmpdir(), "ffmpeg");
+const TMP_FFPROBE = path.join(os.tmpdir(), "ffprobe");
+
+let _ffmpegBootstrap: Promise<string> | null = null;
+let _ffprobeBootstrap: Promise<string> | null = null;
+
+async function systemBinary(name: "ffmpeg" | "ffprobe"): Promise<string | null> {
+  try {
+    const { stdout } = await exec("which", [name]);
+    const p = stdout.trim();
+    return p || null;
+  } catch {
+    return null;
+  }
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadGzipped(url: string, destPath: string): Promise<void> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`download ${url} failed: HTTP ${res.status}`);
+  }
+  // Node's fetch returns a Web ReadableStream; convert to Node Readable.
+  const src = Readable.fromWeb(res.body as unknown as import("stream/web").ReadableStream);
+  await pipeline(src, createGunzip(), createWriteStream(destPath));
+}
+
+async function downloadRaw(url: string, destPath: string): Promise<void> {
+  const res = await fetch(url, { redirect: "follow" });
+  if (!res.ok || !res.body) {
+    throw new Error(`download ${url} failed: HTTP ${res.status}`);
+  }
+  const src = Readable.fromWeb(res.body as unknown as import("stream/web").ReadableStream);
+  await pipeline(src, createWriteStream(destPath));
+}
+
+async function ensureBinary(opts: {
+  name: "ffmpeg" | "ffprobe";
+  tmpPath: string;
+  url: string;
+  gzipped: boolean;
+}): Promise<string> {
+  // 1. Prefer system binary on PATH (local dev shells, CI test runners).
+  const system = await systemBinary(opts.name);
+  if (system) return system;
+
+  // 2. Cached in /tmp from a previous invocation on this warm lambda.
+  if (await fileExists(opts.tmpPath)) return opts.tmpPath;
+
+  // 3. Cold start — download to /tmp. Atomic: write to .tmp then rename so
+  //    concurrent invocations don't race on a half-written binary.
+  const stagingPath = `${opts.tmpPath}.${process.pid}.${Date.now()}`;
+  try {
+    if (opts.gzipped) {
+      await downloadGzipped(opts.url, stagingPath);
+    } else {
+      await downloadRaw(opts.url, stagingPath);
+    }
+    await fs.chmod(stagingPath, 0o755);
+    await fs.rename(stagingPath, opts.tmpPath);
+  } catch (err) {
+    await fs.unlink(stagingPath).catch(() => {});
+    throw err;
+  }
+  return opts.tmpPath;
+}
+
+async function ffmpegBin(): Promise<string> {
+  if (!_ffmpegBootstrap) {
+    _ffmpegBootstrap = ensureBinary({
+      name: "ffmpeg",
+      tmpPath: TMP_FFMPEG,
+      url: FFMPEG_DOWNLOAD_URL,
+      gzipped: true,
+    }).catch((err) => {
+      _ffmpegBootstrap = null; // allow retry on next call
+      throw err;
+    });
+  }
+  return _ffmpegBootstrap;
+}
+
+async function ffprobeBin(): Promise<string> {
+  if (!_ffprobeBootstrap) {
+    _ffprobeBootstrap = ensureBinary({
+      name: "ffprobe",
+      tmpPath: TMP_FFPROBE,
+      url: FFPROBE_DOWNLOAD_URL,
+      gzipped: false,
+    }).catch((err) => {
+      _ffprobeBootstrap = null;
+      throw err;
+    });
+  }
+  return _ffprobeBootstrap;
+}
+
+// Re-export so unused-import doesn't strip them; the streams import is used
+// only inside the helpers above. (Silence TS6133 in strict configs.)
+void createReadStream;
 
 interface AssemblyOptions {
   clips: Array<{ path: string; duration: number }>;
@@ -47,7 +170,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   const normalizedPaths: string[] = [];
   for (let i = 0; i < opts.clips.length; i++) {
     const normPath = path.join(opts.outputDir, `norm_${i}.mp4`);
-    await exec(FFMPEG_PATH, [
+    await exec(await ffmpegBin(), [
       "-i", opts.clips[i].path,
       "-vf", "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1",
       "-r", "30",
@@ -82,7 +205,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     }
 
     const inputs = normalizedPaths.flatMap((p) => ["-i", p]);
-    await exec(FFMPEG_PATH, [
+    await exec(await ffmpegBin(), [
       ...inputs,
       "-filter_complex", filterParts.join(";"),
       "-map", "[outv]",
@@ -101,7 +224,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
 
   if (opts.musicPath) {
     // Get video duration for audio fade
-    const { stdout } = await exec(FFPROBE_PATH, [
+    const { stdout } = await exec(await ffprobeBin(), [
       "-v", "quiet",
       "-print_format", "json",
       "-show_format",
@@ -110,7 +233,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     const videoDuration = parseFloat(JSON.parse(stdout).format.duration);
     const fadeStart = Math.max(0, videoDuration - 2);
 
-    await exec(FFMPEG_PATH, [
+    await exec(await ffmpegBin(), [
       "-i", withTransitionsPath,
       "-i", opts.musicPath,
       "-filter_complex",
@@ -127,7 +250,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   }
 
   // Step 4: Add text overlays (opening and closing cards)
-  const { stdout: durOut } = await exec(FFPROBE_PATH, [
+  const { stdout: durOut } = await exec(await ffprobeBin(), [
     "-v", "quiet",
     "-print_format", "json",
     "-show_format",
@@ -151,7 +274,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
     `drawtext=text='${escapeFFmpegText(closingLine)}':fontsize=32:fontcolor=white:borderw=2:bordercolor=black@0.6:x=(w-tw)/2:y=h-110:enable='between(t,${closingStart},${totalDuration})'`,
   ];
 
-  await exec(FFMPEG_PATH, [
+  await exec(await ffmpegBin(), [
     "-i", videoBeforeOverlay,
     "-vf", drawFilters.join(","),
     "-c:v", "libx264",
@@ -163,7 +286,7 @@ export async function assembleVideo(opts: AssemblyOptions): Promise<{
   ]);
 
   // Step 5: Create 9:16 vertical version (center crop)
-  await exec(FFMPEG_PATH, [
+  await exec(await ffmpegBin(), [
     "-i", horizontalPath,
     "-vf", "crop=ih*9/16:ih:(iw-ih*9/16)/2:0,scale=1080:1920",
     "-c:v", "libx264",
@@ -225,7 +348,7 @@ export async function applySpeedRamp(
   const RF = opts.rampFactor ?? 0.8;
 
   // Probe input duration
-  const { stdout: probeOut } = await exec(FFPROBE_PATH, [
+  const { stdout: probeOut } = await exec(await ffprobeBin(), [
     "-v", "error",
     "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1",
@@ -258,7 +381,7 @@ export async function applySpeedRamp(
     `[head][mid][tail]concat=n=3:v=1[out]`,
   ].join(";").replace(/RF/g, rf);
 
-  await exec(FFMPEG_PATH, [
+  await exec(await ffmpegBin(), [
     "-i", inputPath,
     "-filter_complex", filterComplex,
     "-map", "[out]",
@@ -302,7 +425,7 @@ export async function concatClips(
   await fs.writeFile(listPath, listContent, "utf8");
 
   try {
-    await exec(FFMPEG_PATH, [
+    await exec(await ffmpegBin(), [
       "-f", "concat",
       "-safe", "0",
       "-i", listPath,
@@ -315,7 +438,7 @@ export async function concatClips(
   }
 
   // Probe output duration
-  const { stdout: probeOut } = await exec(FFPROBE_PATH, [
+  const { stdout: probeOut } = await exec(await ffprobeBin(), [
     "-v", "error",
     "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1",

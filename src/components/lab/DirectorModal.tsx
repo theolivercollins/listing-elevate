@@ -979,35 +979,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     alignItems: "center",
                     justifyContent: "center",
                   }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 16,
-                      left: 16,
-                      right: 16,
-                      padding: "14px 18px",
-                      borderRadius: 10,
-                      background: "rgba(11,11,16,0.82)",
-                      color: "#fff",
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                    }}
-                  >
-                    <Play style={{ width: 14, height: 14, marginTop: 2, opacity: 0.8 }} />
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                        Sequence preview only
-                      </div>
-                      <div style={{ fontSize: 12, lineHeight: 1.5, color: "rgba(255,255,255,0.78)" }}>
-                        {sequence.length === 0
-                          ? "Drag clips from the library into the timeline below, then click Generate."
-                          : "Click Generate to assemble the final video. The output will play here when ready."}
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                />
               )}
             </div>
           </div>
@@ -1127,12 +1099,11 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     style={{
                       ...segTabBase,
                       padding: "6px 14px",
-                      borderRadius: 8,
+                      borderRadius: 0,
                       background: active ? "rgba(244,63,140,0.10)" : "transparent",
                       color: active ? "rgb(217,70,160)" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
                       cursor: enabled ? "pointer" : "not-allowed",
                       borderBottom: active ? "2px solid rgb(217,70,160)" : "2px solid transparent",
-                      borderRadius: 0,
                     }}
                   >
                     Video {n}

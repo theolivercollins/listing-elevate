@@ -19,24 +19,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
-    const { applySpeedRampToBuffer } = await import('../../lib/utils/ffmpeg.js');
-
-    // v1.1 cache: avoid re-fetching properties.pipeline_mode for every scene
-    // in a batch. Maps property_id → pipeline_mode for the duration of this
-    // cron invocation.
-    const pipelineModeCache = new Map<string, string>();
-    const getPipelineMode = async (propertyId: string): Promise<string> => {
-      const cached = pipelineModeCache.get(propertyId);
-      if (cached !== undefined) return cached;
-      const { data } = await supabase
-        .from('properties')
-        .select('pipeline_mode')
-        .eq('id', propertyId)
-        .single();
-      const mode = (data?.pipeline_mode as string | undefined) ?? 'v1';
-      pipelineModeCache.set(propertyId, mode);
-      return mode;
-    };
+    // Speed-ramp removed 2026-05-27 — see api/admin/prompt-lab/assemble.ts.
+    // No more ffmpeg in this cron, so no dynamic import + no pipeline_mode
+    // dispatch needed (we used to only ramp v1.1 clips). Every clip is
+    // stored as the provider returned it.
 
     const supabase = getSupabase();
 
@@ -128,24 +114,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // Complete — download + store.
-        const rawClipBuffer = await provider.downloadClip(status.videoUrl);
-
-        // v1.1: apply FFmpeg speed-ramp polish to every clip on v1.1 properties.
-        // On any ramp failure (corrupt clip, ffmpeg missing, etc.) log and fall
-        // back to the unprocessed buffer rather than failing the scene.
-        const pipelineMode = await getPipelineMode(scene.property_id);
-        let clipBuffer = rawClipBuffer;
-        if (pipelineMode === 'v1.1') {
-          try {
-            clipBuffer = await applySpeedRampToBuffer(rawClipBuffer);
-          } catch (rampErr) {
-            const rampMsg = rampErr instanceof Error ? rampErr.message : String(rampErr);
-            await log(scene.property_id, 'generation', 'warn',
-              `Scene ${scene.scene_number}: speed-ramp polish failed, using raw clip: ${rampMsg}`,
-              undefined, scene.id);
-          }
-        }
+        // Complete — download + store. (No speed-ramp; see comment block above.)
+        const clipBuffer = await provider.downloadClip(status.videoUrl);
 
         const clipPath = `${scene.property_id}/clips/scene_${scene.scene_number}_v${scene.attempt_count ?? 1}.mp4`;
         const { error: uploadErr } = await supabase.storage
