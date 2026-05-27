@@ -4,6 +4,7 @@ import type {
   PickerFeatures,
   ShotType,
 } from "../types.js";
+import { computeCosineSimilarity } from "./feature-helpers.js";
 
 // Shot type numeric order for delta calculation (wider = lower index)
 const SHOT_ORDER: Record<ShotType, number> = {
@@ -12,6 +13,19 @@ const SHOT_ORDER: Record<ShotType, number> = {
   medium: 2,
   close: 3,
   detail: 4,
+};
+
+/**
+ * Shot scale for shot_scale_delta: aerial is the widest view (5),
+ * wide is next (4), medium (3), close (2), detail (1).
+ * Normalized over range of 4 → values in [0,1].
+ */
+const SHOT_SCALE: Record<ShotType, number> = {
+  aerial: 5,
+  wide: 4,
+  medium: 3,
+  close: 2,
+  detail: 1,
 };
 
 /**
@@ -123,16 +137,26 @@ function computeFocalSubjectOverlap(
 /**
  * Main feature extractor.
  *
- * @param candidate   The pair candidate being scored
- * @param photoA      Scene facts for photo A
- * @param photoB      Scene facts for photo B
- * @param embeddingSim  Pre-computed cosine similarity (null → default 0.5)
+ * @param candidate       The pair candidate being scored
+ * @param photoA          Scene facts for photo A
+ * @param photoB          Scene facts for photo B
+ * @param embeddingA      Raw embedding vector for photo A (null → 0.5 fallback)
+ * @param embeddingB      Raw embedding vector for photo B (null → 0.5 fallback)
+ * @param brightnessA     Pixel brightness 0..1 for photo A (null → text-feature fallback)
+ * @param brightnessB     Pixel brightness 0..1 for photo B (null → text-feature fallback)
+ *
+ * Legacy single-number embeddingSim overload is kept for existing tests that
+ * pass (null | number) as the fourth argument. When only 4 args are supplied,
+ * the value is treated as a pre-computed similarity (skips vector math).
  */
 export function extractFeatures(
   candidate: PairCandidate,
   photoA: PhotoSceneFacts,
   photoB: PhotoSceneFacts,
-  embeddingSim: number | null,
+  embeddingSimOrVecA: number | null | number[],
+  embeddingB?: number[] | null,
+  brightnessA?: number | null,
+  brightnessB?: number | null,
 ): PickerFeatures {
   const same_room: 0 | 1 = photoA.room_id === photoB.room_id ? 1 : 0;
 
@@ -143,16 +167,33 @@ export function extractFeatures(
   const shotB = SHOT_ORDER[photoB.shot_type] ?? 2;
   const shot_type_delta = Math.abs(shotA - shotB) / 4;
 
-  // zoom_delta: proxy via shot type delta (same scale, kept separate for future)
-  const zoom_delta = shot_type_delta;
+  // shot_scale_delta: aerial=5 wide=4 medium=3 close=2 detail=1, normalized /4
+  const scaleA = SHOT_SCALE[photoA.shot_type] ?? 3;
+  const scaleB = SHOT_SCALE[photoB.shot_type] ?? 3;
+  const shot_scale_delta = Math.abs(scaleA - scaleB) / 4;
+
+  // zoom_delta: proxy via shot_scale_delta for forward-compat
+  const zoom_delta = shot_scale_delta;
 
   const focal_subject_overlap = computeFocalSubjectOverlap(photoA, photoB);
 
-  // lighting_delta: if visible_features contain "bright" / "dark" tokens, derive;
-  // otherwise default 0.5 (neutral = unknown)
-  const lighting_delta = computeLightingDelta(photoA, photoB);
+  // lighting_delta: use pixel brightness when available; fall back to text-feature heuristic
+  const lighting_delta = computeLightingDelta(photoA, photoB, brightnessA ?? null, brightnessB ?? null);
 
-  const embedding_cosine_sim = embeddingSim ?? 0.5;
+  // embedding_cosine_sim: resolve from vector pair or pre-computed scalar
+  let embedding_cosine_sim: number;
+  if (Array.isArray(embeddingSimOrVecA)) {
+    // New calling convention: embeddingSimOrVecA = vector A, embeddingB = vector B
+    const vecB = Array.isArray(embeddingB) ? embeddingB : null;
+    if (vecB) {
+      embedding_cosine_sim = computeCosineSimilarity(embeddingSimOrVecA, vecB);
+    } else {
+      embedding_cosine_sim = 0.5;
+    }
+  } else {
+    // Legacy calling convention: pre-computed scalar or null
+    embedding_cosine_sim = (embeddingSimOrVecA as number | null) ?? 0.5;
+  }
 
   // bearing_compatibility_score: imported from bearing-compat module logic
   const bearing_compatibility_score = computeBearingCompat(
@@ -183,14 +224,25 @@ export function extractFeatures(
 // ---------------------------------------------------------------------------
 
 /**
- * Derives a lighting delta from visible_features strings.
- * Looks for "bright", "dark", "low_light", "natural_light" tokens.
- * Returns 0.0 (same) to 1.0 (opposite extremes); defaults to 0.5 when unknown.
+ * Derives a lighting delta.
+ *
+ * Priority order:
+ *   1. Pixel brightness (from sharp histogram) — real values, most accurate.
+ *   2. visible_features string tokens — text heuristic fallback.
+ *   3. 0.5 sentinel when neither source is available.
  */
 function computeLightingDelta(
   photoA: PhotoSceneFacts,
   photoB: PhotoSceneFacts,
+  brightnessA: number | null,
+  brightnessB: number | null,
 ): number {
+  // Priority 1: real pixel brightness
+  if (brightnessA !== null && brightnessB !== null) {
+    return Math.abs(brightnessA - brightnessB);
+  }
+
+  // Priority 2: text-feature heuristic
   const lightingScore = (features: string[]): number | null => {
     const f = features.map((s) => s.toLowerCase());
     if (f.some((s) => s.includes("bright") || s.includes("natural_light"))) return 1.0;
@@ -200,8 +252,11 @@ function computeLightingDelta(
 
   const scoreA = lightingScore(photoA.visible_features);
   const scoreB = lightingScore(photoB.visible_features);
-  if (scoreA === null || scoreB === null) return 0.5;
-  return Math.abs(scoreA - scoreB);
+  if (scoreA !== null && scoreB !== null) {
+    return Math.abs(scoreA - scoreB);
+  }
+
+  return 0.5; // sentinel: unknown
 }
 
 /**

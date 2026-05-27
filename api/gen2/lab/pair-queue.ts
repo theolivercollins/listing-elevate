@@ -11,6 +11,8 @@ import type { PairCandidate, PropertySceneGraph, PairLabel, PickerFeatures } fro
 import { generateCandidates } from "../../../lib/gen2-v21/candidates/index.js";
 import { predictLabel } from "../../../lib/gen2-v21/apprentice/index.js";
 import { extractFeatures } from "../../../lib/gen2-v21/picker/features.js";
+import { embedImage, isEnabled as embeddingsEnabled } from "../../../lib/embeddings-image.js";
+import { computePixelBrightness } from "../../../lib/gen2-v21/picker/feature-helpers.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (process.env.GEN2_V21_ENABLED !== "true") {
@@ -97,15 +99,86 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const listingPhotoRefs = await getPhotosForV21Listing(listingId);
     const photoUrlMap = new Map(listingPhotoRefs.map((p) => [p.id, p.url]));
 
+    // ── Build per-photo feature caches ────────────────────────────────────────
+    // Collect distinct photo IDs referenced by the current page of candidates.
+    const pagePhotoIds = new Set<string>();
+    for (const c of ranked) {
+      pagePhotoIds.add(c.photo_a_id);
+      pagePhotoIds.add(c.photo_b_id);
+    }
+
+    // 1. Embeddings: try to load from photos.image_embedding in bulk first.
+    const embeddingCache = new Map<string, number[]>();
+
+    // Check if this is a real-property listing (photos table) by seeing if any
+    // photo ref appears in the photos table. If getPhotosForV21Listing returned
+    // rows and they came from photos (not lab), we do a bulk select.
+    const idsToFetch = [...pagePhotoIds];
+    if (idsToFetch.length > 0) {
+      const { data: photoEmbRows } = await supabase
+        .from("photos")
+        .select("id, image_embedding")
+        .in("id", idsToFetch);
+
+      if (photoEmbRows) {
+        for (const row of photoEmbRows) {
+          const emb = row.image_embedding;
+          if (Array.isArray(emb) && emb.length > 0) {
+            embeddingCache.set(row.id, emb as number[]);
+          }
+        }
+      }
+    }
+
+    // For photos not resolved via the DB (lab photos, or photos table without
+    // image_embedding populated), generate on demand if embeddings are enabled.
+    // Cache per request to avoid redundant API calls for the same photo ID.
+    async function getEmbedding(photoId: string): Promise<number[] | null> {
+      if (embeddingCache.has(photoId)) return embeddingCache.get(photoId)!;
+      const url = photoUrlMap.get(photoId);
+      if (!url) return null;
+      if (!embeddingsEnabled()) return null;
+      try {
+        const result = await embedImage({ imageUrl: url, photoId, surface: "lab" });
+        embeddingCache.set(photoId, result.vector);
+        return result.vector;
+      } catch (err) {
+        console.warn(`[pair-queue] embedding generation failed for photo ${photoId}:`, err instanceof Error ? err.message : String(err));
+        return null;
+      }
+    }
+
+    // 2. Pixel brightness: compute lazily per photo, cache in map.
+    const brightnessCache = new Map<string, number | null>();
+    async function getBrightness(photoId: string): Promise<number | null> {
+      if (brightnessCache.has(photoId)) return brightnessCache.get(photoId)!;
+      const url = photoUrlMap.get(photoId);
+      if (!url) {
+        brightnessCache.set(photoId, null);
+        return null;
+      }
+      const brightness = await computePixelBrightness(url);
+      brightnessCache.set(photoId, brightness);
+      return brightness;
+    }
+
     /**
      * Compute features_blob server-side for a candidate.
      * Returns null if scene facts are missing for either photo (cold-start / legacy SG).
      */
-    function computeFeatures(candidate: PairCandidate): PickerFeatures | null {
+    async function computeFeatures(candidate: PairCandidate): Promise<PickerFeatures | null> {
       const factsA = factsMap.get(candidate.photo_a_id);
       const factsB = factsMap.get(candidate.photo_b_id);
       if (!factsA || !factsB) return null;
-      return extractFeatures(candidate, factsA, factsB, null);
+
+      const [embA, embB, brightnessA, brightnessB] = await Promise.all([
+        getEmbedding(candidate.photo_a_id),
+        getEmbedding(candidate.photo_b_id),
+        getBrightness(candidate.photo_a_id),
+        getBrightness(candidate.photo_b_id),
+      ]);
+
+      return extractFeatures(candidate, factsA, factsB, embA, embB, brightnessA, brightnessB);
     }
 
     // Build all_property_photos for filmstrip (all photos for this listing, not just queue)
@@ -113,7 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (mode !== "apprentice_review") {
       // Directors Cut: return items with photo URLs + features_blob + picker predictions
-      const items = ranked.map((candidate) => ({
+      const items = await Promise.all(ranked.map(async (candidate) => ({
         candidate_id: candidate.candidate_id,
         listing_id: candidate.listing_id,
         photo_a_id: candidate.photo_a_id,
@@ -126,9 +199,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         portal_id: candidate.portal_id,
         picker_prediction: null as null,     // populated by separate picker endpoint if live
         apprentice_prediction: null as null,
-        features_blob: computeFeatures(candidate),
+        features_blob: await computeFeatures(candidate),
         scene_graph_version: sgRow.model_version,
-      }));
+      })));
 
       return res.status(200).json({
         items,
@@ -202,7 +275,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           thumbnail_hash_a: "",
           thumbnail_hash_b: "",
           scene_graph_version: sgRow.model_version,
-          features_blob: computeFeatures(candidate),
+          features_blob: await computeFeatures(candidate),
         };
       })
     );
