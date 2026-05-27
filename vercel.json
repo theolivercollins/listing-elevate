@@ -67,6 +67,7 @@
     { "src": "/api/gen2/lab/audit-log", "dest": "/api/gen2/lab/audit-log.ts" },
     { "src": "/api/gen2/lab/observability", "dest": "/api/gen2/lab/observability.ts" },
     { "src": "/api/gen2/lab/mode-state", "dest": "/api/gen2/lab/mode-state.ts" },
+    { "src": "/api/gen2/lab/backfill-and-retrain", "dest": "/api/gen2/lab/backfill-and-retrain.ts" },
     { "src": "/api/cron/v21-outcome-tick", "dest": "/api/cron/v21-outcome-tick.ts" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
