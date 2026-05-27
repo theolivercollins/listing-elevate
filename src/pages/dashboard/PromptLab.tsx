@@ -306,7 +306,7 @@ function SessionList({ version, onVersionChange }: { version: PipelineVersion; o
       <PageHeading
         eyebrow="Lab"
         title="Prompt Lab"
-        sub="Upload a test image, run it through photo-analysis + director, rate + refine via chat until the prompt is perfect. Optional real render via Kling/Runway."
+        sub="Upload an image. Analyze, direct, refine, render."
       />
 
       <FileDropZone
@@ -370,7 +370,7 @@ function FileDropZone({
   const [dragOver, setDragOver] = useState(false);
   return (
     <Card
-      padding={20}
+      padding={14}
       style={{ border: dragOver ? "1px solid var(--ink)" : undefined, background: dragOver ? "rgba(11,11,16,0.02)" : undefined }}
     >
       <div
@@ -388,76 +388,59 @@ function FileDropZone({
             onFiles(e.dataTransfer.files);
           }
         }}
+        style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}
       >
-        <span className="le-d-label">New session(s)</span>
-        <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <label style={{ fontSize: 11.5, color: "var(--muted)", display: "block", marginBottom: 5 }}>
-              Batch label (groups these uploads together)
-            </label>
-            <input
-              value={batchLabel}
-              onChange={(e) => setBatchLabel(e.target.value)}
-              placeholder="e.g. Smith property · Kitchen study #2"
-              style={{
-                width: "100%",
-                padding: "8px 10px",
-                borderRadius: "var(--radius-sm)",
-                border: "1px solid var(--line)",
-                background: "var(--surface)",
-                fontSize: 13,
-                fontFamily: "var(--le-font-sans)",
-                color: "var(--ink)",
-                outline: "none",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
-            <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} style={{ accentColor: "var(--accent)", cursor: "pointer" }} />
-            Auto-analyze on upload
-          </label>
-          <label
-            className="le-btn-ghost"
-            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7 }}
-          >
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" style={{ width: 14, height: 14 }} /> : <Upload style={{ width: 14, height: 14 }} />}
-            <span>
-              {uploading
-                ? uploadProgress
-                  ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
-                  : "Uploading…"
-                : "Upload images"}
-            </span>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => {
-                if (e.target.files) onFiles(e.target.files);
-              }}
-              disabled={uploading}
-            />
-          </label>
-        </div>
-        <p style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-          Drag files from your desktop onto this panel, or click "Upload images". One session per image. With auto-analyze, the director runs on each in parallel. You can drag session cards between batches after they're created.
-        </p>
-        {error && (
-          <div
-            style={{
-              marginTop: 10,
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-              fontSize: 13,
-              color: "var(--bad)",
+        <input
+          value={batchLabel}
+          onChange={(e) => setBatchLabel(e.target.value)}
+          placeholder="Batch label (optional)"
+          style={{
+            flex: 1,
+            minWidth: 180,
+            padding: "7px 10px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--line)",
+            background: "var(--surface)",
+            fontSize: 12.5,
+            fontFamily: "var(--le-font-sans)",
+            color: "var(--ink)",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-2)", cursor: "pointer", userSelect: "none" as const }}>
+          <input type="checkbox" checked={autoAnalyze} onChange={(e) => setAutoAnalyze(e.target.checked)} disabled={uploading} style={{ accentColor: "var(--accent)", cursor: "pointer" }} />
+          Auto-analyze
+        </label>
+        <label
+          className="le-btn-ghost"
+          style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
+          title="Drag files anywhere on this row, or click to choose"
+        >
+          {uploading ? <Loader2 className="animate-spin" style={{ width: 14, height: 14 }} /> : <Upload style={{ width: 14, height: 14 }} />}
+          <span>
+            {uploading
+              ? uploadProgress
+                ? `${uploadProgress.done}/${uploadProgress.total}…`
+                : "Uploading…"
+              : "Upload images"}
+          </span>
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => {
+              if (e.target.files) onFiles(e.target.files);
             }}
-          >
-            <AlertTriangle style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} />
-            <span>{error}</span>
-          </div>
+            disabled={uploading}
+          />
+        </label>
+        {error && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--bad)" }}>
+            <AlertTriangle style={{ width: 13, height: 13, flexShrink: 0 }} />
+            {error}
+          </span>
         )}
       </div>
     </Card>
@@ -486,7 +469,11 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
   // Batches start collapsed — show as compact widgets, expand on click. Users
   // asked for this after every session in every batch rendering up-front was
   // making the Prompt Lab landing page slow and visually busy.
-  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+  // Single-batch expansion (was a Set; multi-expand caused the grid to reflow
+  // chaotically). Now one batch at a time pops UP to a drawer above the grid.
+  const [expandedBatchKey, setExpandedBatchKey] = useState<string | null>(null);
+  // Director modal state — set to the batch key whose Direct button was clicked.
+  const [directorBatchKey, setDirectorBatchKey] = useState<string | null>(null);
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -510,12 +497,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
   }
 
   function toggleExpand(batch: string) {
-    setExpandedBatches((prev) => {
-      const next = new Set(prev);
-      if (next.has(batch)) next.delete(batch);
-      else next.add(batch);
-      return next;
-    });
+    setExpandedBatchKey((prev) => (prev === batch ? null : batch));
   }
 
   async function batchMoveSelected(targetLabel: string | null) {
@@ -677,32 +659,143 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
         </div>
       </div>
 
+      {/* Expanded batch — rendered as a full-width DRAWER above the batches
+          grid (rather than reflowing one grid cell into a giant block). */}
+      {(() => {
+        const expandedEntry = expandedBatchKey
+          ? ordered.find(([b]) => b === expandedBatchKey)
+          : undefined;
+        if (!expandedEntry) return null;
+        const [batch, items] = expandedEntry;
+        const rated = items.filter((i) => typeof i.best_rating === "number");
+        const avgRating = rated.length > 0 ? rated.reduce((s, i) => s + (i.best_rating ?? 0), 0) / rated.length : null;
+        const counts = {
+          all: items.length,
+          not_started: items.filter((i) => statusOf(i) === "not_started").length,
+          in_progress: items.filter((i) => statusOf(i) === "in_progress").length,
+          completed: items.filter((i) => statusOf(i) === "completed").length,
+        };
+        const filter = filters[batch] ?? "all";
+        const filtered = filter === "all" ? items : items.filter((i) => statusOf(i) === filter);
+        const visible = [...filtered].sort((a, b) => {
+          const priority = (s: LabSession) => {
+            if (!s.completed && !s.pending_render && s.ready_for_approval) return 0;
+            if (!s.completed && !s.pending_render && !s.ready_for_approval && s.iteration_needs_attention) return 1;
+            if (s.pending_render) return 2;
+            if (s.completed) return 4;
+            return 3;
+          };
+          return priority(a) - priority(b);
+        });
+        const directBatchEnabled = items.some((s) => !!s.completed) || items.some((s) => statusOf(s) === "in_progress");
+        return (
+          <div className="le-card" style={{ padding: 20 }}>
+            <div style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  onClick={() => toggleExpand(batch)}
+                  type="button"
+                  className="le-btn-ghost"
+                  title="Collapse"
+                  style={{ padding: "4px 8px" }}
+                >
+                  <ChevronDown style={{ width: 14, height: 14 }} />
+                </button>
+                <BatchTitle label={batch} onRename={(v) => renameBatch(batch, v)} />
+                {organizeMode && (
+                  <button
+                    type="button"
+                    onClick={() => selectAllInBatch(batch, items)}
+                    style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    {items.every((s) => selectedIds.has(s.id)) ? "Deselect all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                  {counts.completed}/{counts.all} completed
+                  {avgRating ? ` · avg ${avgRating.toFixed(1)}★` : ""}
+                </span>
+                <button
+                  type="button"
+                  className="le-btn-ghost"
+                  onClick={() => setDirectorBatchKey(batch)}
+                  disabled={!directBatchEnabled}
+                  title={directBatchEnabled ? "Open the Director and assemble a video from this batch's rendered clips" : "No rendered clips in this batch yet"}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, opacity: directBatchEnabled ? 1 : 0.45 }}
+                >
+                  🎬 Direct batch
+                </button>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="le-seg">
+                {(
+                  [
+                    ["all", `All (${counts.all})`],
+                    ["not_started", `Need to start (${counts.not_started})`],
+                    ["in_progress", `In progress (${counts.in_progress})`],
+                    ["completed", `Completed (${counts.completed})`],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setFilters((prev) => ({ ...prev, [batch]: key }))}
+                    className={`le-seg-item${filter === key ? " is-active" : ""}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} version={version} />
+
+            {visible.length === 0 ? (
+              <div style={{ border: "1px dashed var(--line)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
+                No sessions in this filter.
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {visible.map((s) => (
+                  <SessionCard
+                    key={s.id}
+                    session={s}
+                    version={version}
+                    isDragging={draggingId === s.id}
+                    organizeMode={organizeMode}
+                    selected={selectedIds.has(s.id)}
+                    onToggleSelect={() => toggleSelect(s.id)}
+                    onDragStart={() => setDraggingId(s.id)}
+                    onDragEnd={() => {
+                      setDraggingId(null);
+                      setDropTarget(null);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* Collapsed batch tiles — clean grid, no inline expansion */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {ordered.map(([batch, items]) => {
+          // Skip the currently-expanded batch — it's rendered in the drawer above.
+          if (batch === expandedBatchKey) return null;
+
           const rated = items.filter((i) => typeof i.best_rating === "number");
           const avgRating = rated.length > 0 ? rated.reduce((s, i) => s + (i.best_rating ?? 0), 0) / rated.length : null;
           const isTarget = dropTarget === batch;
-          const isExpanded = expandedBatches.has(batch);
 
           const counts = {
             all: items.length,
-            not_started: items.filter((i) => statusOf(i) === "not_started").length,
-            in_progress: items.filter((i) => statusOf(i) === "in_progress").length,
             completed: items.filter((i) => statusOf(i) === "completed").length,
           };
-          const filter = filters[batch] ?? "all";
-          const filtered = filter === "all" ? items : items.filter((i) => statusOf(i) === filter);
-          // Sort: generation approval needed → iteration approval needed → rendering → rest → completed
-          const visible = [...filtered].sort((a, b) => {
-            const priority = (s: LabSession) => {
-              if (!s.completed && !s.pending_render && s.ready_for_approval) return 0;
-              if (!s.completed && !s.pending_render && !s.ready_for_approval && s.iteration_needs_attention) return 1;
-              if (s.pending_render) return 2;
-              if (s.completed) return 4;
-              return 3;
-            };
-            return priority(a) - priority(b);
-          });
 
           // Pick up to four preview images (by newest created_at) for the collapsed tile's 2×2 grid.
           const previewImages = [...items]
@@ -713,7 +806,6 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
           return (
             <div
               key={batch}
-              className={isExpanded ? "col-span-full" : ""}
               style={isTarget ? { outline: "2px solid var(--ink)", borderRadius: "var(--radius)", background: "rgba(11,11,16,0.03)" } : undefined}
               onDragOver={(e) => {
                 if (draggingId) {
@@ -732,114 +824,33 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
                 }
               }}
             >
-              {isExpanded ? (
-                <div className="le-card" style={{ padding: 20 }}>
-                  <div style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <button
-                        onClick={() => toggleExpand(batch)}
-                        type="button"
-                        className="le-btn-ghost"
-                        title="Collapse"
-                        style={{ padding: "4px 8px" }}
-                      >
-                        <ChevronDown style={{ width: 14, height: 14 }} />
-                      </button>
-                      <BatchTitle label={batch} onRename={(v) => renameBatch(batch, v)} />
-                      {organizeMode && (
-                        <button
-                          type="button"
-                          onClick={() => selectAllInBatch(batch, items)}
-                          style={{ marginLeft: 8, fontSize: 10, color: "var(--muted)", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}
-                        >
-                          {items.every((s) => selectedIds.has(s.id)) ? "Deselect all" : "Select all"}
-                        </button>
-                      )}
+              <button
+                type="button"
+                onClick={() => toggleExpand(batch)}
+                className="le-lift"
+                title={`Expand "${batch}"`}
+                style={{ display: "flex", flexDirection: "column", width: "100%", padding: 12, textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius)", cursor: "pointer", aspectRatio: "1" }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, flex: 1, minHeight: 0, marginBottom: 10, overflow: "hidden", borderRadius: 10 }}>
+                  {previewImages.map((src, i) => (
+                    <div key={i} style={{ overflow: "hidden", background: "rgba(11,11,16,0.06)" }}>
+                      {src ? (
+                        <img src={src} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : null}
                     </div>
-                    <span style={{ flexShrink: 0, fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                      {counts.completed}/{counts.all} completed
-                      {avgRating ? ` · avg ${avgRating.toFixed(1)}★` : ""}
-                    </span>
-                  </div>
-
-                  <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    <div className="le-seg">
-                      {(
-                        [
-                          ["all", `All (${counts.all})`],
-                          ["not_started", `Need to start (${counts.not_started})`],
-                          ["in_progress", `In progress (${counts.in_progress})`],
-                          ["completed", `Completed (${counts.completed})`],
-                        ] as const
-                      ).map(([key, label]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => setFilters((prev) => ({ ...prev, [batch]: key }))}
-                          className={`le-seg-item${filter === key ? " is-active" : ""}`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <ListingSelectionSection batchLabel={batch === "Unbatched" ? null : batch} version={version} />
-
-                  {visible.length === 0 ? (
-                    <div style={{ border: "1px dashed var(--line)", borderRadius: "var(--radius)", padding: 24, textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
-                      No sessions in this filter.
-                    </div>
-                  ) : (
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                      {visible.map((s) => (
-                        <SessionCard
-                          key={s.id}
-                          session={s}
-                          version={version}
-                          isDragging={draggingId === s.id}
-                          organizeMode={organizeMode}
-                          selected={selectedIds.has(s.id)}
-                          onToggleSelect={() => toggleSelect(s.id)}
-                          onDragStart={() => setDraggingId(s.id)}
-                          onDragEnd={() => {
-                            setDraggingId(null);
-                            setDropTarget(null);
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  ))}
+                  {Array.from({ length: Math.max(0, 4 - previewImages.length) }).map((_, i) => (
+                    <div key={`placeholder-${i}`} style={{ background: "rgba(11,11,16,0.04)" }} />
+                  ))}
                 </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => toggleExpand(batch)}
-                  className="le-lift"
-                  title={`Expand "${batch}"`}
-                  style={{ display: "flex", flexDirection: "column", width: "100%", padding: 12, textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius)", cursor: "pointer", aspectRatio: "1" }}
-                >
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, flex: 1, minHeight: 0, marginBottom: 10, overflow: "hidden", borderRadius: 10 }}>
-                    {previewImages.map((src, i) => (
-                      <div key={i} style={{ overflow: "hidden", background: "rgba(11,11,16,0.06)" }}>
-                        {src ? (
-                          <img src={src} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                        ) : null}
-                      </div>
-                    ))}
-                    {Array.from({ length: Math.max(0, 4 - previewImages.length) }).map((_, i) => (
-                      <div key={`placeholder-${i}`} style={{ background: "rgba(11,11,16,0.04)" }} />
-                    ))}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.015em", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{batch}</div>
+                  <div style={{ marginTop: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                    {counts.all} session{counts.all === 1 ? "" : "s"} · {counts.completed}/{counts.all} done
+                    {avgRating ? ` · ${avgRating.toFixed(1)}★` : ""}
                   </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.015em", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{batch}</div>
-                    <div style={{ marginTop: 3, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                      {counts.all} session{counts.all === 1 ? "" : "s"} · {counts.completed}/{counts.all} done
-                      {avgRating ? ` · ${avgRating.toFixed(1)}★` : ""}
-                    </div>
-                  </div>
-                </button>
-              )}
+                </div>
+              </button>
             </div>
           );
         })}
@@ -871,6 +882,21 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
       >
         Drop a session here to create a new batch
       </div>
+
+      {/* Director modal for batch-level assemblies */}
+      {directorBatchKey && (() => {
+        const entry = ordered.find(([b]) => b === directorBatchKey);
+        if (!entry) return null;
+        const [batch, items] = entry;
+        const sessionIds = items.map((s) => s.id);
+        return (
+          <DirectorModal
+            source={{ kind: "batch", batchLabel: batch, sessionIds }}
+            open={true}
+            onClose={() => setDirectorBatchKey(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -39,64 +39,90 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { session_id, iteration_ids } = (req.body ?? {}) as {
+  const { session_id, batch_label, iteration_ids } = (req.body ?? {}) as {
     session_id?: string;
+    batch_label?: string;
     iteration_ids?: string[];
   };
 
-  if (!session_id) {
-    return res.status(400).json({ error: "session_id required" });
+  // Either session_id (single-session assembly, original behavior) OR
+  // batch_label (cross-session batch assembly, migration 072) must be set.
+  if (!session_id && !batch_label) {
+    return res.status(400).json({ error: "session_id or batch_label required" });
   }
   if (!Array.isArray(iteration_ids) || iteration_ids.length === 0) {
     return res.status(400).json({ error: "iteration_ids must be a non-empty array" });
   }
 
   const supabase = getSupabase();
-
-  // Validate: session exists
-  const { data: session, error: sessErr } = await supabase
-    .from("prompt_lab_sessions")
-    .select("id")
-    .eq("id", session_id)
-    .single();
-  if (sessErr || !session) {
-    return res.status(400).json({ error: `session not found: ${session_id}` });
-  }
-
-  // Validate: every iteration_id belongs to this session and has a clip_url
-  // De-duplicate IDs for the DB query, but preserve order in the request.
   const uniqueIds = [...new Set(iteration_ids)];
-  const { data: iterations, error: iterErr } = await supabase
-    .from("prompt_lab_iterations")
-    .select("id, clip_url, session_id")
-    .eq("session_id", session_id)
-    .in("id", uniqueIds);
 
-  if (iterErr) {
-    return res.status(500).json({ error: `failed to fetch iterations: ${iterErr.message}` });
+  // Validate iterations + scope (single-session OR batch)
+  let iterMap: Map<string, { id: string; clip_url: string | null; session_id: string }>;
+
+  if (session_id) {
+    // Single-session path — every iteration must belong to this session.
+    const { data: session, error: sessErr } = await supabase
+      .from("prompt_lab_sessions")
+      .select("id")
+      .eq("id", session_id)
+      .single();
+    if (sessErr || !session) {
+      return res.status(400).json({ error: `session not found: ${session_id}` });
+    }
+
+    const { data: iterations, error: iterErr } = await supabase
+      .from("prompt_lab_iterations")
+      .select("id, clip_url, session_id")
+      .eq("session_id", session_id)
+      .in("id", uniqueIds);
+
+    if (iterErr) {
+      return res.status(500).json({ error: `failed to fetch iterations: ${iterErr.message}` });
+    }
+    iterMap = new Map((iterations ?? []).map((it) => [it.id as string, it]));
+
+    for (const id of iteration_ids) {
+      const it = iterMap.get(id);
+      if (!it) {
+        return res.status(400).json({ error: `iteration ${id} does not belong to session ${session_id}` });
+      }
+      if (!it.clip_url) {
+        return res.status(400).json({ error: `iteration ${id} has no clip_url (not yet rendered)` });
+      }
+    }
+  } else {
+    // Batch path — every iteration must belong to a session whose batch_label
+    // matches. Iterations can be drawn from multiple distinct sessions.
+    // Fetch iterations + join their parent session's batch_label to validate.
+    const { data: iterations, error: iterErr } = await supabase
+      .from("prompt_lab_iterations")
+      .select("id, clip_url, session_id, prompt_lab_sessions!inner(batch_label)")
+      .eq("prompt_lab_sessions.batch_label", batch_label!)
+      .in("id", uniqueIds);
+
+    if (iterErr) {
+      return res.status(500).json({ error: `failed to fetch iterations: ${iterErr.message}` });
+    }
+    iterMap = new Map((iterations ?? []).map((it) => [it.id as string, it as unknown as { id: string; clip_url: string | null; session_id: string }]));
+
+    for (const id of iteration_ids) {
+      const it = iterMap.get(id);
+      if (!it) {
+        return res.status(400).json({ error: `iteration ${id} does not belong to any session in batch "${batch_label}"` });
+      }
+      if (!it.clip_url) {
+        return res.status(400).json({ error: `iteration ${id} has no clip_url (not yet rendered)` });
+      }
+    }
   }
 
-  const iterMap = new Map((iterations ?? []).map((it) => [it.id as string, it]));
-
-  for (const id of iteration_ids) {
-    const it = iterMap.get(id);
-    if (!it) {
-      return res.status(400).json({
-        error: `iteration ${id} does not belong to session ${session_id}`,
-      });
-    }
-    if (!it.clip_url) {
-      return res.status(400).json({
-        error: `iteration ${id} has no clip_url (not yet rendered)`,
-      });
-    }
-  }
-
-  // Insert assembly row
+  // Insert assembly row — session_id XOR batch_label per migration 072 CHECK
   const { data: assembly, error: insertErr } = await supabase
     .from("prompt_lab_assemblies")
     .insert({
-      session_id,
+      session_id: session_id ?? null,
+      batch_label: batch_label ?? null,
       iteration_order: iteration_ids,
       status: "assembling",
       pipeline_version: "v1.1",
@@ -155,8 +181,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { durationSeconds } = await concatClips(segmentPaths, finalPath);
 
-    // Step 6: Upload to Supabase Storage
-    const storagePath = `lab/${session_id}/assembled/${assemblyId}.mp4`;
+    // Step 6: Upload to Supabase Storage. Path differs by scope:
+    //   single-session:  lab/<session_id>/assembled/<assemblyId>.mp4
+    //   batch:           lab-batch/<batch-slug>/assembled/<assemblyId>.mp4
+    const batchSlug = batch_label ? batch_label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "batch" : null;
+    const storagePath = session_id
+      ? `lab/${session_id}/assembled/${assemblyId}.mp4`
+      : `lab-batch/${batchSlug}/assembled/${assemblyId}.mp4`;
     const finalBuf = await fs.readFile(finalPath);
 
     const { error: upErr } = await supabase.storage

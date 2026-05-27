@@ -39,16 +39,18 @@ const TABS: Tab[] = [
 
 // Render the sub-nav above the PageHeading so its Y position is constant
 // across all Lab pages (otherwise the nav appears to "bounce" because each
-// page has a different PageHeading height). Stays sticky just below the
-// dashboard top bar so it remains visible while scrolling.
+// page has a different PageHeading height). Sticks to the very top of the
+// main scroll area so it stays visible while scrolling — the dashboard
+// top bar was removed in the profile-menu rework so top:0 is the right
+// anchor now (was top:76 from the old fixed top-bar era).
 const STICKY: CSSProperties = {
   position: "sticky",
-  top: 76,
+  top: 0,
   zIndex: 18,
   background: "var(--bg)",
-  padding: "10px 0 12px",
-  marginTop: -12,
-  marginBottom: 4,
+  padding: "12px 0 12px",
+  marginTop: -24,           // bleed back into the page padding so the row sits flush at the top
+  marginBottom: 8,
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",

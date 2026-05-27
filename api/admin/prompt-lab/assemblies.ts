@@ -20,20 +20,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!auth) return;
 
   const sessionId = req.query.session_id as string | undefined;
-  if (!sessionId) {
-    return res.status(400).json({ error: "session_id query parameter required" });
+  const batchLabel = req.query.batch_label as string | undefined;
+  if (!sessionId && !batchLabel) {
+    return res.status(400).json({ error: "session_id or batch_label query parameter required" });
   }
 
   const supabase = getSupabase();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("prompt_lab_assemblies")
     .select(
       "id, status, assembled_url, duration_seconds, iteration_order, pipeline_version, created_at, completed_at, error",
     )
-    .eq("session_id", sessionId)
     .order("created_at", { ascending: false })
     .limit(20);
+
+  if (sessionId) {
+    query = query.eq("session_id", sessionId);
+  } else {
+    query = query.eq("batch_label", batchLabel!);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return res.status(500).json({ error: error.message });

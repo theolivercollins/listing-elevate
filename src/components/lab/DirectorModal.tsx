@@ -19,6 +19,9 @@ import {
   listAssemblies,
   assembleListing,
   listListingAssemblies,
+  assembleLabBatch,
+  listBatchAssemblies,
+  getSession,
   type LabIteration,
   type PromptLabAssembly,
   type PromptLabListingAssembly,
@@ -30,7 +33,11 @@ import type { LabListingIteration, LabListingScene } from "@/lib/labListingsApi"
 export interface DirectorModalProps {
   source:
     | { kind: "session"; sessionId: string; iterations: LabIteration[] }
-    | { kind: "listing"; listingId: string };
+    | { kind: "listing"; listingId: string }
+    /** Batch source: assembles a video from iterations across multiple
+     *  sessions sharing the same batch_label. Iterations are fetched on
+     *  modal open via parallel getSession() calls. */
+    | { kind: "batch"; batchLabel: string; sessionIds: string[] };
   open: boolean;
   onClose: () => void;
 }
@@ -274,9 +281,11 @@ function SequenceCard({
 // ─── DirectorModal ────────────────────────────────────────────────────────────
 
 export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
-  // ── Listing source: fetch iterations + scenes on open ──────────────────────
+  // ── Listing/batch sources: fetched on open ─────────────────────────────────
   const [listingLibrary, setListingLibrary] = useState<LibraryItem[]>([]);
   const [listingLoading, setListingLoading] = useState(false);
+  const [batchLibrary, setBatchLibrary] = useState<LibraryItem[]>([]);
+  const [batchLoading, setBatchLoading] = useState(false);
 
   // ── Shared state ───────────────────────────────────────────────────────────
   const [sequence, setSequence] = useState<SequenceItem[]>([]);
@@ -295,7 +304,10 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
       : [];
 
   // The active library changes by source kind
-  const library = source.kind === "session" ? sessionLibrary : listingLibrary;
+  const library =
+    source.kind === "session" ? sessionLibrary
+    : source.kind === "listing" ? listingLibrary
+    : batchLibrary;
 
   // Quick lookup map: id → LibraryItem
   const libraryMap = new Map(library.map((item) => [item.id, item]));
@@ -324,6 +336,55 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
           }
         } catch {
           // Best-effort; don't block the modal.
+        }
+      })();
+    } else if (source.kind === "batch") {
+      // Batch source: fetch iterations for every session in the batch
+      // (parallel), flatten + label each clip with "Session N · scene desc",
+      // then load the most-recent batch assembly for inline playback.
+      const { batchLabel, sessionIds } = source;
+      setBatchLoading(true);
+      setBatchLibrary([]);
+      setAssembledUrl(null);
+
+      (async () => {
+        try {
+          const [sessionResults, assemblies] = await Promise.all([
+            Promise.allSettled(sessionIds.map((id) => getSession(id))),
+            listBatchAssemblies(batchLabel).catch(() => [] as PromptLabAssembly[]),
+          ]);
+
+          if (cancelled) return;
+
+          // Flatten iterations across sessions; sort by parent session creation,
+          // then iteration_number. Session-label prefix on each card so the
+          // operator can identify "session 2 · push_in iter 3" vs "session 5 ·
+          // orbit iter 1".
+          const flattened: LibraryItem[] = [];
+          sessionResults.forEach((res, sessionIndex) => {
+            if (res.status !== "fulfilled") return;
+            const { iterations } = res.value;
+            for (const it of iterations) {
+              const item = sessionIterationToLibraryItem(it);
+              if (item) {
+                flattened.push({
+                  ...item,
+                  label: `Session ${sessionIndex + 1} · ${item.label}`,
+                });
+              }
+            }
+          });
+          setBatchLibrary(flattened);
+
+          const latestAssembly = assemblies.find((a) => a.status === "complete" && a.assembled_url);
+          if (latestAssembly?.assembled_url) {
+            setAssembledUrl(latestAssembly.assembled_url);
+            setStatus("complete");
+          }
+        } catch {
+          // Best-effort
+        } finally {
+          if (!cancelled) setBatchLoading(false);
         }
       })();
     } else {
@@ -388,7 +449,14 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, source.kind === "session" ? source.sessionId : (source as { kind: "listing"; listingId: string }).listingId]);
+  }, [
+    open,
+    source.kind === "session"
+      ? source.sessionId
+      : source.kind === "listing"
+        ? source.listingId
+        : (source as { kind: "batch"; batchLabel: string }).batchLabel,
+  ]);
 
   // ─── Add clip to sequence ──────────────────────────────────────────────────
   function addToSequence(iterationId: string) {
@@ -413,8 +481,10 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
       let result: { assembled_url: string };
       if (source.kind === "session") {
         result = await assembleLab(source.sessionId, iterationIds);
-      } else {
+      } else if (source.kind === "listing") {
         result = await assembleListing(source.listingId, iterationIds);
+      } else {
+        result = await assembleLabBatch(source.batchLabel, iterationIds);
       }
       setAssembledUrl(result.assembled_url);
       setStatus("complete");
@@ -450,7 +520,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
           ? "var(--accent)"
           : "var(--muted)";
 
-  const isListingLoading = source.kind === "listing" && listingLoading;
+  const isListingLoading =
+    (source.kind === "listing" && listingLoading) ||
+    (source.kind === "batch" && batchLoading);
 
   return (
     // Backdrop
