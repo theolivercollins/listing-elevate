@@ -244,16 +244,18 @@ export function fetchBatchSelection(batchLabel: string | null): Promise<BatchSel
 
 /**
  * POST /api/admin/prompt-lab/assemble
- * Assembles the given iterations (in order) into a single MP4 via FFmpeg.
- * Returns the assembly id, the URL of the assembled video, and its duration.
+ * Assembles the given iterations (in order) into a single MP4 via Shotstack
+ * (cloud concat). Returns the assembly id, the URL of the assembled video,
+ * and its duration. `aspectRatio` defaults to 16:9 server-side.
  */
 export async function assembleLab(
   sessionId: string,
   iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
 ): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
   return fetchJSON("/api/admin/prompt-lab/assemble", {
     method: "POST",
-    body: JSON.stringify({ session_id: sessionId, iteration_ids: iterationIds }),
+    body: JSON.stringify({ session_id: sessionId, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
   });
 }
 
@@ -265,10 +267,11 @@ export async function assembleLab(
 export async function assembleLabBatch(
   batchLabel: string,
   iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
 ): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
   return fetchJSON("/api/admin/prompt-lab/assemble", {
     method: "POST",
-    body: JSON.stringify({ batch_label: batchLabel, iteration_ids: iterationIds }),
+    body: JSON.stringify({ batch_label: batchLabel, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
   });
 }
 
@@ -294,16 +297,18 @@ export type { PromptLabAssembly };
 
 /**
  * POST /api/admin/prompt-lab/assemble-listing
- * Assembles the given listing iterations (in order) into a single MP4 via FFmpeg.
- * Returns the assembly id, the URL of the assembled video, and its duration.
+ * Assembles the given listing iterations (in order) into a single MP4 via
+ * Shotstack (cloud concat). Returns the assembly id, the URL of the assembled
+ * video, and its duration. `aspectRatio` defaults to 16:9 server-side.
  */
 export async function assembleListing(
   listingId: string,
   iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
 ): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
   return fetchJSON("/api/admin/prompt-lab/assemble-listing", {
     method: "POST",
-    body: JSON.stringify({ listing_id: listingId, iteration_ids: iterationIds }),
+    body: JSON.stringify({ listing_id: listingId, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
   });
 }
 

@@ -1,26 +1,31 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import * as os from "os";
-import * as path from "path";
-import * as fs from "fs/promises";
 
 export const maxDuration = 300;
 
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
-import { concatClips } from "../../../lib/utils/ffmpeg.js";
+import { recordCostEvent } from "../../../lib/db.js";
+import {
+  ShotstackProvider,
+  pollAssemblyUntilComplete,
+  shotstackCostCents,
+} from "../../../lib/providers/shotstack.js";
 
 // POST /api/admin/prompt-lab/assemble-listing
-// Body: { listing_id: string, iteration_ids: string[] }  (ordered; duplicates allowed)
+// Body: { listing_id: string, iteration_ids: string[], aspect_ratio?: "16:9" | "9:16" }
+//   (iteration_ids ordered; duplicates allowed)
 //
 // 1. Auth: admin only.
-// 2. Validate: listing exists, every iteration belongs to one of this listing's scenes
-//    (JOIN prompt_lab_listing_scenes), every iteration has clip_url.
+// 2. Validate: listing exists, every iteration belongs to one of this listing's
+//    scenes (JOIN prompt_lab_listing_scenes), every iteration has clip_url.
 // 3. Insert prompt_lab_listing_assemblies row (status='assembling').
-// 4. For each clip: fetch → tmp file (no per-clip speed-ramp — dropped 2026-05-27).
-// 5. concatClips → final mp4.
-// 6. Upload to property-videos/lab-listing/<listing_id>/assembled/<assemblyId>.mp4.
-// 7. Update assembly row to status='complete'.
-// 8. Return { id, assembled_url, duration_seconds }.
+// 4. Concatenate the ordered clip URLs into a single MP4 via Shotstack
+//    (cloud render — no overlays, no music). Shotstack hosts the output; we
+//    store its URL directly. Replaces the old local-FFmpeg concat that blew
+//    past Supabase's storage upload size limit.
+// 5. Record the Shotstack render cost.
+// 6. Update assembly row to status='complete'.
+// 7. Return { id, assembled_url, duration_seconds }.
 //
 // On any failure: update row to status='failed', return 500.
 
@@ -33,9 +38,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { listing_id, iteration_ids } = (req.body ?? {}) as {
+  const { listing_id, iteration_ids, aspect_ratio } = (req.body ?? {}) as {
     listing_id?: string;
     iteration_ids?: string[];
+    aspect_ratio?: "16:9" | "9:16";
   };
 
   if (!listing_id) {
@@ -44,6 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!Array.isArray(iteration_ids) || iteration_ids.length === 0) {
     return res.status(400).json({ error: "iteration_ids must be a non-empty array" });
   }
+
+  const aspectRatio: "16:9" | "9:16" = aspect_ratio === "9:16" ? "9:16" : "16:9";
 
   const supabase = getSupabase();
 
@@ -122,56 +130,42 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const assemblyId = assembly.id as string;
-  const tmpFiles: string[] = [];
 
   try {
-    // Step 4: Download each clip
-    const segmentPaths: string[] = [];
+    // Ordered clip URLs (duplicates preserved).
+    const clipUrls = iteration_ids.map((id) => iterMap.get(id)!.clip_url as string);
 
-    for (let i = 0; i < iteration_ids.length; i++) {
-      const itId = iteration_ids[i];
-      const it = iterMap.get(itId)!;
-      const clipUrl = it.clip_url as string;
+    // Cloud concat via Shotstack — constructed directly (not via the
+    // assembly-router, which prefers Creatomate when its key is set).
+    const provider = new ShotstackProvider();
+    const job = await provider.assembleConcat(clipUrls, aspectRatio);
+    const result = await pollAssemblyUntilComplete(provider, job);
 
-      const rawPath = path.join(os.tmpdir(), `lab-listing-assemble-${assemblyId}-${i}-raw.mp4`);
-      tmpFiles.push(rawPath);
-
-      // Download clip to tmp file. No speed-ramp — see comment block at top.
-      const fetchRes = await fetch(clipUrl);
-      if (!fetchRes.ok) {
-        throw new Error(`failed to download clip for iteration ${itId}: HTTP ${fetchRes.status}`);
-      }
-      const buf = Buffer.from(await fetchRes.arrayBuffer());
-      await fs.writeFile(rawPath, buf);
-
-      segmentPaths.push(rawPath);
+    if (result.status !== "complete" || !result.videoUrl) {
+      throw new Error(result.error ?? "Shotstack assembly did not complete");
     }
 
-    // Step 5: Concat
-    const finalPath = path.join(os.tmpdir(), `lab-listing-assemble-${assemblyId}-final.mp4`);
-    tmpFiles.push(finalPath);
+    const assembledUrl = result.videoUrl;
+    const durationSeconds = result.durationSeconds ?? 0;
 
-    const { durationSeconds } = await concatClips(segmentPaths, finalPath);
+    await recordCostEvent({
+      propertyId: null,
+      stage: "assembly",
+      provider: "shotstack",
+      unitsConsumed: 1,
+      unitType: "renders",
+      costCents: shotstackCostCents(durationSeconds),
+      metadata: {
+        source: "prompt-lab-assemble-listing",
+        assembly_id: assemblyId,
+        listing_id,
+        clip_count: clipUrls.length,
+        aspect_ratio: aspectRatio,
+        shotstack_job_id: job.jobId,
+      },
+    });
 
-    // Step 6: Upload to Supabase Storage
-    const storagePath = `lab-listing/${listing_id}/assembled/${assemblyId}.mp4`;
-    const finalBuf = await fs.readFile(finalPath);
-
-    const { error: upErr } = await supabase.storage
-      .from("property-videos")
-      .upload(storagePath, finalBuf, { contentType: "video/mp4", upsert: true });
-
-    if (upErr) {
-      throw new Error(`storage upload failed: ${upErr.message}`);
-    }
-
-    const { data: pub } = supabase.storage
-      .from("property-videos")
-      .getPublicUrl(storagePath);
-
-    const assembledUrl = pub.publicUrl;
-
-    // Step 8: Mark complete
+    // Mark complete
     await supabase
       .from("prompt_lab_listing_assemblies")
       .update({
@@ -200,10 +194,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch { /* best-effort */ }
 
     return res.status(500).json({ error: msg, assembly_id: assemblyId });
-  } finally {
-    // Cleanup all tmp files — never throw on failure
-    for (const f of tmpFiles) {
-      await fs.unlink(f).catch(() => {});
-    }
   }
 }

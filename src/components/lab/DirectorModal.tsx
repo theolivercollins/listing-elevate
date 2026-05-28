@@ -586,20 +586,21 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     });
   }
 
-  // ─── Preferences (display-only in v1, not wired to assemble API yet) ───────
+  // ─── Preferences ───────────────────────────────────────────────────────────
+  // Orientation is wired through to the render: landscape → 16:9, portrait →
+  // 9:16. (Branding was removed 2026-05-28 — the toggle never affected output.)
   const [orientation, setOrientation] = useState<"landscape" | "portrait">("landscape");
-  const [branding, setBranding] = useState<"unbranded" | "branded" | "both">("unbranded");
   const [libraryTab, setLibraryTab] = useState<"media" | "vfx" | "audio">("media");
 
-  // Read-only address line shown in Preferences. Real listing-address lookup
-  // is deferred; we expose the source identifier so the operator can confirm
-  // they're editing the right thing.
-  const addressLabel =
+  // Editable listing-address label. Defaults to the source identifier; the
+  // operator can override it. Modal-local only (not persisted).
+  const defaultAddressLabel =
     source.kind === "session"
       ? `Session · ${source.sessionId.slice(0, 8)}`
       : source.kind === "listing"
         ? `Listing · ${source.listingId.slice(0, 8)}`
         : `Batch · ${source.batchLabel}`;
+  const [address, setAddress] = useState(defaultAddressLabel);
 
   // ─── Generate ─────────────────────────────────────────────────────────────
   async function handleGenerate() {
@@ -608,13 +609,14 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     setErrorMsg(null);
     try {
       const iterationIds = sequence.map((s) => s.iteration_id);
+      const aspectRatio: "16:9" | "9:16" = orientation === "portrait" ? "9:16" : "16:9";
       let result: { assembled_url: string };
       if (source.kind === "session") {
-        result = await assembleLab(source.sessionId, iterationIds);
+        result = await assembleLab(source.sessionId, iterationIds, aspectRatio);
       } else if (source.kind === "listing") {
-        result = await assembleListing(source.listingId, iterationIds);
+        result = await assembleListing(source.listingId, iterationIds, aspectRatio);
       } else {
-        result = await assembleLabBatch(source.batchLabel, iterationIds);
+        result = await assembleLabBatch(source.batchLabel, iterationIds, aspectRatio);
       }
       setAssembledUrl(result.assembled_url);
       setStatus("complete");
@@ -887,8 +889,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 );
               })}
             </div>
-            {/* Thumbnail grid */}
-            <div style={{ flex: 1, overflowY: "auto", padding: 12 }}>
+            {/* Thumbnail grid — capped to ~6 thumbnails (3 rows × 2 cols);
+                the rest scroll so the library doesn't dominate the panel. */}
+            <div style={{ overflowY: "auto", padding: 12, maxHeight: 296 }}>
               {libraryTab !== "media" ? (
                 <div style={{ padding: "32px 8px", textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
                   {libraryTab === "vfx" ? "VFX library — coming soon." : "Audio library — coming soon."}
@@ -1008,25 +1011,26 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               <span style={sectionLabel}>Preferences</span>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 18 }}>
-              {/* Listing address */}
+              {/* Listing address (editable) */}
               <div>
                 <label style={{ ...sectionLabel, display: "block", marginBottom: 8 }}>Listing Address</label>
-                <div
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="123 Main St, City, ST"
+                  title={address}
                   style={{
+                    width: "100%",
                     padding: "9px 12px",
                     borderRadius: 10,
                     border: "1px solid var(--line)",
                     background: "var(--surface)",
                     fontSize: 12.5,
                     color: "var(--ink-2)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    outline: "none",
                   }}
-                  title={addressLabel}
-                >
-                  {addressLabel}
-                </div>
+                />
               </div>
 
               {/* Orientation */}
@@ -1042,23 +1046,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 </div>
               </div>
 
-              {/* Branding */}
-              <div>
-                <label style={{ ...sectionLabel, display: "block", marginBottom: 8 }}>Branding</label>
-                <div style={prefToggleGroup}>
-                  <button type="button" onClick={() => setBranding("unbranded")} style={prefToggleBtn(branding === "unbranded")}>
-                    Unbranded
-                  </button>
-                  <button type="button" onClick={() => setBranding("branded")} style={prefToggleBtn(branding === "branded")}>
-                    Branded
-                  </button>
-                  <button type="button" onClick={() => setBranding("both")} style={prefToggleBtn(branding === "both")}>
-                    Both
-                  </button>
-                </div>
-                <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted-2)" }}>
-                  Orientation + Branding are display-only in v1.1 — final video is always 16:9 unbranded.
-                </div>
+              <div style={{ fontSize: 11, color: "var(--muted-2)" }}>
+                Orientation sets the output aspect ratio. Music, text overlays, and
+                branding are disabled — the assembled video is the clips only.
               </div>
             </div>
           </div>
@@ -1189,8 +1179,6 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               {[
                 { label: "VIDEO", sub: `${sequence.length} ${sequence.length === 1 ? "clip" : "clips"}` },
                 { label: "VFX", sub: "None" },
-                { label: "TEXT", sub: "1 item" },
-                { label: "AUDIO", sub: "1 track" },
               ].map((r) => (
                 <div key={r.label} style={trackRailRow}>
                   <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1246,68 +1234,6 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               {/* VFX strip (placeholder) */}
               <div style={{ minHeight: 32, display: "flex", alignItems: "center" }}>
                 <div style={{ width: "100%", height: 28, borderRadius: 8, background: "rgba(11,11,16,0.025)", border: "1px dashed var(--line)" }} />
-              </div>
-              {/* Text strip (address overlay) */}
-              <div style={{ minHeight: 36, display: "flex", alignItems: "center" }}>
-                <div
-                  style={{
-                    width: sequence.length > 0 ? "60%" : "30%",
-                    height: 32,
-                    borderRadius: 8,
-                    background: "rgba(217,70,160,0.10)",
-                    border: "1px solid rgba(217,70,160,0.35)",
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "0 12px",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: "rgb(217,70,160)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={addressLabel}
-                >
-                  {addressLabel}
-                </div>
-              </div>
-              {/* Audio strip (waveform placeholder) */}
-              <div style={{ minHeight: 40, display: "flex", alignItems: "center" }}>
-                <div
-                  style={{
-                    width: "100%",
-                    height: 36,
-                    borderRadius: 8,
-                    background: "rgba(244,63,140,0.06)",
-                    border: "1px solid rgba(244,63,140,0.20)",
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "0 12px",
-                    gap: 1.5,
-                    overflow: "hidden",
-                  }}
-                  title="Music track placeholder"
-                >
-                  <span style={{ fontSize: 11, color: "rgb(217,70,160)", fontWeight: 600, marginRight: 8 }}>
-                    Music
-                  </span>
-                  {/* Fake waveform bars */}
-                  {Array.from({ length: 80 }).map((_, i) => {
-                    const h = 4 + Math.abs(Math.sin(i * 0.7) * 16) + Math.abs(Math.cos(i * 1.3) * 8);
-                    return (
-                      <span
-                        key={i}
-                        style={{
-                          width: 2,
-                          height: h,
-                          borderRadius: 1,
-                          background: "rgba(217,70,160,0.55)",
-                          flexShrink: 0,
-                        }}
-                      />
-                    );
-                  })}
-                </div>
               </div>
             </div>
           </div>

@@ -3,18 +3,17 @@
  *
  * Unit tests for POST /api/admin/prompt-lab/assemble.
  *
- * All external deps are mocked:
- *   - lib/auth  (requireAdmin)
- *   - lib/client (getSupabase)
- *   - lib/utils/ffmpeg (applySpeedRamp, concatClips)
- *   - node fetch (global fetch) for clip downloads
- *   - fs/promises (writeFile / readFile / unlink — lightweight stubs)
+ * The assembly path renders via Shotstack (cloud concat) — no local FFmpeg,
+ * no Supabase upload. External deps are mocked:
+ *   - lib/auth                  (requireAdmin)
+ *   - lib/client                (getSupabase)
+ *   - lib/db                    (recordCostEvent)
+ *   - lib/providers/shotstack   (ShotstackProvider, pollAssemblyUntilComplete,
+ *                                shotstackCostCents)
  */
 
-import { describe, it, expect, vi, beforeEach, type MockInstance } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import * as path from "path";
-import * as os from "os";
 
 // ── Auth mock ────────────────────────────────────────────────────────────────
 const mockRequireAdmin = vi.fn();
@@ -22,35 +21,30 @@ vi.mock("../../../../lib/auth", () => ({
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
 }));
 
-// ── ffmpeg mock ───────────────────────────────────────────────────────────────
-const mockApplySpeedRamp = vi.fn();
-const mockConcatClips = vi.fn();
-vi.mock("../../../../lib/utils/ffmpeg", () => ({
-  applySpeedRamp: (...args: unknown[]) => mockApplySpeedRamp(...args),
-  concatClips: (...args: unknown[]) => mockConcatClips(...args),
+// ── Cost mock ────────────────────────────────────────────────────────────────
+const mockRecordCostEvent = vi.fn();
+vi.mock("../../../../lib/db", () => ({
+  recordCostEvent: (...args: unknown[]) => mockRecordCostEvent(...args),
 }));
 
-// ── fs/promises mock ──────────────────────────────────────────────────────────
-// We need to mock writeFile and readFile (for the final mp4 read) and unlink.
-// Keep the real implementations for everything else (os, path are not affected).
-vi.mock("fs/promises", async (importOriginal) => {
-  const real = await importOriginal<typeof import("fs/promises")>();
-  return {
-    ...real,
-    writeFile: vi.fn().mockResolvedValue(undefined),
-    readFile: vi.fn().mockResolvedValue(Buffer.from("fake-mp4-data")),
-    unlink: vi.fn().mockResolvedValue(undefined),
-  };
-});
+// ── Shotstack mock ─────────────────────────────────────────────────────────────
+const mockAssembleConcat = vi.fn();
+const mockPoll = vi.fn();
+const mockCostCents = vi.fn();
+vi.mock("../../../../lib/providers/shotstack", () => ({
+  ShotstackProvider: class {
+    assembleConcat = (...args: unknown[]) => mockAssembleConcat(...args);
+  },
+  pollAssemblyUntilComplete: (...args: unknown[]) => mockPoll(...args),
+  shotstackCostCents: (...args: unknown[]) => mockCostCents(...args),
+}));
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
-// We build a configurable supabase mock that tracks calls to .insert(), .update().
 let supabaseMockConfig: {
   sessionRow: unknown | null;
   iterations: Array<{ id: string; clip_url: string | null; session_id: string }>;
   assemblyInsertResult: { id: string } | null;
   insertErr: { message: string } | null;
-  uploadErr: { message: string } | null;
 };
 
 function resetSupabaseMockConfig() {
@@ -63,7 +57,6 @@ function resetSupabaseMockConfig() {
     ],
     assemblyInsertResult: { id: "asm-uuid-1" },
     insertErr: null,
-    uploadErr: null,
   };
 }
 
@@ -134,15 +127,6 @@ function buildSupabaseMock() {
       // Fallback
       return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: null, error: null }) }) }) };
     },
-    storage: {
-      from: () => ({
-        upload: (_path: string, _buf: Buffer, _opts: unknown) =>
-          Promise.resolve({ error: supabaseMockConfig.uploadErr ?? null }),
-        getPublicUrl: (storagePath: string) => ({
-          data: { publicUrl: `https://storage.example.com/${storagePath}` },
-        }),
-      }),
-    },
   };
 }
 
@@ -150,10 +134,6 @@ const mockGetSupabase = vi.fn();
 vi.mock("../../../../lib/client", () => ({
   getSupabase: () => mockGetSupabase(),
 }));
-
-// ── Global fetch mock ─────────────────────────────────────────────────────────
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const adminUser = { user: { id: "u1", email: "admin@test.com" }, profile: { role: "admin" } };
@@ -185,15 +165,6 @@ function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
   } as unknown as VercelRequest;
 }
 
-// Build a successful fake fetch response for a clip download
-function makeFakeClipResponse() {
-  return {
-    ok: true,
-    status: 200,
-    arrayBuffer: () => Promise.resolve(new ArrayBuffer(1024)),
-  };
-}
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 let importedHandler: (req: VercelRequest, res: VercelResponse) => Promise<VercelResponse | void>;
@@ -205,27 +176,25 @@ beforeEach(async () => {
   vi.mock("../../../../lib/auth", () => ({
     requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
   }));
-  vi.mock("../../../../lib/utils/ffmpeg", () => ({
-    applySpeedRamp: (...args: unknown[]) => mockApplySpeedRamp(...args),
-    concatClips: (...args: unknown[]) => mockConcatClips(...args),
+  vi.mock("../../../../lib/db", () => ({
+    recordCostEvent: (...args: unknown[]) => mockRecordCostEvent(...args),
+  }));
+  vi.mock("../../../../lib/providers/shotstack", () => ({
+    ShotstackProvider: class {
+      assembleConcat = (...args: unknown[]) => mockAssembleConcat(...args);
+    },
+    pollAssemblyUntilComplete: (...args: unknown[]) => mockPoll(...args),
+    shotstackCostCents: (...args: unknown[]) => mockCostCents(...args),
   }));
   vi.mock("../../../../lib/client", () => ({
     getSupabase: () => mockGetSupabase(),
   }));
-  vi.mock("fs/promises", async (importOriginal) => {
-    const real = await importOriginal<typeof import("fs/promises")>();
-    return {
-      ...real,
-      writeFile: vi.fn().mockResolvedValue(undefined),
-      readFile: vi.fn().mockResolvedValue(Buffer.from("fake-mp4-data")),
-      unlink: vi.fn().mockResolvedValue(undefined),
-    };
-  });
 
   mockRequireAdmin.mockReset();
-  mockApplySpeedRamp.mockReset();
-  mockConcatClips.mockReset();
-  mockFetch.mockReset();
+  mockRecordCostEvent.mockReset();
+  mockAssembleConcat.mockReset();
+  mockPoll.mockReset();
+  mockCostCents.mockReset();
   mockGetSupabase.mockReset();
 
   resetSupabaseMockConfig();
@@ -233,12 +202,16 @@ beforeEach(async () => {
 
   // Default: admin auth passes
   mockRequireAdmin.mockResolvedValue(adminUser);
-  // Default: speed-ramp succeeds (no-op)
-  mockApplySpeedRamp.mockResolvedValue(undefined);
-  // Default: concat succeeds with 15s duration
-  mockConcatClips.mockResolvedValue({ durationSeconds: 15 });
-  // Default: fetch succeeds for every clip URL
-  mockFetch.mockResolvedValue(makeFakeClipResponse());
+  mockRecordCostEvent.mockResolvedValue(undefined);
+  // Default: Shotstack submit succeeds, returns a job
+  mockAssembleConcat.mockResolvedValue({ jobId: "ss-job-1", environment: "v1" });
+  // Default: poll resolves to a complete render hosted on Shotstack
+  mockPoll.mockResolvedValue({
+    status: "complete",
+    videoUrl: "https://cdn.shotstack.io/render/out.mp4",
+    durationSeconds: 15,
+  });
+  mockCostCents.mockReturnValue(20);
 
   const mod = await import("../assemble.js");
   importedHandler = mod.default;
@@ -246,7 +219,7 @@ beforeEach(async () => {
 
 describe("POST /api/admin/prompt-lab/assemble", () => {
   describe("happy path", () => {
-    it("returns 200 with assembled_url and duration_seconds", async () => {
+    it("returns 200 with the Shotstack-hosted url and duration_seconds", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
@@ -256,9 +229,8 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       expect(res._status).toBe(200);
       const body = res._body as Record<string, unknown>;
       expect(body.id).toBe("asm-uuid-1");
-      expect(typeof body.assembled_url).toBe("string");
-      expect((body.assembled_url as string).length).toBeGreaterThan(0);
-      expect(typeof body.duration_seconds).toBe("number");
+      expect(body.assembled_url).toBe("https://cdn.shotstack.io/render/out.mp4");
+      expect(body.duration_seconds).toBe(15);
     });
 
     it("inserts assembly row with correct iteration_order and status='assembling'", async () => {
@@ -286,35 +258,50 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       const completeUpdate = assemblyUpdates.find((u) => u.status === "complete");
       expect(completeUpdate).toBeDefined();
       expect(completeUpdate?.duration_seconds).toBe(15);
-      expect(typeof completeUpdate?.assembled_url).toBe("string");
+      expect(completeUpdate?.assembled_url).toBe("https://cdn.shotstack.io/render/out.mp4");
       expect(completeUpdate?.completed_at).toBeDefined();
     });
 
-    it("calls applySpeedRamp for each iteration", async () => {
+    it("submits the ordered clip URLs to Shotstack (default 16:9)", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
       const res = makeRes();
       await importedHandler(req, res as unknown as VercelResponse);
 
-      expect(mockApplySpeedRamp).toHaveBeenCalledTimes(3);
+      expect(mockAssembleConcat).toHaveBeenCalledTimes(1);
+      const [clipUrls, aspectRatio] = mockAssembleConcat.mock.calls[0] as [string[], string];
+      expect(clipUrls).toEqual([
+        "https://storage.example.com/clip1.mp4",
+        "https://storage.example.com/clip2.mp4",
+        "https://storage.example.com/clip3.mp4",
+      ]);
+      expect(aspectRatio).toBe("16:9");
     });
 
-    it("calls concatClips once with 3 ramped segment paths", async () => {
+    it("passes aspect_ratio '9:16' through to Shotstack", async () => {
+      const req = makeReq({
+        body: { session_id: "sess-1", iteration_ids: ["iter-1"], aspect_ratio: "9:16" },
+      });
+      const res = makeRes();
+      await importedHandler(req, res as unknown as VercelResponse);
+
+      const [, aspectRatio] = mockAssembleConcat.mock.calls[0] as [string[], string];
+      expect(aspectRatio).toBe("9:16");
+    });
+
+    it("records a Shotstack assembly cost event", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
       const res = makeRes();
       await importedHandler(req, res as unknown as VercelResponse);
 
-      expect(mockConcatClips).toHaveBeenCalledTimes(1);
-      const [paths, outPath] = mockConcatClips.mock.calls[0] as [string[], string];
-      expect(paths).toHaveLength(3);
-      // All paths should be in tmp dir
-      for (const p of paths) {
-        expect(p.startsWith(os.tmpdir())).toBe(true);
-      }
-      expect(outPath.startsWith(os.tmpdir())).toBe(true);
+      expect(mockRecordCostEvent).toHaveBeenCalledTimes(1);
+      const event = mockRecordCostEvent.mock.calls[0][0] as Record<string, unknown>;
+      expect(event.provider).toBe("shotstack");
+      expect(event.stage).toBe("assembly");
+      expect(event.costCents).toBe(20);
     });
 
     it("allows duplicate iteration_ids (same clip can appear twice)", async () => {
@@ -325,19 +312,18 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       await importedHandler(req, res as unknown as VercelResponse);
 
       expect(res._status).toBe(200);
-      expect(mockApplySpeedRamp).toHaveBeenCalledTimes(3);
+      const [clipUrls] = mockAssembleConcat.mock.calls[0] as [string[]];
+      expect(clipUrls).toHaveLength(3);
     });
   });
 
   describe("validation — 400 errors", () => {
-    it("returns 400 when session_id is missing", async () => {
+    it("returns 400 when session_id and batch_label are both missing", async () => {
       const req = makeReq({ body: { iteration_ids: ["iter-1"] } });
       const res = makeRes();
       await importedHandler(req, res as unknown as VercelResponse);
 
       expect(res._status).toBe(400);
-      // After migration 072 (batch-level assemblies), the error message is
-      // "session_id or batch_label required" since either is acceptable.
       expect((res._body as Record<string, unknown>).error).toMatch(/session_id or batch_label required/i);
     });
 
@@ -350,13 +336,7 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
     });
 
     it("returns 400 when iteration belongs to a different session", async () => {
-      // Simulate iter-1 belonging to a different session
-      supabaseMockConfig.iterations = [
-        // iter-1 is returned but with wrong session_id (shouldn't happen via the .eq filter
-        // but test that the "not found in iterMap" path fires).
-        // We simulate by returning no rows for the session — as if query returned empty
-        // (the iter doesn't belong to the session being queried).
-      ];
+      supabaseMockConfig.iterations = [];
       mockGetSupabase.mockReturnValue(buildSupabaseMock());
 
       const req = makeReq({
@@ -390,8 +370,8 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
   });
 
   describe("failure path", () => {
-    it("returns 500 and updates assembly to status='failed' when concatClips throws", async () => {
-      mockConcatClips.mockRejectedValue(new Error("ffmpeg concat exploded"));
+    it("returns 500 and marks failed when the Shotstack render does not complete", async () => {
+      mockPoll.mockResolvedValue({ status: "failed", error: "Shotstack render timed out" });
 
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2"] },
@@ -401,36 +381,16 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
 
       expect(res._status).toBe(500);
       const body = res._body as Record<string, unknown>;
-      expect(String(body.error)).toMatch(/ffmpeg concat exploded/i);
+      expect(String(body.error)).toMatch(/timed out/i);
       expect(body.assembly_id).toBe("asm-uuid-1");
 
       const failedUpdate = assemblyUpdates.find((u) => u.status === "failed");
       expect(failedUpdate).toBeDefined();
-      expect(String(failedUpdate?.error)).toMatch(/ffmpeg concat exploded/i);
+      expect(String(failedUpdate?.error)).toMatch(/timed out/i);
     });
 
-    it("falls back to raw clip when applySpeedRamp throws, still returns 200", async () => {
-      mockApplySpeedRamp.mockRejectedValue(new Error("clip too short for speed ramp"));
-
-      const req = makeReq({
-        body: { session_id: "sess-1", iteration_ids: ["iter-1"] },
-      });
-      const res = makeRes();
-      await importedHandler(req, res as unknown as VercelResponse);
-
-      // Should still succeed — raw clip is used as fallback
-      expect(res._status).toBe(200);
-      // concatClips should still have been called with 1 segment (the raw path)
-      expect(mockConcatClips).toHaveBeenCalledTimes(1);
-      const [paths] = mockConcatClips.mock.calls[0] as [string[]];
-      expect(paths).toHaveLength(1);
-      // The segment path should be the *raw* path (ends in -raw.mp4, not -ramp.mp4)
-      expect(paths[0]).toMatch(/-raw\.mp4$/);
-    });
-
-    it("returns 500 and assembly_id when storage upload fails", async () => {
-      supabaseMockConfig.uploadErr = { message: "storage quota exceeded" };
-      mockGetSupabase.mockReturnValue(buildSupabaseMock());
+    it("returns 500 and marks failed when the Shotstack submit throws", async () => {
+      mockAssembleConcat.mockRejectedValue(new Error("Shotstack render submit failed: 401"));
 
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1"] },
@@ -440,15 +400,16 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
 
       expect(res._status).toBe(500);
       const body = res._body as Record<string, unknown>;
-      expect(String(body.error)).toMatch(/storage upload failed/i);
+      expect(String(body.error)).toMatch(/submit failed/i);
       expect(body.assembly_id).toBe("asm-uuid-1");
+
+      const failedUpdate = assemblyUpdates.find((u) => u.status === "failed");
+      expect(failedUpdate).toBeDefined();
     });
   });
 
   describe("auth", () => {
     it("returns whatever requireAdmin returns when auth fails (non-admin gets 403)", async () => {
-      // When requireAdmin returns null (already sent a 403), the handler returns without
-      // calling res.status/json itself. Simulate this by checking handler exits early.
       mockRequireAdmin.mockImplementation((_req: unknown, res: unknown) => {
         (res as ReturnType<typeof makeRes>).status(403).json({ error: "Forbidden" });
         return null;
@@ -459,7 +420,6 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       await importedHandler(req, res as unknown as VercelResponse);
 
       expect(res._status).toBe(403);
-      // No assembly should have been inserted
       expect(assemblyInsertPayloads).toHaveLength(0);
     });
   });

@@ -75,8 +75,11 @@ type ShotstackTransition = { in?: string; out?: string };
 
 interface ShotstackVideoClip {
   asset: { type: "video"; src: string; trim?: number };
-  start: number;
-  length: number;
+  // "auto" lets Shotstack place clips sequentially (start) and use each
+  // asset's natural duration (length) — used by the plain concat path where
+  // per-clip durations aren't known up front.
+  start: number | "auto";
+  length: number | "auto";
   transition?: ShotstackTransition;
 }
 
@@ -129,6 +132,46 @@ interface ShotstackRenderPayload {
 const TRANSITION_OVERLAP_SECONDS = 0.5;
 const OPENING_OVERLAY_DURATION = 2.5;
 const CLOSING_OVERLAY_DURATION = 4.0;
+
+/**
+ * Build a minimal Shotstack render payload that concatenates the given clip
+ * URLs back-to-back with hard cuts — no overlays, no music, no transitions.
+ *
+ * This is the Prompt Lab "Create Video" assembly path: it replaces the old
+ * local-FFmpeg concat (which produced a single large MP4 that blew past
+ * Supabase's storage upload size limit). Shotstack renders in the cloud and
+ * hosts the result, so nothing large is uploaded to our own storage.
+ *
+ * Uses `start: "auto"` + `length: "auto"` so Shotstack sequences the clips
+ * using each asset's natural duration — we don't need to know per-clip
+ * durations (Prompt Lab iterations don't store them).
+ */
+export function buildShotstackConcatTimeline(
+  clipUrls: string[],
+  aspectRatio: "16:9" | "9:16" = "16:9",
+): ShotstackRenderPayload {
+  if (clipUrls.length === 0) {
+    throw new Error("buildShotstackConcatTimeline: clipUrls array is empty");
+  }
+
+  const videoClips: ShotstackVideoClip[] = clipUrls.map((src) => ({
+    asset: { type: "video", src },
+    start: "auto",
+    length: "auto",
+  }));
+
+  return {
+    timeline: {
+      background: "#000000",
+      tracks: [{ clips: videoClips }],
+    },
+    output: {
+      format: "mp4",
+      resolution: "1080",
+      aspectRatio,
+    },
+  };
+}
 
 export function buildShotstackTimeline(
   params: AssembleVideoParams
@@ -490,8 +533,22 @@ export class ShotstackProvider implements IVideoAssemblyProvider {
   }
 
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
-    const payload = buildShotstackTimeline(params);
+    return this.submitRender(buildShotstackTimeline(params));
+  }
 
+  /**
+   * Concatenate the given clip URLs into a single video (hard cuts, no
+   * overlays/music) and submit the render. Used by the Prompt Lab
+   * "Create Video" assembly path.
+   */
+  async assembleConcat(
+    clipUrls: string[],
+    aspectRatio: "16:9" | "9:16" = "16:9",
+  ): Promise<AssemblyJob> {
+    return this.submitRender(buildShotstackConcatTimeline(clipUrls, aspectRatio));
+  }
+
+  private async submitRender(payload: ShotstackRenderPayload): Promise<AssemblyJob> {
     const response = await fetch(`${this.baseUrl}/render`, {
       method: "POST",
       headers: {
