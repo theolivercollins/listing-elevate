@@ -5,11 +5,8 @@ export const maxDuration = 300;
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { recordCostEvent } from "../../../lib/db.js";
-import {
-  ShotstackProvider,
-  pollAssemblyUntilComplete,
-  shotstackCostCents,
-} from "../../../lib/providers/shotstack.js";
+import { CreatomateProvider, creatomateCostCents } from "../../../lib/providers/creatomate.js";
+import { pollAssemblyJob } from "../../../lib/providers/assembly-router.js";
 
 // POST /api/admin/prompt-lab/assemble
 // Body: { session_id?: string, batch_label?: string, iteration_ids: string[], aspect_ratio?: "16:9" | "9:16" }
@@ -19,12 +16,12 @@ import {
 // 2. Validate: session/batch exists, every iteration belongs to it, every
 //    iteration has clip_url.
 // 3. Insert prompt_lab_assemblies row (status='assembling').
-// 4. Concatenate the ordered clip URLs into a single MP4 via Shotstack
-//    (cloud render — no overlays, no music). Shotstack hosts the output;
+// 4. Concatenate the ordered clip URLs into a single MP4 via Creatomate
+//    (cloud render — no overlays, no music). Creatomate hosts the output;
 //    we store its URL directly. This replaces the old local-FFmpeg concat
 //    that produced a single large MP4 and blew past Supabase's storage
 //    upload size limit ("object exceeded the maximum allowed size").
-// 5. Record the Shotstack render cost.
+// 5. Record the Creatomate render cost.
 // 6. Update assembly row to status='complete'.
 // 7. Return { id, assembled_url, duration_seconds }.
 //
@@ -145,29 +142,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Ordered clip URLs (duplicates preserved).
     const clipUrls = iteration_ids.map((id) => iterMap.get(id)!.clip_url as string);
 
-    // Cloud concat via Shotstack. We construct the provider directly (rather
-    // than going through the assembly-router) because the router prefers
-    // Creatomate when CREATOMATE_API_KEY is set — this path is Shotstack-only.
-    const provider = new ShotstackProvider();
+    // Cloud concat via Creatomate (clips only — no overlays/music). Creatomate
+    // renders in the cloud and hosts the output, so nothing large is uploaded
+    // to our storage.
+    const provider = new CreatomateProvider();
     const job = await provider.assembleConcat(clipUrls, aspectRatio);
-    const result = await pollAssemblyUntilComplete(provider, job);
+    const result = await pollAssemblyJob(provider, job);
 
     if (result.status !== "complete" || !result.videoUrl) {
-      throw new Error(result.error ?? "Shotstack assembly did not complete");
+      throw new Error(result.error ?? "Creatomate assembly did not complete");
     }
 
     const assembledUrl = result.videoUrl;
     const durationSeconds = result.durationSeconds ?? 0;
 
-    // Record cost (Shotstack bills per output minute). Lab assemblies aren't
+    // Record cost (Creatomate bills per output minute). Lab assemblies aren't
     // tied to a real property, so propertyId is null.
     await recordCostEvent({
       propertyId: null,
       stage: "assembly",
-      provider: "shotstack",
+      provider: "creatomate",
       unitsConsumed: 1,
       unitType: "renders",
-      costCents: shotstackCostCents(durationSeconds),
+      costCents: creatomateCostCents(durationSeconds),
       metadata: {
         source: "prompt-lab-assemble",
         assembly_id: assemblyId,
@@ -175,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         batch_label: batch_label ?? null,
         clip_count: clipUrls.length,
         aspect_ratio: aspectRatio,
-        shotstack_job_id: job.jobId,
+        creatomate_job_id: job.jobId,
       },
     });
 

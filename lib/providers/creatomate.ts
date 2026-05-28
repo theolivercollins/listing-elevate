@@ -76,6 +76,8 @@ interface CreatomateRenderResponse {
   status: "planned" | "waiting" | "transcribing" | "rendering" | "succeeded" | "failed";
   url?: string;
   error_message?: string;
+  /** Output duration in seconds, present once the render succeeds. */
+  duration?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +90,48 @@ interface CreatomateRenderResponse {
 const OPENING_OVERLAY_RATIO = 0.25;
 const OPENING_OVERLAY_MIN = 4.0;
 const CLOSING_OVERLAY_DURATION = 4.0;
+
+/**
+ * Build a minimal Creatomate RenderScript that concatenates the given clip
+ * URLs back-to-back with hard cuts — no overlays, no music, no transitions.
+ *
+ * This is the Prompt Lab "Create Video" assembly path. It relies on
+ * Creatomate's auto-timing: video elements that share a track with no `time`
+ * play sequentially, and a video with no `duration` uses its source length —
+ * so we don't need per-clip durations (Prompt Lab iterations don't store
+ * them). The composition `duration` is null, which auto-fits to the clips.
+ */
+export function buildCreatomateConcatScript(
+  clipUrls: string[],
+  aspectRatio: "16:9" | "9:16" = "16:9",
+): CreatomateRenderScript {
+  if (clipUrls.length === 0) {
+    throw new Error("buildCreatomateConcatScript: clipUrls array is empty");
+  }
+
+  const isVertical = aspectRatio === "9:16";
+  const width = isVertical ? 1080 : 1920;
+  const height = isVertical ? 1920 : 1080;
+
+  // One video element per clip, all on track 1 with no `time` (→ sequential)
+  // and no `duration` (→ each uses its source length).
+  const elements: CreatomateElement[] = clipUrls.map((source) => ({
+    type: "video",
+    source,
+    track: 1,
+  }));
+
+  return {
+    output_format: "mp4",
+    width,
+    height,
+    frame_rate: 30,
+    // null → auto-fit the composition to the sequential clips (omitting it
+    // makes /v2/renders fall back to a 5s draft, so be explicit).
+    duration: null,
+    elements,
+  };
+}
 
 /**
  * Build a Creatomate RenderScript from the same params the Shotstack
@@ -406,8 +450,24 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
   /** Code-generated RenderScript path — used when no template_id is configured.
    *  Builds a timeline from clips + overlays via buildCreatomateTimeline(). */
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
-    const renderScript = buildCreatomateTimeline(params);
+    return this.submitRenderScript(buildCreatomateTimeline(params));
+  }
 
+  /**
+   * Concatenate the given clip URLs into a single video (hard cuts, no
+   * overlays/music) and submit the render. Used by the Prompt Lab
+   * "Create Video" assembly path.
+   */
+  async assembleConcat(
+    clipUrls: string[],
+    aspectRatio: "16:9" | "9:16" = "16:9",
+  ): Promise<AssemblyJob> {
+    return this.submitRenderScript(buildCreatomateConcatScript(clipUrls, aspectRatio));
+  }
+
+  private async submitRenderScript(
+    renderScript: CreatomateRenderScript,
+  ): Promise<AssemblyJob> {
     // /v2/renders expects the RenderScript fields spread at the TOP LEVEL —
     // NOT wrapped in a `source:` object (that was the v1 convention).
     // Wrapping causes Creatomate to silently fall back to a default 5-second
@@ -511,6 +571,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       return {
         status: "complete",
         videoUrl: render.url,
+        durationSeconds: render.duration,
       };
     }
 

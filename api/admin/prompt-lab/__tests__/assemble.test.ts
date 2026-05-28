@@ -3,13 +3,13 @@
  *
  * Unit tests for POST /api/admin/prompt-lab/assemble.
  *
- * The assembly path renders via Shotstack (cloud concat) — no local FFmpeg,
+ * The assembly path renders via Creatomate (cloud concat) — no local FFmpeg,
  * no Supabase upload. External deps are mocked:
  *   - lib/auth                  (requireAdmin)
  *   - lib/client                (getSupabase)
  *   - lib/db                    (recordCostEvent)
- *   - lib/providers/shotstack   (ShotstackProvider, pollAssemblyUntilComplete,
- *                                shotstackCostCents)
+ *   - lib/providers/creatomate   (CreatomateProvider, pollAssemblyUntilComplete,
+ *                                creatomateCostCents)
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -27,16 +27,18 @@ vi.mock("../../../../lib/db", () => ({
   recordCostEvent: (...args: unknown[]) => mockRecordCostEvent(...args),
 }));
 
-// ── Shotstack mock ─────────────────────────────────────────────────────────────
+// ── Creatomate + poll mock ─────────────────────────────────────────────────────
 const mockAssembleConcat = vi.fn();
 const mockPoll = vi.fn();
 const mockCostCents = vi.fn();
-vi.mock("../../../../lib/providers/shotstack", () => ({
-  ShotstackProvider: class {
+vi.mock("../../../../lib/providers/creatomate", () => ({
+  CreatomateProvider: class {
     assembleConcat = (...args: unknown[]) => mockAssembleConcat(...args);
   },
-  pollAssemblyUntilComplete: (...args: unknown[]) => mockPoll(...args),
-  shotstackCostCents: (...args: unknown[]) => mockCostCents(...args),
+  creatomateCostCents: (...args: unknown[]) => mockCostCents(...args),
+}));
+vi.mock("../../../../lib/providers/assembly-router", () => ({
+  pollAssemblyJob: (...args: unknown[]) => mockPoll(...args),
 }));
 
 // ── Supabase mock ─────────────────────────────────────────────────────────────
@@ -179,12 +181,14 @@ beforeEach(async () => {
   vi.mock("../../../../lib/db", () => ({
     recordCostEvent: (...args: unknown[]) => mockRecordCostEvent(...args),
   }));
-  vi.mock("../../../../lib/providers/shotstack", () => ({
-    ShotstackProvider: class {
+  vi.mock("../../../../lib/providers/creatomate", () => ({
+    CreatomateProvider: class {
       assembleConcat = (...args: unknown[]) => mockAssembleConcat(...args);
     },
-    pollAssemblyUntilComplete: (...args: unknown[]) => mockPoll(...args),
-    shotstackCostCents: (...args: unknown[]) => mockCostCents(...args),
+    creatomateCostCents: (...args: unknown[]) => mockCostCents(...args),
+  }));
+  vi.mock("../../../../lib/providers/assembly-router", () => ({
+    pollAssemblyJob: (...args: unknown[]) => mockPoll(...args),
   }));
   vi.mock("../../../../lib/client", () => ({
     getSupabase: () => mockGetSupabase(),
@@ -203,12 +207,12 @@ beforeEach(async () => {
   // Default: admin auth passes
   mockRequireAdmin.mockResolvedValue(adminUser);
   mockRecordCostEvent.mockResolvedValue(undefined);
-  // Default: Shotstack submit succeeds, returns a job
+  // Default: Creatomate submit succeeds, returns a job
   mockAssembleConcat.mockResolvedValue({ jobId: "ss-job-1", environment: "v1" });
-  // Default: poll resolves to a complete render hosted on Shotstack
+  // Default: poll resolves to a complete render hosted on Creatomate
   mockPoll.mockResolvedValue({
     status: "complete",
-    videoUrl: "https://cdn.shotstack.io/render/out.mp4",
+    videoUrl: "https://cdn.creatomate.io/render/out.mp4",
     durationSeconds: 15,
   });
   mockCostCents.mockReturnValue(20);
@@ -219,7 +223,7 @@ beforeEach(async () => {
 
 describe("POST /api/admin/prompt-lab/assemble", () => {
   describe("happy path", () => {
-    it("returns 200 with the Shotstack-hosted url and duration_seconds", async () => {
+    it("returns 200 with the Creatomate-hosted url and duration_seconds", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
@@ -229,7 +233,7 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       expect(res._status).toBe(200);
       const body = res._body as Record<string, unknown>;
       expect(body.id).toBe("asm-uuid-1");
-      expect(body.assembled_url).toBe("https://cdn.shotstack.io/render/out.mp4");
+      expect(body.assembled_url).toBe("https://cdn.creatomate.io/render/out.mp4");
       expect(body.duration_seconds).toBe(15);
     });
 
@@ -258,11 +262,11 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       const completeUpdate = assemblyUpdates.find((u) => u.status === "complete");
       expect(completeUpdate).toBeDefined();
       expect(completeUpdate?.duration_seconds).toBe(15);
-      expect(completeUpdate?.assembled_url).toBe("https://cdn.shotstack.io/render/out.mp4");
+      expect(completeUpdate?.assembled_url).toBe("https://cdn.creatomate.io/render/out.mp4");
       expect(completeUpdate?.completed_at).toBeDefined();
     });
 
-    it("submits the ordered clip URLs to Shotstack (default 16:9)", async () => {
+    it("submits the ordered clip URLs to Creatomate (default 16:9)", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
@@ -279,7 +283,7 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       expect(aspectRatio).toBe("16:9");
     });
 
-    it("passes aspect_ratio '9:16' through to Shotstack", async () => {
+    it("passes aspect_ratio '9:16' through to Creatomate", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1"], aspect_ratio: "9:16" },
       });
@@ -290,7 +294,7 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       expect(aspectRatio).toBe("9:16");
     });
 
-    it("records a Shotstack assembly cost event", async () => {
+    it("records a Creatomate assembly cost event", async () => {
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2", "iter-3"] },
       });
@@ -299,7 +303,7 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
 
       expect(mockRecordCostEvent).toHaveBeenCalledTimes(1);
       const event = mockRecordCostEvent.mock.calls[0][0] as Record<string, unknown>;
-      expect(event.provider).toBe("shotstack");
+      expect(event.provider).toBe("creatomate");
       expect(event.stage).toBe("assembly");
       expect(event.costCents).toBe(20);
     });
@@ -370,8 +374,8 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
   });
 
   describe("failure path", () => {
-    it("returns 500 and marks failed when the Shotstack render does not complete", async () => {
-      mockPoll.mockResolvedValue({ status: "failed", error: "Shotstack render timed out" });
+    it("returns 500 and marks failed when the Creatomate render does not complete", async () => {
+      mockPoll.mockResolvedValue({ status: "failed", error: "Creatomate render timed out" });
 
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1", "iter-2"] },
@@ -389,8 +393,8 @@ describe("POST /api/admin/prompt-lab/assemble", () => {
       expect(String(failedUpdate?.error)).toMatch(/timed out/i);
     });
 
-    it("returns 500 and marks failed when the Shotstack submit throws", async () => {
-      mockAssembleConcat.mockRejectedValue(new Error("Shotstack render submit failed: 401"));
+    it("returns 500 and marks failed when the Creatomate submit throws", async () => {
+      mockAssembleConcat.mockRejectedValue(new Error("Creatomate render submit failed: 401"));
 
       const req = makeReq({
         body: { session_id: "sess-1", iteration_ids: ["iter-1"] },

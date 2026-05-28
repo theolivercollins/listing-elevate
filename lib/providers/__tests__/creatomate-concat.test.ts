@@ -1,0 +1,58 @@
+/**
+ * creatomate-concat.test.ts
+ *
+ * buildCreatomateConcatScript is the Prompt Lab "Create Video" assembly
+ * builder. It must concatenate clips with no overlays/music, relying on
+ * Creatomate auto-timing (sequential on a shared track, source-length per
+ * clip, null composition duration → auto-fit).
+ */
+
+import { describe, it, expect } from "vitest";
+import { buildCreatomateConcatScript } from "../creatomate.js";
+
+const CLIPS = [
+  "https://cdn.example.com/a.mp4",
+  "https://cdn.example.com/b.mp4",
+  "https://cdn.example.com/c.mp4",
+];
+
+describe("buildCreatomateConcatScript", () => {
+  it("creates one video element per clip on a shared track, in order", () => {
+    const s = buildCreatomateConcatScript(CLIPS);
+    expect(s.elements).toHaveLength(3);
+    expect(s.elements.map((e) => e.source)).toEqual(CLIPS);
+    expect(s.elements.every((e) => e.type === "video")).toBe(true);
+    expect(new Set(s.elements.map((e) => e.track))).toEqual(new Set([1]));
+  });
+
+  it("omits per-clip time and duration so clips auto-sequence at source length", () => {
+    const s = buildCreatomateConcatScript(CLIPS);
+    for (const e of s.elements) {
+      expect(e.time).toBeUndefined();
+      expect(e.duration).toBeUndefined();
+    }
+  });
+
+  it("sets composition duration to null (auto-fit) and mp4 output", () => {
+    const s = buildCreatomateConcatScript(CLIPS);
+    expect(s.duration).toBeNull();
+    expect(s.output_format).toBe("mp4");
+  });
+
+  it("emits no text/audio/image elements (no overlays, no music)", () => {
+    const s = buildCreatomateConcatScript(CLIPS);
+    const hasOverlayOrAudio = s.elements.some(
+      (e) => e.type === "text" || e.type === "audio" || e.type === "image",
+    );
+    expect(hasOverlayOrAudio).toBe(false);
+  });
+
+  it("defaults to 1920x1080 and supports 9:16", () => {
+    expect(buildCreatomateConcatScript(CLIPS)).toMatchObject({ width: 1920, height: 1080 });
+    expect(buildCreatomateConcatScript(CLIPS, "9:16")).toMatchObject({ width: 1080, height: 1920 });
+  });
+
+  it("throws on an empty clip list", () => {
+    expect(() => buildCreatomateConcatScript([])).toThrow(/empty/i);
+  });
+});
