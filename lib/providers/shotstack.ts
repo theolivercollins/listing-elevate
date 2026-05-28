@@ -508,27 +508,65 @@ function escapeHtml(s: string): string {
   );
 }
 
+/**
+ * Resolve which Shotstack environment to use and the matching API key.
+ *
+ * The endpoint MUST match the key: sending a production key to the sandbox
+ * endpoint (or vice-versa) is a 403 ("This API key belongs to the Production
+ * environment and cannot be used with the Sandbox API"). The previous logic
+ * defaulted to "stage" and then reused the production key on the sandbox
+ * endpoint when no stage key was set — which is exactly that 403.
+ *
+ * Rules (endpoint and key can never mismatch):
+ *   - Honor SHOTSTACK_ENV ("production"/"v1" or "stage"/"sandbox") only when
+ *     that environment's key is actually configured.
+ *   - Otherwise use whichever single key IS configured (prod key → v1,
+ *     stage key → sandbox). This makes prod work with only SHOTSTACK_API_KEY
+ *     set, regardless of SHOTSTACK_ENV.
+ *   - If both keys exist and SHOTSTACK_ENV is unset, default to sandbox.
+ *   - If neither key exists, throw a clear configuration error.
+ */
+export function resolveShotstackConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): { environment: "stage" | "v1"; apiKey: string } {
+  const prodKey = env.SHOTSTACK_API_KEY?.trim() || undefined;
+  const stageKey = env.SHOTSTACK_API_KEY_STAGE?.trim() || undefined;
+  const raw = (env.SHOTSTACK_ENV ?? "").toLowerCase().trim();
+  const explicit =
+    raw === "production" || raw === "v1"
+      ? "v1"
+      : raw === "stage" || raw === "sandbox"
+        ? "stage"
+        : undefined;
+
+  if (!prodKey && !stageKey) {
+    throw new Error(
+      "Shotstack is not configured: set SHOTSTACK_API_KEY (production) or " +
+        "SHOTSTACK_API_KEY_STAGE (sandbox).",
+    );
+  }
+
+  let environment: "stage" | "v1";
+  if (explicit === "v1" && prodKey) environment = "v1";
+  else if (explicit === "stage" && stageKey) environment = "stage";
+  else if (prodKey && !stageKey) environment = "v1";
+  else if (stageKey && !prodKey) environment = "stage";
+  else environment = explicit ?? "stage"; // both keys present, no usable explicit → sandbox
+
+  const apiKey = (environment === "v1" ? prodKey : stageKey)!;
+  return { environment, apiKey };
+}
+
 export class ShotstackProvider implements IVideoAssemblyProvider {
   readonly name = "shotstack" as const;
   private readonly apiKey: string;
-  private readonly environment: "stage" | "v1";
+  readonly environment: "stage" | "v1";
   private readonly baseUrl: string;
 
   constructor() {
-    const env = (process.env.SHOTSTACK_ENV ?? "stage").toLowerCase();
-    this.environment = env === "production" || env === "v1" ? "v1" : "stage";
-
-    const key =
-      this.environment === "v1"
-        ? process.env.SHOTSTACK_API_KEY
-        : process.env.SHOTSTACK_API_KEY_STAGE ?? process.env.SHOTSTACK_API_KEY;
-
-    if (!key) {
-      throw new Error(
-        "SHOTSTACK_API_KEY (or SHOTSTACK_API_KEY_STAGE for sandbox) is required"
-      );
-    }
-    this.apiKey = key;
+    const { environment, apiKey } = resolveShotstackConfig();
+    this.environment = environment;
+    this.apiKey = apiKey;
     this.baseUrl = `https://api.shotstack.io/edit/${this.environment}`;
   }
 
