@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider } from "../atlas.js";
+import { __setTransformForTests } from "../../services/source-aspect.js";
 import type { GenerateClipParams } from "../provider.interface.js";
 
 const baseParams: GenerateClipParams = {
@@ -148,5 +149,51 @@ describe("AtlasProvider.resolveModel (via submit)", () => {
     const provider = new AtlasProvider();
     // @ts-expect-error — access private
     expect(() => provider.resolveModel("kling-v99")).toThrow(/not registered/);
+  });
+});
+
+describe("AtlasProvider.generateClip — source aspect-ratio prep", () => {
+  beforeEach(() => {
+    process.env.ATLASCLOUD_API_KEY = "test-key";
+  });
+  afterEach(() => {
+    __setTransformForTests(null);
+    vi.restoreAllMocks();
+  });
+
+  it("rewrites the source image URL to a 16:9 crop before submitting Seedance", async () => {
+    // Seedance derives its OUTPUT aspect ratio from the INPUT image, so the
+    // provider must hand Atlas a 16:9 source. Inject a fake transform to avoid
+    // network/sharp; assert the cropped URL is what gets POSTed as `image`.
+    __setTransformForTests(async () => "https://cdn.example.com/cropped-16x9.jpg");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 200, data: { id: "job-123" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("seedance-pro-pushin");
+    const job = await provider.generateClip({ ...baseParams, modelOverride: "seedance-pro-pushin" });
+
+    expect(job.jobId).toBe("job-123");
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.image).toBe("https://cdn.example.com/cropped-16x9.jpg");
+  });
+
+  it("does NOT rewrite the source image URL for Kling (no forced aspect ratio)", async () => {
+    const transform = vi.fn();
+    __setTransformForTests(transform);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 200, data: { id: "job-kling" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("kling-v3-pro");
+    await provider.generateClip({ ...baseParams, modelOverride: "kling-v3-pro" });
+
+    expect(transform).not.toHaveBeenCalled();
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.image).toBe("https://cdn.example.com/start.jpg");
   });
 });
