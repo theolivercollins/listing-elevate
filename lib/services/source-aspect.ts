@@ -1,5 +1,10 @@
 import sharp from "sharp";
-import { createHash } from "node:crypto";
+// Namespace import (not `{ createHash } from "node:crypto"`): this lib file gets
+// pulled into the client `vite build`, which externalizes node builtins to a
+// browser stub. A *named* import fails to resolve against that stub at build
+// time ("createHash is not exported by __vite-browser-external"); a namespace
+// import is tolerated. Matches the working pattern in lib/providers/kling.ts.
+import * as crypto from "crypto";
 import { getSupabase } from "../client.js";
 
 // Default target geometry for video sources: 16:9 1080p.
@@ -76,7 +81,7 @@ export async function ensureSourceAspectRatio(
     .jpeg({ quality: 92 })
     .toBuffer();
 
-  const hash = createHash("sha1").update(`${imageUrl}|${targetW}x${targetH}`).digest("hex").slice(0, 16);
+  const hash = crypto.createHash("sha1").update(`${imageUrl}|${targetW}x${targetH}`).digest("hex").slice(0, 16);
   const path = `seedance-src/${hash}-${targetW}x${targetH}.jpg`;
   const supabase = getSupabase();
   const { error } = await supabase.storage
