@@ -4,6 +4,7 @@ import type {
   GenerationJob,
   GenerationResult,
 } from "./provider.interface.js";
+import { ensureSourceAspectRatio } from "../services/source-aspect.js";
 
 // Atlas Cloud model descriptors. Add new entries here to make them
 // selectable via ATLAS_VIDEO_MODEL without touching call sites.
@@ -52,6 +53,15 @@ export interface AtlasModelDescriptor {
    * assembly stage adds curated music from a separate track.
    */
   generateAudio?: boolean;
+  /**
+   * When set, the source image is center-cropped to this aspect ratio (and
+   * uploaded to Storage) BEFORE submission. Required for Bytedance Seedance
+   * 2.0 image-to-video, which derives its OUTPUT aspect ratio from the INPUT
+   * image and ignores the `aspect_ratio` field — a 3:2 listing photo otherwise
+   * yields a 4:3 clip (1664×1248) instead of 16:9 1080p. "16:9" → a 1920×1080
+   * crop. Unset for Kling/Runway (their output geometry is fixed in-model).
+   */
+  forceSourceAspectRatio?: "16:9";
 }
 
 // Default clip duration in seconds for cost estimation. Atlas accepts
@@ -143,6 +153,7 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     resolution: "1080p",         // default; kept so legacy callers (no resolution override) get 1080p
     supportedResolutions: ["1080p", "720p", "480p"],  // Seedance natively supports all three
     generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
+    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 so output is 1920×1080 (see source-aspect.ts)
     priceCentsPerSecond: 28,     // ⚠️  placeholder for 1080p tier — verify against invoice
     priceCentsPerClip: 140,      // 28 × 5
   },
@@ -362,7 +373,17 @@ export class AtlasProvider implements IVideoProvider {
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
     const modelForCall = this.resolveModel(params.modelOverride);
-    const body = buildAtlasRequestBody(params, modelForCall);
+    // Seedance copies the input image's aspect ratio onto its output and
+    // ignores `aspect_ratio`. Crop the source to 16:9 first so the clip is
+    // 1920×1080 instead of a 4:3 snap. No-op for models without the flag.
+    let effectiveParams = params;
+    if (modelForCall.forceSourceAspectRatio && params.sourceImageUrl) {
+      const prepared = await ensureSourceAspectRatio(params.sourceImageUrl);
+      if (prepared !== params.sourceImageUrl) {
+        effectiveParams = { ...params, sourceImageUrl: prepared };
+      }
+    }
+    const body = buildAtlasRequestBody(effectiveParams, modelForCall);
     const res = await fetch(ENDPOINT, {
       method: "POST",
       headers: this.authHeaders(),
