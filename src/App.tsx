@@ -79,7 +79,7 @@ const App = () => (
               <Routes>
                 {/* Public routes */}
                 <Route path="/" element={<V2Landing />} />
-                <Route path="/pricing" element={<Pricing />} />
+                <Route path="/custom-pricing" element={<Pricing />} />
                 {/* Legacy preview routes — redirect to the new root */}
                 <Route path="/v2" element={<Navigate to="/" replace />} />
                 <Route path="/legacy" element={<Index />} />

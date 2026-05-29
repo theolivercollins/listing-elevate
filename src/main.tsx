@@ -4,7 +4,7 @@ import "./styles/studio-design.css";
 
 const root = createRoot(document.getElementById("root")!);
 
-if (window.location.pathname === "/pricing") {
+if (window.location.pathname === "/custom-pricing") {
   import("./pages/Pricing.tsx").then(({ default: Pricing }) => {
     root.render(<Pricing />);
   });
