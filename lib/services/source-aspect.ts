@@ -1,9 +1,14 @@
-import sharp from "sharp";
-// Namespace import (not `{ createHash } from "node:crypto"`): this lib file gets
-// pulled into the client `vite build`, which externalizes node builtins to a
-// browser stub. A *named* import fails to resolve against that stub at build
-// time ("createHash is not exported by __vite-browser-external"); a namespace
-// import is tolerated. Matches the working pattern in lib/providers/kling.ts.
+// IMPORTANT: this module is reachable from the CLIENT bundle
+// (src → lib/providers/atlas.ts → here), so it must NOT evaluate native /
+// server-only deps at module load.
+//   • `sharp` is a native module; importing it at the top level evaluates code
+//     that require()s node builtins, which Vite externalizes to a browser stub
+//     that throws on access — that crash at load blanks the entire SPA. So sharp
+//     is imported DYNAMICALLY inside the (server-only) function below; the client
+//     bundle imports this module but never evaluates sharp.
+//   • `crypto` uses a namespace import — a *named* `{ createHash }` import fails
+//     to resolve against Vite's browser stub at build time; namespace is fine
+//     (matches lib/providers/kling.ts).
 import * as crypto from "crypto";
 import { getSupabase } from "../client.js";
 
@@ -61,6 +66,10 @@ export async function ensureSourceAspectRatio(
   targetH: number = TARGET_H,
 ): Promise<string> {
   if (transformOverride) return transformOverride(imageUrl, targetW, targetH);
+
+  // Server-only: load sharp lazily so this module never evaluates the native
+  // dependency when it's pulled into the client bundle (see note at top of file).
+  const sharp = (await import("sharp")).default;
 
   const res = await fetch(imageUrl);
   if (!res.ok) {
