@@ -976,17 +976,42 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                   style={{
                     position: "relative",
                     width: "100%",
-                    maxWidth: 920,
+                    maxWidth: 560,
                     aspectRatio: "16 / 9",
                     borderRadius: 12,
                     overflow: "hidden",
-                    background: "rgba(11,11,16,0.08)",
-                    border: "1px solid var(--line)",
+                    background: "rgba(11,11,16,0.03)",
+                    border: "1.5px dashed rgba(11,11,16,0.16)",
                     display: "flex",
+                    flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
+                    gap: 10,
+                    padding: 24,
+                    textAlign: "center",
                   }}
-                />
+                >
+                  {status === "assembling" ? (
+                    <>
+                      <Loader2 style={{ width: 22, height: 22, color: "var(--muted)" }} className="animate-spin" />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>Assembling your video…</div>
+                    </>
+                  ) : (
+                    <>
+                      <Play style={{ width: 22, height: 22, color: "var(--muted)" }} />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-2)" }}>
+                        {sequence.length === 0
+                          ? "Your video preview appears here"
+                          : `${sequence.length} ${sequence.length === 1 ? "clip" : "clips"} on the timeline`}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)", maxWidth: 340, lineHeight: 1.45 }}>
+                        {sequence.length === 0
+                          ? "Click clips from the library to add them to the timeline below, then press Generate."
+                          : "Press Generate to assemble these clips into a video."}
+                      </div>
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>
