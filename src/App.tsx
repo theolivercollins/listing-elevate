@@ -10,6 +10,7 @@ import { TopNav } from "@/components/TopNav";
 import Index from "./pages/Index";
 import V2Landing from "./v2/pages/Landing";
 import Upload from "./pages/Upload";
+import Pricing from "./pages/Pricing";
 import UploadSuccess from "./pages/UploadSuccess";
 import UploadCancelled from "./pages/UploadCancelled";
 import Presets from "./pages/Presets";
@@ -78,6 +79,7 @@ const App = () => (
               <Routes>
                 {/* Public routes */}
                 <Route path="/" element={<V2Landing />} />
+                <Route path="/pricing" element={<Pricing />} />
                 {/* Legacy preview routes — redirect to the new root */}
                 <Route path="/v2" element={<Navigate to="/" replace />} />
                 <Route path="/legacy" element={<Index />} />
