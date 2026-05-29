@@ -718,7 +718,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
         zIndex: 100,
         background: "rgba(0,0,0,0.72)",
         display: "flex",
-        alignItems: "stretch",
+        // Center (not stretch) so a content-sized panel doesn't get forced to
+        // full viewport height, which left a large empty band under the preview.
+        alignItems: "center",
         justifyContent: "center",
         padding: 12,
       }}
@@ -730,7 +732,9 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
         style={{
           width: "100%",
           maxWidth: 1600,
-          height: "100%",
+          // Size to content, capped at the viewport — instead of always full
+          // height — so the modal only takes the vertical space it needs.
+          maxHeight: "100%",
           background: "var(--surface)",
           border: "1px solid var(--line)",
           borderRadius: 14,
