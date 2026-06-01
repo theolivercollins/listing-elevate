@@ -8,6 +8,38 @@ See also:
 - [../state/PROJECT-STATE.md](../state/PROJECT-STATE.md) — authoritative state
 - `lib/providers/atlas.ts`, `lib/providers/creatomate.ts`, `lib/voiceover/*`, `lib/assembly/music.ts`, `lib/pipeline.ts`
 
+## Status (updated 2026-06-01, branch `claude/listing-elevate-dev-plan-ZvAY5`)
+
+| WI | Status | Commit |
+|---|---|---|
+| WI-3a — ElevenLabs v3 + audio tags | ✅ shipped (code) | `b249c0f` |
+| WI-3b — voiceover auto-trigger from `add_voiceover` | ✅ shipped (code) | `b249c0f` |
+| WI-4 — music Option C-pooled (provider + selection + script + migration) | ✅ shipped (code) | `51ffc72` |
+| WI-1 — Seedance 2K (Atlas upscaled) | ✅ shipped (code) | `48b3104` |
+| WI-2 — owner-lab assembly carries music+voiceover | ✅ backend shipped; DirectorModal Audio-tab UI is a follow-up | `d1c72d0` |
+
+All changes verified: `tsc` clean, `vite build` passes, new + existing unit
+tests green (43 voiceover/creatomate, 20 atlas, 14 music, 28 concat/assemble).
+Full suite 614 pass; the only 5 failures (`ingest`, `MarketComparison`)
+pre-date this work (verified against base `7af8682`).
+
+### Operational gates before this is LIVE on prod (need Oliver / real spend)
+
+1. **Apply migration 073** (`music_tracks` source/prompt/genre columns) to Supabase via MCP.
+2. **Generate the music pool** — run `pnpm exec tsx scripts/generate-music-pool.ts --run`
+   with `ELEVENLABS_API_KEY` set. Spends ~$8 for 25 tracks @ 40s. This inserts real
+   tracks and deactivates the SoundHelix placeholders. (Until then the pipeline still
+   uses the placeholder tracks, which are audible but not licensed for delivery.)
+3. **Confirm ElevenLabs plan covers v3 + Music API** (paid tier; commercial license).
+4. **Verify Seedance 2K** on a real Atlas render (ffprobe = 2048×1080) and check the
+   per-second cost on the first invoice; revert via `SEEDANCE_RESOLUTION=1080p` if needed.
+5. **(WI-2 UI follow-up)** re-enable the DirectorModal Audio tab to drive `music_track_id`
+   + `voiceover_url`, and fetch clip durations to time music precisely.
+
+Note: the owner can already go listing → finished video (clips+music+voiceover+overlays)
+**today** via the Upload form with owner-bypass (admin email → immediate `runPipeline`),
+once gates 1–2 are done. WI-2 brings the same to the experimental lab DirectorModal.
+
 ## Goal
 
 When a user presses **Create Listing**, the pipeline produces a finished, client-ready video — clips + music + voiceover + branded overlays — with **zero human-in-the-loop**. And inside the **owner lab** (`/dashboard/development/lab`), the owner can take a listing from upload → final assembled video in one sitting.
