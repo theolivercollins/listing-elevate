@@ -43,12 +43,21 @@ export interface AssembleVideoParams {
   transition?: ClipTransition;
   /** Background music. Creatomate honors this; Shotstack currently ignores it. */
   music?: AssemblyMusic | null;
+  /** AI voiceover narration. Creatomate honors this; Shotstack ignores it. */
+  voiceover?: AssemblyVoiceover | null;
 }
 
 export interface AssemblyMusic {
   /** Public URL Creatomate can fetch (mp3/m4a/wav). */
   url: string;
   /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays. */
+  volume?: number;
+}
+
+export interface AssemblyVoiceover {
+  /** Public URL Creatomate can fetch (mp3). */
+  url: string;
+  /** Volume in 0..1. Default 1.0 — narration sits on top of ducked music. */
   volume?: number;
 }
 

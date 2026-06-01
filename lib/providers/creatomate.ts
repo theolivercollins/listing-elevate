@@ -91,19 +91,38 @@ const OPENING_OVERLAY_RATIO = 0.25;
 const OPENING_OVERLAY_MIN = 4.0;
 const CLOSING_OVERLAY_DURATION = 4.0;
 
+/** Optional audio for the concat path (owner-lab "Create Video" — WI-2). */
+export interface ConcatAudioOptions {
+  /** Background music URL + optional volume (0..1, default 0.18). */
+  music?: { url: string; volume?: number } | null;
+  /** Voiceover narration URL + optional volume (0..1, default 1.0). */
+  voiceover?: { url: string; volume?: number } | null;
+  /**
+   * Total video length in seconds, when known. Used to trim the music element
+   * so it doesn't extend the composition past the clips. When omitted (Prompt
+   * Lab iterations don't store per-clip durations), the music plays its source
+   * length and the composition auto-fits to the LONGEST element — so only pass
+   * music here once you can supply this, or keep music short.
+   */
+  totalDurationSeconds?: number;
+}
+
 /**
- * Build a minimal Creatomate RenderScript that concatenates the given clip
- * URLs back-to-back with hard cuts — no overlays, no music, no transitions.
+ * Build a Creatomate RenderScript that concatenates the given clip URLs
+ * back-to-back with hard cuts. With no audio options it's the original
+ * clips-only path; pass `audio` to layer a music track (track 5) and/or a
+ * voiceover narration track (track 6) — the owner-lab "Create Video" upgrade.
  *
- * This is the Prompt Lab "Create Video" assembly path. It relies on
- * Creatomate's auto-timing: video elements that share a track with no `time`
- * play sequentially, and a video with no `duration` uses its source length —
- * so we don't need per-clip durations (Prompt Lab iterations don't store
- * them). The composition `duration` is null, which auto-fits to the clips.
+ * Relies on Creatomate's auto-timing: video elements sharing a track with no
+ * `time` play sequentially, and a video with no `duration` uses its source
+ * length — so we don't need per-clip durations. The composition `duration` is
+ * null, which auto-fits to the clips (unless an untrimmed music track is
+ * longer — see ConcatAudioOptions.totalDurationSeconds).
  */
 export function buildCreatomateConcatScript(
   clipUrls: string[],
   aspectRatio: "16:9" | "9:16" = "16:9",
+  audio: ConcatAudioOptions = {},
 ): CreatomateRenderScript {
   if (clipUrls.length === 0) {
     throw new Error("buildCreatomateConcatScript: clipUrls array is empty");
@@ -120,6 +139,37 @@ export function buildCreatomateConcatScript(
     source,
     track: 1,
   }));
+
+  // Background music — track 5, ducked. Trimmed to the video length when known.
+  if (audio.music?.url) {
+    const musicEl: CreatomateElement = {
+      type: "audio",
+      source: audio.music.url,
+      track: 5,
+      time: 0,
+      volume: `${Math.round((audio.music.volume ?? 0.18) * 100)}%`,
+      animations: [
+        { type: "fade", time: "start", duration: "1.0", fade: true },
+        { type: "fade", time: "end", duration: "1.5", fade: false },
+      ],
+    };
+    if (audio.totalDurationSeconds && audio.totalDurationSeconds > 0) {
+      musicEl.duration = audio.totalDurationSeconds;
+    }
+    elements.push(musicEl);
+  }
+
+  // Voiceover narration — track 6, full volume above the ducked music.
+  if (audio.voiceover?.url) {
+    elements.push({
+      type: "audio",
+      source: audio.voiceover.url,
+      track: 6,
+      time: 0,
+      volume: `${Math.round((audio.voiceover.volume ?? 1.0) * 100)}%`,
+      animations: [{ type: "fade", time: "end", duration: "0.5", fade: false }],
+    });
+  }
 
   return {
     output_format: "mp4",
@@ -142,7 +192,7 @@ export function buildCreatomateConcatScript(
 export function buildCreatomateTimeline(
   params: AssembleVideoParams,
 ): CreatomateRenderScript {
-  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music } = params;
+  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music, voiceover } = params;
 
   if (clips.length === 0) {
     throw new Error("buildCreatomateTimeline: clips array is empty");
@@ -388,6 +438,24 @@ export function buildCreatomateTimeline(
       ]
     : [];
 
+  // Voiceover narration — full-volume audio element on track 6, sitting on
+  // top of the ducked music. Starts at 0; fades out at the tail so it doesn't
+  // clip hard if the narration runs to the very end.
+  const voiceoverElements: CreatomateElement[] = voiceover?.url
+    ? [
+        {
+          type: "audio",
+          source: voiceover.url,
+          track: 6,
+          time: 0,
+          volume: `${Math.round((voiceover.volume ?? 1.0) * 100)}%`,
+          animations: [
+            { type: "fade", time: "end", duration: "0.5", fade: false },
+          ],
+        },
+      ]
+    : [];
+
   return {
     output_format: "mp4",
     width,
@@ -406,6 +474,7 @@ export function buildCreatomateTimeline(
       closingAgent,
       ...logoElements,
       ...musicElements,
+      ...voiceoverElements,
     ],
   };
 }
@@ -461,8 +530,9 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
   async assembleConcat(
     clipUrls: string[],
     aspectRatio: "16:9" | "9:16" = "16:9",
+    audio: ConcatAudioOptions = {},
   ): Promise<AssemblyJob> {
-    return this.submitRenderScript(buildCreatomateConcatScript(clipUrls, aspectRatio));
+    return this.submitRenderScript(buildCreatomateConcatScript(clipUrls, aspectRatio, audio));
   }
 
   private async submitRenderScript(

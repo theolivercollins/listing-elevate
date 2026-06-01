@@ -1132,6 +1132,17 @@ async function runAssemblyStep(
           `Brokerage logo + brand color (${branding.primaryColor}) applied`);
       }
 
+      // Voiceover auto-trigger — when the customer bought the AI-voiceover
+      // add-on (add_voiceover) but no narration was pre-generated in the form,
+      // generate it now so the paid add-on actually produces audio. Best-effort:
+      // a failure proceeds without narration rather than failing the render.
+      const { ensureVoiceover } = await import("./voiceover/ensure-voiceover.js");
+      const voiceoverResult = await ensureVoiceover(
+        property as unknown as Parameters<typeof ensureVoiceover>[0],
+        (level, msg) => log(propertyId, "assembly", level, msg),
+      );
+      const voiceoverUrl = voiceoverResult.voiceoverUrl;
+
       // Music track — operator-pinned wins, else auto-pick by package mood.
       const musicTrack = await selectMusicTrackForProperty(propertyId);
       const music = musicTrack ? { url: musicTrack.fileUrl } : null;
@@ -1208,7 +1219,7 @@ async function runAssemblyStep(
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
             clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,
-            voiceoverUrl: (property as unknown as Record<string, unknown>).voiceover_url as string | null | undefined,
+            voiceoverUrl,
           })
         : null;
 
@@ -1242,7 +1253,12 @@ async function runAssemblyStep(
         }
       }
 
-      const assembleParams = { clips: clipInputs, overlays, music };
+      const assembleParams = {
+        clips: clipInputs,
+        overlays,
+        music,
+        voiceover: voiceoverUrl ? { url: voiceoverUrl } : null,
+      };
 
       // Render both aspect ratios sequentially. Each render typically takes
       // 30–90s. Kept sequential to stay under the 300s function budget.

@@ -24,6 +24,17 @@ export const VOICES: Voice[] = [
   { id: "kdmDKE6EkgrWrrykO9Qt", name: "Jessica", gender: "female", description: "Young, conversational, natural" },
 ];
 
+/**
+ * Default narrator for the pipeline auto-trigger when the order didn't pick a
+ * voice. Amanda — warm, polished, informative — reads well for real estate.
+ * Override via ELEVENLABS_DEFAULT_VOICE_ID.
+ */
+export function defaultVoiceId(): string {
+  const env = process.env.ELEVENLABS_DEFAULT_VOICE_ID;
+  if (env && isValidVoiceId(env)) return env;
+  return "F7hCTbeEDbm7osolS21j"; // Amanda
+}
+
 /** Valid voice IDs — used for fast validation without iterating. */
 const VOICE_ID_SET = new Set(VOICES.map((v) => v.id));
 

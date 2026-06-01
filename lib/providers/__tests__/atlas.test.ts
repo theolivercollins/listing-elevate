@@ -75,8 +75,22 @@ describe("buildAtlasRequestBody", () => {
     expect(klingLong.duration).toBe(10);
   });
 
-  it("forwards resolution='1080p' for the Seedance SKU descriptor", () => {
+  it("forwards resolution='2k' for the Seedance SKU descriptor (max-quality upscaled default)", () => {
     const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pro-pushin"]);
+    expect(body.resolution).toBe("2k");
+  });
+
+  it("routes Seedance to the Atlas 2K upscaled variant slug by default", () => {
+    expect(ATLAS_MODELS["seedance-pro-pushin"].slug).toBe(
+      "bytedance/seedance-2.0/image-to-video-upscaled",
+    );
+  });
+
+  it("still honors an explicit per-render resolution override over the descriptor default", () => {
+    const body = buildAtlasRequestBody(
+      { ...baseParams, resolution: "1080p" },
+      ATLAS_MODELS["seedance-pro-pushin"],
+    );
     expect(body.resolution).toBe("1080p");
   });
 

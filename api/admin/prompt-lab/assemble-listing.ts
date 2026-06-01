@@ -35,10 +35,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { listing_id, iteration_ids, aspect_ratio } = (req.body ?? {}) as {
+  const { listing_id, iteration_ids, aspect_ratio, music_track_id, voiceover_url } = (req.body ?? {}) as {
     listing_id?: string;
     iteration_ids?: string[];
     aspect_ratio?: "16:9" | "9:16";
+    /** Optional: pick a track from music_tracks to lay under the concat. */
+    music_track_id?: string;
+    /** Optional: voiceover MP3 URL to lay on top of the music. */
+    voiceover_url?: string;
   };
 
   if (!listing_id) {
@@ -132,9 +136,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Ordered clip URLs (duplicates preserved).
     const clipUrls = iteration_ids.map((id) => iterMap.get(id)!.clip_url as string);
 
-    // Cloud concat via Creatomate (clips only — no overlays/music).
+    // Optional audio (WI-2): resolve a music track + voiceover to lay under
+    // the concat. Both optional — with neither, this is the original
+    // clips-only behavior.
+    let musicUrl: string | null = null;
+    if (music_track_id) {
+      const { data: track } = await supabase
+        .from("music_tracks")
+        .select("file_url")
+        .eq("id", music_track_id)
+        .eq("active", true)
+        .maybeSingle();
+      musicUrl = (track?.file_url as string | undefined) ?? null;
+    }
+    const audio = {
+      music: musicUrl ? { url: musicUrl } : null,
+      voiceover: voiceover_url ? { url: voiceover_url } : null,
+    };
+
+    // Cloud concat via Creatomate (clips + optional music/voiceover).
     const provider = new CreatomateProvider();
-    const job = await provider.assembleConcat(clipUrls, aspectRatio);
+    const job = await provider.assembleConcat(clipUrls, aspectRatio, audio);
     const result = await pollAssemblyJob(provider, job);
 
     if (result.status !== "complete" || !result.videoUrl) {

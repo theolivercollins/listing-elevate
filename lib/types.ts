@@ -127,12 +127,13 @@ export interface Property {
   // Operator Studio Phase 1 — set when order_mode = 'operator'
   client_id: string | null;
   order_mode: 'customer' | 'operator';
-  // ElevenLabs voiceover outputs — pipeline-written, not set at order creation.
+  // ElevenLabs voiceover fields (migration 061). voiceover_url + voiceover_script
+  // are written either by the preview flow (set at order creation) or by the
+  // pipeline's auto-trigger (lib/voiceover/ensure-voiceover.ts) at assembly time.
+  voiceover_url: string | null;
   voiceover_script: string | null;
-  voiceover_audio_url: string | null;
-  voiceover_voice_id_used: string | null;
-  voiceover_chars: number | null;
-  voiceover_duration_seconds: number | null;
+  voiceover_voice_id: string | null;
+  voiceover_compass_url: string | null;
   // Stripe billing — added migration 059.
   stripe_session_id: string | null;
   stripe_payment_intent_id: string | null;
