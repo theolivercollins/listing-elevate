@@ -1,20 +1,31 @@
 /**
  * ElevenLabs TTS generator.
  *
- * Uses the eleven_multilingual_v2 model (highest-quality stable, ~$0.60/1k chars).
+ * Defaults to the eleven_v3 model (GA Feb 2026) — the most human/expressive
+ * voice model, with support for inline audio tags (e.g. [warmly], [pause]).
+ * Overridable via the ELEVENLABS_MODEL_ID env var so we can flip back to
+ * eleven_multilingual_v2 without a deploy if a given voice 404s on v3 or if
+ * v3 latency hurts the live preview UX.
+ *
  * The MP3 binary is uploaded to Supabase storage at:
  *   voiceovers/{propertyId|"preview"}/{Date.now()}.mp3
  *
- * Cost formula: ceil(chars / 1000 * 60) cents (60¢ per 1k chars for multilingual_v2).
- * Example: 150-word script ≈ 800 chars → ceil(0.8 * 60) = 48¢.
+ * Cost formula: ceil(chars / 1000 * 60) cents (1 credit/char on v3 +
+ * multilingual_v2; 60¢/1k chars is our accounting placeholder — reconcile
+ * against the ElevenLabs invoice). Example: 150-word script ≈ 800 chars →
+ * ceil(0.8 * 60) = 48¢.
  */
 
 import { getSupabase, recordCostEvent } from "../db.js";
+import { stripAudioTags } from "./audio-tags.js";
 
 const ELEVENLABS_API = "https://api.elevenlabs.io/v1/text-to-speech";
-// Highest-quality stable model. eleven_v3 is alpha and not all
-// pre-built voices support it yet — flip when GA.
-const MODEL_ID = "eleven_multilingual_v2";
+// eleven_v3: most expressive/human, supports audio tags. Env-overridable.
+const DEFAULT_MODEL_ID = "eleven_v3";
+
+function resolveModelId(): string {
+  return process.env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL_ID;
+}
 
 export interface GenerateAudioInput {
   script: string;
@@ -39,8 +50,16 @@ export async function generateVoiceoverAudio(
 
   const { script, voiceId, propertyId, storageFolder } = input;
   const folder = storageFolder ?? propertyId ?? "preview";
+  const modelId = resolveModelId();
+  const isV3 = modelId.startsWith("eleven_v3");
+
+  // Audio tags (e.g. [warmly], [pause]) are a v3-only feature. On any
+  // non-v3 model they'd be read literally or mishandled, so strip them.
+  const text = isV3 ? script : stripAudioTags(script);
 
   // Call ElevenLabs TTS REST API.
+  // v3 sits in the "Natural" stability zone (~0.5) with light style for a
+  // warm, human read; use_speaker_boost sharpens voice similarity.
   const res = await fetch(`${ELEVENLABS_API}/${voiceId}`, {
     method: "POST",
     headers: {
@@ -49,11 +68,13 @@ export async function generateVoiceoverAudio(
       Accept: "audio/mpeg",
     },
     body: JSON.stringify({
-      text: script,
-      model_id: MODEL_ID,
+      text,
+      model_id: modelId,
+      output_format: "mp3_44100_128",
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,
+        ...(isV3 ? { style: 0.3, use_speaker_boost: true } : {}),
       },
     }),
   });
@@ -86,8 +107,9 @@ export async function generateVoiceoverAudio(
 
   const audioUrl = urlData.publicUrl;
 
-  // Compute cost: ceil(chars / 1000 * 30) cents.
-  const chars = script.length;
+  // Compute cost: ceil(chars / 1000 * 60) cents. Bill on the text actually
+  // sent (tags stripped for non-v3) since that's what ElevenLabs charges for.
+  const chars = text.length;
   const costCents = Math.ceil((chars / 1000) * 60);
   // Rough duration estimate: ~15 chars/sec average narration pace.
   const durationMs = Math.round((chars / 15) * 1000);
@@ -100,7 +122,7 @@ export async function generateVoiceoverAudio(
     unitType: "characters",
     costCents,
     metadata: {
-      model: MODEL_ID,
+      model: modelId,
       voiceId,
       chars,
       storagePath,

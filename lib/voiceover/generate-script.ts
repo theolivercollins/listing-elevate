@@ -10,6 +10,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { computeClaudeCost } from "../utils/claude-cost.js";
 import { recordCostEvent } from "../db.js";
 import { WORD_BUDGET } from "./voices.js";
+import { stripAudioTags } from "./audio-tags.js";
 
 const MODEL = "claude-sonnet-4-6";
 
@@ -24,12 +25,22 @@ Required structure:
 Tone: warm, inviting, real-estate-classic. Connected sentences, not bullet points.
 Output the script ONLY — no preamble, no quotes, no commentary, no stage directions.`;
 
+// Appended only when audio tags are enabled (ElevenLabs v3 target).
+const AUDIO_TAGS_INSTRUCTION = `
+
+DELIVERY CUES (ElevenLabs v3 audio tags): sprinkle in 2–4 inline bracketed cues to make the read warm and human. Use ONLY these: [warmly], [calmly], [softly], [gently], [enthusiastically], [pause]. Place a [warmly] at the open and a [pause] before the closing line; otherwise use sparingly. Do NOT use any other bracketed tags. Tags do NOT count toward the word budget.`;
+
 export interface GenerateScriptInput {
   description: string;
   durationSec: 15 | 30 | 60;
   address: string;
   packageLabel: string;
   propertyId: string | null;
+  /**
+   * Emit inline v3 audio tags ([warmly], [pause], …). Default true.
+   * Set false when the TTS target is a non-v3 model that can't parse tags.
+   */
+  audioTags?: boolean;
 }
 
 export interface GenerateScriptResult {
@@ -55,9 +66,12 @@ export async function generateVoiceoverScript(
   input: GenerateScriptInput,
 ): Promise<GenerateScriptResult> {
   const { description, durationSec, address, packageLabel, propertyId } = input;
+  const audioTags = input.audioTags ?? true;
   const wordBudget = WORD_BUDGET[durationSec] ?? 75;
 
-  const systemPrompt = SYSTEM_PROMPT.replace("{wordBudget}", String(wordBudget));
+  const systemPrompt =
+    SYSTEM_PROMPT.replace("{wordBudget}", String(wordBudget)) +
+    (audioTags ? AUDIO_TAGS_INSTRUCTION : "");
 
   const userMessage = `Property: ${address}
 Package: ${packageLabel}
@@ -82,8 +96,15 @@ Write a ${durationSec}-second voiceover script.`;
   if (!rawText) throw new Error("Script generation returned empty text");
 
   // Enforce word budget as defense-in-depth — model occasionally runs long.
-  const script = trimToWordBudget(rawText, wordBudget);
-  const wordCount = countWords(script);
+  // Count SPOKEN words (tags excluded) so audio tags don't eat the budget.
+  // Only fall back to a hard trim when the spoken read actually overruns; the
+  // trim drops tags (acceptable on the rare overflow) to guarantee duration fit.
+  const spokenWordCount = countWords(stripAudioTags(rawText));
+  const script =
+    spokenWordCount > wordBudget
+      ? trimToWordBudget(stripAudioTags(rawText), wordBudget)
+      : rawText;
+  const wordCount = countWords(stripAudioTags(script));
 
   // Compute and record cost.
   const costResult = computeClaudeCost(response.usage as never, MODEL);

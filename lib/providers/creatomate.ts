@@ -142,7 +142,7 @@ export function buildCreatomateConcatScript(
 export function buildCreatomateTimeline(
   params: AssembleVideoParams,
 ): CreatomateRenderScript {
-  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music } = params;
+  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music, voiceover } = params;
 
   if (clips.length === 0) {
     throw new Error("buildCreatomateTimeline: clips array is empty");
@@ -388,6 +388,24 @@ export function buildCreatomateTimeline(
       ]
     : [];
 
+  // Voiceover narration — full-volume audio element on track 6, sitting on
+  // top of the ducked music. Starts at 0; fades out at the tail so it doesn't
+  // clip hard if the narration runs to the very end.
+  const voiceoverElements: CreatomateElement[] = voiceover?.url
+    ? [
+        {
+          type: "audio",
+          source: voiceover.url,
+          track: 6,
+          time: 0,
+          volume: `${Math.round((voiceover.volume ?? 1.0) * 100)}%`,
+          animations: [
+            { type: "fade", time: "end", duration: "0.5", fade: false },
+          ],
+        },
+      ]
+    : [];
+
   return {
     output_format: "mp4",
     width,
@@ -406,6 +424,7 @@ export function buildCreatomateTimeline(
       closingAgent,
       ...logoElements,
       ...musicElements,
+      ...voiceoverElements,
     ],
   };
 }

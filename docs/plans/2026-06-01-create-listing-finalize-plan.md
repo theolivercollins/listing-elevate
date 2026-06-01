@@ -97,11 +97,11 @@ Files: `lib/assembly/music.ts`, `supabase/migrations/NNN_music_real_tracks.sql` 
 
 Each WI: superpowers loop — write tests (TDD) → implement → `pnpm run build` + headless mount check (per the blank-screen lesson) → `/code-review` → cascade `feat/* → dev → staging → main` via PR.
 
-## Open decisions (need Oliver)
+## Decisions (locked 2026-06-01)
 
-- **Music:** lock Option **C** (and C-pure vs C-pooled). Recommended: **C-pooled**.
-- **Seedance 2K:** confirm the move to the upscaled 2K variant (cost looks neutral-or-lower; verify on invoice).
-- **Build order / go:** confirm sequencing above, or reprioritize.
+- **Music:** **Option C-pooled** — pre-generate a per-mood ElevenLabs Music pool into `music_tracks`, reuse via existing selection logic. **C-pure (unique track per video) is a planned future enhancement**, not built now.
+- **Build order:** plan order below — WI-3b + WI-4 first (customer-path blockers), then WI-3a (v3), WI-1 (Seedance 2K), WI-2 (owner-lab assembly).
+- **Seedance 2K:** proceed to the upscaled 2K variant; verify per-second cost against the first Atlas invoice.
 
 ## Cost snapshot (per finished video, est.)
 
