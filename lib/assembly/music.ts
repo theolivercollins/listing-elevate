@@ -21,6 +21,28 @@ import { getSupabase } from "../db.js";
 
 export type MoodTag = "upbeat" | "warm" | "celebratory" | "cinematic" | "neutral";
 
+interface TrackRow {
+  id: string;
+  name: string;
+  file_url: string;
+  mood_tag: string;
+}
+
+/** Pick a random row from a pool — exposed for testing via the injectable rng. */
+export function pickRandom<T>(rows: T[], rng: () => number = Math.random): T | null {
+  if (rows.length === 0) return null;
+  return rows[Math.floor(rng() * rows.length)] ?? rows[0];
+}
+
+function toTrack(row: TrackRow): MusicTrack {
+  return {
+    id: row.id,
+    name: row.name,
+    fileUrl: row.file_url,
+    moodTag: row.mood_tag as MoodTag,
+  };
+}
+
 export interface MusicTrack {
   id: string;
   name: string;
@@ -78,39 +100,25 @@ export async function selectMusicTrackForProperty(
 
   const mood = moodForPackage(prop?.selected_package as string | null | undefined);
 
-  // 2. Auto-pick by mood.
-  const { data: matchByMood } = await supabase
+  // 2. Auto-pick by mood — pick a RANDOM track from the active pool so a
+  //    pooled library (C-pooled strategy) varies across videos instead of
+  //    every just_listed order getting the same track.
+  const { data: moodPool } = await supabase
     .from("music_tracks")
     .select("id, name, file_url, mood_tag")
     .eq("mood_tag", mood)
-    .eq("active", true)
-    .limit(1)
-    .maybeSingle();
-  if (matchByMood) {
-    return {
-      id: matchByMood.id as string,
-      name: matchByMood.name as string,
-      fileUrl: matchByMood.file_url as string,
-      moodTag: matchByMood.mood_tag as MoodTag,
-    };
-  }
+    .eq("active", true);
+  const fromMood = pickRandom((moodPool ?? []) as TrackRow[]);
+  if (fromMood) return toTrack(fromMood);
 
-  // 3. Fall back to neutral.
-  const { data: neutral } = await supabase
+  // 3. Fall back to a random active neutral track.
+  const { data: neutralPool } = await supabase
     .from("music_tracks")
     .select("id, name, file_url, mood_tag")
     .eq("mood_tag", "neutral")
-    .eq("active", true)
-    .limit(1)
-    .maybeSingle();
-  if (neutral) {
-    return {
-      id: neutral.id as string,
-      name: neutral.name as string,
-      fileUrl: neutral.file_url as string,
-      moodTag: neutral.mood_tag as MoodTag,
-    };
-  }
+    .eq("active", true);
+  const neutral = pickRandom((neutralPool ?? []) as TrackRow[]);
+  if (neutral) return toTrack(neutral);
 
   // 4. Library empty — no music.
   return null;
