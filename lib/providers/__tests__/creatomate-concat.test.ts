@@ -55,4 +55,40 @@ describe("buildCreatomateConcatScript", () => {
   it("throws on an empty clip list", () => {
     expect(() => buildCreatomateConcatScript([])).toThrow(/empty/i);
   });
+
+  it("emits no audio by default (backward compatible)", () => {
+    const s = buildCreatomateConcatScript(CLIPS);
+    expect(s.elements.some((e) => e.type === "audio")).toBe(false);
+  });
+});
+
+describe("buildCreatomateConcatScript audio (WI-2)", () => {
+  it("adds a ducked music track on track 5 when music is supplied", () => {
+    const s = buildCreatomateConcatScript(CLIPS, "16:9", {
+      music: { url: "https://cdn/music.mp3" },
+    });
+    const music = s.elements.find((e) => e.type === "audio" && e.track === 5);
+    expect(music?.source).toBe("https://cdn/music.mp3");
+    expect(music?.volume).toBe("18%");
+    expect(music?.duration).toBeUndefined(); // untrimmed when no totalDurationSeconds
+  });
+
+  it("trims the music to totalDurationSeconds when provided", () => {
+    const s = buildCreatomateConcatScript(CLIPS, "16:9", {
+      music: { url: "https://cdn/music.mp3" },
+      totalDurationSeconds: 25,
+    });
+    const music = s.elements.find((e) => e.type === "audio" && e.track === 5);
+    expect(music?.duration).toBe(25);
+  });
+
+  it("adds a full-volume voiceover on track 6 above the music", () => {
+    const s = buildCreatomateConcatScript(CLIPS, "16:9", {
+      music: { url: "https://cdn/m.mp3" },
+      voiceover: { url: "https://cdn/vo.mp3" },
+    });
+    const vo = s.elements.find((e) => e.type === "audio" && e.track === 6);
+    expect(vo?.source).toBe("https://cdn/vo.mp3");
+    expect(vo?.volume).toBe("100%");
+  });
 });
