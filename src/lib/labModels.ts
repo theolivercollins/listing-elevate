@@ -20,7 +20,7 @@ export interface LabModelInfo {
    * UI default. When absent or single-element, the resolution picker is
    * hidden — there's no meaningful choice to make.
    */
-  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "4k">;
+  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "2k" | "4k">;
   note?: string;
   hidden?: boolean;
 }
@@ -66,14 +66,14 @@ export const LAB_MODELS: LabModelInfo[] = [
   },
   {
     key: "seedance-pro-pushin",
-    slug: "bytedance/seedance-2.0/image-to-video",
-    label: "Seedance 2.0 (push-in)",
+    slug: "bytedance/seedance-2.0/image-to-video-upscaled",
+    label: "Seedance 2.0 (push-in, 2K)",
     shortLabel: "Seedance 2.0",
-    priceCents: 70,          // 14 ¢/s × 5s — matches atlas.ts placeholder
-    priceLabel: "$0.70",
+    priceCents: 65,          // 13 ¢/s × 5s — matches atlas.ts 2K upscaled placeholder
+    priceLabel: "$0.65",
     supportsEndFrame: false,
-    supportedResolutions: ["1080p", "720p", "480p"],  // Seedance natively supports all three
-    note: "Bytedance Seedance 2.0 via Atlas. Push-in only. FFmpeg speed-ramp polish applied on download.",
+    supportedResolutions: ["2k", "1080p", "720p", "480p"],  // Atlas upscaled variant tops out at 2K (2048×1080)
+    note: "Bytedance Seedance 2.0 (2K upscaled) via Atlas. Push-in only. FFmpeg speed-ramp polish applied on download.",
   },
   // ── v1 SKUs ──────────────────────────────────────────────────────────────
   {
