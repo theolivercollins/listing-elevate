@@ -131,12 +131,20 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   const propertyId: string = (property as { id: string }).id;
 
   // 2. Insert photo rows into the shared `photos` table.
-  //    Adapted columns: file_url (= storage path), file_name (= last segment).
-  const photoRows = photo_storage_paths.map((storagePath) => ({
-    property_id: propertyId,
-    file_url: storagePath,
-    file_name: storagePath.split('/').pop() ?? storagePath,
-  }));
+  //    file_url MUST be a fully-qualified URL — the Gemini/Claude analyzers
+  //    fetch() it directly, and Node's URL parser rejects bare object paths
+  //    with "Failed to parse URL". Mirror the customer flow in
+  //    api/properties/index.ts which runs each path through getPublicUrl().
+  const photoRows = photo_storage_paths.map((storagePath) => {
+    const { data: urlData } = supabase.storage
+      .from('property-photos')
+      .getPublicUrl(storagePath);
+    return {
+      property_id: propertyId,
+      file_url: urlData.publicUrl,
+      file_name: storagePath.split('/').pop() ?? storagePath,
+    };
+  });
 
   const { error: photosError } = await supabase.from('photos').insert(photoRows);
   if (photosError) {

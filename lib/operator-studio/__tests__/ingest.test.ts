@@ -19,6 +19,13 @@ vi.mock('../../client', () => ({
       };
       throw new Error(`unexpected table: ${table}`);
     },
+    storage: {
+      from: (bucket: string) => ({
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://example.supabase.co/storage/v1/object/public/${bucket}/${path}` },
+        }),
+      }),
+    },
   }),
 }));
 
@@ -91,13 +98,25 @@ describe('manualIngest', () => {
     }));
   });
 
-  it('inserts photo rows into the photos table (adapted: file_url + file_name)', async () => {
-    await manualIngest(baseInput);
+  it('inserts photo rows with a fully-qualified public URL (NOT bare storage path)', async () => {
+    // Regression: 2026-05-20 .. 2026-06-02 the operator ingest stored bare
+    // storage paths in photos.file_url, which made fetch() in the Gemini
+    // analyzer throw "Failed to parse URL" and stranded properties in
+    // status='generating' with zero scenes. file_url must always be an
+    // absolute URL the analyzer can fetch.
+    await manualIngest({ ...baseInput, photo_storage_paths: ['user-a/raw/one.jpg', 'user-a/raw/two.jpg', 'user-a/raw/three.jpg', 'user-a/raw/four.jpg', 'user-a/raw/five.jpg'] });
     const photosArg = insertPhotos.mock.calls[0][0];
     expect(Array.isArray(photosArg)).toBe(true);
-    expect(photosArg).toHaveLength(8);
-    expect(photosArg[0]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
-    expect(photosArg[7]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
+    expect(photosArg).toHaveLength(5);
+    expect(photosArg[0]).toMatchObject({
+      property_id: 'new-prop-id',
+      file_url: 'https://example.supabase.co/storage/v1/object/public/property-photos/user-a/raw/one.jpg',
+      file_name: 'one.jpg',
+    });
+    expect(photosArg[4]).toMatchObject({
+      file_url: 'https://example.supabase.co/storage/v1/object/public/property-photos/user-a/raw/five.jpg',
+      file_name: 'five.jpg',
+    });
   });
 
   it('inserts a director-notes row only when notes are non-empty', async () => {
