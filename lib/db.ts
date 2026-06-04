@@ -501,6 +501,7 @@ export async function insertScenes(
     provider?: VideoProvider;
     end_photo_id?: string | null;
     end_image_url?: string | null;
+    room_type?: string | null;
   }>
 ): Promise<Scene[]> {
   const { data, error } = await getSupabase().from("scenes").insert(scenes).select();

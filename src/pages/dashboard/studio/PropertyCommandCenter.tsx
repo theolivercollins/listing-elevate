@@ -42,6 +42,9 @@ interface SceneRow {
   room_type: string | null;
   clip_url: string | null;
   status: string;
+  prompt: string | null;
+  camera_movement: string | null;
+  provider: string | null;
 }
 
 interface CostBundle {

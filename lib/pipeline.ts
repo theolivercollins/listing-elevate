@@ -806,6 +806,9 @@ async function runScripting(propertyId: string): Promise<void> {
   // Build a lookup from photo id → file_url from the already-fetched
   // selected photos so we avoid extra DB round trips for the start photo.
   const photoUrlById = new Map(photos.map((p) => [p.id, p.file_url ?? null]));
+  // Build a lookup from photo id → room_type so each inserted scene row
+  // carries the correct room label without an additional DB round trip.
+  const photoRoomTypeById = new Map(photos.map((p) => [p.id, p.room_type ?? null]));
 
   const sceneRows = await Promise.all(
     groundedScenes.map(async (s) => {
@@ -832,6 +835,9 @@ async function runScripting(propertyId: string): Promise<void> {
         provider: s.provider_preference ?? undefined,
         end_photo_id: s.end_photo_id ?? null,
         end_image_url: endImageUrl,
+        // Carry room_type from the source photo so the Operator Studio scene
+        // strip can show the correct room label without a second lookup.
+        room_type: photoRoomTypeById.get(s.photo_id) ?? null,
       };
     })
   );
