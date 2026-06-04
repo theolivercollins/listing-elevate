@@ -50,6 +50,28 @@ lot-from-above = hallucinated geometry. That is what shipped.
   is not aerial/elevated/overhead, regardless of analyzer output.
 - QC: ensure the judge actually runs (not blanket auto_pass) for operator orders.
 
+## What shipped (branch worktree-operator-studio-grounding, 2026-06-04)
+Plan: `docs/superpowers/plans/2026-06-04-operator-studio-grounding.md`. 8 tasks, TDD, subagent-driven.
+1. **Operator orders default to v1.1** (`lib/operator-studio/ingest.ts`) — every non-paired scene renders as a stripped Seedance push-in. This alone closes the 200 Leach drone/top-down class. (SHA eeb6f48)
+2. **Production scene-judge wrapper** (`lib/qc/judge-scene.ts`) — pure verdict mapping + orchestration around the existing Gemini video judge. (37938c0)
+3. **Judge wired into the live cron** (`api/cron/poll-scenes.ts`) — replaced hardcoded `auto_pass`; hallucinated clips → `needs_review`/`qc_hard_reject`. Back-compat: when `JUDGE_ENABLED` is unset (current prod) behavior is unchanged. (91a8f61, +adb7de1 qc_issues shape fix)
+4. **Re-render-on-hallucination loop** — `resubmitScene` extracted (shared by the resubmit endpoint + cron); cron re-renders hard-rejected scenes with judge-derived corrective feedback, capped by `MAX_QC_RERENDERS` (default 2). (97ebbf7)
+5. **Director coercion under v1.1** — stored `camera_movement` forced to `push_in` for non-paired scenes (paired untouched). (5111502)
+6. **Analyzer headroom gate** — `drone_push_in`/`top_down` forced false unless `camera_height ∈ {aerial,elevated,overhead}` (fixes the root analyzer bug; protects v1 customer orders). (c9e7d1b)
+7. **ZIP/folder bulk upload** in Operator Studio (`StudioNew.tsx` + `src/lib/studio/extract-photos.ts`, jszip). (aa7a756)
+
+## Task 8 — assembly verification (no code change; Oliver: keep Creatomate default)
+- `lib/providers/assembly-router.ts#selectAssemblyProvider`: `ASSEMBLY_PROVIDER` override → else Creatomate (if `CREATOMATE_API_KEY`) → else Shotstack (`SHOTSTACK_API_KEY`/`_STAGE`). Matches Oliver's "Creatomate default, Shotstack fallback."
+- Finalize gate (`poll-scenes.ts`): soft-reject and cap-reached hard-rejects → `needs_review`; only `qc_pass` scenes assemble. Existing rule `passed>=6 → complete` still applies (a single bad clip won't block a listing with 6+ good scenes; the bad scene is excluded).
+- **Not done (gated, needs Oliver):** a LIVE re-run of 200 Leach on prod spends provider credits — flag for Oliver. The fix is verified by the analyzer/director/judge unit suites + the v1.1 render path; a live render would only confirm output pixels.
+
+## Verification
+- Full suite: **673 passed, 2 skipped, 1 failed**. The single failure (`src/v2/components/landing/MarketComparison.test.tsx`) is PRE-EXISTING and unrelated (confirmed failing at origin/main; never in this changeset). `tsc --noEmit` clean. `pnpm run build` clean.
+
+## Prod rollout gates (do NOT do without Oliver's green light)
+- Set `JUDGE_ENABLED=true` on Vercel prod to turn on the real QC guard (per-clip Gemini cost ~2¢). Until then the judge wiring is dormant and prod behavior is unchanged.
+- Optional: `MAX_QC_RERENDERS` (default 2). Optional: re-run 200 Leach to confirm on real output (spends credits).
+
 ## Query trail (prod, reelready vrhmaeywqsohlztoouxu)
 ```sql
 select * from properties where address ilike '%leach%';
