@@ -11,7 +11,7 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
-import { uploadPhotosToStorage } from '@/lib/photo-upload';
+import { uploadPhotosToStorage, getStoragePublicUrl } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
 
@@ -244,15 +244,20 @@ const StudioNew = () => {
 
     try {
       const tempId = crypto.randomUUID();
-      const photoPaths = await uploadPhotosToStorage(
+      const storagePaths = await uploadPhotosToStorage(
         files.map((f) => f.file),
         `${tempId}/raw`,
         (uploaded, total) => setUploadProgress({ uploaded, total }),
       );
 
-      if (photoPaths.length === 0) {
+      if (storagePaths.length === 0) {
         throw new Error('All photo uploads failed. Check browser console for details.');
       }
+
+      // The pipeline's photo analyzer does fetch(photo.file_url), so ingest must
+      // receive ABSOLUTE public URLs — not bare storage paths. (Posting raw
+      // paths is what left property 8bd86c4f stuck at 0 analyzed / 0 scenes.)
+      const photoPaths = storagePaths.map((p) => getStoragePublicUrl(p));
 
       setUploadProgress(null);
 

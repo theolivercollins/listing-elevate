@@ -19,10 +19,17 @@ vi.mock('../../client', () => ({
       };
       throw new Error(`unexpected table: ${table}`);
     },
+    storage: {
+      from: (_bucket: string) => ({
+        getPublicUrl: (path: string) => ({
+          data: { publicUrl: `https://test.supabase.co/storage/v1/object/public/property-photos/${path}` },
+        }),
+      }),
+    },
   }),
 }));
 
-import { manualIngest } from '../ingest';
+import { manualIngest, toPublicPhotoUrl } from '../ingest';
 import type { ManualIngestInput } from '../../types/operator-studio';
 
 beforeEach(() => {
@@ -96,8 +103,12 @@ describe('manualIngest', () => {
     const photosArg = insertPhotos.mock.calls[0][0];
     expect(Array.isArray(photosArg)).toBe(true);
     expect(photosArg).toHaveLength(8);
-    expect(photosArg[0]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
-    expect(photosArg[7]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
+    // file_url is normalized to an absolute public URL (the analyzer fetches it).
+    expect(photosArg[0]).toMatchObject({
+      property_id: 'new-prop-id',
+      file_url: 'https://test.supabase.co/storage/v1/object/public/property-photos/p.jpg',
+    });
+    expect(photosArg[7].file_url).toMatch(/^https:\/\/.*\/property-photos\/p\.jpg$/);
   });
 
   it('inserts a director-notes row only when notes are non-empty', async () => {
@@ -125,5 +136,23 @@ describe('manualIngest', () => {
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       pipeline_mode: 'v1',
     }));
+  });
+});
+
+describe('toPublicPhotoUrl', () => {
+  const pub = (path: string) => `https://x.supabase.co/storage/v1/object/public/property-photos/${path}`;
+
+  it('passes absolute http(s) URLs through unchanged', () => {
+    const url = 'https://x.supabase.co/storage/v1/object/public/property-photos/a/raw/p.jpg';
+    expect(toPublicPhotoUrl(url, pub)).toBe(url);
+  });
+
+  it('converts a bare storage path to a public URL (the 8bd86c4f bug)', () => {
+    expect(toPublicPhotoUrl('ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
+  });
+
+  it('strips a leading slash and an accidental bucket prefix before resolving', () => {
+    expect(toPublicPhotoUrl('/ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
+    expect(toPublicPhotoUrl('property-photos/ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
   });
 });

@@ -32,6 +32,17 @@ export type ManualIngestWithActor = ManualIngestInput & {
   submitted_by: string;
 };
 
+// The pipeline photo analyzer does fetch(photo.file_url), so file_url MUST be an
+// absolute URL. The studio upload helper returns bare storage paths
+// (`<tempId>/raw/<file>`); storing those verbatim left property 8bd86c4f stuck at
+// 0 analyzed / 0 scenes ("Failed to parse URL"). Normalize here so any caller
+// that passes a raw path still produces a fetchable URL. Absolute URLs pass through.
+export function toPublicPhotoUrl(rawPath: string, getPublicUrl: (path: string) => string): string {
+  if (/^https?:\/\//i.test(rawPath)) return rawPath;
+  const path = rawPath.replace(/^\/+/, '').replace(/^property-photos\//, '');
+  return getPublicUrl(path);
+}
+
 export async function manualIngest(input: ManualIngestWithActor): Promise<string> {
   const {
     client_id,
@@ -133,10 +144,13 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   const propertyId: string = (property as { id: string }).id;
 
   // 2. Insert photo rows into the shared `photos` table.
-  //    Adapted columns: file_url (= storage path), file_name (= last segment).
+  //    file_url MUST be an absolute, fetchable URL (the analyzer fetches it) —
+  //    normalize any bare storage path to a public property-photos URL.
+  const publicUrlFor = (path: string) =>
+    supabase.storage.from('property-photos').getPublicUrl(path).data.publicUrl;
   const photoRows = photo_storage_paths.map((storagePath) => ({
     property_id: propertyId,
-    file_url: storagePath,
+    file_url: toPublicPhotoUrl(storagePath, publicUrlFor),
     file_name: storagePath.split('/').pop() ?? storagePath,
   }));
 
