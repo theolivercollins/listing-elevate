@@ -112,4 +112,18 @@ describe('manualIngest', () => {
     const id = await manualIngest(baseInput);
     expect(id).toBe('new-prop-id');
   });
+
+  it('defaults pipeline_mode to v1.1 when not provided in input', async () => {
+    await manualIngest(baseInput);
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      pipeline_mode: 'v1.1',
+    }));
+  });
+
+  it('honours an explicit pipeline_mode override (e.g. v1)', async () => {
+    await manualIngest({ ...baseInput, pipeline_mode: 'v1' });
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      pipeline_mode: 'v1',
+    }));
+  });
 });

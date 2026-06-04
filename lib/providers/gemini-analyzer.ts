@@ -252,6 +252,57 @@ function buildResponseSchema() {
   } as const;
 }
 
+// ─── Vertical headroom gate ──────────────────────────────────────────────
+//
+// drone_push_in and top_down require the camera to ALREADY be at altitude
+// (aerial / elevated / overhead). For ground-level frames the video model
+// would have to fabricate unseen geometry (the roof, the lot from above),
+// producing hallucinated aerial clips. This gate runs on every Gemini
+// result before it leaves this module.
+
+const AERIALISH: ReadonlySet<string> = new Set(["aerial", "elevated", "overhead"]);
+
+export function gateVerticalHeadroom<T extends {
+  camera_height?: string | null;
+  motion_headroom?: Record<string, boolean> | null;
+  motion_headroom_rationale?: Record<string, string> | null;
+}>(analysis: T): T {
+  if (!analysis.motion_headroom) {
+    return analysis;
+  }
+
+  const height = analysis.camera_height ?? "eye_level";
+  if (AERIALISH.has(height)) {
+    return analysis;
+  }
+
+  // Ground-level (or unknown): force the two vertical movements off.
+  const VERTICAL_KEYS = ["drone_push_in", "top_down"] as const;
+  const newHeadroom: Record<string, boolean> = { ...analysis.motion_headroom };
+  const newRationale: Record<string, string> = { ...(analysis.motion_headroom_rationale ?? {}) };
+
+  let changed = false;
+  for (const key of VERTICAL_KEYS) {
+    if (newHeadroom[key] === true) {
+      newHeadroom[key] = false;
+      const prev = newRationale[key] ? `${newRationale[key]} | ` : "";
+      newRationale[key] =
+        `${prev}gated: source camera_height='${height}' is not aerial/elevated/overhead; image-to-video cannot synthesize this viewpoint`;
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return analysis;
+  }
+
+  return {
+    ...analysis,
+    motion_headroom: newHeadroom as T["motion_headroom"],
+    motion_headroom_rationale: newRationale as T["motion_headroom_rationale"],
+  };
+}
+
 // ─── Public entrypoint ──────────────────────────────────────────────────
 
 export async function analyzePhotoWithGemini(imageUrl: string): Promise<GeminiAnalysisResult> {
@@ -382,13 +433,17 @@ export async function analyzePhotoWithGemini(imageUrl: string): Promise<GeminiAn
   parsed.camera_tilt = parsed.camera_tilt ?? "level";
   parsed.frame_coverage = parsed.frame_coverage ?? "medium";
 
+  // Apply vertical headroom gate: drone_push_in and top_down must be false
+  // unless the photo is already aerial/elevated/overhead.
+  const gated = gateVerticalHeadroom(parsed);
+
   const usageMeta = res.usageMetadata;
   const inputTokens = usageMeta?.promptTokenCount ?? 0;
   const outputTokens = usageMeta?.candidatesTokenCount ?? 0;
   const costCents = computeGeminiCost(model, inputTokens, outputTokens);
 
   return {
-    analysis: parsed,
+    analysis: gated,
     usage: { inputTokens, outputTokens, costCents },
     model,
   };

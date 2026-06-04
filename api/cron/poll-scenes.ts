@@ -2,6 +2,22 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const maxDuration = 300;
 
+/**
+ * buildCorrectiveSuffix — turn a judge's hallucination_flags into corrective
+ * render guidance appended to the prompt on a QC re-render. Pure; no I/O.
+ *
+ * Always emits the standing grounding directive (keep the camera inside the
+ * room; do not invent geometry/walls/viewpoints not in the source photo). When
+ * flags are present it prepends an "Avoid these defects:" list naming each one.
+ */
+export function buildCorrectiveSuffix(flags: string[]): string {
+  const standing =
+    "Keep the camera inside the room at all times; do not invent geometry, walls, doorways, or viewpoints that are not present in the source photo. Stay faithful to the photographed space.";
+  const cleaned = (flags ?? []).map((f) => String(f).trim()).filter((f) => f.length > 0);
+  if (cleaned.length === 0) return standing;
+  return `Avoid these defects: ${cleaned.join(", ")}. ${standing}`;
+}
+
 // Backstop poller for scenes that were submitted to a provider but never
 // had their completed clip collected (e.g. because the pipeline function
 // hit maxDuration mid-poll). Runs on a Vercel Cron every minute. Each
@@ -19,6 +35,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
+    const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
+    const { resubmitScene } = await import('../../lib/pipeline.js');
+
+    // Cap on TOTAL render attempts per scene (gate is `attempt_count < cap`,
+    // and attempt_count starts at 1 from the original submit). So the default
+    // of 2 allows the original render + ONE judge-driven corrective re-render,
+    // after which a still-hallucinated scene is surfaced as needs_review. Set
+    // MAX_QC_RERENDERS=3 for two corrective re-renders. NOTE on v1.1: a re-render
+    // reuses the same Seedance push-in SKU + source frame and only appends
+    // corrective grounding text, so the loop is a safety net that surfaces bad
+    // clips for review — the actual hallucination prevention is the analyzer
+    // headroom gate + director push-in coercion, which run BEFORE the render.
+    // Dormant until JUDGE_ENABLED (judgeProductionScene returns judgeRan:false /
+    // verdict:qc_pass when disabled).
+    const MAX_QC_RERENDERS = Number(process.env.MAX_QC_RERENDERS ?? 2);
     // Speed-ramp removed 2026-05-27 — see api/admin/prompt-lab/assemble.ts.
     // No more ffmpeg in this cron, so no dynamic import + no pipeline_mode
     // dispatch needed (we used to only ramp v1.1 clips). Every clip is
@@ -30,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // yet have a stored clip. Limit batch size to avoid function timeout.
     const { data: pending, error: pendingErr } = await supabase
       .from('scenes')
-      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at')
+      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type')
       .not('provider_task_id', 'is', null)
       .is('clip_url', null)
       .order('submitted_at', { ascending: true })
@@ -147,14 +178,123 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const providerUnitType = status.providerUnitType ?? fallbackUnitType ?? null;
         const genTimeMs = scene.submitted_at ? Date.now() - new Date(scene.submitted_at).getTime() : null;
 
+        // Fetch source photo URL for judge grounding (non-fatal if missing).
+        let sourcePhotoUrl: string | null = null;
+        if (scene.photo_id) {
+          const { data: photoRow } = await supabase
+            .from('photos')
+            .select('id, file_url')
+            .eq('id', scene.photo_id);
+          sourcePhotoUrl = (photoRow as Array<{ id: string; file_url: string | null }> | null)?.[0]?.file_url ?? null;
+        }
+
+        // Run Gemini judge against the completed clip.
+        const judged = await judgeProductionScene({
+          clipUrl: urlData.publicUrl,
+          sceneId: scene.id,
+          directorPrompt: (scene as unknown as { prompt?: string }).prompt ?? '',
+          cameraMovement: (scene as unknown as { camera_movement?: string }).camera_movement ?? 'unknown',
+          roomType: (scene as unknown as { room_type?: string }).room_type ?? 'other',
+          sourcePhotoUrl,
+        });
+
+        // QC re-render loop: when the judge hard-rejects a hallucinated clip
+        // and we're still under the per-scene cap, feed the hallucination_flags
+        // back as corrective guidance and re-submit the scene to a provider.
+        // resubmitScene resets the scene to status:'generating' with a fresh
+        // provider_task_id, so the next cron tick re-polls and re-judges it.
+        //
+        // We DON'T write qc_hard_reject in this branch (the scene is back in
+        // flight). We DO record the cost of the failed render below before
+        // resubmitting — the clip was generated and billed even though it's
+        // being discarded — so accounting stays accurate.
+        const currentAttempt = (scene.attempt_count ?? 1);
+        if (judged.judgeRan && judged.shouldRerender && currentAttempt < MAX_QC_RERENDERS) {
+          // Record the cost of this (failed/discarded) render before re-submitting.
+          try {
+            await recordCostEvent({
+              propertyId: scene.property_id,
+              sceneId: scene.id,
+              stage: 'generation',
+              provider: provider.name,
+              unitsConsumed: providerUnits,
+              unitType: providerUnitType,
+              costCents,
+              metadata: {
+                scene_number: scene.scene_number,
+                duration_seconds: scene.duration_seconds,
+                generation_time_ms: genTimeMs,
+                render_outcome: 'qc_rerender_discarded',
+                source: 'cron',
+              },
+            });
+          } catch (costErr) {
+            const costMsg = costErr instanceof Error ? costErr.message : String(costErr);
+            await log(scene.property_id, 'generation', 'warn',
+              `Scene ${scene.scene_number}: failed cost_events insert before re-render: ${costMsg}`, undefined, scene.id);
+          }
+
+          const flags = (judged.rubric?.hallucination_flags as string[] | undefined) ?? [];
+          const promptSuffix = buildCorrectiveSuffix(flags);
+
+          await log(scene.property_id, 'qc', 'info',
+            `Scene ${scene.scene_number}: re-rendering after judge hard-reject (attempt ${currentAttempt}/${MAX_QC_RERENDERS}) — ${judged.reason}`,
+            { verdict: judged.verdict, attempt: currentAttempt, flags }, scene.id);
+
+          const resubmit = await resubmitScene(scene.id, { promptSuffix });
+          if (resubmit.ok) {
+            // Scene is back in flight (status:'generating', fresh task_id) and
+            // will be re-polled + re-judged next tick. Don't write any QC status.
+            completedCount++;
+            continue;
+          }
+
+          // Resubmit failed — fall back to needs_review so the property surfaces
+          // for review rather than dangling. Never let this kill the cron loop.
+          await supabase.from('scenes').update({
+            status: 'needs_review',
+            clip_url: urlData.publicUrl,
+            generation_cost_cents: costCents,
+            generation_time_ms: genTimeMs,
+            qc_verdict: judged.verdict,
+            qc_confidence: judged.rubric ? judged.rubric.overall / 5 : 1.0,
+            qc_issues: flags.length ? { issues: flags } : null,
+          }).eq('id', scene.id);
+          await log(scene.property_id, 'qc', 'warn',
+            `Scene ${scene.scene_number}: QC re-render submit failed (${resubmit.error ?? 'unknown'}); marking needs_review`,
+            { error: resubmit.error }, scene.id);
+          failedCount++;
+          continue;
+        }
+
+        const newStatus =
+          judged.verdict === 'qc_pass' ? 'qc_pass'
+          : judged.verdict === 'qc_soft_reject' ? 'needs_review'
+          : judged.judgeRan && judged.shouldRerender ? 'needs_review' // cap reached → review, not dangling hard-reject
+          : 'qc_hard_reject';
+
+        // Shape matches the dashboard consumer (Pipeline.tsx reads
+        // `qc_issues.issues` as string[]). null when there are no flags.
+        const qcIssues = judged.rubric?.hallucination_flags?.length
+          ? { issues: judged.rubric.hallucination_flags as string[] }
+          : null;
+
         await supabase.from('scenes').update({
-          status: 'qc_pass',
+          status: newStatus,
           clip_url: urlData.publicUrl,
           generation_cost_cents: costCents,
           generation_time_ms: genTimeMs,
-          qc_verdict: 'auto_pass',
-          qc_confidence: 1.0,
+          qc_verdict: judged.judgeRan ? judged.verdict : 'auto_pass',
+          qc_confidence: judged.rubric ? judged.rubric.overall / 5 : 1.0,
+          qc_issues: qcIssues,
         }).eq('id', scene.id);
+
+        if (judged.judgeRan) {
+          await log(scene.property_id, 'qc', 'info',
+            `Scene ${scene.scene_number}: judge verdict=${judged.verdict} — ${judged.reason}`,
+            { verdict: judged.verdict, judgeRan: judged.judgeRan },
+            scene.id);
+        }
 
         await recordCostEvent({
           propertyId: scene.property_id,
