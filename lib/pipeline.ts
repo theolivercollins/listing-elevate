@@ -48,7 +48,7 @@ import {
   renderPerPhotoBlock,
 } from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
-import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt } from "./providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, resolveRenderPrompt } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
 import { orderScenesForAssembly } from "./assembly/scene-ordering.js";
@@ -957,13 +957,14 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         pipelineMode,
       );
       const provider = buildProviderFromDecision(decision);
-      // v1.1: when the Seedance Atlas SKU is selected, strip movement verbs
-      // from the scene prompt and prepend the stable push-in directive. We do
-      // NOT mutate scene.prompt in the DB — the override is render-time only
-      // so the audit trail remains the human-authored prompt.
-      const renderPrompt = decision.modelKey === "seedance-pro-pushin"
-        ? forceSeedancePushInPrompt(scene.prompt)
-        : scene.prompt;
+      // v1.1 = "simple push-in only". Force the push-in prompt for EVERY v1.1
+      // render — not just the Seedance SKU. Critical: when Seedance hits a
+      // permanent error and fails over to Kling/Runway, the fallback provider
+      // must ALSO get the stripped push-in prompt; otherwise it renders the
+      // original mixed-movement text (e.g. "parallax glide") and hallucinates
+      // (the 310 Severin clip-3 "wine bottles moving" bug). Override is
+      // render-time only — scene.prompt in the DB stays human-authored.
+      const renderPrompt = resolveRenderPrompt(pipelineMode, decision.modelKey, scene.prompt);
       try {
         const genJob = await provider.generateClip({
           sourceImage,
@@ -1147,11 +1148,9 @@ export async function resubmitScene(
       pipelineMode,
     );
     const provider = buildProviderFromDecision(decision);
-    // v1.1: when the Seedance push-in SKU is selected, normalize the prompt to a
-    // stable push-in directive (render-time only, same as runGenerationSubmit).
-    const renderPrompt = decision.modelKey === "seedance-pro-pushin"
-      ? forceSeedancePushInPrompt(effectivePrompt)
-      : effectivePrompt;
+    // v1.1 = push-in only for EVERY provider, including failover off Seedance
+    // (same safety as runGenerationSubmit). Render-time only.
+    const renderPrompt = resolveRenderPrompt(pipelineMode, decision.modelKey, effectivePrompt);
     try {
       const genJob = await provider.generateClip({
         sourceImage,

@@ -292,6 +292,24 @@ export function forceSeedancePushInPrompt(originalPrompt: string): string {
 }
 
 /**
+ * Decide the prompt actually sent to the video model. Under v1.1 ("simple
+ * push-in only") the push-in override applies to EVERY provider — not just the
+ * Seedance SKU — so a failover off Seedance to Kling/Runway still renders a safe
+ * slow push-in instead of the original mixed-movement prompt (the 310 Severin
+ * clip-3 hallucination). Render-time only; the stored prompt is never mutated.
+ */
+export function resolveRenderPrompt(
+  pipelineMode: string | null | undefined,
+  modelKey: string | undefined,
+  prompt: string,
+): string {
+  if (pipelineMode === "v1.1" || modelKey === "seedance-pro-pushin") {
+    return forceSeedancePushInPrompt(prompt);
+  }
+  return prompt;
+}
+
+/**
  * selectProvider — BACKWARD-COMPATIBLE wrapper that returns an IVideoProvider
  * instance directly. Kept for callers that were written before Phase C.1
  * introduced ProviderDecision (prompt-lab.ts, poll-scenes.ts).

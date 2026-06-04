@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   selectProviderForScene,
   forceSeedancePushInPrompt,
+  resolveRenderPrompt,
   stripMovementVerbs,
   V1_DEFAULT_SKU,
   getEnabledProviders,
@@ -101,6 +102,33 @@ describe("forceSeedancePushInPrompt", () => {
     expect(out).toBe(
       "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.",
     );
+  });
+});
+
+describe("resolveRenderPrompt — v1.1 push-in safety on any provider", () => {
+  const mixed = "smooth cinematic parallax glide past the granite breakfast bar.";
+
+  it("forces push-in under v1.1 even when the provider is NOT the Seedance SKU (failover to Kling)", () => {
+    // modelKey undefined = native Kling failover. The 310 Severin clip-3 bug:
+    // Kling used to receive the raw 'parallax glide' prompt and hallucinated.
+    const out = resolveRenderPrompt("v1.1", undefined, mixed);
+    expect(out.startsWith("Slow, steady push in toward the room.")).toBe(true);
+    expect(out.toLowerCase()).not.toMatch(/parallax glide/);
+  });
+
+  it("forces push-in under v1.1 for the Seedance SKU too", () => {
+    const out = resolveRenderPrompt("v1.1", "seedance-pro-pushin", mixed);
+    expect(out.startsWith("Slow, steady push in toward the room.")).toBe(true);
+  });
+
+  it("still forces push-in for the Seedance SKU even under v1 (SKU-level safety)", () => {
+    const out = resolveRenderPrompt("v1", "seedance-pro-pushin", mixed);
+    expect(out.startsWith("Slow, steady push in toward the room.")).toBe(true);
+  });
+
+  it("leaves the prompt untouched under v1 with a non-Seedance provider", () => {
+    expect(resolveRenderPrompt("v1", undefined, mixed)).toBe(mixed);
+    expect(resolveRenderPrompt(null, "kling-v2-master", mixed)).toBe(mixed);
   });
 });
 
