@@ -12,6 +12,7 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
+import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
 
 const MIN_PHOTOS = 5;
@@ -118,6 +119,7 @@ const StudioNew = () => {
   const [squareFootage, setSquareFootage] = useState('');
   const [price, setPrice] = useState('');                    // stores raw digits ("2400000")
   const [directorNotes, setDirectorNotes] = useState('');
+  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
   // ─── MLS lookup state ───
@@ -132,6 +134,7 @@ const StudioNew = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const isValid = address.trim() && files.length >= MIN_PHOTOS;
 
@@ -158,6 +161,41 @@ const StudioNew = () => {
       setFiles((prev) => [...prev, ...mapped]);
     },
     [files.length],
+  );
+
+  /** Handle a zip file or folder selection via extractImageFiles, then merge into files state. */
+  const handleBulkInput = useCallback(
+    async (input: File | FileList) => {
+      try {
+        const extracted = await extractImageFiles(input);
+        // Use functional updater to read current length at the time of commit
+        let droppedForCap = 0;
+        let addedCount = 0;
+        setFiles((prev) => {
+          const remaining = 60 - prev.length;
+          const toAdd = extracted.slice(0, remaining);
+          droppedForCap = extracted.length - toAdd.length;
+          addedCount = toAdd.length;
+          const mapped = toAdd.map((f) => ({
+            file: f,
+            preview: URL.createObjectURL(f),
+            id: crypto.randomUUID(),
+          }));
+          return [...prev, ...mapped];
+        });
+        // Don't silently truncate — tell the operator what got dropped at the 60-photo cap.
+        if (droppedForCap > 0) {
+          setSubmitError(
+            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+          );
+        }
+      } catch (err) {
+        setSubmitError(
+          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed',
+        );
+      }
+    },
+    [],
   );
 
   const removeFile = (id: string) => {
@@ -231,6 +269,7 @@ const StudioNew = () => {
           price: price ? Number(price) : null,
           photo_storage_paths: photoPaths,
           director_notes: directorNotes.trim() || null,
+          selected_duration: selectedDuration,
         }),
       });
 
@@ -412,6 +451,40 @@ const StudioNew = () => {
               />
             </div>
 
+            {/* Duration */}
+            <div>
+              <FieldLabel>Video length</FieldLabel>
+              <div
+                role="group"
+                aria-label="Video length"
+                style={{ display: 'flex', gap: 8 }}
+              >
+                {([15, 30, 60] as const).map((d) => {
+                  const active = selectedDuration === d;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedDuration(d)}
+                      className="studio-input"
+                      style={{
+                        flex: 1,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        fontWeight: active ? 600 : 500,
+                        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
+                        borderColor: active ? 'var(--le-ink)' : undefined,
+                        background: active ? 'var(--le-surface-2, rgba(0,0,0,0.04))' : undefined,
+                      }}
+                    >
+                      {d} seconds
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Photo dropzone */}
             <div>
               <FieldLabel>Photos</FieldLabel>
@@ -451,8 +524,20 @@ const StudioNew = () => {
                   {...({ webkitdirectory: '', directory: '' } as React.HTMLAttributes<HTMLInputElement>)}
                   style={{ display: 'none' }}
                   onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    e.target.files && handleFiles(e.target.files)
+                    e.target.files && handleBulkInput(e.target.files)
                   }
+                />
+                <input
+                  ref={zipInputRef}
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  style={{ display: 'none' }}
+                  onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleBulkInput(f);
+                    // Reset so the same zip can be re-selected if needed
+                    e.target.value = '';
+                  }}
                 />
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
                   <Image size={28} strokeWidth={1.4} style={{ color: 'var(--le-muted)' }} />
@@ -462,14 +547,24 @@ const StudioNew = () => {
                   <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
                     or click to browse — JPG, PNG, HEIC, WebP
                   </p>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
-                    className="studio-btn-ghost"
-                    style={{ fontSize: 11.5, padding: '5px 12px', marginTop: 4 }}
-                  >
-                    Import entire folder
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
+                      className="studio-btn-ghost"
+                      style={{ fontSize: 11.5, padding: '5px 12px' }}
+                    >
+                      Import folder
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); zipInputRef.current?.click(); }}
+                      className="studio-btn-ghost"
+                      style={{ fontSize: 11.5, padding: '5px 12px' }}
+                    >
+                      Import ZIP
+                    </button>
+                  </div>
                 </div>
               </div>
 

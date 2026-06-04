@@ -46,6 +46,7 @@ export type ManualIngestInput = {
   custom_request_text?: string | null;
   days_on_market?: number | null;
   sold_price?: number | null;
+  pipeline_mode?: 'v1' | 'v1.1' | null;
 };
 
 export type RevisionNoteRow = {
@@ -91,4 +92,5 @@ export type BrandKitVars = {
   agent_name: string | null;
   agent_headshot_url: string | null;
   brokerage: string | null;
+  phone: string | null;
 };
