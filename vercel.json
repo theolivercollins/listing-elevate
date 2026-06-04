@@ -52,6 +52,8 @@
     { "src": "/api/blog/emails/([^/]+)/send", "dest": "/api/blog/emails/[id]/send?id=$1" },
     { "src": "/api/blog/emails/([^/]+)/test", "dest": "/api/blog/emails/[id]/test?id=$1" },
     { "src": "/api/blog/emails/([^/]+)", "dest": "/api/blog/emails/[id]?id=$1" },
+    { "src": "/api/blog/market-update/runs/([^/]+)/generate", "dest": "/api/blog/market-update/runs/[id]/generate?id=$1" },
+    { "src": "/api/blog/market-update/runs/([^/]+)", "dest": "/api/blog/market-update/runs/[id]?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)/scenes/([^/]+)/swap-clip", "dest": "/api/admin/studio/properties/[id]/scenes/[idx]/swap-clip?id=$1&idx=$2" },
     { "src": "/api/admin/studio/properties/([^/]+)/preview-link", "dest": "/api/admin/studio/properties/[id]/preview-link?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)/notes", "dest": "/api/admin/studio/properties/[id]/notes?id=$1" },

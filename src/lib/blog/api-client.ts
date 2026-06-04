@@ -494,3 +494,98 @@ export async function aiEmailFromPost(postId: string): Promise<{
   return asJson(res);
 }
 
+
+// ─── Market Update workflow ───────────────────────────────────────
+export interface MuRegionConfig {
+  slug: string;
+  display_name: string;
+  strip_images: boolean;
+  emits_email: boolean;
+  sort_order: number;
+}
+export interface MuTemplateOption {
+  id: string;
+  name: string;
+  description: string | null;
+  metadata: { kind?: string; mu_role?: string } | null;
+}
+export interface MuConfig {
+  regions: MuRegionConfig[];
+  blog_templates: MuTemplateOption[];
+  email_templates: MuTemplateOption[];
+}
+export interface MuIssue {
+  severity: "error" | "warning";
+  field: string;
+  message: string;
+  expected?: string | number;
+  got?: string | number;
+}
+export interface MuRegionResult {
+  region_slug: string;
+  region_name: string;
+  strip_images: boolean;
+  emits_email: boolean;
+  metrics: any | null;
+  issues: MuIssue[];
+  post_id?: string | null;
+  email_id?: string | null;
+  error?: string | null;
+}
+export interface MuAnalyzeResult {
+  run_id: string;
+  status: string;
+  region_results: MuRegionResult[];
+  cost_usd_cents: number;
+}
+
+export async function getMarketUpdateConfig(): Promise<MuConfig> {
+  const res = await fetch("/api/blog/market-update/config", { headers: await authHeaders() });
+  return asJson(res);
+}
+
+export async function analyzeMarketUpdate(body: {
+  period_month: number;
+  period_year: number;
+  blog_template_id: string;
+  email_template_id: string | null;
+  regions: { slug: string; pdf_base64: string; filename?: string }[];
+}): Promise<MuAnalyzeResult> {
+  const res = await fetch("/api/blog/market-update/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  return asJson(res);
+}
+
+export async function getMarketUpdateRun(id: string): Promise<{ run: any }> {
+  const res = await fetch(`/api/blog/market-update/runs/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+
+export async function generateMarketUpdate(
+  id: string,
+  acknowledgeWarnings: boolean,
+): Promise<{ status: string; post_ids: string[]; email_ids: string[]; cost_usd_cents: number }> {
+  const res = await fetch(`/api/blog/market-update/runs/${id}/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ acknowledge_warnings: acknowledgeWarnings }),
+  });
+  return asJson(res);
+}
+
+/** Read a File into a bare base64 string (no data: prefix). */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
