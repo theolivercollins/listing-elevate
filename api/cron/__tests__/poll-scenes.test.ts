@@ -32,9 +32,12 @@ vi.mock("../../../lib/providers/router.js", () => ({
   selectProvider: vi.fn(),
 }));
 
-// Mock pipeline (only runAssembly is called in the finalize path).
+// Mock pipeline (runAssembly in the finalize path; resubmitScene in the QC
+// re-render path). These tests don't exercise the re-render branch, so a
+// default no-op resubmitScene is sufficient.
 vi.mock("../../../lib/pipeline.js", () => ({
   runAssembly: vi.fn().mockResolvedValue(undefined),
+  resubmitScene: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 // ---------------------------------------------------------------------------
@@ -44,6 +47,7 @@ vi.mock("../../../lib/pipeline.js", () => ({
 import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase, recordCostEvent, log } from "../../../lib/db.js";
 import { selectProvider } from "../../../lib/providers/router.js";
+import { resubmitScene } from "../../../lib/pipeline.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -235,10 +239,15 @@ function makeProvider(providerName = "kling") {
 describe("poll-scenes — Gemini judge wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.MAX_QC_RERENDERS;
   });
 
-  it("qc_hard_reject: scene gets status:'qc_hard_reject', qc_verdict:'qc_hard_reject', qc_issues with flags", async () => {
-    const scene = makeScene();
+  it("qc_hard_reject at re-render cap: scene gets status:'needs_review', qc_verdict:'qc_hard_reject', qc_issues with flags", async () => {
+    // attempt_count at the cap (2) means no re-render is left — the scene is
+    // finalized for review with the judge's hard-reject verdict + flags. (The
+    // under-cap re-render path is covered in poll-scenes-rerender.test.ts.)
+    process.env.MAX_QC_RERENDERS = "2";
+    const scene = makeScene({ attempt_count: 2 });
     const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
     const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
 
@@ -265,10 +274,12 @@ describe("poll-scenes — Gemini judge wiring", () => {
     await handler(req, res);
 
     expect(getStatus()).toBe(200);
+    expect(resubmitScene).not.toHaveBeenCalled();
     expect(capturedSceneUpdate.payload).not.toBeNull();
 
     const update = capturedSceneUpdate.payload!;
-    expect(update.status).toBe("qc_hard_reject");
+    // Cap reached → surface for review rather than dangling at hard-reject.
+    expect(update.status).toBe("needs_review");
     expect(update.qc_verdict).toBe("qc_hard_reject");
     // qc_issues should carry the flags in the dashboard-consumed shape
     expect((update.qc_issues as { issues: string[] }).issues).toEqual(["hallucinated_geometry"]);

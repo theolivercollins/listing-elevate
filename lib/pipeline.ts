@@ -17,7 +17,7 @@ import {
   log,
 } from "./db.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
-import type { Photo, RoomType, DepthRating, VideoProvider, CameraMovement } from "./types.js";
+import type { Photo, RoomType, DepthRating, VideoProvider, CameraMovement, PipelineMode } from "./types.js";
 import {
   PHOTO_ANALYSIS_SYSTEM,
   buildAnalysisUserPrompt,
@@ -976,6 +976,187 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
   const failed = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
   await log(propertyId, "generation", "info",
     `Submission complete: ${submitted}/${scenes.length} submitted, ${failed} failed at submit`);
+}
+
+/**
+ * resubmitScene — re-submit a single scene to a video provider, resetting its
+ * provider-side state and stamping a fresh provider_task_id so the cron poller
+ * picks it up and finalizes it. This is the shared core extracted from
+ * `api/scenes/[id]/resubmit.ts`; the HTTP endpoint and the QC re-render loop in
+ * `api/cron/poll-scenes.ts` both call it so the submit logic lives in one place.
+ *
+ * Mirrors `runGenerationSubmit`'s per-scene path: it loads the scene + source
+ * photo, re-fetches the property's pipeline_mode (so v1.1 still routes to the
+ * Seedance push-in SKU and applies `forceSeedancePushInPrompt`), runs the
+ * failover loop over `selectProviderForScene`, and on the first successful
+ * submit stamps `provider`, `provider_task_id`, `submitted_at`, `status:
+ * 'generating'`, and bumps `attempt_count`.
+ *
+ * opts.promptOverride replaces the stored prompt for this render (the stored
+ * scene.prompt is NOT mutated). opts.promptSuffix is appended to the effective
+ * prompt — used to feed corrective judge feedback back into the render.
+ * opts.providerOverride forces a specific provider preference.
+ *
+ * Returns { ok:false, error } on any failure (scene not found, photo missing,
+ * all providers exhausted) and leaves the scene at needs_review in the
+ * exhausted case — never throws, so cron callers can fall back safely.
+ */
+export async function resubmitScene(
+  sceneId: string,
+  opts: {
+    promptOverride?: string;
+    promptSuffix?: string;
+    providerOverride?: VideoProvider;
+  } = {},
+): Promise<{ ok: boolean; provider?: string; jobId?: string; attempt?: number; error?: string; kind?: string; retryable?: boolean; excluded?: VideoProvider[] }> {
+  const supabase = getSupabase();
+
+  const { data: scene, error } = await supabase
+    .from("scenes")
+    .select("id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider")
+    .eq("id", sceneId)
+    .single();
+  if (error || !scene) return { ok: false, error: "scene not found" };
+
+  const { data: photo } = await supabase
+    .from("photos")
+    .select("file_url, room_type")
+    .eq("id", scene.photo_id)
+    .single();
+  if (!photo) return { ok: false, error: "source photo not found" };
+
+  // Re-fetch pipeline_mode so v1.1 routing (Seedance push-in) is honored on the
+  // re-render exactly as it is on the original submission.
+  let pipelineMode: PipelineMode = "v1";
+  try {
+    const property = await getProperty(scene.property_id);
+    pipelineMode = (property.pipeline_mode as PipelineMode | undefined) ?? "v1";
+  } catch {
+    // Non-fatal: default to v1 routing if the property lookup hiccups.
+  }
+
+  // Effective prompt for this render: override (or stored) + optional suffix.
+  // The stored scene.prompt is never mutated here — the override/suffix are
+  // render-time only so the DB audit trail stays as authored.
+  const basePrompt = (typeof opts.promptOverride === "string" && opts.promptOverride.trim().length > 0)
+    ? opts.promptOverride.trim()
+    : (scene.prompt as string);
+  const effectivePrompt = (opts.promptSuffix && opts.promptSuffix.trim().length > 0)
+    ? `${basePrompt}\n\n${opts.promptSuffix.trim()}`
+    : basePrompt;
+
+  // Reset provider-side state so the cron doesn't race on the stale id.
+  await supabase
+    .from("scenes")
+    .update({
+      provider_task_id: null,
+      clip_url: null,
+      generation_cost_cents: null,
+      generation_time_ms: null,
+      qc_verdict: null,
+      qc_confidence: null,
+      status: "pending",
+    })
+    .eq("id", sceneId);
+
+  // Providers accept sourceImageUrl directly; pass an empty Buffer placeholder.
+  const sourceImage = Buffer.alloc(0);
+  const roomType = ((photo as { room_type?: string }).room_type as RoomType) ?? "other";
+  const cameraMovement = (scene.camera_movement as CameraMovement | null) ?? null;
+  const preference = (opts.providerOverride ?? (scene.provider as VideoProvider | null)) ?? null;
+
+  const excluded: VideoProvider[] = [];
+  const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
+  let lastError: { message: string; kind: string; provider: string } | null = null;
+
+  for (let attempt = 0; attempt <= maxFailovers; attempt++) {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+        movement: cameraMovement,
+        roomType,
+        preference,
+      },
+      excluded,
+      pipelineMode,
+    );
+    const provider = buildProviderFromDecision(decision);
+    // v1.1: when the Seedance push-in SKU is selected, normalize the prompt to a
+    // stable push-in directive (render-time only, same as runGenerationSubmit).
+    const renderPrompt = decision.modelKey === "seedance-pro-pushin"
+      ? forceSeedancePushInPrompt(effectivePrompt)
+      : effectivePrompt;
+    try {
+      const genJob = await provider.generateClip({
+        sourceImage,
+        sourceImageUrl: (photo as { file_url: string }).file_url,
+        prompt: renderPrompt,
+        durationSeconds: scene.duration_seconds,
+        aspectRatio: "16:9",
+        endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
+        modelOverride: decision.modelKey,
+      });
+
+      const nextAttemptCount = (scene.attempt_count ?? 0) + 1;
+      await supabase
+        .from("scenes")
+        .update({
+          provider: provider.name,
+          provider_task_id: genJob.jobId,
+          submitted_at: new Date().toISOString(),
+          status: "generating",
+          attempt_count: nextAttemptCount,
+        })
+        .eq("id", sceneId);
+
+      const modelNote = decision.modelKey ? ` model=${decision.modelKey}` : "";
+      await log(scene.property_id, "generation", "info",
+        `Scene ${scene.scene_number}: resubmitted to ${provider.name}${modelNote} (attempt ${nextAttemptCount}${attempt > 0 ? `, failover ${attempt}` : ""})`,
+        { jobId: genJob.jobId, attempt: nextAttemptCount, modelKey: decision.modelKey }, sceneId);
+
+      return { ok: true, provider: provider.name, jobId: genJob.jobId, attempt: nextAttemptCount };
+    } catch (err) {
+      const classified = classifyProviderError(err);
+      lastError = { message: classified.message, kind: classified.kind, provider: provider.name };
+
+      if (!classified.shouldFailover) {
+        // Capacity/transient: leave status=pending so the cron retry path can
+        // try again on a later tick.
+        await log(scene.property_id, "generation", "warn",
+          `Scene ${scene.scene_number}: ${provider.name} ${classified.kind} on resubmit (will retry via cron): ${classified.message}`,
+          { status: classified.status, kind: classified.kind }, sceneId);
+        return {
+          ok: false,
+          provider: provider.name,
+          error: classified.message,
+          kind: classified.kind,
+          retryable: true,
+        };
+      }
+
+      excluded.push(provider.name as VideoProvider);
+      await log(scene.property_id, "generation", "warn",
+        `Scene ${scene.scene_number}: ${provider.name} permanent error on resubmit, failing over: ${classified.message}`,
+        { status: classified.status, kind: classified.kind, excluded, modelKey: decision.modelKey }, sceneId);
+    }
+  }
+
+  // All providers exhausted — surface for review.
+  await supabase
+    .from("scenes")
+    .update({ status: "needs_review" })
+    .eq("id", sceneId);
+  await log(scene.property_id, "generation", "error",
+    `Scene ${scene.scene_number}: resubmit failed across ${excluded.length} provider(s): ${lastError?.message ?? "unknown"}`,
+    { lastError, excluded }, sceneId);
+
+  return {
+    ok: false,
+    error: lastError?.message ?? "All providers failed",
+    kind: lastError?.kind ?? "unknown",
+    retryable: false,
+    excluded,
+  };
 }
 
 async function runQCForScene(
