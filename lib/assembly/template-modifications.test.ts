@@ -150,3 +150,77 @@ describe("buildTemplateModifications", () => {
     expect(mods["City/State-Intro.text"]).toBe("Tampa FL");
   });
 });
+
+// "15 seconds - Just Listed" template (075d3024…), created 2026-06-04.
+// Different element names from Just Listed #01 — single-line text fields,
+// 5 clip slots, an Image-Headshot, and a Text-Phone-Number that #01 lacked.
+describe("buildTemplateModifications — 15s Just Listed template element names", () => {
+  it("writes the 15s template's single-line text fields", () => {
+    const mods = buildTemplateModifications({
+      address: "2750 Palm Tree Dr, Punta Gorda, FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian Helgemo, Realtor",
+      brokerageName: "- The Helgemo Team | Compass",
+    });
+    expect(mods).toMatchObject({
+      "Text-Agent-Name.text": "Brian Helgemo, Realtor",
+      "Text-JL.text": "Just Listed",
+      "Text-Address.text": "2750 Palm Tree Dr, Punta Gorda, FL",
+      "Text-Brokerage-Team.text": "- The Helgemo Team | Compass",
+    });
+  });
+
+  it("maps Text-Brokerage-Team to empty string when brokerage is null", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: null,
+    });
+    expect(mods["Text-Brokerage-Team.text"]).toBe("");
+  });
+
+  it("emits Text-Phone-Number.text when agentPhone is provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+      agentPhone: "c: 941.205.9011",
+    });
+    expect(mods["Text-Phone-Number.text"]).toBe("c: 941.205.9011");
+  });
+
+  it("omits Text-Phone-Number when agentPhone is absent (keeps template default)", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+    });
+    expect(mods).not.toHaveProperty("Text-Phone-Number.text");
+  });
+
+  it("writes Image-Headshot.source from the same headshot URL as #01", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+      agentHeadshotUrl: "https://headshots/brian.png",
+    });
+    expect(mods["Image-Headshot.source"]).toBe("https://headshots/brian.png");
+    // still backward-compatible with #01's Agent-Headshot-Final
+    expect(mods["Agent-Headshot-Final.source"]).toBe("https://headshots/brian.png");
+  });
+
+  it("omits Image-Headshot when no headshot URL is provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+    });
+    expect(mods).not.toHaveProperty("Image-Headshot.source");
+  });
+});

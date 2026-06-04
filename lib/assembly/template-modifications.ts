@@ -64,6 +64,12 @@ export interface ModificationContext {
   agentName: string;
   /** Brokerage name (from user_profile.brokerage or property.brokerage). */
   brokerageName: string | null | undefined;
+  /**
+   * Agent contact phone (user_profiles.phone) → Text-Phone-Number.text on the
+   * "15 seconds - Just Listed" template. Omitted when absent so the template's
+   * own default line shows rather than a blank.
+   */
+  agentPhone?: string | null;
   /** Ordered property clips → Clip-1.source … Clip-N.source. */
   clips?: AssembleVideoParams["clips"];
   /** Background music URL → Audio-Music.source. */
@@ -99,7 +105,18 @@ export function buildTemplateModifications(
     "Listing-Brokerage-Mid.text": brokerage,
     "Listing-Brokerage-Final.text": brokerage,
     "Full-Address-Final.text": fullAddress,
+    // "15 seconds - Just Listed" (075d3024…) element names. Single-line text
+    // fields; backward-compatible — Creatomate ignores keys a template lacks,
+    // so #01 renders are unaffected by these extra keys.
+    "Text-Agent-Name.text": ctx.agentName,
+    "Text-JL.text": categoryLabel,
+    "Text-Address.text": fullAddress,
+    "Text-Brokerage-Team.text": brokerage,
   };
+
+  if (ctx.agentPhone) {
+    mods["Text-Phone-Number.text"] = ctx.agentPhone;
+  }
 
   if (ctx.clips && ctx.clips.length > 0) {
     ctx.clips.forEach((clip, i) => {
@@ -115,6 +132,8 @@ export function buildTemplateModifications(
 
   if (ctx.agentHeadshotUrl) {
     mods["Agent-Headshot-Final.source"] = ctx.agentHeadshotUrl;
+    // 15s template uses Image-Headshot for the same asset.
+    mods["Image-Headshot.source"] = ctx.agentHeadshotUrl;
   }
 
   if (ctx.voiceoverUrl) {
