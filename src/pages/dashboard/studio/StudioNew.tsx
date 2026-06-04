@@ -168,9 +168,13 @@ const StudioNew = () => {
       try {
         const extracted = await extractImageFiles(input);
         // Use functional updater to read current length at the time of commit
+        let droppedForCap = 0;
+        let addedCount = 0;
         setFiles((prev) => {
           const remaining = 60 - prev.length;
           const toAdd = extracted.slice(0, remaining);
+          droppedForCap = extracted.length - toAdd.length;
+          addedCount = toAdd.length;
           const mapped = toAdd.map((f) => ({
             file: f,
             preview: URL.createObjectURL(f),
@@ -178,6 +182,12 @@ const StudioNew = () => {
           }));
           return [...prev, ...mapped];
         });
+        // Don't silently truncate — tell the operator what got dropped at the 60-photo cap.
+        if (droppedForCap > 0) {
+          setSubmitError(
+            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+          );
+        }
       } catch (err) {
         setSubmitError(
           err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed',

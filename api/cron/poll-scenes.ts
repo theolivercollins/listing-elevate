@@ -38,10 +38,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     const { resubmitScene } = await import('../../lib/pipeline.js');
 
-    // Cap on how many times the judge may force a re-render of a hallucinated
-    // scene before we give up and surface it for review. Dormant until the
-    // judge is enabled (JUDGE_ENABLED), since judgeProductionScene returns
-    // judgeRan:false / verdict:qc_pass when disabled.
+    // Cap on TOTAL render attempts per scene (gate is `attempt_count < cap`,
+    // and attempt_count starts at 1 from the original submit). So the default
+    // of 2 allows the original render + ONE judge-driven corrective re-render,
+    // after which a still-hallucinated scene is surfaced as needs_review. Set
+    // MAX_QC_RERENDERS=3 for two corrective re-renders. NOTE on v1.1: a re-render
+    // reuses the same Seedance push-in SKU + source frame and only appends
+    // corrective grounding text, so the loop is a safety net that surfaces bad
+    // clips for review — the actual hallucination prevention is the analyzer
+    // headroom gate + director push-in coercion, which run BEFORE the render.
+    // Dormant until JUDGE_ENABLED (judgeProductionScene returns judgeRan:false /
+    // verdict:qc_pass when disabled).
     const MAX_QC_RERENDERS = Number(process.env.MAX_QC_RERENDERS ?? 2);
     // Speed-ramp removed 2026-05-27 — see api/admin/prompt-lab/assemble.ts.
     // No more ffmpeg in this cron, so no dynamic import + no pipeline_mode
