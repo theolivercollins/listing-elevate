@@ -19,6 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
+    const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     // Speed-ramp removed 2026-05-27 — see api/admin/prompt-lab/assemble.ts.
     // No more ffmpeg in this cron, so no dynamic import + no pipeline_mode
     // dispatch needed (we used to only ramp v1.1 clips). Every clip is
@@ -30,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // yet have a stored clip. Limit batch size to avoid function timeout.
     const { data: pending, error: pendingErr } = await supabase
       .from('scenes')
-      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at')
+      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type')
       .not('provider_task_id', 'is', null)
       .is('clip_url', null)
       .order('submitted_at', { ascending: true })
@@ -147,14 +148,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const providerUnitType = status.providerUnitType ?? fallbackUnitType ?? null;
         const genTimeMs = scene.submitted_at ? Date.now() - new Date(scene.submitted_at).getTime() : null;
 
+        // Fetch source photo URL for judge grounding (non-fatal if missing).
+        let sourcePhotoUrl: string | null = null;
+        if (scene.photo_id) {
+          const { data: photoRow } = await supabase
+            .from('photos')
+            .select('id, file_url')
+            .eq('id', scene.photo_id);
+          sourcePhotoUrl = (photoRow as Array<{ id: string; file_url: string | null }> | null)?.[0]?.file_url ?? null;
+        }
+
+        // Run Gemini judge against the completed clip.
+        const judged = await judgeProductionScene({
+          clipUrl: urlData.publicUrl,
+          sceneId: scene.id,
+          directorPrompt: (scene as unknown as { prompt?: string }).prompt ?? '',
+          cameraMovement: (scene as unknown as { camera_movement?: string }).camera_movement ?? 'unknown',
+          roomType: (scene as unknown as { room_type?: string }).room_type ?? 'other',
+          sourcePhotoUrl,
+        });
+
+        const newStatus =
+          judged.verdict === 'qc_pass' ? 'qc_pass'
+          : judged.verdict === 'qc_soft_reject' ? 'needs_review'
+          : 'qc_hard_reject';
+
+        const qcIssues = judged.rubric?.hallucination_flags?.length
+          ? judged.rubric.hallucination_flags.map((f) => ({ flag: f }))
+          : null;
+
         await supabase.from('scenes').update({
-          status: 'qc_pass',
+          status: newStatus,
           clip_url: urlData.publicUrl,
           generation_cost_cents: costCents,
           generation_time_ms: genTimeMs,
-          qc_verdict: 'auto_pass',
-          qc_confidence: 1.0,
+          qc_verdict: judged.judgeRan ? judged.verdict : 'auto_pass',
+          qc_confidence: judged.rubric ? judged.rubric.overall / 5 : 1.0,
+          qc_issues: qcIssues,
         }).eq('id', scene.id);
+
+        if (judged.judgeRan) {
+          await log(scene.property_id, 'qc', 'info',
+            `Scene ${scene.scene_number}: judge verdict=${judged.verdict} — ${judged.reason}`,
+            { verdict: judged.verdict, judgeRan: judged.judgeRan },
+            scene.id);
+        }
 
         await recordCostEvent({
           propertyId: scene.property_id,
