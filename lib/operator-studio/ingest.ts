@@ -52,6 +52,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     custom_request_text,
     days_on_market,
     sold_price,
+    pipeline_mode,
     listing_agent: explicit_listing_agent,
     brokerage: explicit_brokerage,
   } = input as ManualIngestWithActor & {
@@ -121,6 +122,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       custom_request_text: custom_request_text ?? null,
       days_on_market: days_on_market ?? null,
       sold_price: sold_price ?? null,
+      pipeline_mode: pipeline_mode ?? 'v1.1',
     })
     .select()
     .single();
