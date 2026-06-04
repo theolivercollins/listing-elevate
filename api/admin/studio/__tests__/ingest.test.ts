@@ -7,9 +7,13 @@ const mockManualIngest = vi.fn();
 vi.mock('../../../../lib/auth', () => ({
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
 }));
-vi.mock('../../../../lib/operator-studio/ingest', () => ({
-  manualIngest: (...args: unknown[]) => mockManualIngest(...args),
-}));
+vi.mock('../../../../lib/operator-studio/ingest', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/operator-studio/ingest')>();
+  return {
+    ...actual,
+    manualIngest: (...args: unknown[]) => mockManualIngest(...args),
+  };
+});
 
 import handler from '../ingest';
 
