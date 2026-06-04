@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   getMarketUpdateConfig,
   analyzeMarketUpdate,
   generateMarketUpdate,
+  createTemplate,
+  createEmailTemplate,
   fileToBase64,
   type MuConfig,
   type MuRegionResult,
@@ -48,11 +50,34 @@ export default function MarketUpdate() {
   const [ackWarnings, setAckWarnings] = useState(false);
   const [created, setCreated] = useState<{ posts: string[]; emails: string[] } | null>(null);
 
+  const qc = useQueryClient();
+
   // Default the template selectors once config loads.
   useMemo(() => {
     if (config && !blogTemplateId && config.blog_templates[0]) setBlogTemplateId(config.blog_templates[0].id);
     if (config && !emailTemplateId && config.email_templates[0]) setEmailTemplateId(config.email_templates[0].id);
   }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Upload a real .html template file -> create it (tagged MU) -> select it.
+  const uploadTemplate = useMutation({
+    mutationFn: async ({ role, file }: { role: "blog" | "email"; file: File }) => {
+      const html = await file.text();
+      const name = file.name.replace(/\.html?$/i, "") || `Market Update ${role}`;
+      const metadata = { kind: "market_update", mu_role: role };
+      const { id } =
+        role === "blog"
+          ? await createTemplate({ name, body_html: html, default_category_label: "Market Update", metadata })
+          : await createEmailTemplate({ name, body_html: html, metadata });
+      return { role, id, name };
+    },
+    onSuccess: async ({ role, id, name }) => {
+      await qc.invalidateQueries({ queryKey: ["mu-config"] });
+      if (role === "blog") setBlogTemplateId(id);
+      else setEmailTemplateId(id);
+      toast.success(`Uploaded "${name}" and selected it.`);
+    },
+    onError: (e: any) => toast.error(e?.message ?? "Template upload failed"),
+  });
 
   const regions = config?.regions ?? [];
   const allUploaded = regions.length > 0 && regions.every((r) => files[r.slug]);
@@ -126,14 +151,29 @@ export default function MarketUpdate() {
                   <select className="le-input" value={blogTemplateId} onChange={(e) => setBlogTemplateId(e.target.value)}>
                     {(config?.blog_templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
+                  <UploadTemplateLink
+                    role="blog"
+                    pending={uploadTemplate.isPending}
+                    onPick={(file) => uploadTemplate.mutate({ role: "blog", file })}
+                  />
                 </Field>
                 <Field label="Email template (Charlotte County)">
                   <select className="le-input" value={emailTemplateId} onChange={(e) => setEmailTemplateId(e.target.value)}>
                     <option value="">None</option>
                     {(config?.email_templates ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
                   </select>
+                  <UploadTemplateLink
+                    role="email"
+                    pending={uploadTemplate.isPending}
+                    onPick={(file) => uploadTemplate.mutate({ role: "email", file })}
+                  />
                 </Field>
               </div>
+              <p style={{ fontSize: 11.5, color: "var(--muted)", marginTop: -6 }}>
+                The selected templates are pre-loaded defaults. Upload your own <strong>Blog_Template_MU.html</strong> / <strong>Email_Template_MU.html</strong> above (keep the <code>{`{{TOKEN}}`}</code> names), or edit them under{" "}
+                <Link to="/dashboard/studio/blog/templates" style={{ color: "var(--accent)" }}>Blog templates</Link> ·{" "}
+                <Link to="/dashboard/studio/email/templates" style={{ color: "var(--accent)" }}>Email templates</Link>.
+              </p>
 
               <SectionLabel n={2} text="Upload the regional reports (PDF)" />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
@@ -184,7 +224,7 @@ export default function MarketUpdate() {
                 <SectionLabel n={4} text="Generate drafts" />
                 {hasErrors ? (
                   <p style={{ fontSize: 13, color: "var(--bad)" }}>
-                    Fix the flagged (red) numbers before generating — the math didn't reconcile against the source. Re-upload a corrected report and run extraction again.
+                    A region has a blocking issue (red flags above) — either a number that didn't reconcile against the source, or a report too sparse to read. Check the flags, re-upload a corrected report if needed, and run extraction again. (Metrics simply missing from a summary report are amber warnings, not blockers — you can still generate.)
                   </p>
                 ) : (
                   <>
@@ -249,10 +289,31 @@ function SectionLabel({ n, text }: { n: number; text: string }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
       <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>{label}</span>
       {children}
-    </label>
+    </div>
+  );
+}
+
+function UploadTemplateLink({ role, pending, onPick }: { role: "blog" | "email"; pending: boolean; onPick: (f: File) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => ref.current?.click()}
+        disabled={pending}
+        style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: 5, marginTop: 4, padding: 0, border: "none", background: "transparent", cursor: pending ? "default" : "pointer", color: "var(--accent)", fontSize: 11.5, fontFamily: "var(--le-font-sans)" }}
+      >
+        <Icon name="upload" size={11} />
+        {pending ? "Uploading…" : `Upload ${role} .html`}
+      </button>
+      <input
+        ref={ref} type="file" accept=".html,text/html" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); e.target.value = ""; }}
+      />
+    </>
   );
 }
 

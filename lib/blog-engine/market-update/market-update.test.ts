@@ -140,15 +140,31 @@ describe("validate", () => {
     expect(issues.find((i) => i.field === "sold.mom_pct")?.severity).toBe("error");
   });
 
-  it("flags a missing current value as an error", () => {
+  it("treats a few missing metrics as a warning, not a block (summary reports)", () => {
     const region = islesFixture();
-    // @ts-expect-error intentionally break it
-    region.metrics.dom.current = null;
+    // Drop the 7 detailed metrics a Stellar summary report typically omits.
+    for (const k of ["avg_for_sale_price", "avg_sold_price", "median_sold_price", "avg_ppsf", "moi_pended", "absorption_closed", "absorption_pended"] as const) {
+      // @ts-expect-error intentionally clear it
+      region.metrics[k].current = null;
+    }
     const issues = validateMetrics(region);
-    expect(issues.find((i) => i.field === "dom.current")?.severity).toBe("error");
+    expect(hasBlockingIssues(issues)).toBe(false); // present numbers reconcile → still generatable
+    expect(issues.find((i) => i.field === "missing_metrics")?.severity).toBe("warning");
   });
 
-  it("flags an implausible $0 price as an error (incomplete report)", () => {
+  it("blocks when too few metrics could be read (wrong/unreadable document)", () => {
+    const region = islesFixture();
+    for (const k of METRIC_KEYS) {
+      if (k === "for_sale" || k === "sold") continue; // leave only 2 present
+      // @ts-expect-error intentionally clear it
+      region.metrics[k].current = null;
+    }
+    const issues = validateMetrics(region);
+    expect(hasBlockingIssues(issues)).toBe(true);
+    expect(issues.find((i) => i.field === "extraction")?.severity).toBe("error");
+  });
+
+  it("warns on a present-but-zero price (likely misread), without blocking", () => {
     const region = islesFixture();
     region.metrics.median_sold_price.current = 0;
     region.metrics.median_sold_price.prev_month = null;
@@ -156,8 +172,8 @@ describe("validate", () => {
     region.metrics.median_sold_price.mom_pct = null;
     region.metrics.median_sold_price.yoy_pct = null;
     const issues = validateMetrics(region);
-    expect(issues.find((i) => i.field === "median_sold_price.current")?.severity).toBe("error");
-    expect(hasBlockingIssues(issues)).toBe(true);
+    expect(issues.find((i) => i.field === "median_sold_price.current")?.severity).toBe("warning");
+    expect(hasBlockingIssues(issues)).toBe(false);
   });
 
   it("warns when verdict disagrees with MOI", () => {
