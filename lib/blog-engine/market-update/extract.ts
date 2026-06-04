@@ -112,10 +112,11 @@ export async function extractRegion(
   metrics.region_name = regionName;
 
   const cost = computeClaudeCost(result.usage, MU_MODEL);
+  const costCents = Math.ceil(cost.costCents); // cost_events.cost_cents is an integer column
   if (opts.supabase && opts.siteId) {
     await recordBlogCost(opts.supabase, {
       stage: "blog_mu_extract",
-      cost_cents: cost.costCents,
+      cost_cents: costCents,
       post_id: null,
       site_id: opts.siteId,
       provider: "anthropic",
@@ -123,5 +124,5 @@ export async function extractRegion(
     });
   }
 
-  return { metrics, costCents: cost.costCents };
+  return { metrics, costCents };
 }

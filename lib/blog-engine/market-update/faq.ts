@@ -82,10 +82,11 @@ export async function rewriteFaq(
     .trim();
 
   const cost = computeClaudeCost(result.usage, MU_MODEL);
+  const costCents = Math.ceil(cost.costCents); // cost_events.cost_cents is an integer column
   if (opts.supabase && opts.siteId) {
     await recordBlogCost(opts.supabase, {
       stage: "blog_mu_faq",
-      cost_cents: cost.costCents,
+      cost_cents: costCents,
       post_id: null,
       site_id: opts.siteId,
       provider: "anthropic",
@@ -96,5 +97,5 @@ export async function rewriteFaq(
   // Defensive: if the model returned nothing usable, keep the original FAQ.
   const safeFaq = newFaq.length > 0 ? newFaq : currentFaq;
   const html = filledHtml.replace(FAQ_RE, `$1\n${safeFaq}\n$3`);
-  return { html, costCents: cost.costCents, rewritten: newFaq.length > 0 };
+  return { html, costCents, rewritten: newFaq.length > 0 };
 }
