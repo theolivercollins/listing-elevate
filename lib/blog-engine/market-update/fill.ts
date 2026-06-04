@@ -1,7 +1,7 @@
 // Pure deterministic template fill: replace every {{TOKEN}} from a token map.
 // Reports any {{...}} tokens it could not resolve, so the caller can block on them.
 
-import { allTokenNames } from "./types.js";
+import { allTokenNames, PASSTHROUGH_TOKENS } from "./types.js";
 
 const TOKEN_RE = /\{\{\s*([A-Z0-9_]+)\s*\}\}/g;
 
@@ -23,6 +23,9 @@ export function fillTemplate(
   const empty = new Set<string>();
 
   const html = templateHtml.replace(TOKEN_RE, (match, name: string) => {
+    if (PASSTHROUGH_TOKENS.has(name)) {
+      return match; // downstream system substitutes these; leave untouched
+    }
     if (!vocab.has(name)) {
       unknown.add(name);
       return match; // leave unknown tokens visible so they're caught downstream

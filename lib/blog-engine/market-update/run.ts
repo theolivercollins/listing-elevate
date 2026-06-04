@@ -147,7 +147,11 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
     // --- Blog post ---
     const filled = fillTemplate(blogTpl, tokenMap);
     if (filled.unknownTokens.length > 0) {
-      throw new Error(`blog template references unknown tokens: ${filled.unknownTokens.join(", ")}`);
+      r.issues.push({
+        severity: "warning",
+        field: "blog_template.tokens",
+        message: `blog template has unrecognized tokens left literal: ${filled.unknownTokens.join(", ")}`,
+      });
     }
     let blogHtml = filled.html;
     const faq = await rewriteFaq(blogHtml, r.metrics, { supabase, siteId, runId });
@@ -178,7 +182,11 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
     if (r.emits_email && emailTpl) {
       const eFilled = fillTemplate(emailTpl, tokenMap);
       if (eFilled.unknownTokens.length > 0) {
-        throw new Error(`email template references unknown tokens: ${eFilled.unknownTokens.join(", ")}`);
+        r.issues.push({
+          severity: "warning",
+          field: "email_template.tokens",
+          message: `email template has unrecognized tokens left literal: ${eFilled.unknownTokens.join(", ")}`,
+        });
       }
       let emailHtml = eFilled.html;
       const eFaq = await rewriteFaq(emailHtml, r.metrics, { supabase, siteId, runId });

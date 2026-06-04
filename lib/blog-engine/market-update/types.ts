@@ -103,6 +103,21 @@ export const METRIC_TOKEN_SUFFIXES = [
   "_YOY_DIR",
 ] as const;
 
+/**
+ * Tokens left untouched by fill — downstream systems substitute them
+ * (Sendy replaces {{UNSUBSCRIBE_URL}}; Sierra/CTA links are operator-set).
+ * These are NOT flagged as unknown.
+ */
+export const PASSTHROUGH_TOKENS = new Set<string>([
+  "UNSUBSCRIBE_URL",
+  "CTA_URL",
+  "CTA_TEXT",
+  "HERO_IMAGE_URL",
+  "HERO_ALT",
+  "EYEBROW",
+  "HEADLINE",
+]);
+
 /** The complete set of valid token names (without the surrounding {{ }}). */
 export function allTokenNames(): string[] {
   const out: string[] = [...META_TOKENS];

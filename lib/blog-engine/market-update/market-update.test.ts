@@ -87,6 +87,15 @@ describe("fill", () => {
     expect(r.unknownTokens).toEqual(["BOGUS_TOKEN"]);
   });
 
+  it("leaves passthrough tokens (Sendy/Sierra vars) untouched and unflagged", () => {
+    const map = buildTokenMap(islesFixture());
+    const r = fillTemplate('<a href="{{CTA_URL}}">x</a> {{UNSUBSCRIBE_URL}} {{SOLD}}', map);
+    expect(r.html).toContain("{{CTA_URL}}");
+    expect(r.html).toContain("{{UNSUBSCRIBE_URL}}");
+    expect(r.html).toContain("66");
+    expect(r.unknownTokens).toEqual([]);
+  });
+
   it("tolerates whitespace inside braces and lists template tokens", () => {
     const map = buildTokenMap(islesFixture());
     const r = fillTemplate("{{ SOLD }}", map);
