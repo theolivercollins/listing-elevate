@@ -334,6 +334,14 @@ export default function BlogPostsList() {
         actions={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Link
+              to="/dashboard/studio/blog/market-update"
+              style={ghostBtn}
+              title="Generate the monthly market-update posts + email"
+            >
+              <Icon name="trend-up" size={14} />
+              Market Update
+            </Link>
+            <Link
               to="/dashboard/studio/blog/ally-history"
               style={ghostBtn}
               title="Browse your Ally conversation history"

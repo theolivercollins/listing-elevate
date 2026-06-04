@@ -45,6 +45,7 @@ import BlogPostDetail from "./pages/dashboard/BlogPostDetail";
 import BlogAllyHistory from "./pages/dashboard/BlogAllyHistory";
 import BlogImageLibrary from "./pages/dashboard/BlogImageLibrary";
 import BlogTemplates from "./pages/dashboard/BlogTemplates";
+import MarketUpdate from "./pages/dashboard/MarketUpdate";
 import BlogTemplateDetail from "./pages/dashboard/BlogTemplateDetail";
 import EmailsList from "./pages/dashboard/EmailsList";
 import EmailDetail from "./pages/dashboard/EmailDetail";
@@ -141,6 +142,7 @@ const App = () => (
                       {/* Blog */}
                       <Route path="blog" element={<Navigate to="posts" replace />} />
                       <Route path="blog/posts" element={<BlogPostsList />} />
+                      <Route path="blog/market-update" element={<MarketUpdate />} />
                       <Route path="blog/posts/new" element={<BlogPostDetail />} />
                       <Route path="blog/posts/:id" element={<BlogPostDetail />} />
                       <Route path="blog/ally-history" element={<BlogAllyHistory />} />
