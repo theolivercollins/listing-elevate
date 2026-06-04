@@ -179,6 +179,27 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // Stage 2: Analyze
     await runAnalysis(propertyId, photos);
 
+    // Guard (never silently stuck): analysis must select at least one viable
+    // photo. If it selected zero — e.g. every photo URL was unfetchable (the
+    // 8bd86c4f / 310 Severin Rd bug: bare storage paths in file_url), a storage
+    // outage, or all photos non-viable — FAIL LOUDLY here instead of marching to
+    // scripting + generation with 0 scenes. A property with 0 scenes is invisible
+    // to the poll-scenes finalizer, so it would otherwise sit at 'generating'
+    // forever with no error surfaced.
+    const { data: analyzedProp } = await getSupabase()
+      .from("properties")
+      .select("selected_photo_count")
+      .eq("id", propertyId)
+      .maybeSingle();
+    const selectedCount = (analyzedProp as { selected_photo_count?: number } | null)?.selected_photo_count ?? 0;
+    if (selectedCount === 0) {
+      await updatePropertyStatus(propertyId, "failed");
+      await log(propertyId, "analysis", "error",
+        `Analysis selected 0 of ${photos.length} photos — none were viable or all failed to load (check photo URLs / storage). Halting before generation so this surfaces instead of hanging at 'generating'.`,
+        opCtx);
+      return;
+    }
+
     // Stage 2.5: Build Property Style Guide — one vision pass that sees all
     // selected photos at once so later scene prompts can describe adjacent
     // rooms accurately instead of the video model hallucinating them.
@@ -186,6 +207,22 @@ export async function runPipeline(propertyId: string): Promise<void> {
 
     // Stage 3: Script
     await runScripting(propertyId);
+
+    // Guard (never silently stuck): scripting must produce at least one scene.
+    // If the director planned zero (e.g. it errored, or selected photos vanished),
+    // fail loudly rather than submitting 0 clips and hanging at 'generating'.
+    const { data: plannedScenes } = await getSupabase()
+      .from("scenes")
+      .select("id")
+      .eq("property_id", propertyId);
+    const sceneCount = Array.isArray(plannedScenes) ? plannedScenes.length : 0;
+    if (sceneCount === 0) {
+      await updatePropertyStatus(propertyId, "failed");
+      await log(propertyId, "scripting", "error",
+        `Scripting produced 0 scenes from ${selectedCount} selected photos. Halting before generation.`,
+        opCtx);
+      return;
+    }
 
     // Stage 3.5 (Pre-flight prompt QA) REMOVED. It was burning ~95s of the
     // 300s function budget on 12 sequential Claude vision calls AND

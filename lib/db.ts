@@ -15,6 +15,7 @@ import type {
   UserProfile,
 } from "./types.js";
 import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
+import { ensureAbsolutePhotoUrl } from "./storage-url.js";
 
 export type {
   Property,
@@ -430,13 +431,23 @@ export async function insertPhotos(
 }
 
 export async function getPhotosForProperty(propertyId: string): Promise<Photo[]> {
-  const { data, error } = await getSupabase()
+  const supabase = getSupabase();
+  const { data, error } = await supabase
     .from("photos")
     .select()
     .eq("property_id", propertyId)
     .order("created_at");
   if (error) throw error;
-  return data as Photo[];
+  // Normalize file_url on read so a bare storage path (from any past or future
+  // ingest path) can never reach a fetch() in the analyzer / providers / judge.
+  // This is the last-line chokepoint that, with the ingest-side fix, makes the
+  // 8bd86c4f "stuck at generating" bug impossible to reintroduce.
+  const publicUrlFor = (path: string) =>
+    supabase.storage.from("property-photos").getPublicUrl(path).data.publicUrl;
+  return (data as Photo[]).map((p) => ({
+    ...p,
+    file_url: ensureAbsolutePhotoUrl(p.file_url, publicUrlFor),
+  }));
 }
 
 export async function updatePhotoAnalysis(

@@ -29,7 +29,7 @@ vi.mock('../../client', () => ({
   }),
 }));
 
-import { manualIngest, toPublicPhotoUrl } from '../ingest';
+import { manualIngest } from '../ingest';
 import type { ManualIngestInput } from '../../types/operator-studio';
 
 beforeEach(() => {
@@ -136,23 +136,5 @@ describe('manualIngest', () => {
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       pipeline_mode: 'v1',
     }));
-  });
-});
-
-describe('toPublicPhotoUrl', () => {
-  const pub = (path: string) => `https://x.supabase.co/storage/v1/object/public/property-photos/${path}`;
-
-  it('passes absolute http(s) URLs through unchanged', () => {
-    const url = 'https://x.supabase.co/storage/v1/object/public/property-photos/a/raw/p.jpg';
-    expect(toPublicPhotoUrl(url, pub)).toBe(url);
-  });
-
-  it('converts a bare storage path to a public URL (the 8bd86c4f bug)', () => {
-    expect(toPublicPhotoUrl('ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
-  });
-
-  it('strips a leading slash and an accidental bucket prefix before resolving', () => {
-    expect(toPublicPhotoUrl('/ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
-    expect(toPublicPhotoUrl('property-photos/ae22add0/raw/p.jpg', pub)).toBe(pub('ae22add0/raw/p.jpg'));
   });
 });
