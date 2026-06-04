@@ -561,6 +561,23 @@ export async function analyzeMarketUpdate(body: {
   return asJson(res);
 }
 
+export interface MuRunListItem {
+  id: string;
+  period_month: number;
+  period_year: number;
+  status: string;
+  created_post_ids: string[];
+  created_email_ids: string[];
+  cost_usd_cents: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listMarketUpdateRuns(): Promise<{ runs: MuRunListItem[] }> {
+  const res = await fetch("/api/blog/market-update/runs", { headers: await authHeaders() });
+  return asJson(res);
+}
+
 export async function getMarketUpdateRun(id: string): Promise<{ run: any }> {
   const res = await fetch(`/api/blog/market-update/runs/${id}`, { headers: await authHeaders() });
   return asJson(res);
