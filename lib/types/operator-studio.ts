@@ -92,4 +92,5 @@ export type BrandKitVars = {
   agent_name: string | null;
   agent_headshot_url: string | null;
   brokerage: string | null;
+  phone: string | null;
 };
