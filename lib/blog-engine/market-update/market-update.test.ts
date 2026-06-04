@@ -148,6 +148,18 @@ describe("validate", () => {
     expect(issues.find((i) => i.field === "dom.current")?.severity).toBe("error");
   });
 
+  it("flags an implausible $0 price as an error (incomplete report)", () => {
+    const region = islesFixture();
+    region.metrics.median_sold_price.current = 0;
+    region.metrics.median_sold_price.prev_month = null;
+    region.metrics.median_sold_price.prev_year = null;
+    region.metrics.median_sold_price.mom_pct = null;
+    region.metrics.median_sold_price.yoy_pct = null;
+    const issues = validateMetrics(region);
+    expect(issues.find((i) => i.field === "median_sold_price.current")?.severity).toBe("error");
+    expect(hasBlockingIssues(issues)).toBe(true);
+  });
+
   it("warns when verdict disagrees with MOI", () => {
     const region = islesFixture();
     region.market_verdict = "Seller's"; // MOI 6 implies Neutral

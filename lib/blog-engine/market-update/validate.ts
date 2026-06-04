@@ -2,7 +2,7 @@
 // requires. Re-derives MoM% / YoY% from the reported values and flags drift,
 // plus sanity-checks market verdict and absorption against months of inventory.
 
-import { METRIC_KEYS, type MetricKey, type RegionMetrics, type MathIssue } from "./types.js";
+import { METRIC_KEYS, METRIC_FORMAT, type MetricKey, type RegionMetrics, type MathIssue } from "./types.js";
 
 /** Allowed gap (percentage points) between reported and re-derived MoM/YoY. */
 export const PCT_TOLERANCE = 0.75;
@@ -54,7 +54,13 @@ export function validateMetrics(region: RegionMetrics): MathIssue[] {
   for (const key of METRIC_KEYS) {
     const stat = m[key];
     if (!stat || stat.current === null || stat.current === undefined || Number.isNaN(stat.current)) {
-      issues.push({ severity: "error", field: `${key}.current`, message: `${key} current value missing` });
+      issues.push({ severity: "error", field: `${key}.current`, message: `${key} value missing from the report` });
+      continue;
+    }
+    // A $0 price / 0 months of inventory is never a real figure — it means the
+    // metric wasn't found. Block it so an incomplete report can't ship literal $0.
+    if (stat.current === 0 && (METRIC_FORMAT[key] === "price" || METRIC_FORMAT[key] === "months")) {
+      issues.push({ severity: "error", field: `${key}.current`, message: `${key} is 0 — implausible, likely missing from the report` });
       continue;
     }
     deriveAndCheck(key, "MoM", stat.current, stat.prev_month, stat.mom_pct, issues);

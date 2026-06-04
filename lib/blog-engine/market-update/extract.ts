@@ -22,7 +22,7 @@ function metricStatSchema() {
   return {
     type: "object",
     properties: {
-      current: { type: "number", description: "the reported figure for the data month" },
+      current: { type: ["number", "null"], description: "the reported figure for the data month; null if the metric is absent from the report" },
       prev_month: { type: ["number", "null"], description: "prior month's figure if stated, else null" },
       prev_year: { type: ["number", "null"], description: "same month last year if stated, else null" },
       mom_pct: { type: ["number", "null"], description: "reported month-over-month percent, signed (e.g. -15.1)" },
@@ -65,6 +65,7 @@ Extract every metric EXACTLY as printed. Do not compute, round, or infer values 
 - months of inventory (MOI) and absorption rate appear in two bases: "based on Closed Sales" (-> *_closed) and "based on Pended Sales" (-> *_pended).
 - avg_ppsf is "Average Sold Price per Square Footage". sold_to_list is "Sold Price vs. Original List Price" ratio as a whole percent (e.g. 89).
 - report_month is the month the DATA covers (often one month before the publish date).
+- CRITICAL: if a metric is NOT shown in the report, set its current (and every field) to null. NEVER use 0 as a placeholder and NEVER invent or guess a value. A genuine zero only appears if the report literally prints 0.
 Call emit_metrics exactly once with the full structured result.`;
 
 export interface ExtractResult {
