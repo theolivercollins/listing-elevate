@@ -270,9 +270,8 @@ describe("poll-scenes — Gemini judge wiring", () => {
     const update = capturedSceneUpdate.payload!;
     expect(update.status).toBe("qc_hard_reject");
     expect(update.qc_verdict).toBe("qc_hard_reject");
-    // qc_issues should contain the flag
-    expect(Array.isArray(update.qc_issues)).toBe(true);
-    expect((update.qc_issues as Array<{ flag: string }>)[0].flag).toBe("hallucinated_geometry");
+    // qc_issues should carry the flags in the dashboard-consumed shape
+    expect((update.qc_issues as { issues: string[] }).issues).toEqual(["hallucinated_geometry"]);
     // qc_confidence should be rubric.overall / 5 = 1/5 = 0.2
     expect(update.qc_confidence).toBeCloseTo(0.2, 5);
     // clip_url must still be stored

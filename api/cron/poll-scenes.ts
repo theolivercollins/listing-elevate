@@ -173,8 +173,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           : judged.verdict === 'qc_soft_reject' ? 'needs_review'
           : 'qc_hard_reject';
 
+        // Shape matches the dashboard consumer (Pipeline.tsx reads
+        // `qc_issues.issues` as string[]). null when there are no flags.
         const qcIssues = judged.rubric?.hallucination_flags?.length
-          ? judged.rubric.hallucination_flags.map((f) => ({ flag: f }))
+          ? { issues: judged.rubric.hallucination_flags as string[] }
           : null;
 
         await supabase.from('scenes').update({
