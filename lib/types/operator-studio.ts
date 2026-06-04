@@ -35,6 +35,7 @@ export type ManualIngestInput = {
   director_notes: string | null;
 
   listing_agent?: string | null;
+  agent_phone?: string | null;
   brokerage?: string | null;
 
   selected_package?: 'just_listed' | 'just_pended' | 'just_closed' | 'life_cycle' | null;

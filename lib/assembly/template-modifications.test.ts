@@ -74,6 +74,66 @@ describe("buildTemplateModifications", () => {
     });
   });
 
+  it("writes Text-* keys matching the live just-listed-15s template (075d3024)", () => {
+    const mods = buildTemplateModifications({
+      address: "2750 Palm Tree Dr, Punta Gorda, FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian Helgemo, Realtor",
+      brokerageName: "The Helgemo Team | Compass",
+      agentPhone: "c: 941.205.9011",
+    });
+    expect(mods).toMatchObject({
+      "Text-Agent-Name.text": "Brian Helgemo, Realtor",
+      "Text-Phone-Number.text": "c: 941.205.9011",
+      "Text-Address.text": "2750 Palm Tree Dr, Punta Gorda, FL",
+      "Text-Brokerage-Team.text": "The Helgemo Team | Compass",
+    });
+  });
+
+  it("defaults Text-Phone-Number.text to empty string when agentPhone is null", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, FL",
+      selectedPackage: "just_listed",
+      agentName: "Agent",
+      brokerageName: "Brokerage",
+      agentPhone: null,
+    });
+    expect(mods["Text-Phone-Number.text"]).toBe("");
+  });
+
+  it("defaults Text-Phone-Number.text to empty string when agentPhone is omitted", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, FL",
+      selectedPackage: "just_listed",
+      agentName: "Agent",
+      brokerageName: "Brokerage",
+    });
+    expect(mods["Text-Phone-Number.text"]).toBe("");
+  });
+
+  it("writes Image-Headshot.source alongside Agent-Headshot-Final.source when headshot provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, FL",
+      selectedPackage: "just_listed",
+      agentName: "Agent",
+      brokerageName: "Brokerage",
+      agentHeadshotUrl: "https://headshots/brian.png",
+    });
+    expect(mods["Agent-Headshot-Final.source"]).toBe("https://headshots/brian.png");
+    expect(mods["Image-Headshot.source"]).toBe("https://headshots/brian.png");
+  });
+
+  it("omits both headshot keys when agentHeadshotUrl is not provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, FL",
+      selectedPackage: "just_listed",
+      agentName: "Agent",
+      brokerageName: "Brokerage",
+    });
+    expect(mods).not.toHaveProperty("Agent-Headshot-Final.source");
+    expect(mods).not.toHaveProperty("Image-Headshot.source");
+  });
+
   it("substitutes empty string when brokerage is null", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",

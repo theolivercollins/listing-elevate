@@ -1468,6 +1468,7 @@ async function runAssemblyStep(
             address: property.address,
             selectedPackage: property.selected_package,
             agentName: property.listing_agent,
+            agentPhone: (property as { agent_phone?: string | null }).agent_phone ?? null,
             brokerageName: branding.brokerageName ?? property.brokerage ?? null,
             clips: templateClipInputs,
             musicUrl: musicTrack?.fileUrl,

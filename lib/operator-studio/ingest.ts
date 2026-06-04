@@ -55,9 +55,11 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     sold_price,
     pipeline_mode,
     listing_agent: explicit_listing_agent,
+    agent_phone: explicit_agent_phone,
     brokerage: explicit_brokerage,
   } = input as ManualIngestWithActor & {
     listing_agent?: string | null;
+    agent_phone?: string | null;
     brokerage?: string | null;
   };
 
@@ -78,15 +80,17 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   // signed-in user's profile.
   let agentFromClient: string | null = null;
   let brokerageFromClient: string | null = null;
+  let phoneFromClient: string | null = null;
   if (client_id) {
     const { data: client, error: clientErr } = await supabase
       .from('clients')
-      .select('agent_name, name')
+      .select('agent_name, name, phone')
       .eq('id', client_id)
       .maybeSingle();
     if (clientErr) throw new Error(`client lookup failed: ${stringifyDbError(clientErr)}`);
     agentFromClient = (client as { agent_name?: string | null } | null)?.agent_name ?? null;
     brokerageFromClient = (client as { name?: string | null } | null)?.name ?? null;
+    phoneFromClient = (client as { phone?: string | null } | null)?.phone ?? null;
   }
 
   // Fallback chain for listing_agent (NOT NULL in prod):
@@ -97,6 +101,10 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     'Operator';
 
   const brokerage = explicit_brokerage?.trim() || brokerageFromClient || null;
+
+  // Fallback chain for agent_phone:
+  //   explicit form value → client.phone → null
+  const agent_phone = explicit_agent_phone?.trim() || phoneFromClient || null;
 
   // 1. Insert the property row.
   const { data: property, error: propError } = await supabase
@@ -113,6 +121,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       status: 'queued',
       submitted_by,
       listing_agent,
+      agent_phone,
       brokerage,
       selected_package: selected_package ?? 'just_listed',
       selected_duration: selected_duration ?? 30,

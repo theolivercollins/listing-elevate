@@ -36,7 +36,7 @@ beforeEach(() => {
   insertProperty.mockReset().mockReturnValue({ select: () => ({ single: () => Promise.resolve({ data: { id: 'new-prop-id' }, error: null }) }) });
   insertPhotos.mockReset().mockResolvedValue({ data: null, error: null });
   insertRevisionNote.mockReset().mockResolvedValue({ data: null, error: null });
-  selectClient.mockReset().mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty' }, error: null });
+  selectClient.mockReset().mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty', phone: '555-0100' }, error: null });
 });
 
 const baseInput: ManualIngestInput & { submitted_by: string } = {
@@ -72,6 +72,7 @@ describe('manualIngest', () => {
       photo_count: 8,
       submitted_by: 'admin-user-id',
       listing_agent: 'Jane Agent',
+      agent_phone: '555-0100',
       brokerage: 'Acme Realty',
     }));
   });
@@ -88,13 +89,36 @@ describe('manualIngest', () => {
     await expect(manualIngest(baseInput)).rejects.toThrow(/listing_agent.*23502/i);
   });
 
-  it('falls back to "Operator" when there is no client', async () => {
+  it('falls back to "Operator" + null phone when there is no client', async () => {
     selectClient.mockResolvedValue({ data: null, error: null });
     await manualIngest({ ...baseInput, client_id: null });
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       client_id: null,
       listing_agent: 'Operator',
+      agent_phone: null,
       brokerage: null,
+    }));
+  });
+
+  it('uses explicit agent_phone when provided, overriding client.phone', async () => {
+    await manualIngest({ ...baseInput, agent_phone: '941.555.1234' } as typeof baseInput & { agent_phone?: string | null });
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      agent_phone: '941.555.1234',
+    }));
+  });
+
+  it('falls back to client.phone when no explicit agent_phone', async () => {
+    await manualIngest(baseInput);
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      agent_phone: '555-0100',
+    }));
+  });
+
+  it('stores null for agent_phone when neither explicit nor client phone exists', async () => {
+    selectClient.mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty', phone: null }, error: null });
+    await manualIngest(baseInput);
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      agent_phone: null,
     }));
   });
 

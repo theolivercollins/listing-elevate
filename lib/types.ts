@@ -105,6 +105,7 @@ export interface Property {
   bedrooms: number;
   bathrooms: number;
   listing_agent: string;
+  agent_phone: string | null;
   brokerage: string | null;
   status: PropertyStatus;
   photo_count: number;

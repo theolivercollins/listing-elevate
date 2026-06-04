@@ -114,6 +114,8 @@ const StudioNew = () => {
   // ─── form state ───
   const [address, setAddress] = useState('');
   const [clientId, setClientId] = useState<string | null>(null);
+  const [listingAgent, setListingAgent] = useState('');
+  const [agentPhone, setAgentPhone] = useState('');
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
   const [squareFootage, setSquareFootage] = useState('');
@@ -267,6 +269,8 @@ const StudioNew = () => {
         body: JSON.stringify({
           client_id: clientId,
           address: address.trim(),
+          listing_agent: listingAgent.trim() || null,
+          agent_phone: agentPhone.trim() || null,
           bedrooms: bedrooms ? Number(bedrooms) : null,
           bathrooms: bathrooms ? Number(bathrooms) : null,
           square_footage: squareFootage ? Number(squareFootage) : null,
@@ -370,6 +374,36 @@ const StudioNew = () => {
                   {mlsMsg.text}
                 </p>
               )}
+            </div>
+
+            {/* Agent name / phone — used when no client is selected */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <div>
+                <FieldLabel>Agent name</FieldLabel>
+                <input
+                  className="studio-input"
+                  type="text"
+                  value={listingAgent}
+                  onChange={(e) => setListingAgent(e.target.value)}
+                  placeholder="Brian Helgemo, Realtor"
+                />
+                <p style={{ marginTop: 4, fontSize: 11, color: 'var(--le-muted)' }}>
+                  Used when no client is selected
+                </p>
+              </div>
+              <div>
+                <FieldLabel>Agent phone</FieldLabel>
+                <input
+                  className="studio-input"
+                  type="tel"
+                  value={agentPhone}
+                  onChange={(e) => setAgentPhone(e.target.value)}
+                  placeholder="c: 941.205.9011"
+                />
+                <p style={{ marginTop: 4, fontSize: 11, color: 'var(--le-muted)' }}>
+                  Used when no client is selected
+                </p>
+              </div>
             </div>
 
             {/* Bedrooms / bathrooms */}

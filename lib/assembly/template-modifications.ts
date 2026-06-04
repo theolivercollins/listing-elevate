@@ -18,6 +18,17 @@
  *   Audio-Music              audio  background music URL
  *   Clip-1 … Clip-8          video  walkthrough clip URLs
  *
+ * Live "just listed 15s" template (id 075d3024-b727-4dde-bdc1-cd15a4929882)
+ * uses a different naming convention — we send BOTH sets; Creatomate ignores
+ * keys for placeholders the template doesn't have:
+ *
+ *   Text-Agent-Name          text   agent display name
+ *   Text-Phone-Number        text   agent phone number
+ *   Text-Address             text   full address
+ *   Text-Brokerage-Team      text   brokerage name
+ *   Image-Headshot           image  agent headshot
+ *   Clip-1 … Clip-5          video  walkthrough clips (already work)
+ *
  * Creatomate silently ignores keys for placeholders the template doesn't have,
  * so the mapper writes the full set every time. If a future template uses
  * different names, add a new mapper.
@@ -68,8 +79,10 @@ export interface ModificationContext {
   clips?: AssembleVideoParams["clips"];
   /** Background music URL → Audio-Music.source. */
   musicUrl?: string | null;
-  /** Optional agent headshot URL → Agent-Headshot-Final.source. */
+  /** Optional agent headshot URL → Agent-Headshot-Final.source + Image-Headshot.source. */
   agentHeadshotUrl?: string | null;
+  /** Agent phone number → Text-Phone-Number.text (live 15s template). */
+  agentPhone?: string | null;
   /**
    * AI voiceover MP3 URL → Voice-Over.source.
    * When present the template swaps in the generated narration track.
@@ -91,6 +104,7 @@ export function buildTemplateModifications(
   const fullAddress = ctx.address?.trim() ?? "";
 
   const mods: CreatomateModifications = {
+    // Legacy "Just Listed #01 rev 2" placeholder names — kept for back-compat.
     "St#/StName-Intro.text": streetLine,
     "City/State-Intro.text": cityStateLine,
     "Vid-Category-Intro.text": categoryLabel,
@@ -99,6 +113,13 @@ export function buildTemplateModifications(
     "Listing-Brokerage-Mid.text": brokerage,
     "Listing-Brokerage-Final.text": brokerage,
     "Full-Address-Final.text": fullAddress,
+    // Live "just listed 15s" template (075d3024-b727-4dde-bdc1-cd15a4929882)
+    // element names — Creatomate silently ignores these on templates that don't
+    // have them, so it's safe to send both sets on every render.
+    "Text-Agent-Name.text": ctx.agentName,
+    "Text-Phone-Number.text": ctx.agentPhone ?? "",
+    "Text-Address.text": fullAddress,
+    "Text-Brokerage-Team.text": brokerage,
   };
 
   if (ctx.clips && ctx.clips.length > 0) {
@@ -115,6 +136,8 @@ export function buildTemplateModifications(
 
   if (ctx.agentHeadshotUrl) {
     mods["Agent-Headshot-Final.source"] = ctx.agentHeadshotUrl;
+    // Live 15s template element name:
+    mods["Image-Headshot.source"] = ctx.agentHeadshotUrl;
   }
 
   if (ctx.voiceoverUrl) {
