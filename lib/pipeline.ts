@@ -79,6 +79,30 @@ const BATCH_SIZE = 8;
 // Re-export for any downstream importer that pulls these via lib/pipeline.
 export { TARGET_SCENE_COUNT, MAX_PER_ROOM_TYPE, REQUIRED_ROOM_TYPES };
 
+// ─── HELPERS ───────────────────────────────────────────────────
+
+/**
+ * Coerce `camera_movement` to `'push_in'` for every non-paired scene when the
+ * property is in v1.1 pipeline mode.
+ *
+ * Motivation: v1.1 routes ALL non-paired scenes to a Seedance push-in SKU at
+ * render time, so the value stored in the `scenes` table should reflect that
+ * reality rather than whatever 11-verb movement the director planned. Paired
+ * scenes (`end_photo_id` set) are routed to `kling-v2-1-pair` and keep their
+ * original movement untouched.
+ *
+ * Pure — inputs are never mutated; new objects are returned.
+ */
+export function coerceToPushInForV11<
+  T extends { camera_movement: string; end_photo_id?: string | null },
+>(scenes: T[], pipelineMode: string): T[] {
+  if (pipelineMode !== "v1.1") return scenes;
+  return scenes.map((s) => {
+    if (s.end_photo_id) return s; // paired — leave untouched
+    return { ...s, camera_movement: "push_in" };
+  });
+}
+
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
 
 // Snapshot every system prompt to prompt_revisions on each pipeline run so
@@ -736,13 +760,18 @@ async function runScripting(propertyId: string): Promise<void> {
     scene.duration_seconds = targetClipDuration;
   }
 
+  // v1.1 audit-trail coercion — the render path forces every non-paired scene
+  // to a Seedance push-in SKU; align the stored camera_movement to match so
+  // the DB reflects what actually renders. Paired scenes are left untouched.
+  const groundedScenes = coerceToPushInForV11(validScenes, propertyPipelineMode);
+
   // Phase 2.7: resolve end-frame URL for each scene before insert.
   // Build a lookup from photo id → file_url from the already-fetched
   // selected photos so we avoid extra DB round trips for the start photo.
   const photoUrlById = new Map(photos.map((p) => [p.id, p.file_url ?? null]));
 
   const sceneRows = await Promise.all(
-    validScenes.map(async (s) => {
+    groundedScenes.map(async (s) => {
       const startPhotoUrl = photoUrlById.get(s.photo_id) ?? null;
 
       let endImageUrl: string | null = null;
