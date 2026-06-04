@@ -119,6 +119,7 @@ const StudioNew = () => {
   const [squareFootage, setSquareFootage] = useState('');
   const [price, setPrice] = useState('');                    // stores raw digits ("2400000")
   const [directorNotes, setDirectorNotes] = useState('');
+  const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
   // ─── MLS lookup state ───
@@ -268,6 +269,7 @@ const StudioNew = () => {
           price: price ? Number(price) : null,
           photo_storage_paths: photoPaths,
           director_notes: directorNotes.trim() || null,
+          selected_duration: selectedDuration,
         }),
       });
 
@@ -447,6 +449,40 @@ const StudioNew = () => {
                 placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
                 rows={4}
               />
+            </div>
+
+            {/* Duration */}
+            <div>
+              <FieldLabel>Video length</FieldLabel>
+              <div
+                role="group"
+                aria-label="Video length"
+                style={{ display: 'flex', gap: 8 }}
+              >
+                {([15, 30, 60] as const).map((d) => {
+                  const active = selectedDuration === d;
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedDuration(d)}
+                      className="studio-input"
+                      style={{
+                        flex: 1,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        fontWeight: active ? 600 : 500,
+                        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
+                        borderColor: active ? 'var(--le-ink)' : undefined,
+                        background: active ? 'var(--le-surface-2, rgba(0,0,0,0.04))' : undefined,
+                      }}
+                    >
+                      {d} seconds
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Photo dropzone */}
