@@ -68,6 +68,7 @@ vi.mock("../assembly/branding.js", () => ({
     logoUrl: null,
     primaryColor: "#000000",
     secondaryColor: "#ffffff",
+    phone: null,
   }),
 }));
 
