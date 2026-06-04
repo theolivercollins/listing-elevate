@@ -50,21 +50,31 @@ export function validateMetrics(region: RegionMetrics): MathIssue[] {
   if (!region.report_month) issues.push({ severity: "error", field: "report_month", message: "report_month missing" });
   if (!region.report_year) issues.push({ severity: "error", field: "report_year", message: "report_year missing" });
 
-  // 2. Each metric: a current value must exist, and MoM/YoY must reconcile.
+  // 2. Each metric: where a value IS present, its MoM/YoY must reconcile. A metric
+  //    absent from the report is NOT an error — many Stellar summary reports carry
+  //    only the headline stats. It becomes a warning so the operator knows that
+  //    template token will be blank, but present-and-correct numbers still generate.
+  const missing: string[] = [];
   for (const key of METRIC_KEYS) {
     const stat = m[key];
     if (!stat || stat.current === null || stat.current === undefined || Number.isNaN(stat.current)) {
-      issues.push({ severity: "error", field: `${key}.current`, message: `${key} value missing from the report` });
+      missing.push(key);
       continue;
     }
-    // A $0 price / 0 months of inventory is never a real figure — it means the
-    // metric wasn't found. Block it so an incomplete report can't ship literal $0.
+    // A present-but-zero price / MOI is suspicious (likely a misread) — flag, don't block.
     if (stat.current === 0 && (METRIC_FORMAT[key] === "price" || METRIC_FORMAT[key] === "months")) {
-      issues.push({ severity: "error", field: `${key}.current`, message: `${key} is 0 — implausible, likely missing from the report` });
-      continue;
+      issues.push({ severity: "warning", field: `${key}.current`, message: `${key} reads 0 — verify against the report` });
     }
     deriveAndCheck(key, "MoM", stat.current, stat.prev_month, stat.mom_pct, issues);
     deriveAndCheck(key, "YoY", stat.current, stat.prev_year, stat.yoy_pct, issues);
+  }
+
+  // Too few metrics read = the wrong document or an unreadable scan — block that.
+  const presentCount = METRIC_KEYS.length - missing.length;
+  if (presentCount < 3) {
+    issues.push({ severity: "error", field: "extraction", message: `only ${presentCount} metric(s) could be read from this report — it may be the wrong document or unreadable` });
+  } else if (missing.length > 0) {
+    issues.push({ severity: "warning", field: "missing_metrics", message: `${missing.length} metric(s) not found in this report (${missing.join(", ")}) — their template tokens will be blank, which is fine if your template doesn't use them` });
   }
 
   // 3. Market verdict vs months-of-inventory (closed). Warning — source labels

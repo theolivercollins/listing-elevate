@@ -209,6 +209,7 @@ export async function createTemplate(input: {
   default_meta_title?: string | null;
   default_meta_description?: string | null;
   default_meta_tags?: string[];
+  metadata?: Record<string, unknown>;
 }): Promise<{ id: string }> {
   const res = await fetch("/api/blog/templates", {
     method: "POST",
@@ -358,6 +359,7 @@ export async function createEmailTemplate(input: {
   default_from_name?: string | null;
   default_from_email?: string | null;
   default_audience?: string | null;
+  metadata?: Record<string, unknown>;
 }): Promise<{ id: string }> {
   const res = await fetch("/api/blog/email-templates", {
     method: "POST",
