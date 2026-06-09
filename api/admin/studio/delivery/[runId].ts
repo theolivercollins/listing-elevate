@@ -109,8 +109,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           return res.status(200).json({ run: updated });
         }
-        // Later tasks add: 'set_voice'/'generate_audio' (T18),
-        // 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
+        case 'set_voice': {
+          const voiceId = String(req.body?.voice_id ?? '');
+          if (!voiceId) return res.status(400).json({ error: 'voice_id required' });
+          const { updateRun: uRun2, recordMlEvent: rme2 } = await import('../../../../lib/delivery/runs.js');
+          const updated = await uRun2(runId, { voiceover_voice_id: voiceId } as never);
+          await rme2(runId, 'voice_choice', { voice_id: voiceId, is_client_voice: Boolean(req.body?.is_client_voice) });
+          return res.status(200).json({ run: updated });
+        }
+        case 'generate_audio': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          if (!run.voiceover_script) return res.status(400).json({ error: 'generate the script first' });
+          if (!run.voiceover_voice_id) return res.status(400).json({ error: 'pick a voice first' });
+          const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
+          const { updateRun: uRun3, setRunError: sre3 } = await import('../../../../lib/delivery/runs.js');
+          try {
+            let audioUrl: string;
+            try {
+              ({ audioUrl } = await generateVoiceoverAudio({
+                script: run.voiceover_script, voiceId: run.voiceover_voice_id,
+                propertyId: run.property_id, storageFolder: run.property_id,
+              }));
+            } catch {
+              ({ audioUrl } = await generateVoiceoverAudio({
+                script: run.voiceover_script, voiceId: run.voiceover_voice_id,
+                propertyId: run.property_id, storageFolder: run.property_id,
+              }));
+            }
+            const updated = await uRun3(runId, { voiceover_audio_url: audioUrl } as never);
+            return res.status(200).json({ run: updated });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await sre3(runId, `Voiceover audio failed twice: ${msg} — you can skip (assembly proceeds without VO).`);
+            return res.status(502).json({ error: msg });
+          }
+        }
+        // Later tasks add: 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

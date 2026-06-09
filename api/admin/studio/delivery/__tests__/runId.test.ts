@@ -17,6 +17,7 @@ const mockDbUpdate = vi.fn();
 const mockDbFrom = vi.fn();
 const mockGenerateDeliveryScript = vi.fn();
 const mockDbSelect = vi.fn();
+const mockGenerateVoiceoverAudio = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -38,6 +39,9 @@ vi.mock('../../../../../lib/delivery/variants', () => ({
 }));
 vi.mock('../../../../../lib/delivery/voiceover-script', () => ({
   generateDeliveryScript: (...a: unknown[]) => mockGenerateDeliveryScript(...a),
+}));
+vi.mock('../../../../../lib/voiceover/generate-audio', () => ({
+  generateVoiceoverAudio: (...a: unknown[]) => mockGenerateVoiceoverAudio(...a),
 }));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
@@ -69,6 +73,7 @@ beforeEach(() => {
   mockRegenerateVariant.mockResolvedValue(undefined);
   mockUpdateRun.mockResolvedValue({ ...run, voiceover_script: 'Welcome to X St.' });
   mockGenerateDeliveryScript.mockResolvedValue({ script: 'Welcome to X St.', wordCount: 4 });
+  mockGenerateVoiceoverAudio.mockResolvedValue({ audioUrl: 'https://cdn.example.com/vo.mp3', durationMs: 8000 });
   // Default chain for supabase (flip_winner update + generate_script address select)
   mockDbSelect.mockReturnValue({
     eq: vi.fn().mockReturnValue({
@@ -276,6 +281,95 @@ describe('POST generate_script + set_script (T17)', () => {
     );
     expect(res._status).toBe(200);
     expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST set_voice + generate_audio (T18)', () => {
+  it('POST set_voice -> 200, stores voice_id + records voice_choice ml_event', async () => {
+    const voiceId = 'UgBBYS2sOqTuMpoF3BR0';
+    mockUpdateRun.mockResolvedValue({ ...run, voiceover_voice_id: voiceId });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_voice', voice_id: voiceId, is_client_voice: false } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ voiceover_voice_id: voiceId }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'voice_choice', { voice_id: voiceId, is_client_voice: false });
+  });
+
+  it('POST set_voice with is_client_voice=true sets flag correctly', async () => {
+    const voiceId = 'kdmDKE6EkgrWrrykO9Qt';
+    mockUpdateRun.mockResolvedValue({ ...run, voiceover_voice_id: voiceId });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_voice', voice_id: voiceId, is_client_voice: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'voice_choice', { voice_id: voiceId, is_client_voice: true });
+  });
+
+  it('POST set_voice without voice_id -> 400', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_voice', voice_id: '' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('POST generate_audio -> 200, calls generateVoiceoverAudio + updateRun with audioUrl', async () => {
+    const runWithVO = { ...run, voiceover_script: 'Great home!', voiceover_voice_id: 'UgBBYS2sOqTuMpoF3BR0', property_id: 'p1' };
+    mockGetRun.mockResolvedValue(runWithVO);
+    mockUpdateRun.mockResolvedValue({ ...runWithVO, voiceover_audio_url: 'https://cdn.example.com/vo.mp3' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockGenerateVoiceoverAudio).toHaveBeenCalledWith(expect.objectContaining({
+      script: 'Great home!',
+      voiceId: 'UgBBYS2sOqTuMpoF3BR0',
+      propertyId: 'p1',
+    }));
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ voiceover_audio_url: 'https://cdn.example.com/vo.mp3' }));
+  });
+
+  it('POST generate_audio without script -> 400', async () => {
+    mockGetRun.mockResolvedValue({ ...run, voiceover_script: null, voiceover_voice_id: 'UgBBYS2sOqTuMpoF3BR0' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockGenerateVoiceoverAudio).not.toHaveBeenCalled();
+  });
+
+  it('POST generate_audio without voice_id -> 400', async () => {
+    mockGetRun.mockResolvedValue({ ...run, voiceover_script: 'A script.', voiceover_voice_id: null });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockGenerateVoiceoverAudio).not.toHaveBeenCalled();
+  });
+
+  it('POST generate_audio -> 502 + setRunError on two consecutive failures', async () => {
+    mockGetRun.mockResolvedValue({ ...run, voiceover_script: 'A script.', voiceover_voice_id: 'UgBBYS2sOqTuMpoF3BR0', property_id: 'p1' });
+    mockGenerateVoiceoverAudio.mockRejectedValue(new Error('ElevenLabs TTS failed (500): server error'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(502);
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Voiceover audio failed twice'));
   });
 });
 

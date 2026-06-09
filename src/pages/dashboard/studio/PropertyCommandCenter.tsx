@@ -16,6 +16,7 @@ import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
+import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
 import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
@@ -438,6 +439,17 @@ const PropertyCommandCenter = () => {
               runId={bundle.delivery_run.id}
               listingDetails={bundle.delivery_run.listing_details}
               onSaved={fetchBundle}
+            />
+          )}
+          {/* ─── Voiceover: script + voice picker + audio ─── */}
+          {bundle.delivery_run.stage === 'voiceover' && (
+            <DeliveryVoiceover
+              runId={bundle.delivery_run.id}
+              clientId={property.client_id}
+              voiceoverScript={bundle.delivery_run.voiceover_script}
+              voiceoverVoiceId={bundle.delivery_run.voiceover_voice_id}
+              voiceoverAudioUrl={bundle.delivery_run.voiceover_audio_url}
+              onChanged={fetchBundle}
             />
           )}
           <DeliveryNextButton
