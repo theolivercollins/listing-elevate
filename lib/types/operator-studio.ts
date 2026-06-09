@@ -13,6 +13,7 @@ export type ClientRow = {
   agent_name: string | null;
   agent_headshot_url: string | null;
   voice_id: string | null;
+  brokerage: string | null;
   archived_at: string | null;
   created_at: string;
   updated_at: string;

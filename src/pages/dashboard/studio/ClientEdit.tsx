@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
 import { authedFetch } from "@/lib/api";
+import { normalizePhone, formatAsYouType } from '../../../../lib/utils/phone';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,7 @@ interface ClientFormState {
   brand_primary_hex: string;
   brand_secondary_hex: string;
   agent_name: string;
+  brokerage: string;
   agent_headshot_url: string;
   voice_id: string;
 }
@@ -43,6 +45,7 @@ const EMPTY_FORM: ClientFormState = {
   brand_primary_hex: '#000000',
   brand_secondary_hex: '#ffffff',
   agent_name: '',
+  brokerage: '',
   agent_headshot_url: '',
   voice_id: '',
 };
@@ -126,7 +129,7 @@ const ClientEdit = () => {
           setForm({
             name: c.name ?? '',
             contact_email: c.contact_email ?? '',
-            phone: c.phone ?? '',
+            phone: formatAsYouType(c.phone ?? ''),
             monthly_rate_dollars:
               c.monthly_rate_cents != null
                 ? String(Math.round(c.monthly_rate_cents / 100))
@@ -136,6 +139,7 @@ const ClientEdit = () => {
             brand_primary_hex: c.brand_primary_hex ?? '#000000',
             brand_secondary_hex: c.brand_secondary_hex ?? '#ffffff',
             agent_name: c.agent_name ?? '',
+            brokerage: c.brokerage ?? '',
             agent_headshot_url: c.agent_headshot_url ?? '',
             voice_id: c.voice_id ?? '',
           });
@@ -198,13 +202,14 @@ const ClientEdit = () => {
       const payload = {
         name: form.name.trim(),
         contact_email: form.contact_email.trim() || null,
-        phone: form.phone.trim() || null,
+        phone: normalizePhone(form.phone) || null,
         monthly_rate_cents: centsFromDollars(form.monthly_rate_dollars),
         notes: form.notes.trim() || null,
         brand_logo_url: logoUrl || null,
         brand_primary_hex: form.brand_primary_hex || null,
         brand_secondary_hex: form.brand_secondary_hex || null,
         agent_name: form.agent_name.trim() || null,
+        brokerage: form.brokerage.trim() || null,
         agent_headshot_url: headshotUrl || null,
         voice_id: form.voice_id.trim() || null,
       };
@@ -382,8 +387,8 @@ const ClientEdit = () => {
                   className="studio-input"
                   type="tel"
                   value={form.phone}
-                  onChange={(e) => setField('phone', e.target.value)}
-                  placeholder="+1 555 000 0000"
+                  onChange={(e) => setField('phone', formatAsYouType(e.target.value))}
+                  placeholder="(941) 205-9011"
                 />
               </div>
             </div>
@@ -542,13 +547,27 @@ const ClientEdit = () => {
 
             {/* Agent name */}
             <div>
-              <FieldLabel>Agent name</FieldLabel>
+              <FieldLabel>Display name (shown on videos)</FieldLabel>
               <input
                 className="studio-input"
                 value={form.agent_name}
                 onChange={(e) => setField('agent_name', e.target.value)}
                 placeholder="Jane Smith"
               />
+            </div>
+
+            {/* Brokerage */}
+            <div>
+              <FieldLabel>Brokerage</FieldLabel>
+              <input
+                className="studio-input"
+                value={form.brokerage}
+                onChange={(e) => setField('brokerage', e.target.value)}
+                placeholder="RE/MAX Harbor Realty"
+              />
+              <p style={{ marginTop: 5, fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+                Shown on videos. Falls back to the listing's brokerage when blank.
+              </p>
             </div>
 
             {/* Headshot upload */}
