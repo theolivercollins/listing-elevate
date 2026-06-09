@@ -105,27 +105,52 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
 }
 
 /**
- * Cron tick: poll pending B-variant tasks, download finished clips into
- * property-videos storage, record generation cost_events with the run id.
- * Mirrors api/cron/poll-scenes.ts's per-scene path (provider reconstructed
- * by name via selectProvider).
+ * Cron tick: poll pending variant tasks (B variants and regenerated A variants),
+ * download finished clips into property-videos storage, record generation
+ * cost_events with the run id. Mirrors api/cron/poll-scenes.ts's per-scene
+ * path (provider reconstructed by name via selectProvider).
+ *
+ * Safety note — who owns which rows:
+ *   • Original A rows: submitVariantsForProperty mirrors the scene's own
+ *     provider_task_id onto the A row. The judge pass (runJudgePass) syncs
+ *     the clip from scenes.clip_url once the scene settles — it never needs
+ *     to call the provider. This poller must NOT collect original A rows
+ *     (would double-attribute cost and race the judge sync).
+ *   • Regenerated A rows: regenerateVariant fires a fresh generateClip() and
+ *     writes a NEW provider_task_id that differs from scenes.provider_task_id.
+ *     The judge sync only reads scenes.clip_url (the old clip) — it can never
+ *     land the regenerated clip. This poller MUST collect them or the operator
+ *     sees "rendering…" forever.
+ *   • B rows: always owned by this poller (the judge sync never touches them).
+ *
+ * Discriminator: for each A row fetched, check whether its provider_task_id
+ * matches the scene's provider_task_id. A match → original row → skip (judge
+ * owns it). A mismatch → regeneration → collect it here.
+ *
+ * The partial index idx_scene_variants_pending (migration 077) is already
+ * variant-agnostic (task id + no clip + no error), so it covers both B rows
+ * and regenerated A rows without any schema change.
  */
 export async function pollPendingVariants(limit = 15): Promise<{ polled: number; completed: number; failed: number }> {
   const supabase = getSupabase();
+  // Fetch all pending rows (B and potentially regenerated A). The variant='B'
+  // filter is intentionally absent — see safety note above.
   const { data: pending } = await supabase
     .from('scene_variants')
     .select('id, delivery_run_id, scene_id, variant, provider, provider_task_id, created_at')
     .not('provider_task_id', 'is', null)
     .is('clip_url', null)
     .is('error', null)
-    .eq('variant', 'B')
     .order('created_at', { ascending: true })
     .limit(limit);
 
   let completed = 0, failed = 0;
   for (const v of pending ?? []) {
     const { data: scene } = await supabase
-      .from('scenes').select('property_id, scene_number, duration_seconds').eq('id', v.scene_id).single();
+      .from('scenes').select('property_id, scene_number, duration_seconds, provider_task_id').eq('id', v.scene_id).single();
+    // Skip original A rows — the judge pass owns syncing their clip from
+    // scenes.clip_url. A regenerated A row has a different provider_task_id.
+    if (v.variant === 'A' && scene?.provider_task_id === v.provider_task_id) continue;
     if (!scene || !v.provider) continue;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -154,7 +179,7 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
           unitType: isKlingFailed ? 'kling_units' : null,
           costCents: isKlingFailed ? 0 : (status.costCents ?? 0),
           metadata: {
-            delivery_run_id: v.delivery_run_id, variant: 'B', render_outcome: 'failed',
+            delivery_run_id: v.delivery_run_id, variant: v.variant, render_outcome: 'failed',
             ...(isKlingFailed ? { billing: 'prepaid_credits_failed_refunded' } : {}),
             source: 'cron',
           },
@@ -163,7 +188,7 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         continue;
       }
       const clipBuffer = await provider.downloadClip(status.videoUrl);
-      const clipPath = `${scene.property_id}/variants/scene_${scene.scene_number}_B.mp4`;
+      const clipPath = `${scene.property_id}/variants/scene_${scene.scene_number}_${v.variant}.mp4`;
       const { error: upErr } = await supabase.storage
         .from('property-videos').upload(clipPath, clipBuffer, { contentType: 'video/mp4', upsert: true });
       if (upErr) throw upErr;
@@ -210,18 +235,18 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         provider: v.provider as Parameters<typeof recordCostEvent>[0]['provider'],
         unitsConsumed: providerUnits, unitType: providerUnitType,
         costCents,
-        metadata: { delivery_run_id: v.delivery_run_id, variant: 'B', duration_seconds: scene.duration_seconds, source: 'cron' },
+        metadata: { delivery_run_id: v.delivery_run_id, variant: v.variant, duration_seconds: scene.duration_seconds, source: 'cron' },
       }).catch((e) => console.error('[delivery/variants] cost_event failed:', e));
       // Mirror poll-scenes.ts "recovered by cron" convention so B completions
       // are visible in the property timeline (same log() table + stage).
       await log(scene.property_id, 'generation', 'info',
-        `Scene ${scene.scene_number}: variant B clip collected from ${v.provider}`,
+        `Scene ${scene.scene_number}: variant ${v.variant} clip collected from ${v.provider}`,
         { costCents, delivery_run_id: v.delivery_run_id }, v.scene_id);
       completed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await log(scene.property_id, 'generation', 'warn',
-        `Variant B poll failed for scene ${scene.scene_number}: ${msg}`, { delivery_run_id: v.delivery_run_id }, v.scene_id);
+        `Variant ${v.variant} poll failed for scene ${scene.scene_number}: ${msg}`, { delivery_run_id: v.delivery_run_id }, v.scene_id);
     }
   }
   return { polled: (pending ?? []).length, completed, failed };
