@@ -69,7 +69,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (pendingErr) throw pendingErr;
     if (!pending || pending.length === 0) {
-      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0 });
+      // Operator delivery: B-variant renders can outlive the scenes queue
+      // (all A clips collected while B is still rendering), so poll them
+      // even when no scenes are pending — otherwise a delivery run would
+      // stall in 'generating' forever. No-op when none exist.
+      let variants: { polled: number; completed: number; failed: number } | null = null;
+      try {
+        const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+        variants = await pollPendingVariants();
+      } catch (err) {
+        console.error('[poll-scenes] variant polling failed:', err);
+      }
+      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0, variants });
     }
 
     let completedCount = 0;
@@ -321,6 +332,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await log(scene.property_id, 'generation', 'warn',
           `Cron poll failed for scene ${scene.scene_number}: ${msg}`, undefined, scene.id);
       }
+    }
+
+    // Operator delivery: poll pending B-variant renders (no-op when none exist).
+    try {
+      const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+      await pollPendingVariants();
+    } catch (err) {
+      console.error('[poll-scenes] variant polling failed:', err);
     }
 
     // For every property we touched, check if all its scenes have settled

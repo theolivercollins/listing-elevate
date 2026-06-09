@@ -1000,6 +1000,30 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
     Array.from({ length: Math.min(GENERATION_CONCURRENCY, scenes.length) }, () => worker()),
   );
 
+  // Operator delivery A/B (spec 2026-06-09): when a delivery run exists,
+  // submit a second independent render per scene for pairwise judging.
+  // Gated read — customer flow (no run) is byte-identical. delivery_runs
+  // can hold multiple rows per property (partial unique index on
+  // (property_id, video_type) WHERE stage <> 'delivered'), so the gate
+  // targets the most-recent ACTIVE run, never a delivered one.
+  try {
+    const { data: deliveryRun } = await supabase
+      .from('delivery_runs')
+      .select('id')
+      .eq('property_id', propertyId)
+      .neq('stage', 'delivered')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (deliveryRun) {
+      const { submitVariantsForProperty } = await import('./delivery/variants.js');
+      await submitVariantsForProperty(propertyId, deliveryRun.id as string);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await log(propertyId, 'generation', 'warn', `A/B variant submission failed (non-fatal): ${msg}`);
+  }
+
   const submittedScenes = await getScenesForProperty(propertyId);
   const submitted = submittedScenes.filter(s => s.provider_task_id).length;
   const failed = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
