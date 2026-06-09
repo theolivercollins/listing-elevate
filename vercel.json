@@ -58,6 +58,7 @@
     { "src": "/api/admin/studio/properties/([^/]+)/preview-link", "dest": "/api/admin/studio/properties/[id]/preview-link?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)/notes", "dest": "/api/admin/studio/properties/[id]/notes?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)", "dest": "/api/admin/studio/properties/[id]?id=$1" },
+    { "src": "/api/admin/studio/delivery/([^/]+)", "dest": "/api/admin/studio/delivery/[runId]?runId=$1" },
     { "src": "/api/admin/studio/clients/([^/]+)", "dest": "/api/admin/studio/clients/[id]?id=$1" },
     { "src": "/api/admin/studio/creatives/renders", "dest": "/api/admin/studio/creatives/renders" },
     { "src": "/api/admin/studio/creatives/upload-url", "dest": "/api/admin/studio/creatives/upload-url" },

@@ -44,8 +44,9 @@ function makeDb(results: Array<{ data: unknown; error: unknown }>) {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
       chain.eq = () => chain;
+      chain.neq = () => chain;
       chain.order = () => chain;
-      chain.limit = () => Promise.resolve(result);
+      chain.limit = () => chain;
       chain.maybeSingle = () => Promise.resolve(result);
       // Make the chain thenable so it resolves as a Promise when awaited
       // (the Promise.all in the handler awaits each parallel call)
@@ -87,6 +88,7 @@ describe('GET /api/admin/studio/properties/[id]', () => {
       { data: [], error: null },    // revision_notes
       { data: [], error: null },    // cost_events
       { data: [], error: null },    // previews
+      { data: null, error: null },  // delivery_runs
     ]));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
@@ -125,6 +127,7 @@ describe('GET /api/admin/studio/properties/[id]', () => {
       { data: sampleNotes, error: null },     // revision_notes
       { data: sampleCostEvents, error: null },// cost_events
       { data: samplePreviews, error: null },  // previews
+      { data: null, error: null },            // delivery_runs (none yet)
     ]));
 
     const res = makeRes();

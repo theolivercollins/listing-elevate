@@ -9,12 +9,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = String(req.query.id);
 
   const db = getSupabase();
-  const [pRes, sRes, nRes, cRes, pvRes] = await Promise.all([
+  const [pRes, sRes, nRes, cRes, pvRes, dRes] = await Promise.all([
     db.from('properties').select('*, client:client_id(*)').eq('id', id).maybeSingle(),
     db.from('scenes').select('*').eq('property_id', id).order('scene_number', { ascending: true }),
     db.from('property_revision_notes').select('*').eq('property_id', id).order('created_at', { ascending: false }),
     db.from('cost_events').select('stage, provider, cost_cents').eq('property_id', id),
     db.from('property_previews').select('token, expires_at, viewed_count, last_viewed_at, created_at').eq('property_id', id).order('created_at', { ascending: false }).limit(5),
+    db.from('delivery_runs').select('*').eq('property_id', id).neq('stage', 'delivered').order('created_at', { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!pRes.data) return res.status(404).json({ error: 'not_found' });
 
@@ -31,5 +32,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     revision_notes: nRes.data ?? [],
     previews: pvRes.data ?? [],
     cost: { total_cents: costTotal, by_provider: costByProvider },
+    delivery_run: dRes.data ?? null,
   });
 }
