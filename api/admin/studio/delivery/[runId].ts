@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(400).json({ error: 'scene_order must be a permutation of the current order' });
           }
           const { updateRun, recordMlEvent } = await import('../../../../lib/delivery/runs.js');
-          const updated = await updateRun(runId, { scene_order: after } as never);
+          const updated = await updateRun(runId, { scene_order: after });
           await recordMlEvent(runId, 'reorder', { before, after });
           return res.status(200).json({ run: updated });
         }
