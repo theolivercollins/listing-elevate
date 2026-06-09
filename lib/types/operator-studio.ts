@@ -38,6 +38,7 @@ export type ManualIngestInput = {
   listing_agent?: string | null;
   brokerage?: string | null;
 
+  video_type?: 'just_listed' | 'just_pended' | 'just_closed' | null;
   selected_package?: 'just_listed' | 'just_pended' | 'just_closed' | 'life_cycle' | null;
   selected_duration?: 15 | 30 | 60 | null;
   selected_orientation?: 'horizontal' | 'vertical' | 'both' | null;

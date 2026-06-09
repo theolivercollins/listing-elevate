@@ -34,7 +34,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const run = await clearRunError(runId);
           return res.status(200).json({ run });
         }
-        // Later tasks add: 'scrape' (T8), 'reorder' (T14), 'regenerate'/'flip_winner' (T15),
+        case 'scrape': {
+          const { runScrapeStage } = await import('../../../../lib/delivery/scrape.js');
+          await runScrapeStage(runId);
+          const run = await getRun(runId);
+          return res.status(200).json({ run });
+        }
+        // Later tasks add: 'reorder' (T14), 'regenerate'/'flip_winner' (T15),
         // 'generate_script'/'set_script' (T17), 'set_voice'/'generate_audio' (T18),
         // 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
         default:
