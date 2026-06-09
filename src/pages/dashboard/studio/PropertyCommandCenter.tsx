@@ -13,6 +13,8 @@ import {
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
+import { DeliveryStepper } from '@/components/studio/DeliveryStepper';
+import { isDeliveryStage, nextStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
   ClientRow,
@@ -49,12 +51,26 @@ interface CostBundle {
   by_provider: Record<string, number>;
 }
 
+interface DeliveryRunSummary {
+  id: string;
+  stage: string;
+  error: string | null;
+  listing_details: Record<string, unknown>;
+  scene_order: string[] | null;
+  voiceover_script: string | null;
+  voiceover_voice_id: string | null;
+  voiceover_audio_url: string | null;
+  music_track_id: string | null;
+  video_type: string;
+}
+
 interface Bundle {
   property: PropertyRow;
   scenes: SceneRow[];
   revision_notes: RevisionNoteRow[];
   previews: PropertyPreviewRow[];
   cost: CostBundle;
+  delivery_run: DeliveryRunSummary | null;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -207,6 +223,9 @@ const PropertyCommandCenter = () => {
   const [generatingLink, setGeneratingLink] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
+  const [advancePending, setAdvancePending] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchBundle = useCallback(async () => {
@@ -279,6 +298,19 @@ const PropertyCommandCenter = () => {
       setGeneratingLink(false);
     }
   };
+
+  // Generic delivery action helper — all checkpoint sections reuse this.
+  const deliveryAction = useCallback(async (body: Record<string, unknown>) => {
+    if (!bundle?.delivery_run) return;
+    const res = await authedFetch(`/api/admin/studio/delivery/${bundle.delivery_run.id}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error((d as { error?: string }).error ?? `${res.status}`);
+    }
+    await fetchBundle(); // existing refetch
+  }, [bundle, fetchBundle]);
 
   if (loading) {
     return (
@@ -383,6 +415,49 @@ const PropertyCommandCenter = () => {
 
       {/* ─── StudioNav ─── */}
       <StudioNav />
+
+      {/* ─── Delivery stepper (operator-mode only — hidden when no delivery_run) ─── */}
+      {bundle.delivery_run && isDeliveryStage(bundle.delivery_run.stage) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+          <DeliveryStepper stage={bundle.delivery_run.stage} error={bundle.delivery_run.error} />
+          {/* Shared Next button — rendered on checkpoint/details/voiceover/music stages */}
+          {(['checkpoint_a', 'details', 'voiceover', 'music', 'checkpoint_b'] as const).includes(
+            bundle.delivery_run.stage as 'checkpoint_a' | 'details' | 'voiceover' | 'music' | 'checkpoint_b',
+          ) && (() => {
+            const next = nextStage(bundle.delivery_run!.stage as Parameters<typeof nextStage>[0]);
+            return next ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <button
+                  type="button"
+                  className="studio-cta-primary"
+                  style={{ fontSize: 12.5, padding: '8px 16px' }}
+                  disabled={advancePending}
+                  onClick={async () => {
+                    setAdvancePending(true);
+                    setAdvanceError(null);
+                    try {
+                      await deliveryAction({ action: 'advance', to: next });
+                    } catch (err) {
+                      // 409 = stage-moved conflict; fetchBundle already re-synced; surface to operator
+                      setAdvanceError(err instanceof Error ? err.message : 'Advance failed');
+                    } finally {
+                      setAdvancePending(false);
+                    }
+                  }}
+                >
+                  {advancePending && <Loader2 size={12} className="studio-spinner" />}
+                  Advance to {next.replace(/_/g, ' ')}
+                </button>
+                {advanceError && (
+                  <span className="studio-error-strip" style={{ padding: '4px 10px', fontSize: 12 }}>
+                    {advanceError}
+                  </span>
+                )}
+              </div>
+            ) : null;
+          })()}
+        </div>
+      )}
 
       {/* ─── Section stack ─── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
