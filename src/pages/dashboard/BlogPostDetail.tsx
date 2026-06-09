@@ -327,7 +327,7 @@ export default function BlogPostDetailPage() {
 
   if (!isCompose && isLoading) return (
     <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-      <div style={{ width: 24, height: 24, borderRadius: 99, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
 

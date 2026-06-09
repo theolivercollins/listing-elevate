@@ -17,6 +17,7 @@ import {
   createEmail, getEmail, updateEmail, sendEmail, testSendEmail, listEmailTemplates,
 } from "@/lib/blog/api-client";
 import type { UpdateEmailInput } from "@/lib/blog/types";
+import { StatePill, EMAIL_STATE_PILL_MAP } from "@/components/dashboard/StatePill";
 import EmailDesigner, { type EmailDesignerHandle } from "@/components/blog/EmailDesigner";
 import { AllyEmailFloatingChat } from "@/components/blog/AllyEmailFloatingChat";
 import EmailChatCompose from "./EmailChatCompose";
@@ -190,7 +191,7 @@ export default function EmailDetail() {
           </h1>
           {email && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <EmailStatePill state={email.state} />
+              <StatePill state={email.state} map={EMAIL_STATE_PILL_MAP} />
               {email.sent_at && <span>Sent {new Date(email.sent_at).toLocaleString()}</span>}
               {email.source_post_id && (
                 <a
@@ -206,27 +207,36 @@ export default function EmailDetail() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleSave} disabled={saveNew.isPending || saveEdit.isPending}>
-            {(saveNew.isPending || saveEdit.isPending) && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+          <button
+            type="button"
+            className="le-btn-ghost"
+            style={{ fontSize: 12, padding: "6px 12px" }}
+            onClick={handleSave}
+            disabled={saveNew.isPending || saveEdit.isPending}
+          >
+            {(saveNew.isPending || saveEdit.isPending) && <Loader2 style={{ width: 13, height: 13, marginRight: 4, animation: "spin 1s linear infinite" }} />}
             Save
-          </Button>
+          </button>
           {!isNew && !isSent && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
+              type="button"
+              className="le-btn-ghost"
+              style={{ fontSize: 12, padding: "6px 12px" }}
               onClick={() => setTestDialogOpen(true)}
             >
-              <FlaskConical className="mr-1 h-3.5 w-3.5" /> Send test
-            </Button>
+              <FlaskConical style={{ width: 13, height: 13, marginRight: 4 }} /> Send test
+            </button>
           )}
           {!isNew && !isSent && (
-            <Button
-              size="sm"
+            <button
+              type="button"
+              className="le-btn-dark"
+              style={{ fontSize: 12, padding: "6px 12px" }}
               onClick={() => setSendConfirmOpen(true)}
               disabled={doSend.isPending}
             >
-              <Send className="mr-1 h-3.5 w-3.5" /> Send
-            </Button>
+              <Send style={{ width: 13, height: 13, marginRight: 4 }} /> Send
+            </button>
           )}
         </div>
       </div>
@@ -478,14 +488,4 @@ export default function EmailDetail() {
       </Dialog>
     </div>
   );
-}
-
-function EmailStatePill({ state }: { state: string }) {
-  const color =
-    state === "sent" ? "bg-green-100 text-green-800" :
-    state === "failed" ? "bg-red-100 text-red-800" :
-    state === "ready" ? "bg-blue-100 text-blue-800" :
-    state === "sending" ? "bg-amber-100 text-amber-800" :
-    "bg-muted text-muted-foreground";
-  return <span className={`inline-block rounded px-2 py-0.5 text-xs ${color}`}>{state}</span>;
 }

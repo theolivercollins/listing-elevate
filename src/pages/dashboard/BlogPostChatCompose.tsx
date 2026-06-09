@@ -748,7 +748,7 @@ export default function BlogPostChatCompose() {
             </div>
 
             {showPreview && (
-              <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "#fff" }}>
+              <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.025)", padding: "6px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button
