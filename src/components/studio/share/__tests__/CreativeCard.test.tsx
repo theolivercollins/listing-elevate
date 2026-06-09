@@ -26,6 +26,8 @@ function makeCreative(overrides: Partial<Creative> = {}): Creative {
     shareUrl: '/v/abcdefghijklmnopqrstuvwxyz234567',
     embedUrl: '/embed/abcdefghijklmnopqrstuvwxyz234567',
     previewUrl: null,
+    bunny_video_id: null,
+    bunnyEmbedUrl: null,
     ...overrides,
   };
 }

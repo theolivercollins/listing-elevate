@@ -29,6 +29,7 @@ function makeRow(over: Partial<CreativeRow> = {}): CreativeRow {
     bucket: 'property-videos',
     storage_path: null,
     public_url: 'https://cdn.example.com/v.mp4',
+    bunny_video_id: null,
     thumbnail_url: 'https://cdn.example.com/p.jpg',
     mime_type: 'video/mp4',
     duration_seconds: 15,

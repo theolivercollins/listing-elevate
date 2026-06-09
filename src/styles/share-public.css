@@ -61,6 +61,14 @@
   background: #000;
 }
 
+/* Bunny iframe player inside the presentation stage */
+.share-media .share-embed-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 80vh;
+}
+
 .share-meta {
   display: flex;
   align-items: flex-start;
@@ -237,6 +245,15 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
+  background: #000;
+}
+
+.share-embed-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
   background: #000;
 }
 

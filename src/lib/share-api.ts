@@ -26,10 +26,12 @@ export interface Creative {
   share_token: string;
   property_id: string | null;
   created_at: string;
+  bunny_video_id: string | null; // set when hosted on Bunny Stream
   // Computed by the admin API:
   shareUrl: string; // `/v/{token}`
   embedUrl: string; // `/embed/{token}`
   previewUrl: string | null; // signed URL (uploads) or public_url (renders) for in-studio preview
+  bunnyEmbedUrl: string | null; // Bunny iframe player URL (in-studio preview for Bunny videos)
 }
 
 export interface RenderOption {
@@ -40,7 +42,8 @@ export interface RenderOption {
 }
 
 export interface UploadedFileMeta {
-  storage_path: string;
+  storage_path?: string | null; // set for Supabase-bucket uploads (images)
+  bunny_video_id?: string; // set for Bunny Stream uploads (videos)
   kind: CreativeKind;
   mime_type: string;
   file_size_bytes: number;
@@ -48,6 +51,14 @@ export interface UploadedFileMeta {
   height: number | null;
   duration_seconds: number | null;
   title: string;
+}
+
+interface BunnyUploadAuth {
+  videoId: string;
+  libraryId: number | string;
+  signature: string;
+  expiration: number;
+  endpoint: string;
 }
 
 export interface CreativePatch {
@@ -156,14 +167,22 @@ function readMediaMetadata(
 ): Promise<{ width: number | null; height: number | null; duration_seconds: number | null }> {
   return new Promise((resolve) => {
     const objectUrl = URL.createObjectURL(file);
+    let settled = false;
     const done = (
       width: number | null,
       height: number | null,
       duration_seconds: number | null,
     ) => {
+      if (settled) return;
+      settled = true;
       URL.revokeObjectURL(objectUrl);
       resolve({ width, height, duration_seconds });
     };
+
+    // Safety net: some files never fire loadedmetadata/onerror (and would
+    // otherwise hang the whole upload). Dimensions are best-effort, so bail
+    // after a short wait and proceed with nulls.
+    setTimeout(() => done(null, null, null), 5000);
 
     if (kind === 'image') {
       const img = new Image();
@@ -184,23 +203,117 @@ function readMediaMetadata(
   });
 }
 
+/** Ask our server to create a Bunny video + mint a short-lived TUS signature. */
+async function getBunnyUploadAuth(title: string): Promise<BunnyUploadAuth> {
+  return authedJson<BunnyUploadAuth>('/api/admin/studio/creatives/bunny-upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+}
+
+/** base64 a (possibly unicode) string for a TUS Upload-Metadata value. */
+function b64(s: string): string {
+  return btoa(unescape(encodeURIComponent(s)));
+}
+
 /**
- * Upload a creative File to the private `creatives` bucket via a signed upload
- * URL, then resolve the metadata payload to POST to the create endpoint.
- *
- * Steps: getUploadUrl → supabase.storage.uploadToSignedUrl → read media
- * metadata → return UploadedFileMeta (caller then calls createUploadCreative).
- *
- * `onProgress` is best-effort (0→1). Supabase's signed-upload client does not
- * expose granular progress, so we emit a mid-point before upload and 1 after.
+ * Upload a video to Bunny Stream via the resumable TUS protocol, implemented
+ * directly over fetch + XHR (chunked PATCH with real upload progress). This
+ * replaces tus-js-client, which silently stalled at 0% in our build even though
+ * the underlying TUS POST/PATCH succeed. Reports TRUE progress (0→1).
+ */
+async function uploadVideoToBunny(
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<UploadedFileMeta> {
+  onProgress?.(0);
+  const title = file.name.replace(/\.[^.]+$/, '') || file.name;
+  const auth = await getBunnyUploadAuth(title);
+  const { width, height, duration_seconds } = await readMediaMetadata(file, 'video');
+
+  const authHeaders: Record<string, string> = {
+    AuthorizationSignature: auth.signature,
+    AuthorizationExpire: String(auth.expiration),
+    LibraryId: String(auth.libraryId),
+    VideoId: auth.videoId,
+  };
+
+  // 1. Create the TUS upload (POST) → 201 + Location.
+  const createRes = await fetch(auth.endpoint, {
+    method: 'POST',
+    headers: {
+      ...authHeaders,
+      'Tus-Resumable': '1.0.0',
+      'Upload-Length': String(file.size),
+      'Upload-Metadata': `filetype ${b64(file.type || 'video/mp4')},title ${b64(title)}`,
+    },
+  });
+  if (createRes.status !== 201) {
+    throw new Error(`Upload init failed: ${createRes.status}`);
+  }
+  const location = createRes.headers.get('location');
+  if (!location) throw new Error('Upload init failed: no upload URL');
+  const uploadUrl = new URL(location, auth.endpoint).href;
+
+  // 2. PATCH the bytes in chunks, with real progress per chunk.
+  const CHUNK = 32 * 1024 * 1024; // 32 MB
+  let offset = 0;
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK, file.size);
+    const chunk = file.slice(offset, end);
+    const startOffset = offset;
+    offset = await new Promise<number>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PATCH', uploadUrl, true);
+      xhr.setRequestHeader('Tus-Resumable', '1.0.0');
+      xhr.setRequestHeader('Upload-Offset', String(startOffset));
+      xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
+      for (const [k, v] of Object.entries(authHeaders)) xhr.setRequestHeader(k, v);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress?.((startOffset + e.loaded) / file.size);
+      };
+      xhr.onload = () => {
+        if (xhr.status === 204 || xhr.status === 200) {
+          const next = xhr.getResponseHeader('Upload-Offset');
+          resolve(next ? parseInt(next, 10) : end);
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Upload failed: network error'));
+      xhr.send(chunk);
+    });
+  }
+  onProgress?.(1);
+
+  return {
+    bunny_video_id: auth.videoId,
+    kind: 'video',
+    mime_type: file.type || 'video/mp4',
+    file_size_bytes: file.size,
+    width,
+    height,
+    duration_seconds,
+    title,
+  };
+}
+
+/**
+ * Upload a creative. Videos go to Bunny Stream (resumable, real progress, HLS
+ * + adaptive playback); images stay in the Supabase `creatives` bucket (Bunny
+ * is video-only). Returns the metadata payload for createUploadCreative.
  */
 export async function uploadCreativeFile(
   file: File,
   onProgress?: (fraction: number) => void,
 ): Promise<UploadedFileMeta> {
   const kind = kindFromFile(file);
-  onProgress?.(0);
+  if (kind === 'video') {
+    return uploadVideoToBunny(file, onProgress);
+  }
 
+  onProgress?.(0);
   const { path, token } = await getUploadUrl(file.name, kind);
   onProgress?.(0.1);
 
@@ -220,7 +333,7 @@ export async function uploadCreativeFile(
   return {
     storage_path: path,
     kind,
-    mime_type: file.type || (kind === 'image' ? 'image/jpeg' : 'video/mp4'),
+    mime_type: file.type || 'image/jpeg',
     file_size_bytes: file.size,
     width,
     height,

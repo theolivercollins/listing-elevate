@@ -92,7 +92,17 @@ export default function Presentation() {
     <div className="share-public le-dark">
       <div className="share-stage">
         <div className="share-media">
-          {data.kind === 'video' ? (
+          {data.embedUrl ? (
+            <div className="share-embed-frame">
+              <iframe
+                src={data.embedUrl}
+                title={data.title}
+                loading="lazy"
+                allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+                allowFullScreen
+              />
+            </div>
+          ) : data.kind === 'video' ? (
             <video
               src={data.playbackUrl}
               poster={data.posterUrl ?? undefined}

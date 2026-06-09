@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import { getSupabase } from '../../../../lib/client.js';
 import { generateShareToken, getPlaybackUrl } from '../../../../lib/operator-studio/creatives.js';
+import { bunnyEmbedUrl } from '../../../../lib/providers/bunny-stream.js';
 import type { CreativeRow } from '../../../../lib/types/creatives.js';
 
 function publicBase(): string {
@@ -12,6 +13,7 @@ type CreativeWithUrls = CreativeRow & {
   shareUrl: string;
   embedUrl: string;
   previewUrl: string | null;
+  bunnyEmbedUrl: string | null;
 };
 
 // Resolve display URLs for the admin UI. `previewUrl` is a signed URL for
@@ -22,17 +24,24 @@ async function withUrls(
   supabase: ReturnType<typeof getSupabase>,
 ): Promise<CreativeWithUrls> {
   const base = publicBase();
+  // For Bunny uploads the studio drawer renders the Bunny iframe (previewUrl is
+  // an HLS URL that most browsers can't play in a bare <video>), so expose the
+  // embed URL separately and skip the signed-preview work.
+  const bunny = row.bunny_video_id ? bunnyEmbedUrl(row.bunny_video_id) : null;
   let previewUrl: string | null = null;
-  try {
-    previewUrl = await getPlaybackUrl(row, supabase);
-  } catch {
-    previewUrl = null; // never fail the list/create over a single bad asset
+  if (!bunny) {
+    try {
+      previewUrl = await getPlaybackUrl(row, supabase);
+    } catch {
+      previewUrl = null; // never fail the list/create over a single bad asset
+    }
   }
   return {
     ...row,
     shareUrl: `${base}/v/${row.share_token}`,
     embedUrl: `${base}/embed/${row.share_token}`,
     previewUrl,
+    bunnyEmbedUrl: bunny,
   };
 }
 
@@ -63,15 +72,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mode = req.body?.mode;
 
     if (mode === 'upload') {
-      const { storage_path, title, kind } = req.body ?? {};
-      if (!storage_path || !title || !kind) {
-        return res.status(400).json({ error: 'storage_path, title, and kind are required' });
+      const { storage_path, bunny_video_id, title, kind } = req.body ?? {};
+      if (!title || !kind) {
+        return res.status(400).json({ error: 'title and kind are required' });
+      }
+      if (!storage_path && !bunny_video_id) {
+        return res.status(400).json({ error: 'storage_path or bunny_video_id is required' });
       }
       const insert = {
         source: 'upload' as const,
         kind,
-        bucket: 'creatives',
-        storage_path,
+        bucket: bunny_video_id ? 'bunny' : 'creatives',
+        storage_path: storage_path ?? null,
+        bunny_video_id: bunny_video_id ?? null,
         title,
         description: req.body.description ?? null,
         mime_type: req.body.mime_type ?? null,

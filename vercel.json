@@ -61,6 +61,7 @@
     { "src": "/api/admin/studio/clients/([^/]+)", "dest": "/api/admin/studio/clients/[id]?id=$1" },
     { "src": "/api/admin/studio/creatives/renders", "dest": "/api/admin/studio/creatives/renders" },
     { "src": "/api/admin/studio/creatives/upload-url", "dest": "/api/admin/studio/creatives/upload-url" },
+    { "src": "/api/admin/studio/creatives/bunny-upload", "dest": "/api/admin/studio/creatives/bunny-upload" },
     { "src": "/api/admin/studio/creatives/([^/]+)", "dest": "/api/admin/studio/creatives/[id]?id=$1" },
     { "src": "/api/preview/([^/]+)", "dest": "/api/preview/[token]?token=$1" },
     { "src": "/api/share/([^/]+)", "dest": "/api/share/[token]?token=$1" },

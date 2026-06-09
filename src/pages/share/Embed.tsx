@@ -64,7 +64,15 @@ export default function Embed() {
   return (
     <div className="share-embed le-dark">
       <div className="share-embed-frame">
-        {data.kind === 'video' ? (
+        {data.embedUrl ? (
+          <iframe
+            src={data.embedUrl}
+            title={data.title}
+            loading="lazy"
+            allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        ) : data.kind === 'video' ? (
           <video
             src={data.playbackUrl}
             poster={data.posterUrl ?? undefined}
