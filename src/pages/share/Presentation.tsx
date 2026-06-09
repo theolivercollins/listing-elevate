@@ -88,8 +88,16 @@ export default function Presentation() {
   // status === 'ok'
   if (!data) return null;
 
+  const ap = data.appearance ?? {};
+  const showTitle = !ap.hideTitle;
+  const showDescription = !ap.hideDescription && !!data.description;
+  const showDownload = !!data.downloadUrl;
+  const stageStyle = ap.accentColor
+    ? ({ ['--share-accent']: ap.accentColor } as React.CSSProperties)
+    : undefined;
+
   return (
-    <div className="share-public le-dark">
+    <div className="share-public le-dark" style={stageStyle}>
       <div className="share-stage">
         <div className="share-media">
           {data.embedUrl ? (
@@ -114,26 +122,30 @@ export default function Presentation() {
           )}
         </div>
 
-        <div className="share-meta">
-          <div className="share-meta-text">
-            <h1 className="share-title">{data.title}</h1>
-            {data.description && (
-              <p className="share-description">{data.description}</p>
+        {(showTitle || showDescription || showDownload) && (
+          <div className="share-meta">
+            {(showTitle || showDescription) && (
+              <div className="share-meta-text">
+                {showTitle && <h1 className="share-title">{data.title}</h1>}
+                {showDescription && (
+                  <p className="share-description">{data.description}</p>
+                )}
+              </div>
+            )}
+
+            {showDownload && (
+              <a
+                className="share-download"
+                href={data.downloadUrl}
+                download
+                rel="noopener"
+              >
+                <Download size={15} strokeWidth={2} />
+                Download
+              </a>
             )}
           </div>
-
-          {data.downloadUrl && (
-            <a
-              className="share-download"
-              href={data.downloadUrl}
-              download
-              rel="noopener"
-            >
-              <Download size={15} strokeWidth={2} />
-              Download
-            </a>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

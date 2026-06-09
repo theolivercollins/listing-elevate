@@ -7,6 +7,15 @@ export type CreativeSource = 'upload' | 'render';
 export type CreativeKind = 'video' | 'image';
 export type CreativeVisibility = 'unlisted' | 'public';
 
+export interface AppearanceSettings {
+  autoplay?: boolean;
+  loop?: boolean;
+  muted?: boolean;
+  accentColor?: string | null;
+  hideTitle?: boolean;
+  hideDescription?: boolean;
+}
+
 export interface Creative {
   id: string;
   title: string;
@@ -27,6 +36,7 @@ export interface Creative {
   property_id: string | null;
   created_at: string;
   bunny_video_id: string | null; // set when hosted on Bunny Stream
+  appearance: AppearanceSettings;
   // Computed by the admin API:
   shareUrl: string; // `/v/{token}`
   embedUrl: string; // `/embed/{token}`
@@ -70,6 +80,7 @@ export interface CreativePatch {
   presentation_enabled?: boolean;
   expires_at?: string | null;
   password?: string;
+  appearance?: AppearanceSettings;
 }
 
 const CREATIVES_BUCKET = 'creatives';

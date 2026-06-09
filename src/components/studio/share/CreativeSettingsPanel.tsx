@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, ExternalLink, Loader2, Trash2, X } from 'lucide-react';
-import type { Creative, CreativePatch } from '@/lib/share-api';
+import type { AppearanceSettings, Creative, CreativePatch } from '@/lib/share-api';
 import { QrCode } from './QrCode';
 
 type EmbedPreset = 'responsive' | '640x360' | '1280x720';
@@ -145,6 +145,11 @@ export function CreativeSettingsPanel({
   }
 
   const poster = creative.thumbnail_url ?? undefined;
+  const ap: AppearanceSettings = creative.appearance ?? {};
+  // Appearance is stored as one JSON blob; send the full merged object so the
+  // server's sanitizer replaces it wholesale.
+  const patchAppearance = (partial: Partial<AppearanceSettings>) =>
+    onPatch(creative.id, { appearance: { ...ap, ...partial } });
 
   return (
     <div className="share-drawer-overlay" onClick={onClose} role="presentation">
@@ -221,6 +226,105 @@ export function CreativeSettingsPanel({
                 {savingGeneral ? <Loader2 size={12} className="studio-spinner" /> : null}
                 Save changes
               </button>
+            </div>
+          </section>
+
+          {/* ─── Appearance ─── */}
+          <section className="share-section">
+            <div className="share-section-title">Appearance</div>
+
+            {creative.bunny_video_id && (
+              <>
+                <div className="share-toggle-row">
+                  <div>
+                    <div className="label">Autoplay</div>
+                    <div className="hint">Start playing on load (muted recommended).</div>
+                  </div>
+                  <Toggle
+                    label="Autoplay"
+                    checked={!!ap.autoplay}
+                    onChange={(v) => patchAppearance({ autoplay: v })}
+                  />
+                </div>
+                <div className="share-toggle-row">
+                  <div>
+                    <div className="label">Loop</div>
+                    <div className="hint">Restart automatically when it ends.</div>
+                  </div>
+                  <Toggle
+                    label="Loop"
+                    checked={!!ap.loop}
+                    onChange={(v) => patchAppearance({ loop: v })}
+                  />
+                </div>
+                <div className="share-toggle-row">
+                  <div>
+                    <div className="label">Muted</div>
+                    <div className="hint">Start without sound.</div>
+                  </div>
+                  <Toggle
+                    label="Muted"
+                    checked={!!ap.muted}
+                    onChange={(v) => patchAppearance({ muted: v })}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="share-field">
+              <span className="share-field-label">Accent color</span>
+              <div className="share-link-row">
+                <input
+                  type="color"
+                  aria-label="Accent color"
+                  value={ap.accentColor || '#111114'}
+                  onChange={(e) => patchAppearance({ accentColor: e.target.value })}
+                  style={{
+                    width: 48,
+                    height: 38,
+                    padding: 4,
+                    borderRadius: 8,
+                    border: '1px solid var(--le-border)',
+                    background: 'var(--le-surface)',
+                    cursor: 'pointer',
+                  }}
+                />
+                <span className="share-qr-note" style={{ flex: 1 }}>
+                  Themes the download button on the share page.
+                </span>
+                {ap.accentColor && (
+                  <button
+                    type="button"
+                    className="studio-btn-ghost"
+                    onClick={() => patchAppearance({ accentColor: null })}
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="share-toggle-row">
+              <div>
+                <div className="label">Hide title</div>
+                <div className="hint">Don't show the title on the share page.</div>
+              </div>
+              <Toggle
+                label="Hide title"
+                checked={!!ap.hideTitle}
+                onChange={(v) => patchAppearance({ hideTitle: v })}
+              />
+            </div>
+            <div className="share-toggle-row">
+              <div>
+                <div className="label">Hide description</div>
+                <div className="hint">Don't show the description on the share page.</div>
+              </div>
+              <Toggle
+                label="Hide description"
+                checked={!!ap.hideDescription}
+                onChange={(v) => patchAppearance({ hideDescription: v })}
+              />
             </div>
           </section>
 

@@ -28,6 +28,7 @@ function makeCreative(overrides: Partial<Creative> = {}): Creative {
     previewUrl: null,
     bunny_video_id: null,
     bunnyEmbedUrl: null,
+    appearance: {},
     ...overrides,
   };
 }
