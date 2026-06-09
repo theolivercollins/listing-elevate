@@ -181,7 +181,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(502).json({ error: msg });
           }
         }
-        // Later tasks add: 'assemble' (T20), 'submit_ratings' (T21).
+        case 'assemble': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          // music -> assembling advance happens here so the music Next button
+          // fires a single request; a retry on an 'assembling' run skips it.
+          if (run.stage === 'music') {
+            await (await import('../../../../lib/delivery/runs.js')).advanceRun(runId, 'assembling');
+          }
+          const { runAssembleStage } = await import('../../../../lib/delivery/assemble.js');
+          await runAssembleStage(runId);
+          const updated = await getRun(runId);
+          return res.status(200).json({ run: updated });
+        }
+        // Later tasks add: 'submit_ratings' (T21).
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

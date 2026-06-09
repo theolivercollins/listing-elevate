@@ -21,6 +21,7 @@ const mockGenerateVoiceoverAudio = vi.fn();
 const mockComposeMusic = vi.fn();
 const mockDbInsert = vi.fn();
 const mockDbStorage = vi.fn();
+const mockRunAssembleStage = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -49,6 +50,9 @@ vi.mock('../../../../../lib/voiceover/generate-audio', () => ({
 vi.mock('../../../../../lib/providers/elevenlabs-music', () => ({
   composeMusic: (...a: unknown[]) => mockComposeMusic(...a),
   MOOD_PROMPTS: { upbeat: 'upbeat prompt', warm: 'warm prompt', celebratory: 'celebratory prompt', cinematic: 'cinematic prompt', neutral: 'neutral prompt' },
+}));
+vi.mock('../../../../../lib/delivery/assemble', () => ({
+  runAssembleStage: (...a: unknown[]) => mockRunAssembleStage(...a),
 }));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
@@ -471,6 +475,49 @@ describe('POST set_music + generate_music (T19)', () => {
     );
     expect(res._status).toBe(502);
     expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Music generation failed'));
+  });
+});
+
+describe('POST assemble (T20)', () => {
+  it('POST assemble from music stage -> advances to assembling, runs the assemble stage, returns updated run', async () => {
+    const musicRun = { ...run, stage: 'music' };
+    const assembledRun = { ...run, stage: 'checkpoint_b' };
+    mockGetRun.mockResolvedValueOnce(musicRun).mockResolvedValueOnce(assembledRun);
+    mockAdvanceRun.mockResolvedValue({ ...run, stage: 'assembling' });
+    mockRunAssembleStage.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'assemble' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'assembling');
+    expect(mockRunAssembleStage).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: { stage: string } }).run.stage).toBe('checkpoint_b');
+  });
+
+  it('POST assemble from assembling stage (retry) skips the advance and re-fires the stage', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'assembling' });
+    mockRunAssembleStage.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'assemble' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockAdvanceRun).not.toHaveBeenCalled();
+    expect(mockRunAssembleStage).toHaveBeenCalledWith('r1');
+  });
+
+  it('POST assemble -> 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'assemble' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
+    expect(mockRunAssembleStage).not.toHaveBeenCalled();
   });
 });
 

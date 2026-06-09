@@ -470,7 +470,14 @@ const PropertyCommandCenter = () => {
               setAdvancePending(true);
               setAdvanceError(null);
               try {
-                await deliveryAction({ action: 'advance', to });
+                // Music's Next kicks off assembly in one request: the server
+                // advances music -> assembling itself, runs the render, and
+                // lands on checkpoint_b. All other gates use the plain advance.
+                if (to === 'assembling') {
+                  await deliveryAction({ action: 'assemble' });
+                } else {
+                  await deliveryAction({ action: 'advance', to });
+                }
               } catch (err) {
                 // fetchBundle already re-synced inside deliveryAction; surface error to operator
                 setAdvanceError(err instanceof Error ? err.message : 'Advance failed');

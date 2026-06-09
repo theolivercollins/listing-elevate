@@ -1290,6 +1290,29 @@ async function runAssemblyStep(
     `Ordered ${passedScenes.length} scenes for walkthrough`,
     { order: passedScenes.map((s) => ({ scene_number: s.scene_number, room_type: s.room_type })) });
 
+  // Operator delivery: honor the operator's checkpoint-A clip order when a
+  // delivery run with an explicit scene_order exists. Customer flow (no run)
+  // keeps the deterministic walkthrough order above, byte-identical.
+  // delivery_runs can hold multiple rows per property (partial unique index
+  // excludes 'delivered'), so prefer the most-recent active run.
+  let orderedScenes = passedScenes;
+  try {
+    const { data: deliveryRun } = await getSupabase()
+      .from("delivery_runs")
+      .select("scene_order")
+      .eq("property_id", propertyId)
+      .neq("stage", "delivered")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const order = (deliveryRun?.scene_order as string[] | null) ?? null;
+    if (order && order.length > 0) {
+      const { applySceneOrder } = await import("./delivery/assemble.js");
+      orderedScenes = applySceneOrder(passedScenes as Array<{ id: string }>, order) as typeof passedScenes;
+      await log(propertyId, "assembly", "info", "Using operator delivery scene order", { order });
+    }
+  } catch { /* gated read — never fails customer assembly */ }
+
   const totalProcessingMsBase = Date.now() - new Date(property.created_at).getTime();
 
   let horizontalUrl: string | null = null;
@@ -1326,7 +1349,7 @@ async function runAssemblyStep(
           ? property.selected_duration
           : null;
       const fitted = fitScenesToDuration(
-        passedScenes.map((s) => ({
+        orderedScenes.map((s) => ({
           ...s,
           durationSeconds: s.duration_seconds,
         })),
@@ -1638,7 +1661,7 @@ async function runAssemblyStep(
     );
   }
 
-  const thumbnailUrl = passedScenes[0]?.clip_url ?? null;
+  const thumbnailUrl = orderedScenes[0]?.clip_url ?? null;
   // Measure THIS RUN, not the property's original creation date.
   // pipeline_started_at is stamped at the top of runPipeline; fall back to
   // created_at only for legacy rows. Clamp to int4 max so weeks-old
@@ -1664,9 +1687,9 @@ async function runAssemblyStep(
     : "Delivered individual clips (no assembly provider configured)";
 
   await log(propertyId, "assembly", "info",
-    `Complete! ${passedScenes.length} clips in ${(totalProcessingMs / 1000).toFixed(1)}s. Total cost: $${((property.total_cost_cents) / 100).toFixed(2)}. ${assemblyNote}`,
+    `Complete! ${orderedScenes.length} clips in ${(totalProcessingMs / 1000).toFixed(1)}s. Total cost: $${((property.total_cost_cents) / 100).toFixed(2)}. ${assemblyNote}`,
     {
-      clipCount: passedScenes.length,
+      clipCount: orderedScenes.length,
       totalProcessingMs,
       totalCostCents: property.total_cost_cents,
       horizontalUrl,
