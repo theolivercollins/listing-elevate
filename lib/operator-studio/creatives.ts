@@ -57,9 +57,43 @@ interface StorageLike {
       createSignedUrl(
         path: string,
         expiresIn: number,
+        options?: { download?: string | boolean },
       ): Promise<{ data: { signedUrl: string } | null; error: unknown }>;
     };
   };
+}
+
+const EXT_BY_MIME: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-matroska': 'mkv',
+  'video/x-msvideo': 'avi',
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+/**
+ * A safe, human-friendly download filename derived from the creative's title +
+ * its real extension (from mime type, else the stored path, else kind default).
+ */
+export function downloadFilename(row: CreativeRow): string {
+  let ext = row.mime_type ? EXT_BY_MIME[row.mime_type] : undefined;
+  if (!ext) {
+    const src = (row.storage_path || row.public_url || '').split('?')[0];
+    const m = src.match(/\.([a-z0-9]{2,5})$/i);
+    ext = m ? m[1].toLowerCase() : row.kind === 'image' ? 'jpg' : 'mp4';
+  }
+  const base =
+    (row.title || 'creative')
+      .trim()
+      .replace(/[^\w.\- ]+/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'creative';
+  return base.toLowerCase().endsWith(`.${ext}`) ? base : `${base}.${ext}`;
 }
 
 /**
@@ -85,11 +119,28 @@ export async function getPlaybackUrl(row: CreativeRow, supabase: StorageLike): P
 }
 
 /**
- * Resolve a download URL (same signed/public URL as playback). Callers only use
- * this when `allow_download` is set.
+ * Resolve a DOWNLOAD url — like playback, but carrying a
+ * `Content-Disposition: attachment` so the browser saves the file instead of
+ * playing it inline. Renders append `?download=<name>` to their public URL;
+ * uploads mint a signed URL with the `download` option. Callers only use this
+ * when `allow_download` is set.
  */
 export async function getDownloadUrl(row: CreativeRow, supabase: StorageLike): Promise<string | null> {
-  return getPlaybackUrl(row, supabase);
+  const filename = downloadFilename(row);
+  if (row.source === 'render') {
+    if (!row.public_url) return null;
+    const sep = row.public_url.includes('?') ? '&' : '?';
+    return `${row.public_url}${sep}download=${encodeURIComponent(filename)}`;
+  }
+  const { data, error } = await supabase.storage
+    .from(row.bucket)
+    .createSignedUrl(row.storage_path ?? '', 7200, { download: filename });
+  if (error || !data) {
+    throw new Error(
+      `getDownloadUrl: failed to sign ${row.bucket}/${row.storage_path}: ${String(error)}`,
+    );
+  }
+  return data.signedUrl;
 }
 
 /** Map a CreativeRow + resolved URLs → the public SharePayload (no secrets). */

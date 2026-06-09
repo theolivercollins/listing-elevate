@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Loader2, Trash2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, Trash2, X } from 'lucide-react';
 import type { Creative, CreativePatch } from '@/lib/share-api';
 import { QrCode } from './QrCode';
 
 type EmbedPreset = 'responsive' | '640x360' | '1280x720';
 
-function origin(): string {
-  return typeof window !== 'undefined' ? window.location.origin : '';
+/**
+ * Resolve a share/embed URL to an absolute one. The backend already returns an
+ * absolute URL (e.g. https://listingelevate.com/v/<token>); only prepend the
+ * current origin when the value is a bare relative path. (Previously this always
+ * prepended origin, producing a doubled `https://host…https://host…/v/…` link.)
+ */
+function toAbsolute(url: string): string {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
 /** YYYY-MM-DD for a date input, from an ISO string (or '' for none). */
@@ -102,8 +111,8 @@ export function CreativeSettingsPanel({
     setConfirmingDelete(false);
   }, [creative.id, creative.title, creative.description]);
 
-  const shareLink = `${origin()}${creative.shareUrl}`;
-  const embedSrc = `${origin()}${creative.embedUrl}`;
+  const shareLink = toAbsolute(creative.shareUrl);
+  const embedSrc = toAbsolute(creative.embedUrl);
 
   const embedSnippet = useMemo(() => {
     if (embedPreset === 'responsive') {
@@ -331,10 +340,28 @@ export function CreativeSettingsPanel({
                 readOnly
                 value={shareLink}
                 aria-label="Presentation link"
+                onClick={(e) => e.currentTarget.select()}
                 onFocus={(e) => e.currentTarget.select()}
               />
               <CopyButton text={shareLink} label="Copy link" />
+              <a
+                className="studio-btn-ghost"
+                href={shareLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open presentation in a new tab"
+                title="Open in new tab"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <ExternalLink size={13} strokeWidth={2} />
+                Open
+              </a>
             </div>
+            {creative.visibility === 'unlisted' && (
+              <p className="share-qr-note" style={{ marginTop: 4 }}>
+                Anyone with this link can view — it just won&apos;t be listed publicly.
+              </p>
+            )}
             <div className="share-qr">
               <QrCode value={shareLink} size={92} />
               <span className="share-qr-note">Scan to open the presentation link.</span>
