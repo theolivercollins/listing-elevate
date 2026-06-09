@@ -2,21 +2,26 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import { getSupabase } from '../../../../lib/client.js';
 import { hashPassword, getPlaybackUrl } from '../../../../lib/operator-studio/creatives.js';
+import { bunnyEmbedUrl } from '../../../../lib/providers/bunny-stream.js';
 import type { CreativeRow } from '../../../../lib/types/creatives.js';
 
 async function withUrls(row: CreativeRow, supabase: ReturnType<typeof getSupabase>) {
   const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
+  const bunny = row.bunny_video_id ? bunnyEmbedUrl(row.bunny_video_id) : null;
   let previewUrl: string | null = null;
-  try {
-    previewUrl = await getPlaybackUrl(row, supabase);
-  } catch {
-    previewUrl = null;
+  if (!bunny) {
+    try {
+      previewUrl = await getPlaybackUrl(row, supabase);
+    } catch {
+      previewUrl = null;
+    }
   }
   return {
     ...row,
     shareUrl: `${base}/v/${row.share_token}`,
     embedUrl: `${base}/embed/${row.share_token}`,
     previewUrl,
+    bunnyEmbedUrl: bunny,
   };
 }
 

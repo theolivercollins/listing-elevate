@@ -3,6 +3,7 @@
 // SharePayload construction incl. signed-URL selection. Service-role only.
 import crypto from 'node:crypto';
 import { generatePreviewToken } from './preview-tokens.js';
+import { bunnyHlsUrl, bunnyEmbedUrl, bunnyMp4Url } from '../providers/bunny-stream.js';
 import type { CreativeRow, SharePayload } from '../types/creatives.js';
 
 /**
@@ -101,6 +102,11 @@ export function downloadFilename(row: CreativeRow): string {
  * uploads mint a 2h signed URL from the private bucket.
  */
 export async function getPlaybackUrl(row: CreativeRow, supabase: StorageLike): Promise<string> {
+  // Bunny-hosted uploads: the viewer renders the Bunny iframe (see embedUrl in
+  // the SharePayload); this HLS URL is the raw stream for any custom player.
+  if (row.bunny_video_id) {
+    return bunnyHlsUrl(row.bunny_video_id);
+  }
   if (row.source === 'render') {
     if (!row.public_url) {
       throw new Error(`getPlaybackUrl: render creative ${row.id} has no public_url`);
@@ -127,6 +133,11 @@ export async function getPlaybackUrl(row: CreativeRow, supabase: StorageLike): P
  */
 export async function getDownloadUrl(row: CreativeRow, supabase: StorageLike): Promise<string | null> {
   const filename = downloadFilename(row);
+  // Bunny: serve the MP4 rendition (requires "MP4 Fallback" enabled on the
+  // library). Bunny CDN honours ?download to force an attachment.
+  if (row.bunny_video_id) {
+    return `${bunnyMp4Url(row.bunny_video_id)}?download=${encodeURIComponent(filename)}`;
+  }
   if (row.source === 'render') {
     if (!row.public_url) return null;
     const sep = row.public_url.includes('?') ? '&' : '?';
@@ -157,6 +168,7 @@ export function buildSharePayload(
     allow_embed: row.allow_embed,
     presentation_enabled: row.presentation_enabled,
     playbackUrl,
+    embedUrl: row.bunny_video_id ? bunnyEmbedUrl(row.bunny_video_id) : null,
     posterUrl: row.thumbnail_url,
     downloadUrl: row.allow_download ? downloadUrl : null,
     width: row.width,

@@ -14,6 +14,8 @@ export interface CreativeRow {
   bucket: string;
   storage_path: string | null;
   public_url: string | null;
+  /** Bunny Stream video GUID when the upload is hosted on Bunny (else null). */
+  bunny_video_id: string | null;
   thumbnail_url: string | null;
   mime_type: string | null;
   duration_seconds: number | null;
@@ -43,7 +45,9 @@ export interface SharePayload {
   allow_download: boolean;
   allow_embed: boolean;
   presentation_enabled: boolean;
-  playbackUrl: string; // signed (upload) or public (render)
+  playbackUrl: string; // signed (upload) / public (render) / HLS (bunny)
+  /** Bunny iframe player URL — when set, viewers render an iframe, not <video>. */
+  embedUrl: string | null;
   posterUrl: string | null;
   downloadUrl: string | null; // present only when allow_download
   width: number | null;
