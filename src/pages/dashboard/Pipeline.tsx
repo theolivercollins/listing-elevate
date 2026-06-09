@@ -388,7 +388,7 @@ const Pipeline = () => {
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* ── 1. Health row (4-up) ── */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <HealthCard label="In flight" value={inFlight} icon="pipeline" tone="accent" />
         <HealthCard
           label="Avg stage time"
@@ -450,6 +450,7 @@ const Pipeline = () => {
             No properties in the pipeline yet. New uploads will appear here.
           </div>
         ) : (
+        <div className="le-table-scroll is-wide">
         <div
           style={{
             display: "grid",
@@ -508,6 +509,7 @@ const Pipeline = () => {
               </div>
             );
           })}
+        </div>
         </div>
         )}
       </Card>

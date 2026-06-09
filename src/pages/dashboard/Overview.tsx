@@ -393,7 +393,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       />
 
       {/* ── KPI row ──────────────────────────────────────────────────── */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
+      <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
         <KpiCard
           label="Delivered today"
           value={String(completedToday)}
@@ -422,7 +422,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       </section>
 
       {/* ── Spend chart + SLA ring ────────────────────────────────────── */}
-      <section style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 16 }}>
+      <section className="le-stack-lg" style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 16 }}>
 
         {/* Spend insights */}
         <div className="le-card" style={{ padding: 24 }}>
@@ -491,7 +491,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       </section>
 
       {/* ── In production + Activity ─────────────────────────────────── */}
-      <section style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 16 }}>
+      <section className="le-stack-lg" style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16, marginBottom: 16 }}>
 
         {/* In production */}
         <div className="le-card" style={{ padding: 24 }}>
@@ -602,7 +602,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               <Icon name="chevron-right" size={12} />
             </button>
           </div>
-          <div>
+          <div className="le-table-scroll is-wide">
             {agentsForUI.length === 0 && (
               <div style={{ padding: "28px 4px", fontSize: 13, color: "var(--muted)" }}>
                 Not enough delivered listings yet to rank agents.

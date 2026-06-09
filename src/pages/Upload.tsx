@@ -681,7 +681,7 @@ const Upload = () => {
       {/* Content wrapper above background */}
       <div style={{ position: "relative", zIndex: 2, flex: 1 }}>
         {/* Page heading */}
-        <div style={{ padding: "12px 36px 0" }}>
+        <div style={{ padding: "12px clamp(16px, 5vw, 36px) 0" }}>
           <div className="g-page-heading">
             <div>
               <span className="g-page-eyebrow">

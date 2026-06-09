@@ -184,6 +184,7 @@ const StudioHome = () => {
         <>
           {/* ─── KPI strip ─── */}
           <div
+            className="le-cols-2-lg le-stack-sm"
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',
@@ -236,6 +237,7 @@ const StudioHome = () => {
 
           {/* ─── Kanban ─── */}
           <div
+            className="le-cols-2-lg le-stack-sm"
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',

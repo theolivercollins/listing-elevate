@@ -9,7 +9,7 @@ export function FAQ() {
   return (
     <section
       id="faq"
-      style={{ background: "transparent", color: "var(--le-text)", padding: "140px 48px" }}
+      style={{ background: "transparent", color: "var(--le-text)", padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)" }}
     >
       <div style={{ maxWidth: 880, margin: "0 auto" }}>
         <div className="le-eyebrow" style={{ marginBottom: 24 }}>— FAQ</div>
@@ -51,7 +51,7 @@ export function FAQ() {
                 >
                   <span
                     style={{
-                      fontSize: 20,
+                      fontSize: "clamp(16px, 4vw, 20px)",
                       fontWeight: 500,
                       letterSpacing: "-0.02em",
                       fontFamily: "var(--le-font-sans)",

@@ -12,7 +12,7 @@ export function Pricing() {
   return (
     <section
       id="pricing"
-      style={{ background: "transparent", color: "var(--le-text)", padding: "140px 48px" }}
+      style={{ background: "transparent", color: "var(--le-text)", padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)" }}
     >
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <div className="le-eyebrow" style={{ marginBottom: 24 }}>— PRICING</div>

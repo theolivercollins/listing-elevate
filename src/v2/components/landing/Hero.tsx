@@ -20,7 +20,8 @@ export function Hero() {
     <section
       style={{
         position: "relative",
-        height: 574,
+        minHeight: "clamp(480px, 70vh, 574px)",
+        height: "auto",
         overflow: "hidden",
         background: "#000",
       }}
@@ -58,12 +59,12 @@ export function Hero() {
       {/* HERO COPY — vertically centered within the section */}
       <div
         style={{
-          position: "absolute",
-          inset: 0,
-          paddingLeft: 48,
-          paddingRight: 48,
+          position: "relative",
+          minHeight: "clamp(480px, 70vh, 574px)",
+          paddingLeft: "clamp(16px, 5vw, 48px)",
+          paddingRight: "clamp(16px, 5vw, 48px)",
           paddingTop: 96,
-          paddingBottom: 48,
+          paddingBottom: "clamp(40px, 8vw, 48px)",
           color: "#fff",
           zIndex: 2,
           display: "flex",
@@ -123,6 +124,7 @@ export function Hero() {
         </p>
 
         <div
+          className="le-flexcol-sm"
           style={{
             display: "flex",
             alignItems: "center",

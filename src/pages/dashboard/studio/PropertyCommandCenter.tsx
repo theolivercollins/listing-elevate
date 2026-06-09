@@ -390,7 +390,7 @@ const PropertyCommandCenter = () => {
         {/* ── Final video ── */}
         <SectionCard eyebrow="Output" title="Final video">
           {property.status === 'complete' && (property.horizontal_video_url || property.vertical_video_url) ? (
-            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <div className="le-flexcol-lg" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {property.horizontal_video_url && (
                 <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
@@ -747,6 +747,7 @@ const PropertyCommandCenter = () => {
           </div>
 
           {Object.keys(cost.by_provider).length > 0 ? (
+            <div className="le-table-scroll is-mid">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--le-line-2)' }}>
@@ -804,6 +805,7 @@ const PropertyCommandCenter = () => {
                   ))}
               </tbody>
             </table>
+            </div>
           ) : (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
           )}
@@ -812,6 +814,7 @@ const PropertyCommandCenter = () => {
         {/* ── Metadata ── */}
         <SectionCard eyebrow="Listing details" title="Metadata">
           <div
+            className="le-cols-2-lg le-stack-sm"
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(4, 1fr)',

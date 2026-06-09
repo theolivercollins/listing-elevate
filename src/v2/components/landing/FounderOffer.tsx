@@ -6,7 +6,7 @@ export function FounderOffer() {
       style={{
         background: "var(--le-bg-sunken)",
         color: "var(--le-text)",
-        padding: "24px 48px",
+        padding: "24px clamp(16px, 5vw, 48px)",
         borderTop: "1px solid var(--le-border)",
         borderBottom: "1px solid var(--le-border)",
       }}

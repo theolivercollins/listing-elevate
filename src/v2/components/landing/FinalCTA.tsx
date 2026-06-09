@@ -12,7 +12,7 @@ export function FinalCTA() {
       style={{
         position: "relative",
         overflow: "hidden",
-        padding: "160px 48px",
+        padding: "clamp(64px, 14vw, 160px) clamp(16px, 5vw, 48px)",
         background: "#000",
       }}
     >
@@ -64,7 +64,7 @@ export function FinalCTA() {
         >
           Elevate your next listing.
         </h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 28 }}>
+        <div className="le-flexcol-sm" style={{ display: "flex", alignItems: "center", gap: 28 }}>
           <Link
             to="/upload"
             style={{

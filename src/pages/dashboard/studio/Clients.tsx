@@ -151,6 +151,7 @@ const Clients = () => {
 
       {/* ─── Table card ─── */}
       <div className="studio-card" style={{ overflow: 'hidden' }}>
+        <div className="le-table-scroll is-wide">
         {/* Header row */}
         <div
           className="studio-table-header-row"
@@ -330,6 +331,7 @@ const Clients = () => {
             );
           })
         )}
+        </div>
       </div>
     </StudioShell>
   );

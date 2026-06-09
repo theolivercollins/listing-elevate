@@ -48,7 +48,7 @@ export function Process() {
     <section
       id="process"
       style={{
-        padding: "112px 48px 120px",
+        padding: "clamp(56px, 12vw, 112px) clamp(16px, 5vw, 48px) clamp(60px, 12vw, 120px)",
         background: "var(--le-bg)",
       }}
     >
@@ -60,6 +60,7 @@ export function Process() {
       </div>
 
       <div
+        className="le-cols-2-lg le-stack-sm"
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 1fr 1fr",
@@ -71,12 +72,12 @@ export function Process() {
           <div
             key={s.n}
             style={{
-              padding: "44px 40px 48px",
+              padding: "clamp(28px, 6vw, 44px) clamp(20px, 5vw, 40px) clamp(32px, 6vw, 48px)",
               background: "var(--le-bg)",
               display: "flex",
               flexDirection: "column",
               gap: 32,
-              minHeight: 520,
+              minHeight: "clamp(360px, 50vw, 520px)",
             }}
           >
             <div
