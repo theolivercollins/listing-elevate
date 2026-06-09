@@ -54,6 +54,11 @@ vi.mock('../../../../../lib/providers/elevenlabs-music', () => ({
 vi.mock('../../../../../lib/delivery/assemble', () => ({
   runAssembleStage: (...a: unknown[]) => mockRunAssembleStage(...a),
 }));
+
+const mockParseFeedbackComment = vi.fn();
+vi.mock('../../../../../lib/delivery/parse-feedback', () => ({
+  parseFeedbackComment: (...a: unknown[]) => mockParseFeedbackComment(...a),
+}));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
     from: (...a: unknown[]) => mockDbFrom(...a),
@@ -113,6 +118,8 @@ beforeEach(() => {
     if (table === 'music_tracks') return { insert: mockDbInsert };
     return { update: mockDbUpdate };
   });
+  mockParseFeedbackComment.mockResolvedValue({ tags: [{ category: 'pacing', sentiment: 'negative', note: 'felt rushed' }] });
+  mockAdvanceRun.mockResolvedValue({ ...run, stage: 'delivered' });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -518,6 +525,73 @@ describe('POST assemble (T20)', () => {
     );
     expect(res._status).toBe(404);
     expect(mockRunAssembleStage).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST submit_ratings (T21)', () => {
+  const checkpointBRun = { id: 'r1', property_id: 'p1', stage: 'checkpoint_b' };
+
+  it('POST submit_ratings -> 200, calls recordMlEvent(rating) + recordMlEvent(comment) + advanceRun(delivered)', async () => {
+    mockGetRun.mockResolvedValue(checkpointBRun);
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'r1' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 4, music: 5, voiceover: 3, script: 4, comment: 'pacing felt rushed',
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'rating', { overall: 4, music: 5, voiceover: 3, script: 4 });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'comment', expect.objectContaining({ raw: 'pacing felt rushed' }));
+    expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'delivered');
+  });
+
+  it('POST submit_ratings with a rating outside 1-5 -> 400', async () => {
+    mockGetRun.mockResolvedValue(checkpointBRun);
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'r1' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 0, music: 5, voiceover: 3, script: 4,
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('POST submit_ratings with empty comment skips the comment ml_event', async () => {
+    mockGetRun.mockResolvedValue(checkpointBRun);
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'r1' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 5, music: 5, voiceover: 5, script: 5, comment: '',
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'rating', expect.any(Object));
+    expect(mockRecordMlEvent).not.toHaveBeenCalledWith('r1', 'comment', expect.anything());
+    expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'delivered');
+  });
+
+  it('POST submit_ratings -> 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'rX' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 4, music: 4, voiceover: 4, script: 4,
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
   });
 });
 

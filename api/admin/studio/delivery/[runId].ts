@@ -194,7 +194,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const updated = await getRun(runId);
           return res.status(200).json({ run: updated });
         }
-        // Later tasks add: 'submit_ratings' (T21).
+        case 'submit_ratings': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          const ratings: Record<string, number> = {};
+          for (const k of ['overall', 'music', 'voiceover', 'script'] as const) {
+            const v = Number(req.body?.[k]);
+            if (!Number.isInteger(v) || v < 1 || v > 5) return res.status(400).json({ error: `${k} must be an integer 1-5` });
+            ratings[k] = v;
+          }
+          const { recordMlEvent, advanceRun } = await import('../../../../lib/delivery/runs.js');
+          await recordMlEvent(runId, 'rating', ratings);
+          const comment = String(req.body?.comment ?? '').trim();
+          if (comment) {
+            let tags: unknown = [];
+            try {
+              const { parseFeedbackComment } = await import('../../../../lib/delivery/parse-feedback.js');
+              tags = (await parseFeedbackComment(comment, { runId, propertyId: run.property_id })).tags;
+            } catch (err) {
+              console.error('[delivery] feedback parse failed (storing raw only):', err);
+            }
+            await recordMlEvent(runId, 'comment', { raw: comment, tags });
+          }
+          const updated = await advanceRun(runId, 'delivered');
+          return res.status(200).json({ run: updated });
+        }
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

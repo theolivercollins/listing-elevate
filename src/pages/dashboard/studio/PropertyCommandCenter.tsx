@@ -15,6 +15,7 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
 import { CheckpointA } from '@/components/studio/CheckpointA';
+import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
 import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
@@ -461,6 +462,18 @@ const PropertyCommandCenter = () => {
               musicTrackId={bundle.delivery_run.music_track_id}
               onChanged={fetchBundle}
             />
+          )}
+          {/* ─── Checkpoint B: final video + ratings + delivered ─── */}
+          {bundle.delivery_run.stage === 'checkpoint_b' && (
+            <CheckpointB
+              runId={bundle.delivery_run.id}
+              videoUrl={property.horizontal_video_url}
+              onDelivered={fetchBundle}
+            />
+          )}
+          {/* ─── Delivered: summary card ─── */}
+          {bundle.delivery_run.stage === 'delivered' && (
+            <DeliveredCard />
           )}
           <DeliveryNextButton
             stage={bundle.delivery_run.stage}
