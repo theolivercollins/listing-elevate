@@ -1,4 +1,3 @@
-import * as tus from 'tus-js-client';
 import { authedFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
@@ -205,10 +204,16 @@ async function getBunnyUploadAuth(title: string): Promise<BunnyUploadAuth> {
   });
 }
 
+/** base64 a (possibly unicode) string for a TUS Upload-Metadata value. */
+function b64(s: string): string {
+  return btoa(unescape(encodeURIComponent(s)));
+}
+
 /**
- * Upload a video to Bunny Stream via resumable TUS. Reports TRUE progress
- * (0→1) and survives flaky connections — replacing the Supabase signed-upload
- * path that had no progress events (it appeared stuck at 10%).
+ * Upload a video to Bunny Stream via the resumable TUS protocol, implemented
+ * directly over fetch + XHR (chunked PATCH with real upload progress). This
+ * replaces tus-js-client, which silently stalled at 0% in our build even though
+ * the underlying TUS POST/PATCH succeed. Reports TRUE progress (0→1).
  */
 async function uploadVideoToBunny(
   file: File,
@@ -219,23 +224,59 @@ async function uploadVideoToBunny(
   const auth = await getBunnyUploadAuth(title);
   const { width, height, duration_seconds } = await readMediaMetadata(file, 'video');
 
-  await new Promise<void>((resolve, reject) => {
-    const upload = new tus.Upload(file, {
-      endpoint: auth.endpoint,
-      retryDelays: [0, 1000, 3000, 5000],
-      headers: {
-        AuthorizationSignature: auth.signature,
-        AuthorizationExpire: String(auth.expiration),
-        LibraryId: String(auth.libraryId),
-        VideoId: auth.videoId,
-      },
-      metadata: { filetype: file.type || 'video/mp4', title },
-      onError: (err) => reject(new Error(`Upload failed: ${err.message || String(err)}`)),
-      onProgress: (sent, total) => onProgress?.(total ? sent / total : 0),
-      onSuccess: () => resolve(),
-    });
-    upload.start();
+  const authHeaders: Record<string, string> = {
+    AuthorizationSignature: auth.signature,
+    AuthorizationExpire: String(auth.expiration),
+    LibraryId: String(auth.libraryId),
+    VideoId: auth.videoId,
+  };
+
+  // 1. Create the TUS upload (POST) → 201 + Location.
+  const createRes = await fetch(auth.endpoint, {
+    method: 'POST',
+    headers: {
+      ...authHeaders,
+      'Tus-Resumable': '1.0.0',
+      'Upload-Length': String(file.size),
+      'Upload-Metadata': `filetype ${b64(file.type || 'video/mp4')},title ${b64(title)}`,
+    },
   });
+  if (createRes.status !== 201) {
+    throw new Error(`Upload init failed: ${createRes.status}`);
+  }
+  const location = createRes.headers.get('location');
+  if (!location) throw new Error('Upload init failed: no upload URL');
+  const uploadUrl = new URL(location, auth.endpoint).href;
+
+  // 2. PATCH the bytes in chunks, with real progress per chunk.
+  const CHUNK = 32 * 1024 * 1024; // 32 MB
+  let offset = 0;
+  while (offset < file.size) {
+    const end = Math.min(offset + CHUNK, file.size);
+    const chunk = file.slice(offset, end);
+    const startOffset = offset;
+    offset = await new Promise<number>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PATCH', uploadUrl, true);
+      xhr.setRequestHeader('Tus-Resumable', '1.0.0');
+      xhr.setRequestHeader('Upload-Offset', String(startOffset));
+      xhr.setRequestHeader('Content-Type', 'application/offset+octet-stream');
+      for (const [k, v] of Object.entries(authHeaders)) xhr.setRequestHeader(k, v);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress?.((startOffset + e.loaded) / file.size);
+      };
+      xhr.onload = () => {
+        if (xhr.status === 204 || xhr.status === 200) {
+          const next = xhr.getResponseHeader('Upload-Offset');
+          resolve(next ? parseInt(next, 10) : end);
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Upload failed: network error'));
+      xhr.send(chunk);
+    });
+  }
   onProgress?.(1);
 
   return {
