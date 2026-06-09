@@ -167,14 +167,22 @@ function readMediaMetadata(
 ): Promise<{ width: number | null; height: number | null; duration_seconds: number | null }> {
   return new Promise((resolve) => {
     const objectUrl = URL.createObjectURL(file);
+    let settled = false;
     const done = (
       width: number | null,
       height: number | null,
       duration_seconds: number | null,
     ) => {
+      if (settled) return;
+      settled = true;
       URL.revokeObjectURL(objectUrl);
       resolve({ width, height, duration_seconds });
     };
+
+    // Safety net: some files never fire loadedmetadata/onerror (and would
+    // otherwise hang the whole upload). Dimensions are best-effort, so bail
+    // after a short wait and proceed with nulls.
+    setTimeout(() => done(null, null, null), 5000);
 
     if (kind === 'image') {
       const img = new Image();
