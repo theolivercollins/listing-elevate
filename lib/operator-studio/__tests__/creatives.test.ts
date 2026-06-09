@@ -12,6 +12,8 @@ import {
   verifyPassword,
   evaluateShareAccess,
   buildSharePayload,
+  getDownloadUrl,
+  downloadFilename,
 } from '../creatives';
 import type { CreativeRow } from '../../types/creatives';
 
@@ -139,5 +141,62 @@ describe('buildSharePayload', () => {
     expect(payload.kind).toBe('image');
     expect(payload.width).toBe(800);
     expect(payload.height).toBe(600);
+  });
+});
+
+describe('downloadFilename', () => {
+  it('slugifies the title and uses the mime-type extension', () => {
+    expect(downloadFilename(makeRow({ title: 'Sunny Loft Tour!', mime_type: 'video/mp4' }))).toBe(
+      'Sunny-Loft-Tour.mp4',
+    );
+  });
+  it('falls back to the stored path extension, then a kind default', () => {
+    expect(
+      downloadFilename(
+        makeRow({ title: 'clip', mime_type: null, storage_path: 'a/b/reel.webm', source: 'upload' }),
+      ),
+    ).toBe('clip.webm');
+    expect(
+      downloadFilename(
+        makeRow({ title: '', mime_type: null, storage_path: null, public_url: null, kind: 'image' }),
+      ),
+    ).toBe('creative.jpg');
+  });
+});
+
+describe('getDownloadUrl', () => {
+  it('appends ?download=<name> to a render public URL (forces attachment)', async () => {
+    const url = await getDownloadUrl(
+      makeRow({ source: 'render', public_url: 'https://cdn.example.com/v.mp4', title: 'My Reel' }),
+      {} as never,
+    );
+    expect(url).toBe('https://cdn.example.com/v.mp4?download=My-Reel.mp4');
+  });
+
+  it('returns null for a render with no public URL', async () => {
+    const url = await getDownloadUrl(
+      makeRow({ source: 'render', public_url: null }),
+      {} as never,
+    );
+    expect(url).toBeNull();
+  });
+
+  it('signs an upload with the download option set to the filename', async () => {
+    const createSignedUrl = vi
+      .fn()
+      .mockResolvedValue({ data: { signedUrl: 'https://signed/x?token=1' }, error: null });
+    const supabase = { storage: { from: () => ({ createSignedUrl }) } };
+    const url = await getDownloadUrl(
+      makeRow({
+        source: 'upload',
+        bucket: 'creatives',
+        storage_path: 'c/clip.mp4',
+        title: 'Clip',
+        mime_type: 'video/mp4',
+      }),
+      supabase as never,
+    );
+    expect(createSignedUrl).toHaveBeenCalledWith('c/clip.mp4', 7200, { download: 'Clip.mp4' });
+    expect(url).toBe('https://signed/x?token=1');
   });
 });
