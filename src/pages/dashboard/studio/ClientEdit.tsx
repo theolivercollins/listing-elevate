@@ -359,6 +359,7 @@ const ClientEdit = () => {
             </div>
 
             <div
+              className="le-stack-sm"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',
@@ -474,6 +475,7 @@ const ClientEdit = () => {
 
             {/* Color pickers */}
             <div
+              className="le-stack-sm"
               style={{
                 display: 'grid',
                 gridTemplateColumns: '1fr 1fr',

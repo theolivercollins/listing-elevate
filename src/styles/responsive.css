@@ -1,0 +1,72 @@
+/* ─────────────────────────────────────────────────────────────────
+   Responsive utility library — Listing Elevate
+   ---------------------------------------------------------------
+   Shared, app-wide responsive helpers. Imported LAST in main.tsx so
+   these win the cascade. The grid collapsers use `!important` at the
+   breakpoint so a component can keep its existing INLINE desktop
+   `gridTemplateColumns` and simply ADD a class to become responsive —
+   no need to remove inline styles.
+
+   Breakpoint standard (desktop-first, matches the existing codebase):
+     - Tablet : max-width 1024px   (suffix -lg)
+     - Mobile : max-width 640px    (suffix -sm)
+   ───────────────────────────────────────────────────────────────── */
+
+/* Never let media or content force horizontal page scroll on phones. */
+.le-main-scroll img,
+.le-main-scroll video,
+.studio-main img,
+.studio-main video {
+  max-width: 100%;
+}
+
+/* ── Tablet collapsers (≤1024px) ──────────────────────────────── */
+@media (max-width: 1024px) {
+  .le-stack-lg   { grid-template-columns: 1fr !important; }
+  .le-cols-2-lg  { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .le-cols-3-lg  { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .le-flexcol-lg { flex-direction: column !important; align-items: stretch !important; }
+}
+
+/* ── Mobile collapsers (≤640px) ───────────────────────────────── */
+@media (max-width: 640px) {
+  .le-stack-sm   { grid-template-columns: 1fr !important; }
+  .le-cols-2-sm  { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .le-cols-3-sm  { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .le-flexcol-sm { flex-direction: column !important; align-items: stretch !important; }
+  .le-flexwrap-sm { flex-wrap: wrap !important; }
+}
+
+/* ── Horizontal-scroll wrapper for wide, fixed-column data tables.
+   Wrap the table block; give the inner grid a sensible min-width so it
+   scrolls instead of crushing. The wrapper only scrolls when needed. ── */
+.le-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* subtle edge fade hint handled by the browser scrollbar; keep it simple */
+}
+.le-table-scroll > * {
+  min-width: 0;
+}
+@media (max-width: 1024px) {
+  /* Opt-in min-width so columns keep readable widths and the row scrolls.
+     Components add `data-min` inline or rely on this default floor. */
+  .le-table-scroll.is-wide > * { min-width: 880px; }
+  .le-table-scroll.is-mid  > * { min-width: 680px; }
+}
+
+/* ── Visibility helpers ───────────────────────────────────────── */
+@media (max-width: 640px) {
+  .le-hide-sm { display: none !important; }
+}
+@media (min-width: 641px) {
+  .le-show-sm { display: none !important; }
+}
+
+/* ── Responsive spacing tokens (fluid). Optional helpers for inline
+   refactors that prefer a token over a raw clamp(). ──────────────── */
+:root {
+  --le-pad-section: clamp(40px, 10vw, 140px);
+  --le-pad-inline:  clamp(16px, 5vw, 48px);
+  --le-gap-fluid:   clamp(12px, 3vw, 24px);
+}

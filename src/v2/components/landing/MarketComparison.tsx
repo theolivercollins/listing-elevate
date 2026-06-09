@@ -34,7 +34,7 @@ function FirstImpression() {
       style={{
         position: "relative",
         overflow: "hidden",
-        padding: "140px 48px",
+        padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)",
         background: "#000",
       }}
     >

@@ -832,7 +832,7 @@ export default function Finances() {
       </div>
 
       {/* ── KPI row: 4 ledger totals ─────────────────────────────────────────── */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Revenue (all time)"
           value={fmtCentsPrim(totalRevenueCents)}
@@ -862,7 +862,7 @@ export default function Finances() {
       </section>
 
       {/* ── KPI row: 4 cost-event metrics (from /api/stats/cost-breakdown) ────── */}
-      <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+      <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Spend · MTD"
           value={fmtCentsPrim(mtdCents)}
@@ -1006,7 +1006,7 @@ export default function Finances() {
             No cost events in the last 30 days.
           </div>
         ) : (
-          <>
+          <div className="le-table-scroll is-wide">
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.2fr", gap: 16, padding: "10px 14px", borderBottom: "1px solid rgba(15,24,60,0.06)" }}>
               {[
                 { label: breakdownTab === "provider" ? "Provider" : breakdownTab === "model" ? "Model" : breakdownTab === "scope" ? "Scope" : "Stage", align: "left" },
@@ -1039,7 +1039,7 @@ export default function Finances() {
                 </div>
               </div>
             ))}
-          </>
+          </div>
         )}
       </Card>
 
@@ -1280,7 +1280,7 @@ export default function Finances() {
             No subscriptions yet. Add your first recurring charge above.
           </div>
         ) : (
-          <div style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line)" }}>
             {/* Column headers */}
             <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr 80px", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
               {["Provider", "Amount", "Frequency", "Next charge", "Status", ""].map((c, i) => (
@@ -1525,7 +1525,7 @@ function LedgerTable({
         </span>
       </div>
 
-      <div style={{ borderTop: "1px solid var(--line)" }}>
+      <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line)" }}>
         {/* Column headers */}
         <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 1fr 1fr 1fr 56px", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
           {columns.map((c, i) => (

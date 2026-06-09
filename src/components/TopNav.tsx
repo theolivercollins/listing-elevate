@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,8 @@ import {
   LayoutTemplate,
   Mail,
   Clapperboard,
+  Menu,
+  X,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
@@ -156,6 +159,7 @@ export function TopNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // v2 shell mounts its own navigation; suppress the legacy TopNav on /v2/*.
   if (location.pathname.startsWith("/v2")) return null;
@@ -254,6 +258,17 @@ export function TopNav() {
         )}
 
         <div className="ml-auto flex items-center gap-2 md:gap-4">
+          {inDashboard && isAdmin && (
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((o) => !o)}
+              className="flex h-9 w-9 items-center justify-center border border-border text-foreground transition-colors duration-300 ease-cinematic hover:border-foreground/40 hover:bg-secondary md:hidden"
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileMenuOpen}
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+          )}
           {user ? (
             <>
               {!inDashboard && (
@@ -351,6 +366,44 @@ export function TopNav() {
           )}
         </div>
       </div>
+
+      {/* Mobile dashboard sub-nav — replaces the md:flex nav hidden below 768px */}
+      {inDashboard && isAdmin && mobileMenuOpen && (
+        <nav className="border-t border-border/60 bg-background/95 px-6 py-2 md:hidden">
+          {dashboardNav.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              onClick={() => setMobileMenuOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-300 ease-cinematic ${
+                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                }`
+              }
+            >
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
+              {label}
+            </NavLink>
+          ))}
+          <Link
+            to="/dashboard/development"
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-300 ease-cinematic hover:text-foreground"
+          >
+            <Code2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Development
+          </Link>
+          <Link
+            to="/dashboard/studio/blog/posts"
+            onClick={() => setMobileMenuOpen(false)}
+            className="flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-300 ease-cinematic hover:text-foreground"
+          >
+            <Newspaper className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Blog
+          </Link>
+        </nav>
+      )}
     </header>
   );
 }

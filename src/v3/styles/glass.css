@@ -1532,3 +1532,48 @@
   color: var(--bad);
   margin-top: 4px;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Responsive — Upload flow (mobile / tablet)
+   ════════════════════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+  /* Order rail drops below the main column instead of squeezing it */
+  .g-upload-layout {
+    grid-template-columns: 1fr;
+  }
+  .g-order-rail {
+    position: static;
+    top: auto;
+  }
+  /* 4-up form/card grids relax to 2-up */
+  .g-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .g-form-field.half {
+    grid-column: span 1;
+  }
+  .g-card-grid-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .g-step-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .g-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .g-form-field.half,
+  .g-form-field.full {
+    grid-column: 1 / -1;
+  }
+  .g-card-grid-2,
+  .g-card-grid-3 {
+    grid-template-columns: 1fr;
+  }
+  .g-voice-grid {
+    grid-template-columns: 1fr;
+  }
+}

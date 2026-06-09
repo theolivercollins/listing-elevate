@@ -482,6 +482,7 @@ const Properties = () => {
         </div>
 
         {/* Header row */}
+        <div className="le-table-scroll is-wide">
         <div
           style={{
             display: "grid",
@@ -531,6 +532,7 @@ const Properties = () => {
             />
           ))
         )}
+        </div>
       </Card>
 
       {/* Floating bulk action bar */}

@@ -17,3 +17,25 @@ export function useIsMobile() {
 
   return !!isMobile;
 }
+
+/**
+ * Generic media-query hook. Pass any CSS media query string, e.g.
+ * `useMediaQuery("(max-width: 1024px)")`. Returns false on the server /
+ * first paint, then resolves on mount and updates on viewport changes.
+ */
+export function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(query).matches;
+  });
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(query);
+    const onChange = () => setMatches(mql.matches);
+    onChange();
+    mql.addEventListener("change", onChange);
+    return () => mql.removeEventListener("change", onChange);
+  }, [query]);
+
+  return matches;
+}

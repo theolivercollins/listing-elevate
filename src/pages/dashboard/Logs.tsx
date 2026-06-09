@@ -167,6 +167,7 @@ const Logs = () => {
           className="le-card-flat"
           style={{ padding: 0, overflow: "hidden" }}
         >
+          <div className="le-table-scroll is-mid">
           {rows.length === 0 ? (
             <div style={{ padding: "40px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
               No events in the last hour.
@@ -216,6 +217,7 @@ const Logs = () => {
               </div>
             ))
           )}
+          </div>
         </div>
       </Card>
     </div>

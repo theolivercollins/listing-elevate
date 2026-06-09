@@ -15,7 +15,7 @@ export function SelectedWork() {
   return (
     <section
       id="showcase"
-      style={{ padding: "140px 48px", color: "var(--le-text)", background: "transparent" }}
+      style={{ padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)", color: "var(--le-text)", background: "transparent" }}
     >
       <div style={{ maxWidth: 1440, margin: "0 auto" }}>
         <div className="le-eyebrow" style={{ marginBottom: 24, color: "var(--le-text-muted)" }}>— SHOWCASE</div>
@@ -27,7 +27,7 @@ export function SelectedWork() {
             View the reel →
           </a>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
+        <div className="le-stack-lg" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
           <ReelCard reel={hero} large />
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
             {rest.map(r => <ReelCard key={r.id} reel={r} />)}

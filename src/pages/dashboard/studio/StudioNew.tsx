@@ -370,7 +370,7 @@ const StudioNew = () => {
             </div>
 
             {/* Bedrooms / bathrooms */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="le-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <FieldLabel>Bedrooms</FieldLabel>
                 <input
@@ -398,7 +398,7 @@ const StudioNew = () => {
             </div>
 
             {/* Square footage / price — comma-formatted */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="le-stack-sm" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
                 <FieldLabel>Square footage</FieldLabel>
                 <input
@@ -492,6 +492,7 @@ const StudioNew = () => {
                 className={'studio-dropzone' + (isDragging ? ' dragging' : '')}
                 style={{
                   aspectRatio: '16/6',
+                  minHeight: 140,
                   flexDirection: 'column',
                   textAlign: 'center',
                   gap: 0,
@@ -618,6 +619,7 @@ const StudioNew = () => {
               {/* Thumbnails */}
               {files.length > 0 && (
                 <div
+                  className="le-cols-3-lg le-cols-2-sm"
                   style={{
                     marginTop: 16,
                     display: 'grid',

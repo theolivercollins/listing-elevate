@@ -11,7 +11,7 @@ export function Footer() {
   return (
     <footer
       style={{
-        padding: "40px 48px",
+        padding: "clamp(32px, 6vw, 40px) clamp(16px, 5vw, 48px)",
         borderTop: "1px solid var(--le-border)",
         display: "flex",
         justifyContent: "space-between",
@@ -26,7 +26,7 @@ export function Footer() {
       <div style={{ display: "flex", alignItems: "center" }}>
         <LELogoMark size={14} variant="light" />
       </div>
-      <div style={{ display: "flex", gap: 28 }}>
+      <div className="le-flexwrap-sm" style={{ display: "flex", gap: 28 }}>
         <span>Process</span>
         <span>Showcase</span>
         <span>Pricing</span>

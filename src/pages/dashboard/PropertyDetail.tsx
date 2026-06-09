@@ -592,7 +592,7 @@ const PropertyDetail = () => {
 
       {/* Stat strip */}
       <Card padding={0}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
+        <div className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
           {[
             { label: "Total cost", value: formatCents(property.total_cost_cents) },
             { label: "Processing time", value: property.processing_time_ms > 0 ? formatDuration(property.processing_time_ms) : "—" },
@@ -733,7 +733,7 @@ const PropertyDetail = () => {
             eyebrow="Costs"
             title={<>Real per-call breakdown <span style={{ fontWeight: 400, color: "var(--muted)" }}>· {formatCents(costTotalCents)}</span></>}
           />
-          <div style={{ marginTop: 16 }}>
+          <div className="le-table-scroll is-mid" style={{ marginTop: 16 }}>
             {/* Header row */}
             <div
               style={{
@@ -1105,6 +1105,7 @@ const PropertyDetail = () => {
 
                       {/* Metadata grid */}
                       <div
+                        className="le-cols-3-lg le-cols-2-sm"
                         style={{
                           marginTop: 16,
                           paddingTop: 16,

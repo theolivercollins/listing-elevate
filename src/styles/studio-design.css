@@ -682,3 +682,22 @@
   color: var(--le-ink);
   margin: 0 0 24px 0;
 }
+
+/* ─── Responsive (mobile / tablet) ───────────────────────────────── */
+@media (max-width: 1024px) {
+  .studio-scope .studio-main { padding: 20px 20px 40px; }
+}
+@media (max-width: 640px) {
+  .studio-scope .studio-main { padding: 14px 14px 36px; }
+
+  /* Segmented nav: allow wrap + horizontal scroll so tabs never clip */
+  .studio-scope .studio-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .studio-scope .studio-segmented-item { padding: 6px 12px; }
+
+  .studio-scope.studio-preview { padding: 24px 14px 56px; }
+  .studio-scope.studio-preview .studio-preview-h1 { font-size: 24px; }
+}
