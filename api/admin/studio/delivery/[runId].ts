@@ -48,7 +48,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // PATCH (listing details) lands in Task 9.
+    if (req.method === 'PATCH') {
+      const { validateListingDetails } = await import('../../../../lib/delivery/details.js');
+      const run = await getRun(runId);
+      if (!run) return res.status(404).json({ error: 'not_found' });
+      const v = validateListingDetails(req.body ?? {});
+      if (!v.ok) return res.status(400).json({ error: v.error });
+      const { setListingDetails, recordMlEvent } = await import('../../../../lib/delivery/runs.js');
+      const updated = await setListingDetails(runId, v.details);
+      await recordMlEvent(runId, 'details_edit', { before: run.listing_details, after: v.details });
+      return res.status(200).json({ run: updated });
+    }
+
     return res.status(405).json({ error: 'method_not_allowed' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

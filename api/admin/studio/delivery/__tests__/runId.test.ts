@@ -11,6 +11,7 @@ const mockSetRunError = vi.fn();
 const mockUpdateRun = vi.fn();
 const mockRecordMlEvent = vi.fn();
 const mockSetListingDetails = vi.fn();
+const mockValidateListingDetails = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -23,6 +24,9 @@ vi.mock('../../../../../lib/delivery/runs', () => ({
   updateRun: (...a: unknown[]) => mockUpdateRun(...a),
   recordMlEvent: (...a: unknown[]) => mockRecordMlEvent(...a),
   setListingDetails: (...a: unknown[]) => mockSetListingDetails(...a),
+}));
+vi.mock('../../../../../lib/delivery/details', () => ({
+  validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
 }));
 
 import handler from '../[runId]';
@@ -43,6 +47,9 @@ beforeEach(() => {
   mockGetRun.mockResolvedValue(run);
   mockGetVariantsForRun.mockResolvedValue([]);
   mockGetEventsForRun.mockResolvedValue([]);
+  mockSetListingDetails.mockResolvedValue({ ...run, listing_details: { price: 899000, source: 'manual' } });
+  mockRecordMlEvent.mockResolvedValue(undefined);
+  mockValidateListingDetails.mockReturnValue({ ok: true, details: { price: 899000, source: 'manual' } });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -88,6 +95,45 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
     const res1 = makeRes();
     await handler({ method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'nope' } } as unknown as VercelRequest, res1 as unknown as VercelResponse);
     expect(res1._status).toBe(400);
+  });
+});
+
+describe('PATCH /api/admin/studio/delivery/[runId]', () => {
+  it('PATCH with valid payload -> 200, calls setListingDetails + recordMlEvent', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'PATCH', query: { runId: 'r1' }, headers: {}, body: { price: 899000 } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockSetListingDetails).toHaveBeenCalledWith('r1', { price: 899000, source: 'manual' });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith(
+      'r1',
+      'details_edit',
+      expect.objectContaining({ before: run.listing_details, after: { price: 899000, source: 'manual' } }),
+    );
+  });
+
+  it('PATCH with invalid payload -> 400', async () => {
+    mockValidateListingDetails.mockReturnValue({ ok: false, error: 'price must be a non-negative number' });
+    const res = makeRes();
+    await handler(
+      { method: 'PATCH', query: { runId: 'r1' }, headers: {}, body: { price: -1 } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockSetListingDetails).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('PATCH with unknown runId -> 404', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'PATCH', query: { runId: 'rX' }, headers: {}, body: { price: 899000 } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
   });
 });
 
