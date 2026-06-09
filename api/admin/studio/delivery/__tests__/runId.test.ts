@@ -18,6 +18,9 @@ const mockDbFrom = vi.fn();
 const mockGenerateDeliveryScript = vi.fn();
 const mockDbSelect = vi.fn();
 const mockGenerateVoiceoverAudio = vi.fn();
+const mockComposeMusic = vi.fn();
+const mockDbInsert = vi.fn();
+const mockDbStorage = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -43,9 +46,16 @@ vi.mock('../../../../../lib/delivery/voiceover-script', () => ({
 vi.mock('../../../../../lib/voiceover/generate-audio', () => ({
   generateVoiceoverAudio: (...a: unknown[]) => mockGenerateVoiceoverAudio(...a),
 }));
+vi.mock('../../../../../lib/providers/elevenlabs-music', () => ({
+  composeMusic: (...a: unknown[]) => mockComposeMusic(...a),
+  MOOD_PROMPTS: { upbeat: 'upbeat prompt', warm: 'warm prompt', celebratory: 'celebratory prompt', cinematic: 'cinematic prompt', neutral: 'neutral prompt' },
+}));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
     from: (...a: unknown[]) => mockDbFrom(...a),
+    storage: {
+      from: (...a: unknown[]) => mockDbStorage(...a),
+    },
   }),
 }));
 
@@ -74,6 +84,19 @@ beforeEach(() => {
   mockUpdateRun.mockResolvedValue({ ...run, voiceover_script: 'Welcome to X St.' });
   mockGenerateDeliveryScript.mockResolvedValue({ script: 'Welcome to X St.', wordCount: 4 });
   mockGenerateVoiceoverAudio.mockResolvedValue({ audioUrl: 'https://cdn.example.com/vo.mp3', durationMs: 8000 });
+  mockComposeMusic.mockResolvedValue({ audio: Buffer.from('mp3'), lengthMs: 35000 });
+  mockDbInsert.mockReturnValue({
+    select: vi.fn().mockReturnValue({
+      single: vi.fn().mockResolvedValue({
+        data: { id: 'track-new', name: 'Generated · celebratory · 2026-06-09', file_url: 'https://cdn.example.com/music/track-new.mp3', mood_tag: 'celebratory', source: 'elevenlabs_music' },
+        error: null,
+      }),
+    }),
+  });
+  mockDbStorage.mockReturnValue({
+    upload: vi.fn().mockResolvedValue({ error: null }),
+    getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://cdn.example.com/music/track-new.mp3' } }),
+  });
   // Default chain for supabase (flip_winner update + generate_script address select)
   mockDbSelect.mockReturnValue({
     eq: vi.fn().mockReturnValue({
@@ -83,6 +106,7 @@ beforeEach(() => {
   mockDbUpdate.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) });
   mockDbFrom.mockImplementation((table: string) => {
     if (table === 'properties') return { select: mockDbSelect };
+    if (table === 'music_tracks') return { insert: mockDbInsert };
     return { update: mockDbUpdate };
   });
 });
@@ -370,6 +394,83 @@ describe('POST set_voice + generate_audio (T18)', () => {
     );
     expect(res._status).toBe(502);
     expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Voiceover audio failed twice'));
+  });
+});
+
+describe('POST set_music + generate_music (T19)', () => {
+  it('POST set_music -> 200, stores music_track_id + records music_choice ml_event', async () => {
+    const trackId = 'track-abc';
+    mockUpdateRun.mockResolvedValue({ ...run, music_track_id: trackId });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_music', music_track_id: trackId, source: 'library' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ music_track_id: trackId }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_choice', { music_track_id: trackId, source: 'library' });
+  });
+
+  it('POST set_music with source=generated records correct source', async () => {
+    const trackId = 'track-generated';
+    mockUpdateRun.mockResolvedValue({ ...run, music_track_id: trackId });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_music', music_track_id: trackId, source: 'generated' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_choice', { music_track_id: trackId, source: 'generated' });
+  });
+
+  it('POST set_music without music_track_id -> 400', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_music', music_track_id: '' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('POST generate_music -> 201, calls composeMusic, uploads + inserts track', async () => {
+    mockGetRun.mockResolvedValue({ ...run, video_type: 'just_closed', duration_seconds: 30, property_id: 'p1' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockComposeMusic).toHaveBeenCalledWith(
+      'celebratory prompt',
+      expect.any(Number),
+      expect.objectContaining({ propertyId: 'p1' }),
+    );
+    const body = res._body as { track: { id: string } };
+    expect(body.track.id).toBe('track-new');
+  });
+
+  it('POST generate_music -> 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
+    expect(mockComposeMusic).not.toHaveBeenCalled();
+  });
+
+  it('POST generate_music -> 502 + setRunError on compose failure', async () => {
+    mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, property_id: 'p1' });
+    mockComposeMusic.mockRejectedValue(new Error('ElevenLabs Music failed (500): server error'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(502);
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Music generation failed'));
   });
 });
 

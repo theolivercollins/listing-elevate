@@ -145,7 +145,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(502).json({ error: msg });
           }
         }
-        // Later tasks add: 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
+        case 'set_music': {
+          const trackId = String(req.body?.music_track_id ?? '');
+          if (!trackId) return res.status(400).json({ error: 'music_track_id required' });
+          const { updateRun: uRun4, recordMlEvent: rme4 } = await import('../../../../lib/delivery/runs.js');
+          const updated = await uRun4(runId, { music_track_id: trackId } as never);
+          await rme4(runId, 'music_choice', { music_track_id: trackId, source: String(req.body?.source ?? 'library') });
+          return res.status(200).json({ run: updated });
+        }
+        case 'generate_music': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          const { moodForPackage } = await import('../../../../lib/assembly/music.js');
+          const { composeMusic, MOOD_PROMPTS } = await import('../../../../lib/providers/elevenlabs-music.js');
+          const mood = moodForPackage(run.video_type);
+          const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
+          const db = (await import('../../../../lib/client.js')).getSupabase();
+          try {
+            const { audio } = await composeMusic(MOOD_PROMPTS[mood], lengthMs, { propertyId: run.property_id });
+            const path = `delivery/${run.id}/${Date.now()}.mp3`;
+            const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
+            if (upErr) throw new Error(upErr.message);
+            const { data: urlData } = db.storage.from('music').getPublicUrl(path);
+            const { data: track, error: insErr } = await db.from('music_tracks').insert({
+              name: `Generated · ${mood} · ${new Date().toISOString().slice(0, 10)}`,
+              file_url: urlData.publicUrl, mood_tag: mood, source: 'elevenlabs_music',
+              prompt: MOOD_PROMPTS[mood], active: true,
+            }).select('id, name, file_url, mood_tag, source').single();
+            if (insErr) throw new Error(insErr.message);
+            return res.status(201).json({ track });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
+            await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
+            return res.status(502).json({ error: msg });
+          }
+        }
+        // Later tasks add: 'assemble' (T20), 'submit_ratings' (T21).
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

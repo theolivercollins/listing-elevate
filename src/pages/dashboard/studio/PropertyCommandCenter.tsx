@@ -17,6 +17,7 @@ import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/Deliver
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
+import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
 import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
@@ -449,6 +450,15 @@ const PropertyCommandCenter = () => {
               voiceoverScript={bundle.delivery_run.voiceover_script}
               voiceoverVoiceId={bundle.delivery_run.voiceover_voice_id}
               voiceoverAudioUrl={bundle.delivery_run.voiceover_audio_url}
+              onChanged={fetchBundle}
+            />
+          )}
+          {/* ─── Music: library options + generate-new ─── */}
+          {bundle.delivery_run.stage === 'music' && (
+            <DeliveryMusic
+              runId={bundle.delivery_run.id}
+              videoType={bundle.delivery_run.video_type}
+              musicTrackId={bundle.delivery_run.music_track_id}
               onChanged={fetchBundle}
             />
           )}
