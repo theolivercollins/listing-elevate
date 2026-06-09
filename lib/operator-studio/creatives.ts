@@ -160,6 +160,7 @@ export function buildSharePayload(
   playbackUrl: string,
   downloadUrl: string | null,
 ): SharePayload {
+  const ap = row.appearance ?? {};
   return {
     title: row.title,
     description: row.description,
@@ -168,10 +169,17 @@ export function buildSharePayload(
     allow_embed: row.allow_embed,
     presentation_enabled: row.presentation_enabled,
     playbackUrl,
-    embedUrl: row.bunny_video_id ? bunnyEmbedUrl(row.bunny_video_id) : null,
+    embedUrl: row.bunny_video_id
+      ? bunnyEmbedUrl(row.bunny_video_id, {
+          autoplay: ap.autoplay,
+          loop: ap.loop,
+          muted: ap.muted,
+        })
+      : null,
     posterUrl: row.thumbnail_url,
     downloadUrl: row.allow_download ? downloadUrl : null,
     width: row.width,
     height: row.height,
+    appearance: ap,
   };
 }

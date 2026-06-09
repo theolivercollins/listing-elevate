@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import { getSupabase } from '../../../../lib/client.js';
 import { hashPassword, getPlaybackUrl } from '../../../../lib/operator-studio/creatives.js';
-import { bunnyEmbedUrl } from '../../../../lib/providers/bunny-stream.js';
+import { bunnyEmbedUrl, deleteBunnyVideo } from '../../../../lib/providers/bunny-stream.js';
 import type { CreativeRow } from '../../../../lib/types/creatives.js';
 
 async function withUrls(row: CreativeRow, supabase: ReturnType<typeof getSupabase>) {
@@ -59,6 +59,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if ('password' in body) {
       update.password_hash = body.password ? hashPassword(String(body.password)) : null;
     }
+    // Appearance is a JSON blob — sanitize to the known shape.
+    if ('appearance' in body && body.appearance && typeof body.appearance === 'object') {
+      const a = body.appearance as Record<string, unknown>;
+      update.appearance = {
+        autoplay: !!a.autoplay,
+        loop: !!a.loop,
+        muted: !!a.muted,
+        accentColor: typeof a.accentColor === 'string' ? a.accentColor : null,
+        hideTitle: !!a.hideTitle,
+        hideDescription: !!a.hideDescription,
+      };
+    }
     update.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -82,7 +94,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!row) return res.status(404).json({ error: 'not found' });
 
     const creative = row as CreativeRow;
-    if (creative.source === 'upload' && creative.storage_path) {
+    if (creative.bunny_video_id) {
+      await deleteBunnyVideo(creative.bunny_video_id);
+    } else if (creative.source === 'upload' && creative.storage_path) {
       await supabase.storage.from(creative.bucket).remove([creative.storage_path]);
     }
     const { error: delErr } = await supabase.from('creatives').delete().eq('id', id);

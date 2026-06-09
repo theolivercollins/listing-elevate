@@ -5,6 +5,18 @@ export type CreativeSource = 'upload' | 'render';
 export type CreativeKind = 'video' | 'image';
 export type CreativeVisibility = 'unlisted' | 'public';
 
+/** Per-creative appearance settings (Vimeo-style). All optional. */
+export interface AppearanceSettings {
+  // Player behaviour (Bunny iframe params)
+  autoplay?: boolean;
+  loop?: boolean;
+  muted?: boolean;
+  // Presentation page (/v/:token)
+  accentColor?: string | null; // hex, themes the page accents
+  hideTitle?: boolean;
+  hideDescription?: boolean;
+}
+
 export interface CreativeRow {
   id: string;
   title: string;
@@ -16,6 +28,7 @@ export interface CreativeRow {
   public_url: string | null;
   /** Bunny Stream video GUID when the upload is hosted on Bunny (else null). */
   bunny_video_id: string | null;
+  appearance: AppearanceSettings;
   thumbnail_url: string | null;
   mime_type: string | null;
   duration_seconds: number | null;
@@ -52,4 +65,5 @@ export interface SharePayload {
   downloadUrl: string | null; // present only when allow_download
   width: number | null;
   height: number | null;
+  appearance: AppearanceSettings;
 }

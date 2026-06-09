@@ -11,6 +11,7 @@ const OK_PAYLOAD: SharePayload = {
   presentation_enabled: true,
   playbackUrl: 'https://example.com/video.mp4',
   embedUrl: null,
+  appearance: {},
   posterUrl: 'https://example.com/poster.jpg',
   downloadUrl: 'https://example.com/download.mp4',
   width: 1920,

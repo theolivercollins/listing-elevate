@@ -19,6 +19,14 @@ export interface SharePayload {
   downloadUrl: string | null;
   width: number | null;
   height: number | null;
+  appearance: {
+    autoplay?: boolean;
+    loop?: boolean;
+    muted?: boolean;
+    accentColor?: string | null;
+    hideTitle?: boolean;
+    hideDescription?: boolean;
+  };
 }
 
 export type ShareStatus =
