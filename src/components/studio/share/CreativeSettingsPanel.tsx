@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Copy, ExternalLink, Loader2, Trash2, X } from 'lucide-react';
+import { Check, Copy, ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import type { AppearanceSettings, Creative, CreativePatch } from '@/lib/share-api';
 import { QrCode } from './QrCode';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 type EmbedPreset = 'responsive' | '640x360' | '1280x720';
 
@@ -152,44 +153,44 @@ export function CreativeSettingsPanel({
     onPatch(creative.id, { appearance: { ...ap, ...partial } });
 
   return (
-    <div className="share-drawer-overlay" onClick={onClose} role="presentation">
-      <aside
-        className="share-drawer"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label={`Settings for ${creative.title}`}
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-w-[1500px] w-[97vw] h-[92vh] p-0 gap-0 overflow-hidden rounded-xl"
       >
-        <div className="share-drawer-head">
-          <h2>{creative.title}</h2>
-          <button type="button" className="share-drawer-close" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </button>
-        </div>
+        {/* Re-establish the studio token + style scope inside the body portal */}
+        <div className="studio-scope is-embedded share-fs">
+          <DialogTitle className="share-fs-srtitle">{creative.title}</DialogTitle>
+          <div className="share-fs-grid">
+            {/* Big player — fills the screen */}
+            <div className="share-fs-player">
+              {creative.bunnyEmbedUrl ? (
+                <iframe
+                  src={creative.bunnyEmbedUrl}
+                  title={creative.title}
+                  loading="lazy"
+                  allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  allowFullScreen
+                />
+              ) : creative.kind === 'image' ? (
+                <img src={creative.previewUrl ?? creative.public_url ?? poster} alt={creative.title} />
+              ) : (
+                <video
+                  src={creative.previewUrl ?? creative.public_url ?? undefined}
+                  poster={poster}
+                  controls
+                  preload="metadata"
+                />
+              )}
+            </div>
 
-        {/* Live player */}
-        <div className="share-drawer-player">
-          {creative.bunnyEmbedUrl ? (
-            <iframe
-              src={creative.bunnyEmbedUrl}
-              title={creative.title}
-              loading="lazy"
-              allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
-              allowFullScreen
-            />
-          ) : creative.kind === 'image' ? (
-            <img src={creative.previewUrl ?? creative.public_url ?? poster} alt={creative.title} />
-          ) : (
-            <video
-              src={creative.previewUrl ?? creative.public_url ?? undefined}
-              poster={poster}
-              controls
-              preload="metadata"
-            />
-          )}
-        </div>
+            {/* Settings panel */}
+            <div className="share-fs-panel">
+              <div className="share-fs-head">
+                <h2>{creative.title}</h2>
+              </div>
 
-        <div className="share-drawer-body">
+              <div className="share-drawer-body">
           {/* ─── General ─── */}
           <section className="share-section">
             <div className="share-section-title">General</div>
@@ -529,8 +530,11 @@ export function CreativeSettingsPanel({
               </button>
             )}
           </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </aside>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
