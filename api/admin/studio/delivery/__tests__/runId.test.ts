@@ -77,6 +77,13 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
     expect(res._status).toBe(400);
   });
 
+  it('POST advance surfaces stage-moved conflict as 409', async () => {
+    mockAdvanceRun.mockRejectedValue(new Error('advanceRun: stage moved (expected judging)'));
+    const res = makeRes();
+    await handler({ method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'advance', to: 'checkpoint_a' } } as unknown as VercelRequest, res as unknown as VercelResponse);
+    expect(res._status).toBe(409);
+  });
+
   it('POST unknown action -> 400', async () => {
     const res1 = makeRes();
     await handler({ method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'nope' } } as unknown as VercelRequest, res1 as unknown as VercelResponse);

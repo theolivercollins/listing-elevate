@@ -85,7 +85,9 @@ export async function updateRun(runId: string, patch: Partial<DeliveryRunRow>): 
   return data as DeliveryRunRow;
 }
 
-/** Single-step stage advance, guarded by the pure state machine. Clears error. */
+/** Single-step stage advance, guarded by the pure state machine. Clears error.
+ *  Uses a compare-and-swap UPDATE (WHERE id = runId AND stage = from) to prevent
+ *  silent double-advance races between the stepper UI and cron actors. */
 export async function advanceRun(runId: string, to: string): Promise<DeliveryRunRow> {
   if (!isDeliveryStage(to)) throw new Error(`advanceRun: '${to}' is not a delivery stage`);
   const run = await getRun(runId);
@@ -94,7 +96,16 @@ export async function advanceRun(runId: string, to: string): Promise<DeliveryRun
   if (!canAdvance(from, to)) {
     throw new Error(`advanceRun: illegal transition ${from} -> ${to}`);
   }
-  return updateRun(runId, { stage: to, error: null } as Partial<DeliveryRunRow>);
+  const { data, error } = await getSupabase()
+    .from('delivery_runs')
+    .update({ stage: to, error: null, updated_at: new Date().toISOString() })
+    .eq('id', runId)
+    .eq('stage', from)
+    .select()
+    .maybeSingle();
+  if (error) throw new Error(`advanceRun: ${error.message}`);
+  if (!data) throw new Error(`advanceRun: stage moved (expected ${from})`);
+  return data as DeliveryRunRow;
 }
 
 /** Stage failed: keep the pointer, surface the error for per-stage retry UI. */

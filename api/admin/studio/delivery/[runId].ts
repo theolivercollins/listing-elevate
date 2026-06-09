@@ -46,6 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'method_not_allowed' });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (/stage moved/i.test(msg)) return res.status(409).json({ error: msg });
     return res.status(/illegal transition|not a delivery stage|required|invalid|unknown/i.test(msg) ? 400 : 500).json({ error: msg });
   }
 }
