@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { ChevronDown, RefreshCw } from 'lucide-react';
+import { authedFetch } from '@/lib/api';
 
 export interface ClientRow {
   id: string;
@@ -34,14 +35,32 @@ export function ClientPicker({
   includeNone?: boolean;
 }) {
   const [clients, setClients] = useState<ClientRow[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch('/api/admin/studio/clients')
-      .then((r) => r.json())
-      .then((d) => setClients(d.clients ?? []));
+  const loadClients = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await authedFetch('/api/admin/studio/clients');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `${res.status} ${res.statusText}`);
+      }
+      const d = await res.json();
+      setClients(d.clients ?? []);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load clients');
+      setClients([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
+  useEffect(() => { void loadClients(); }, [loadClients]);
+
   return (
+    <>
     <div style={{ position: 'relative' }}>
       <select
         value={value ?? ''}
@@ -70,8 +89,9 @@ export function ClientPicker({
           e.currentTarget.style.boxShadow = 'none';
         }}
       >
-        {includeNone && <option value="">No client</option>}
-        {!includeNone && <option value="">Select client</option>}
+        {loading && <option value="">Loading clients…</option>}
+        {!loading && includeNone && <option value="">No client</option>}
+        {!loading && !includeNone && <option value="">Select client</option>}
         {clients.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}
@@ -90,5 +110,21 @@ export function ClientPicker({
         }}
       />
     </div>
+    {loadError && (
+      <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--le-bad, #b42318)' }}>
+          Couldn't load clients: {loadError}
+        </span>
+        <button
+          type="button"
+          className="studio-btn-ghost"
+          style={{ fontSize: 11.5, padding: '2px 8px' }}
+          onClick={() => void loadClients()}
+        >
+          <RefreshCw size={11} strokeWidth={1.8} /> Retry
+        </button>
+      </div>
+    )}
+    </>
   );
 }
