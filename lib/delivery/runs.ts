@@ -130,7 +130,7 @@ export async function recordMlEvent(
   if (error) throw new Error(`recordMlEvent: ${error.message}`);
 }
 
-/** Listing-details merge helper used by PATCH + scrape. */
+/** Whole-column REPLACE of listing_details (no merge) — callers must send the full field set. Used by PATCH + scrape. */
 export async function setListingDetails(
   runId: string,
   details: ListingDetails,
