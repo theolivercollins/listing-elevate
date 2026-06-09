@@ -96,6 +96,29 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
     await handler({ method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'nope' } } as unknown as VercelRequest, res1 as unknown as VercelResponse);
     expect(res1._status).toBe(400);
   });
+
+  it('POST reorder -> 200, calls updateRun + recordMlEvent with before/after', async () => {
+    mockGetRun.mockResolvedValue({ ...run, scene_order: ['s1', 's2'] });
+    mockUpdateRun.mockResolvedValue({ ...run, scene_order: ['s2', 's1'] });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'reorder', scene_order: ['s2', 's1'] } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', { scene_order: ['s2', 's1'] });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'reorder', { before: ['s1', 's2'], after: ['s2', 's1'] });
+  });
+
+  it('POST reorder with wrong id set -> 400', async () => {
+    mockGetRun.mockResolvedValue({ ...run, scene_order: ['s1', 's2'] });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'reorder', scene_order: ['s1', 's3'] } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+  });
 });
 
 describe('PATCH /api/admin/studio/delivery/[runId]', () => {

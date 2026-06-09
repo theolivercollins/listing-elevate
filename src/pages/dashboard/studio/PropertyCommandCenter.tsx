@@ -14,6 +14,7 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
+import { CheckpointA } from '@/components/studio/CheckpointA';
 import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
@@ -425,6 +426,10 @@ const PropertyCommandCenter = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
           <DeliveryStepper stage={bundle.delivery_run.stage} error={bundle.delivery_run.error} />
           {/* Shared Next button — rendered on gate stages where the operator manually advances */}
+          {/* ─── Checkpoint A: clip reorder panel ─── */}
+          {bundle.delivery_run.stage === 'checkpoint_a' && (
+            <CheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />
+          )}
           <DeliveryNextButton
             stage={bundle.delivery_run.stage}
             pending={advancePending}
