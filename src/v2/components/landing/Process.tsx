@@ -48,7 +48,7 @@ export function Process() {
     <section
       id="process"
       style={{
-        padding: "clamp(56px, 12vw, 112px) clamp(16px, 5vw, 48px) clamp(60px, 12vw, 120px)",
+        padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)",
         background: "var(--le-bg)",
       }}
     >

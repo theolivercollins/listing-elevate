@@ -2,3 +2,47 @@
    Only imported by /v2 pages — must not leak to legacy pages. */
 @import url("https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700&display=swap");
 @import "./tokens.css";
+
+/* ------------------------------------------------------------------
+   Marketing hover + CTA helpers (UI-consistency pass WS1.4 / WS2.5).
+   Base looks stay inline in the components so visual parity holds even
+   on pages that don't load this sheet; these rules only layer hover
+   affordances on top. `!important` is used only where the base value
+   is set via an inline style (which otherwise beats any :hover rule).
+   Pattern matches the `.le-btn-primary:hover` precedent in tokens.css.
+   ------------------------------------------------------------------ */
+
+/* Solid (accent-filled) CTAs — brightness dip on hover. */
+.le-cta-primary-hover { transition: filter 150ms ease; }
+.le-cta-primary-hover:hover { filter: brightness(0.9); }
+
+/* Ghost (outlined) CTAs — border strengthens on hover. */
+.le-cta-ghost-hover { transition: border-color 150ms ease, color 150ms ease; }
+.le-cta-ghost-hover:hover { border-color: var(--le-text-faint) !important; }
+
+/* Nav text links — muted base (inline) shifts to full strength.
+   The hover color is themeable per-nav via --le-nav-hover-color. */
+.le-nav-link { transition: color 150ms ease; }
+.le-nav-link:hover { color: var(--le-nav-hover-color, var(--le-text)) !important; }
+
+/* Underlined "Sign in" text links (Hero / FinalCTA) — shared styling. */
+.le-cta-textlink {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: var(--le-font-sans);
+  color: var(--le-text);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity 150ms ease;
+}
+.le-cta-textlink:hover { opacity: 0.75; }
+
+/* FAQ accordion toggle — subtle dim on hover. */
+.le-faq-toggle { color: var(--le-text); transition: color 150ms ease; }
+.le-faq-toggle:hover { color: var(--le-text-muted); }

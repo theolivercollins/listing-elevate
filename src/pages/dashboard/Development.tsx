@@ -33,19 +33,13 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   lineHeight: 1.5,
 };
 
-const GHOST_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "7px 12px",
-  borderRadius: "var(--radius-pill)",
-  border: "1px solid var(--line)",
-  background: "transparent",
-  color: "var(--ink-2)",
-  fontSize: 12.5,
-  fontWeight: 500,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
+// Inline <code> chip — matches the small-chip radius step used across lab pages.
+const CODE_CHIP: React.CSSProperties = {
+  fontSize: 11,
+  fontFamily: "var(--le-font-mono)",
+  background: "rgba(11,11,16,0.05)",
+  padding: "1px 5px",
+  borderRadius: 6,
 };
 
 // ─── quick-link card ──────────────────────────────────────────────
@@ -226,7 +220,7 @@ const Development = () => {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button
                 type="button"
-                style={GHOST_BTN}
+                className="le-btn-ghost"
                 onClick={() => {
                   setCreating(false);
                   setDraft({ objective: "", accomplishments: "", session_date: new Date().toISOString().slice(0, 10) });
@@ -322,12 +316,12 @@ const Development = () => {
             <span className="le-d-label">Pipeline (6 stages, fire-and-forget)</span>
             <ol style={{ marginTop: 12, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                ["1. Intake", <>agent uploads 10–60 photos; <code style={{ fontSize: 11, fontFamily: "var(--le-font-mono)", background: "rgba(11,11,16,0.05)", padding: "1px 5px", borderRadius: 4 }}>POST /api/pipeline/:propertyId</code> fires the run.</>],
+                ["1. Intake", <>agent uploads 10–60 photos; <code style={CODE_CHIP}>POST /api/pipeline/:propertyId</code> fires the run.</>],
                 ["2. Analysis", "Claude vision per photo: room, quality/aesthetic, depth, video_viable, key_features, composition, suggested_motion."],
-                ["3. Style guide", <>one extra vision pass across all selected photos; stored on <code style={{ fontSize: 11, fontFamily: "var(--le-font-mono)", background: "rgba(11,11,16,0.05)", padding: "1px 5px", borderRadius: 4 }}>properties.style_guide</code> but NOT injected into the director.</>],
+                ["3. Style guide", <>one extra vision pass across all selected photos; stored on <code style={CODE_CHIP}>properties.style_guide</code> but NOT injected into the director.</>],
                 ["4. Scripting", "director picks 10–16 scenes from viable photos. PAST GENERATIONS (rated winners + losers from last 30d) appended as in-context learning."],
                 ["5. Generation (submit-only)", "parallel worker pool submits to Kling/Runway, persists task_id, exits. No polling in the pipeline function."],
-                ["6. Cron finalize", <><code style={{ fontSize: 11, fontFamily: "var(--le-font-mono)", background: "rgba(11,11,16,0.05)", padding: "1px 5px", borderRadius: 4 }}>/api/cron/poll-scenes</code> every minute: downloads completed clips, records cost, flips property to complete. Shotstack assembly runs here if <code style={{ fontSize: 11, fontFamily: "var(--le-font-mono)", background: "rgba(11,11,16,0.05)", padding: "1px 5px", borderRadius: 4 }}>SHOTSTACK_API_KEY</code> is set.</>],
+                ["6. Cron finalize", <><code style={CODE_CHIP}>/api/cron/poll-scenes</code> every minute: downloads completed clips, records cost, flips property to complete. Shotstack assembly runs here if <code style={CODE_CHIP}>SHOTSTACK_API_KEY</code> is set.</>],
               ].map(([label, desc], idx) => (
                 <li key={idx} style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: 12, fontSize: 13, color: "var(--ink-2)" }}>
                   <span style={{ fontWeight: 600, color: "var(--ink)" }}>{label}</span>
@@ -340,7 +334,7 @@ const Development = () => {
           <div className="le-card-flat" style={{ padding: 20 }}>
             <span className="le-d-label">Provider routing</span>
             <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--muted)" }}>
-              Movement-first, room-type as tiebreaker. See <code style={{ fontSize: 11, fontFamily: "var(--le-font-mono)", background: "rgba(11,11,16,0.05)", padding: "1px 5px", borderRadius: 4 }}>lib/providers/router.ts</code>.
+              Movement-first, room-type as tiebreaker. See <code style={CODE_CHIP}>lib/providers/router.ts</code>.
             </p>
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
               {[

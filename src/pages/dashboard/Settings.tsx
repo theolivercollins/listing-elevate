@@ -20,7 +20,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     >
       <span style={{
         position: "absolute", top: 2, left: value ? 16 : 2,
-        width: 18, height: 18, borderRadius: 99, background: "#fff",
+        width: 18, height: 18, borderRadius: 999, background: "#fff",
         transition: "left .15s",
         boxShadow: "0 1px 2px rgba(11,11,16,0.15)",
       }} />
@@ -103,7 +103,7 @@ function ModelChip({ provider, model }: { provider: string; model: string }) {
       <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "rgba(11,11,16,0.06)", color: "var(--muted)", letterSpacing: "0.02em" }}>
         {provider}
       </span>
-      <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace" }}>
+      <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
         {model}
       </span>
     </div>
@@ -243,7 +243,7 @@ const Settings = () => {
         <Card padding={24}>
           <SectionHeader eyebrow="Runtime" title="Model versions" />
           <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 4px", lineHeight: 1.6 }}>
-            Read-only. Change model constants in <span style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", fontSize: 11 }}>lib/providers/*</span> and redeploy.
+            Read-only. Change model constants in <span style={{ fontSize: 11 }}>lib/providers/*</span> and redeploy.
           </p>
           <SettingRow first label="Director" hint="Writes the scene script and orchestrates the pipeline.">
             <ModelChip provider="Anthropic" model="claude-sonnet-4-6" />
@@ -337,7 +337,7 @@ const Settings = () => {
             {PROVIDERS.map(p => (
               <div key={p.name} className="le-card-flat" style={{ padding: "12px 14px", borderRadius: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{p.name}</span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, paddingLeft: 15 }}>{p.desc}</div>
@@ -370,7 +370,7 @@ const Settings = () => {
           ] as const).map((row, i) => (
             <SettingRow key={row.label} first={i === 0} label={row.label} hint={row.hint}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {row.url.replace("https://", "")}
                 </span>
                 <a href={row.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--muted)", display: "flex", lineHeight: 1 }}>

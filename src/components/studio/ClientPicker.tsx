@@ -46,28 +46,13 @@ export function ClientPicker({
       <select
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value || null)}
+        className="studio-input"
         style={{
-          width: '100%',
           appearance: 'none',
           WebkitAppearance: 'none',
-          background: 'var(--le-surface)',
-          border: '1px solid var(--le-line)',
-          borderRadius: 'var(--le-radius-sm)',
-          padding: '10px 36px 10px 12px',
-          fontSize: 13.5,
-          fontFamily: 'inherit',
+          paddingRight: 36,
           color: value ? 'var(--le-ink)' : 'var(--le-muted-2)',
-          outline: 'none',
           cursor: 'pointer',
-          transition: 'border-color 0.15s, box-shadow 0.15s',
-        }}
-        onFocus={(e) => {
-          e.currentTarget.style.borderColor = 'rgba(11,11,16,0.16)';
-          e.currentTarget.style.boxShadow = '0 0 0 3px rgba(11,11,16,0.04)';
-        }}
-        onBlur={(e) => {
-          e.currentTarget.style.borderColor = 'var(--le-line)';
-          e.currentTarget.style.boxShadow = 'none';
         }}
       >
         {includeNone && <option value="">No client</option>}

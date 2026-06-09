@@ -143,7 +143,7 @@ export default function SystemStatus() {
                     display: "inline-block",
                     width: 10,
                     height: 10,
-                    borderRadius: 99,
+                    borderRadius: 999,
                     background: hasDegraded ? "var(--warn)" : "var(--good)",
                     flexShrink: 0,
                   }}
@@ -440,7 +440,7 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                   <span
                     style={{
                       padding: "2px 8px",
-                      borderRadius: 99,
+                      borderRadius: 999,
                       fontSize: 10.5,
                       fontWeight: 600,
                       background: cs.bg,
@@ -459,7 +459,7 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                     <span
                       style={{
                         padding: "2px 8px",
-                        borderRadius: 99,
+                        borderRadius: 999,
                         fontSize: 11,
                         background: "rgba(47,138,85,0.10)",
                         color: "var(--good)",
@@ -472,7 +472,7 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                     <span
                       style={{
                         padding: "2px 8px",
-                        borderRadius: 99,
+                        borderRadius: 999,
                         fontSize: 11,
                         background: "rgba(182,128,44,0.10)",
                         color: "var(--warn)",
@@ -694,7 +694,7 @@ function KillSwitchSection({ flags, onReload }: { flags: SystemStatusFlag[]; onR
             <span
               style={{
                 padding: "2px 8px",
-                borderRadius: 99,
+                borderRadius: 999,
                 fontSize: 10.5,
                 fontWeight: 600,
                 background: f.value ? "rgba(182,128,44,0.12)" : "rgba(47,138,85,0.10)",
@@ -848,7 +848,7 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
                         key={t}
                         style={{
                           padding: "1px 6px",
-                          borderRadius: 99,
+                          borderRadius: 999,
                           fontSize: 10.5,
                           background: "rgba(11,11,16,0.05)",
                           color: "var(--muted)",
@@ -1001,7 +1001,7 @@ function ModelsView({ data, loading }: { data: ModelHealthResponse | null; loadi
                     display: "inline-block",
                     width: 6,
                     height: 6,
-                    borderRadius: 99,
+                    borderRadius: 999,
                     background: dotColor,
                     flexShrink: 0,
                   }}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { getPricingTiers, type PricingTier } from "@/v2/data/pricing";
+import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 
 export function Pricing() {
   const [tiers, setTiers] = useState<PricingTier[]>([]);
@@ -42,23 +42,15 @@ export function Pricing() {
                   </li>
                 ))}
               </ul>
-              <Link
+              <LEButtonLink
                 to="/upload"
-                style={t.isLead ? {
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 500,
-                  background: "var(--le-accent)", color: "var(--le-accent-fg)", borderRadius: 4,
-                  textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em",
-                } : {
-                  display: "inline-flex", alignItems: "center", justifyContent: "center",
-                  width: "100%", padding: "10px 16px", fontSize: 13, fontWeight: 500,
-                  background: "transparent", color: "var(--le-text)", borderRadius: 4,
-                  border: "1px solid var(--le-border-strong)",
-                  textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em",
-                }}
+                variant={t.isLead ? "primary" : "ghost"}
+                size="sm"
+                className={t.isLead ? "le-cta-primary-hover" : "le-cta-ghost-hover"}
+                style={{ width: "100%", padding: "10px 16px" }}
               >
                 {t.priceUsd > 0 ? "Get started →" : "Contact sales →"}
-              </Link>
+              </LEButtonLink>
             </div>
           ))}
         </div>

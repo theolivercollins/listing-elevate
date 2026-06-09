@@ -26,7 +26,7 @@ const COLS: string[] = [
 
 // Cell state → visual colors using design token vars
 const STATE_BG: Record<string, string> = {
-  untested: "rgba(11,11,16,0.04)",
+  untested: "var(--line-2)",
   weak:     "rgba(196,74,74,0.15)",
   okay:     "rgba(182,128,44,0.15)",
   strong:   "rgba(47,138,85,0.15)",
@@ -164,7 +164,7 @@ export default function KnowledgeMap() {
               alignItems: "center",
               gap: 6,
               padding: "4px 10px",
-              borderRadius: 99,
+              borderRadius: 999,
               fontSize: 11.5,
               fontWeight: 500,
               background: STATE_BG[s],
@@ -176,7 +176,7 @@ export default function KnowledgeMap() {
                 display: "inline-block",
                 width: 6,
                 height: 6,
-                borderRadius: 99,
+                borderRadius: 999,
                 background: "currentColor",
               }}
             />

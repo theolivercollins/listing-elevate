@@ -759,7 +759,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
                 No sessions in this filter.
               </div>
             ) : (
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 16 }}>
                 {visible.map((s) => (
                   <SessionCard
                     key={s.id}
@@ -783,7 +783,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
       })()}
 
       {/* Collapsed batch tiles — clean grid, no inline expansion */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 16 }}>
         {ordered.map(([batch, items]) => {
           // Skip the currently-expanded batch — it's rendered in the drawer above.
           if (batch === expandedBatchKey) return null;
@@ -840,7 +840,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
                     </div>
                   ))}
                   {Array.from({ length: Math.max(0, 4 - previewImages.length) }).map((_, i) => (
-                    <div key={`placeholder-${i}`} style={{ background: "rgba(11,11,16,0.04)" }} />
+                    <div key={`placeholder-${i}`} style={{ background: "var(--line-2)" }} />
                   ))}
                 </div>
                 <div style={{ minWidth: 0 }}>
@@ -988,7 +988,7 @@ function ListingSelectionSection({ batchLabel, version }: { batchLabel: string |
                   <> {data.unanalyzed.length} session{data.unanalyzed.length === 1 ? "" : "s"} still need analysis and were excluded.</>
                 )}
               </p>
-              <div className="grid gap-4 md:grid-cols-3">
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
                 <SelectionColumn
                   title="Selected"
                   count={data.selected_count}
@@ -1555,7 +1555,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
 
   if (!data) {
     return (
-      <div className="py-20 text-center">
+      <div style={{ padding: "80px 0", textAlign: "center" }}>
         <Loader2 className="animate-spin" style={{ width: 22, height: 22, display: "block", margin: "0 auto", color: "var(--muted)" }} />
       </div>
     );
@@ -1968,7 +1968,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
     <>
       {exemplars.length > 0 && (
         <span
-          style={{ ...chipBase, background: "rgba(11,11,16,0.07)", color: "var(--ink-2)" }}
+          style={{ ...chipBase, background: "var(--line)", color: "var(--ink-2)" }}
           title={exemplars.map((e) => `${e.rating}★ · ${e.camera_movement} · d=${e.distance.toFixed(3)}\n   ${e.prompt}`).join("\n\n")}
         >
           Based on {exemplars.length} similar {exemplars.length === 1 ? "win" : "wins"}
@@ -2538,7 +2538,7 @@ function IterationCard({
         )}
 
         {iteration.user_comment && iteration.user_comment.startsWith("[refiner rationale]") && (
-          <div style={{ marginTop: 12, borderRadius: "var(--radius-sm)", background: "rgba(11,11,16,0.04)", padding: 12, fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>
+          <div style={{ marginTop: 12, borderRadius: "var(--radius-sm)", background: "var(--line-2)", padding: 12, fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>
             {iteration.user_comment.replace("[refiner rationale] ", "Why: ")}
           </div>
         )}

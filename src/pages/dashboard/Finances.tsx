@@ -295,7 +295,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
         style={{
           width: 8,
           height: 8,
-          borderRadius: 99,
+          borderRadius: 999,
           background: color,
           flexShrink: 0,
         }}
@@ -1032,8 +1032,8 @@ export default function Finances() {
                 <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{fmtCentsPrim(r.month)}</span>
                 <span className="le-tabular" style={{ fontSize: 12, textAlign: "right", color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{r.events.toLocaleString()}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: 99, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent)", borderRadius: 99 }} />
+                  <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: 999, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent)", borderRadius: 999 }} />
                   </div>
                   <span className="le-tabular" style={{ fontSize: 11, color: "var(--muted-2)", width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.share}%</span>
                 </div>
@@ -1077,15 +1077,15 @@ export default function Finances() {
                     </div>
                     <span
                       style={{
-                        width: 12, height: 12, borderRadius: 99,
+                        width: 12, height: 12, borderRadius: 999,
                         background: PROVIDER_COLORS[row.provider],
                         flexShrink: 0, marginTop: 2,
                       }}
                     />
                   </div>
-                  <div style={{ marginTop: 14, height: 3, width: "100%", borderRadius: 99, background: "rgba(15,24,60,0.08)" }}>
+                  <div style={{ marginTop: 14, height: 3, width: "100%", borderRadius: 999, background: "rgba(15,24,60,0.08)" }}>
                     <motion.div
-                      style={{ height: "100%", borderRadius: 99, background: PROVIDER_COLORS[row.provider] }}
+                      style={{ height: "100%", borderRadius: 999, background: PROVIDER_COLORS[row.provider] }}
                       initial={{ width: 0 }}
                       animate={{ width: `${usedPct}%` }}
                       transition={{ duration: 1, ease: EASE }}
@@ -1333,7 +1333,7 @@ export default function Finances() {
                     background: statusBg, padding: "3px 8px", borderRadius: 999,
                     textTransform: "capitalize", width: "fit-content",
                   }}>
-                    <span style={{ width: 5, height: 5, borderRadius: 99, background: statusColor, flexShrink: 0 }} />
+                    <span style={{ width: 5, height: 5, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
                     {sub.status}
                   </span>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>

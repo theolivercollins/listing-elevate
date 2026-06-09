@@ -318,8 +318,8 @@ export function IterateInLabModal({
 
                       <button
                         type="button"
-                        className={isSuccess ? 'studio-cta-primary' : 'studio-btn-ghost'}
-                        style={{ width: '100%', justifyContent: 'center', fontSize: 11.5, padding: '7px 12px' }}
+                        className={(isSuccess ? 'studio-cta-primary' : 'studio-btn-ghost') + ' studio-btn-sm'}
+                        style={{ width: '100%', justifyContent: 'center' }}
                         onClick={() => handleSwap(iter)}
                         disabled={!!swappingId || !!swapSuccess}
                       >

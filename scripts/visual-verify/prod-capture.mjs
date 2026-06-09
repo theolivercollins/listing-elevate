@@ -1,0 +1,11 @@
+import { chromium } from "playwright-core";
+const browser = await chromium.launch({ executablePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", headless: true });
+const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
+await page.goto("https://www.listingelevate.com/", { waitUntil: "networkidle" }).catch(() => {});
+await page.waitForTimeout(2000);
+await page.screenshot({ path: "/tmp/le-visual/00-PROD-landing-hero.png" });
+await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+await page.waitForTimeout(1800);
+await page.screenshot({ path: "/tmp/le-visual/00-PROD-final-cta.png" });
+await browser.close();
+console.log("prod captured");

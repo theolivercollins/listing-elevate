@@ -24,6 +24,8 @@ import {
 import type { EmailState } from "@/lib/blog/types";
 import { PageHeading, KpiCard, Card } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
+import { ListTabs } from "@/components/dashboard/ListTabs";
+import { StatePill, EMAIL_STATE_PILL_MAP } from "@/components/dashboard/StatePill";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import React from "react";
@@ -37,66 +39,6 @@ const STATE_FILTERS: Array<{ label: string; value: EmailState | "all" }> = [
   { label: "Sent",   value: "sent"   },
   { label: "Failed", value: "failed" },
 ];
-
-// ─── inline styles (v3 tokens) ────────────────────────────────────────────────
-
-const tabBtnBase: React.CSSProperties = {
-  padding: "8px 14px",
-  borderRadius: 999,
-  border: "none",
-  fontSize: 12.5,
-  fontWeight: 600,
-  cursor: "pointer",
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  transition: "background .2s",
-  fontFamily: "var(--le-font-sans)",
-};
-
-// ─── StatePill ────────────────────────────────────────────────────────────────
-
-const STATE_PILL_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  draft:   { label: "Draft",   color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
-  ready:   { label: "Ready",   color: "var(--ink-2)", bg: "rgba(15,24,60,0.06)"   },
-  sending: { label: "Sending", color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
-  sent:    { label: "Sent",    color: "var(--good)",  bg: "rgba(47,138,85,0.10)"  },
-  failed:  { label: "Failed",  color: "var(--bad)",   bg: "rgba(196,74,74,0.10)"  },
-};
-
-function StatePill({ state }: { state: EmailState }) {
-  const s =
-    STATE_PILL_MAP[state] ?? { label: state, color: "var(--muted)", bg: "rgba(11,11,16,0.06)" };
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        padding: "3px 8px",
-        borderRadius: 99,
-        fontSize: 11,
-        fontWeight: 600,
-        letterSpacing: "0.01em",
-        background: s.bg,
-        color: s.color,
-        fontFamily: "var(--le-font-sans)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: "50%",
-          background: s.color,
-          flexShrink: 0,
-        }}
-      />
-      {s.label}
-    </span>
-  );
-}
 
 // ─── "New email" dropdown (native, v3 tokens — matches Blog's NewPostDropdown) ─
 
@@ -122,7 +64,7 @@ function NewEmailDropdown({
           borderRadius: 12,
           border: "none",
           background: "var(--ink)",
-          color: "#fff",
+          color: "var(--surface)",
           fontSize: 13,
           fontWeight: 600,
           cursor: "pointer",
@@ -147,7 +89,7 @@ function NewEmailDropdown({
               right: 0,
               zIndex: 50,
               minWidth: 280,
-              background: "#fff",
+              background: "var(--surface)",
               borderRadius: 14,
               boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
               border: "1px solid rgba(15,24,60,0.06)",
@@ -327,36 +269,12 @@ export default function EmailsList() {
           }}
         >
           {/* Tab pills */}
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            {STATE_FILTERS.map((f) => {
-              const active = activeState === f.value;
-              return (
-                <button
-                  key={f.value}
-                  type="button"
-                  onClick={() => setActiveState(f.value)}
-                  style={{
-                    ...tabBtnBase,
-                    background: active ? "var(--ink)" : "transparent",
-                    color: active ? "#fff" : "var(--muted)",
-                  }}
-                >
-                  {f.label}
-                  <span
-                    style={{
-                      fontVariantNumeric: "tabular-nums",
-                      fontSize: 10,
-                      padding: "1px 6px",
-                      borderRadius: 99,
-                      background: active ? "rgba(255,255,255,0.18)" : "rgba(15,24,60,0.05)",
-                    }}
-                  >
-                    {tabCounts[f.value]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          <ListTabs
+            filters={STATE_FILTERS}
+            active={activeState}
+            counts={tabCounts}
+            onChange={setActiveState}
+          />
 
           <div style={{ flex: 1 }} />
 
@@ -577,7 +495,7 @@ function EmailRow({
             style={{
               fontSize: 10,
               padding: "2px 6px",
-              borderRadius: 99,
+              borderRadius: 999,
               background: "rgba(15,24,60,0.05)",
               color: "var(--muted)",
               flexShrink: 0,
@@ -589,7 +507,7 @@ function EmailRow({
       </div>
 
       {/* State */}
-      <div><StatePill state={e.state} /></div>
+      <div><StatePill state={e.state} map={EMAIL_STATE_PILL_MAP} /></div>
 
       {/* Audience */}
       <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -734,7 +652,7 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
                 borderRadius: 12,
                 border: "none",
                 background: "var(--ink)",
-                color: "#fff",
+                color: "var(--surface)",
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: !selectedPostId || convert.isPending ? "not-allowed" : "pointer",

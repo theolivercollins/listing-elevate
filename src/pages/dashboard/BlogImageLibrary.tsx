@@ -169,7 +169,7 @@ export default function BlogImageLibrary() {
                       borderRadius: "var(--radius-pill)",
                       border: on ? "none" : "1px solid var(--line)",
                       background: on ? "var(--ink)" : "var(--surface)",
-                      color: on ? "#fff" : "var(--ink-2)",
+                      color: on ? "var(--surface)" : "var(--ink-2)",
                       fontSize: 12,
                       fontWeight: 500,
                       cursor: "pointer",

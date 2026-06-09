@@ -66,7 +66,7 @@ export default function AccountBilling() {
             style={{
               ...ROW_STYLE,
               borderBottom: "1px solid var(--line)",
-              background: "rgba(11,11,16,0.02)",
+              background: "var(--line-2)",
             }}
           >
             <span className="le-d-label">Property</span>
@@ -89,7 +89,7 @@ export default function AccountBilling() {
                 <div
                   key={p.id}
                   style={ROW_STYLE}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(11,11,16,0.02)"; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--line-2)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                 >
                   <span
@@ -130,7 +130,7 @@ export default function AccountBilling() {
                   ...ROW_STYLE,
                   borderBottom: "none",
                   borderTop: "1px solid var(--line)",
-                  background: "rgba(11,11,16,0.02)",
+                  background: "var(--line-2)",
                 }}
               >
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>Total</span>

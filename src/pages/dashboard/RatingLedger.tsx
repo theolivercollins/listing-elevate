@@ -74,22 +74,6 @@ function FilterChip({
   );
 }
 
-// ─── ghost button styles ──────────────────────────────────────────
-const GHOST_BTN: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "7px 12px",
-  borderRadius: "var(--radius-sm)",
-  border: "1px solid var(--line)",
-  background: "transparent",
-  color: "var(--ink-2)",
-  fontSize: 12.5,
-  fontWeight: 500,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-
 // ─── main component ───────────────────────────────────────────────
 export default function RatingLedger() {
   const [rows, setRows] = useState<LedgerRow[]>([]);
@@ -388,7 +372,6 @@ export default function RatingLedger() {
             <button
               className="le-btn-ghost"
               style={{
-                ...GHOST_BTN,
                 opacity: offset === 0 || loading ? 0.4 : 1,
                 cursor: offset === 0 || loading ? "not-allowed" : "pointer",
               }}
@@ -400,7 +383,6 @@ export default function RatingLedger() {
             <button
               className="le-btn-ghost"
               style={{
-                ...GHOST_BTN,
                 opacity: !hasMore || loading ? 0.4 : 1,
                 cursor: !hasMore || loading ? "not-allowed" : "pointer",
               }}

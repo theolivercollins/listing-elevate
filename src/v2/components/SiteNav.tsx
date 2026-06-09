@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { LEIcon } from "@/v2/components/primitives/LEIcon";
+import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import { useTheme } from "@/lib/theme";
@@ -64,7 +65,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
   const iconColor = solid ? "var(--le-text)" : "#fff";
 
   const navStyle: CSSProperties = solid
-    ? {
+    ? ({
         position: "fixed",
         top: 0,
         left: 0,
@@ -77,8 +78,10 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
         zIndex: 20,
         background: "var(--le-bg)",
         borderBottom: "1px solid var(--le-border)",
-      }
-    : {
+        // .le-nav-link hover target — full-strength text in this mode.
+        "--le-nav-hover-color": "var(--le-text)",
+      } as CSSProperties)
+    : ({
         position: "fixed",
         top: 0,
         left: 0,
@@ -93,7 +96,9 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
           "linear-gradient(180deg, rgba(5,7,16,0.82) 0%, rgba(5,7,16,0.55) 65%, rgba(5,7,16,0) 100%)",
         backdropFilter: "blur(14px) saturate(1.2)",
         WebkitBackdropFilter: "blur(14px) saturate(1.2)",
-      };
+        // .le-nav-link hover target — always on a dark scrim here.
+        "--le-nav-hover-color": "#fff",
+      } as CSSProperties);
 
   // In solid mode, pick a logo variant that reads on the current bg.
   // In gradient mode we're always on a dark scrim, so "light" (white) logo.
@@ -128,16 +133,16 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             fontFamily: "var(--le-font-sans)",
           }}
         >
-          <a href="#process" style={navLinkStyle}>
+          <a href="#process" className="le-nav-link" style={navLinkStyle}>
             Process
           </a>
-          <a href="#showcase" style={navLinkStyle}>
+          <a href="#showcase" className="le-nav-link" style={navLinkStyle}>
             Showcase
           </a>
-          <a href="#pricing" style={navLinkStyle}>
+          <a href="#pricing" className="le-nav-link" style={navLinkStyle}>
             Pricing
           </a>
-          <a href="#faq" style={navLinkStyle}>
+          <a href="#faq" className="le-nav-link" style={navLinkStyle}>
             FAQ
           </a>
         </div>
@@ -170,6 +175,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
           <>
             <Link
               to="/account"
+              className="le-nav-link"
               style={{
                 fontSize: 11,
                 fontWeight: 500,
@@ -185,6 +191,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             {isAdmin && (
               <Link
                 to="/dashboard"
+                className="le-nav-link"
                 style={{
                   fontSize: 11,
                   fontWeight: 500,
@@ -201,6 +208,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <button
               type="button"
               onClick={handleSignOut}
+              className="le-nav-link"
               style={{
                 background: "transparent",
                 border: "none",
@@ -222,6 +230,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <button
               type="button"
               onClick={openLogin}
+              className="le-nav-link"
               style={{
                 background: "transparent",
                 border: "none",
@@ -235,27 +244,9 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             >
               Sign in
             </button>
-            <Link
-              to="/upload"
-              style={{
-                background: "var(--le-accent)",
-                color: "var(--le-accent-fg)",
-                border: "none",
-                padding: "8px 16px",
-                borderRadius: 4,
-                fontSize: 13,
-                fontWeight: 500,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                cursor: "pointer",
-                letterSpacing: "-0.005em",
-                textDecoration: "none",
-                fontFamily: "var(--le-font-sans)",
-              }}
-            >
+            <LEButtonLink to="/upload" variant="primary" size="sm" className="le-cta-primary-hover">
               Get started <LEIcon name="arrow" size={12} color="var(--le-accent-fg)" />
-            </Link>
+            </LEButtonLink>
           </>
         )}
       </div>

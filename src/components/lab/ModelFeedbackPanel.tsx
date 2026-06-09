@@ -151,7 +151,7 @@ export function ModelFeedbackPanel({ iterationId }: ModelFeedbackPanelProps) {
                   key={row.id}
                   style={{
                     borderRadius: "var(--radius-sm)",
-                    background: "rgba(11,11,16,0.04)",
+                    background: "var(--line-2)",
                     border: "1px solid var(--line-2)",
                     padding: "8px 12px",
                     fontSize: 12,

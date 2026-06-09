@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 
 export function FounderOffer() {
   return (
@@ -30,9 +30,9 @@ export function FounderOffer() {
             50% off your first three videos. First 50 signups.
           </span>
         </div>
-        <Link to="/upload" style={{ background: "var(--le-accent)", color: "var(--le-accent-fg)", padding: "8px 16px", fontSize: 13, fontWeight: 500, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 4, textDecoration: "none", fontFamily: "var(--le-font-sans)", letterSpacing: "-0.005em" }}>
+        <LEButtonLink to="/upload" variant="primary" size="sm" className="le-cta-primary-hover" style={{ gap: 6 }}>
           Claim spot →
-        </Link>
+        </LEButtonLink>
       </div>
     </section>
   );

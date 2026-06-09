@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import { LEIcon } from "@/v2/components/primitives/LEIcon";
+import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { LECyclingWord } from "@/v2/components/primitives/LECyclingWord";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
@@ -23,7 +23,7 @@ export function Hero() {
         minHeight: "clamp(480px, 70vh, 574px)",
         height: "auto",
         overflow: "hidden",
-        background: "#000",
+        background: "var(--le-bg)",
       }}
     >
       {/* Background image */}
@@ -65,7 +65,7 @@ export function Hero() {
           paddingRight: "clamp(16px, 5vw, 48px)",
           paddingTop: 96,
           paddingBottom: "clamp(40px, 8vw, 48px)",
-          color: "#fff",
+          color: "var(--le-text)",
           zIndex: 2,
           display: "flex",
           flexDirection: "column",
@@ -132,47 +132,18 @@ export function Hero() {
             marginTop: 40,
           }}
         >
-          <Link
+          <LEButtonLink
             to="/upload"
-            style={{
-              background: "#fff",
-              color: "#07080c",
-              border: "none",
-              padding: "16px 22px",
-              fontSize: 14,
-              fontWeight: 500,
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              letterSpacing: "-0.005em",
-              borderRadius: 4,
-              textDecoration: "none",
-              fontFamily: "var(--le-font-sans)",
-            }}
+            variant="primary"
+            size="lg"
+            className="le-cta-primary-hover"
+            style={{ padding: "16px 22px", gap: 10 }}
           >
-            Start a video <LEIcon name="arrow" size={14} color="#07080c" />
-          </Link>
-          <button
-            type="button"
-            onClick={openLogin}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-              fontSize: 14,
-              color: "#fff",
-              textDecoration: "underline",
-              textUnderlineOffset: 4,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              fontFamily: "var(--le-font-sans)",
-            }}
-          >
+            Start a video <LEIcon name="arrow" size={14} color="currentColor" />
+          </LEButtonLink>
+          <button type="button" onClick={openLogin} className="le-cta-textlink">
             Sign in to your account
-            <LEIcon name="arrowUpRight" size={12} color="#fff" />
+            <LEIcon name="arrowUpRight" size={12} color="currentColor" />
           </button>
         </div>
       </div>

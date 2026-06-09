@@ -14,16 +14,8 @@ export interface LoginDialogProps {
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
-const eyebrowStyle: React.CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: 10,
-  letterSpacing: "0.22em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.55)",
-};
-
+// Layout-only addition on top of className="le-eyebrow" for form labels.
 const labelStyle: React.CSSProperties = {
-  ...eyebrowStyle,
   display: "block",
   marginBottom: 8,
 };
@@ -31,9 +23,9 @@ const labelStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   width: "100%",
   background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(220,230,255,0.18)",
+  border: "1px solid var(--le-border-strong)",
   borderRadius: 4,
-  color: "#fff",
+  color: "var(--le-text)",
   fontFamily: "var(--le-font-sans)",
   fontSize: 14,
   height: 46,
@@ -121,6 +113,9 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
       {open && (
         <motion.div
           key="login-dialog-root"
+          // `dark` anchors the --le-* tokens to their dark values: the dialog
+          // is always editorial-dark and portals outside any themed subtree.
+          className="dark"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -163,11 +158,11 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
               position: "relative",
               width: "100%",
               maxWidth: 440,
-              background: "#0b0f1c",
-              border: "1px solid rgba(220,230,255,0.14)",
+              background: "var(--le-bg-elev)",
+              border: "1px solid var(--le-border-strong)",
               borderRadius: 4,
               padding: "40px 40px 32px",
-              color: "#fff",
+              color: "var(--le-text)",
               boxShadow: "0 32px 80px rgba(0,0,0,0.55)",
               fontFamily: "var(--le-font-sans)",
             }}
@@ -208,7 +203,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   style={{
                     width: 44,
                     height: 44,
-                    border: "1px solid rgba(220,230,255,0.22)",
+                    border: "1px solid var(--le-border-strong)",
                     background: "rgba(255,255,255,0.06)",
                     display: "inline-flex",
                     alignItems: "center",
@@ -217,7 +212,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   }}
                 >
                   <CheckCircle2
-                    style={{ width: 18, height: 18, color: "#fff" }}
+                    style={{ width: 18, height: 18, color: "var(--le-text)" }}
                     strokeWidth={1.5}
                   />
                 </div>
@@ -228,7 +223,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     fontWeight: 500,
                     letterSpacing: "-0.02em",
                     margin: 0,
-                    color: "#fff",
+                    color: "var(--le-text)",
                     fontFamily: "var(--le-font-sans)",
                   }}
                 >
@@ -238,13 +233,13 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   style={{
                     marginTop: 10,
                     fontSize: 14,
-                    color: "rgba(255,255,255,0.62)",
+                    color: "var(--le-text-muted)",
                     lineHeight: 1.55,
                     fontFamily: "var(--le-font-sans)",
                   }}
                 >
                   Magic link sent to{" "}
-                  <span style={{ fontWeight: 500, color: "#fff" }}>{email}</span>. Click it to sign in.
+                  <span style={{ fontWeight: 500, color: "var(--le-text)" }}>{email}</span>. Click it to sign in.
                 </p>
                 <button
                   type="button"
@@ -270,7 +265,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
               </>
             ) : (
               <>
-                <span style={eyebrowStyle}>— Sign in</span>
+                <span className="le-eyebrow">— Sign in</span>
                 <h2
                   id="login-heading"
                   style={{
@@ -279,7 +274,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     fontSize: 28,
                     fontWeight: 500,
                     letterSpacing: "-0.035em",
-                    color: "#fff",
+                    color: "var(--le-text)",
                     fontFamily: "var(--le-font-sans)",
                   }}
                 >
@@ -289,7 +284,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   style={{
                     margin: 0,
                     fontSize: 13,
-                    color: "rgba(255,255,255,0.62)",
+                    color: "var(--le-text-muted)",
                     lineHeight: 1.55,
                     fontFamily: "var(--le-font-sans)",
                   }}
@@ -309,7 +304,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   }}
                 >
                   <div>
-                    <label htmlFor="login-email" style={labelStyle}>
+                    <label htmlFor="login-email" className="le-eyebrow" style={labelStyle}>
                       Email
                     </label>
                     <div style={{ position: "relative" }}>
@@ -322,7 +317,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                           transform: "translateY(-50%)",
                           width: 16,
                           height: 16,
-                          color: "rgba(255,255,255,0.35)",
+                          color: "var(--le-text-faint)",
                           pointerEvents: "none",
                         }}
                       />
@@ -342,7 +337,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
 
                   {mode === "password" && (
                     <div>
-                      <label htmlFor="login-password" style={labelStyle}>
+                      <label htmlFor="login-password" className="le-eyebrow" style={labelStyle}>
                         Password
                       </label>
                       <div style={{ position: "relative" }}>
@@ -355,7 +350,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                             transform: "translateY(-50%)",
                             width: 16,
                             height: 16,
-                            color: "rgba(255,255,255,0.35)",
+                            color: "var(--le-text-faint)",
                             pointerEvents: "none",
                           }}
                         />
@@ -377,8 +372,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     <div
                       role="alert"
                       style={{
-                        border: "1px solid rgba(255,80,80,0.4)",
-                        background: "rgba(255,80,80,0.08)",
+                        border: "1px solid var(--le-danger)",
+                        background: "var(--le-danger-soft)",
                         padding: 12,
                         borderRadius: 4,
                       }}
@@ -387,7 +382,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                         style={{
                           margin: 0,
                           fontSize: 12,
-                          color: "rgba(255,140,140,0.95)",
+                          color: "var(--le-danger)",
                           fontFamily: "var(--le-font-sans)",
                         }}
                       >
@@ -405,8 +400,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       background:
                         submitting || !canSubmit
                           ? "rgba(255,255,255,0.28)"
-                          : "#fff",
-                      color: "#07080c",
+                          : "var(--le-accent)",
+                      color: "var(--le-accent-fg)",
                       border: "none",
                       padding: "12px 20px",
                       fontSize: 14,

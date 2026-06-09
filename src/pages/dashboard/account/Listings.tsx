@@ -48,7 +48,7 @@ export default function AccountListings() {
             style={{
               ...ROW_STYLE,
               borderBottom: "1px solid var(--line)",
-              background: "rgba(11,11,16,0.02)",
+              background: "var(--line-2)",
               color: "var(--muted)",
             }}
           >
@@ -78,7 +78,7 @@ export default function AccountListings() {
                 key={p.id}
                 to={`/dashboard/properties/${p.id}`}
                 style={ROW_STYLE}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(11,11,16,0.02)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--line-2)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
               >
                 <div style={{ minWidth: 0 }}>

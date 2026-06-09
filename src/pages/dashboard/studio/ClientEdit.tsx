@@ -268,7 +268,7 @@ const ClientEdit = () => {
       <div className="studio-page-heading">
         <div>
           <span className="studio-page-eyebrow">Studio · clients</span>
-          <h1 className="studio-page-h1" style={{ fontSize: 40 }}>
+          <h1 className="studio-page-h1">
             {isNew ? 'New client' : form.name || 'Edit client'}
           </h1>
         </div>
@@ -465,7 +465,6 @@ const ClientEdit = () => {
                 <button
                   type="button"
                   className="studio-btn-ghost"
-                  style={{ fontSize: 12 }}
                   onClick={() => logoInputRef.current?.click()}
                 >
                   {form.brand_logo_url || logoFile ? 'Replace logo' : 'Upload logo'}
@@ -579,7 +578,6 @@ const ClientEdit = () => {
                 <button
                   type="button"
                   className="studio-btn-ghost"
-                  style={{ fontSize: 12 }}
                   onClick={() => headshotInputRef.current?.click()}
                 >
                   {form.agent_headshot_url || headshotFile ? 'Replace headshot' : 'Upload headshot'}

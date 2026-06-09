@@ -21,8 +21,7 @@
   --radius: 18px;
   --radius-sm: 12px;
   --radius-pill: 999px;
-  --font: "Inter", -apple-system, BlinkMacSystemFont, "Helvetica Neue",
-    system-ui, sans-serif;
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --shadow-sm: 0 1px 2px rgba(11, 11, 16, 0.04),
     0 0 0 1px rgba(11, 11, 16, 0.04);
   --shadow-md: 0 2px 4px rgba(11, 11, 16, 0.04),
@@ -1531,6 +1530,26 @@
   font-size: 12px;
   color: var(--bad);
   margin-top: 4px;
+}
+
+/* ─── Focus rings (keyboard accessibility) ─── */
+.g-cta-primary:focus-visible,
+.g-btn-ghost:focus-visible,
+.g-step-pip:focus-visible,
+.g-choice-card:focus-visible,
+.g-duration-tile:focus-visible,
+.g-orient-tile:focus-visible,
+.g-addon-head:focus-visible,
+.g-voice-tile:focus-visible,
+.g-mls-btn:focus-visible,
+.g-mls-reset:focus-visible,
+.g-vo-regen:focus-visible,
+.g-dropzone:focus-visible,
+.g-photo-remove:focus-visible,
+.g-input:focus-visible,
+.g-custom-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ════════════════════════════════════════════════════════════════

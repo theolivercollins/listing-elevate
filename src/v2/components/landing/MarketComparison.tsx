@@ -77,15 +77,7 @@ function FirstImpression() {
           }}
         >
           <div style={{ width: 20, height: 1, background: "#fff" }} />
-          <span
-            style={{
-              fontSize: 11,
-              letterSpacing: "0.22em",
-              textTransform: "uppercase",
-              color: "rgba(255,255,255,0.78)",
-              fontFamily: "var(--le-font-sans)",
-            }}
-          >
+          <span className="le-eyebrow" style={{ color: "rgba(255,255,255,0.78)" }}>
             First impression
           </span>
         </div>

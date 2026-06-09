@@ -38,7 +38,7 @@ const STICKY: CSSProperties = {
 const WRAP: CSSProperties = {
   display: "inline-flex",
   padding: 4,
-  background: "rgba(11,11,16,0.04)",
+  background: "var(--line-2)",
   borderRadius: 999,
 };
 
