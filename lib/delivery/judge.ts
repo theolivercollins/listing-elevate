@@ -218,14 +218,8 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
     }
   }
 
-  // Draft order (Task 12's helper) + advance. The specifier is computed so
-  // vite import-analysis / tsc don't fail the build before Task 12 creates
-  // ./order.ts; until then a live judge pass throws here at runtime (plan:
-  // Tasks 11+12 must both land before a delivery judge pass runs).
-  const orderModulePath = './order.js';
-  const { draftOrderForRun } = (await import(/* @vite-ignore */ orderModulePath)) as {
-    draftOrderForRun: (runId: string) => Promise<string[]>;
-  };
+  // Draft order (Task 12's helper) + advance.
+  const { draftOrderForRun } = await import('./order.js');
   const order = await draftOrderForRun(runId);
   await updateRun(runId, { scene_order: order } as Partial<DeliveryRunRow>);
   try {
