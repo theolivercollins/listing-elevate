@@ -6,6 +6,7 @@ import {
   selectProvider,
   forceSeedancePushInPrompt,
 } from '../providers/router.js';
+import { atlasClipCostCents, V1_DEFAULT_SKU } from '../providers/atlas.js';
 import type { SceneVariantRow } from '../types/operator-studio.js';
 import type { RoomType, CameraMovement, VideoProvider, PipelineMode } from '../types.js';
 
@@ -118,6 +119,7 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
     .is('clip_url', null)
     .is('error', null)
     .eq('variant', 'B')
+    .order('created_at', { ascending: true })
     .limit(limit);
 
   let completed = 0, failed = 0;
@@ -170,8 +172,13 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
       // Fallback cost estimate when the provider doesn't return credit
       // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
       // Kling v2-master is 10 units/clip (5s) regardless of duration.
-      // (Copied from api/cron/poll-scenes.ts so B-variant costs are never
-      // silently 0 for those providers.)
+      // Atlas: use atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds) — the
+      // model key isn't stored on scene_variants, so we use the established
+      // per-second price map (atlas.ts:atlasClipCostCents) with the current
+      // default SKU. If status.costCents is already populated by AtlasProvider
+      // (it returns this.model.priceCentsPerClip on success), this branch is a
+      // safety net for any edge case where that field is null.
+      // keep in sync with api/cron/poll-scenes.ts cost fallback
       const durationSeconds = scene.duration_seconds ?? 5;
       let fallbackUnits: number | undefined;
       let fallbackUnitType: 'credits' | 'kling_units' | undefined;
@@ -184,6 +191,11 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         fallbackUnits = 10;
         fallbackUnitType = 'kling_units';
         fallbackCents = Math.round(fallbackUnits * parseFloat(process.env.KLING_CENTS_PER_UNIT ?? '0'));
+      } else if (provider.name === 'atlas') {
+        fallbackCents = atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds);
+        if (fallbackCents === 0) {
+          console.warn('[cost] atlas render missing costCents — SKU not stored on scene_variants; using V1_DEFAULT_SKU fallback');
+        }
       }
 
       const costCents = status.costCents ?? fallbackCents;
@@ -200,6 +212,11 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         costCents,
         metadata: { delivery_run_id: v.delivery_run_id, variant: 'B', duration_seconds: scene.duration_seconds, source: 'cron' },
       }).catch((e) => console.error('[delivery/variants] cost_event failed:', e));
+      // Mirror poll-scenes.ts "recovered by cron" convention so B completions
+      // are visible in the property timeline (same log() table + stage).
+      await log(scene.property_id, 'generation', 'info',
+        `Scene ${scene.scene_number}: variant B clip collected from ${v.provider}`,
+        { costCents, delivery_run_id: v.delivery_run_id }, v.scene_id);
       completed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

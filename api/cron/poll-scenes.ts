@@ -170,6 +170,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Fallback cost estimate when the provider doesn't return credit
         // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
         // Kling v2-master is 10 units/clip (5s) regardless of duration.
+        // Atlas: use atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds) — the
+        // model key isn't stored on scenes at poll time, so we use the
+        // established per-second price map with the current default SKU.
+        // If status.costCents is already populated by AtlasProvider
+        // (it returns this.model.priceCentsPerClip on success), this branch
+        // is a safety net for any edge case where that field is null.
+        // keep in sync with lib/delivery/variants.ts cost fallback
+        const { atlasClipCostCents, V1_DEFAULT_SKU } = await import('../../lib/providers/atlas.js');
         const durationSeconds = scene.duration_seconds ?? 5;
         let fallbackUnits: number | undefined;
         let fallbackUnitType: 'credits' | 'kling_units' | undefined;
@@ -182,6 +190,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fallbackUnits = 10;
           fallbackUnitType = 'kling_units';
           fallbackCents = Math.round(fallbackUnits * parseFloat(process.env.KLING_CENTS_PER_UNIT ?? '0'));
+        } else if (provider.name === 'atlas') {
+          fallbackCents = atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds);
+          if (fallbackCents === 0) {
+            await log(scene.property_id, 'generation', 'warn',
+              `[cost] atlas render missing costCents for scene ${scene.scene_number} — using V1_DEFAULT_SKU fallback`,
+              undefined, scene.id);
+          }
         }
 
         const costCents = status.costCents ?? fallbackCents;
