@@ -72,7 +72,7 @@ export interface ComposeMusicResult {
 export async function composeMusic(
   prompt: string,
   lengthMs: number,
-  opts: { propertyId?: string | null } = {},
+  opts: { propertyId?: string | null; deliveryRunId?: string | null } = {},
 ): Promise<ComposeMusicResult> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY env var is not set");
@@ -106,7 +106,11 @@ export async function composeMusic(
     unitsConsumed: Math.round(body.music_length_ms / 1000),
     unitType: "credits",
     costCents,
-    metadata: { kind: "music_generation", music_length_ms: body.music_length_ms },
+    metadata: {
+      kind: "music_generation",
+      music_length_ms: body.music_length_ms,
+      ...(opts.deliveryRunId ? { delivery_run_id: opts.deliveryRunId } : {}),
+    },
   }).catch((e) => console.error("[elevenlabs-music] cost_event insert failed:", e));
 
   return { audio, lengthMs: body.music_length_ms };

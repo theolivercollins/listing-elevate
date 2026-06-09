@@ -130,11 +130,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               ({ audioUrl } = await generateVoiceoverAudio({
                 script: run.voiceover_script, voiceId: run.voiceover_voice_id,
                 propertyId: run.property_id, storageFolder: run.property_id,
+                deliveryRunId: runId,
               }));
             } catch {
               ({ audioUrl } = await generateVoiceoverAudio({
                 script: run.voiceover_script, voiceId: run.voiceover_voice_id,
                 propertyId: run.property_id, storageFolder: run.property_id,
+                deliveryRunId: runId,
               }));
             }
             const updated = await uRun3(runId, { voiceover_audio_url: audioUrl } as never);
@@ -162,7 +164,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
           const db = (await import('../../../../lib/client.js')).getSupabase();
           try {
-            const { audio } = await composeMusic(MOOD_PROMPTS[mood], lengthMs, { propertyId: run.property_id });
+            const { audio } = await composeMusic(MOOD_PROMPTS[mood], lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
             const path = `delivery/${run.id}/${Date.now()}.mp3`;
             const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
             if (upErr) throw new Error(upErr.message);

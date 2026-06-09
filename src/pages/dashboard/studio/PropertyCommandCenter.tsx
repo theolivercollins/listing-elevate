@@ -55,6 +55,7 @@ interface SceneRow {
 interface CostBundle {
   total_cents: number;
   by_provider: Record<string, number>;
+  delivery: { total_cents: number; by_stage: Record<string, number> } | null;
 }
 
 interface DeliveryRunSummary {
@@ -926,6 +927,82 @@ const PropertyCommandCenter = () => {
             </div>
           ) : (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
+          )}
+
+          {/* ── Delivery run sub-block ── */}
+          {cost.delivery && (
+            <div
+              style={{
+                marginTop: 20,
+                paddingTop: 16,
+                borderTop: '1px solid var(--le-line-2)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: 'var(--le-muted)',
+                  }}
+                >
+                  Delivery run
+                </span>
+                <span
+                  style={{
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: 'var(--le-ink)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatCents(cost.delivery.total_cents)}
+                </span>
+              </div>
+              {Object.entries(cost.delivery.by_stage).length > 0 ? (
+                <div className="le-table-scroll is-mid">
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <tbody>
+                      {Object.entries(cost.delivery.by_stage)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([stage, cents]) => (
+                          <tr key={stage} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                            <td
+                              style={{
+                                padding: '8px 0',
+                                fontSize: 12.5,
+                                color: 'var(--le-ink-2)',
+                              }}
+                            >
+                              {stage}
+                            </td>
+                            <td
+                              style={{
+                                padding: '8px 0',
+                                textAlign: 'right',
+                                fontSize: 12.5,
+                                color: 'var(--le-ink)',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}
+                            >
+                              {formatCents(cents)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: 'var(--le-muted-2)' }}>No delivery cost events yet.</p>
+              )}
+            </div>
           )}
         </SectionCard>
 
