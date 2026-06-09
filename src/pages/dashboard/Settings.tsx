@@ -103,7 +103,7 @@ function ModelChip({ provider, model }: { provider: string; model: string }) {
       <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "rgba(11,11,16,0.06)", color: "var(--muted)", letterSpacing: "0.02em" }}>
         {provider}
       </span>
-      <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace" }}>
+      <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
         {model}
       </span>
     </div>
@@ -243,7 +243,7 @@ const Settings = () => {
         <Card padding={24}>
           <SectionHeader eyebrow="Runtime" title="Model versions" />
           <p style={{ fontSize: 12, color: "var(--muted)", margin: "8px 0 4px", lineHeight: 1.6 }}>
-            Read-only. Change model constants in <span style={{ fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", fontSize: 11 }}>lib/providers/*</span> and redeploy.
+            Read-only. Change model constants in <span style={{ fontSize: 11 }}>lib/providers/*</span> and redeploy.
           </p>
           <SettingRow first label="Director" hint="Writes the scene script and orchestrates the pipeline.">
             <ModelChip provider="Anthropic" model="claude-sonnet-4-6" />
@@ -370,7 +370,7 @@ const Settings = () => {
           ] as const).map((row, i) => (
             <SettingRow key={row.label} first={i === 0} label={row.label} hint={row.hint}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "ui-monospace, 'SF Mono', Menlo, monospace", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {row.url.replace("https://", "")}
                 </span>
                 <a href={row.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--muted)", display: "flex", lineHeight: 1 }}>

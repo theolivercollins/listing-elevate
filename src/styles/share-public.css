@@ -14,6 +14,10 @@
   --share-border: var(--le-border-strong, rgba(220, 230, 255, 0.18));
   --share-accent: #ffffff;
   --share-accent-fg: #05070f;
+  /* Mirrors the dark-theme --le-danger (tokens.css). These routes are
+     chrome-less and not under .dark, so referencing --le-danger directly
+     would resolve to the light value — keep a scoped literal instead. */
+  --share-danger: oklch(0.72 0.17 25);
   --share-radius: var(--le-radius-sm, 12px);
 
   position: fixed;
@@ -201,7 +205,15 @@
 .share-error {
   margin: 0;
   font-size: 12.5px;
-  color: #ff8a8a;
+  color: var(--share-danger);
+}
+
+/* ─── Focus rings (keyboard accessibility) ───────────────────────────────── */
+.share-input:focus-visible,
+.share-submit:focus-visible,
+.share-download:focus-visible {
+  outline: 2px solid var(--share-accent);
+  outline-offset: 2px;
 }
 
 /* ─── Spinner ───────────────────────────────────────────────────────────── */
