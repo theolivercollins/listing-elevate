@@ -254,7 +254,7 @@ const Clients = () => {
                         fontWeight: 500,
                         color: 'var(--le-muted)',
                         background: 'rgba(11,11,16,0.05)',
-                        borderRadius: 99,
+                        borderRadius: 999,
                         padding: '1px 6px',
                         flexShrink: 0,
                       }}
@@ -302,8 +302,7 @@ const Clients = () => {
                 >
                   <Link
                     to={`/dashboard/studio/video/clients/${client.id}`}
-                    className="studio-btn-ghost"
-                    style={{ fontSize: 11.5, padding: '5px 10px', gap: 5 }}
+                    className="studio-btn-ghost studio-btn-sm"
                     aria-label={`Edit ${client.name}`}
                   >
                     <Pencil size={11} strokeWidth={1.6} />
@@ -311,8 +310,7 @@ const Clients = () => {
                   </Link>
                   <button
                     type="button"
-                    className="studio-btn-ghost"
-                    style={{ fontSize: 11.5, padding: '5px 10px', gap: 5 }}
+                    className="studio-btn-ghost studio-btn-sm"
                     onClick={() => handleCopyInvoice(client.id)}
                     disabled={copyingId === client.id}
                     aria-label={`Copy invoice summary for ${client.name}`}

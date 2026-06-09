@@ -126,8 +126,7 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
               </p>
               <button
                 type="button"
-                className="studio-btn-ghost"
-                style={{ fontSize: 11, padding: '5px 10px', gap: 5 }}
+                className="studio-btn-ghost studio-btn-sm"
                 onClick={() => setActiveScene(scene)}
               >
                 <FlaskConical size={11} strokeWidth={1.6} />

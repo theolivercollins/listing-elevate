@@ -42,14 +42,14 @@ function StepIndicator({ steps, currentStep }: { steps: string[]; currentStep: n
                     : active
                       ? 'var(--le-ink)'
                       : 'rgba(11,11,16,0.06)',
-                  color: done || active ? '#fff' : 'var(--le-muted)',
+                  color: done || active ? 'var(--le-surface)' : 'var(--le-muted)',
                   transition: 'background 0.2s, color 0.2s',
                   flexShrink: 0,
                 }}
               >
                 {done ? (
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ) : (
                   i + 1
@@ -552,16 +552,14 @@ const StudioNew = () => {
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
-                      className="studio-btn-ghost"
-                      style={{ fontSize: 11.5, padding: '5px 12px' }}
+                      className="studio-btn-ghost studio-btn-sm"
                     >
                       Import folder
                     </button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); zipInputRef.current?.click(); }}
-                      className="studio-btn-ghost"
-                      style={{ fontSize: 11.5, padding: '5px 12px' }}
+                      className="studio-btn-ghost studio-btn-sm"
                     >
                       Import ZIP
                     </button>
@@ -577,7 +575,7 @@ const StudioNew = () => {
                       flex: 1,
                       height: 2,
                       background: 'var(--le-line)',
-                      borderRadius: 99,
+                      borderRadius: 999,
                       overflow: 'hidden',
                     }}
                   >
@@ -586,7 +584,7 @@ const StudioNew = () => {
                         height: '100%',
                         width: `${(files.length / MIN_PHOTOS) * 100}%`,
                         background: 'var(--le-accent)',
-                        borderRadius: 99,
+                        borderRadius: 999,
                         transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
                       }}
                     />

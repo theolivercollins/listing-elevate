@@ -285,7 +285,7 @@ export function CreativeSettingsPanel({
                     height: 38,
                     padding: 4,
                     borderRadius: 8,
-                    border: '1px solid var(--le-border)',
+                    border: '1px solid var(--le-line)',
                     background: 'var(--le-surface)',
                     cursor: 'pointer',
                   }}

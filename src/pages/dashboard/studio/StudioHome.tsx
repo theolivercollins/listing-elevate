@@ -266,7 +266,7 @@ const StudioHome = () => {
                         color: 'var(--le-muted-2)',
                         fontVariantNumeric: 'tabular-nums',
                         background: 'rgba(11,11,16,0.05)',
-                        borderRadius: 99,
+                        borderRadius: 999,
                         padding: '1px 7px',
                         minWidth: 20,
                         textAlign: 'center',
@@ -283,7 +283,7 @@ const StudioHome = () => {
                         No listings here
                         {col.key === 'inbox' && (
                           <div style={{ marginTop: 12 }}>
-                            <Link to="/dashboard/studio/video/new" className="studio-btn-ghost" style={{ fontSize: 11, padding: '5px 12px' }}>
+                            <Link to="/dashboard/studio/video/new" className="studio-btn-ghost studio-btn-sm">
                               <Plus size={11} strokeWidth={2} />
                               Add listing
                             </Link>

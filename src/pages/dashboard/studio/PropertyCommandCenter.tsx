@@ -101,8 +101,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      className="studio-btn-ghost"
-      style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}
+      className="studio-btn-ghost studio-btn-sm"
       onClick={handleCopy}
     >
       {copied ? (
@@ -128,28 +127,8 @@ function SectionCard({
 }) {
   return (
     <div className="studio-card" style={{ padding: 24 }}>
-      <span
-        style={{
-          display: 'block',
-          fontSize: 11.5,
-          fontWeight: 500,
-          color: 'var(--le-muted)',
-          marginBottom: 6,
-        }}
-      >
-        {eyebrow}
-      </span>
-      <h3
-        style={{
-          margin: '0 0 16px 0',
-          fontSize: 16,
-          fontWeight: 600,
-          letterSpacing: '-0.015em',
-          color: 'var(--le-ink)',
-        }}
-      >
-        {title}
-      </h3>
+      <span className="studio-section-eyebrow">{eyebrow}</span>
+      <h3 className="studio-section-h3">{title}</h3>
       {children}
     </div>
   );
@@ -310,7 +289,7 @@ const PropertyCommandCenter = () => {
       <div className="studio-page-heading">
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <Link to="/dashboard/studio" className="studio-btn-ghost" style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}>
+            <Link to="/dashboard/studio" className="studio-btn-ghost studio-btn-sm">
               <ArrowLeft size={11} strokeWidth={1.8} />
               Queue
             </Link>
@@ -319,8 +298,7 @@ const PropertyCommandCenter = () => {
                 <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)' }}>/</span>
                 <Link
                   to={`/dashboard/studio/video/clients/${property.client_id}`}
-                  className="studio-btn-ghost"
-                  style={{ fontSize: 11.5, padding: '4px 10px', gap: 5 }}
+                  className="studio-btn-ghost studio-btn-sm"
                 >
                   <span
                     style={{
@@ -451,11 +429,8 @@ const PropertyCommandCenter = () => {
               {revision_notes.map((note) => (
                 <div
                   key={note.id}
-                  style={{
-                    background: 'rgba(11,11,16,0.025)',
-                    borderRadius: 'var(--le-radius-sm)',
-                    padding: '12px 14px',
-                  }}
+                  className="studio-card-flat"
+                  style={{ padding: '12px 14px' }}
                 >
                   <div
                     style={{
@@ -471,7 +446,7 @@ const PropertyCommandCenter = () => {
                         fontSize: 11,
                         fontWeight: 600,
                         padding: note.source === 'client_preview' ? '2px 7px' : '0',
-                        borderRadius: 99,
+                        borderRadius: 999,
                         background:
                           note.source === 'client_preview'
                             ? 'rgba(182,128,44,0.10)'
@@ -550,14 +525,13 @@ const PropertyCommandCenter = () => {
                 return (
                   <div
                     key={pv.token}
+                    className="studio-card-flat"
                     style={{
                       display: 'flex',
                       flexWrap: 'wrap',
                       alignItems: 'center',
                       gap: 10,
                       padding: '10px 14px',
-                      background: 'rgba(11,11,16,0.025)',
-                      borderRadius: 'var(--le-radius-sm)',
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>

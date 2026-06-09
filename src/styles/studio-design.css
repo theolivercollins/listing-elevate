@@ -85,7 +85,7 @@
 .studio-scope .studio-main::-webkit-scrollbar { width: 8px; }
 .studio-scope .studio-main::-webkit-scrollbar-thumb {
   background: rgba(11,11,16,0.12);
-  border-radius: 99px;
+  border-radius: var(--le-radius-pill);
 }
 
 /* ─── Page heading ───────────────────────────────────────────────── */
@@ -165,7 +165,7 @@
 .studio-scope .studio-segmented-item.active,
 .studio-scope .studio-segmented-item[data-active="true"] {
   background: var(--le-ink);
-  color: #fff;
+  color: var(--le-surface);
 }
 
 /* ─── Buttons ────────────────────────────────────────────────────── */
@@ -198,7 +198,7 @@
   gap: 7px;
   padding: 10px 16px;
   background: var(--le-ink);
-  color: #fff;
+  color: var(--le-surface);
   border: none;
   border-radius: var(--le-radius-sm);
   font-size: 13px;
@@ -228,7 +228,7 @@
   gap: 7px;
   padding: 9px 14px;
   background: var(--le-ink);
-  color: #fff;
+  color: var(--le-surface);
   border: none;
   border-radius: var(--le-radius-pill);
   font-size: 12.5px;
@@ -249,6 +249,32 @@
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Small-button modifier — the ONE compact size for studio buttons.
+   Replaces ad-hoc inline fontSize/padding overrides on .studio-btn-* /
+   .studio-cta-primary. Declared after the base button classes so the
+   equal-specificity tie resolves in its favour. */
+.studio-scope .studio-btn-sm {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  gap: 5px;
+}
+
+/* ─── Focus-visible rings (a11y) ─────────────────────────────────── */
+/* Canonical keyboard-focus outline. Additive: the soft :focus
+   box-shadow on inputs/textareas stays for pointer focus. */
+.studio-scope .studio-btn-ghost:focus-visible,
+.studio-scope .studio-btn-dark:focus-visible,
+.studio-scope .studio-cta-primary:focus-visible,
+.studio-scope .studio-segmented-item:focus-visible,
+.studio-scope .studio-kanban-card:focus-visible,
+.studio-scope .studio-dropzone:focus-visible,
+.studio-scope .studio-input:focus-visible,
+.studio-scope .studio-textarea:focus-visible,
+.studio-scope select:focus-visible {
+  outline: 2px solid var(--le-accent);
+  outline-offset: 2px;
 }
 
 /* ─── Cards ──────────────────────────────────────────────────────── */
@@ -333,7 +359,7 @@
 .studio-scope .studio-status-dot {
   width: 5px;
   height: 5px;
-  border-radius: 99px;
+  border-radius: var(--le-radius-pill);
   flex-shrink: 0;
   background: currentColor;
 }
@@ -563,7 +589,7 @@
 .studio-scope .studio-hscroll::-webkit-scrollbar { height: 6px; }
 .studio-scope .studio-hscroll::-webkit-scrollbar-thumb {
   background: rgba(11,11,16,0.10);
-  border-radius: 99px;
+  border-radius: var(--le-radius-pill);
 }
 
 /* ─── Loading spinner ────────────────────────────────────────────── */
@@ -638,7 +664,7 @@
 .studio-scope .studio-brand-dot {
   width: 12px;
   height: 12px;
-  border-radius: 99px;
+  border-radius: var(--le-radius-pill);
   flex-shrink: 0;
   display: inline-block;
 }
@@ -700,4 +726,93 @@
 
   .studio-scope.studio-preview { padding: 24px 14px 56px; }
   .studio-scope.studio-preview .studio-preview-h1 { font-size: 24px; }
+}
+
+/* ─── Dark mode ──────────────────────────────────────────────────────
+   The studio scope shares the dashboard shell's design language, so the
+   dark palette MIRRORS `.dark .le-dash-shell` in src/v2/styles/tokens.css.
+   Keep the two in sync if the dash-shell dark palette ever changes. */
+.dark .studio-scope {
+  --le-bg:      #050710;
+  --le-surface: #0b0f1c;
+  --le-ink:     #f4f5fb;
+  --le-ink-2:   #d3d6dd;
+  --le-muted:   #9aa0aa;
+  --le-muted-2: #6b6f7a;
+  --le-line:    rgba(255,255,255,0.08);
+  --le-line-2:  rgba(255,255,255,0.05);
+  --le-accent:  #6f8df5;
+  --le-good:    #4cb37b;
+  --le-warn:    #d8a458;
+  --le-bad:     #e07474;
+  --le-shadow-sm: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  --le-shadow-md: 0 2px 4px rgba(0,0,0,0.4), 0 12px 32px -16px rgba(0,0,0,0.55);
+  --le-shadow-lg: 0 4px 12px rgba(0,0,0,0.45), 0 24px 60px -24px rgba(0,0,0,0.7);
+}
+
+/* Warm-paper radial gradients are light-only — dark uses the flat navy
+   canvas, matching the dash shell's dark background treatment. */
+.dark .studio-scope .studio-bg-base {
+  background: var(--le-bg);
+}
+
+/* Black-noise multiply grain muddies the navy canvas; the dash shell has
+   no grain in dark, so hide it. */
+.dark .studio-scope .studio-grain {
+  display: none;
+}
+
+/* Hardcoded near-black alphas → white-alpha equivalents (mirrors the
+   .dark .le-card-flat / .dark .le-seg pattern in tokens.css). */
+.dark .studio-scope .studio-main {
+  scrollbar-color: rgba(255,255,255,0.14) transparent;
+}
+.dark .studio-scope .studio-main::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+}
+.dark .studio-scope .studio-segmented {
+  background: rgba(255,255,255,0.06);
+}
+.dark .studio-scope .studio-btn-ghost:hover {
+  border-color: rgba(255,255,255,0.16);
+}
+.dark .studio-scope .studio-card-flat,
+.dark .studio-scope .studio-mini-stat {
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-status-pill.queued {
+  background: rgba(255,255,255,0.06);
+}
+.dark .studio-scope .studio-input:focus,
+.dark .studio-scope .studio-textarea:focus {
+  border-color: rgba(255,255,255,0.18);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+}
+.dark .studio-scope .studio-kanban-empty {
+  border-color: rgba(255,255,255,0.1);
+}
+.dark .studio-scope .studio-table-row:hover {
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-modal-overlay {
+  background: rgba(0,0,0,0.65);
+}
+.dark .studio-scope .studio-dropzone {
+  border-color: rgba(255,255,255,0.14);
+}
+.dark .studio-scope .studio-dropzone:hover,
+.dark .studio-scope .studio-dropzone.dragging {
+  border-color: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-hscroll {
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+.dark .studio-scope .studio-hscroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+}
+
+/* Media chrome stays dark — intentional, not a theme surface. */
+.dark .studio-scope .studio-video {
+  background: #0b0b10;
 }
