@@ -327,7 +327,7 @@ export default function KnowledgeMapCell() {
                               key={t}
                               style={{
                                 padding: "1px 6px",
-                                borderRadius: 99,
+                                borderRadius: 999,
                                 fontSize: 10,
                                 border: "1px solid var(--line)",
                                 color: t.startsWith("fail:") ? "var(--bad)" : "var(--muted)",

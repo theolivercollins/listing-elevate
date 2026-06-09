@@ -197,7 +197,7 @@ function LibraryCard({
         transition: "background 0.12s, border-color 0.12s",
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = "rgba(11,11,16,0.04)";
+        (e.currentTarget as HTMLButtonElement).style.background = "var(--line-2)";
         (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(11,11,16,0.3)";
       }}
       onMouseLeave={(e) => {
@@ -885,7 +885,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                   >
                     {tab}
                     {tab === "vfx" && (
-                      <span style={{ marginLeft: 5, padding: "1px 5px", borderRadius: 4, fontSize: 9, background: "rgba(217,70,160,0.12)", color: "rgb(217,70,160)" }}>
+                      <span style={{ marginLeft: 5, padding: "1px 5px", borderRadius: 6, fontSize: 9, background: "rgba(217,70,160,0.12)", color: "rgb(217,70,160)" }}>
                         NEW
                       </span>
                     )}
