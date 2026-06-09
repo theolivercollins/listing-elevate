@@ -365,7 +365,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   if (loading) {
     return (
       <div className="le-fade-up" style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 24, height: 24, borderRadius: 99, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+        <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
       </div>
     );
   }
@@ -532,12 +532,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     <span>· {p.agent}</span>
                   </div>
                 </div>
-                <div style={{ width: 120, height: 5, background: "rgba(11,11,16,0.08)", borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ width: 120, height: 5, background: "rgba(11,11,16,0.08)", borderRadius: 999, overflow: "hidden" }}>
                   <div style={{
                     height: "100%",
                     width: `${p.progress}%`,
                     background: "var(--ink)",
-                    borderRadius: 99,
+                    borderRadius: 999,
                     transition: "width .8s",
                   }} />
                 </div>
@@ -556,7 +556,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             <SectionTitle eyebrow="Activity" title="Last 60 minutes" />
             <span
               className="le-dot-pulse"
-              style={{ width: 7, height: 7, borderRadius: 99, background: "var(--good)", color: "var(--good)", flexShrink: 0 }}
+              style={{ width: 7, height: 7, borderRadius: 999, background: "var(--good)", color: "var(--good)", flexShrink: 0 }}
             />
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -585,8 +585,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                   <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
                   <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
                 </div>
-                <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 99, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 99, transition: "width .8s" }} />
+                <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
                 </div>
               </div>
             ))}
@@ -632,7 +632,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                   </span>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{
-                      width: 30, height: 30, borderRadius: 99,
+                      width: 30, height: 30, borderRadius: 999,
                       background: `linear-gradient(135deg, hsl(${210 + i * 22}, 8%, 56%), hsl(${230 + i * 30}, 8%, 38%))`,
                       display: "grid", placeItems: "center",
                       color: "#fff", fontWeight: 600, fontSize: 10.5,

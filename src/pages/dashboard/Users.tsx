@@ -52,7 +52,7 @@ function UserStatusPill({ status }: { status: UserStatusValue }) {
         style={{
           width: 5,
           height: 5,
-          borderRadius: 99,
+          borderRadius: 999,
           background: "currentColor",
           flexShrink: 0,
         }}
@@ -296,7 +296,7 @@ export default function Users() {
                   style={{
                     fontSize: 10.5,
                     padding: "1px 6px",
-                    borderRadius: 99,
+                    borderRadius: 999,
                     background: tab === t.id ? "rgba(255,255,255,0.18)" : "rgba(11,11,16,0.06)",
                     fontVariantNumeric: "tabular-nums",
                   }}
@@ -402,7 +402,7 @@ export default function Users() {
                   style={{
                     width: 36,
                     height: 36,
-                    borderRadius: 99,
+                    borderRadius: 999,
                     flexShrink: 0,
                     background: `linear-gradient(135deg, hsl(${u.hue ?? 200}, 12%, 60%), hsl(${(u.hue ?? 200) + 30}, 14%, 42%))`,
                     color: "#fff",
@@ -509,7 +509,7 @@ export default function Users() {
                     fontWeight: 500,
                     color: "var(--muted)",
                     padding: "3px 9px",
-                    borderRadius: 99,
+                    borderRadius: 999,
                     background: "rgba(11,11,16,0.05)",
                     fontVariantNumeric: "tabular-nums",
                     flexShrink: 0,

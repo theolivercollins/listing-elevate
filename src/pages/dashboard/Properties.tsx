@@ -368,7 +368,7 @@ const Properties = () => {
             fontVariantNumeric: "tabular-nums",
             fontSize: 10,
             padding: "1px 6px",
-            borderRadius: 99,
+            borderRadius: 999,
             background: active ? "rgba(255,255,255,0.18)" : "rgba(15,24,60,0.05)",
           }}
         >

@@ -152,7 +152,7 @@ const Logs = () => {
                   display: "inline-block",
                   width: 6,
                   height: 6,
-                  borderRadius: 99,
+                  borderRadius: 999,
                   background: "var(--good)",
                   flexShrink: 0,
                 }}
@@ -207,7 +207,7 @@ const Logs = () => {
                     color: "var(--muted)",
                     padding: "2px 7px",
                     background: "rgba(11,11,16,0.04)",
-                    borderRadius: 99,
+                    borderRadius: 999,
                     fontSize: 10,
                   }}
                 >
