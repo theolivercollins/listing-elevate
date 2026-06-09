@@ -12,6 +12,9 @@ const mockUpdateRun = vi.fn();
 const mockRecordMlEvent = vi.fn();
 const mockSetListingDetails = vi.fn();
 const mockValidateListingDetails = vi.fn();
+const mockRegenerateVariant = vi.fn();
+const mockDbUpdate = vi.fn();
+const mockDbFrom = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -27,6 +30,14 @@ vi.mock('../../../../../lib/delivery/runs', () => ({
 }));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
+}));
+vi.mock('../../../../../lib/delivery/variants', () => ({
+  regenerateVariant: (...a: unknown[]) => mockRegenerateVariant(...a),
+}));
+vi.mock('../../../../../lib/client', () => ({
+  getSupabase: () => ({
+    from: (...a: unknown[]) => mockDbFrom(...a),
+  }),
 }));
 
 import handler from '../[runId]';
@@ -50,6 +61,10 @@ beforeEach(() => {
   mockSetListingDetails.mockResolvedValue({ ...run, listing_details: { price: 899000, source: 'manual' } });
   mockRecordMlEvent.mockResolvedValue(undefined);
   mockValidateListingDetails.mockReturnValue({ ok: true, details: { price: 899000, source: 'manual' } });
+  mockRegenerateVariant.mockResolvedValue(undefined);
+  // Default chain for supabase update calls (flip_winner)
+  mockDbUpdate.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) });
+  mockDbFrom.mockReturnValue({ update: mockDbUpdate });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -118,6 +133,30 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(400);
+  });
+
+  it('POST flip_winner -> 200 and calls recordMlEvent with variant_override', async () => {
+    const aVariant = { id: 'va1', scene_id: 's1', variant: 'A', clip_url: 'a.mp4', winner: true, winner_source: 'gemini' };
+    const bVariant = { id: 'vb1', scene_id: 's1', variant: 'B', clip_url: 'b.mp4', winner: false, winner_source: 'gemini' };
+    mockGetVariantsForRun.mockResolvedValue([aVariant, bVariant]);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'flip_winner', scene_id: 's1' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'variant_override', expect.objectContaining({ scene_id: 's1' }));
+  });
+
+  it('POST regenerate -> 200 and calls recordMlEvent with regenerate', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'B' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRegenerateVariant).toHaveBeenCalledWith('r1', 's1', 'B');
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'regenerate', expect.objectContaining({ scene_id: 's1', variant: 'B' }));
   });
 });
 

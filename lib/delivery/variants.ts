@@ -226,3 +226,78 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
   }
   return { polled: (pending ?? []).length, completed, failed };
 }
+
+/**
+ * Re-render one variant: reset its scene_variants row and submit a fresh provider run.
+ * Storage path: {property_id}/variants/scene_{n}_{variant}.mp4 (upsert:true overwrites).
+ */
+export async function regenerateVariant(runId: string, sceneId: string, variant: 'A' | 'B'): Promise<void> {
+  const supabase = getSupabase();
+
+  const { data: scene } = await supabase
+    .from('scenes')
+    .select('id, property_id, scene_number, photo_id, prompt, duration_seconds, camera_movement, provider, end_photo_id, end_image_url')
+    .eq('id', sceneId)
+    .single();
+  if (!scene) throw new Error('regenerateVariant: scene not found');
+
+  const { data: photo } = await supabase
+    .from('photos')
+    .select('file_url, room_type')
+    .eq('id', scene.photo_id)
+    .single();
+  if (!photo) throw new Error('regenerateVariant: source photo not found');
+
+  const { data: prop } = await supabase
+    .from('properties')
+    .select('pipeline_mode')
+    .eq('id', scene.property_id)
+    .maybeSingle();
+
+  const decision = selectProviderForScene(
+    {
+      endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+      movement: (scene.camera_movement as CameraMovement | null) ?? null,
+      roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
+      preference: (scene.provider as VideoProvider | null) ?? null,
+    },
+    [],
+    ((prop?.pipeline_mode as PipelineMode | null) ?? 'v1'),
+  );
+  const provider = buildProviderFromDecision(decision);
+
+  // Apply the Seedance push-in prompt directive if applicable.
+  const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
+    ? forceSeedancePushInPrompt(scene.prompt as string)
+    : (scene.prompt as string);
+
+  const genJob = await provider.generateClip({
+    sourceImage: Buffer.alloc(0),
+    sourceImageUrl: (photo as { file_url: string }).file_url,
+    prompt: renderPrompt,
+    durationSeconds: scene.duration_seconds,
+    aspectRatio: '16:9',
+    endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
+    modelOverride: decision.modelKey,
+  });
+
+  // Upsert resets the row — clip_url/costs/scores cleared, new task in flight.
+  await supabase.from('scene_variants').upsert(
+    {
+      delivery_run_id: runId,
+      scene_id: sceneId,
+      variant,
+      provider: provider.name,
+      provider_task_id: genJob.jobId,
+      clip_url: null,
+      cost_cents: null,
+      gemini_scores: null,
+      winner: false,
+      winner_source: null,
+      degraded: false,
+      error: null,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'delivery_run_id,scene_id,variant' },
+  );
+}

@@ -53,8 +53,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await recordMlEvent(runId, 'reorder', { before, after });
           return res.status(200).json({ run: updated });
         }
-        // Later tasks add: 'regenerate'/'flip_winner' (T15),
-        // 'generate_script'/'set_script' (T17), 'set_voice'/'generate_audio' (T18),
+        case 'flip_winner': {
+          const sceneId = String(req.body?.scene_id ?? '');
+          if (!sceneId) return res.status(400).json({ error: 'scene_id required' });
+          const { getVariantsForRun: gv, recordMlEvent: rme } = await import('../../../../lib/delivery/runs.js');
+          const variants = (await gv(runId)).filter((v) => v.scene_id === sceneId);
+          const a = variants.find((v) => v.variant === 'A');
+          const b = variants.find((v) => v.variant === 'B');
+          if (!a?.clip_url || !b?.clip_url) return res.status(400).json({ error: 'both variants need clips to flip' });
+          const oldWinner = a.winner ? 'A' : 'B';
+          const newWinner = oldWinner === 'A' ? 'B' : 'A';
+          const db = (await import('../../../../lib/client.js')).getSupabase();
+          await db.from('scene_variants').update({ winner: newWinner === 'A', winner_source: 'operator', updated_at: new Date().toISOString() }).eq('id', a.id);
+          await db.from('scene_variants').update({ winner: newWinner === 'B', winner_source: 'operator', updated_at: new Date().toISOString() }).eq('id', b.id);
+          await rme(runId, 'variant_override', { scene_id: sceneId, from: oldWinner, to: newWinner });
+          return res.status(200).json({ ok: true });
+        }
+        case 'regenerate': {
+          const sceneId = String(req.body?.scene_id ?? '');
+          const variant = req.body?.variant === 'A' ? 'A' : 'B';
+          if (!sceneId) return res.status(400).json({ error: 'scene_id required' });
+          const { regenerateVariant } = await import('../../../../lib/delivery/variants.js');
+          const { recordMlEvent } = await import('../../../../lib/delivery/runs.js');
+          await regenerateVariant(runId, sceneId, variant);
+          await recordMlEvent(runId, 'regenerate', { scene_id: sceneId, variant });
+          return res.status(200).json({ ok: true });
+        }
+        // Later tasks add: 'generate_script'/'set_script' (T17), 'set_voice'/'generate_audio' (T18),
         // 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
