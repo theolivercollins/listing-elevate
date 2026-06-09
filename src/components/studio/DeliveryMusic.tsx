@@ -101,8 +101,8 @@ export function DeliveryMusic({
       }
       setSelectedId(trackId);
       onChanged();
-    } catch {
-      // Silently fail — selection remains unchanged, operator can retry
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Track selection failed');
     } finally {
       setSelecting(false);
     }

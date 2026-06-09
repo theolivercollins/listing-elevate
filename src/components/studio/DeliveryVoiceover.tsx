@@ -163,8 +163,8 @@ export function DeliveryVoiceover({
       }
       setSelectedVoiceId(voiceId);
       onChanged();
-    } catch {
-      // Silently fail — voice remains unset, operator can retry
+    } catch (err) {
+      setAudioError(err instanceof Error ? err.message : 'Voice selection failed');
     } finally {
       setSettingVoice(false);
     }
