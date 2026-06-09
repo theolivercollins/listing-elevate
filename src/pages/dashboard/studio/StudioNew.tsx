@@ -295,7 +295,9 @@ const StudioNew = () => {
             });
           }
         })
-        .catch(() => {}); // scrape is never a blocker
+        // Recovery owner: the Property Command Center stepper (Task 13) exposes
+        // a retry that re-fires the scrape action, which is resumable from 'intake'.
+        .catch((e) => console.warn('[studio] scrape kick failed; stepper retry will recover', e));
       navigate(`/dashboard/studio/video/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');

@@ -114,6 +114,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       submitted_by,
       listing_agent,
       brokerage,
+      // Precedence: video_type (operator delivery) wins over legacy selected_package; life_cycle only arrives via selected_package (customer flow).
       selected_package: video_type ?? selected_package ?? 'just_listed',
       selected_duration: selected_duration ?? 30,
       selected_orientation: selected_orientation ?? 'horizontal',

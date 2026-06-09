@@ -21,6 +21,11 @@ export function listingDetailsFromRedfin(r: RedfinScrapeResult | null): ListingD
  * error on the run, and STILL advances to 'generating' so the pipeline
  * (kicked in parallel by StudioNew) is never gated on Redfin.
  * scrapeRedfinByAddress records its own apify cost_event.
+ *
+ * NOTE (Task 16): The details UI keys off empty listing_details for the amber
+ * manual-entry state; run.error is supplementary operator visibility only.
+ * setRunError MUST be called AFTER advanceRun — advanceRun's CAS update sets
+ * error:null, which would wipe any error message written before it.
  */
 export async function runScrapeStage(runId: string): Promise<void> {
   const run = await getRun(runId);
@@ -30,16 +35,22 @@ export async function runScrapeStage(runId: string): Promise<void> {
   const { data: prop } = await getSupabase()
     .from('properties').select('address').eq('id', run.property_id).maybeSingle();
 
+  // Capture scrape result/error before advancing — write the error AFTER advance
+  // so advanceRun's error:null CAS reset doesn't clobber the message.
+  let scrapeError: string | null = null;
   try {
     const result = await scrapeRedfinByAddress(String(prop?.address ?? ''), run.property_id);
     await setListingDetails(runId, listingDetailsFromRedfin(result));
-    if (!result) await setRunError(runId, 'Redfin scrape returned no listing — enter details manually.');
+    if (!result) scrapeError = 'Redfin scrape returned no listing — enter details manually.';
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await setRunError(runId, `Redfin scrape failed: ${msg} — enter details manually.`);
+    scrapeError = `Redfin scrape failed: ${msg} — enter details manually.`;
   }
 
   // Advance regardless of scrape outcome (resumable; details editable later).
   const after = await getRun(runId);
   if (after?.stage === 'scraping') await advanceRun(runId, 'generating');
+
+  // Set error AFTER advance so it is not wiped by advanceRun's error:null reset.
+  if (scrapeError) await setRunError(runId, scrapeError);
 }
