@@ -1,8 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import { getSupabase } from '../../../../lib/client.js';
-import { hashPassword } from '../../../../lib/operator-studio/creatives.js';
+import { hashPassword, getPlaybackUrl } from '../../../../lib/operator-studio/creatives.js';
 import type { CreativeRow } from '../../../../lib/types/creatives.js';
+
+async function withUrls(row: CreativeRow, supabase: ReturnType<typeof getSupabase>) {
+  const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
+  let previewUrl: string | null = null;
+  try {
+    previewUrl = await getPlaybackUrl(row, supabase);
+  } catch {
+    previewUrl = null;
+  }
+  return {
+    ...row,
+    shareUrl: `${base}/v/${row.share_token}`,
+    embedUrl: `${base}/embed/${row.share_token}`,
+    previewUrl,
+  };
+}
 
 const PATCHABLE = [
   'title',
@@ -48,7 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: 'not found' });
-    return res.status(200).json({ creative: data as CreativeRow });
+    return res.status(200).json({ creative: await withUrls(data as CreativeRow, supabase) });
   }
 
   if (req.method === 'DELETE') {

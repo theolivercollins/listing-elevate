@@ -156,9 +156,14 @@ export function CreativeSettingsPanel({
         {/* Live player */}
         <div className="share-drawer-player">
           {creative.kind === 'image' ? (
-            <img src={creative.public_url ?? poster} alt={creative.title} />
+            <img src={creative.previewUrl ?? creative.public_url ?? poster} alt={creative.title} />
           ) : (
-            <video src={creative.public_url ?? undefined} poster={poster} controls preload="metadata" />
+            <video
+              src={creative.previewUrl ?? creative.public_url ?? undefined}
+              poster={poster}
+              controls
+              preload="metadata"
+            />
           )}
         </div>
 

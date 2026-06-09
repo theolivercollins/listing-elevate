@@ -1,19 +1,38 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import { getSupabase } from '../../../../lib/client.js';
-import { generateShareToken } from '../../../../lib/operator-studio/creatives.js';
+import { generateShareToken, getPlaybackUrl } from '../../../../lib/operator-studio/creatives.js';
 import type { CreativeRow } from '../../../../lib/types/creatives.js';
 
 function publicBase(): string {
   return process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
 }
 
-function withUrls(row: CreativeRow): CreativeRow & { shareUrl: string; embedUrl: string } {
+type CreativeWithUrls = CreativeRow & {
+  shareUrl: string;
+  embedUrl: string;
+  previewUrl: string | null;
+};
+
+// Resolve display URLs for the admin UI. `previewUrl` is a signed URL for
+// private uploads (public_url is null for those) and the stored public URL for
+// renders, so the operator can preview their own creatives in the studio.
+async function withUrls(
+  row: CreativeRow,
+  supabase: ReturnType<typeof getSupabase>,
+): Promise<CreativeWithUrls> {
   const base = publicBase();
+  let previewUrl: string | null = null;
+  try {
+    previewUrl = await getPlaybackUrl(row, supabase);
+  } catch {
+    previewUrl = null; // never fail the list/create over a single bad asset
+  }
   return {
     ...row,
     shareUrl: `${base}/v/${row.share_token}`,
     embedUrl: `${base}/embed/${row.share_token}`,
+    previewUrl,
   };
 }
 
@@ -36,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select('*')
       .order('created_at', { ascending: false });
     if (error) return res.status(500).json({ error: error.message });
-    const rows = (data ?? []).map((r) => withUrls(r as CreativeRow));
+    const rows = await Promise.all((data ?? []).map((r) => withUrls(r as CreativeRow, supabase)));
     return res.status(200).json({ creatives: rows });
   }
 
@@ -61,6 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         height: req.body.height ?? null,
         duration_seconds: req.body.duration_seconds ?? null,
         share_token: generateShareToken(),
+        created_by: admin.user.id,
       };
       const { data, error } = await supabase
         .from('creatives')
@@ -68,7 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('*')
         .single();
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(201).json({ creative: withUrls(data as CreativeRow) });
+      return res.status(201).json({ creative: await withUrls(data as CreativeRow, supabase) });
     }
 
     if (mode === 'render') {
@@ -103,6 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         property_id,
         title,
         share_token: generateShareToken(),
+        created_by: admin.user.id,
       };
       const { data, error } = await supabase
         .from('creatives')
@@ -110,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select('*')
         .single();
       if (error) return res.status(500).json({ error: error.message });
-      return res.status(201).json({ creative: withUrls(data as CreativeRow) });
+      return res.status(201).json({ creative: await withUrls(data as CreativeRow, supabase) });
     }
 
     return res.status(400).json({ error: "mode must be 'upload' or 'render'" });

@@ -21,7 +21,12 @@ export function hashPassword(pw: string): string {
 /** True when no hash is set (open) or the password matches the stored hash. */
 export function verifyPassword(pw: string, hash: string | null): boolean {
   if (!hash) return true;
-  return hashPassword(pw) === hash;
+  const a = Buffer.from(hashPassword(pw), 'utf8');
+  const b = Buffer.from(hash, 'utf8');
+  // Lengths are equal for valid sha256 hex digests; guard anyway so
+  // timingSafeEqual never throws on a malformed stored hash.
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 type AccessRow = Pick<CreativeRow, 'password_hash' | 'expires_at'>;
@@ -63,7 +68,10 @@ interface StorageLike {
  */
 export async function getPlaybackUrl(row: CreativeRow, supabase: StorageLike): Promise<string> {
   if (row.source === 'render') {
-    return row.public_url ?? '';
+    if (!row.public_url) {
+      throw new Error(`getPlaybackUrl: render creative ${row.id} has no public_url`);
+    }
+    return row.public_url;
   }
   const { data, error } = await supabase.storage
     .from(row.bucket)

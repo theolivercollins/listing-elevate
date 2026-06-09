@@ -29,6 +29,7 @@ export interface Creative {
   // Computed by the admin API:
   shareUrl: string; // `/v/{token}`
   embedUrl: string; // `/embed/{token}`
+  previewUrl: string | null; // signed URL (uploads) or public_url (renders) for in-studio preview
 }
 
 export interface RenderOption {

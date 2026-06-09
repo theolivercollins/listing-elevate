@@ -13,7 +13,8 @@ export function CreativeCard({
   creative: Creative;
   onSelect: (creative: Creative) => void;
 }) {
-  const poster = creative.thumbnail_url ?? (creative.kind === 'image' ? creative.public_url : null);
+  const poster =
+    creative.thumbnail_url ?? (creative.kind === 'image' ? creative.previewUrl : null);
   const KindIcon = creative.kind === 'image' ? ImageIcon : Film;
 
   return (

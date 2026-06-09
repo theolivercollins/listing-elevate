@@ -27,6 +27,32 @@ export default function Embed() {
     );
   }
 
+  // Password-protected creatives are not unlocked inside an iframe — point the
+  // viewer at the full share page rather than showing a generic error.
+  if (status === 'password') {
+    return (
+      <div className="share-embed le-dark">
+        <p className="share-embed-message">
+          {token ? (
+            <a href={`/v/${token}`} target="_blank" rel="noreferrer">
+              This video is password-protected — open it here.
+            </a>
+          ) : (
+            'This video is password-protected.'
+          )}
+        </p>
+      </div>
+    );
+  }
+
+  if (status === 'expired') {
+    return (
+      <div className="share-embed le-dark">
+        <p className="share-embed-message">This link has expired.</p>
+      </div>
+    );
+  }
+
   if (status !== 'ok' || !data) {
     return (
       <div className="share-embed le-dark">

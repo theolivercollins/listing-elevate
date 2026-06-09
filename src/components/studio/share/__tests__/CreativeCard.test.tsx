@@ -25,6 +25,7 @@ function makeCreative(overrides: Partial<Creative> = {}): Creative {
     created_at: '2026-06-08T00:00:00Z',
     shareUrl: '/v/abcdefghijklmnopqrstuvwxyz234567',
     embedUrl: '/embed/abcdefghijklmnopqrstuvwxyz234567',
+    previewUrl: null,
     ...overrides,
   };
 }
