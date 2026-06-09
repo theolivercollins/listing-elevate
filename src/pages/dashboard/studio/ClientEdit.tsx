@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
 import { authedFetch } from "@/lib/api";
@@ -17,6 +17,24 @@ import {
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { uploadSingleFile, getStoragePublicUrl } from '@/lib/photo-upload';
+
+// ─── Brand field coverage map ─────────────────────────────────────────────────
+// templateKeys: the Creatomate element placeholder keys this brand field feeds.
+// Keys sourced from lib/operator-studio/brand-kit.ts (BRAND_KEY_MAP) and
+// lib/assembly/template-modifications.ts (real element names).
+const BRAND_FIELD_SOURCES: Array<{
+  label: string;
+  templateKeys: string[];
+  hasValue: (f: ClientFormState) => boolean;
+}> = [
+  { label: 'Logo',      templateKeys: ['Brand.logo'],                                    hasValue: (f) => !!f.brand_logo_url },
+  { label: 'Primary',   templateKeys: ['Brand.primary'],                                 hasValue: (f) => !!f.brand_primary_hex },
+  { label: 'Secondary', templateKeys: ['Brand.secondary'],                               hasValue: (f) => !!f.brand_secondary_hex },
+  { label: 'Name',      templateKeys: ['Brand.agent_name', 'Text-Agent-Name.text'],      hasValue: (f) => !!f.agent_name },
+  { label: 'Headshot',  templateKeys: ['Brand.agent_headshot', 'Image-Headshot.source'], hasValue: (f) => !!f.agent_headshot_url },
+  { label: 'Brokerage', templateKeys: ['Brand.brokerage', 'Text-Brokerage-Team.text'],   hasValue: (f) => !!f.brokerage },
+  { label: 'Phone',     templateKeys: ['Brand.phone', 'Text-Phone-Number.text'],         hasValue: (f) => !!f.phone },
+];
 
 // ─── Form state ───────────────────────────────────────────────────────────────
 
@@ -104,6 +122,33 @@ const ClientEdit = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // ─── Template coverage ───────────────────────────────────────────────────────
+  type CoverageTemplate = {
+    env_var: string;
+    template_id: string;
+    name: string | null;
+    fields: string[];
+    error?: string;
+  };
+  const [coverage, setCoverage] = useState<CoverageTemplate[] | null>(null);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+
+  const fetchCoverage = useCallback(async () => {
+    try {
+      const res = await authedFetch('/api/admin/studio/template-coverage');
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      setCoverage(data.templates);
+      setCoverageError(null);
+    } catch (err) {
+      setCoverageError(err instanceof Error ? err.message : 'Failed to load template coverage');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isNew) fetchCoverage();
+  }, [isNew, fetchCoverage]);
 
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [headshotFile, setHeadshotFile] = useState<File | null>(null);
@@ -607,6 +652,85 @@ const ClientEdit = () => {
             </div>
           </div>
         </div>
+
+        {/* ── Template coverage (edit mode only) ── */}
+        {!isNew && (
+          <div className="studio-card" style={{ padding: 24 }}>
+            <SectionHeading>Template coverage</SectionHeading>
+            {coverageError && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-bad)', marginBottom: 12 }}>
+                {coverageError}
+              </p>
+            )}
+            {coverage === null && !coverageError && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>Loading…</p>
+            )}
+            {coverage !== null && coverage.length === 0 && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
+                No Creatomate template env vars configured.
+              </p>
+            )}
+            {coverage !== null && coverage.map((tpl) => (
+              <div
+                key={tpl.env_var}
+                style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid var(--le-line)' }}
+              >
+                {tpl.error ? (
+                  <div>
+                    <p style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--le-text)', marginBottom: 4 }}>
+                      {tpl.env_var}
+                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--le-bad)' }}>{tpl.error}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--le-text)', marginBottom: 8 }}>
+                      {tpl.name ?? tpl.env_var}
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {BRAND_FIELD_SOURCES.map((src) => {
+                        const inTemplate = src.templateKeys.some((k) => tpl.fields.includes(k));
+                        const filled = src.hasValue(form);
+                        let bg: string;
+                        let color: string;
+                        let label: string;
+                        if (inTemplate && filled) {
+                          bg = 'rgba(34,197,94,0.12)';
+                          color = 'var(--le-good)';
+                          label = src.label;
+                        } else if (inTemplate && !filled) {
+                          bg = 'rgba(234,179,8,0.12)';
+                          color = '#b45309';
+                          label = `${src.label} (empty)`;
+                        } else {
+                          bg = 'rgba(11,11,16,0.06)';
+                          color = 'var(--le-muted)';
+                          label = `${src.label} — no placeholder`;
+                        }
+                        return (
+                          <span
+                            key={src.label}
+                            style={{
+                              display: 'inline-block',
+                              fontSize: 11.5,
+                              fontWeight: 500,
+                              padding: '3px 8px',
+                              borderRadius: 'var(--le-radius-sm)',
+                              background: bg,
+                              color,
+                            }}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Section 3: Voice (Phase 3) ── */}
         <div className="studio-card" style={{ padding: 24 }}>
