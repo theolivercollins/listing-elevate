@@ -6,6 +6,7 @@ create table if not exists delivery_runs (
   id uuid primary key default gen_random_uuid(),
   property_id uuid not null references properties(id) on delete cascade,
   client_id uuid references clients(id) on delete set null,
+  -- life_cycle packages are intentionally out of scope for the delivery pipeline (customer flow only).
   video_type text not null default 'just_listed'
     check (video_type in ('just_listed','just_pended','just_closed')),
   duration_seconds integer,
@@ -23,8 +24,15 @@ create table if not exists delivery_runs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-create unique index if not exists idx_delivery_runs_property on delivery_runs(property_id);
-create index if not exists idx_delivery_runs_stage on delivery_runs(stage);
+-- One in-flight run per (property, video_type); delivered runs free the slot
+-- so just_listed → just_pended → just_closed and re-delivery all work.
+create unique index if not exists idx_delivery_runs_property_active
+  on delivery_runs(property_id, video_type)
+  where stage <> 'delivered';
+create index if not exists idx_delivery_runs_property on delivery_runs(property_id);
+create index if not exists idx_delivery_runs_stage_active
+  on delivery_runs(stage, created_at desc)
+  where stage <> 'delivered';
 
 create table if not exists scene_variants (
   id uuid primary key default gen_random_uuid(),
@@ -34,6 +42,7 @@ create table if not exists scene_variants (
   provider text,
   provider_task_id text,
   clip_url text,
+  -- NULL = not yet generated; 0 = generated, cost unknown (still write cost_events). Never leave NULL after a successful generation.
   cost_cents integer,
   gemini_scores jsonb,
   winner boolean not null default false,
@@ -42,7 +51,7 @@ create table if not exists scene_variants (
   error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  unique (scene_id, variant)
+  unique (delivery_run_id, scene_id, variant)
 );
 create index if not exists idx_scene_variants_run on scene_variants(delivery_run_id);
 -- Poll queue: submitted but not yet collected.

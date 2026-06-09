@@ -44,7 +44,7 @@ Client editor calls existing `creatomate.getTemplate()` (already returns `elemen
 
 **`scene_variants`** — `scene_id`, `variant char('A'|'B')`, clip url/provider/cost, `gemini_scores jsonb`, `winner bool`, `winner_source enum('gemini','operator')`. Variant B failure → degrade to single-clip, flagged `degraded=true`.
 
-**`ml_events`** — `run_id`, `event_type enum('reorder','regenerate','variant_override','script_edit','voice_choice','music_choice','rating','comment')`, `payload jsonb`, `created_at`. The ML training corpus.
+**`ml_events`** — `run_id`, `event_type enum('reorder','regenerate','variant_override','script_edit','voice_choice','music_choice','rating','comment','details_edit')`, `payload jsonb`, `created_at`. The ML training corpus.
 
 RLS: same service-role-only posture as the other operator tables (migration 062 pattern).
 

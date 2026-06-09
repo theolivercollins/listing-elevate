@@ -501,6 +501,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     id uuid primary key default gen_random_uuid(),
     property_id uuid not null references properties(id) on delete cascade,
     client_id uuid references clients(id) on delete set null,
+    -- life_cycle packages are intentionally out of scope for the delivery pipeline (customer flow only).
     video_type text not null default 'just_listed'
       check (video_type in ('just_listed','just_pended','just_closed')),
     duration_seconds integer,
@@ -518,8 +519,15 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   );
-  create unique index if not exists idx_delivery_runs_property on delivery_runs(property_id);
-  create index if not exists idx_delivery_runs_stage on delivery_runs(stage);
+  -- One in-flight run per (property, video_type); delivered runs free the slot
+  -- so just_listed → just_pended → just_closed and re-delivery all work.
+  create unique index if not exists idx_delivery_runs_property_active
+    on delivery_runs(property_id, video_type)
+    where stage <> 'delivered';
+  create index if not exists idx_delivery_runs_property on delivery_runs(property_id);
+  create index if not exists idx_delivery_runs_stage_active
+    on delivery_runs(stage, created_at desc)
+    where stage <> 'delivered';
 
   create table if not exists scene_variants (
     id uuid primary key default gen_random_uuid(),
@@ -529,6 +537,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     provider text,
     provider_task_id text,
     clip_url text,
+    -- NULL = not yet generated; 0 = generated, cost unknown (still write cost_events). Never leave NULL after a successful generation.
     cost_cents integer,
     gemini_scores jsonb,
     winner boolean not null default false,
@@ -537,7 +546,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     error text,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
-    unique (scene_id, variant)
+    unique (delivery_run_id, scene_id, variant)
   );
   create index if not exists idx_scene_variants_run on scene_variants(delivery_run_id);
   -- Poll queue: submitted but not yet collected.
@@ -1336,7 +1345,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
       await supabase.from('scene_variants').upsert({
         delivery_run_id: runId, scene_id: scene.id, variant: 'A',
         provider: scene.provider, provider_task_id: scene.provider_task_id,
-      }, { onConflict: 'scene_id,variant' });
+      }, { onConflict: 'delivery_run_id,scene_id,variant' });
 
       // Variant B: an independent second render of the same prompt.
       const { data: photo } = await supabase.from('photos').select('file_url, room_type').eq('id', scene.photo_id).single();
@@ -1365,7 +1374,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
         await supabase.from('scene_variants').upsert({
           delivery_run_id: runId, scene_id: scene.id, variant: 'B',
           provider: provider.name, provider_task_id: genJob.jobId,
-        }, { onConflict: 'scene_id,variant' });
+        }, { onConflict: 'delivery_run_id,scene_id,variant' });
         await log(propertyId, 'generation', 'info',
           `Scene ${scene.scene_number}: variant B submitted to ${provider.name}`,
           { jobId: genJob.jobId, delivery_run_id: runId }, scene.id);
@@ -1374,7 +1383,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
         await supabase.from('scene_variants').upsert({
           delivery_run_id: runId, scene_id: scene.id, variant: 'B',
           error: msg, degraded: true,
-        }, { onConflict: 'scene_id,variant' });
+        }, { onConflict: 'delivery_run_id,scene_id,variant' });
         await log(propertyId, 'generation', 'warn',
           `Scene ${scene.scene_number}: variant B submit failed (degrading to single clip): ${msg}`,
           { delivery_run_id: runId }, scene.id);
@@ -1998,7 +2007,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
       clip_url: null, cost_cents: null, gemini_scores: null,
       winner: false, winner_source: null, degraded: false, error: null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'scene_id,variant' });
+    }, { onConflict: 'delivery_run_id,scene_id,variant' });
   }
   ```
   Generalize `pollPendingVariants` to poll BOTH variants whose `clip_url` is null with a task id (drop the `.eq('variant','B')` filter, but skip 'A' rows whose scene still owns the task — i.e. only poll an 'A' row when its `provider_task_id` differs from the scene's `provider_task_id`; pass the scene's task id into the row comparison).
