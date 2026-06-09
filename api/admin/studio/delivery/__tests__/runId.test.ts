@@ -15,6 +15,8 @@ const mockValidateListingDetails = vi.fn();
 const mockRegenerateVariant = vi.fn();
 const mockDbUpdate = vi.fn();
 const mockDbFrom = vi.fn();
+const mockGenerateDeliveryScript = vi.fn();
+const mockDbSelect = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -33,6 +35,9 @@ vi.mock('../../../../../lib/delivery/details', () => ({
 }));
 vi.mock('../../../../../lib/delivery/variants', () => ({
   regenerateVariant: (...a: unknown[]) => mockRegenerateVariant(...a),
+}));
+vi.mock('../../../../../lib/delivery/voiceover-script', () => ({
+  generateDeliveryScript: (...a: unknown[]) => mockGenerateDeliveryScript(...a),
 }));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
@@ -62,9 +67,19 @@ beforeEach(() => {
   mockRecordMlEvent.mockResolvedValue(undefined);
   mockValidateListingDetails.mockReturnValue({ ok: true, details: { price: 899000, source: 'manual' } });
   mockRegenerateVariant.mockResolvedValue(undefined);
-  // Default chain for supabase update calls (flip_winner)
+  mockUpdateRun.mockResolvedValue({ ...run, voiceover_script: 'Welcome to X St.' });
+  mockGenerateDeliveryScript.mockResolvedValue({ script: 'Welcome to X St.', wordCount: 4 });
+  // Default chain for supabase (flip_winner update + generate_script address select)
+  mockDbSelect.mockReturnValue({
+    eq: vi.fn().mockReturnValue({
+      maybeSingle: vi.fn().mockResolvedValue({ data: { address: '470 Sorrento Ct' }, error: null }),
+    }),
+  });
   mockDbUpdate.mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) });
-  mockDbFrom.mockReturnValue({ update: mockDbUpdate });
+  mockDbFrom.mockImplementation((table: string) => {
+    if (table === 'properties') return { select: mockDbSelect };
+    return { update: mockDbUpdate };
+  });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -196,6 +211,71 @@ describe('PATCH /api/admin/studio/delivery/[runId]', () => {
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(404);
+  });
+});
+
+describe('POST generate_script + set_script (T17)', () => {
+  it('POST generate_script -> 200, calls generateDeliveryScript + updateRun with script', async () => {
+    mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, listing_details: { price: 899000 } });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_script' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockGenerateDeliveryScript).toHaveBeenCalledWith(expect.objectContaining({
+      runId: 'r1',
+      propertyId: 'p1',
+      videoType: 'just_listed',
+      durationSec: 30,
+    }));
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ voiceover_script: 'Welcome to X St.' }));
+  });
+
+  it('POST generate_script -> 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'generate_script' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
+    expect(mockGenerateDeliveryScript).not.toHaveBeenCalled();
+  });
+
+  it('POST set_script -> 200, calls updateRun with the new script and records script_edit ml_event', async () => {
+    mockGetRun.mockResolvedValue({ ...run, voiceover_script: 'Old script.' });
+    mockUpdateRun.mockResolvedValue({ ...run, voiceover_script: 'New script.' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_script', script: 'New script.' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ voiceover_script: 'New script.' }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'script_edit', { before: 'Old script.', after: 'New script.' });
+  });
+
+  it('POST set_script with empty body -> 400', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_script', script: '' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('POST set_script does NOT record ml_event when script is unchanged', async () => {
+    mockGetRun.mockResolvedValue({ ...run, voiceover_script: 'Same script.' });
+    mockUpdateRun.mockResolvedValue({ ...run, voiceover_script: 'Same script.' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_script', script: 'Same script.' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
   });
 });
 

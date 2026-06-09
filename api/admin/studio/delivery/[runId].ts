@@ -79,7 +79,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await recordMlEvent(runId, 'regenerate', { scene_id: sceneId, variant });
           return res.status(200).json({ ok: true });
         }
-        // Later tasks add: 'generate_script'/'set_script' (T17), 'set_voice'/'generate_audio' (T18),
+        case 'generate_script': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          const db = (await import('../../../../lib/client.js')).getSupabase();
+          const { data: prop } = await db.from('properties').select('address').eq('id', run.property_id).maybeSingle();
+          const { generateDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
+          const { updateRun } = await import('../../../../lib/delivery/runs.js');
+          const { script } = await generateDeliveryScript({
+            runId,
+            propertyId: run.property_id,
+            address: String((prop as { address?: string } | null)?.address ?? ''),
+            videoType: run.video_type,
+            durationSec: run.duration_seconds ?? 30,
+            details: run.listing_details ?? {},
+          });
+          const updated = await updateRun(runId, { voiceover_script: script } as never);
+          return res.status(200).json({ run: updated });
+        }
+        case 'set_script': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          const script = String(req.body?.script ?? '').trim();
+          if (!script) return res.status(400).json({ error: 'script required' });
+          const { updateRun, recordMlEvent } = await import('../../../../lib/delivery/runs.js');
+          const updated = await updateRun(runId, { voiceover_script: script } as never);
+          if (run.voiceover_script && run.voiceover_script !== script) {
+            await recordMlEvent(runId, 'script_edit', { before: run.voiceover_script, after: script });
+          }
+          return res.status(200).json({ run: updated });
+        }
+        // Later tasks add: 'set_voice'/'generate_audio' (T18),
         // 'set_music'/'generate_music' (T19), 'assemble' (T20), 'submit_ratings' (T21).
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
