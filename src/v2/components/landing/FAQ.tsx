@@ -35,6 +35,7 @@ export function FAQ() {
                 <button
                   type="button"
                   onClick={() => setOpen(isOpen ? null : f.id)}
+                  className="le-faq-toggle"
                   style={{
                     width: "100%",
                     display: "flex",
@@ -44,7 +45,6 @@ export function FAQ() {
                     background: "none",
                     border: "none",
                     cursor: "pointer",
-                    color: "var(--le-text)",
                     textAlign: "left",
                     gap: 16,
                   }}
