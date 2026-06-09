@@ -28,7 +28,7 @@
 
 (`details_edit` is an addition to the spec's 8-value enum: the spec's Stage-5 text requires "edits logged" but its enum has no type for it. Locked here.)
 
-**winner_source**: `'gemini','operator'` · **variant**: `'A','B'`
+**winner_source**: `'gemini','operator','default'` (`'default'` = unjudged auto-win — degraded pair or judge failure — winning row carries `gemini_scores.judge_error` so ML excludes it) · **variant**: `'A','B'`
 
 **Feedback tag categories** (comment parser): `'pacing','voice_tone','clip_quality','music_fit','script_style','other'`
 
@@ -541,7 +541,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     cost_cents integer,
     gemini_scores jsonb,
     winner boolean not null default false,
-    winner_source text check (winner_source in ('gemini','operator')),
+    winner_source text check (winner_source in ('gemini','operator','default')),
     degraded boolean not null default false,
     error text,
     created_at timestamptz not null default now(),
@@ -611,7 +611,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
     cost_cents: number | null;
     gemini_scores: Record<string, unknown> | null;
     winner: boolean;
-    winner_source: 'gemini' | 'operator' | null;
+    winner_source: 'gemini' | 'operator' | 'default' | null;
     degraded: boolean;
     error: string | null;
     created_at: string;
@@ -1642,8 +1642,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   /**
    * Judge pass — invoked by the poll-scenes cron once a delivery property's
    * scenes settle. Returns {ready:false} while B variants are still in flight
-   * (next tick retries). On completion: winners set (winner_source='gemini'),
-   * draft order stored on the run, stage -> checkpoint_a.
+   * (next tick retries). On completion: winners set (winner_source='gemini'
+   * for judged pairs; 'default' + gemini_scores.judge_error for degraded /
+   * judge-failure pairs), draft order stored on the run, stage -> checkpoint_a.
    */
   export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
     const supabase = getSupabase();
@@ -1701,9 +1702,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
       }
       const winnerRow = winner === 'A' ? a : b;
       const loserRow = winner === 'A' ? b : a;
+      // NOTE (implemented): winner_source is 'gemini' ONLY for truly judged
+      // pairs. Degraded pairs and judge failures win with
+      // winner_source='default' and gemini_scores={judge_error: ...} on the
+      // winning row so ML excludes unjudged pairs. See lib/delivery/judge.ts.
       if (winnerRow) {
         await supabase.from('scene_variants')
-          .update({ winner: true, winner_source: 'gemini', updated_at: new Date().toISOString() })
+          .update({ winner: true, winner_source: winnerSource, updated_at: new Date().toISOString(), ...(judgeError ? { gemini_scores: { judge_error: judgeError } } : {}) })
           .eq('id', winnerRow.id);
       }
       if (loserRow) {
@@ -1947,7 +1952,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   }
   ```
   Run the route test — passing.
-- [ ] Create `src/components/studio/CheckpointA.tsx`: fetches `GET /api/admin/studio/delivery/{runId}` (run + variants) via `authedFetch`; renders the winner clip of each scene in `scene_order` order as a horizontal card row (`<video src={clip_url} muted loop playsInline>` thumbnails, like `SceneStrip`). Wrap the row in `DndProvider` (`react-dnd` + `HTML5Backend`); each card is both `useDrag` (type `'delivery-clip'`, item `{ id }`) and `useDrop` (on hover-swap reorder local state). Also render ▲/▼ buttons per card mutating local order. A "Save order" button (enabled when local order ≠ saved order) POSTs `{ action: 'reorder', scene_order: localOrder }` and refetches. Variant badges: show `A`/`B` + "Gemini pick" / "Operator pick" from `winner_source`, and a degraded chip when the pair's loser row has `degraded=true`.
+- [ ] Create `src/components/studio/CheckpointA.tsx`: fetches `GET /api/admin/studio/delivery/{runId}` (run + variants) via `authedFetch`; renders the winner clip of each scene in `scene_order` order as a horizontal card row (`<video src={clip_url} muted loop playsInline>` thumbnails, like `SceneStrip`). Wrap the row in `DndProvider` (`react-dnd` + `HTML5Backend`); each card is both `useDrag` (type `'delivery-clip'`, item `{ id }`) and `useDrop` (on hover-swap reorder local state). Also render ▲/▼ buttons per card mutating local order. A "Save order" button (enabled when local order ≠ saved order) POSTs `{ action: 'reorder', scene_order: localOrder }` and refetches. Variant badges: show `A`/`B` + "Gemini pick" / "Operator pick" / "Default (unjudged)" from `winner_source` (`'default'` = degraded pair or judge failure — no Gemini verdict exists), and a degraded chip when the pair's loser row has `degraded=true`.
 - [ ] Wire into `PropertyCommandCenter.tsx`: `{bundle.delivery_run?.stage === 'checkpoint_a' && <CheckpointA runId={bundle.delivery_run.id} onChanged={loadBundle} />}` plus the shared Next button (`advance` to `'details'`).
 - [ ] `npx vite build` — exit 0. Manual check: drag + arrows both reorder; Save persists; reload preserves order.
 - [ ] Commit:

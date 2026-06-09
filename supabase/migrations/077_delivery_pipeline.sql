@@ -46,7 +46,9 @@ create table if not exists scene_variants (
   cost_cents integer,
   gemini_scores jsonb,
   winner boolean not null default false,
-  winner_source text check (winner_source in ('gemini','operator')),
+  -- 'gemini' = real judged verdict; 'operator' = checkpoint-A flip;
+  -- 'default' = unjudged auto-win (degraded pair or judge failure) — ML must exclude.
+  winner_source text check (winner_source in ('gemini','operator','default')),
   degraded boolean not null default false,
   error text,
   created_at timestamptz not null default now(),

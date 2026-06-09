@@ -5,8 +5,12 @@
  * runJudgePass instead of runAssembly. Each ready pair (A clip + B clip)
  * is scored by Gemini on a 4-dimension rubric; the winner is computed
  * DETERMINISTICALLY from the scores (never trusted from the model's own
- * "winner" output). Degraded pairs auto-win the surviving variant; failed
- * pairs are skipped (operator regenerates at checkpoint A).
+ * "winner" output). Clips are uploaded through the Gemini Files API first —
+ * HTTPS fileUri passthrough is unsupported on the Developer API. Degraded
+ * pairs auto-win the surviving variant and judge failures default to A; in
+ * BOTH cases the winner is marked winner_source='default' with a
+ * gemini_scores.judge_error marker (only truly judged pairs get 'gemini').
+ * Failed pairs are skipped (operator regenerates at checkpoint A).
  *
  * Gemini conventions mirror lib/providers/gemini-judge.ts: @google/genai,
  * GEMINI_API_KEY ?? GOOGLE_API_KEY, responseMimeType 'application/json',
@@ -18,6 +22,7 @@ import { GoogleGenAI } from '@google/genai';
 import { getSupabase } from '../client.js';
 import { recordCostEvent, log, updatePropertyStatus } from '../db.js';
 import { geminiCostCents } from '../providers/gemini-judge.js';
+import { uploadVideoToGeminiFiles, deleteGeminiFile, type UploadedGeminiFile } from '../providers/gemini-files.js';
 import { getRun, getVariantsForRun, advanceRun, updateRun } from './runs.js';
 import { variantPairStatus } from './variants.js';
 import type { SceneVariantRow, DeliveryRunRow } from '../types/operator-studio.js';
@@ -58,27 +63,36 @@ const AB_SYSTEM_PROMPT = `You compare two AI-generated real-estate video clips (
 Score EACH clip 1-5 on: motion_quality (smooth, intentional camera motion), artifacts (5 = none), realism (faithful to the photographed space, no invented geometry), composition.
 Return ONLY JSON: {"a":{"motion_quality":n,"artifacts":n,"realism":n,"composition":n},"b":{...}}`;
 
-async function judgePair(
+export async function judgePair(
   clipA: string,
   clipB: string,
   prompt: string,
   runId: string,
   sceneId: string,
-  propertyId: string,
+  propertyId: string | null,
 ): Promise<{ a: VariantScores | null; b: VariantScores | null }> {
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY or GOOGLE_API_KEY required for A/B judge');
   const model = process.env.AB_JUDGE_MODEL ?? AB_JUDGE_MODEL_DEFAULT;
   const genai = new GoogleGenAI({ apiKey });
+  // fileData.fileUri does NOT accept HTTPS passthrough on the Developer API
+  // (GCS/Files-API/YouTube only — see gemini-analyzer.ts). Clips must be
+  // uploaded via the Files API first; an upload/processing failure throws,
+  // which the caller marks winner_source='default' — never silently judge
+  // against the raw URL.
+  let fileA: UploadedGeminiFile | null = null;
+  let fileB: UploadedGeminiFile | null = null;
   try {
+    fileA = await uploadVideoToGeminiFiles(genai, clipA);
+    fileB = await uploadVideoToGeminiFiles(genai, clipB);
     const resp = await genai.models.generateContent({
       model,
       contents: [{
         role: 'user',
         parts: [
           { text: `Director prompt: ${prompt}\nClip A is the first video, clip B the second. Score both.` },
-          { fileData: { fileUri: clipA, mimeType: 'video/mp4' } },
-          { fileData: { fileUri: clipB, mimeType: 'video/mp4' } },
+          { fileData: { fileUri: fileA.uri, mimeType: fileA.mimeType } },
+          { fileData: { fileUri: fileB.uri, mimeType: fileB.mimeType } },
         ],
       }],
       config: { systemInstruction: AB_SYSTEM_PROMPT, responseMimeType: 'application/json', temperature: 0.1 },
@@ -113,6 +127,10 @@ async function judgePair(
       },
     }).catch(() => {});
     throw err;
+  } finally {
+    // Best-effort cleanup; uploaded files auto-expire in 48h regardless.
+    if (fileA) await deleteGeminiFile(genai, fileA.name);
+    if (fileB) await deleteGeminiFile(genai, fileB.name);
   }
 }
 
@@ -128,8 +146,9 @@ function isBenignAdvanceRace(err: unknown): boolean {
  * Judge pass — invoked by the poll-scenes cron once a delivery property's
  * scenes settle (and re-attempted via sweepActiveJudgePasses while B variants
  * are still in flight). Returns {ready:false} while any pair is still pending
- * (next tick retries). On completion: winners set (winner_source='gemini'),
- * draft order stored on the run, stage -> checkpoint_a.
+ * (next tick retries). On completion: winners set (winner_source='gemini'
+ * for judged pairs, 'default' + gemini_scores.judge_error for degraded /
+ * judge-failure pairs), draft order stored on the run, stage -> checkpoint_a.
  */
 export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
   const supabase = getSupabase();
@@ -188,8 +207,16 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
     const status = variantPairStatus(a, b);
     if (status === 'failed') continue; // operator regenerates at checkpoint A
     let winner: 'A' | 'B';
+    // winner_source='gemini' is reserved for pairs Gemini ACTUALLY watched.
+    // Anything that wins without judging (degraded pair, judge failure) is
+    // marked winner_source='default' + a judge_error marker in gemini_scores
+    // so ML training can exclude unjudged pairs.
+    let winnerSource: 'gemini' | 'default' = 'gemini';
+    let judgeError: string | null = null;
     if (status === 'degraded') {
       winner = a?.clip_url ? 'A' : 'B';
+      winnerSource = 'default';
+      judgeError = 'degraded pair — no judging possible';
     } else {
       try {
         const scores = await judgePair(a!.clip_url!, b!.clip_url!, String(scene.prompt ?? ''), runId, scene.id as string, run.property_id);
@@ -197,19 +224,22 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
         await supabase.from('scene_variants').update({ gemini_scores: scores.b, updated_at: new Date().toISOString() }).eq('id', b!.id);
         winner = pickWinner(scores.a, scores.b);
       } catch (err) {
-        // Judge failure degrades gracefully: A wins by default, error logged.
+        // Judge failure degrades gracefully: A wins by DEFAULT (not a Gemini
+        // verdict), error preserved on the row for ML exclusion.
         await log(run.property_id, 'qc', 'warn',
           `A/B judge failed for scene ${scene.scene_number}; defaulting winner=A: ${err instanceof Error ? err.message : String(err)}`,
           { delivery_run_id: runId }, scene.id as string);
         winner = 'A';
+        winnerSource = 'default';
+        judgeError = err instanceof Error ? err.message : String(err);
       }
     }
     const winnerRow = winner === 'A' ? a : b;
     const loserRow = winner === 'A' ? b : a;
     if (winnerRow) {
-      await supabase.from('scene_variants')
-        .update({ winner: true, winner_source: 'gemini', updated_at: new Date().toISOString() })
-        .eq('id', winnerRow.id);
+      const update: Record<string, unknown> = { winner: true, winner_source: winnerSource, updated_at: new Date().toISOString() };
+      if (judgeError !== null) update.gemini_scores = { judge_error: judgeError };
+      await supabase.from('scene_variants').update(update).eq('id', winnerRow.id);
     }
     if (loserRow) {
       await supabase.from('scene_variants')

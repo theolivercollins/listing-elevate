@@ -137,7 +137,9 @@ export type SceneVariantRow = {
   cost_cents: number | null;
   gemini_scores: Record<string, unknown> | null;
   winner: boolean;
-  winner_source: 'gemini' | 'operator' | null;
+  /** 'gemini' = real judged verdict; 'operator' = checkpoint-A flip;
+   *  'default' = unjudged auto-win (degraded pair / judge failure — gemini_scores carries judge_error). */
+  winner_source: 'gemini' | 'operator' | 'default' | null;
   degraded: boolean;
   error: string | null;
   created_at: string;

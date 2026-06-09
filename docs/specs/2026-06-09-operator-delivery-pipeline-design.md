@@ -42,7 +42,7 @@ Client editor calls existing `creatomate.getTemplate()` (already returns `elemen
 
 **`delivery_runs`** — one row per delivery. `property_id`, `client_id`, `video_type enum('just_listed','just_pended','just_closed')`, `duration_seconds`, `stage enum('intake','scraping','generating','judging','checkpoint_a','details','voiceover','music','assembling','checkpoint_b','delivered')`, `listing_details jsonb` (price, beds, baths, sqft, mls_description, source: scraped|manual), `voiceover_script text`, `voiceover_voice_id text`, `music_track_id`, `error text`, timestamps. Stage transitions only via `lib/delivery/state.ts` (pure, unit-tested). Resumable from any stage.
 
-**`scene_variants`** — `scene_id`, `variant char('A'|'B')`, clip url/provider/cost, `gemini_scores jsonb`, `winner bool`, `winner_source enum('gemini','operator')`. Variant B failure → degrade to single-clip, flagged `degraded=true`.
+**`scene_variants`** — `scene_id`, `variant char('A'|'B')`, clip url/provider/cost, `gemini_scores jsonb`, `winner bool`, `winner_source enum('gemini','operator','default')` — `'gemini'` only for pairs Gemini actually judged; `'operator'` for checkpoint-A flips; `'default'` for unjudged auto-wins (degraded pair or judge failure), with `gemini_scores = {"judge_error": ...}` on the winning row so ML excludes them. Variant B failure → degrade to single-clip, flagged `degraded=true`.
 
 **`ml_events`** — `run_id`, `event_type enum('reorder','regenerate','variant_override','script_edit','voice_choice','music_choice','rating','comment','details_edit')`, `payload jsonb`, `created_at`. The ML training corpus.
 
@@ -52,7 +52,7 @@ RLS: same service-role-only posture as the other operator tables (migration 062 
 
 1. **Intake** — `/dashboard/studio/new` gains video-type selector (duration selector exists). On create: delivery_run inserted, Redfin scrape (`lib/mls/scrape-redfin.ts`, existing `tri_angle/redfin-detail` actor) fires async. Hit → `listing_details` populated, `source='scraped'`. Miss → amber manual-entry state.
 2. **Generate** — existing analysis + director run unchanged; generation fires **two independent provider runs per scene** (same prompt; Kling output variance differentiates). Both variants → `scene_variants`.
-3. **Judge** — Gemini judge (reuse `lib/providers/gemini-judge.ts` patterns) scores each A/B pair (motion quality, artifacts, realism, composition) → sets `winner`, `winner_source='gemini'`. Draft order via existing `orderScenesForAssembly()`.
+3. **Judge** — Gemini judge (reuse `lib/providers/gemini-judge.ts` patterns; clips uploaded via the Gemini Files API — HTTPS fileUri passthrough is unsupported on the Developer API) scores each A/B pair (motion quality, artifacts, realism, composition) → sets `winner`, `winner_source='gemini'`. Degraded pairs and judge failures auto-win with `winner_source='default'` + `gemini_scores.judge_error` (never recorded as a Gemini verdict). Draft order via existing `orderScenesForAssembly()`.
 4. **Checkpoint A** — stepper in Command Center: drag-reorder draft order, regenerate a scene, flip A↔B. Every action → `ml_events`.
 5. **Details** — overlay fields pre-filled from `listing_details`; operator verifies/edits; edits logged.
 6. **Voiceover** — Sonnet 4.6 writes script from MLS description + details + video type (extend `lib/voiceover/`). Editable textarea (edits → `ml_events.script_edit` with before/after). Voice options: ElevenLabs V3 roster + client `voice_id` when set (badged "Client voice"). Audio generated on selection.
