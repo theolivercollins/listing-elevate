@@ -30,9 +30,9 @@ const BRAND_FIELD_SOURCES: Array<{
   { label: 'Logo',      templateKeys: ['Brand.logo'],                                    hasValue: (f) => !!f.brand_logo_url },
   { label: 'Primary',   templateKeys: ['Brand.primary'],                                 hasValue: (f) => !!f.brand_primary_hex },
   { label: 'Secondary', templateKeys: ['Brand.secondary'],                               hasValue: (f) => !!f.brand_secondary_hex },
-  { label: 'Name',      templateKeys: ['Brand.agent_name', 'Text-Agent-Name.text'],      hasValue: (f) => !!f.agent_name },
-  { label: 'Headshot',  templateKeys: ['Brand.agent_headshot', 'Image-Headshot.source'], hasValue: (f) => !!f.agent_headshot_url },
-  { label: 'Brokerage', templateKeys: ['Brand.brokerage', 'Text-Brokerage-Team.text'],   hasValue: (f) => !!f.brokerage },
+  { label: 'Name',      templateKeys: ['Brand.agent_name', 'Text-Agent-Name.text', 'Listing-Agent-Mid.text', 'Listing-Agent-Final.text'],                      hasValue: (f) => !!f.agent_name },
+  { label: 'Headshot',  templateKeys: ['Brand.agent_headshot', 'Image-Headshot.source', 'Agent-Headshot-Final.source'],                                         hasValue: (f) => !!f.agent_headshot_url },
+  { label: 'Brokerage', templateKeys: ['Brand.brokerage', 'Text-Brokerage-Team.text', 'Listing-Brokerage-Mid.text', 'Listing-Brokerage-Final.text'],            hasValue: (f) => !!f.brokerage },
   { label: 'Phone',     templateKeys: ['Brand.phone', 'Text-Phone-Number.text'],         hasValue: (f) => !!f.phone },
 ];
 
