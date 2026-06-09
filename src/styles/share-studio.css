@@ -421,3 +421,97 @@
   background: var(--le-ink);
   transition: width 0.2s ease;
 }
+
+/* ─── Fullscreen creative detail (shadcn Dialog) ─────────────────────────
+   Clicking a creative opens a near-fullscreen dialog: a big player on the left
+   and the scrollable settings on the right. The dialog portals to <body>, so
+   the content is re-wrapped in `.studio-scope` to recover the token + styles. */
+.studio-scope.is-embedded {
+  min-height: 0;
+  position: static;
+}
+.share-fs-srtitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.share-fs {
+  height: 100%;
+  background: var(--le-bg);
+  color: var(--le-ink);
+}
+.share-fs-grid {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+}
+.share-fs-player {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+.share-fs-player iframe,
+.share-fs-player video,
+.share-fs-player img {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 0;
+  display: block;
+}
+.share-fs-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--le-surface);
+  border-left: 1px solid var(--le-line);
+}
+.share-fs-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--le-line);
+}
+.share-fs-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The settings list scrolls inside the panel (beats the drawer-body rule). */
+.studio-scope .share-fs-panel .share-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  .share-fs-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .share-fs-player {
+    aspect-ratio: 16 / 9;
+  }
+  .share-fs-panel {
+    border-left: 0;
+    border-top: 1px solid var(--le-line);
+  }
+}
