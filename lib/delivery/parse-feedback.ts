@@ -29,10 +29,16 @@ const SYSTEM_PROMPT = `You convert an operator's freeform feedback about a real-
 Return ONLY JSON: {"tags":[{"category":"<one of: pacing, voice_tone, clip_quality, music_fit, script_style, other>","sentiment":"positive|negative|neutral","note":"<short paraphrase>"}]}
 One tag per distinct point. Empty comment -> {"tags":[]}.`;
 
+export interface ParseFeedbackResult {
+  tags: FeedbackTag[];
+  parse_error?: true;
+  error_message?: string;
+}
+
 export async function parseFeedbackComment(
   comment: string,
   ctx: { runId: string; propertyId: string },
-): Promise<{ tags: FeedbackTag[] }> {
+): Promise<ParseFeedbackResult> {
   const client = new Anthropic();
   const response = await client.messages.create({
     model: MODEL,
@@ -56,7 +62,8 @@ export async function parseFeedbackComment(
     const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
     const parsed = JSON.parse(cleaned) as { tags?: unknown };
     return { tags: validateFeedbackTags(parsed.tags) };
-  } catch {
-    return { tags: [] }; // raw comment is stored regardless (Task 21)
+  } catch (e) {
+    // raw comment is stored regardless (Task 21); signal to caller that this was a fallback
+    return { tags: [], parse_error: true, error_message: e instanceof Error ? e.message : String(e) };
   }
 }

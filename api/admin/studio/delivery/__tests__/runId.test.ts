@@ -544,7 +544,46 @@ describe('POST submit_ratings (T21)', () => {
     );
     expect(res._status).toBe(200);
     expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'rating', { overall: 4, music: 5, voiceover: 3, script: 4 });
+    // Clean parse: no parse_error field in the comment event payload
     expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'comment', expect.objectContaining({ raw: 'pacing felt rushed' }));
+    const commentCall = mockRecordMlEvent.mock.calls.find((c: unknown[]) => c[1] === 'comment');
+    expect(commentCall?.[2]).not.toHaveProperty('parse_error');
+    expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'delivered');
+  });
+
+  it('POST submit_ratings comment parse failure -> parse_error:true in comment ml_event payload', async () => {
+    mockGetRun.mockResolvedValue(checkpointBRun);
+    mockParseFeedbackComment.mockResolvedValue({ tags: [], parse_error: true, error_message: 'JSON parse error' });
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'r1' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 4, music: 5, voiceover: 3, script: 4, comment: 'junk response from model',
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const commentCall = mockRecordMlEvent.mock.calls.find((c: unknown[]) => c[1] === 'comment');
+    expect(commentCall?.[2]).toEqual(expect.objectContaining({ raw: 'junk response from model', tags: [], parse_error: true }));
+    expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'delivered');
+  });
+
+  it('POST submit_ratings parseFeedbackComment throws -> parse_error:true in comment ml_event payload', async () => {
+    mockGetRun.mockResolvedValue(checkpointBRun);
+    mockParseFeedbackComment.mockRejectedValue(new Error('network failure'));
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST', query: { runId: 'r1' }, headers: {}, body: {
+          action: 'submit_ratings', overall: 4, music: 5, voiceover: 3, script: 4, comment: 'great video',
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const commentCall = mockRecordMlEvent.mock.calls.find((c: unknown[]) => c[1] === 'comment');
+    expect(commentCall?.[2]).toEqual(expect.objectContaining({ raw: 'great video', tags: [], parse_error: true, error_message: 'network failure' }));
     expect(mockAdvanceRun).toHaveBeenCalledWith('r1', 'delivered');
   });
 

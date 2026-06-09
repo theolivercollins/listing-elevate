@@ -209,14 +209,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await recordMlEvent(runId, 'rating', ratings);
           const comment = String(req.body?.comment ?? '').trim();
           if (comment) {
-            let tags: unknown = [];
+            const { parseFeedbackComment } = await import('../../../../lib/delivery/parse-feedback.js');
+            let parseResult: Awaited<ReturnType<typeof parseFeedbackComment>>;
             try {
-              const { parseFeedbackComment } = await import('../../../../lib/delivery/parse-feedback.js');
-              tags = (await parseFeedbackComment(comment, { runId, propertyId: run.property_id })).tags;
+              parseResult = await parseFeedbackComment(comment, { runId, propertyId: run.property_id });
             } catch (err) {
               console.error('[delivery] feedback parse failed (storing raw only):', err);
+              parseResult = { tags: [], parse_error: true, error_message: err instanceof Error ? err.message : String(err) };
             }
-            await recordMlEvent(runId, 'comment', { raw: comment, tags });
+            const commentPayload: Record<string, unknown> = { raw: comment, tags: parseResult.tags };
+            if (parseResult.parse_error) {
+              commentPayload.parse_error = true;
+              if (parseResult.error_message) commentPayload.error_message = parseResult.error_message;
+            }
+            await recordMlEvent(runId, 'comment', commentPayload);
           }
           const updated = await advanceRun(runId, 'delivered');
           return res.status(200).json({ run: updated });
