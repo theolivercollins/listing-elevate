@@ -13,6 +13,8 @@ export interface SharePayload {
   allow_embed: boolean;
   presentation_enabled: boolean;
   playbackUrl: string;
+  /** Bunny iframe player URL — when set, the viewer renders an iframe player. */
+  embedUrl: string | null;
   posterUrl: string | null;
   downloadUrl: string | null;
   width: number | null;

@@ -164,7 +164,15 @@ export function CreativeSettingsPanel({
 
         {/* Live player */}
         <div className="share-drawer-player">
-          {creative.kind === 'image' ? (
+          {creative.bunnyEmbedUrl ? (
+            <iframe
+              src={creative.bunnyEmbedUrl}
+              title={creative.title}
+              loading="lazy"
+              allow="accelerometer; gyroscope; autoplay; encrypted-media; picture-in-picture; fullscreen"
+              allowFullScreen
+            />
+          ) : creative.kind === 'image' ? (
             <img src={creative.previewUrl ?? creative.public_url ?? poster} alt={creative.title} />
           ) : (
             <video
