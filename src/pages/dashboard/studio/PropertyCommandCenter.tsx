@@ -15,12 +15,14 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
 import { CheckpointA } from '@/components/studio/CheckpointA';
+import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
   ClientRow,
   RevisionNoteRow,
   PropertyPreviewRow,
+  ListingDetails,
 } from '../../../../lib/types/operator-studio';
 
 // ─── Local types ───────────────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ interface DeliveryRunSummary {
   id: string;
   stage: string;
   error: string | null;
-  listing_details: Record<string, unknown>;
+  listing_details: ListingDetails;
   scene_order: string[] | null;
   voiceover_script: string | null;
   voiceover_voice_id: string | null;
@@ -429,6 +431,14 @@ const PropertyCommandCenter = () => {
           {/* ─── Checkpoint A: clip reorder panel ─── */}
           {bundle.delivery_run.stage === 'checkpoint_a' && (
             <CheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />
+          )}
+          {/* ─── Details: listing fields form ─── */}
+          {bundle.delivery_run.stage === 'details' && (
+            <DeliveryDetails
+              runId={bundle.delivery_run.id}
+              listingDetails={bundle.delivery_run.listing_details}
+              onSaved={fetchBundle}
+            />
           )}
           <DeliveryNextButton
             stage={bundle.delivery_run.stage}
