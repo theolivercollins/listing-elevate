@@ -56,6 +56,9 @@ import StudioNew from "./pages/dashboard/studio/StudioNew";
 import StudioClients from "./pages/dashboard/studio/Clients";
 import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
+import StudioShare from "./pages/dashboard/studio/Share";
+import SharePresentation from "./pages/share/Presentation";
+import ShareEmbed from "./pages/share/Embed";
 import PreviewPage from "./pages/preview/PreviewPage";
 import NotFound from "./pages/NotFound";
 
@@ -86,6 +89,9 @@ const App = () => (
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
                 <Route path="/preview/:token" element={<PreviewPage />} />
+                {/* Public Vimeo-style share viewer (presentation + embed) */}
+                <Route path="/v/:token" element={<SharePresentation />} />
+                <Route path="/embed/:token" element={<ShareEmbed />} />
 
                 {/* Backwards-compat redirects for old /account/* bookmarks */}
                 <Route path="/account" element={<Navigate to="/dashboard/account/profile" replace />} />
@@ -136,6 +142,7 @@ const App = () => (
                       <Route path="video" element={<StudioHome />} />
                       <Route path="video/new" element={<StudioNew />} />
                       <Route path="video/clients" element={<StudioClients />} />
+                      <Route path="video/share" element={<StudioShare />} />
                       <Route path="video/clients/:id" element={<StudioClientEdit />} />
                       <Route path="video/properties/:id" element={<StudioPropertyCommandCenter />} />
 
