@@ -214,7 +214,7 @@ const StudioNew = () => {
       return;
     }
     setMlsLooking(true);
-    setMlsMsg(null);
+    setMlsMsg({ kind: 'warn', text: 'Searching MLS — this can take 1–3 minutes…' });
     try {
       const r = await lookupMls(address.trim());
       if (r.price != null) setPrice(String(r.price));
