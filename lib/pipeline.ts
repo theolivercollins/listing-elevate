@@ -409,6 +409,36 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
   const nonViableCount = allResults.filter(r => r.analysis.video_viable === false).length;
   await log(propertyId, "analysis", "info",
     `Analysis done: ${selected.length} selected from ${allResults.length} (${nonViableCount} photos marked non-viable for video)`);
+
+  // Fix B: fail fast when zero photos are usable so the pipeline never
+  // proceeds to scripting/generation with an empty photo set and silently
+  // stalls at 'generating' forever (0/0 scenes submitted = no cron trigger).
+  // Gate covers both "all fetches failed" and "all photos marked non-viable".
+  if (selected.length === 0) {
+    const reason = allResults.length === 0
+      ? `0 of ${photos.length} photos loadable — check photos.file_url are absolute URLs`
+      : `0 of ${allResults.length} analyzed photos were video-viable — all marked non-viable`;
+    await updatePropertyStatus(propertyId, "failed");
+    await log(propertyId, "analysis", "error", reason);
+    // Surface the error in the operator delivery stepper if a run exists.
+    try {
+      const { data: run } = await getSupabase()
+        .from("delivery_runs")
+        .select("id")
+        .eq("property_id", propertyId)
+        .neq("stage", "delivered")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (run) {
+        const { setRunError } = await import("./delivery/runs.js");
+        await setRunError((run as { id: string }).id, reason);
+      }
+    } catch {
+      // Best-effort — never block the fail-fast on a run-lookup hiccup.
+    }
+    throw new Error(reason);
+  }
 }
 
 // selectPhotos lives in ./pipeline/selection.ts — imported at the top of this
