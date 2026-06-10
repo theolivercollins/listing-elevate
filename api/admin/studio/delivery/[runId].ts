@@ -147,17 +147,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // at most 2 attempts, then proceed with a warning.
             const targetSec = run.duration_seconds ?? 30;
             const toleranceMs = 1000;
+            let shortenUnavailable = false;
             if (durationMs > targetSec * 1000 + toleranceMs) {
               const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
               const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
               const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
               for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
                 const fromWords = countWords(stripAudioTags(script));
-                ({ script } = await shortenDeliveryScript({
-                  runId, propertyId: run.property_id, script,
-                  actualSeconds: durationMs / 1000, targetSeconds: targetSec,
-                }));
-                ({ audioUrl, durationMs } = await genAudio(script));
+                // A shorten or re-render failure must NOT discard the good audio
+                // we already paid for: keep the last good {script, audio} pair
+                // (always consistent — script is only swapped once its audio
+                // exists) and fall through to persist it with a warning.
+                try {
+                  const { script: shortened } = await shortenDeliveryScript({
+                    runId, propertyId: run.property_id, script,
+                    actualSeconds: durationMs / 1000, targetSeconds: targetSec,
+                  });
+                  ({ audioUrl, durationMs } = await genAudio(shortened));
+                  script = shortened;
+                } catch (shortenErr) {
+                  console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
+                  shortenUnavailable = true;
+                  break;
+                }
                 await rme3(runId, 'script_edit', {
                   source: 'auto_shorten',
                   from_words: fromWords,
@@ -172,7 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (durationMs > targetSec * 1000 + toleranceMs) {
               return res.status(200).json({
                 run: updated,
-                duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target`,
+                duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
               });
             }
             return res.status(200).json({ run: updated });
