@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = `You write welcoming real-estate listing-video voiceover s
 STRICT word budget: {wordBudget} words maximum. Count carefully — the spoken read at ~150 wpm must fit the duration.
 
 Required structure:
-1. OPEN with a warm greeting that names the property — e.g. "Welcome to <street address>" or "Step inside <street address>".
+1. OPEN by naming the property in a fresh construction — lead with a standout feature, the lifestyle, or the setting, e.g. "Waterfront mornings come standard at <street address>" or "Tucked on a quiet cul-de-sac, <street address> delivers …". Do NOT open with "Welcome to" or "Step inside".
 2. MIDDLE — use "featuring", "boasting", or "with" to flow into 3–5 of the most distinctive features from the listing description (waterfront, pool, square footage, kitchen, view, etc.). Prefer flowing prose over staccato fragments.
 3. CLOSE with one short, inviting line tied to the package (e.g. "Just listed" / "Just sold" / "Now pending").
 
@@ -49,13 +49,26 @@ export interface GenerateScriptResult {
 }
 
 /**
- * Trim a script to at most `n` words.
- * Preserves sentence endings where possible by cutting at word boundaries.
+ * Trim a script to at most `n` words, ending on a complete sentence.
+ *
+ * Slices to the word budget, then cuts at the LAST sentence boundary
+ * (`.` / `!` / `?` followed by whitespace or end-of-slice — so decimals like
+ * "$1.2" don't count) within the slice. If no boundary exists in the slice,
+ * keeps the word slice and appends "." so the read at least ends cleanly
+ * instead of chopping mid-sentence.
  */
 export function trimToWordBudget(text: string, maxWords: number): string {
   const words = text.trim().split(/\s+/);
   if (words.length <= maxWords) return text.trim();
-  return words.slice(0, maxWords).join(" ");
+  const sliced = words.slice(0, maxWords).join(" ");
+
+  let lastBoundary = -1;
+  const boundaryRe = /[.!?](?=\s|$)/g;
+  for (let m = boundaryRe.exec(sliced); m; m = boundaryRe.exec(sliced)) {
+    lastBoundary = m.index;
+  }
+  if (lastBoundary > 0) return sliced.slice(0, lastBoundary + 1);
+  return `${sliced}.`;
 }
 
 export function countWords(text: string): number {

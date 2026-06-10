@@ -23,6 +23,24 @@ const ELEVENLABS_API = "https://api.elevenlabs.io/v1/text-to-speech";
 // eleven_v3: most expressive/human, supports audio tags. Env-overridable.
 const DEFAULT_MODEL_ID = "eleven_v3";
 
+// Must stay in sync with the output_format sent to ElevenLabs below
+// (mp3_44100_128 = CBR MP3 @ 128 kbps), so byte length maps to duration.
+const OUTPUT_FORMAT = "mp3_44100_128";
+const OUTPUT_BITRATE_KBPS = 128;
+
+/**
+ * Duration of a CBR MP3 from its byte length: bytes * 8 bits / bitrate.
+ * At kbps granularity that's exactly `bytes * 8 / kbps` milliseconds.
+ * Accurate to within the ID3/frame-header overhead (negligible at our sizes).
+ */
+export function estimateMp3DurationMs(
+  byteLength: number,
+  bitrateKbps: number = OUTPUT_BITRATE_KBPS,
+): number {
+  if (byteLength <= 0 || bitrateKbps <= 0) return 0;
+  return Math.round((byteLength * 8) / bitrateKbps);
+}
+
 function resolveModelId(): string {
   return process.env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL_ID;
 }
@@ -40,7 +58,7 @@ export interface GenerateAudioInput {
 
 export interface GenerateAudioResult {
   audioUrl: string;
-  /** Estimated duration derived from character count at 15 chars/sec average. */
+  /** Measured duration derived from the MP3 byte length at the CBR bitrate. */
   durationMs: number;
 }
 
@@ -72,7 +90,7 @@ export async function generateVoiceoverAudio(
     body: JSON.stringify({
       text,
       model_id: modelId,
-      output_format: "mp3_44100_128",
+      output_format: OUTPUT_FORMAT,
       voice_settings: {
         stability: 0.5,
         similarity_boost: 0.75,
@@ -113,8 +131,8 @@ export async function generateVoiceoverAudio(
   // sent (tags stripped for non-v3) since that's what ElevenLabs charges for.
   const chars = text.length;
   const costCents = Math.ceil((chars / 1000) * 60);
-  // Rough duration estimate: ~15 chars/sec average narration pace.
-  const durationMs = Math.round((chars / 15) * 1000);
+  // Real duration measured from the MP3 buffer (CBR @ OUTPUT_BITRATE_KBPS).
+  const durationMs = estimateMp3DurationMs(audioBuffer.byteLength);
 
   await recordCostEvent({
     propertyId,

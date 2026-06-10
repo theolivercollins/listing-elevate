@@ -72,6 +72,53 @@ describe("trimToWordBudget", () => {
     const result = trimToWordBudget(overBudget, 37);
     expect(countWords(result)).toBeLessThanOrEqual(37);
   });
+
+  // ── Sentence-aware trimming (prod failure: 15s script cut mid-sentence) ────
+
+
+  it("cuts at the last complete sentence boundary within the budget", () => {
+    // Real-world shape: budget lands mid-way through the final sentence.
+    const script =
+      "Soaring ceilings and a chef's kitchen anchor this waterfront retreat. " + // 10 words
+      "Outside, the heated pool overlooks the canal with direct Gulf access. " + // 11 words
+      "Just listed at $599,900 — your Florida dream home is waiting for you today."; // 14 words
+    // Budget of 25 words falls inside sentence 3 → trim back to end of sentence 2.
+    const result = trimToWordBudget(script, 25);
+    expect(result).toBe(
+      "Soaring ceilings and a chef's kitchen anchor this waterfront retreat. " +
+        "Outside, the heated pool overlooks the canal with direct Gulf access.",
+    );
+    expect(result.endsWith(".")).toBe(true);
+  });
+
+  it("never ends mid-sentence", () => {
+    const script =
+      "First sentence here ends now. Second sentence runs much longer than the remaining budget allows for sure.";
+    const result = trimToWordBudget(script, 8);
+    expect(result).toBe("First sentence here ends now.");
+  });
+
+  it("handles ! and ? sentence boundaries", () => {
+    const script = "What a view! The sunsets here are unforgettable every single evening of the year.";
+    expect(trimToWordBudget(script, 7)).toBe("What a view!");
+  });
+
+  it("appends a period when no sentence boundary exists in the slice", () => {
+    const words = Array.from({ length: 50 }, (_, i) => `word${i}`).join(" ");
+    const result = trimToWordBudget(words, 37);
+    expect(countWords(result)).toBe(37);
+    expect(result.endsWith(".")).toBe(true);
+  });
+
+  it("does not treat decimals like $1.2 as sentence boundaries", () => {
+    const script =
+      "Priced at $1.2 million this estate spans three lush acres with mature oaks and a private gated drive plus a guest house";
+    const result = trimToWordBudget(script, 10);
+    // The "." inside $1.2 must not count as a boundary → fallback applies.
+    expect(countWords(result)).toBe(10);
+    expect(result.endsWith(".")).toBe(true);
+    expect(result.startsWith("Priced at $1.2 million")).toBe(true);
+  });
 });
 
 // ── generateVoiceoverScript (mocked Anthropic) ────────────────────────────────
