@@ -30,7 +30,18 @@ interface DeliveryBundle {
     scene_order: string[] | null;
   };
   variants: SceneVariantRow[];
+  /** Scene ids with end_photo_id set (paired start+end-frame scenes). These
+   *  unlock the regenerate model picker (Kling 3 Pro / Seedance 2.0 pair). */
+  paired_scene_ids?: string[];
 }
+
+/** Regenerate model choices for PAIRED scenes only. Order matters: first is
+ *  the default (mirrors RULE DQ.3 — paired scenes default to Kling 3 Pro). */
+const PAIRED_REGEN_MODELS = [
+  { key: 'kling-v3-pro', label: 'Kling 3 Pro' },
+  { key: 'seedance-pair', label: 'Seedance 2.0 (pair)' },
+] as const;
+type PairedRegenModelKey = (typeof PAIRED_REGEN_MODELS)[number]['key'];
 
 /** The display-state we track per scene card. */
 interface ClipCard {
@@ -111,11 +122,15 @@ function VariantBadge({
 function RegenerateMenu({
   onSelect,
   busy,
+  paired,
 }: {
-  onSelect: (variant: 'A' | 'B') => void;
+  onSelect: (variant: 'A' | 'B', model?: PairedRegenModelKey) => void;
   busy: boolean;
+  /** Paired scenes (end photo set) get a model choice; others keep the plain menu. */
+  paired: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [model, setModel] = useState<PairedRegenModelKey>('kling-v3-pro');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -153,9 +168,44 @@ function RegenerateMenu({
             borderRadius: 6,
             boxShadow: '0 4px 12px rgba(0,0,0,.12)',
             zIndex: 20,
-            minWidth: 80,
+            minWidth: paired ? 168 : 80,
           }}
         >
+          {paired && (
+            /* Paired scene: pick the render model. Default mirrors DQ.3
+               (Kling 3 Pro); Seedance 2.0 pair mode is the opt-in. */
+            <div style={{ padding: '7px 8px 5px', borderBottom: '1px solid var(--le-line)' }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--le-muted)', marginBottom: 4 }}>
+                Model
+              </div>
+              <div style={{ display: 'flex', gap: 3 }}>
+                {PAIRED_REGEN_MODELS.map((m) => {
+                  const active = model === m.key;
+                  return (
+                    <button
+                      key={m.key}
+                      type="button"
+                      aria-pressed={active}
+                      style={{
+                        flex: 1,
+                        padding: '4px 6px',
+                        fontSize: 10.5,
+                        fontWeight: active ? 600 : 400,
+                        borderRadius: 5,
+                        border: active ? '1px solid var(--le-ink)' : '1px solid var(--le-line)',
+                        background: active ? 'var(--le-ink)' : 'var(--le-surface)',
+                        color: active ? '#fff' : 'var(--le-muted)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setModel(m.key)}
+                    >
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {(['A', 'B'] as const).map((v) => (
             <button
               key={v}
@@ -171,7 +221,7 @@ function RegenerateMenu({
                 cursor: 'pointer',
                 color: 'var(--le-ink)',
               }}
-              onClick={() => { setOpen(false); onSelect(v); }}
+              onClick={() => { setOpen(false); onSelect(v, paired ? model : undefined); }}
             >
               Variant {v}
             </button>
@@ -193,17 +243,19 @@ interface DraggableCardProps {
   card: ClipCard;
   index: number;
   total: number;
+  /** True when the scene has an end photo (paired) — unlocks the regenerate model picker. */
+  paired: boolean;
   onMoveUp: () => void;
   onMoveDown: () => void;
   onHover: (dragIndex: number, hoverIndex: number) => void;
   onFlip: () => void;
-  onRegenerate: (variant: 'A' | 'B') => void;
+  onRegenerate: (variant: 'A' | 'B', model?: PairedRegenModelKey) => void;
   flipping: boolean;
   regenerating: boolean;
 }
 
 function DraggableCard({
-  card, index, total, onMoveUp, onMoveDown, onHover, onFlip, onRegenerate, flipping, regenerating,
+  card, index, total, paired, onMoveUp, onMoveDown, onHover, onFlip, onRegenerate, flipping, regenerating,
 }: DraggableCardProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -290,7 +342,7 @@ function DraggableCard({
             {flipping ? <Loader2 size={10} className="studio-spinner" /> : <ArrowLeftRight size={10} strokeWidth={2} />}
             Flip A↔B
           </button>
-          <RegenerateMenu onSelect={onRegenerate} busy={regenerating || card.inFlight} />
+          <RegenerateMenu onSelect={onRegenerate} busy={regenerating || card.inFlight} paired={paired} />
         </div>
 
         {/* ▲/▼ reorder controls */}
@@ -370,6 +422,7 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
   const [savedOrder, setSavedOrder] = useState<string[]>([]);
   const [localOrder, setLocalOrder] = useState<string[]>([]);
   const [variantsMap, setVariantsMap] = useState<Map<string, ClipCard>>(new Map());
+  const [pairedSceneIds, setPairedSceneIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -396,6 +449,7 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
         return order;
       });
       setVariantsMap(buildCardMap(bundle.variants));
+      setPairedSceneIds(new Set(bundle.paired_scene_ids ?? []));
       setError(null);
 
       // Manage in-flight polling
@@ -477,14 +531,15 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
     }
   };
 
-  const handleRegenerate = async (sceneId: string, variant: 'A' | 'B') => {
+  const handleRegenerate = async (sceneId: string, variant: 'A' | 'B', model?: PairedRegenModelKey) => {
     setRegenerating((s) => new Set(s).add(sceneId));
     setActionError(null);
     try {
       const res = await authedFetch(`/api/admin/studio/delivery/${runId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'regenerate', scene_id: sceneId, variant }),
+        // model only travels for paired scenes (the menu omits it otherwise).
+        body: JSON.stringify({ action: 'regenerate', scene_id: sceneId, variant, ...(model ? { model } : {}) }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -568,11 +623,12 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
               card={card}
               index={i}
               total={cards.length}
+              paired={pairedSceneIds.has(card.sceneId)}
               onMoveUp={() => moveUp(i)}
               onMoveDown={() => moveDown(i)}
               onHover={moveCard}
               onFlip={() => void handleFlip(card.sceneId)}
-              onRegenerate={(v) => void handleRegenerate(card.sceneId, v)}
+              onRegenerate={(v, model) => void handleRegenerate(card.sceneId, v, model)}
               flipping={flipping.has(card.sceneId)}
               regenerating={regenerating.has(card.sceneId)}
             />

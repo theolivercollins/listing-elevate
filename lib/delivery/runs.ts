@@ -66,6 +66,22 @@ export async function getVariantsForRun(runId: string): Promise<SceneVariantRow[
   return (data ?? []) as SceneVariantRow[];
 }
 
+/**
+ * Scene ids on this property that are PAIRED (end_photo_id set — start+end-
+ * frame interpolation). The delivery GET bundle exposes these so Checkpoint A
+ * can offer the paired-only regenerate model picker (kling-v3-pro default /
+ * seedance-pair opt-in) without a second round trip.
+ */
+export async function getPairedSceneIds(propertyId: string): Promise<string[]> {
+  const { data, error } = await getSupabase()
+    .from('scenes')
+    .select('id')
+    .eq('property_id', propertyId)
+    .not('end_photo_id', 'is', null);
+  if (error) throw new Error(`getPairedSceneIds: ${error.message}`);
+  return (data ?? []).map((r) => (r as { id: string }).id);
+}
+
 export async function getEventsForRun(runId: string): Promise<MlEventRow[]> {
   const { data, error } = await getSupabase()
     .from('ml_events').select('*').eq('run_id', runId).order('created_at', { ascending: false });

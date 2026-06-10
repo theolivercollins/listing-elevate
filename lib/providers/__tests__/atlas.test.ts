@@ -139,6 +139,48 @@ describe("buildAtlasRequestBody", () => {
   });
 });
 
+describe("seedance-pair — opt-in Seedance 2.0 pair mode", () => {
+  it("includes last_image (NOT end_image) when endImageUrl is passed", () => {
+    const body = buildAtlasRequestBody(
+      { ...baseParams, endImageUrl: "https://cdn.example.com/end.jpg" },
+      ATLAS_MODELS["seedance-pair"],
+    );
+    // Schema-confirmed field name (bytedance-seedance-2.0-image-to-video.json).
+    expect(body.last_image).toBe("https://cdn.example.com/end.jpg");
+    expect((body as unknown as Record<string, unknown>).end_image).toBeUndefined();
+  });
+
+  it("omits last_image when endImageUrl is absent", () => {
+    const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pair"]);
+    expect((body as unknown as Record<string, unknown>).last_image).toBeUndefined();
+  });
+
+  it("uses the same Seedance 2.0 slug, 1080p-SR default resolution, and silent audio as the push-in SKU", () => {
+    const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pair"]);
+    expect(body.model).toBe("bytedance/seedance-2.0/image-to-video");
+    expect(body.resolution).toBe("1080p-SR");
+    expect(body.generate_audio).toBe(false);
+  });
+
+  it("pricing matches the push-in SKU: 9.6¢/s → 48¢ for a 5s clip — verify against invoice", () => {
+    expect(ATLAS_MODELS["seedance-pair"].priceCentsPerSecond).toBe(9.6);
+    expect(ATLAS_MODELS["seedance-pair"].priceCentsPerClip).toBe(48);
+    expect(atlasClipCostCents("seedance-pair", 5)).toBe(48);
+    expect(atlasClipCostCents("seedance-pair", 10)).toBe(96);
+  });
+
+  it("supportedResolutions mirrors the push-in SKU enum", () => {
+    expect(ATLAS_MODELS["seedance-pair"].supportedResolutions).toEqual(
+      ATLAS_MODELS["seedance-pro-pushin"].supportedResolutions,
+    );
+  });
+
+  it("forces 16:9 source crop and 5/10 durations like the push-in SKU", () => {
+    expect(ATLAS_MODELS["seedance-pair"].forceSourceAspectRatio).toBe("16:9");
+    expect(ATLAS_MODELS["seedance-pair"].allowedDurations).toEqual([5, 10]);
+  });
+});
+
 describe("parseAtlasSubmitResponse", () => {
   it("extracts the prediction id from a successful submit response", () => {
     const resp = {
@@ -219,6 +261,29 @@ describe("AtlasProvider.generateClip — source aspect-ratio prep", () => {
     expect(job.jobId).toBe("job-123");
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(sentBody.image).toBe("https://cdn.example.com/cropped-16x9.jpg");
+  });
+
+  it("crops BOTH the start and end images to 16:9 for seedance-pair submissions", async () => {
+    // Pair mode interpolates between two frames; a 3:2 last_image against a
+    // 16:9 first frame would skew the geometry, so both get the crop.
+    __setTransformForTests(async (url) => `${url}?cropped=16x9`);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 200, data: { id: "job-pair-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("seedance-pair");
+    await provider.generateClip({
+      ...baseParams,
+      endImageUrl: "https://cdn.example.com/end.jpg",
+      modelOverride: "seedance-pair",
+    });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.image).toBe("https://cdn.example.com/start.jpg?cropped=16x9");
+    expect(sentBody.last_image).toBe("https://cdn.example.com/end.jpg?cropped=16x9");
+    expect(sentBody.end_image).toBeUndefined();
   });
 
   it("does NOT rewrite the source image URL for Kling (no forced aspect ratio)", async () => {

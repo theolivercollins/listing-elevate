@@ -15,7 +15,9 @@ export function GenerateAllModal({ sceneLabel, useEndFrame, usedModels = [], onG
   const usedSet = new Set(usedModels);
   const visibleModels = LAB_MODELS.filter((m) => !m.hidden);
   const [selected, setSelected] = useState<Set<string>>(
-    new Set(visibleModels.filter((m) => m.key !== "kling-v2-master" && m.key !== "kling-v2-native" && !usedSet.has(m.key)).map((m) => m.key))
+    // seedance-pair is excluded from the default selection: it's the opt-in
+    // pair-mode SKU and only meaningful on paired scenes. Still selectable.
+    new Set(visibleModels.filter((m) => m.key !== "kling-v2-master" && m.key !== "kling-v2-native" && m.key !== "seedance-pair" && !usedSet.has(m.key)).map((m) => m.key))
   );
   const [submitting, setSubmitting] = useState(false);
 

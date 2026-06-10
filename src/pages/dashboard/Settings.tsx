@@ -178,7 +178,7 @@ const Settings = () => {
   const [thompsonRouter, setThompsonRouter] = useState(true);
   const [autoJudge, setAutoJudge]           = useState(false);
   const [judgeCronPaused, setJudgeCronPaused] = useState(false);
-  const [defaultSku, setDefaultSku] = useState<"kling-v2-6-pro" | "kling-v3-pro" | "kling-v3-std" | "kling-v2-1-pair" | "kling-o3-pro" | "kling-v2-master">("kling-v2-6-pro");
+  const [defaultSku, setDefaultSku] = useState<"kling-v2-6-pro" | "kling-v3-pro" | "kling-v3-std" | "kling-v2-1-pair" | "seedance-pair" | "kling-o3-pro" | "kling-v2-master">("kling-v2-6-pro");
 
   // Video presets
   const [duration, setDuration]       = useState<"15" | "30" | "60">("30");
@@ -233,6 +233,7 @@ const Settings = () => {
               <option value="kling-v3-pro">kling-v3-pro</option>
               <option value="kling-v3-std">kling-v3-std</option>
               <option value="kling-v2-1-pair">kling-v2-1-pair</option>
+              <option value="seedance-pair">seedance-pair</option>
               <option value="kling-o3-pro">kling-o3-pro</option>
               <option value="kling-v2-master">kling-v2-master</option>
             </select>

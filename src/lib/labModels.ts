@@ -53,6 +53,10 @@ export const V1_1_LAB_SKUS = [
   // Routes through VeoProvider (not Atlas). priceCents reflects 50¢/s × 5s
   // placeholder — verify against first invoice and update.
   "veo-3-1-preview",
+  // Opt-in Seedance 2.0 pair mode (2026-06-10). Only meaningful on paired
+  // scenes — never a default; paired scenes still default to kling-v3-pro.
+  // Keep in sync with V1_1_LAB_SKUS in lib/providers/atlas.ts.
+  "seedance-pair",
 ] as const;
 export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
 export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
@@ -87,6 +91,21 @@ export const LAB_MODELS: LabModelInfo[] = [
     supportsEndFrame: false,
     supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],  // -SR = FlashVSR super-res tiers (replaced retired 2K upscaled variant)
     note: "Bytedance Seedance 2.0 via Atlas, 1080p super-res default. Push-in only. FFmpeg speed-ramp polish applied on download.",
+  },
+  {
+    // Opt-in pair mode (2026-06-10): Seedance 2.0 with `last_image`
+    // start+end-frame interpolation. Uses the scene's own prompt (incl.
+    // trajectory clause) — NO push-in preamble. Paired scenes still
+    // DEFAULT to kling-v3-pro; this SKU is an explicit user choice only.
+    key: "seedance-pair",
+    slug: "bytedance/seedance-2.0/image-to-video",
+    label: "Seedance 2.0 (start+end frame)",
+    shortLabel: "Seedance Pair",
+    priceCents: 48,          // 9.6 ¢/s × 5s — matches atlas.ts (live Atlas catalog 2026-06-10)
+    priceLabel: "$0.48",
+    supportsEndFrame: true,
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],  // same enum as seedance-pro-pushin
+    note: "Bytedance Seedance 2.0 pair mode via Atlas (last_image end frame). For paired scenes only — start+end-frame interpolation with the scene's own prompt.",
   },
   // ── v1 SKUs ──────────────────────────────────────────────────────────────
   {

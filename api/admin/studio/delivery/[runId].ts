@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import {
-  getRun, getVariantsForRun, getEventsForRun,
+  getRun, getVariantsForRun, getEventsForRun, getPairedSceneIds,
   advanceRun, clearRunError,
 } from '../../../../lib/delivery/runs.js';
 
@@ -16,11 +16,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const run = await getRun(runId);
       if (!run) return res.status(404).json({ error: 'not_found' });
-      const [variants, events] = await Promise.all([
+      const [variants, events, pairedSceneIds] = await Promise.all([
         getVariantsForRun(runId),
         getEventsForRun(runId),
+        // Paired scenes (end_photo_id set) unlock the Checkpoint A regenerate
+        // model picker (kling-v3-pro default / seedance-pair opt-in).
+        getPairedSceneIds(run.property_id),
       ]);
-      return res.status(200).json({ run, variants, events });
+      return res.status(200).json({ run, variants, events, paired_scene_ids: pairedSceneIds });
     }
 
     if (req.method === 'POST') {
@@ -73,10 +76,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const sceneId = String(req.body?.scene_id ?? '');
           const variant = req.body?.variant === 'A' ? 'A' : 'B';
           if (!sceneId) return res.status(400).json({ error: 'scene_id required' });
+
+          // Optional explicit model choice (paired scenes only). Allowlist:
+          // kling-v3-pro (the DQ.3 default) and seedance-pair (opt-in
+          // Seedance 2.0 start+end-frame mode). Anything else → 400.
+          const modelRaw = req.body?.model;
+          let model: 'kling-v3-pro' | 'seedance-pair' | undefined;
+          if (modelRaw != null && modelRaw !== '') {
+            if (modelRaw !== 'kling-v3-pro' && modelRaw !== 'seedance-pair') {
+              return res.status(400).json({
+                error: `model '${String(modelRaw)}' is not allowed for regenerate — valid: kling-v3-pro, seedance-pair`,
+              });
+            }
+            model = modelRaw;
+            if (model === 'seedance-pair') {
+              // Pair mode needs an end frame: only paired scenes qualify.
+              const db = (await import('../../../../lib/client.js')).getSupabase();
+              const { data: sceneRow } = await db
+                .from('scenes').select('end_photo_id').eq('id', sceneId).maybeSingle();
+              if (!(sceneRow as { end_photo_id?: string | null } | null)?.end_photo_id) {
+                return res.status(400).json({
+                  error: 'seedance-pair requires a paired scene (start + end photo) — this scene has no end_photo_id',
+                });
+              }
+            }
+          }
+
           const { regenerateVariant } = await import('../../../../lib/delivery/variants.js');
           const { recordMlEvent } = await import('../../../../lib/delivery/runs.js');
-          await regenerateVariant(runId, sceneId, variant);
-          await recordMlEvent(runId, 'regenerate', { scene_id: sceneId, variant });
+          if (model) {
+            await regenerateVariant(runId, sceneId, variant, { modelOverride: model });
+          } else {
+            await regenerateVariant(runId, sceneId, variant);
+          }
+          // ml_event records the operator's model choice (absent = router default).
+          await recordMlEvent(runId, 'regenerate', { scene_id: sceneId, variant, ...(model ? { model } : {}) });
           return res.status(200).json({ ok: true });
         }
         case 'generate_script': {

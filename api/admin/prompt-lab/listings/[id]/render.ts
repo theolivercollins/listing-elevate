@@ -120,10 +120,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // pickProvider() sees the model key. This is correct: native Kling
       // v2.0 doesn't support end-frame (supportsEndFrame=false in
       // labModels), and v3-pro on Atlas declares end_image support.
+      // EXCEPTION (2026-06-10): an explicit "seedance-pair" request on a
+      // paired scene is honoured — that's the opt-in Seedance 2.0 pair mode
+      // (last_image end frame). Every other model key still coerces to
+      // kling-v3-pro, so the paired DEFAULT is unchanged.
       // Auto-route only runs when body.models[] was NOT supplied — the
       // Compare-models flow must respect explicit user selections.
       const resolvedModel = isPaired && (!body.models || body.models.length === 0)
-        ? "kling-v3-pro"
+        ? (modelKey === "seedance-pair" ? "seedance-pair" : "kling-v3-pro")
         : modelKey;
 
       // DM.3: Pick the provider per-model. `kling-v2-native` routes to

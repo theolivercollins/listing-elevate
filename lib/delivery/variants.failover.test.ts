@@ -278,3 +278,55 @@ describe('regenerateVariant — provider failover', () => {
     await expect(regenerateVariant('run-1', 'scene-1', 'A')).rejects.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// regenerateVariant — explicit model override (paired regenerate picker)
+// ---------------------------------------------------------------------------
+
+describe('regenerateVariant — explicit modelOverride (seedance-pair opt-in)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    genQueue.length = 0;
+    upsertCalls.length = 0;
+    scenesTableData = [{ ...BASE_SCENE, end_photo_id: 'photo-end-1', end_image_url: 'https://example.com/end.jpg' }];
+  });
+
+  it('bypasses selectProviderForScene and submits atlas + the chosen model', async () => {
+    const { regenerateVariant } = await import('./variants');
+    const { selectProviderForScene, buildProviderFromDecision, forceSeedancePushInPrompt } = await import('../providers/router.js');
+
+    genQueue.push({ jobId: 'seedance-pair-task-1' });
+
+    await regenerateVariant('run-1', 'scene-1', 'A', { modelOverride: 'seedance-pair' });
+
+    // Router routing is fully bypassed — the operator's choice is the decision.
+    expect(vi.mocked(selectProviderForScene)).not.toHaveBeenCalled();
+    expect(vi.mocked(buildProviderFromDecision)).toHaveBeenCalledWith({
+      provider: 'atlas', modelKey: 'seedance-pair', fallback: undefined,
+    });
+    // Pair mode uses the scene's own prompt — NO push-in preamble (that
+    // override is keyed on the exact string 'seedance-pro-pushin').
+    expect(vi.mocked(forceSeedancePushInPrompt)).not.toHaveBeenCalled();
+
+    const successUpsert = upsertCalls.find((u) => u.provider_task_id === 'seedance-pair-task-1');
+    expect(successUpsert).toBeDefined();
+    expect(successUpsert!.provider).toBe('atlas');
+  });
+
+  it('does NOT fail over to another model on a permanent error — throws instead', async () => {
+    const { regenerateVariant } = await import('./variants');
+    const { selectProviderForScene } = await import('../providers/router.js');
+
+    genQueue.push(makeAtlas400Error());
+    genQueue.push({ jobId: 'should-never-be-used' });
+
+    await expect(
+      regenerateVariant('run-1', 'scene-1', 'B', { modelOverride: 'seedance-pair' }),
+    ).rejects.toThrow();
+
+    // One attempt only; no router consultation, no success upsert.
+    expect(vi.mocked(selectProviderForScene)).not.toHaveBeenCalled();
+    const successUpsert = upsertCalls.find((u) => u.provider_task_id != null);
+    expect(successUpsert).toBeUndefined();
+  });
+});
