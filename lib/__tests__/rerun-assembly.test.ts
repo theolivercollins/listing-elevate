@@ -101,6 +101,7 @@ vi.mock("../assembly/duration-fit.js", () => ({
 vi.mock("../operator-studio/brand-kit.js", () => ({
   brandKitFromClient: vi.fn().mockReturnValue({}),
   mergeBrandVars: vi.fn().mockImplementation((mods: unknown) => mods),
+  applyRealtorSuffix: vi.fn().mockImplementation((name: unknown) => name),
 }));
 
 vi.mock("../providers/assembly-router.js", () => ({

@@ -9,6 +9,7 @@
  * Every successful call writes a cost_events row with:
  *   stage: 'scripting', provider: 'anthropic',
  *   metadata.delivery_run_id, metadata.subtype: 'delivery_voiceover_script'
+ *   (or 'delivery_voiceover_shorten' for the duration-audit shorten pass)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -28,8 +29,9 @@ const VIDEO_TYPE_LABELS: Record<DeliveryVideoType, string> = {
 };
 
 const SYSTEM_PROMPT = `You write welcoming real-estate listing-video voiceover scripts.
-STRICT word budget: {wordBudget} words maximum (spoken read ~150 wpm must fit the duration).
-Structure: warm greeting naming the property -> 3-5 distinctive features from the MLS description and facts -> one short closing line tied to the video type.
+HARD word budget: {wordBudget} words maximum (spoken read ~150 wpm must fit the duration). This is a hard limit — the script MUST end with a complete sentence and never run past the budget; anything over gets cut off mid-read.
+Structure: a fresh opener naming the property -> 3-5 distinctive features from the MLS description and facts -> one short closing line tied to the video type.
+OPENER: do NOT open with "Welcome to" or "Step inside". Vary the opener — lead with a standout feature, the lifestyle, the setting, or the address in a fresher construction.
 Tone: warm, inviting, real-estate-classic. Output the script ONLY.
 DELIVERY CUES (ElevenLabs v3 audio tags): sprinkle 2-4 of ONLY these inline cues: [warmly], [calmly], [softly], [gently], [enthusiastically], [pause]. Tags do not count toward the word budget.`;
 
@@ -132,4 +134,80 @@ export async function generateDeliveryScript(input: {
   );
 
   return { script, wordCount: countWords(stripAudioTags(script)) };
+}
+
+/**
+ * Build the user message for a shorten pass.
+ * Pure function — no I/O, fully testable.
+ */
+export function buildShortenUserMessage(input: {
+  script: string;
+  actualSeconds: number;
+  targetSeconds: number;
+}): string {
+  const { script, actualSeconds, targetSeconds } = input;
+  return [
+    `This voiceover runs ${actualSeconds.toFixed(1)}s but must fit in ${targetSeconds}s.`,
+    'Shorten it naturally — keep complete sentences, keep the address and price if present, cut the least important features.',
+    'Output the script only.',
+    '',
+    script,
+  ].join('\n');
+}
+
+/**
+ * Shorten an over-running delivery voiceover script naturally (complete
+ * sentences, address/price preserved) and record the Anthropic cost.
+ *
+ * Same model + cost-tracking pattern as generateDeliveryScript;
+ * cost_events metadata.subtype: 'delivery_voiceover_shorten'.
+ */
+export async function shortenDeliveryScript(input: {
+  runId: string;
+  propertyId: string;
+  script: string;
+  /** Measured audio duration of the current script, in seconds. */
+  actualSeconds: number;
+  /** Target video duration the audio must fit in, in seconds. */
+  targetSeconds: number;
+}): Promise<{ script: string }> {
+  const client = new Anthropic();
+
+  const response = await client.messages.create({
+    model: MODEL,
+    max_tokens: 400,
+    system: SYSTEM_PROMPT.replace(
+      '{wordBudget}',
+      String(WORD_BUDGET[input.targetSeconds] ?? 75),
+    ),
+    messages: [{ role: 'user', content: buildShortenUserMessage(input) }],
+  });
+
+  const script =
+    response.content[0]?.type === 'text' ? response.content[0].text.trim() : '';
+  if (!script) throw new Error('Delivery script shortening returned empty text');
+
+  // Cost tracking — never null/0 for a real API call.
+  const cost = computeClaudeCost(response.usage as never, MODEL);
+  await recordCostEvent({
+    propertyId: input.propertyId,
+    stage: 'scripting',
+    provider: 'anthropic',
+    unitsConsumed: cost.totalTokens,
+    unitType: 'tokens',
+    costCents: cost.costCents,
+    metadata: {
+      delivery_run_id: input.runId,
+      subtype: 'delivery_voiceover_shorten',
+      model: MODEL,
+      target_seconds: input.targetSeconds,
+      actual_seconds: input.actualSeconds,
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+    },
+  }).catch((e) =>
+    console.error('[delivery/voiceover-script] cost_event failed:', e),
+  );
+
+  return { script };
 }

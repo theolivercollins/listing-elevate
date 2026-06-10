@@ -485,8 +485,9 @@ export function buildCreatomateTimeline(
 
 /** Options for assembleFromTemplate. */
 export interface TemplateRenderOptions {
-  /** Modification dict keyed by template element name (e.g. "St#/StName.text"). */
-  modifications: Record<string, string | number | null>;
+  /** Modification dict keyed by template element name (e.g. "St#/StName.text").
+   *  Booleans are valid RenderScript property values (e.g. `.text_wrap`). */
+  modifications: Record<string, string | number | boolean | null>;
   /** Multiplier on the template's canvas (verified 2026-05-14). Output
    *  dimensions = canvas × renderScale. Top-level `width`/`height` in the
    *  request body are silently ignored by /v2/renders when a template is
@@ -677,7 +678,9 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       source?: {
         width?: number;
         height?: number;
-        elements?: Array<{ name?: string; type?: string; dynamic?: string[] }>;
+        // Creatomate returns `dynamic` as a string[] of property names for
+        // some elements but a plain boolean for others — normalize below.
+        elements?: Array<{ name?: string; type?: string; dynamic?: string[] | boolean }>;
       };
     };
     const src = data.source ?? {};
@@ -688,7 +691,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       elements: (src.elements ?? []).map((e) => ({
         name: e.name ?? "",
         type: e.type ?? "",
-        dynamic: e.dynamic ?? [],
+        dynamic: Array.isArray(e.dynamic) ? e.dynamic : [],
       })),
     };
   }

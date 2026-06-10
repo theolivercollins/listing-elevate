@@ -41,8 +41,16 @@ vi.mock('../../../../../lib/delivery/details', () => ({
 vi.mock('../../../../../lib/delivery/variants', () => ({
   regenerateVariant: (...a: unknown[]) => mockRegenerateVariant(...a),
 }));
+const mockShortenDeliveryScript = vi.fn();
 vi.mock('../../../../../lib/delivery/voiceover-script', () => ({
   generateDeliveryScript: (...a: unknown[]) => mockGenerateDeliveryScript(...a),
+  shortenDeliveryScript: (...a: unknown[]) => mockShortenDeliveryScript(...a),
+}));
+vi.mock('../../../../../lib/voiceover/generate-script', () => ({
+  countWords: (t: string) => t.trim().split(/\s+/).filter(Boolean).length,
+}));
+vi.mock('../../../../../lib/voiceover/audio-tags', () => ({
+  stripAudioTags: (t: string) => t,
 }));
 vi.mock('../../../../../lib/voiceover/generate-audio', () => ({
   generateVoiceoverAudio: (...a: unknown[]) => mockGenerateVoiceoverAudio(...a),
@@ -405,6 +413,84 @@ describe('POST set_voice + generate_audio (T18)', () => {
     );
     expect(res._status).toBe(502);
     expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Voiceover audio failed twice'));
+  });
+});
+
+describe('POST generate_audio auto-shorten (duration audit)', () => {
+  const overrunRun = {
+    ...run,
+    voiceover_script: 'A long original script with far too many words in it.',
+    voiceover_voice_id: 'UgBBYS2sOqTuMpoF3BR0',
+    property_id: 'p1',
+    duration_seconds: 30,
+  };
+
+  beforeEach(() => {
+    mockGetRun.mockResolvedValue(overrunRun);
+  });
+
+  it('overrun audio -> shortens, regenerates, persists the shortened script with the new audio, no warning', async () => {
+    mockGenerateVoiceoverAudio
+      .mockResolvedValueOnce({ audioUrl: 'https://cdn.example.com/vo-long.mp3', durationMs: 35000 })
+      .mockResolvedValueOnce({ audioUrl: 'https://cdn.example.com/vo-short.mp3', durationMs: 29000 });
+    mockShortenDeliveryScript.mockResolvedValue({ script: 'A short script.' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', { voiceover_script: 'A short script.', voiceover_audio_url: 'https://cdn.example.com/vo-short.mp3' });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'script_edit', expect.objectContaining({ source: 'auto_shorten', target_seconds: 30 }));
+    expect((res._body as { duration_warning?: string }).duration_warning).toBeUndefined();
+  });
+
+  it('shortenDeliveryScript failure keeps the last good audio: 200 + persists original script/audio + auto-shorten-unavailable warning', async () => {
+    mockGenerateVoiceoverAudio.mockResolvedValue({ audioUrl: 'https://cdn.example.com/vo-long.mp3', durationMs: 35000 });
+    mockShortenDeliveryScript.mockRejectedValue(new Error('Claude overloaded'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', { voiceover_script: overrunRun.voiceover_script, voiceover_audio_url: 'https://cdn.example.com/vo-long.mp3' });
+    expect((res._body as { duration_warning?: string }).duration_warning).toContain('(auto-shorten unavailable)');
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    // No partial state: the shorten never produced audio, so no script_edit event.
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('regenerate failure after a successful shorten keeps the last good {script, audio} pair (never the shortened script with old audio)', async () => {
+    mockGenerateVoiceoverAudio
+      .mockResolvedValueOnce({ audioUrl: 'https://cdn.example.com/vo-long.mp3', durationMs: 35000 })
+      .mockRejectedValue(new Error('ElevenLabs TTS failed (500): server error')); // both regen attempts fail
+    mockShortenDeliveryScript.mockResolvedValue({ script: 'A short script.' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', { voiceover_script: overrunRun.voiceover_script, voiceover_audio_url: 'https://cdn.example.com/vo-long.mp3' });
+    expect((res._body as { duration_warning?: string }).duration_warning).toContain('(auto-shorten unavailable)');
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('still over after 2 successful shorten passes -> plain duration warning (no unavailable suffix)', async () => {
+    mockGenerateVoiceoverAudio.mockResolvedValue({ audioUrl: 'https://cdn.example.com/vo-long.mp3', durationMs: 35000 });
+    mockShortenDeliveryScript.mockResolvedValue({ script: 'Still a bit long.' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_audio' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockShortenDeliveryScript).toHaveBeenCalledTimes(2);
+    const warning = (res._body as { duration_warning?: string }).duration_warning;
+    expect(warning).toContain('35.0s > 30s target');
+    expect(warning).not.toContain('auto-shorten unavailable');
   });
 });
 

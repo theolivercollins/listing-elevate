@@ -64,6 +64,7 @@ export function DeliveryVoiceover({
   const [generatingAudio, setGeneratingAudio] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(voiceoverAudioUrl);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [durationWarning, setDurationWarning] = useState<string | null>(null);
 
   // Load voice roster
   useEffect(() => {
@@ -183,8 +184,18 @@ export function DeliveryVoiceover({
         const d = await res.json().catch(() => ({}));
         throw new Error((d as { error?: string }).error ?? `HTTP ${res.status}`);
       }
-      const d = await res.json() as { run: { voiceover_audio_url?: string } };
+      const d = await res.json() as {
+        run: { voiceover_audio_url?: string; voiceover_script?: string };
+        duration_warning?: string;
+      };
       setAudioUrl(d.run?.voiceover_audio_url ?? null);
+      setDurationWarning(d.duration_warning ?? null);
+      // The server may auto-shorten the script to fit the duration — sync it
+      // so the textarea shows what's actually spoken.
+      if (d.run?.voiceover_script) {
+        setScript(d.run.voiceover_script);
+        savedScriptRef.current = d.run.voiceover_script;
+      }
       onChanged();
     } catch (err) {
       setAudioError(err instanceof Error ? err.message : 'Audio generation failed');
@@ -195,8 +206,15 @@ export function DeliveryVoiceover({
 
   // ─── Build ordered voice list (client voice prepended if present) ────────────
 
-  const clientVoiceEntry = clientVoiceId
-    ? voices.find((v) => v.id === clientVoiceId) ?? null
+  // The API prepends a synthesized entry for custom client voices; if an older
+  // API response omits it, synthesize a fallback rather than dropping the voice.
+  const clientVoiceEntry: Voice | null = clientVoiceId
+    ? voices.find((v) => v.id === clientVoiceId) ?? {
+        id: clientVoiceId,
+        name: 'Client voice',
+        gender: 'custom',
+        description: "Client's custom ElevenLabs voice",
+      }
     : null;
   const nonClientVoices = voices.filter((v) => v.id !== clientVoiceId);
   const orderedVoices = clientVoiceEntry
@@ -400,6 +418,11 @@ export function DeliveryVoiceover({
               src={audioUrl}
               style={{ width: '100%', maxWidth: 480 }}
             />
+            {durationWarning && (
+              <span style={{ fontSize: 12, color: 'var(--le-muted)' }}>
+                Runs long even after auto-shortening: {durationWarning}. Trim the script and regenerate if needed.
+              </span>
+            )}
           </div>
         )}
       </div>

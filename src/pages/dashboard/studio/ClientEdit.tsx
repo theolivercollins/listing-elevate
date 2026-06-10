@@ -48,6 +48,7 @@ interface ClientFormState {
   brand_primary_hex: string;
   brand_secondary_hex: string;
   agent_name: string;
+  realtor_suffix: boolean;
   brokerage: string;
   agent_headshot_url: string;
   voice_id: string;
@@ -63,6 +64,7 @@ const EMPTY_FORM: ClientFormState = {
   brand_primary_hex: '#000000',
   brand_secondary_hex: '#ffffff',
   agent_name: '',
+  realtor_suffix: false,
   brokerage: '',
   agent_headshot_url: '',
   voice_id: '',
@@ -184,6 +186,7 @@ const ClientEdit = () => {
             brand_primary_hex: c.brand_primary_hex ?? '#000000',
             brand_secondary_hex: c.brand_secondary_hex ?? '#ffffff',
             agent_name: c.agent_name ?? '',
+            realtor_suffix: c.realtor_suffix ?? false,
             brokerage: c.brokerage ?? '',
             agent_headshot_url: c.agent_headshot_url ?? '',
             voice_id: c.voice_id ?? '',
@@ -254,6 +257,7 @@ const ClientEdit = () => {
         brand_primary_hex: form.brand_primary_hex || null,
         brand_secondary_hex: form.brand_secondary_hex || null,
         agent_name: form.agent_name.trim() || null,
+        realtor_suffix: form.realtor_suffix,
         brokerage: form.brokerage.trim() || null,
         agent_headshot_url: headshotUrl || null,
         voice_id: form.voice_id.trim() || null,
@@ -598,6 +602,28 @@ const ClientEdit = () => {
                 onChange={(e) => setField('agent_name', e.target.value)}
                 placeholder="Jane Smith"
               />
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 8,
+                  fontSize: 12,
+                  fontWeight: 500,
+                  color: 'var(--le-muted)',
+                  cursor: 'pointer',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={form.realtor_suffix}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, realtor_suffix: e.target.checked }))
+                  }
+                  style={{ accentColor: 'var(--le-accent)', cursor: 'pointer' }}
+                />
+                Add &ldquo;, Realtor&rdquo; after the name on videos
+              </label>
             </div>
 
             {/* Brokerage */}

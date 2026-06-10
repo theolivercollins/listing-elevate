@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brandKitFromClient, mergeBrandVars } from '../brand-kit';
+import { brandKitFromClient, mergeBrandVars, applyRealtorSuffix } from '../brand-kit';
 import type { ClientRow } from '../../types/operator-studio';
 
 const client: ClientRow = {
@@ -8,7 +8,7 @@ const client: ClientRow = {
   brand_logo_url: 'https://x/logo.png',
   brand_primary_hex: '#1A1A1A', brand_secondary_hex: '#EEEEEE',
   agent_name: 'Abby Helgemo', agent_headshot_url: 'https://x/abby.png',
-  voice_id: null, brokerage: null, archived_at: null,
+  voice_id: null, brokerage: null, realtor_suffix: false, archived_at: null,
   created_at: '', updated_at: '',
 };
 
@@ -82,9 +82,52 @@ const baseClient: ClientRow = {
   monthly_rate_cents: null, notes: null, brand_logo_url: 'https://x/logo.png',
   brand_primary_hex: '#112233', brand_secondary_hex: null,
   agent_name: 'Brian Helgemo', agent_headshot_url: 'https://x/head.jpg',
-  voice_id: null, brokerage: 'RE/MAX Harbor Realty', archived_at: null,
+  voice_id: null, brokerage: 'RE/MAX Harbor Realty', realtor_suffix: false, archived_at: null,
   created_at: '2026-01-01', updated_at: '2026-01-01',
 };
+
+// ── ", Realtor" display-name suffix toggle ────────────────────────────────────
+
+describe('applyRealtorSuffix', () => {
+  it('appends ", Realtor" when the toggle is on', () => {
+    expect(applyRealtorSuffix('Brian Helgemo', true)).toBe('Brian Helgemo, Realtor');
+  });
+  it('returns the name unchanged when the toggle is off', () => {
+    expect(applyRealtorSuffix('Brian Helgemo', false)).toBe('Brian Helgemo');
+  });
+  it('treats null/undefined toggle (pre-migration rows) as off', () => {
+    expect(applyRealtorSuffix('Brian Helgemo', null)).toBe('Brian Helgemo');
+    expect(applyRealtorSuffix('Brian Helgemo', undefined)).toBe('Brian Helgemo');
+  });
+  it('keeps a null name null even when the toggle is on', () => {
+    expect(applyRealtorSuffix(null, true)).toBeNull();
+  });
+});
+
+describe('brandKitFromClient — realtor_suffix', () => {
+  it('suffixes agent_name when realtor_suffix is true', () => {
+    const kit = brandKitFromClient({ ...client, realtor_suffix: true }, {});
+    expect(kit.agent_name).toBe('Abby Helgemo, Realtor');
+  });
+  it('leaves agent_name clean when realtor_suffix is false', () => {
+    const kit = brandKitFromClient(client, {});
+    expect(kit.agent_name).toBe('Abby Helgemo');
+  });
+  it('keeps agent_name null when realtor_suffix is true but agent_name is null', () => {
+    const kit = brandKitFromClient({ ...client, agent_name: null, realtor_suffix: true }, {});
+    expect(kit.agent_name).toBeNull();
+  });
+  it('tolerates undefined realtor_suffix (pre-migration select *)', () => {
+    const { realtor_suffix: _omit, ...rest } = client;
+    const kit = brandKitFromClient(rest as ClientRow, {});
+    expect(kit.agent_name).toBe('Abby Helgemo');
+  });
+  it('feeds the suffixed name through mergeBrandVars to Brand.agent_name + Text-Agent-Name.text', () => {
+    const out = mergeBrandVars({}, brandKitFromClient({ ...client, realtor_suffix: true }, {}));
+    expect(out['Brand.agent_name']).toBe('Abby Helgemo, Realtor');
+    expect(out['Text-Agent-Name.text']).toBe('Abby Helgemo, Realtor');
+  });
+});
 
 describe('brandKitFromClient — brokerage precedence', () => {
   it('prefers clients.brokerage over the property brokerage', () => {

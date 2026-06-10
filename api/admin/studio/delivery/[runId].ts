@@ -123,23 +123,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           if (!run.voiceover_script) return res.status(400).json({ error: 'generate the script first' });
           if (!run.voiceover_voice_id) return res.status(400).json({ error: 'pick a voice first' });
           const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
-          const { updateRun: uRun3, setRunError: sre3 } = await import('../../../../lib/delivery/runs.js');
+          const { updateRun: uRun3, setRunError: sre3, recordMlEvent: rme3 } = await import('../../../../lib/delivery/runs.js');
           try {
-            let audioUrl: string;
-            try {
-              ({ audioUrl } = await generateVoiceoverAudio({
-                script: run.voiceover_script, voiceId: run.voiceover_voice_id,
+            const voiceId = run.voiceover_voice_id;
+            const genAudio = async (script: string) => {
+              const input = {
+                script, voiceId,
                 propertyId: run.property_id, storageFolder: run.property_id,
                 deliveryRunId: runId,
-              }));
-            } catch {
-              ({ audioUrl } = await generateVoiceoverAudio({
-                script: run.voiceover_script, voiceId: run.voiceover_voice_id,
-                propertyId: run.property_id, storageFolder: run.property_id,
-                deliveryRunId: runId,
-              }));
+              };
+              try {
+                return await generateVoiceoverAudio(input);
+              } catch {
+                return await generateVoiceoverAudio(input);
+              }
+            };
+
+            let script = run.voiceover_script;
+            let { audioUrl, durationMs } = await genAudio(script);
+
+            // Duration audit: the audio must fit the video. If it overruns the
+            // target by >1s, ask Claude to shorten naturally and re-render —
+            // at most 2 attempts, then proceed with a warning.
+            const targetSec = run.duration_seconds ?? 30;
+            const toleranceMs = 1000;
+            let shortenUnavailable = false;
+            if (durationMs > targetSec * 1000 + toleranceMs) {
+              const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
+              const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
+              const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
+              for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
+                const fromWords = countWords(stripAudioTags(script));
+                // A shorten or re-render failure must NOT discard the good audio
+                // we already paid for: keep the last good {script, audio} pair
+                // (always consistent — script is only swapped once its audio
+                // exists) and fall through to persist it with a warning.
+                try {
+                  const { script: shortened } = await shortenDeliveryScript({
+                    runId, propertyId: run.property_id, script,
+                    actualSeconds: durationMs / 1000, targetSeconds: targetSec,
+                  });
+                  ({ audioUrl, durationMs } = await genAudio(shortened));
+                  script = shortened;
+                } catch (shortenErr) {
+                  console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
+                  shortenUnavailable = true;
+                  break;
+                }
+                await rme3(runId, 'script_edit', {
+                  source: 'auto_shorten',
+                  from_words: fromWords,
+                  to_words: countWords(stripAudioTags(script)),
+                  target_seconds: targetSec,
+                });
+              }
             }
-            const updated = await uRun3(runId, { voiceover_audio_url: audioUrl } as never);
+
+            // Persist the script actually spoken so the UI matches the audio.
+            const updated = await uRun3(runId, { voiceover_script: script, voiceover_audio_url: audioUrl } as never);
+            if (durationMs > targetSec * 1000 + toleranceMs) {
+              return res.status(200).json({
+                run: updated,
+                duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
+              });
+            }
             return res.status(200).json({ run: updated });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);

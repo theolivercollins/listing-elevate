@@ -55,6 +55,24 @@ describe('GET /api/admin/studio/template-coverage', () => {
     expect(body.templates[0].fields).toEqual(['Text-Phone-Number.text', 'Image-Headshot.source']);
   });
 
+  it('tolerates boolean dynamic flags (Creatomate quirk) — no error, no fields contributed', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    mockGetTemplate.mockResolvedValue({
+      name: '15 seconds - Just Listed', width: 1280, height: 720,
+      elements: [
+        { name: 'Text-Phone-Number', type: 'text', dynamic: ['text'] },
+        { name: 'Clip-1', type: 'video', dynamic: true },
+        { name: 'Static-BG', type: 'shape', dynamic: false },
+      ],
+    });
+    const res = makeRes();
+    await handler({ method: 'GET', query: {}, headers: {} } as unknown as VercelRequest, res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { templates: Array<{ fields: string[]; error?: string }> };
+    expect(body.templates[0].error).toBeUndefined();
+    expect(body.templates[0].fields).toEqual(['Text-Phone-Number.text']);
+  });
+
   it('reports a fetch failure per-template instead of 500ing the whole panel', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetTemplate.mockRejectedValue(new Error('Creatomate template fetch failed: 404'));
