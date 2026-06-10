@@ -2,8 +2,56 @@ import { describe, it, expect } from "vitest";
 import {
   buildTemplateModifications,
   categoryLabelForPackage,
+  displayAddress,
   splitAddress,
 } from "./template-modifications.js";
+
+describe("displayAddress", () => {
+  it("strips a trailing 5-digit zip", () => {
+    expect(displayAddress("5019 San Massimo Dr, Punta Gorda, FL 33950")).toBe(
+      "5019 San Massimo Dr, Punta Gorda, FL",
+    );
+  });
+
+  it("strips a trailing zip+4", () => {
+    expect(displayAddress("5019 San Massimo Dr, Punta Gorda, FL 33950-1234")).toBe(
+      "5019 San Massimo Dr, Punta Gorda, FL",
+    );
+  });
+
+  it("leaves an address without a zip unchanged", () => {
+    expect(displayAddress("123 Waymay Dr, Punta Gorda FL")).toBe(
+      "123 Waymay Dr, Punta Gorda FL",
+    );
+  });
+
+  it("strips a trailing ', USA' (with or without a zip before it)", () => {
+    expect(displayAddress("5019 San Massimo Dr, Punta Gorda, FL 33950, USA")).toBe(
+      "5019 San Massimo Dr, Punta Gorda, FL",
+    );
+    expect(displayAddress("5019 San Massimo Dr, Punta Gorda, FL, USA")).toBe(
+      "5019 San Massimo Dr, Punta Gorda, FL",
+    );
+  });
+
+  it("strips a trailing ', United States'", () => {
+    expect(displayAddress("1 Main St, Tampa, FL 33602, United States")).toBe(
+      "1 Main St, Tampa, FL",
+    );
+  });
+
+  it("does not strip 5-digit street numbers (zip must be trailing)", () => {
+    expect(displayAddress("33950 Ocean Blvd, Naples, FL")).toBe(
+      "33950 Ocean Blvd, Naples, FL",
+    );
+  });
+
+  it("handles empty / null input", () => {
+    expect(displayAddress(null)).toBe("");
+    expect(displayAddress(undefined)).toBe("");
+    expect(displayAddress("   ")).toBe("");
+  });
+});
 
 describe("splitAddress", () => {
   it("returns ['', ''] for empty input", () => {
@@ -245,5 +293,69 @@ describe("buildTemplateModifications — 15s Just Listed template element names"
       brokerageName: "Compass",
     });
     expect(mods).not.toHaveProperty("Image-Headshot.source");
+  });
+});
+
+// Owner feedback 2026-06: the rendered address must show NO zip code and must
+// stay on ONE line (shrink to fit, never wrap).
+describe("buildTemplateModifications — address display: no zip, one-line fit", () => {
+  const ctx = {
+    selectedPackage: "just_listed",
+    agentName: "Brian",
+    brokerageName: "Compass",
+  };
+
+  it("strips the zip from Text-Address and Full-Address-Final", () => {
+    const mods = buildTemplateModifications({
+      ...ctx,
+      address: "5019 San Massimo Dr, Punta Gorda, FL 33950",
+    });
+    expect(mods["Text-Address.text"]).toBe("5019 San Massimo Dr, Punta Gorda, FL");
+    expect(mods["Full-Address-Final.text"]).toBe(
+      "5019 San Massimo Dr, Punta Gorda, FL",
+    );
+  });
+
+  it("strips the zip from the City/State-Intro split line too", () => {
+    const mods = buildTemplateModifications({
+      ...ctx,
+      address: "5019 San Massimo Dr, Punta Gorda, FL 33950",
+    });
+    expect(mods["St#/StName-Intro.text"]).toBe("5019 San Massimo Dr, Punta Gorda");
+    expect(mods["City/State-Intro.text"]).toBe("FL");
+  });
+
+  it("emits auto-size + no-wrap (font_size: null, text_wrap: false) for long addresses", () => {
+    const mods = buildTemplateModifications({
+      ...ctx,
+      // 36 chars after zip strip — the real prod failure case that wrapped.
+      address: "5019 San Massimo Dr, Punta Gorda, FL 33950",
+    });
+    expect(mods["Text-Address.font_size"]).toBeNull();
+    expect(mods["Text-Address.text_wrap"]).toBe(false);
+    expect(mods["Full-Address-Final.font_size"]).toBeNull();
+    expect(mods["Full-Address-Final.text_wrap"]).toBe(false);
+  });
+
+  it("omits the fit keys for short addresses (keeps the template's designed size)", () => {
+    const mods = buildTemplateModifications({
+      ...ctx,
+      address: "1 Main, Punta Gorda FL", // 22 chars ≤ 28 threshold
+    });
+    expect(mods).not.toHaveProperty("Text-Address.font_size");
+    expect(mods).not.toHaveProperty("Text-Address.text_wrap");
+    expect(mods).not.toHaveProperty("Full-Address-Final.font_size");
+    expect(mods).not.toHaveProperty("Full-Address-Final.text_wrap");
+  });
+
+  it("gates the fit on the DISPLAY length, not the raw address length", () => {
+    // Raw is 31 chars, but after zip-strip it's 22 — under the threshold.
+    const mods = buildTemplateModifications({
+      ...ctx,
+      address: "1 Main, Punta Gorda FL 33950",
+    });
+    expect(mods["Text-Address.text"]).toBe("1 Main, Punta Gorda FL");
+    expect(mods).not.toHaveProperty("Text-Address.font_size");
+    expect(mods).not.toHaveProperty("Text-Address.text_wrap");
   });
 });

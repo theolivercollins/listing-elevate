@@ -27,8 +27,16 @@
 
 import type { AssembleVideoParams } from "../providers/shotstack.js";
 
-/** Modification dict accepted by POST /v2/renders. Values: string | number | null. */
-export type CreatomateModifications = Record<string, string | number | null>;
+/**
+ * Modification dict accepted by POST /v2/renders. Values: string | number |
+ * boolean | null — modifications can replace ANY RenderScript element property
+ * (e.g. `Text-Address.text_wrap`), not just `.text`/`.source`. See
+ * https://creatomate.com/docs/fundamentals/getting-started/template-modifications
+ */
+export type CreatomateModifications = Record<
+  string,
+  string | number | boolean | null
+>;
 
 /** Map our internal package keys to the label that goes onto the title card. */
 const PACKAGE_LABELS: Record<string, string> = {
@@ -56,6 +64,32 @@ export function splitAddress(address: string | null | undefined): [string, strin
   const cityState = trimmed.slice(lastCommaIdx + 1).trim();
   return [street, cityState];
 }
+
+/**
+ * Address used for on-video DISPLAY (not voiceover/script generation):
+ * strips a trailing country (", USA" / ", United States [of America]") and a
+ * trailing US zip (5-digit or zip+4), then trims dangling commas/whitespace.
+ *
+ *   "5019 San Massimo Dr, Punta Gorda, FL 33950" → "5019 San Massimo Dr, Punta Gorda, FL"
+ */
+export function displayAddress(address: string | null | undefined): string {
+  let s = (address ?? "").trim();
+  // Trailing country first (it follows the zip when both are present).
+  s = s.replace(/[,\s]*(?:USA|U\.S\.A\.|United States(?: of America)?)\.?$/i, "");
+  // Trailing US zip, 5-digit or zip+4.
+  s = s.replace(/\s+\d{5}(?:-\d{4})?$/, "");
+  // Dangling separators left behind by the strips.
+  s = s.replace(/[,\s]+$/, "");
+  return s;
+}
+
+/**
+ * Display addresses longer than this get the one-line auto-fit treatment
+ * (see buildTemplateModifications). Calibrated from the 2026-06 prod failure:
+ * "5019 San Massimo Dr, Punta Gorda, FL" (36 chars, zip already stripped)
+ * wrapped to two lines on the 15s template at its designed font size.
+ */
+export const ADDRESS_ONE_LINE_FIT_THRESHOLD = 28;
 
 export interface ModificationContext {
   /** Free-text full address. */
@@ -94,10 +128,13 @@ export interface ModificationContext {
 export function buildTemplateModifications(
   ctx: ModificationContext,
 ): CreatomateModifications {
-  const [streetLine, cityStateLine] = splitAddress(ctx.address);
+  // The video never shows the zip code (owner request, 2026-06): strip it
+  // (and any trailing country) BEFORE splitting, so City/State-Intro shows
+  // "Punta Gorda, FL"-style lines, never "FL 33950".
+  const fullAddress = displayAddress(ctx.address);
+  const [streetLine, cityStateLine] = splitAddress(fullAddress);
   const categoryLabel = categoryLabelForPackage(ctx.selectedPackage);
   const brokerage = ctx.brokerageName ?? "";
-  const fullAddress = ctx.address?.trim() ?? "";
 
   const mods: CreatomateModifications = {
     "St#/StName-Intro.text": streetLine,
@@ -116,6 +153,25 @@ export function buildTemplateModifications(
     "Text-Address.text": fullAddress,
     "Text-Brokerage-Team.text": brokerage,
   };
+
+  // One-line fit for long addresses (owner request, 2026-06: the address must
+  // never wrap — shrink to fit instead). Per the Creatomate RenderScript docs
+  // (https://creatomate.com/docs/api/render-script/text-element):
+  //   - `font_size: null` enables automatic sizing, constrained by
+  //     `font_size_minimum` (default "1 vmin") / `font_size_maximum`
+  //     (default "100 vmin");
+  //   - `text_wrap: false` keeps the text on a single line, so the autosizer
+  //     shrinks the font until that one line fits the element's box.
+  // Gated by length: short addresses keep the template's designed font size
+  // (autosizing them could GROW the text past the design), and templates
+  // without these elements silently ignore the keys — same precedent as the
+  // Voice-Over.source key above.
+  if (fullAddress.length > ADDRESS_ONE_LINE_FIT_THRESHOLD) {
+    for (const el of ["Text-Address", "Full-Address-Final"]) {
+      mods[`${el}.font_size`] = null; // auto-size (shrink to fit)
+      mods[`${el}.text_wrap`] = false; // force a single line
+    }
+  }
 
   if (ctx.agentPhone) {
     mods["Text-Phone-Number.text"] = ctx.agentPhone;

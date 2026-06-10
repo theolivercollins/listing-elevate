@@ -485,8 +485,9 @@ export function buildCreatomateTimeline(
 
 /** Options for assembleFromTemplate. */
 export interface TemplateRenderOptions {
-  /** Modification dict keyed by template element name (e.g. "St#/StName.text"). */
-  modifications: Record<string, string | number | null>;
+  /** Modification dict keyed by template element name (e.g. "St#/StName.text").
+   *  Booleans are valid RenderScript property values (e.g. `.text_wrap`). */
+  modifications: Record<string, string | number | boolean | null>;
   /** Multiplier on the template's canvas (verified 2026-05-14). Output
    *  dimensions = canvas × renderScale. Top-level `width`/`height` in the
    *  request body are silently ignored by /v2/renders when a template is
