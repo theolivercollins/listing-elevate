@@ -35,11 +35,15 @@ describe("selectProviderForScene — v1.1 mode", () => {
     expect(decision.fallback?.fallback).toBeUndefined();
   });
 
-  it("paired scenes ALWAYS route to kling-v2-1-pair even under v1.1", () => {
+  it("paired scenes ALWAYS route to kling-v3-pro even under v1.1", () => {
     const paired = { ...baseScene, endPhotoId: "photo-end-id" };
     const decision = selectProviderForScene(paired, [], "v1.1");
     expect(decision.provider).toBe("atlas");
-    expect(decision.modelKey).toBe("kling-v2-1-pair");
+    expect(decision.modelKey).toBe("kling-v3-pro");
+  });
+
+  it("the paired SKU (kling-v3-pro) declares end_image support in ATLAS_MODELS", () => {
+    expect(ATLAS_MODELS["kling-v3-pro"].endFrameField).toBe("end_image");
   });
 
   it("v1 mode does not route to the Seedance SKU", () => {

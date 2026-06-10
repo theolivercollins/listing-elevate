@@ -52,7 +52,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!iteration_id) return res.status(400).json({ error: "iteration_id required" });
 
   // Validate resolution if provided — must be in the known set.
-  const VALID_RESOLUTIONS = ["480p", "720p", "1080p", "4k"] as const;
+  // -SR values are Seedance 2.0's super-resolution tiers (2026-06 Atlas catalog).
+  const VALID_RESOLUTIONS = ["480p", "720p", "720p-SR", "1080p", "1080p-SR", "1440p-SR", "4k"] as const;
   if (resolutionParam != null && !(VALID_RESOLUTIONS as readonly string[]).includes(resolutionParam)) {
     return res.status(400).json({
       error: `resolution="${resolutionParam}" is not valid. Must be one of: ${VALID_RESOLUTIONS.join(", ")}`,
@@ -118,10 +119,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // session (via director_output_json.end_photo_id). Single-image Prompt Lab
   // renders — the V1 default — must NOT get a synthetic center-crop, because
   // submitLabRender treats any non-null endImageUrl as a paired render and
-  // forces model_used = "kling-v2-1-pair" regardless of the user's SKU
-  // selection. That routes Atlas through its paired-image endpoint and stalls
-  // on single-photo sessions (2026-04-23 bug: 3 iterations stuck 85+ min on
-  // kling-v2-1-pair with no real end photo).
+  // forces model_used = "kling-v3-pro" (the paired SKU) regardless of the
+  // user's SKU selection. That routes Atlas through its paired-image path and
+  // stalls on single-photo sessions (2026-04-23 bug: 3 iterations stuck 85+
+  // min on the then-paired SKU kling-v2-1-pair with no real end photo).
   const director = iteration.director_output_json as { end_photo_id?: string } | null;
   let endImageUrl: string | null = null;
   if (director?.end_photo_id) {

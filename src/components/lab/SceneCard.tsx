@@ -498,7 +498,8 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
           <div className="flex gap-2">
             {(() => {
               const isPaired = Boolean(scene.use_end_frame && scene.end_image_url);
-              const effectiveModelKey = isPaired ? "kling-v2-1-pair" : defaultModel;
+              // Mirrors server-side DQ.3: paired scenes auto-route to kling-v3-pro.
+              const effectiveModelKey = isPaired ? "kling-v3-pro" : defaultModel;
               const effectiveModel = getLabModel(effectiveModelKey);
               return (
                 <button

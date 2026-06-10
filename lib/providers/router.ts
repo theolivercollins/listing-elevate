@@ -50,10 +50,10 @@ export function resolveDecision(input: ResolveDecisionInput): ProviderDecision {
 // Phase C.1: ProviderDecision is the structured routing result used by
 // pipeline.ts and the resubmit / retry endpoints. It carries enough
 // information to instantiate the provider AND pass the correct model
-// override (e.g. "kling-v2-1-pair" for paired scenes).
+// override (e.g. "kling-v3-pro" for paired scenes).
 //
 // provider:  which backend to call
-// modelKey:  for "atlas" routes — which Atlas SKU (e.g. "kling-v2-1-pair").
+// modelKey:  for "atlas" routes — which Atlas SKU (e.g. "kling-v3-pro").
 //            When absent, AtlasProvider uses the ATLAS_VIDEO_MODEL env var.
 // fallback:  next decision to try if the primary errors with shouldFailover=true.
 //
@@ -82,7 +82,7 @@ export interface ProviderDecision {
 //
 // Priority rules:
 //
-//   1. PAIRED SCENES (end_photo_id set): atlas + kling-v2-1-pair. Short-
+//   1. PAIRED SCENES (end_photo_id set): atlas + kling-v3-pro. Short-
 //      circuits in selectProviderForScene() before movement is consulted.
 //
 //   2. ALL OTHER SCENES: atlas + kling-v2-6-pro (Lab default). Failover
@@ -215,8 +215,8 @@ export function selectDecision(
  * selectProviderForScene — routing entry point for runGenerationSubmit.
  *
  * Handles the paired-scene rule FIRST:
- * - Paired scenes (end_photo_id set) ALWAYS route to atlas + kling-v2-1-pair,
- *   the purpose-built start+end-frame SKU. This mirrors DQ.3 in the Lab.
+ * - Paired scenes (end_photo_id set) ALWAYS route to atlas + kling-v3-pro
+ *   (declares endFrameField "end_image"). This mirrors DQ.3 in the Lab.
  * - Unpaired scenes fall through to the movement-based routing table.
  *
  * @param scene.endPhotoId  end_photo_id from the scene row
@@ -235,14 +235,15 @@ export function selectProviderForScene(
   excluded: VideoProvider[] = [],
   mode: PipelineMode = "v1",
 ): ProviderDecision {
-  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair (v2.1 model).
+  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v3-pro (Kling 3.0 Pro,
+  // endFrameField "end_image" — upgraded from kling-v2-1-pair 2026-06-10).
   // This rule wins over pipeline_mode — v1.1 never replaces the paired path.
   // If atlas itself is excluded, fall through to the movement table
   // as best-effort (better to try something than nothing).
   if (scene.endPhotoId && !excluded.includes("atlas")) {
     return {
       provider: "atlas",
-      modelKey: "kling-v2-1-pair",
+      modelKey: "kling-v3-pro",
       fallback: undefined, // terminal — no fallback preserves paired semantics
     };
   }

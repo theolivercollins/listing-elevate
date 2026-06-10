@@ -86,7 +86,8 @@ export default function LabListingDetail() {
       if (unrenderedScenes.length === 0) return;
       const totalCents = unrenderedScenes.reduce((sum, s) => {
         const isPaired = Boolean(s.use_end_frame && s.end_image_url);
-        const modelKey = isPaired ? "kling-v2-1-pair" : (listing?.model_name ?? "kling-v2-6-pro");
+        // Mirrors server-side DQ.3: paired scenes auto-route to kling-v3-pro.
+        const modelKey = isPaired ? "kling-v3-pro" : (listing?.model_name ?? "kling-v2-6-pro");
         return sum + (getLabModel(modelKey)?.priceCents ?? 0);
       }, 0);
       const confirmed = window.confirm(

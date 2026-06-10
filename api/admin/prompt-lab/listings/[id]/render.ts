@@ -67,8 +67,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // DQ.3: Detect paired scenes. A scene is "paired" when use_end_frame
     // is true AND an end_image_url has been set. Paired scenes should
-    // route to kling-v2-1-pair (the SKU purpose-built for start+end frame
-    // rendering) UNLESS the caller explicitly supplied body.models[] —
+    // route to kling-v3-pro (Kling 3.0 Pro, end_image support — upgraded
+    // from kling-v2-1-pair 2026-06-10) UNLESS the caller explicitly supplied body.models[] —
     // that's the Compare-models flow where the user is intentionally
     // testing multiple models and we must respect their selections verbatim.
     const isPaired = !!(scene.use_end_frame && scene.end_image_url);
@@ -116,14 +116,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // DQ.3 + DM.4 ordering note: Paired auto-route runs FIRST, provider
       // dispatch runs SECOND. So a caller that requests "kling-v2-native"
       // on a paired scene (scene.use_end_frame=true + end_image_url set)
-      // gets auto-routed to "kling-v2-1-pair" (Atlas) here — before
+      // gets auto-routed to "kling-v3-pro" (Atlas) here — before
       // pickProvider() sees the model key. This is correct: native Kling
       // v2.0 doesn't support end-frame (supportsEndFrame=false in
-      // labModels), and v2-1-pair on Atlas is the purpose-built SKU.
+      // labModels), and v3-pro on Atlas declares end_image support.
       // Auto-route only runs when body.models[] was NOT supplied — the
       // Compare-models flow must respect explicit user selections.
       const resolvedModel = isPaired && (!body.models || body.models.length === 0)
-        ? "kling-v2-1-pair"
+        ? "kling-v3-pro"
         : modelKey;
 
       // DM.3: Pick the provider per-model. `kling-v2-native` routes to
