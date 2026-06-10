@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-06-10 (Seedance slug fix + paired scenes → Kling 3 Pro on `fix/atlas-seedance-routing`; fix round 2 merged as `b8c003d`, migration 081 applied to prod)
+Last updated: 2026-06-10 (opt-in Seedance 2.0 pair mode on `feat/seedance-pair-option`; Seedance slug fix + paired→Kling 3 Pro merged as `3446c33`)
 
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
@@ -13,6 +13,8 @@ See also:
 - `../CLAUDE.md` — session-start brief; read this before doing anything
 
 ## Right now
+
+**2026-06-10 (opt-in Seedance pair mode, `feat/seedance-pair-option`): paired scenes can now be A/B'd against Seedance 2.0's `last_image` pair mode — default stays `kling-v3-pro`.** New Atlas SKU **`seedance-pair`** (same slug as pushin, `endFrameField: "last_image"` — schema-confirmed; 1080p-SR; 9.6¢/s; end image also 16:9-cropped for clean interpolation). Opt-in surfaces: (1) **delivery checkpoint A** — paired scene cards get a Kling 3 Pro / Seedance 2.0 (pair) segment in the Regenerate flow (GET bundle now returns `paired_scene_ids`; `regenerate` action takes allowlisted `model`, 400s seedance-pair on non-paired scenes; choice recorded in the regenerate ml_event); explicit choice bypasses the router with failover DISABLED so it never silently lands on another model; (2) **Lab pickers** (labModels/Settings/LabListingNew) — DQ.3 overrides in listings render + submitLabRender honor an explicit `seedance-pair` on paired scenes, coerce everything else to kling-v3-pro (submitLabRender WAS clobbering; fixed); GenerateAllModal excludes it from default pre-selection. `forceSeedancePushInPrompt` exact-keyed on `seedance-pro-pushin` so pair renders keep the scene's trajectory prompt. Known pre-existing edge (flagged, unchanged): `pollPendingVariants`/`finalizeLabRender` cost fallback uses the env-default descriptor price, fine while both pair SKUs are 48¢/5s — persist the SKU on variant rows if a differently-priced pair SKU is ever added.
 
 **2026-06-10 (Atlas-400 root cause + routing change, `fix/atlas-seedance-routing`): the "Atlas 400 not found" mystery is SOLVED — Seedance was the only broken slug.** Atlas retired `bytedance/seedance-2.0/image-to-video-upscaled`; the live catalog (361 models, probed without billing) has `bytedance/seedance-2.0/image-to-video`, with the old 2K tier folded into `-SR` resolutions (`2k` is no longer a valid value). All 6 Kling slugs we use are VALID — the blast radius was Seedance only, meaning every v1.1 scene has been silently failing over to Kling since the slug retired. Fixes: (1) `seedance-pro-pushin` → new slug, default resolution `1080p-SR`, supportedResolutions = live enum, pricing corrected to 9.6¢/s / 48¢ per 5s clip (catalog $0.096/s — verify against invoice); env overrides kept; Seedance 2.0 now supports `last_image` upstream (endFrameField left null — pairs on Seedance out of scope). (2) **Paired scenes (end_photo_id) now route to `kling-v3-pro` instead of `kling-v2-1-pair`** per Oliver — changed in router RULE DQ.3, the prompt-lab DQ.3 override, `submitLabRender`'s paired branch, and the UI cost/label mirrors (SceneCard, LabListingDetail); `kling-v2-1-pair` SKU kept (still valid, manual pick unchanged). Resolution type plumbing widened (`AtlasResolution`/`LabResolution`, VALID_RESOLUTIONS, GenerateClipParams). Context: the San Massimo scene-1 "how did it do start+end frames?!" investigation — answer: director-paired aerial→front-exterior photos hit RULE DQ.3 → Atlas `kling-v2-1-pair`; nothing in that run was actually Seedance.
 
@@ -691,6 +693,7 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-06-10 — merge of `feat/seedance-pair-option` — opt-in `seedance-pair` SKU (`last_image`) for paired scenes via checkpoint-A regenerate + Lab pickers; paired default stays `kling-v3-pro`.
 - 2026-06-10 — merge of `fix/atlas-seedance-routing` — Seedance slug fixed (`bytedance/seedance-2.0/image-to-video`, 1080p-SR, 9.6¢/s) ending the silent v1.1→Kling failover; paired scenes route to `kling-v3-pro` (was `kling-v2-1-pair`).
 - 2026-06-10 — merge of `fix/operator-feedback-2` (`b8c003d`) — 9 owner-reported delivery-run fixes (client voice picker, ", Realtor" toggle + migration **081** applied, sentence-safe VO trim, duration audit + auto-shorten, no "Welcome to", dynamic.map guard, Audio-Voiceover key, address zip/one-line).
 - 2026-06-10 — merge of `fix/operator-ingest-photo-urls` (`6e4edf0`) — prod-run hotfixes (absolute photo URLs on ingest, zero-photos fail-fast, lookup-mls timeout/UX, B-variant failover).
