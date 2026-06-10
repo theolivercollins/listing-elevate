@@ -73,7 +73,7 @@ describe('GET /api/preview/[token]', () => {
     expect(res._status).toBe(404);
   });
 
-  it('returns 200 with video_url and records view on valid GET', async () => {
+  it('returns 200 with video_url, videos, and records view on valid GET', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue({
       expired: false,
@@ -83,14 +83,18 @@ describe('GET /api/preview/[token]', () => {
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._status).toBe(200);
-    const body = res._body as { address: string; video_url: string | null; brand: unknown };
+    const body = res._body as { address: string; video_url: string | null; videos: { horizontal: string | null; vertical: string | null }; brand: unknown };
     expect(body.address).toBe('123 Main St');
+    // Only vertical available → video_url falls back to vertical
     expect(body.video_url).toBe('https://cdn/v.mp4');
+    // videos field exposes both slots
+    expect(body.videos.horizontal).toBeNull();
+    expect(body.videos.vertical).toBe('https://cdn/v.mp4');
     expect(body.brand).toBeNull();
     expect(mockRecordPreviewView).toHaveBeenCalledWith('validtoken1234567890validtoken12');
   });
 
-  it('prefers vertical_video_url over horizontal when both are set', async () => {
+  it('prefers horizontal_video_url for video_url when both are set', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue({
       expired: false,
@@ -99,7 +103,12 @@ describe('GET /api/preview/[token]', () => {
     });
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
-    expect((res._body as { video_url: string }).video_url).toBe('vertical.mp4');
+    const body = res._body as { video_url: string; videos: { horizontal: string; vertical: string } };
+    // video_url now prefers horizontal for back-compat
+    expect(body.video_url).toBe('horizontal.mp4');
+    // both slots populated in videos
+    expect(body.videos.horizontal).toBe('horizontal.mp4');
+    expect(body.videos.vertical).toBe('vertical.mp4');
   });
 
   it('falls back to horizontal_video_url when vertical is null', async () => {
@@ -111,7 +120,10 @@ describe('GET /api/preview/[token]', () => {
     });
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
-    expect((res._body as { video_url: string }).video_url).toBe('horizontal.mp4');
+    const body = res._body as { video_url: string; videos: { horizontal: string; vertical: string | null } };
+    expect(body.video_url).toBe('horizontal.mp4');
+    expect(body.videos.horizontal).toBe('horizontal.mp4');
+    expect(body.videos.vertical).toBeNull();
   });
 
   it('includes brand info when client is set', async () => {

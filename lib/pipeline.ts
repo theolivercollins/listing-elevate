@@ -1283,6 +1283,23 @@ async function runAssemblyStep(
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
+
+  // Orientation gate. `selected_orientation` is 'horizontal' | 'vertical' |
+  // 'both' (operator ingest defaults 'horizontal'; customer intake leaves it
+  // null when only the base — horizontal — product was bought, see
+  // api/properties/index.ts). Treat null/unknown as 'horizontal' so we never
+  // render — and bill (cost_events) — a 9:16 the customer didn't order; 'both'
+  // is the only value that adds the vertical render. The prod incident on
+  // property 0cdb242c rendered both for a 'horizontal' order because this gate
+  // didn't exist; the vertical render additionally still respects skipVertical
+  // (missing 9:16 template) below.
+  const orientation =
+    property.selected_orientation === "vertical" || property.selected_orientation === "both"
+      ? property.selected_orientation
+      : "horizontal";
+  const wantHorizontal = orientation !== "vertical";
+  const wantVertical = orientation === "vertical" || orientation === "both";
+
   const scenes = await getScenesForProperty(propertyId);
   const qcPassed = scenes.filter((s) => s.status === "qc_pass" && s.clip_url);
 
@@ -1327,7 +1344,16 @@ async function runAssemblyStep(
   // excludes 'delivered'), so prefer the most-recent active run.
   let orderedScenes = passedScenes;
   try {
-    const { data: deliveryRun } = await getSupabase()
+    // Prefer the most-recent ACTIVE (non-delivered) run — the one currently
+    // moving through checkpoints. But a clip-swap rerun
+    // (lib/operator-studio/clip-swap.ts) can fire AFTER delivery, when the only
+    // run for the property is stage='delivered'; without the fallback below the
+    // `.neq('stage','delivered')` filter would miss it and assembly would drop
+    // the operator's curated checkpoint-A order back to the default walkthrough.
+    // So: active run if present, else the latest run regardless of stage.
+    const db = getSupabase();
+    let deliveryRun: { scene_order: string[] | null } | null = null;
+    const { data: activeRun } = await db
       .from("delivery_runs")
       .select("scene_order")
       .eq("property_id", propertyId)
@@ -1335,10 +1361,38 @@ async function runAssemblyStep(
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    const activeRunTyped = (activeRun as { scene_order: string[] | null } | null) ?? null;
+    // Use the active run only when it has a non-empty scene_order.
+    // If the active run exists but scene_order is null/empty (operator hasn't
+    // reordered yet on this run), fall through to the any-run lookup which
+    // will pick the most recent run that DOES have a curated order.
+    if (activeRunTyped?.scene_order && activeRunTyped.scene_order.length > 0) {
+      deliveryRun = activeRunTyped;
+    }
+    if (!deliveryRun) {
+      // Find the most recent run (any stage) that has a non-empty scene_order.
+      const { data: runs } = await db
+        .from("delivery_runs")
+        .select("scene_order")
+        .eq("property_id", propertyId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      const orderedRuns = (runs as Array<{ scene_order: string[] | null }> | null) ?? [];
+      const withOrder = orderedRuns.find(
+        (r) => r.scene_order && r.scene_order.length > 0,
+      );
+      deliveryRun = withOrder ?? null;
+    }
     const order = (deliveryRun?.scene_order as string[] | null) ?? null;
     if (order && order.length > 0) {
       const { applySceneOrder } = await import("./delivery/assemble.js");
-      orderedScenes = applySceneOrder(passedScenes as Array<{ id: string }>, order) as typeof passedScenes;
+      // passedScenes carry `id` + `scene_number`; pass both so applySceneOrder's
+      // deterministic tie-break (scene_number) engages for any scene missing
+      // from the saved order.
+      orderedScenes = applySceneOrder(
+        passedScenes as Array<{ id: string; scene_number: number }>,
+        order,
+      ) as typeof passedScenes;
       await log(propertyId, "assembly", "info", "Using operator delivery scene order", { order });
     }
   } catch { /* gated read — never fails customer assembly */ }
@@ -1559,61 +1613,75 @@ async function runAssemblyStep(
         voiceover: voiceoverUrl ? { url: voiceoverUrl } : null,
       };
 
-      // Render both aspect ratios sequentially. Each render typically takes
-      // 30–90s. Kept sequential to stay under the 300s function budget.
-      // Template path uses assembleFromTemplate; code-generated path uses assemble().
-      const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
-        ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
-            modifications: templateMods,
-            renderScale: 1,
-          })
-        : await provider.assemble({
-            ...assembleParams,
-            aspectRatio: "16:9",
-          });
-      await log(propertyId, "assembly", "info",
-        `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
-      const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
-      if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
-        throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
-      }
-      horizontalUrl = horizontalResult.videoUrl;
-
       const timelineDurationSeconds = clipInputs.reduce(
         (sum, c) => sum + c.durationSeconds,
         0,
       );
-      const horizontalDuration =
-        horizontalResult.durationSeconds ?? timelineDurationSeconds;
-      const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
-      await recordCostEvent({
-        propertyId,
-        stage: "assembly",
-        provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
-        unitsConsumed: 1,
-        unitType: "renders",
-        costCents: horizontalCents,
-        metadata: {
-          aspect_ratio: "16:9",
-          clip_count: clipInputs.length,
-          output_duration_seconds: horizontalDuration,
-          render_time_ms: horizontalResult.renderTimeMs ?? null,
-          job_id: horizontalJob.jobId,
-          reason,
-        },
-      });
+
+      // Render the ordered aspect ratios sequentially (each ~30–90s; kept
+      // sequential to stay under the 300s function budget). Template path uses
+      // assembleFromTemplate; code-generated path uses assemble(). Each format
+      // is gated on `selected_orientation` (wantHorizontal / wantVertical) so a
+      // single-orientation order renders — and costs — only what was bought.
+      let horizontalRenderMs: number | null = null;
+      if (wantHorizontal) {
+        const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
+          ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
+              modifications: templateMods,
+              renderScale: 1,
+            })
+          : await provider.assemble({
+              ...assembleParams,
+              aspectRatio: "16:9",
+            });
+        await log(propertyId, "assembly", "info",
+          `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
+        const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
+        if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
+          throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
+        }
+        horizontalUrl = horizontalResult.videoUrl;
+        horizontalRenderMs = horizontalResult.renderTimeMs ?? null;
+
+        const horizontalDuration =
+          horizontalResult.durationSeconds ?? timelineDurationSeconds;
+        const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
+        await recordCostEvent({
+          propertyId,
+          stage: "assembly",
+          provider: providerName as Parameters<typeof recordCostEvent>[0]["provider"],
+          unitsConsumed: 1,
+          unitType: "renders",
+          costCents: horizontalCents,
+          metadata: {
+            aspect_ratio: "16:9",
+            clip_count: clipInputs.length,
+            output_duration_seconds: horizontalDuration,
+            render_time_ms: horizontalResult.renderTimeMs ?? null,
+            job_id: horizontalJob.jobId,
+            reason,
+          },
+        });
+      } else {
+        await log(propertyId, "assembly", "info",
+          "selected_orientation=vertical — skipping 16:9 render");
+      }
 
       // Vertical render — same template-vs-codegen branch as horizontal.
-      // When the template path is active but no vertical template is
-      // configured (current state: we aren't offering vertical yet), skip
-      // the 9:16 render entirely. The DB column `vertical_video_url` will
-      // stay null and the UI's `&&` guard handles that gracefully.
+      // Gated first on the order's orientation (wantVertical: 'vertical' or
+      // 'both'). When the template path is active but no vertical template is
+      // configured, skipVertical additionally suppresses the 9:16 render so we
+      // never produce a wrong-aspect file. In either skip case the DB column
+      // `vertical_video_url` stays null and the UI's `&&` guard handles it.
       const skipVertical =
         horizontalTemplateId !== null &&
         verticalTemplateId === null &&
         provider.name === "creatomate";
 
-      if (!skipVertical) {
+      if (!wantVertical) {
+        await log(propertyId, "assembly", "info",
+          `selected_orientation=${orientation} — skipping 9:16 render`);
+      } else if (!skipVertical) {
         const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
               modifications: templateMods,
@@ -1683,9 +1751,9 @@ async function runAssemblyStep(
         {
           horizontalUrl,
           verticalUrl,
-          horizontalRenderMs: horizontalResult.renderTimeMs,
+          horizontalRenderMs,
           // verticalRenderMs intentionally omitted: verticalResult is scoped
-          // to the !skipVertical branch above. Touching it from here would
+          // to the vertical-render branch above. Touching it from here would
           // ReferenceError at runtime and TS2552 at build time.
         },
       );
@@ -1721,7 +1789,12 @@ async function runAssemblyStep(
     ...(verticalUrl ? { vertical_video_url: verticalUrl } : {}),
   });
 
-  const assemblyNote = horizontalUrl && verticalUrl
+  // A single-orientation order intentionally produces just one URL, so the
+  // "stitched" note keys off "got every render we asked for", not "got both".
+  const gotRequestedRenders =
+    (!wantHorizontal || horizontalUrl !== null) &&
+    (!wantVertical || verticalUrl !== null);
+  const assemblyNote = (horizontalUrl || verticalUrl) && gotRequestedRenders
     ? "Stitched video delivered"
     : assemblyErrored
     ? "Assembly failed, delivered individual clips as fallback"

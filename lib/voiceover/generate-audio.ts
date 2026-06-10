@@ -18,15 +18,22 @@
 
 import { getSupabase, recordCostEvent } from "../db.js";
 import { stripAudioTags } from "./audio-tags.js";
+import { VOICES } from "./voices.js";
 
 const ELEVENLABS_API = "https://api.elevenlabs.io/v1/text-to-speech";
 // eleven_v3: most expressive/human, supports audio tags. Env-overridable.
 const DEFAULT_MODEL_ID = "eleven_v3";
+// Client/cloned voices are best served by eleven_multilingual_v2 (v3 distorts
+// cloned voices). Env-overridable independently of stock model.
+const CLIENT_VOICE_DEFAULT_MODEL_ID = "eleven_multilingual_v2";
 
 // Must stay in sync with the output_format sent to ElevenLabs below
 // (mp3_44100_128 = CBR MP3 @ 128 kbps), so byte length maps to duration.
 const OUTPUT_FORMAT = "mp3_44100_128";
 const OUTPUT_BITRATE_KBPS = 128;
+
+/** Pre-built stock voice IDs from the VOICES catalog. */
+const STOCK_VOICE_ID_SET = new Set(VOICES.map((v) => v.id));
 
 /**
  * Duration of a CBR MP3 from its byte length: bytes * 8 bits / bitrate.
@@ -41,8 +48,19 @@ export function estimateMp3DurationMs(
   return Math.round((byteLength * 8) / bitrateKbps);
 }
 
-function resolveModelId(): string {
-  return process.env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL_ID;
+/**
+ * Resolve the ElevenLabs model to use for a given voice.
+ *
+ * - Stock voices (ids in the VOICES catalog) use `ELEVENLABS_MODEL_ID || eleven_v3`.
+ * - Any other voice id is treated as a client/cloned voice and uses
+ *   `ELEVENLABS_CLIENT_VOICE_MODEL_ID || eleven_multilingual_v2` — v3 distorts
+ *   cloned voices, multilingual_v2 preserves them accurately.
+ */
+export function resolveModelId(voiceId: string): string {
+  if (STOCK_VOICE_ID_SET.has(voiceId)) {
+    return process.env.ELEVENLABS_MODEL_ID || DEFAULT_MODEL_ID;
+  }
+  return process.env.ELEVENLABS_CLIENT_VOICE_MODEL_ID || CLIENT_VOICE_DEFAULT_MODEL_ID;
 }
 
 export interface GenerateAudioInput {
@@ -70,7 +88,7 @@ export async function generateVoiceoverAudio(
 
   const { script, voiceId, propertyId, storageFolder, deliveryRunId } = input;
   const folder = storageFolder ?? propertyId ?? "preview";
-  const modelId = resolveModelId();
+  const modelId = resolveModelId(voiceId);
   const isV3 = modelId.startsWith("eleven_v3");
 
   // Audio tags (e.g. [warmly], [pause]) are a v3-only feature. On any
