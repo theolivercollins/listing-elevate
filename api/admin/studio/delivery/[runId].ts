@@ -205,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         case 'generate_music': {
           const run = await getRun(runId);
           if (!run) return res.status(404).json({ error: 'not_found' });
-          const { moodForPackage } = await import('../../../../lib/assembly/music.js');
+          const { moodForPackage, pickRandom } = await import('../../../../lib/assembly/music.js');
           const { composeMusic, MOOD_PROMPTS } = await import('../../../../lib/providers/elevenlabs-music.js');
           const mood = moodForPackage(run.video_type);
           const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
@@ -225,9 +225,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(201).json({ track });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
-            await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
-            return res.status(502).json({ error: msg });
+
+            // Auto-fallback: find a library track instead of blocking the operator.
+            // Priority: matching mood → neutral → any active track.
+            // Exclude AI-generated tracks (source = 'elevenlabs_music') so the
+            // fallback always draws from the curated library pool.
+            type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
+            const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
+            const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
+            const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
+
+            const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
+            if (!fallbackRow) {
+              const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
+              await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
+              return res.status(502).json({ error: msg });
+            }
+
+            // Apply the fallback: update the run and record the event.
+            const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
+            await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
+            await rme5(runId, 'music_choice', {
+              music_track_id: (fallbackRow as LibraryTrackRow).id,
+              source: 'library_fallback',
+              generation_error: msg,
+            });
+            return res.status(200).json({ track: fallbackRow, fallback: true, warning: msg });
           }
         }
         case 'assemble': {

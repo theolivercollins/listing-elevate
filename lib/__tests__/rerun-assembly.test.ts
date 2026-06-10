@@ -294,4 +294,177 @@ describe("rerunAssembly", () => {
     );
     expect(hasManualRerun).toBe(true);
   });
+
+  // ── Orientation gating (Fix 1 — honor properties.selected_orientation) ──
+  //
+  // The shotstack provider path has no creatomate skipVertical short-circuit,
+  // so the only thing keeping a render from firing is the orientation gate.
+  // We assert via the aspect_ratio on each recorded cost_event + the
+  // horizontal_video_url / vertical_video_url written by updatePropertyStatus.
+
+  function aspectRatiosRendered(): string[] {
+    const costCalls = vi.mocked(db.recordCostEvent).mock.calls as Array<
+      [{ metadata?: Record<string, unknown> }]
+    >;
+    return costCalls
+      .map(([e]) => e.metadata?.aspect_ratio)
+      .filter((a): a is string => typeof a === "string");
+  }
+
+  function finalStatusPatch(): Record<string, unknown> {
+    const calls = vi.mocked(db.updatePropertyStatus).mock.calls as Array<
+      [string, string, Record<string, unknown>?]
+    >;
+    const complete = calls.find(([, status]) => status === "complete");
+    return (complete?.[2] ?? {}) as Record<string, unknown>;
+  }
+
+  it("orientation null defaults to horizontal-only (no 9:16 render)", async () => {
+    vi.mocked(db.getProperty).mockResolvedValue({
+      ...PROP_COMPLETE,
+      selected_orientation: null,
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    expect(aspectRatiosRendered()).toEqual(["16:9"]);
+    const patch = finalStatusPatch();
+    expect(patch.horizontal_video_url).toBe("https://cdn.example.com/h.mp4");
+    expect(patch.vertical_video_url).toBeUndefined();
+  });
+
+  it("orientation 'horizontal' renders 16:9 only", async () => {
+    vi.mocked(db.getProperty).mockResolvedValue({
+      ...PROP_COMPLETE,
+      selected_orientation: "horizontal",
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    expect(aspectRatiosRendered()).toEqual(["16:9"]);
+    expect(finalStatusPatch().vertical_video_url).toBeUndefined();
+  });
+
+  it("orientation 'both' renders 16:9 and 9:16", async () => {
+    vi.mocked(db.getProperty).mockResolvedValue({
+      ...PROP_COMPLETE,
+      selected_orientation: "both",
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    expect(aspectRatiosRendered()).toEqual(["16:9", "9:16"]);
+    const patch = finalStatusPatch();
+    expect(patch.horizontal_video_url).toBe("https://cdn.example.com/h.mp4");
+    expect(patch.vertical_video_url).toBe("https://cdn.example.com/h.mp4");
+  });
+
+  it("orientation 'vertical' renders 9:16 only and leaves horizontal_video_url null", async () => {
+    vi.mocked(db.getProperty).mockResolvedValue({
+      ...PROP_COMPLETE,
+      selected_orientation: "vertical",
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    expect(aspectRatiosRendered()).toEqual(["9:16"]);
+    const patch = finalStatusPatch();
+    expect(patch.horizontal_video_url).toBeUndefined();
+    expect(patch.vertical_video_url).toBe("https://cdn.example.com/h.mp4");
+  });
+
+  // ── Delivery-run scene-order lookup (Fix 5 — active run with null order) ──
+  //
+  // Edge: active run has scene_order=null while an older delivered run has a
+  // curated order.  The lookup must fall through to the delivered run's order
+  // rather than silently using the walkthrough default.
+
+  it("falls through to delivered-run order when active run has null scene_order", async () => {
+    const curatedOrder = ["scene-1"];
+
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") {
+          return makeChain({ id: "photo-1", room_type: "living_room" });
+        }
+        if (table === "delivery_runs") {
+          // Build a chain that handles both the maybeSingle (active run)
+          // and the array (any-run) queries.
+          let limitCount = 0;
+          const chain: Record<string, unknown> = {};
+          chain.select = vi.fn().mockReturnValue(chain);
+          chain.eq = vi.fn().mockReturnValue(chain);
+          chain.neq = vi.fn().mockReturnValue(chain);
+          chain.order = vi.fn().mockReturnValue(chain);
+          chain.limit = vi.fn().mockImplementation((n: number) => {
+            limitCount = n;
+            return chain;
+          });
+          chain.maybeSingle = vi.fn().mockResolvedValue({
+            // Active run: exists but no scene_order.
+            data: { scene_order: null },
+            error: null,
+          });
+          // Array query (limit > 1) returns one delivered run with a curated order.
+          chain.then = vi.fn().mockImplementation((resolve: (v: { data: unknown; error: null }) => unknown) => {
+            const rows = limitCount > 1
+              ? [{ scene_order: curatedOrder }]
+              : [{ scene_order: null }];
+            return Promise.resolve(resolve({ data: rows, error: null }));
+          });
+          return chain;
+        }
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    // applySceneOrder is called inside a dynamic import; verify via the log
+    // call that confirms the operator order was applied.
+    const logCalls = vi.mocked(db.log).mock.calls as Array<
+      [string, string, string, string, unknown]
+    >;
+    const usedOperatorOrder = logCalls.some(
+      ([, , , msg]) => typeof msg === "string" && msg.includes("operator delivery scene order"),
+    );
+    expect(usedOperatorOrder).toBe(true);
+  });
+
+  it("uses active run scene_order when present (non-empty)", async () => {
+    const activeOrder = ["scene-1"];
+
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") {
+          return makeChain({ id: "photo-1", room_type: "living_room" });
+        }
+        if (table === "delivery_runs") {
+          const chain: Record<string, unknown> = {};
+          chain.select = vi.fn().mockReturnValue(chain);
+          chain.eq = vi.fn().mockReturnValue(chain);
+          chain.neq = vi.fn().mockReturnValue(chain);
+          chain.order = vi.fn().mockReturnValue(chain);
+          chain.limit = vi.fn().mockReturnValue(chain);
+          chain.maybeSingle = vi.fn().mockResolvedValue({
+            // Active run has a curated order — should be used directly.
+            data: { scene_order: activeOrder },
+            error: null,
+          });
+          return chain;
+        }
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    await rerunAssembly("prop-1");
+
+    const logCalls = vi.mocked(db.log).mock.calls as Array<
+      [string, string, string, string, unknown]
+    >;
+    const usedOperatorOrder = logCalls.some(
+      ([, , , msg]) => typeof msg === "string" && msg.includes("operator delivery scene order"),
+    );
+    expect(usedOperatorOrder).toBe(true);
+  });
 });

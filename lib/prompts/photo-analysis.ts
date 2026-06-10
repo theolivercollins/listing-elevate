@@ -36,7 +36,7 @@ EVALUATION CRITERIA
 
 3. depth_rating: "high" (clear foreground/midground/background separation, strong perspective lines) | "medium" | "low" (flat head-on shot).
 
-4. room_type: kitchen | living_room | master_bedroom | bedroom | bathroom | exterior_front | exterior_back | pool | aerial | dining | hallway | garage | foyer | office | laundry | closet | basement | deck | powder_room | stairs | media_room | gym | mudroom | other
+4. room_type: kitchen | living_room | master_bedroom | bedroom | bathroom | exterior_front | exterior_back | pool | aerial | dining | hallway | garage | foyer | office | laundry | closet | basement | deck | powder_room | stairs | media_room | gym | mudroom | lanai | other
 
 5. key_features: 3-6 SPECIFIC features visible in this photo, ordered by visual prominence. Write like a TECHNICAL / ARCHITECTURAL GROUNDING comment — not like real-estate listing copy.
 

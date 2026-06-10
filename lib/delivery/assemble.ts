@@ -1,13 +1,29 @@
 import { getSupabase } from '../client.js';
 import { getRun, getVariantsForRun, advanceRun, setRunError } from './runs.js';
 
-/** Pure: reorder by an explicit id list; unknown ids keep relative order at the end. */
-export function applySceneOrder<T extends { id: string }>(scenes: T[], order: string[] | null): T[] {
+/**
+ * Pure: reorder by an explicit id list. Ids present in `order` sort by their
+ * index; ids missing from `order` (e.g. a scene added after the operator's
+ * checkpoint-A draft was saved) fall to the end. Ties — multiple missing ids,
+ * or any equal-position pair — break DETERMINISTICALLY by `scene_number` when
+ * present, then by `id`, so assembly never depends on Array.prototype.sort
+ * stability or the caller's input order.
+ */
+export function applySceneOrder<T extends { id: string; scene_number?: number }>(
+  scenes: T[],
+  order: string[] | null,
+): T[] {
   if (!order || order.length === 0) return scenes;
   const pos = new Map(order.map((id, i) => [id, i]));
-  return [...scenes].sort(
-    (a, b) => (pos.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (pos.get(b.id) ?? Number.MAX_SAFE_INTEGER),
-  );
+  return [...scenes].sort((a, b) => {
+    const pa = pos.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const pb = pos.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (pa !== pb) return pa - pb;
+    const sa = a.scene_number ?? Number.MAX_SAFE_INTEGER;
+    const sb = b.scene_number ?? Number.MAX_SAFE_INTEGER;
+    if (sa !== sb) return sa - sb;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 }
 
 /**

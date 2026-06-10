@@ -11,13 +11,15 @@
  */
 
 import { useState } from 'react';
-import { Star, Loader2 } from 'lucide-react';
+import { Star, Loader2, Download } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CheckpointBProps {
   runId: string;
+  /** Property id — used to build the download endpoint URL. */
+  propertyId: string;
   /** Assembled horizontal video URL — from property.horizontal_video_url */
   videoUrl: string | null;
   onDelivered: () => void;
@@ -99,15 +101,49 @@ function StarRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CheckpointB({ runId, videoUrl, onDelivered }: CheckpointBProps) {
+export function CheckpointB({ runId, propertyId, videoUrl, onDelivered }: CheckpointBProps) {
   const [ratings, setRatings] = useState<Record<RatingKey, number>>({
     overall: 0, music: 0, voiceover: 0, script: 0,
   });
   const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [downloadPreparing, setDownloadPreparing] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const allRated = RATING_ROWS.every(({ key }) => ratings[key] > 0);
+
+  const handleDownload = async () => {
+    setDownloadPreparing(true);
+    setDownloadError(null);
+    try {
+      const res = await authedFetch(
+        `/api/admin/studio/properties/${propertyId}/download?format=horizontal`,
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const msg = (d as { error?: string }).error ?? `HTTP ${res.status}`;
+        console.error('Download failed:', msg);
+        setDownloadError(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = res.headers.get('content-disposition') ?? '';
+      const match = /filename="([^"]+)"/.exec(disposition);
+      a.download = match?.[1] ?? 'video-horizontal.mp4';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Download failed';
+      console.error('Download failed:', msg);
+      setDownloadError(msg);
+    } finally {
+      setDownloadPreparing(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -163,13 +199,38 @@ export function CheckpointB({ runId, videoUrl, onDelivered }: CheckpointBProps) 
 
       {/* Video player */}
       {videoUrl ? (
-        <video
-          src={videoUrl}
-          controls
-          playsInline
-          className="studio-video"
-          style={{ width: '100%', maxHeight: 400, borderRadius: 8, background: '#000' }}
-        />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <video
+            src={videoUrl}
+            controls
+            playsInline
+            className="studio-video"
+            style={{ width: '100%', maxHeight: 400, borderRadius: 8, background: '#000' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+            {downloadError && (
+              <span
+                className="studio-error-strip"
+                style={{ padding: '3px 8px', fontSize: 11.5 }}
+              >
+                {downloadError}
+              </span>
+            )}
+            <button
+              type="button"
+              className="studio-btn-ghost studio-btn-sm"
+              onClick={() => void handleDownload()}
+              disabled={downloadPreparing}
+            >
+              {downloadPreparing ? (
+                <Loader2 size={11} className="studio-spinner" />
+              ) : (
+                <Download size={11} strokeWidth={1.6} />
+              )}
+              {downloadPreparing ? 'Preparing…' : 'Download'}
+            </button>
+          </div>
+        </div>
       ) : (
         <div
           style={{

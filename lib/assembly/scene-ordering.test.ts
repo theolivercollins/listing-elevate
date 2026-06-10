@@ -114,6 +114,38 @@ describe("orderScenesForAssembly", () => {
     ]);
   });
 
+  it("slots lanai in the outdoor sequence (after deck, before pool) — not uncategorized", () => {
+    const scenes = [
+      scene(1, "exterior_back", "back"),
+      scene(2, "pool", "pool"),
+      scene(3, "lanai", "lanai"),
+      scene(4, "deck", "deck"),
+      scene(5, "kitchen", "kit"),
+    ];
+    const out = orderScenesForAssembly(scenes);
+    expect(out.map((s) => s.id)).toEqual(["kit", "deck", "lanai", "pool", "back"]);
+  });
+
+  it("reproduces the 2026-06-10 prod run with lanai correctly placed mid-walkthrough", () => {
+    // Real failure data: aerial, exterior_front, living_room, pool,
+    // exterior_back, exterior_back, lanai — lanai had been dumped at the end
+    // because it wasn't a slotted room_type. With lanai slotted, it lands in
+    // the outdoor group before pool instead of trailing the video.
+    const scenes = [
+      scene(1, "aerial", "s1"),
+      scene(2, "exterior_front", "s2"),
+      scene(3, "living_room", "s3"),
+      scene(5, "pool", "s5"),
+      scene(6, "exterior_back", "s6"),
+      scene(7, "exterior_back", "s7"),
+      scene(4, "lanai", "s4"),
+    ];
+    const out = orderScenesForAssembly(scenes);
+    expect(out.map((s) => s.id)).toEqual(["s1", "s2", "s3", "s4", "s5", "s6", "s7"]);
+    // lanai is no longer last.
+    expect(out[out.length - 1].room_type).toBe("exterior_back");
+  });
+
   it("does not mutate input", () => {
     const scenes = [scene(1, "kitchen", "k1"), scene(2, "aerial", "a1")];
     const snapshot = JSON.stringify(scenes);
@@ -126,6 +158,7 @@ describe("slotForRoomType", () => {
   it("returns the room_type itself for slotted types", () => {
     expect(slotForRoomType("kitchen")).toBe("kitchen");
     expect(slotForRoomType("master_bedroom")).toBe("master_bedroom");
+    expect(slotForRoomType("lanai")).toBe("lanai");
   });
 
   it("returns '_uncategorized' for null, 'other'", () => {
