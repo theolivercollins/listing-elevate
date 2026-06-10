@@ -923,7 +923,7 @@ const Upload = () => {
                               ) : mlsLookingUp ? (
                                 <span className="g-mls-loading">
                                   <span className="g-mls-spinner" />
-                                  Searching MLS…
+                                  Searching MLS — this can take 1–3 minutes…
                                 </span>
                               ) : (
                                 <button

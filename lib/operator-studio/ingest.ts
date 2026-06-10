@@ -12,6 +12,16 @@
 import { getSupabase } from '../client.js';
 import type { ManualIngestInput } from '../types/operator-studio.js';
 
+/**
+ * Convert a raw Supabase storage path to an absolute public URL.
+ * Already-absolute URLs (http/https) are returned unchanged (idempotent).
+ * Paths must live in the `property-photos` public bucket.
+ */
+export function toPublicPhotoUrl(storagePath: string): string {
+  if (storagePath.startsWith('http')) return storagePath;
+  return `${process.env.SUPABASE_URL}/storage/v1/object/public/property-photos/${storagePath}`;
+}
+
 // Extract a useful string from PostgrestError-shaped objects (which are NOT
 // JS Error instances, so `err.message` works but `instanceof Error` doesn't).
 export function stringifyDbError(err: unknown): string {
@@ -135,10 +145,13 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   const propertyId: string = (property as { id: string }).id;
 
   // 2. Insert photo rows into the shared `photos` table.
-  //    Adapted columns: file_url (= storage path), file_name (= last segment).
+  //    file_url must be an absolute public URL so the pipeline analyzer can
+  //    fetch() it. toPublicPhotoUrl() expands bare storage paths (e.g.
+  //    "7f9fed83-…/raw/x.jpg") to the full Supabase Storage URL;
+  //    already-absolute URLs pass through unchanged.
   const photoRows = photo_storage_paths.map((storagePath) => ({
     property_id: propertyId,
-    file_url: storagePath,
+    file_url: toPublicPhotoUrl(storagePath),
     file_name: storagePath.split('/').pop() ?? storagePath,
   }));
 

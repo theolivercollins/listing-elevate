@@ -1,5 +1,5 @@
 // lib/operator-studio/__tests__/ingest.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const insertProperty = vi.fn();
 const insertPhotos = vi.fn();
@@ -22,14 +22,21 @@ vi.mock('../../client', () => ({
   }),
 }));
 
-import { manualIngest } from '../ingest';
+import { manualIngest, toPublicPhotoUrl } from '../ingest';
 import type { ManualIngestInput } from '../../types/operator-studio';
 
+const FAKE_SUPABASE_URL = 'https://abcdef.supabase.co';
+
 beforeEach(() => {
+  process.env.SUPABASE_URL = FAKE_SUPABASE_URL;
   insertProperty.mockReset().mockReturnValue({ select: () => ({ single: () => Promise.resolve({ data: { id: 'new-prop-id' }, error: null }) }) });
   insertPhotos.mockReset().mockResolvedValue({ data: null, error: null });
   insertRevisionNote.mockReset().mockResolvedValue({ data: null, error: null });
   selectClient.mockReset().mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty' }, error: null });
+});
+
+afterEach(() => {
+  delete process.env.SUPABASE_URL;
 });
 
 const baseInput: ManualIngestInput & { submitted_by: string } = {
@@ -91,13 +98,15 @@ describe('manualIngest', () => {
     }));
   });
 
-  it('inserts photo rows into the photos table (adapted: file_url + file_name)', async () => {
-    await manualIngest(baseInput);
+  it('inserts photo rows with absolute public URLs (bare paths → full Supabase URL)', async () => {
+    const paths = Array(8).fill('7f9fed83-abc/raw/kitchen.jpg');
+    await manualIngest({ ...baseInput, photo_storage_paths: paths });
     const photosArg = insertPhotos.mock.calls[0][0];
     expect(Array.isArray(photosArg)).toBe(true);
     expect(photosArg).toHaveLength(8);
-    expect(photosArg[0]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
-    expect(photosArg[7]).toMatchObject({ property_id: 'new-prop-id', file_url: 'p.jpg' });
+    const expectedUrl = `${FAKE_SUPABASE_URL}/storage/v1/object/public/property-photos/7f9fed83-abc/raw/kitchen.jpg`;
+    expect(photosArg[0]).toMatchObject({ property_id: 'new-prop-id', file_url: expectedUrl, file_name: 'kitchen.jpg' });
+    expect(photosArg[7]).toMatchObject({ property_id: 'new-prop-id', file_url: expectedUrl });
   });
 
   it('inserts a director-notes row only when notes are non-empty', async () => {
@@ -105,6 +114,14 @@ describe('manualIngest', () => {
     expect(insertRevisionNote).not.toHaveBeenCalled();
     await manualIngest({ ...baseInput, director_notes: 'Faster pace on kitchen' });
     expect(insertRevisionNote).toHaveBeenCalledWith(expect.objectContaining({ property_id: 'new-prop-id', source: 'operator', body: 'Faster pace on kitchen' }));
+  });
+
+  it('passes already-absolute URLs through unchanged (idempotent)', async () => {
+    const absUrl = `${FAKE_SUPABASE_URL}/storage/v1/object/public/property-photos/uuid/raw/living.jpg`;
+    const paths = Array(8).fill(absUrl);
+    await manualIngest({ ...baseInput, photo_storage_paths: paths });
+    const photosArg = insertPhotos.mock.calls[0][0];
+    expect(photosArg[0]).toMatchObject({ file_url: absUrl });
   });
 
   it('does NOT trigger the pipeline (client-side responsibility)', async () => {
@@ -125,5 +142,24 @@ describe('manualIngest', () => {
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       pipeline_mode: 'v1',
     }));
+  });
+});
+
+describe('toPublicPhotoUrl', () => {
+  it('expands a bare storage path to an absolute public URL', () => {
+    process.env.SUPABASE_URL = FAKE_SUPABASE_URL;
+    const result = toPublicPhotoUrl('abc123/raw/photo.jpg');
+    expect(result).toBe(`${FAKE_SUPABASE_URL}/storage/v1/object/public/property-photos/abc123/raw/photo.jpg`);
+    delete process.env.SUPABASE_URL;
+  });
+
+  it('leaves an https:// URL unchanged (idempotent)', () => {
+    const abs = 'https://abcdef.supabase.co/storage/v1/object/public/property-photos/x/y.jpg';
+    expect(toPublicPhotoUrl(abs)).toBe(abs);
+  });
+
+  it('leaves an http:// URL unchanged', () => {
+    const abs = 'http://localhost:54321/storage/v1/object/public/property-photos/x/y.jpg';
+    expect(toPublicPhotoUrl(abs)).toBe(abs);
   });
 });

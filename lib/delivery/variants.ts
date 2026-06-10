@@ -5,7 +5,9 @@ import {
   buildProviderFromDecision,
   selectProvider,
   forceSeedancePushInPrompt,
+  getEnabledProviders,
 } from '../providers/router.js';
+import { classifyProviderError } from '../providers/errors.js';
 import { atlasClipCostCents, V1_DEFAULT_SKU } from '../providers/atlas.js';
 import type { SceneVariantRow } from '../types/operator-studio.js';
 import type { RoomType, CameraMovement, VideoProvider, PipelineMode } from '../types.js';
@@ -55,51 +57,86 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
     }, { onConflict: 'delivery_run_id,scene_id,variant' });
 
     // Variant B: an independent second render of the same prompt.
+    // Mirrors runGenerationSubmit's failover loop — on a permanent provider
+    // error, append to excluded and retry the next decision. Degrade only
+    // when all decisions are exhausted (same cap as the A path).
     const { data: photo } = await supabase.from('photos').select('file_url, room_type').eq('id', scene.photo_id).single();
-    try {
-      if (!photo) throw new Error('source photo not found');
-      const decision = selectProviderForScene(
-        {
-          endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
-          movement: (scene.camera_movement as CameraMovement | null) ?? null,
-          roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
-          preference: (scene.provider as VideoProvider | null) ?? null,
-        },
-        [],
-        pipelineMode,
-      );
-      const provider = buildProviderFromDecision(decision);
-      // Same render-time prompt convention as runGenerationSubmit: the Seedance
-      // push-in SKU gets the movement-stripped directive; scene.prompt in the DB
-      // is never mutated.
-      const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
-        ? forceSeedancePushInPrompt(scene.prompt as string)
-        : (scene.prompt as string);
-      const genJob = await provider.generateClip({
-        sourceImage: Buffer.alloc(0),
-        sourceImageUrl: (photo as { file_url: string }).file_url,
-        prompt: renderPrompt,
-        durationSeconds: scene.duration_seconds,
-        aspectRatio: '16:9',
-        endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
-        modelOverride: decision.modelKey,
-      });
-      await supabase.from('scene_variants').upsert({
-        delivery_run_id: runId, scene_id: scene.id, variant: 'B',
-        provider: provider.name, provider_task_id: genJob.jobId,
-      }, { onConflict: 'delivery_run_id,scene_id,variant' });
-      await log(propertyId, 'generation', 'info',
-        `Scene ${scene.scene_number}: variant B submitted to ${provider.name}`,
-        { jobId: genJob.jobId, delivery_run_id: runId }, scene.id);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await supabase.from('scene_variants').upsert({
-        delivery_run_id: runId, scene_id: scene.id, variant: 'B',
-        error: msg, degraded: true,
-      }, { onConflict: 'delivery_run_id,scene_id,variant' });
-      await log(propertyId, 'generation', 'warn',
-        `Scene ${scene.scene_number}: variant B submit failed (degrading to single clip): ${msg}`,
-        { delivery_run_id: runId }, scene.id);
+    {
+      const excluded: VideoProvider[] = [];
+      const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
+      let bSubmitted = false;
+      let lastErrMsg = 'unknown';
+
+      if (!photo) {
+        lastErrMsg = 'source photo not found';
+      } else {
+        for (let attempt = 0; attempt <= maxFailovers; attempt++) {
+          const decision = selectProviderForScene(
+            {
+              endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+              movement: (scene.camera_movement as CameraMovement | null) ?? null,
+              roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
+              preference: (scene.provider as VideoProvider | null) ?? null,
+            },
+            excluded,
+            pipelineMode,
+          );
+          const provider = buildProviderFromDecision(decision);
+          // Same render-time prompt convention as runGenerationSubmit: the Seedance
+          // push-in SKU gets the movement-stripped directive; scene.prompt in the DB
+          // is never mutated. Re-apply per attempt because modelKey changes on failover.
+          const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
+            ? forceSeedancePushInPrompt(scene.prompt as string)
+            : (scene.prompt as string);
+          try {
+            const genJob = await provider.generateClip({
+              sourceImage: Buffer.alloc(0),
+              sourceImageUrl: (photo as { file_url: string }).file_url,
+              prompt: renderPrompt,
+              durationSeconds: scene.duration_seconds,
+              aspectRatio: '16:9',
+              endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
+              modelOverride: decision.modelKey,
+            });
+            await supabase.from('scene_variants').upsert({
+              delivery_run_id: runId, scene_id: scene.id, variant: 'B',
+              provider: provider.name, provider_task_id: genJob.jobId,
+            }, { onConflict: 'delivery_run_id,scene_id,variant' });
+            const modelNote = decision.modelKey ? ` model=${decision.modelKey}` : '';
+            await log(propertyId, 'generation', 'info',
+              `Scene ${scene.scene_number}: variant B submitted to ${provider.name}${modelNote}${attempt > 0 ? ` (failover ${attempt})` : ''}`,
+              { jobId: genJob.jobId, delivery_run_id: runId, modelKey: decision.modelKey }, scene.id);
+            bSubmitted = true;
+            break;
+          } catch (err) {
+            const classified = classifyProviderError(err);
+            lastErrMsg = classified.message;
+            if (!classified.shouldFailover) {
+              // Capacity / transient: don't burn this provider; degrade and let
+              // the cron retry path handle it (same convention as the A path).
+              await log(propertyId, 'generation', 'warn',
+                `Scene ${scene.scene_number}: variant B ${provider.name} ${classified.kind} error (degrading): ${classified.message}`,
+                { delivery_run_id: runId, kind: classified.kind }, scene.id);
+              break;
+            }
+            // Permanent error: exclude and try the next decision.
+            excluded.push(provider.name as VideoProvider);
+            await log(propertyId, 'generation', 'warn',
+              `Scene ${scene.scene_number}: variant B: failover ${attempt + 1} to next provider (${provider.name} permanent error): ${classified.message}`,
+              { delivery_run_id: runId, excluded, modelKey: decision.modelKey }, scene.id);
+          }
+        }
+      }
+
+      if (!bSubmitted) {
+        await supabase.from('scene_variants').upsert({
+          delivery_run_id: runId, scene_id: scene.id, variant: 'B',
+          error: lastErrMsg, degraded: true,
+        }, { onConflict: 'delivery_run_id,scene_id,variant' });
+        await log(propertyId, 'generation', 'warn',
+          `Scene ${scene.scene_number}: variant B submit failed after ${excluded.length + 1} attempt(s) (degrading to single clip): ${lastErrMsg}`,
+          { delivery_run_id: runId }, scene.id);
+      }
     }
   }
 }
@@ -279,50 +316,84 @@ export async function regenerateVariant(runId: string, sceneId: string, variant:
     .eq('id', scene.property_id)
     .maybeSingle();
 
-  const decision = selectProviderForScene(
-    {
-      endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
-      movement: (scene.camera_movement as CameraMovement | null) ?? null,
-      roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
-      preference: (scene.provider as VideoProvider | null) ?? null,
-    },
-    [],
-    ((prop?.pipeline_mode as PipelineMode | null) ?? 'v1'),
-  );
-  const provider = buildProviderFromDecision(decision);
+  const pipelineMode = ((prop?.pipeline_mode as PipelineMode | null) ?? 'v1');
 
-  // Apply the Seedance push-in prompt directive if applicable.
-  const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
-    ? forceSeedancePushInPrompt(scene.prompt as string)
-    : (scene.prompt as string);
+  // Failover loop — mirrors runGenerationSubmit's A-path: on a permanent
+  // provider error, append to excluded and retry the next decision. Throws
+  // only when all providers are exhausted (the caller marks the row degraded).
+  const excluded: VideoProvider[] = [];
+  const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
+  let lastError: Error | unknown = null;
 
-  const genJob = await provider.generateClip({
-    sourceImage: Buffer.alloc(0),
-    sourceImageUrl: (photo as { file_url: string }).file_url,
-    prompt: renderPrompt,
-    durationSeconds: scene.duration_seconds,
-    aspectRatio: '16:9',
-    endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
-    modelOverride: decision.modelKey,
-  });
+  for (let attempt = 0; attempt <= maxFailovers; attempt++) {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+        movement: (scene.camera_movement as CameraMovement | null) ?? null,
+        roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
+        preference: (scene.provider as VideoProvider | null) ?? null,
+      },
+      excluded,
+      pipelineMode,
+    );
+    const provider = buildProviderFromDecision(decision);
 
-  // Upsert resets the row — clip_url/costs/scores cleared, new task in flight.
-  await supabase.from('scene_variants').upsert(
-    {
-      delivery_run_id: runId,
-      scene_id: sceneId,
-      variant,
-      provider: provider.name,
-      provider_task_id: genJob.jobId,
-      clip_url: null,
-      cost_cents: null,
-      gemini_scores: null,
-      winner: false,
-      winner_source: null,
-      degraded: false,
-      error: null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'delivery_run_id,scene_id,variant' },
-  );
+    // Apply the Seedance push-in prompt directive if applicable.
+    // Re-applied per attempt because modelKey changes across failovers.
+    const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
+      ? forceSeedancePushInPrompt(scene.prompt as string)
+      : (scene.prompt as string);
+
+    try {
+      const genJob = await provider.generateClip({
+        sourceImage: Buffer.alloc(0),
+        sourceImageUrl: (photo as { file_url: string }).file_url,
+        prompt: renderPrompt,
+        durationSeconds: scene.duration_seconds,
+        aspectRatio: '16:9',
+        endImageUrl: (scene as { end_image_url?: string | null }).end_image_url ?? undefined,
+        modelOverride: decision.modelKey,
+      });
+
+      // Upsert resets the row — clip_url/costs/scores cleared, new task in flight.
+      await supabase.from('scene_variants').upsert(
+        {
+          delivery_run_id: runId,
+          scene_id: sceneId,
+          variant,
+          provider: provider.name,
+          provider_task_id: genJob.jobId,
+          clip_url: null,
+          cost_cents: null,
+          gemini_scores: null,
+          winner: false,
+          winner_source: null,
+          degraded: false,
+          error: null,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'delivery_run_id,scene_id,variant' },
+      );
+      const modelNote = decision.modelKey ? ` model=${decision.modelKey}` : '';
+      await log(scene.property_id, 'generation', 'info',
+        `Scene ${scene.scene_number}: variant ${variant} regenerated via ${provider.name}${modelNote}${attempt > 0 ? ` (failover ${attempt})` : ''}`,
+        { jobId: genJob.jobId, delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
+      return;
+    } catch (err) {
+      const classified = classifyProviderError(err);
+      lastError = err;
+      if (!classified.shouldFailover) {
+        // Capacity / transient: re-throw so the caller handles it.
+        throw err;
+      }
+      // Permanent error: exclude and try the next decision.
+      excluded.push(provider.name as VideoProvider);
+      await log(scene.property_id, 'generation', 'warn',
+        `Scene ${scene.scene_number}: variant ${variant}: failover ${attempt + 1} to next provider (${provider.name} permanent error): ${classified.message}`,
+        { delivery_run_id: runId, excluded, modelKey: decision.modelKey }, sceneId);
+    }
+  }
+
+  // All providers exhausted — re-throw so the caller can degrade the row.
+  throw lastError ?? new Error(`regenerateVariant: all providers exhausted for scene ${sceneId}`);
 }
