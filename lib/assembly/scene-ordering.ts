@@ -14,7 +14,7 @@
  *   5. BATHROOMS      — bathroom → powder_room
  *   6. SPECIALTY      — office, media_room, gym, laundry, mudroom,
  *                       basement, closet, garage, hallway, stairs
- *   7. OUTDOOR        — deck, pool
+ *   7. OUTDOOR        — deck, lanai, pool
  *   8. CLOSING        — exterior_back (or unused aerial)
  *   9. UNCATEGORIZED  — room_type 'other' or null — kept at the end in
  *                       director order so we don't lose them
@@ -57,6 +57,12 @@ const SLOT_ORDER: ReadonlyArray<RoomType | "_uncategorized"> = [
   "hallway",
   "stairs",
   "deck",
+  // 'lanai' (covered outdoor living) groups with the outdoor slot, after the
+  // open deck and before the pool. The active analyzer
+  // (lib/providers/gemini-analyzer.ts) emits this room_type; before it was
+  // listed here, lanai scenes fell into '_uncategorized' and were dumped at the
+  // end of the video (prod incident 2026-06-10, property 0cdb242c).
+  "lanai",
   "pool",
   "exterior_back",
   // Always last — catches "other" + null room_type

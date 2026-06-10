@@ -558,9 +558,64 @@ describe('POST set_music + generate_music (T19)', () => {
     expect(mockComposeMusic).not.toHaveBeenCalled();
   });
 
-  it('POST generate_music -> 502 + setRunError on compose failure', async () => {
+  it('POST generate_music -> fallback to library track when compose fails and library has tracks', async () => {
+    mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, property_id: 'p1' });
+    mockComposeMusic.mockRejectedValue(new Error('401 missing_permissions'));
+    const libraryTrack = { id: 'lib-track-1', name: 'Upbeat Library Track', file_url: 'https://cdn.example.com/music/lib1.mp3', mood_tag: 'upbeat', source: 'library' };
+    // Build a chainable Supabase mock that handles the query shapes used in the fallback:
+    //   .select(...).eq(...).eq(...).neq(...)  → { data: [libraryTrack] }  (3-filter queries)
+    //   .select(...).eq(...).neq(...)           → { data: [libraryTrack] }  (2-filter query)
+    // Each eq/neq step must also expose the remaining chain methods.
+    function makeChain(result: unknown) {
+      const chain: Record<string, unknown> = {};
+      chain.neq = vi.fn().mockResolvedValue(result);
+      chain.eq = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
+    const chainWithTrack = makeChain({ data: [libraryTrack] });
+    const mockSelectChain = vi.fn().mockReturnValue(chainWithTrack);
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'properties') return { select: mockDbSelect };
+      if (table === 'music_tracks') return { select: mockSelectChain, insert: mockDbInsert };
+      return { update: mockDbUpdate };
+    });
+    mockUpdateRun.mockResolvedValue({ ...run, music_track_id: 'lib-track-1' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    const body = res._body as { track: { id: string }; fallback: boolean; warning: string };
+    expect(body.fallback).toBe(true);
+    expect(body.track.id).toBe('lib-track-1');
+    expect(body.warning).toContain('401 missing_permissions');
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ music_track_id: 'lib-track-1' }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_choice', expect.objectContaining({
+      music_track_id: 'lib-track-1',
+      source: 'library_fallback',
+      generation_error: expect.stringContaining('401 missing_permissions'),
+    }));
+  });
+
+  it('POST generate_music -> 502 + setRunError when compose fails AND library is empty', async () => {
     mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, property_id: 'p1' });
     mockComposeMusic.mockRejectedValue(new Error('ElevenLabs Music failed (500): server error'));
+    // All fallback queries return empty pools — same chain structure but empty arrays
+    function makeEmptyChain() {
+      const chain: Record<string, unknown> = {};
+      chain.neq = vi.fn().mockResolvedValue({ data: [] });
+      chain.eq = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
+    const emptyChain = makeEmptyChain();
+    const mockSelectEmpty = vi.fn().mockReturnValue(emptyChain);
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'properties') return { select: mockDbSelect };
+      if (table === 'music_tracks') return { select: mockSelectEmpty, insert: mockDbInsert };
+      return { update: mockDbUpdate };
+    });
     const res = makeRes();
     await handler(
       { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
@@ -568,6 +623,7 @@ describe('POST set_music + generate_music (T19)', () => {
     );
     expect(res._status).toBe(502);
     expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Music generation failed'));
+    expect(mockUpdateRun).not.toHaveBeenCalled();
   });
 });
 

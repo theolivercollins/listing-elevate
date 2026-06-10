@@ -12,7 +12,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     void recordPreviewView(token);
     return res.status(200).json({
       address: result.property.address,
-      video_url: result.property.vertical_video_url ?? result.property.horizontal_video_url,
+      // Back-compat: single video_url — prefer horizontal for primary display
+      video_url: result.property.horizontal_video_url ?? result.property.vertical_video_url,
+      // Both formats for multi-player rendering
+      videos: {
+        horizontal: result.property.horizontal_video_url ?? null,
+        vertical: result.property.vertical_video_url ?? null,
+      },
       brand: result.client
         ? { logo: result.client.brand_logo_url, agent_name: result.client.agent_name, name: result.client.name }
         : null,

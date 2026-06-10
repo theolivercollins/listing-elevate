@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ExternalLink,
   ArrowLeft,
+  Download,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -134,6 +135,79 @@ function CopyButton({ text }: { text: string }) {
       )}
       {copied ? 'Copied' : 'Copy'}
     </button>
+  );
+}
+
+// ─── Download button ───────────────────────────────────────────────────────────
+
+/**
+ * Downloads the video via a fetch→blob→objectURL→programmatic-click flow so the
+ * Authorization header is carried. An <a download> anchor would be cross-origin
+ * and wouldn't send the auth header, so we proxy through the server endpoint.
+ */
+function DownloadButton({ propertyId, format }: { propertyId: string; format: 'horizontal' | 'vertical' }) {
+  const [preparing, setPreparing] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const handleDownload = async () => {
+    setPreparing(true);
+    setDownloadError(null);
+    try {
+      const res = await authedFetch(
+        `/api/admin/studio/properties/${propertyId}/download?format=${format}`,
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        const msg = (d as { error?: string }).error ?? `HTTP ${res.status}`;
+        console.error('Download failed:', msg);
+        setDownloadError(msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Use the server-provided filename from Content-Disposition if available,
+      // otherwise fall back to a generic name.
+      const disposition = res.headers.get('content-disposition') ?? '';
+      const match = /filename="([^"]+)"/.exec(disposition);
+      a.download = match?.[1] ?? `video-${format}.mp4`;
+      a.click();
+      // Revoke after a tick to allow the browser to begin the download
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Download failed';
+      console.error('Download failed:', msg);
+      setDownloadError(msg);
+    } finally {
+      setPreparing(false);
+    }
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      {downloadError && (
+        <span
+          className="studio-error-strip"
+          style={{ padding: '3px 8px', fontSize: 11.5 }}
+        >
+          {downloadError}
+        </span>
+      )}
+      <button
+        type="button"
+        className="studio-btn-ghost studio-btn-sm"
+        onClick={() => void handleDownload()}
+        disabled={preparing}
+      >
+        {preparing ? (
+          <Loader2 size={11} className="studio-spinner" />
+        ) : (
+          <Download size={11} strokeWidth={1.6} />
+        )}
+        {preparing ? 'Preparing…' : 'Download'}
+      </button>
+    </div>
   );
 }
 
@@ -446,7 +520,11 @@ const PropertyCommandCenter = () => {
           {bundle.delivery_run.stage === 'checkpoint_b' && (
             <CheckpointB
               runId={bundle.delivery_run.id}
-              videoUrl={property.horizontal_video_url}
+              propertyId={property.id}
+              // Prefer 16:9 for review, but fall back to 9:16 so a
+              // vertical-only order (selected_orientation='vertical', no
+              // horizontal_video_url) still shows a video at checkpoint B.
+              videoUrl={property.horizontal_video_url ?? property.vertical_video_url}
               onDelivered={fetchBundle}
             />
           )}
@@ -490,9 +568,12 @@ const PropertyCommandCenter = () => {
             <div className="le-flexcol-lg" style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
               {property.horizontal_video_url && (
                 <div style={{ flex: '1 1 260px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
-                    Horizontal (16:9)
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
+                      Horizontal (16:9)
+                    </span>
+                    <DownloadButton propertyId={property.id} format="horizontal" />
+                  </div>
                   <video
                     src={property.horizontal_video_url}
                     controls
@@ -505,9 +586,12 @@ const PropertyCommandCenter = () => {
               )}
               {property.vertical_video_url && (
                 <div style={{ flex: '0 0 180px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
-                    Vertical (9:16)
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
+                      Vertical (9:16)
+                    </span>
+                    <DownloadButton propertyId={property.id} format="vertical" />
+                  </div>
                   <video
                     src={property.vertical_video_url}
                     controls

@@ -33,6 +33,10 @@ interface MusicOptionsResponse {
 
 interface GenerateMusicResponse {
   track: MusicTrack;
+  /** Present when generation failed and the server auto-selected a library track. */
+  fallback?: boolean;
+  /** The original generation error message, present when fallback is true. */
+  warning?: string;
 }
 
 interface DeliveryMusicProps {
@@ -61,6 +65,7 @@ export function DeliveryMusic({
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<{ trackName: string; warning: string } | null>(null);
 
   // Load library tracks for the run's video_type
   useEffect(() => {
@@ -111,6 +116,7 @@ export function DeliveryMusic({
   const handleGenerateNew = async () => {
     setGenerating(true);
     setGenerateError(null);
+    setFallbackNotice(null);
     try {
       const res = await authedFetch(`/api/admin/studio/delivery/${runId}`, {
         method: 'POST',
@@ -123,14 +129,22 @@ export function DeliveryMusic({
       }
       const d = await res.json() as GenerateMusicResponse;
       const newTrack = d.track;
-      // Append to track list
+      // Append to track list (library fallback tracks may already be in the list)
       setTracks((prev) => {
         if (prev.some((t) => t.id === newTrack.id)) return prev;
         return [...prev, newTrack];
       });
-      // Auto-select the generated track
-      await handleSelectTrack(newTrack.id, 'generated');
-      onChanged();
+      if (d.fallback) {
+        // Server auto-fell back to a library track — select it silently and
+        // show a non-blocking amber notice instead of an error.
+        setSelectedId(newTrack.id);
+        setFallbackNotice({ trackName: newTrack.name, warning: d.warning ?? '' });
+        onChanged();
+      } else {
+        // Successful generation — auto-select the new track.
+        await handleSelectTrack(newTrack.id, 'generated');
+        onChanged();
+      }
     } catch (err) {
       setGenerateError(err instanceof Error ? err.message : 'Music generation failed');
     } finally {
@@ -283,6 +297,22 @@ export function DeliveryMusic({
             Creates a fresh AI track for this mood and adds it to the library
           </span>
         </div>
+        {fallbackNotice && (
+          <div
+            className="studio-warn-strip"
+            role="status"
+            style={{ padding: '6px 10px', fontSize: 12 }}
+          >
+            <span style={{ color: 'var(--le-warn, #b54708)', fontWeight: 500 }}>
+              Music generation unavailable — library track &ldquo;{fallbackNotice.trackName}&rdquo; was used instead.
+            </span>
+            {fallbackNotice.warning && (
+              <span style={{ color: 'var(--le-warn, #b54708)', marginLeft: 6 }}>
+                ({fallbackNotice.warning})
+              </span>
+            )}
+          </div>
+        )}
         {generateError && (
           <span className="studio-error-strip" style={{ padding: '4px 10px', fontSize: 12 }}>
             {generateError} — pick a library track or skip this step.

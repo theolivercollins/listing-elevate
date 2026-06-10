@@ -5,7 +5,10 @@ import '../../styles/studio-design.css';
 
 type PreviewData = {
   address: string;
+  /** Back-compat single-video field (horizontal ?? vertical). */
   video_url: string | null;
+  /** Both formats when available. */
+  videos?: { horizontal: string | null; vertical: string | null } | null;
   brand: { logo: string | null; agent_name: string | null; name: string } | null;
 };
 
@@ -129,25 +132,61 @@ export default function PreviewPage() {
         {/* Address heading */}
         <h1 className="studio-preview-h1">{data.address}</h1>
 
-        {/* Video player */}
-        {data.video_url ? (
-          <video
-            src={data.video_url}
-            controls
-            playsInline
-            className="studio-video"
-            style={{ marginBottom: 16 }}
-          />
-        ) : (
-          <div
-            className="studio-kanban-empty"
-            style={{ padding: 48, textAlign: 'center', marginBottom: 16 }}
-          >
-            <p style={{ fontSize: 14, color: 'var(--le-muted)' }}>
-              Video not yet available.
-            </p>
-          </div>
-        )}
+        {/* Video player(s) */}
+        {(() => {
+          const hUrl = data.videos?.horizontal ?? null;
+          const vUrl = data.videos?.vertical ?? null;
+          const hasHorizontal = Boolean(hUrl);
+          const hasVertical = Boolean(vUrl);
+
+          if (!hasHorizontal && !hasVertical) {
+            return (
+              <div
+                className="studio-kanban-empty"
+                style={{ padding: 48, textAlign: 'center', marginBottom: 16 }}
+              >
+                <p style={{ fontSize: 14, color: 'var(--le-muted)' }}>
+                  Video not yet available.
+                </p>
+              </div>
+            );
+          }
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 16 }}>
+              {hasHorizontal && (
+                <div>
+                  {hasVertical && (
+                    <p style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)', marginBottom: 8 }}>
+                      Horizontal (16:9)
+                    </p>
+                  )}
+                  <video
+                    src={hUrl!}
+                    controls
+                    playsInline
+                    className="studio-video"
+                  />
+                </div>
+              )}
+              {hasVertical && (
+                <div>
+                  {hasHorizontal && (
+                    <p style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)', marginBottom: 8 }}>
+                      Vertical (9:16)
+                    </p>
+                  )}
+                  <video
+                    src={vUrl!}
+                    controls
+                    playsInline
+                    className="studio-video studio-video--vertical"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Agent caption */}
         {data.brand?.agent_name && (

@@ -610,6 +610,15 @@
   display: block;
 }
 
+/* Vertical (9:16) variant — height-constrained so it never dominates
+   the viewport. Width: auto preserves aspect ratio. */
+.studio-scope .studio-video--vertical {
+  width: auto;
+  max-height: min(70vh, 640px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* ─── Scene strip card ───────────────────────────────────────────── */
 .studio-scope .studio-scene-card {
   flex: none;

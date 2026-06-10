@@ -57,6 +57,7 @@
     { "src": "/api/admin/studio/properties/([^/]+)/scenes/([^/]+)/swap-clip", "dest": "/api/admin/studio/properties/[id]/scenes/[idx]/swap-clip?id=$1&idx=$2" },
     { "src": "/api/admin/studio/properties/([^/]+)/preview-link", "dest": "/api/admin/studio/properties/[id]/preview-link?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)/notes", "dest": "/api/admin/studio/properties/[id]/notes?id=$1" },
+    { "src": "/api/admin/studio/properties/([^/]+)/download", "dest": "/api/admin/studio/properties/[id]/download?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)", "dest": "/api/admin/studio/properties/[id]?id=$1" },
     { "src": "/api/admin/studio/delivery/([^/]+)", "dest": "/api/admin/studio/delivery/[runId]?runId=$1" },
     { "src": "/api/admin/studio/clients/([^/]+)", "dest": "/api/admin/studio/clients/[id]?id=$1" },

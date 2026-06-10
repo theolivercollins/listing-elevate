@@ -18,3 +18,13 @@ it('keeps director order within a room bucket and tolerates null room types', ()
   ]);
   expect(order).toEqual(['a', 'b']);
 });
+
+it('drafts lanai mid-walkthrough rather than trailing the order', () => {
+  const order = draftOrderFromWinners([
+    { id: 's-pool', scene_number: 4, room_type: 'pool' },
+    { id: 's-lanai', scene_number: 3, room_type: 'lanai' },
+    { id: 's-living', scene_number: 1, room_type: 'living_room' },
+    { id: 's-back', scene_number: 5, room_type: 'exterior_back' },
+  ]);
+  expect(order).toEqual(['s-living', 's-lanai', 's-pool', 's-back']);
+});

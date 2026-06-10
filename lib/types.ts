@@ -37,6 +37,12 @@ export type RoomType =
   | "media_room"
   | "gym"
   | "mudroom"
+  // Outdoor covered living space. The active per-photo analyzer
+  // (lib/providers/gemini-analyzer.ts) emits this room_type, so it must be a
+  // first-class union member — omitting it dropped lanai scenes into the
+  // assembly walkthrough's trailing "uncategorized" bucket (prod incident
+  // 2026-06-10, property 0cdb242c). See lib/assembly/scene-ordering.ts.
+  | "lanai"
   | "other";
 
 export type DepthRating = "high" | "medium" | "low";
