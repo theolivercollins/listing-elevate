@@ -16,6 +16,8 @@
  *   Agent-Headshot-Final     image  agent headshot — left as template default
  *                                   until user_profiles.headshot_url exists
  *   Audio-Music              audio  background music URL
+ *   Audio-Voiceover          audio  AI voiceover URL (current template track name)
+ *   Voice-Over               audio  AI voiceover URL (legacy template track name)
  *   Clip-1 … Clip-8          video  walkthrough clip URLs
  *
  * Creatomate silently ignores keys for placeholders the template doesn't have,
@@ -77,9 +79,10 @@ export interface ModificationContext {
   /** Optional agent headshot URL → Agent-Headshot-Final.source. */
   agentHeadshotUrl?: string | null;
   /**
-   * AI voiceover MP3 URL → Voice-Over.source.
-   * When present the template swaps in the generated narration track.
-   * Templates without a Voice-Over element silently ignore this key.
+   * AI voiceover MP3 URL → Audio-Voiceover.source (current templates) and
+   * Voice-Over.source (legacy templates). When present the template swaps in
+   * the generated narration track. Templates without a matching element
+   * silently ignore the extra key.
    */
   voiceoverUrl?: string | null;
 }
@@ -137,7 +140,8 @@ export function buildTemplateModifications(
   }
 
   if (ctx.voiceoverUrl) {
-    mods["Voice-Over.source"] = ctx.voiceoverUrl;
+    mods["Audio-Voiceover.source"] = ctx.voiceoverUrl; // current template track name
+    mods["Voice-Over.source"] = ctx.voiceoverUrl; // legacy templates
   }
 
   return mods;

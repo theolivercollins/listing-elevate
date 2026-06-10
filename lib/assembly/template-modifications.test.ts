@@ -126,6 +126,29 @@ describe("buildTemplateModifications", () => {
     expect(mods["Agent-Headshot-Final.source"]).toBe("https://headshots/brian.png");
   });
 
+  it("writes Audio-Voiceover.source AND legacy Voice-Over.source when voiceoverUrl is provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+      voiceoverUrl: "https://audio/vo.mp3",
+    });
+    expect(mods["Audio-Voiceover.source"]).toBe("https://audio/vo.mp3");
+    expect(mods["Voice-Over.source"]).toBe("https://audio/vo.mp3");
+  });
+
+  it("omits voiceover keys when voiceoverUrl is not provided", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+    });
+    expect(mods).not.toHaveProperty("Audio-Voiceover.source");
+    expect(mods).not.toHaveProperty("Voice-Over.source");
+  });
+
   it("does not pollute output with music/headshot keys when not provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",

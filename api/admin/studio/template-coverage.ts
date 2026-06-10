@@ -26,7 +26,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         try {
           const tpl = await provider.getTemplate(templateId);
           // "Brand.phone"-style dynamic fields: element name + each dynamic property.
-          const fields = tpl.elements.flatMap((e) => e.dynamic.map((d) => `${e.name}.${d}`));
+          // Creatomate sometimes returns `dynamic` as a boolean — guard here too
+          // (defense in depth; getTemplate already normalizes to an array).
+          const fields = tpl.elements.flatMap((e) =>
+            Array.isArray(e.dynamic) ? e.dynamic.map((d) => `${e.name}.${d}`) : [],
+          );
           return { env_var: envVar, template_id: templateId, name: tpl.name, fields };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);

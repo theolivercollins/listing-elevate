@@ -677,7 +677,9 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       source?: {
         width?: number;
         height?: number;
-        elements?: Array<{ name?: string; type?: string; dynamic?: string[] }>;
+        // Creatomate returns `dynamic` as a string[] of property names for
+        // some elements but a plain boolean for others — normalize below.
+        elements?: Array<{ name?: string; type?: string; dynamic?: string[] | boolean }>;
       };
     };
     const src = data.source ?? {};
@@ -688,7 +690,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       elements: (src.elements ?? []).map((e) => ({
         name: e.name ?? "",
         type: e.type ?? "",
-        dynamic: e.dynamic ?? [],
+        dynamic: Array.isArray(e.dynamic) ? e.dynamic : [],
       })),
     };
   }

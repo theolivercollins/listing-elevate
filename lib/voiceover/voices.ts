@@ -11,7 +11,8 @@ export interface Voice {
   /** ElevenLabs voice_id as returned by GET /v1/voices */
   id: string;
   name: string;
-  gender: "male" | "female";
+  /** "custom" = a client's own cloned/custom ElevenLabs voice (not in the catalog). */
+  gender: "male" | "female" | "custom";
   description: string;
   /** Preview MP3 URL hosted by ElevenLabs — present for pre-built voices. */
   sampleUrl?: string;

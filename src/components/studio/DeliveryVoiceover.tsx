@@ -195,8 +195,15 @@ export function DeliveryVoiceover({
 
   // ─── Build ordered voice list (client voice prepended if present) ────────────
 
-  const clientVoiceEntry = clientVoiceId
-    ? voices.find((v) => v.id === clientVoiceId) ?? null
+  // The API prepends a synthesized entry for custom client voices; if an older
+  // API response omits it, synthesize a fallback rather than dropping the voice.
+  const clientVoiceEntry: Voice | null = clientVoiceId
+    ? voices.find((v) => v.id === clientVoiceId) ?? {
+        id: clientVoiceId,
+        name: 'Client voice',
+        gender: 'custom',
+        description: "Client's custom ElevenLabs voice",
+      }
     : null;
   const nonClientVoices = voices.filter((v) => v.id !== clientVoiceId);
   const orderedVoices = clientVoiceEntry
