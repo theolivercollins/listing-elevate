@@ -28,6 +28,7 @@ Customer flow stays byte-identical. Every new path gates on `order_mode='operato
 ### Schema (migration 079)
 - Add `clients.brokerage text`. Brand-kit injection (`lib/operator-studio/brand-kit.ts`) prefers `clients.brokerage`, falls back to `properties.brokerage`.
 - No new display-name column: `clients.agent_name` IS the display name; relabel in UI as "Display name (shown on videos)".
+- **Addendum (2026-06-10, `fix/operator-feedback-2`):** migration **081** adds `clients.realtor_suffix boolean` — per-client ", Realtor" display-name toggle (checkbox in ClientEdit). `applyRealtorSuffix()` in `brand-kit.ts` appends the suffix wherever the agent name reaches a template: `Brand.agent_name`, `Text-Agent-Name.text`, `Listing-Agent-Mid/Final.text`. Migration NOT yet applied to prod.
 
 ### Phone auto-format
 - Normalize to digits-only on save (`lib/utils/phone.ts`, pure, unit-tested).
@@ -56,6 +57,7 @@ RLS: same service-role-only posture as the other operator tables (migration 062 
 4. **Checkpoint A** — stepper in Command Center: drag-reorder draft order, regenerate a scene, flip A↔B. Every action → `ml_events`.
 5. **Details** — overlay fields pre-filled from `listing_details`; operator verifies/edits; edits logged.
 6. **Voiceover** — Sonnet 4.6 writes script from MLS description + details + video type (extend `lib/voiceover/`). Editable textarea (edits → `ml_events.script_edit` with before/after). Voice options: ElevenLabs V3 roster + client `voice_id` when set (badged "Client voice"). Audio generated on selection.
+   - **Addendum (2026-06-10, `fix/operator-feedback-2`):** word-budget trimming is now sentence-aware (no mid-sentence cutoffs); scripts may not open with "Welcome to"/"Step inside" (prompt constraint in both generators); and a **duration audit** runs after TTS — real MP3 duration measured (`estimateMp3DurationMs`, CBR 128kbps), and if audio exceeds `duration_seconds`+1s, Sonnet auto-shortens the script (max 2 passes; `cost_events` + `ml_events` `script_edit/auto_shorten` recorded), persisting the final script+audio together and surfacing `duration_warning` in the UI. A failed shorten keeps the last good audio (no wasted TTS spend).
 7. **Music** — 3 genre options library-first from `music_tracks`; "Generate new" button → `lib/providers/elevenlabs-music.ts`, new track joins library. Choice → `ml_events`.
 8. **Assemble** — existing Creatomate template path: brand kit + overlay details + voiceover + music. Reuse `rerunAssembly()` plumbing.
 9. **Checkpoint B** — four 1–5 ratings (overall, music, voiceover, script) + freeform comment. Haiku parses comment → structured tags (`pacing`, `voice_tone`, `clip_quality`, `music_fit`, `script_style`, `other`) stored with raw text in `ml_events.rating`/`comment`. Then `delivered`.
