@@ -18,7 +18,7 @@ import { sanitizeDirectorPrompt } from "./prompts/sanitize-director.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
 import { selectProvider, resolveDecision, resolveDecisionAsync, forceSeedancePushInPrompt } from "./providers/router.js";
 import type { ThompsonDecision } from "./providers/thompson-router.js";
-import { pollUntilComplete, type IVideoProvider } from "./providers/provider.interface.js";
+import { pollUntilComplete, type IVideoProvider, type GenerateClipParams } from "./providers/provider.interface.js";
 import { KlingProvider } from "./providers/kling.js";
 import { RunwayProvider } from "./providers/runway.js";
 import { AtlasProvider, type V1AtlasSku } from "./providers/atlas.js";
@@ -687,7 +687,7 @@ export async function submitLabRender(params: {
       aspectRatio: "16:9",
       modelOverride: SEEDANCE_SKU,
       // Thread the UI quality dropdown override (or default to descriptor's value).
-      resolution: (params.resolution as "480p" | "720p" | "1080p" | "4k") ?? undefined,
+      resolution: (params.resolution as GenerateClipParams["resolution"]) ?? undefined,
     });
     return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, staticSku, resolutionUsed: params.resolution ?? "1080p" };
   }
@@ -748,10 +748,11 @@ export async function submitLabRender(params: {
     // thompson stays undefined for escape-hatch path
     staticSku = resolvedSku;
   } else if (params.endImageUrl) {
-    // Paired scene: always use kling-v2-1-pair via Atlas.
+    // Paired scene: always use kling-v3-pro via Atlas (end_image support;
+    // upgraded from kling-v2-1-pair 2026-06-10).
     // Thompson does not run on paired scenes per P5 design.
-    resolvedSku = "kling-v2-1-pair" as unknown as V1AtlasSku;
-    provider = new AtlasProvider("kling-v2-1-pair");
+    resolvedSku = "kling-v3-pro" as unknown as V1AtlasSku;
+    provider = new AtlasProvider("kling-v3-pro");
     // thompson stays undefined; staticSku equals the paired SKU itself.
     staticSku = resolvedSku;
   } else {
@@ -780,7 +781,7 @@ export async function submitLabRender(params: {
     aspectRatio: "16:9",
     endImageUrl: params.endImageUrl ?? undefined,
     // Thread the UI quality dropdown override through to the provider body.
-    resolution: (params.resolution as "480p" | "720p" | "1080p" | "4k") ?? undefined,
+    resolution: (params.resolution as GenerateClipParams["resolution"]) ?? undefined,
   });
   return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, thompson, staticSku, resolutionUsed: params.resolution ?? null };
 }

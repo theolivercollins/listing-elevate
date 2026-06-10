@@ -7,6 +7,19 @@
 // these values = perSecond × 5. If a 10-second clip is rendered, real
 // cost is 2x the label.
 
+// Resolution values across Lab SKUs. The `-SR` tiers are Seedance 2.0's
+// super-resolution (FlashVSR) variants — they replaced the retired
+// standalone "upscaled"/2K Atlas variant 2026-06. Mirrors
+// lib/providers/atlas.ts::AtlasResolution.
+export type LabResolution =
+  | "480p"
+  | "720p"
+  | "720p-SR"
+  | "1080p"
+  | "1080p-SR"
+  | "1440p-SR"
+  | "4k";
+
 export interface LabModelInfo {
   key: string;
   slug: string;
@@ -20,7 +33,7 @@ export interface LabModelInfo {
    * UI default. When absent or single-element, the resolution picker is
    * hidden — there's no meaningful choice to make.
    */
-  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "2k" | "4k">;
+  supportedResolutions?: ReadonlyArray<LabResolution>;
   note?: string;
   hidden?: boolean;
 }
@@ -66,14 +79,14 @@ export const LAB_MODELS: LabModelInfo[] = [
   },
   {
     key: "seedance-pro-pushin",
-    slug: "bytedance/seedance-2.0/image-to-video-upscaled",
-    label: "Seedance 2.0 (push-in, 2K)",
+    slug: "bytedance/seedance-2.0/image-to-video",
+    label: "Seedance 2.0 (push-in, 1080p SR)",
     shortLabel: "Seedance 2.0",
-    priceCents: 65,          // 13 ¢/s × 5s — matches atlas.ts 2K upscaled placeholder
-    priceLabel: "$0.65",
+    priceCents: 48,          // 9.6 ¢/s × 5s — matches atlas.ts (live Atlas catalog 2026-06-10)
+    priceLabel: "$0.48",
     supportsEndFrame: false,
-    supportedResolutions: ["2k", "1080p", "720p", "480p"],  // Atlas upscaled variant tops out at 2K (2048×1080)
-    note: "Bytedance Seedance 2.0 (2K upscaled) via Atlas. Push-in only. FFmpeg speed-ramp polish applied on download.",
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],  // -SR = FlashVSR super-res tiers (replaced retired 2K upscaled variant)
+    note: "Bytedance Seedance 2.0 via Atlas, 1080p super-res default. Push-in only. FFmpeg speed-ramp polish applied on download.",
   },
   // ── v1 SKUs ──────────────────────────────────────────────────────────────
   {
@@ -179,7 +192,7 @@ export function getV1_1LabModels(): LabModelInfo[] {
  *
  * The UI should hide the resolution picker when the returned array has length ≤ 1.
  */
-export function getSupportedResolutions(sku: string): ReadonlyArray<"480p" | "720p" | "1080p" | "4k"> {
+export function getSupportedResolutions(sku: string): ReadonlyArray<LabResolution> {
   const model = getLabModel(sku);
   if (model?.supportedResolutions && model.supportedResolutions.length > 0) {
     return model.supportedResolutions;

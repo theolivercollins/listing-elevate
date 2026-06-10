@@ -59,7 +59,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Validate resolution if provided — must be in the known set.
-  const VALID_RESOLUTIONS = ["480p", "720p", "1080p", "4k"] as const;
+  // -SR values are Seedance 2.0's super-resolution tiers (2026-06 Atlas catalog).
+  const VALID_RESOLUTIONS = ["480p", "720p", "720p-SR", "1080p", "1080p-SR", "1440p-SR", "4k"] as const;
   if (resolutionParam != null && !(VALID_RESOLUTIONS as readonly string[]).includes(resolutionParam)) {
     return res.status(400).json({
       error: `resolution="${resolutionParam}" is not valid. Must be one of: ${VALID_RESOLUTIONS.join(", ")}`,

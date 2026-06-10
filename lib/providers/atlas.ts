@@ -15,6 +15,20 @@ import { ensureSourceAspectRatio } from "../services/source-aspect.js";
 // `priceCentsPerClip` below is the per-second rate × 5 (default clip
 // length). If the render duration differs, compute dynamically via
 // priceCentsPerSecond × actualSeconds.
+// Resolution values accepted across Atlas-hosted models. The `-SR` variants
+// are Seedance 2.0's super-resolution tiers (FlashVSR pass folded into the
+// main model 2026-06 — they replaced the retired standalone "upscaled"/2K
+// variant). Kling SKUs only ever use "1080p"; "4k" is reserved for future
+// SKUs (Veo-class) so UI mirrors can share the union.
+export type AtlasResolution =
+  | "480p"
+  | "720p"
+  | "720p-SR"
+  | "1080p"
+  | "1080p-SR"
+  | "1440p-SR"
+  | "4k";
+
 export interface AtlasModelDescriptor {
   slug: string;                                   // `model` value Atlas expects
   endFrameField: "end_image" | null;
@@ -25,24 +39,25 @@ export interface AtlasModelDescriptor {
   /**
    * Optional render resolution forwarded to the underlying Replicate model
    * via the `resolution` input field. When set, Atlas passes it through to
-   * the model (Seedance accepts '480p' | '720p' | '1080p'; some Kling
-   * variants support similar fields). When unset, the model uses its own
-   * default — for Bytedance Seedance that's '720p', which observably
-   * underuses the model's native quality. Kling variants typically have
-   * a fixed output resolution baked into the model (v2 Master is 1080p,
-   * v2.6 Pro is 1080p, etc.) so this field is a no-op there.
+   * the model (Seedance 2.0 accepts '480p' | '720p' | '720p-SR' | '1080p' |
+   * '1080p-SR' | '1440p-SR'; some Kling variants support similar fields).
+   * When unset, the model uses its own default — for Bytedance Seedance
+   * that's '720p', which observably underuses the model's native quality.
+   * Kling variants typically have a fixed output resolution baked into the
+   * model (v2 Master is 1080p, v2.6 Pro is 1080p, etc.) so this field is a
+   * no-op there.
    *
    * This is the descriptor-level DEFAULT. It can be overridden per-render
    * via `GenerateClipParams.resolution` (UI quality dropdown).
    */
-  resolution?: "480p" | "720p" | "1080p" | "2k";
+  resolution?: AtlasResolution;
   /**
    * Ordered list of resolutions the underlying model can produce. First
    * entry is the default selection in the UI. When unset or single-element,
    * the UI hides the resolution picker (no meaningful choice to make).
    * Seedance has a real multi-res picker; Kling SKUs are fixed at 1080p.
    */
-  supportedResolutions?: ReadonlyArray<"480p" | "720p" | "1080p" | "2k" | "4k">;
+  supportedResolutions?: ReadonlyArray<AtlasResolution>;
   /**
    * Optional `generate_audio` flag forwarded to the underlying Replicate
    * model. Only Bytedance Seedance 2.0 generates audio by default — set
@@ -135,36 +150,34 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
   },
   // v1.1 pipeline mode (added 2026-05-23) — Bytedance Seedance 2.0 push-in via Atlas.
-  // Slug confirmed by Oliver 2026-05-23: bytedance/seedance-2.0/image-to-video.
-  // SEEDANCE_ATLAS_SLUG env var still honored as an escape hatch (chasing the
-  // next release train without a code change) but no longer required.
   //
-  // Resolution forced to 1080p (2026-05-24): without an explicit resolution
-  // field Seedance defaults to 720p (observed: 5 MB / 5s ≈ 8 Mbps). Pushing
-  // to 1080p doubles file size + roughly doubles per-second cost on Replicate
-  // (the published Seedance Pro rate scales with output pixels). Worth it for
-  // customer-facing v1.1 output — the model's native quality is high enough
-  // that the extra resolution actually shows. Price bumped from 14 → 28 ¢/s
-  // to reflect 1080p tier (still a placeholder, verify against first invoice).
-  // Max-quality default (2026-06-01): the Atlas Seedance 2.0 *upscaled* variant
-  // adds a FlashVSR super-resolution pass to reach 2K (2048×1080) — the highest
-  // the Seedance family exposes (no Seedance variant does native 4K). Atlas's
-  // per-second rate for the upscaled tier (~12–13¢/s) is actually LOWER than the
-  // old 28¢ 1080p placeholder, so this is a quality win at neutral-or-lower cost.
-  // Both slug and resolution are env-overridable for instant rollback without a
-  // deploy (SEEDANCE_ATLAS_SLUG → standard 1080p model; SEEDANCE_RESOLUTION →
-  // "1080p") if the upscaled variant misbehaves on a render. Verify the real
-  // per-second cost against the first Atlas invoice.
+  // Slug fixed 2026-06-10 against the LIVE Atlas catalog (GET /api/v1/models):
+  // the standalone "image-to-video-upscaled" variant was RETIRED by Atlas —
+  // every submit against it returned 400 "not found", which silently failed
+  // all v1.1 scenes over to the Kling fallback. Atlas folded the upscaled/2K
+  // tier into the main model as resolution values: the schema now enumerates
+  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR']
+  // (default 720p) — "2k" is no longer valid. The `-SR` tiers run the
+  // FlashVSR super-resolution pass that the old upscaled variant provided.
+  //
+  // Default resolution "1080p-SR": SR is the quality tier that replaced the
+  // old 2K upscale, and 1080p matches our delivery output. Both slug and
+  // resolution remain env-overridable for instant rollback without a deploy
+  // (SEEDANCE_ATLAS_SLUG / SEEDANCE_RESOLUTION) if Atlas shuffles the
+  // catalog again.
+  //
+  // Note: Seedance 2.0 now supports `last_image` upstream, but enabling
+  // pairs on Seedance is out of scope — paired scenes route to Kling 3 Pro.
   "seedance-pro-pushin": {
-    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video-upscaled",
-    endFrameField: null,         // Seedance has no start+end-frame support
-    allowedDurations: [5, 10],
-    resolution: (process.env.SEEDANCE_RESOLUTION as "2k" | "1080p" | "720p" | "480p" | undefined) ?? "2k",
-    supportedResolutions: ["2k", "1080p", "720p", "480p"],
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: null,         // Seedance pairs not enabled (see note above)
+    allowedDurations: [5, 10],   // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p-SR",
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],
     generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
-    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts); upscale pass governs output res
-    priceCentsPerSecond: 13,     // ⚠️  placeholder for Atlas 2K upscaled tier — verify against invoice
-    priceCentsPerClip: 65,       // 13 × 5
+    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts)
+    priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
+    priceCentsPerClip: 48,       // 9.6 × 5
   },
 };
 
@@ -238,12 +251,12 @@ export interface AtlasSubmitBody {
   cfg_scale?: number;
   negative_prompt?: string;
   end_image?: string;
-  /** Forwarded to the underlying Replicate model when set. Seedance honors
-   *  '480p' | '720p' | '1080p'; the Atlas Seedance 2.0 *upscaled* variant also
-   *  honors '2k' (2048×1080, FlashVSR super-resolution pass). Kling variants
+  /** Forwarded to the underlying Replicate model when set. Seedance 2.0
+   *  honors '480p' | '720p' | '720p-SR' | '1080p' | '1080p-SR' | '1440p-SR'
+   *  (the -SR tiers run the FlashVSR super-resolution pass). Kling variants
    *  ignore it (their output res is fixed per-SKU). Atlas passes through
    *  unrecognized fields to the model's input schema, so it's safe to send. */
-  resolution?: "480p" | "720p" | "1080p" | "2k";
+  resolution?: AtlasResolution;
   /** Forwarded to Seedance 2.0 to disable native audio/music generation.
    *  Ignored by other models. */
   generate_audio?: boolean;
@@ -285,10 +298,10 @@ export function buildAtlasRequestBody(
   // output resolution is fixed in-model and passing a value is a no-op.
   const effectiveResolution = params.resolution ?? model.resolution;
   if (effectiveResolution) {
-    // AtlasSubmitBody.resolution accepts '480p'|'720p'|'1080p'|'2k'. Cast is
+    // AtlasSubmitBody.resolution accepts the AtlasResolution union. Cast is
     // safe: the UI only offers values from the SKU's supportedResolutions array,
     // and the descriptor default is one of these.
-    body.resolution = effectiveResolution as "480p" | "720p" | "1080p" | "2k";
+    body.resolution = effectiveResolution as AtlasResolution;
   }
   // Forward generate_audio when the descriptor opts in (Seedance 2.0 only —
   // kills its default music track). Atlas passes through to Replicate's

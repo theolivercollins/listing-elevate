@@ -174,7 +174,7 @@ describe("router — production scene routing (Lab parity)", () => {
     expect(decision.provider).toBe("runway");
   });
 
-  it("paired scene (end_photo_id set) still routes to Atlas kling-v2-1-pair (unchanged)", () => {
+  it("paired scene (end_photo_id set) routes to Atlas kling-v3-pro (upgraded from kling-v2-1-pair 2026-06-10)", () => {
     const decision = selectProviderForScene({
       endPhotoId: "photo-end-uuid",
       movement: "push_in",
@@ -182,7 +182,7 @@ describe("router — production scene routing (Lab parity)", () => {
       preference: null,
     });
     expect(decision.provider).toBe("atlas");
-    expect(decision.modelKey).toBe("kling-v2-1-pair");
+    expect(decision.modelKey).toBe("kling-v3-pro");
   });
 
   it("paired-scene rule wins even for drone movements", () => {
@@ -193,6 +193,6 @@ describe("router — production scene routing (Lab parity)", () => {
       preference: null,
     });
     expect(decision.provider).toBe("atlas");
-    expect(decision.modelKey).toBe("kling-v2-1-pair");
+    expect(decision.modelKey).toBe("kling-v3-pro");
   });
 });

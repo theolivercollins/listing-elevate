@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider } from "../atlas.js";
+import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider, atlasClipCostCents } from "../atlas.js";
 import { __setTransformForTests } from "../../services/source-aspect.js";
 import type { GenerateClipParams } from "../provider.interface.js";
 
@@ -75,15 +75,36 @@ describe("buildAtlasRequestBody", () => {
     expect(klingLong.duration).toBe(10);
   });
 
-  it("forwards resolution='2k' for the Seedance SKU descriptor (max-quality upscaled default)", () => {
+  it("forwards resolution='1080p-SR' for the Seedance SKU descriptor (super-res default — replaced the retired 2K upscale tier)", () => {
     const body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["seedance-pro-pushin"]);
-    expect(body.resolution).toBe("2k");
+    expect(body.resolution).toBe("1080p-SR");
   });
 
-  it("routes Seedance to the Atlas 2K upscaled variant slug by default", () => {
+  it("routes Seedance to the current Seedance 2.0 slug by default (standalone upscaled variant was retired by Atlas)", () => {
     expect(ATLAS_MODELS["seedance-pro-pushin"].slug).toBe(
-      "bytedance/seedance-2.0/image-to-video-upscaled",
+      "bytedance/seedance-2.0/image-to-video",
     );
+  });
+
+  it("Seedance request uses the new slug + 1080p-SR and still omits end_image even when endImageUrl is passed", () => {
+    const body = buildAtlasRequestBody(
+      { ...baseParams, endImageUrl: "https://cdn.example.com/end.jpg" },
+      ATLAS_MODELS["seedance-pro-pushin"],
+    );
+    expect(body.model).toBe("bytedance/seedance-2.0/image-to-video");
+    expect(body.resolution).toBe("1080p-SR");
+    // endFrameField is null on the Seedance descriptor — pairs on Seedance
+    // are deliberately not enabled (last_image exists upstream, out of scope).
+    expect((body as unknown as Record<string, unknown>).end_image).toBeUndefined();
+    expect((body as unknown as Record<string, unknown>).last_image).toBeUndefined();
+  });
+
+  it("supportedResolutions for Seedance matches the live Atlas enum (no '2k')", () => {
+    const supported = ATLAS_MODELS["seedance-pro-pushin"].supportedResolutions ?? [];
+    expect([...supported].sort()).toEqual(
+      ["480p", "720p", "720p-SR", "1080p", "1080p-SR", "1440p-SR"].sort(),
+    );
+    expect(supported).not.toContain("2k" as never);
   });
 
   it("still honors an explicit per-render resolution override over the descriptor default", () => {
@@ -109,6 +130,12 @@ describe("buildAtlasRequestBody", () => {
   it("omits generate_audio for Kling descriptors (they don't generate audio)", () => {
     const klingBody = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v2-master"]);
     expect(klingBody.generate_audio).toBeUndefined();
+  });
+
+  it("Seedance pricing matches the live catalog: 9.6¢/s → 48¢ for a 5s clip", () => {
+    expect(ATLAS_MODELS["seedance-pro-pushin"].priceCentsPerSecond).toBe(9.6);
+    expect(ATLAS_MODELS["seedance-pro-pushin"].priceCentsPerClip).toBe(48);
+    expect(atlasClipCostCents("seedance-pro-pushin", 5)).toBe(48);
   });
 });
 

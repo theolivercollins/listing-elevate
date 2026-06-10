@@ -88,7 +88,7 @@ export { TARGET_SCENE_COUNT, MAX_PER_ROOM_TYPE, REQUIRED_ROOM_TYPES };
  * Motivation: v1.1 routes ALL non-paired scenes to a Seedance push-in SKU at
  * render time, so the value stored in the `scenes` table should reflect that
  * reality rather than whatever 11-verb movement the director planned. Paired
- * scenes (`end_photo_id` set) are routed to `kling-v2-1-pair` and keep their
+ * scenes (`end_photo_id` set) are routed to `kling-v3-pro` and keep their
  * original movement untouched.
  *
  * Pure — inputs are never mutated; new objects are returned.
@@ -931,7 +931,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
 
     // C.1: Build the failover sequence using the new ProviderDecision shape.
     // selectProviderForScene handles the paired-scene rule (end_photo_id set
-    // → atlas + kling-v2-1-pair) before delegating to the movement table.
+    // → atlas + kling-v3-pro) before delegating to the movement table.
     // The decision's .fallback chain carries the next provider to try on
     // permanent errors, so we don't need to re-call the router mid-loop.
     const excluded: VideoProvider[] = [];
@@ -966,7 +966,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
           aspectRatio: "16:9",
           endImageUrl: scene.end_image_url ?? undefined,
           // C.1: forward the Atlas SKU override from the decision so AtlasProvider
-          // calls kling-v2-1-pair (or whichever model the router selected) rather
+          // calls kling-v3-pro (or whichever model the router selected) rather
           // than the ATLAS_VIDEO_MODEL env default.
           modelOverride: decision.modelKey,
         });
