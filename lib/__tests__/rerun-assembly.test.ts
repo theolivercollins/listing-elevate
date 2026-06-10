@@ -187,6 +187,9 @@ function makeChain(data: unknown) {
   const resolve = vi.fn().mockResolvedValue({ data, error: null });
   chain.select = vi.fn().mockReturnValue(chain);
   chain.eq = vi.fn().mockReturnValue(chain);
+  chain.neq = vi.fn().mockReturnValue(chain);
+  chain.order = vi.fn().mockReturnValue(chain);
+  chain.limit = vi.fn().mockReturnValue(chain);
   chain.in = vi.fn().mockReturnValue(chain);
   chain.update = vi.fn().mockReturnValue(chain);
   chain.upsert = vi.fn().mockReturnValue(chain);
@@ -224,6 +227,10 @@ describe("rerunAssembly", () => {
       from: vi.fn((table: string) => {
         if (table === "photos") {
           return makeChain({ id: "photo-1", room_type: "living_room" });
+        }
+        if (table === "delivery_runs") {
+          // Customer flow: no delivery run -> deterministic order untouched.
+          return makeChain(null);
         }
         return makeChain(PROP_COMPLETE);
       }),

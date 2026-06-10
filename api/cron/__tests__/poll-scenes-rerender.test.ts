@@ -144,6 +144,19 @@ function makeSupabase(opts: {
       };
     }
 
+    if (table === "delivery_runs") {
+      // Task 11 gate: no delivery run → customer flow unchanged.
+      const chain: Record<string, unknown> = {};
+      chain.select = () => chain;
+      chain.eq = () => chain;
+      chain.neq = () => chain;
+      chain.in = () => Promise.resolve({ data: [], error: null });
+      chain.order = () => chain;
+      chain.limit = () => chain;
+      chain.maybeSingle = () => Promise.resolve({ data: null, error: null });
+      return chain;
+    }
+
     return {
       select: () => Promise.resolve({ data: [], error: null }),
       update: () => ({ eq: () => Promise.resolve({ error: null }) }),

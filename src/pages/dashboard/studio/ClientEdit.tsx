@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
 import { authedFetch } from "@/lib/api";
+import { normalizePhone, formatAsYouType } from '../../../../lib/utils/phone';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +18,24 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { uploadSingleFile, getStoragePublicUrl } from '@/lib/photo-upload';
 
+// ─── Brand field coverage map ─────────────────────────────────────────────────
+// templateKeys: the Creatomate element placeholder keys this brand field feeds.
+// Keys sourced from lib/operator-studio/brand-kit.ts (BRAND_KEY_MAP) and
+// lib/assembly/template-modifications.ts (real element names).
+const BRAND_FIELD_SOURCES: Array<{
+  label: string;
+  templateKeys: string[];
+  hasValue: (f: ClientFormState) => boolean;
+}> = [
+  { label: 'Logo',      templateKeys: ['Brand.logo'],                                    hasValue: (f) => !!f.brand_logo_url },
+  { label: 'Primary',   templateKeys: ['Brand.primary'],                                 hasValue: (f) => !!f.brand_primary_hex },
+  { label: 'Secondary', templateKeys: ['Brand.secondary'],                               hasValue: (f) => !!f.brand_secondary_hex },
+  { label: 'Name',      templateKeys: ['Brand.agent_name', 'Text-Agent-Name.text', 'Listing-Agent-Mid.text', 'Listing-Agent-Final.text'],                      hasValue: (f) => !!f.agent_name },
+  { label: 'Headshot',  templateKeys: ['Brand.agent_headshot', 'Image-Headshot.source', 'Agent-Headshot-Final.source'],                                         hasValue: (f) => !!f.agent_headshot_url },
+  { label: 'Brokerage', templateKeys: ['Brand.brokerage', 'Text-Brokerage-Team.text', 'Listing-Brokerage-Mid.text', 'Listing-Brokerage-Final.text'],            hasValue: (f) => !!f.brokerage },
+  { label: 'Phone',     templateKeys: ['Brand.phone', 'Text-Phone-Number.text'],         hasValue: (f) => !!f.phone },
+];
+
 // ─── Form state ───────────────────────────────────────────────────────────────
 
 interface ClientFormState {
@@ -29,6 +48,7 @@ interface ClientFormState {
   brand_primary_hex: string;
   brand_secondary_hex: string;
   agent_name: string;
+  brokerage: string;
   agent_headshot_url: string;
   voice_id: string;
 }
@@ -43,6 +63,7 @@ const EMPTY_FORM: ClientFormState = {
   brand_primary_hex: '#000000',
   brand_secondary_hex: '#ffffff',
   agent_name: '',
+  brokerage: '',
   agent_headshot_url: '',
   voice_id: '',
 };
@@ -102,6 +123,33 @@ const ClientEdit = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // ─── Template coverage ───────────────────────────────────────────────────────
+  type CoverageTemplate = {
+    env_var: string;
+    template_id: string;
+    name: string | null;
+    fields: string[];
+    error?: string;
+  };
+  const [coverage, setCoverage] = useState<CoverageTemplate[] | null>(null);
+  const [coverageError, setCoverageError] = useState<string | null>(null);
+
+  const fetchCoverage = useCallback(async () => {
+    try {
+      const res = await authedFetch('/api/admin/studio/template-coverage');
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const data = await res.json();
+      setCoverage(data.templates);
+      setCoverageError(null);
+    } catch (err) {
+      setCoverageError(err instanceof Error ? err.message : 'Failed to load template coverage');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isNew) fetchCoverage();
+  }, [isNew, fetchCoverage]);
+
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [headshotFile, setHeadshotFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
@@ -126,7 +174,7 @@ const ClientEdit = () => {
           setForm({
             name: c.name ?? '',
             contact_email: c.contact_email ?? '',
-            phone: c.phone ?? '',
+            phone: formatAsYouType(c.phone ?? ''),
             monthly_rate_dollars:
               c.monthly_rate_cents != null
                 ? String(Math.round(c.monthly_rate_cents / 100))
@@ -136,6 +184,7 @@ const ClientEdit = () => {
             brand_primary_hex: c.brand_primary_hex ?? '#000000',
             brand_secondary_hex: c.brand_secondary_hex ?? '#ffffff',
             agent_name: c.agent_name ?? '',
+            brokerage: c.brokerage ?? '',
             agent_headshot_url: c.agent_headshot_url ?? '',
             voice_id: c.voice_id ?? '',
           });
@@ -198,13 +247,14 @@ const ClientEdit = () => {
       const payload = {
         name: form.name.trim(),
         contact_email: form.contact_email.trim() || null,
-        phone: form.phone.trim() || null,
+        phone: normalizePhone(form.phone) || null,
         monthly_rate_cents: centsFromDollars(form.monthly_rate_dollars),
         notes: form.notes.trim() || null,
         brand_logo_url: logoUrl || null,
         brand_primary_hex: form.brand_primary_hex || null,
         brand_secondary_hex: form.brand_secondary_hex || null,
         agent_name: form.agent_name.trim() || null,
+        brokerage: form.brokerage.trim() || null,
         agent_headshot_url: headshotUrl || null,
         voice_id: form.voice_id.trim() || null,
       };
@@ -382,8 +432,8 @@ const ClientEdit = () => {
                   className="studio-input"
                   type="tel"
                   value={form.phone}
-                  onChange={(e) => setField('phone', e.target.value)}
-                  placeholder="+1 555 000 0000"
+                  onChange={(e) => setField('phone', formatAsYouType(e.target.value))}
+                  placeholder="(941) 205-9011"
                 />
               </div>
             </div>
@@ -541,13 +591,27 @@ const ClientEdit = () => {
 
             {/* Agent name */}
             <div>
-              <FieldLabel>Agent name</FieldLabel>
+              <FieldLabel>Display name (shown on videos)</FieldLabel>
               <input
                 className="studio-input"
                 value={form.agent_name}
                 onChange={(e) => setField('agent_name', e.target.value)}
                 placeholder="Jane Smith"
               />
+            </div>
+
+            {/* Brokerage */}
+            <div>
+              <FieldLabel>Brokerage</FieldLabel>
+              <input
+                className="studio-input"
+                value={form.brokerage}
+                onChange={(e) => setField('brokerage', e.target.value)}
+                placeholder="RE/MAX Harbor Realty"
+              />
+              <p style={{ marginTop: 5, fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+                Shown on videos. Falls back to the listing's brokerage when blank.
+              </p>
             </div>
 
             {/* Headshot upload */}
@@ -586,6 +650,85 @@ const ClientEdit = () => {
             </div>
           </div>
         </div>
+
+        {/* ── Template coverage (edit mode only) ── */}
+        {!isNew && (
+          <div className="studio-card" style={{ padding: 24 }}>
+            <SectionHeading>Template coverage</SectionHeading>
+            {coverageError && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-bad)', marginBottom: 12 }}>
+                {coverageError}
+              </p>
+            )}
+            {coverage === null && !coverageError && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>Loading…</p>
+            )}
+            {coverage !== null && coverage.length === 0 && (
+              <p style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
+                No Creatomate template env vars configured.
+              </p>
+            )}
+            {coverage !== null && coverage.map((tpl) => (
+              <div
+                key={tpl.env_var}
+                style={{ marginBottom: 20, paddingBottom: 20, borderBottom: '1px solid var(--le-line)' }}
+              >
+                {tpl.error ? (
+                  <div>
+                    <p style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--le-text)', marginBottom: 4 }}>
+                      {tpl.env_var}
+                    </p>
+                    <p style={{ fontSize: 12, color: 'var(--le-bad)' }}>{tpl.error}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--le-text)', marginBottom: 8 }}>
+                      {tpl.name ?? tpl.env_var}
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {BRAND_FIELD_SOURCES.map((src) => {
+                        const inTemplate = src.templateKeys.some((k) => tpl.fields.includes(k));
+                        const filled = src.hasValue(form);
+                        let bg: string;
+                        let color: string;
+                        let label: string;
+                        if (inTemplate && filled) {
+                          bg = 'rgba(34,197,94,0.12)';
+                          color = 'var(--le-good)';
+                          label = src.label;
+                        } else if (inTemplate && !filled) {
+                          bg = 'rgba(234,179,8,0.12)';
+                          color = '#b45309';
+                          label = `${src.label} (empty)`;
+                        } else {
+                          bg = 'rgba(11,11,16,0.06)';
+                          color = 'var(--le-muted)';
+                          label = `${src.label} — no placeholder`;
+                        }
+                        return (
+                          <span
+                            key={src.label}
+                            style={{
+                              display: 'inline-block',
+                              fontSize: 11.5,
+                              fontWeight: 500,
+                              padding: '3px 8px',
+                              borderRadius: 'var(--le-radius-sm)',
+                              background: bg,
+                              color,
+                            }}
+                          >
+                            {label}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Section 3: Voice (Phase 3) ── */}
         <div className="studio-card" style={{ padding: 24 }}>

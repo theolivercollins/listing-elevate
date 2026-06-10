@@ -13,11 +13,19 @@ import {
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
+import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
+import { CheckpointA } from '@/components/studio/CheckpointA';
+import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
+import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
+import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
+import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
+import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
   ClientRow,
   RevisionNoteRow,
   PropertyPreviewRow,
+  ListingDetails,
 } from '../../../../lib/types/operator-studio';
 
 // ─── Local types ───────────────────────────────────────────────────────────────
@@ -47,6 +55,20 @@ interface SceneRow {
 interface CostBundle {
   total_cents: number;
   by_provider: Record<string, number>;
+  delivery: { total_cents: number; by_stage: Record<string, number> } | null;
+}
+
+interface DeliveryRunSummary {
+  id: string;
+  stage: string;
+  error: string | null;
+  listing_details: ListingDetails;
+  scene_order: string[] | null;
+  voiceover_script: string | null;
+  voiceover_voice_id: string | null;
+  voiceover_audio_url: string | null;
+  music_track_id: string | null;
+  video_type: string;
 }
 
 interface Bundle {
@@ -55,6 +77,7 @@ interface Bundle {
   revision_notes: RevisionNoteRow[];
   previews: PropertyPreviewRow[];
   cost: CostBundle;
+  delivery_run: DeliveryRunSummary | null;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -186,6 +209,9 @@ const PropertyCommandCenter = () => {
   const [generatingLink, setGeneratingLink] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
+  const [advancePending, setAdvancePending] = useState(false);
+  const [advanceError, setAdvanceError] = useState<string | null>(null);
+
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchBundle = useCallback(async () => {
@@ -258,6 +284,23 @@ const PropertyCommandCenter = () => {
       setGeneratingLink(false);
     }
   };
+
+  // Generic delivery action helper — all checkpoint sections reuse this.
+  const deliveryAction = useCallback(async (body: Record<string, unknown>) => {
+    if (!bundle?.delivery_run) return;
+    const res = await authedFetch(`/api/admin/studio/delivery/${bundle.delivery_run.id}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      // Re-sync the stepper before surfacing the error so the UI never shows
+      // a stale stage. 409 = stage-moved conflict; other errors re-sync too
+      // in case the server advanced before returning the error.
+      await fetchBundle();
+      throw new Error((d as { error?: string }).error ?? `${res.status}`);
+    }
+    await fetchBundle();
+  }, [bundle, fetchBundle]);
 
   if (loading) {
     return (
@@ -361,6 +404,82 @@ const PropertyCommandCenter = () => {
 
       {/* ─── StudioNav ─── */}
       <StudioNav />
+
+      {/* ─── Delivery stepper (operator-mode only — hidden when no delivery_run) ─── */}
+      {bundle.delivery_run && isDeliveryStage(bundle.delivery_run.stage) && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
+          <DeliveryStepper stage={bundle.delivery_run.stage} error={bundle.delivery_run.error} />
+          {/* Shared Next button — rendered on gate stages where the operator manually advances */}
+          {/* ─── Checkpoint A: clip reorder panel ─── */}
+          {bundle.delivery_run.stage === 'checkpoint_a' && (
+            <CheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />
+          )}
+          {/* ─── Details: listing fields form ─── */}
+          {bundle.delivery_run.stage === 'details' && (
+            <DeliveryDetails
+              runId={bundle.delivery_run.id}
+              listingDetails={bundle.delivery_run.listing_details}
+              onSaved={fetchBundle}
+            />
+          )}
+          {/* ─── Voiceover: script + voice picker + audio ─── */}
+          {bundle.delivery_run.stage === 'voiceover' && (
+            <DeliveryVoiceover
+              runId={bundle.delivery_run.id}
+              clientId={property.client_id}
+              voiceoverScript={bundle.delivery_run.voiceover_script}
+              voiceoverVoiceId={bundle.delivery_run.voiceover_voice_id}
+              voiceoverAudioUrl={bundle.delivery_run.voiceover_audio_url}
+              onChanged={fetchBundle}
+            />
+          )}
+          {/* ─── Music: library options + generate-new ─── */}
+          {bundle.delivery_run.stage === 'music' && (
+            <DeliveryMusic
+              runId={bundle.delivery_run.id}
+              videoType={bundle.delivery_run.video_type}
+              musicTrackId={bundle.delivery_run.music_track_id}
+              onChanged={fetchBundle}
+            />
+          )}
+          {/* ─── Checkpoint B: final video + ratings + delivered ─── */}
+          {bundle.delivery_run.stage === 'checkpoint_b' && (
+            <CheckpointB
+              runId={bundle.delivery_run.id}
+              videoUrl={property.horizontal_video_url}
+              onDelivered={fetchBundle}
+            />
+          )}
+          {/* ─── Delivered: summary card ─── */}
+          {bundle.delivery_run.stage === 'delivered' && (
+            <DeliveredCard />
+          )}
+          <DeliveryNextButton
+            stage={bundle.delivery_run.stage}
+            pending={advancePending}
+            error={advanceError}
+            onAdvance={async (to) => {
+              setAdvancePending(true);
+              setAdvanceError(null);
+              try {
+                // Music's Next kicks off assembly in one request: the server
+                // advances music -> assembling itself, runs the render, and
+                // lands on checkpoint_b. All other gates use the plain advance.
+                if (to === 'assembling') {
+                  await deliveryAction({ action: 'assemble' });
+                } else {
+                  await deliveryAction({ action: 'advance', to });
+                }
+              } catch (err) {
+                // fetchBundle already re-synced inside deliveryAction; surface error to operator
+                setAdvanceError(err instanceof Error ? err.message : 'Advance failed');
+              } finally {
+                setAdvancePending(false);
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* ─── Section stack ─── */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -782,6 +901,82 @@ const PropertyCommandCenter = () => {
             </div>
           ) : (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
+          )}
+
+          {/* ── Delivery run sub-block ── */}
+          {cost.delivery && (
+            <div
+              style={{
+                marginTop: 20,
+                paddingTop: 16,
+                borderTop: '1px solid var(--le-line-2)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: 'var(--le-muted)',
+                  }}
+                >
+                  Delivery run
+                </span>
+                <span
+                  style={{
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: 'var(--le-ink)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {formatCents(cost.delivery.total_cents)}
+                </span>
+              </div>
+              {Object.entries(cost.delivery.by_stage).length > 0 ? (
+                <div className="le-table-scroll is-mid">
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <tbody>
+                      {Object.entries(cost.delivery.by_stage)
+                        .sort(([, a], [, b]) => b - a)
+                        .map(([stage, cents]) => (
+                          <tr key={stage} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                            <td
+                              style={{
+                                padding: '8px 0',
+                                fontSize: 12.5,
+                                color: 'var(--le-ink-2)',
+                              }}
+                            >
+                              {stage}
+                            </td>
+                            <td
+                              style={{
+                                padding: '8px 0',
+                                textAlign: 'right',
+                                fontSize: 12.5,
+                                color: 'var(--le-ink)',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}
+                            >
+                              {formatCents(cents)}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: 'var(--le-muted-2)' }}>No delivery cost events yet.</p>
+              )}
+            </div>
           )}
         </SectionCard>
 

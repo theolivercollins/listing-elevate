@@ -69,7 +69,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (pendingErr) throw pendingErr;
     if (!pending || pending.length === 0) {
-      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0 });
+      // Operator delivery: B-variant renders can outlive the scenes queue
+      // (all A clips collected while B is still rendering), so poll them
+      // even when no scenes are pending — otherwise a delivery run would
+      // stall in 'generating' forever. No-op when none exist.
+      let variants: { polled: number; completed: number; failed: number } | null = null;
+      try {
+        const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+        variants = await pollPendingVariants();
+      } catch (err) {
+        console.error('[poll-scenes] variant polling failed:', err);
+      }
+      // Re-attempt judge passes for delivery runs whose B variants just
+      // settled — the finalize loop below never fires once a property has
+      // no pending scenes, so this sweep is what un-stalls 'generating'.
+      let judgeSweep: { swept: number; advanced: number } | null = null;
+      try {
+        const { sweepActiveJudgePasses } = await import('../../lib/delivery/judge.js');
+        judgeSweep = await sweepActiveJudgePasses();
+      } catch (err) {
+        console.error('[poll-scenes] delivery judge sweep failed:', err);
+      }
+      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0, variants, judgeSweep });
     }
 
     let completedCount = 0;
@@ -159,6 +180,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Fallback cost estimate when the provider doesn't return credit
         // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
         // Kling v2-master is 10 units/clip (5s) regardless of duration.
+        // Atlas: use atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds) — the
+        // model key isn't stored on scenes at poll time, so we use the
+        // established per-second price map with the current default SKU.
+        // If status.costCents is already populated by AtlasProvider
+        // (it returns this.model.priceCentsPerClip on success), this branch
+        // is a safety net for any edge case where that field is null.
+        // keep in sync with lib/delivery/variants.ts cost fallback
+        const { atlasClipCostCents, V1_DEFAULT_SKU } = await import('../../lib/providers/atlas.js');
         const durationSeconds = scene.duration_seconds ?? 5;
         let fallbackUnits: number | undefined;
         let fallbackUnitType: 'credits' | 'kling_units' | undefined;
@@ -171,6 +200,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fallbackUnits = 10;
           fallbackUnitType = 'kling_units';
           fallbackCents = Math.round(fallbackUnits * parseFloat(process.env.KLING_CENTS_PER_UNIT ?? '0'));
+        } else if (provider.name === 'atlas') {
+          fallbackCents = atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds);
+          if (fallbackCents === 0) {
+            await log(scene.property_id, 'generation', 'warn',
+              `[cost] atlas render missing costCents for scene ${scene.scene_number} — using V1_DEFAULT_SKU fallback`,
+              undefined, scene.id);
+          }
         }
 
         const costCents = status.costCents ?? fallbackCents;
@@ -323,6 +359,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Operator delivery: poll pending B-variant renders (no-op when none exist).
+    try {
+      const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+      await pollPendingVariants();
+    } catch (err) {
+      console.error('[poll-scenes] variant polling failed:', err);
+    }
+    // Operator delivery: re-attempt judge passes for runs stuck in
+    // generating/judging whose pairs may have settled via the variant poll
+    // above (their properties no longer appear in affectedProperties once
+    // every A clip is collected). No-op when no active delivery runs exist.
+    try {
+      const { sweepActiveJudgePasses } = await import('../../lib/delivery/judge.js');
+      await sweepActiveJudgePasses();
+    } catch (err) {
+      console.error('[poll-scenes] delivery judge sweep failed:', err);
+    }
+
     // For every property we touched, check if all its scenes have settled
     // (either passed or needs_review with no pending task). If so, finalize.
     for (const propertyId of affectedProperties) {
@@ -372,6 +426,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const startTs = (prop as { pipeline_started_at?: string | null }).pipeline_started_at
         ?? prop.created_at;
       const processingTimeMs = Date.now() - new Date(startTs).getTime();
+
+      // Operator delivery: a property with an ACTIVE delivery run never
+      // auto-assembles. Judge the A/B pairs instead; the operator drives the
+      // rest via checkpoints. Run lookup matches lib/pipeline.ts's variant
+      // gate: most-recent run whose stage <> 'delivered' (the partial unique
+      // index on (property_id, video_type) allows multiple rows, and a
+      // delivered run must never re-capture its property).
+      const { data: deliveryRun } = await supabase
+        .from('delivery_runs')
+        .select('id, stage')
+        .eq('property_id', propertyId)
+        .neq('stage', 'delivered')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (deliveryRun) {
+        try {
+          const { runJudgePass } = await import('../../lib/delivery/judge.js');
+          const { ready } = await runJudgePass(deliveryRun.id as string);
+          if (ready) {
+            await updatePropertyStatus(propertyId, 'needs_review', {
+              processing_time_ms: processingTimeMs,
+              thumbnail_url: scenes.find(s => s.clip_url)?.clip_url ?? null,
+            });
+          }
+        } catch (err) {
+          console.error('[poll-scenes] delivery judge pass failed:', err);
+        }
+        continue; // never falls through to runAssembly
+      }
 
       if (finalStatus === 'complete') {
         // All scenes passed QC — hand off to runAssembly. runAssembly

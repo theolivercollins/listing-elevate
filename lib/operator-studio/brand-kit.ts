@@ -1,4 +1,5 @@
 import type { ClientRow, BrandKitVars } from '../types/operator-studio.js';
+import { formatPhoneDisplay } from '../utils/phone.js';
 
 export function brandKitFromClient(c: ClientRow, ctx: { brokerage?: string | null }): BrandKitVars {
   return {
@@ -7,8 +8,8 @@ export function brandKitFromClient(c: ClientRow, ctx: { brokerage?: string | nul
     secondary_hex: c.brand_secondary_hex,
     agent_name: c.agent_name,
     agent_headshot_url: c.agent_headshot_url,
-    brokerage: ctx.brokerage ?? null,
-    phone: c.phone,
+    brokerage: c.brokerage ?? ctx.brokerage ?? null,
+    phone: formatPhoneDisplay(c.phone),
   };
 }
 
@@ -26,7 +27,7 @@ const BRAND_KEY_MAP: Record<keyof BrandKitVars, string[]> = {
   agent_name: ['Brand.agent_name', 'Text-Agent-Name.text'],
   agent_headshot_url: ['Brand.agent_headshot', 'Image-Headshot.source'],
   brokerage: ['Brand.brokerage', 'Text-Brokerage-Team.text'],
-  phone: ['Text-Phone-Number.text'],
+  phone: ['Brand.phone', 'Text-Phone-Number.text'],
 };
 
 export function mergeBrandVars<T extends Record<string, unknown>>(base: T, brand: BrandKitVars): T & Record<string, unknown> {

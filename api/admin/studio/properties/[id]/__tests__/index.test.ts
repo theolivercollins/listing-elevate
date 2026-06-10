@@ -44,8 +44,9 @@ function makeDb(results: Array<{ data: unknown; error: unknown }>) {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
       chain.eq = () => chain;
+      chain.neq = () => chain;
       chain.order = () => chain;
-      chain.limit = () => Promise.resolve(result);
+      chain.limit = () => chain;
       chain.maybeSingle = () => Promise.resolve(result);
       // Make the chain thenable so it resolves as a Promise when awaited
       // (the Promise.all in the handler awaits each parallel call)
@@ -87,6 +88,7 @@ describe('GET /api/admin/studio/properties/[id]', () => {
       { data: [], error: null },    // revision_notes
       { data: [], error: null },    // cost_events
       { data: [], error: null },    // previews
+      { data: null, error: null },  // delivery_runs
     ]));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
@@ -125,6 +127,7 @@ describe('GET /api/admin/studio/properties/[id]', () => {
       { data: sampleNotes, error: null },     // revision_notes
       { data: sampleCostEvents, error: null },// cost_events
       { data: samplePreviews, error: null },  // previews
+      { data: null, error: null },            // delivery_runs (none yet)
     ]));
 
     const res = makeRes();
@@ -159,5 +162,88 @@ describe('GET /api/admin/studio/properties/[id]', () => {
     expect(body.cost.total_cents).toBe(2700);
     expect(body.cost.by_provider.kling).toBe(2500);
     expect(body.cost.by_provider.anthropic).toBe(200);
+
+    // No active delivery run → delivery field is null
+    expect((body as unknown as { cost: { delivery: unknown } }).cost.delivery).toBeNull();
+  });
+
+  it('returns delivery breakdown when active run has tagged cost events', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const sampleProperty = { id: 'prop-456', address: '2 Elm St', status: 'assembling', client: null };
+    const runId = 'run-abc';
+    const sampleCostEvents = [
+      // Tagged to this run
+      { stage: 'generation', provider: 'kling', cost_cents: 2000, metadata: { delivery_run_id: runId } },
+      { stage: 'qc', provider: 'google', cost_cents: 300, metadata: { delivery_run_id: runId } },
+      { stage: 'assembly', provider: 'elevenlabs', cost_cents: 150, metadata: { delivery_run_id: runId, kind: 'voiceover' } },
+      { stage: 'assembly', provider: 'elevenlabs', cost_cents: 100, metadata: { delivery_run_id: runId, kind: 'music_generation' } },
+      // NOT tagged to this run (older / unrelated events)
+      { stage: 'generation', provider: 'kling', cost_cents: 500, metadata: null },
+      { stage: 'analysis', provider: 'anthropic', cost_cents: 80, metadata: {} },
+    ];
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },                           // properties
+      { data: [], error: null },                                       // scenes
+      { data: [], error: null },                                       // revision_notes
+      { data: sampleCostEvents, error: null },                        // cost_events
+      { data: [], error: null },                                       // previews
+      { data: { id: runId, stage: 'assembling' }, error: null },     // delivery_runs
+    ]));
+
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'prop-456' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      cost: {
+        total_cents: number;
+        by_provider: Record<string, number>;
+        delivery: { total_cents: number; by_stage: Record<string, number> } | null;
+      };
+    };
+
+    // Total includes all events
+    expect(body.cost.total_cents).toBe(3130);
+
+    // Delivery sub-block covers only run-tagged events
+    expect(body.cost.delivery).not.toBeNull();
+    expect(body.cost.delivery!.total_cents).toBe(2550);
+    // generation: 2000, qc: 300, assembly: 150 + 100 = 250
+    expect(body.cost.delivery!.by_stage.generation).toBe(2000);
+    expect(body.cost.delivery!.by_stage.qc).toBe(300);
+    expect(body.cost.delivery!.by_stage.assembly).toBe(250);
+  });
+
+  it('returns delivery: null when no cost events match the active run id', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const sampleProperty = { id: 'prop-789', address: '3 Oak Ave', status: 'generating', client: null };
+    const runId = 'run-xyz';
+    const sampleCostEvents = [
+      // Only untagged events (pre-delivery)
+      { stage: 'generation', provider: 'kling', cost_cents: 1000, metadata: null },
+    ];
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: sampleCostEvents, error: null },
+      { data: [], error: null },
+      { data: { id: runId, stage: 'generating' }, error: null },
+    ]));
+
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'prop-789' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as { cost: { delivery: { total_cents: number; by_stage: Record<string, number> } | null } };
+
+    // Run exists but no cost events tagged to it → delivery total = 0, by_stage = {}
+    expect(body.cost.delivery).not.toBeNull();
+    expect(body.cost.delivery!.total_cents).toBe(0);
+    expect(Object.keys(body.cost.delivery!.by_stage)).toHaveLength(0);
   });
 });

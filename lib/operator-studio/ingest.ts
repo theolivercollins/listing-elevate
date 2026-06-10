@@ -43,6 +43,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     photo_storage_paths,
     director_notes,
     submitted_by,
+    video_type,
     selected_package,
     selected_duration,
     selected_orientation,
@@ -113,7 +114,8 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       submitted_by,
       listing_agent,
       brokerage,
-      selected_package: selected_package ?? 'just_listed',
+      // Precedence: video_type (operator delivery) wins over legacy selected_package; life_cycle only arrives via selected_package (customer flow).
+      selected_package: video_type ?? selected_package ?? 'just_listed',
       selected_duration: selected_duration ?? 30,
       selected_orientation: selected_orientation ?? 'horizontal',
       add_voiceover: !!add_voiceover,
@@ -143,6 +145,20 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   const { error: photosError } = await supabase.from('photos').insert(photoRows);
   if (photosError) {
     throw new Error(`photos insert failed: ${stringifyDbError(photosError)}`);
+  }
+
+  // 4. Operator delivery run (spec 2026-06-09). Non-fatal: a run-create
+  // failure must not lose the ingested property — surface in logs instead.
+  try {
+    const { createRun } = await import('../delivery/runs.js');
+    await createRun({
+      property_id: propertyId,
+      client_id: client_id ?? null,
+      video_type: (video_type ?? 'just_listed') as 'just_listed' | 'just_pended' | 'just_closed',
+      duration_seconds: selected_duration ?? 30,
+    });
+  } catch (err) {
+    console.error('[ingest] delivery_run create failed:', err);
   }
 
   // 3. Optionally insert a director-notes revision row.

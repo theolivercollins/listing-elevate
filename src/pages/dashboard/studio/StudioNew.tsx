@@ -120,6 +120,7 @@ const StudioNew = () => {
   const [price, setPrice] = useState('');                    // stores raw digits ("2400000")
   const [directorNotes, setDirectorNotes] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
+  const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
   // ─── MLS lookup state ───
@@ -270,6 +271,7 @@ const StudioNew = () => {
           photo_storage_paths: photoPaths,
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
+          video_type: videoType,
         }),
       });
 
@@ -280,6 +282,22 @@ const StudioNew = () => {
 
       const { property_id } = await res.json();
       fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      // Fire scrape action fire-and-forget: fetch the run id from the bundle then kick scrape.
+      authedFetch(`/api/admin/studio/properties/${property_id}`)
+        .then((r) => r.json())
+        .then((b) => {
+          const runId = (b as { delivery_run?: { id?: string } }).delivery_run?.id;
+          if (runId) {
+            return authedFetch(`/api/admin/studio/delivery/${runId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'scrape' }),
+            });
+          }
+        })
+        // Recovery owner: the Property Command Center stepper (Task 13) exposes
+        // a retry that re-fires the scrape action, which is resumable from 'intake'.
+        .catch((e) => console.warn('[studio] scrape kick failed; stepper retry will recover', e));
       navigate(`/dashboard/studio/video/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');
@@ -449,6 +467,41 @@ const StudioNew = () => {
                 placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
                 rows={4}
               />
+            </div>
+
+            {/* Video type */}
+            <div>
+              <FieldLabel>Video type</FieldLabel>
+              <div
+                role="group"
+                aria-label="Video type"
+                style={{ display: 'flex', gap: 8 }}
+              >
+                {(['just_listed', 'just_pended', 'just_closed'] as const).map((vt) => {
+                  const active = videoType === vt;
+                  const label = vt === 'just_listed' ? 'Just Listed' : vt === 'just_pended' ? 'Just Pended' : 'Just Closed';
+                  return (
+                    <button
+                      key={vt}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setVideoType(vt)}
+                      className="studio-input"
+                      style={{
+                        flex: 1,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        fontWeight: active ? 600 : 500,
+                        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
+                        borderColor: active ? 'var(--le-ink)' : undefined,
+                        background: active ? 'var(--le-surface-2, rgba(0,0,0,0.04))' : undefined,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Duration */}

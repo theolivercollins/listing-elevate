@@ -34,6 +34,8 @@ export interface GenerateAudioInput {
   propertyId: string | null;
   /** Folder prefix in storage: "preview" for temp files, property UUID otherwise. */
   storageFolder?: string;
+  /** When called from the delivery pipeline, tag the cost_event so it rolls up in the per-run breakdown. */
+  deliveryRunId?: string | null;
 }
 
 export interface GenerateAudioResult {
@@ -48,7 +50,7 @@ export async function generateVoiceoverAudio(
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY env var is not set");
 
-  const { script, voiceId, propertyId, storageFolder } = input;
+  const { script, voiceId, propertyId, storageFolder, deliveryRunId } = input;
   const folder = storageFolder ?? propertyId ?? "preview";
   const modelId = resolveModelId();
   const isV3 = modelId.startsWith("eleven_v3");
@@ -126,6 +128,7 @@ export async function generateVoiceoverAudio(
       voiceId,
       chars,
       storagePath,
+      ...(deliveryRunId ? { delivery_run_id: deliveryRunId } : {}),
     },
   }).catch((e) => console.error("[voiceover/audio] cost_event insert failed:", e));
 

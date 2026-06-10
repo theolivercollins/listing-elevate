@@ -101,6 +101,29 @@ describe('POST /api/admin/studio/ingest', () => {
     expect(res._status).toBe(500);
     expect((res._body as { error: string }).error).toMatch(/db connection error/);
   });
+
+  it('passes video_type through without 400 (run create is non-fatal)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    mockManualIngest.mockResolvedValue('prop-vtype-001');
+    const res = makeRes();
+    await handler(
+      makeReq({
+        body: {
+          client_id: 'c1',
+          address: '470 Sorrento Ct',
+          photo_storage_paths: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'],
+          video_type: 'just_listed',
+          selected_duration: 30,
+        },
+      }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect((res._body as { property_id: string }).property_id).toBe('prop-vtype-001');
+    // video_type must be forwarded to manualIngest
+    const callArg = mockManualIngest.mock.calls[0][0];
+    expect(callArg.video_type).toBe('just_listed');
+  });
 });
 
 describe('non-POST methods', () => {
