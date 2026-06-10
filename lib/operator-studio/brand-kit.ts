@@ -1,12 +1,26 @@
 import type { ClientRow, BrandKitVars } from '../types/operator-studio.js';
 import { formatPhoneDisplay } from '../utils/phone.js';
 
+/**
+ * Per-client ", Realtor" display-name toggle (clients.realtor_suffix).
+ * Single source of truth for the suffix string — used here for the brand-kit
+ * agent_name and in lib/pipeline.ts for the buildTemplateModifications
+ * agentName (Listing-Agent-Mid/Final + Text-Agent-Name keys).
+ * `on` tolerates null/undefined so pre-migration `select('*')` rows (column
+ * absent → undefined) behave as off. Stored agent_name stays clean; the
+ * suffix is applied only at render-mapping time.
+ */
+export function applyRealtorSuffix(name: string | null, on: boolean | null | undefined): string | null {
+  if (!on || !name) return name;
+  return `${name}, Realtor`;
+}
+
 export function brandKitFromClient(c: ClientRow, ctx: { brokerage?: string | null }): BrandKitVars {
   return {
     logo_url: c.brand_logo_url,
     primary_hex: c.brand_primary_hex,
     secondary_hex: c.brand_secondary_hex,
-    agent_name: c.agent_name,
+    agent_name: applyRealtorSuffix(c.agent_name, c.realtor_suffix),
     agent_headshot_url: c.agent_headshot_url,
     brokerage: c.brokerage ?? ctx.brokerage ?? null,
     phone: formatPhoneDisplay(c.phone),

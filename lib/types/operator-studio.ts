@@ -14,6 +14,8 @@ export type ClientRow = {
   agent_headshot_url: string | null;
   voice_id: string | null;
   brokerage: string | null;
+  /** ", Realtor" display-name toggle. Applied at render-mapping time; stored agent_name stays clean. May be undefined on rows read before migration 081 — treat as false. */
+  realtor_suffix: boolean;
   archived_at: string | null;
   created_at: string;
   updated_at: string;
