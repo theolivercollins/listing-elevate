@@ -10,12 +10,13 @@ import { FinalCTA } from "@/v2/components/landing/FinalCTA";
 import { Footer } from "@/v2/components/landing/Footer";
 
 /**
- * Landing — composes the dark editorial surface top-to-bottom.
+ * Landing — composes the light SaaS surface top-to-bottom.
  *
- * The landing is dark-only (per user request) so we pin
- * data-theme="dark" at the root. Hero carries the fixed top nav and
- * the 820px photo header; every downstream section sits on the
- * midnight --le-bg base.
+ * The landing defaults to light mode and follows the global theme toggle:
+ * when the user switches themes, ThemeProvider adds/removes `.dark` on
+ * <html>, and all `--le-*` tokens re-resolve automatically. There is no
+ * `[data-theme="light"]` rule in tokens.css, so a `data-theme="light"`
+ * attribute on this element would be inert — it is intentionally omitted.
  *
  * Section order:
  *   1. Hero (contains Nav)
@@ -33,8 +34,7 @@ export default function Landing() {
     <div
       data-testid="v2-landing-root"
       data-v2-root
-      className="le-root dark"
-      data-theme="dark"
+      className="le-root"
       style={{
         minHeight: "100vh",
         background: "var(--le-bg)",

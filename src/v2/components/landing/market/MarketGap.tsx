@@ -21,7 +21,7 @@ export default function MarketGap() {
   const gap = useCountUp(62, 2400, isInView);
 
   return (
-    <div ref={ref} className="px-6 sm:px-12 pb-10">
+    <div ref={ref} className="pb-10">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
 
         {/* Demand card */}
@@ -30,7 +30,7 @@ export default function MarketGap() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div className="flex items-center gap-2.5 mb-6">
             <AnimatedCircleCheck isInView={isInView} delay={0.3} size={16} />
@@ -95,7 +95,7 @@ export default function MarketGap() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.12, ease: [0.22, 1, 0.36, 1] }}
           className="p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div className="flex items-center gap-2.5 mb-6">
             <AnimatedCircleX isInView={isInView} delay={0.5} size={16} />
@@ -151,7 +151,7 @@ export default function MarketGap() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.24, ease: [0.22, 1, 0.36, 1] }}
           className="p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: WHITE }}>

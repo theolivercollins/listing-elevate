@@ -38,6 +38,18 @@ export interface LabModelInfo {
   hidden?: boolean;
 }
 
+// ─── v1 SKU catalog ──────────────────────────────────────────────────────────
+//
+// Client-safe mirror of lib/providers/atlas.ts::V1_ATLAS_SKUS. The server
+// module reads process.env at import time and must never be bundled into the
+// browser (it crashes vite dev with "process is not defined").
+export const V1_ATLAS_SKUS = [
+  "kling-v2-6-pro",
+  "kling-v2-master",
+] as const;
+export type V1AtlasSku = (typeof V1_ATLAS_SKUS)[number];
+export const V1_DEFAULT_SKU: V1AtlasSku = "kling-v2-6-pro";
+
 // ─── v1.1 SKU catalog ────────────────────────────────────────────────────────
 //
 // SKUs valid for v1.1 Lab sessions (multi-model picker).

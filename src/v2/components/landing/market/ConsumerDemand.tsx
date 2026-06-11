@@ -18,7 +18,7 @@ export default function ConsumerDemand() {
   const pct = useCountUp(84, 2000, isInView);
 
   return (
-    <div ref={ref} className="px-6 sm:px-12 pb-10">
+    <div ref={ref} className="pb-10">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Left: Consumer demand card */}
@@ -27,7 +27,7 @@ export default function ConsumerDemand() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: DIM }}>
             Consumer demand for video
@@ -109,7 +109,7 @@ export default function ConsumerDemand() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
           className="p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: DIM }}>

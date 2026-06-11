@@ -17,7 +17,7 @@ export default function MarketDomination() {
   const { ref, isInView } = useInView(0.1);
 
   return (
-    <div ref={ref} className="px-6 sm:px-12 pb-10">
+    <div ref={ref} className="pb-10">
 
       {/* Top row: How it works — 3 step cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-6">
@@ -44,7 +44,7 @@ export default function MarketDomination() {
             animate={isInView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.55, delay: i * 0.12, ease: [0.22, 1, 0.36, 1] }}
             className="p-8"
-            style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+            style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
           >
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-4" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               {item.step}
@@ -68,7 +68,7 @@ export default function MarketDomination() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.4, ease: [0.22, 1, 0.36, 1] }}
           className="p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: DIM }}>
             What sellers see
@@ -77,7 +77,7 @@ export default function MarketDomination() {
           <div className="grid grid-cols-2 gap-6">
             {/* With Listing Elevate */}
             <div>
-              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}>
+              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}>
                 With Listing Elevate
               </span>
               <div className="space-y-4">
@@ -114,7 +114,7 @@ export default function MarketDomination() {
 
             {/* Without */}
             <div>
-              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: DIMMER, border: `1px solid ${LINE}` }}>
+              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}>
                 Without
               </span>
               <div className="space-y-4">
@@ -157,7 +157,7 @@ export default function MarketDomination() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: DIM }}>

@@ -66,6 +66,9 @@
   --le-chart-4: #b893ff;
   --le-chart-5: #f08aae;
 
+  /* Nav background — translucent frosted bar; overridden dark below */
+  --le-nav-bg: rgba(255, 255, 255, 0.85);
+
   /* Soft dashboard surfaces */
   --le-surface-page: #f4f6fb;
   --le-surface-card: #ffffff;
@@ -99,6 +102,8 @@
   --le-danger-soft: oklch(0.3 0.07 25);
   --le-info: oklch(0.72 0.13 240);
   --le-info-soft: oklch(0.28 0.06 240);
+
+  --le-nav-bg: rgba(7, 8, 12, 0.7);
 
   --le-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --le-shadow-md: 0 2px 6px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -165,46 +170,6 @@
   border-radius: inherit;
 }
 
-/* ============ LIQUID GLASS — Apple-style panels ============ */
-
-/* On dark midnight backgrounds */
-.le-glass {
-  position: relative;
-  background: linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.1) 100%);
-  backdrop-filter: blur(28px) saturate(1.6);
-  -webkit-backdrop-filter: blur(28px) saturate(1.6);
-  border: 1px solid rgba(255,255,255,0.22);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.3),
-    inset 0 -1px 0 rgba(255,255,255,0.05),
-    inset 0 0 0 1px rgba(255,255,255,0.03),
-    0 24px 64px rgba(0,0,0,0.5),
-    0 4px 12px rgba(0,0,0,0.3);
-}
-
-/* Light-mode glass: on pure white surfaces, more subtle */
-[data-theme="light"] .le-glass {
-  background: linear-gradient(135deg, rgba(255,255,255,0.75) 0%, rgba(255,255,255,0.4) 100%);
-  border: 1px solid rgba(10, 12, 20, 0.08);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.8),
-    inset 0 -1px 0 rgba(10,12,20,0.02),
-    0 18px 48px rgba(10,12,20,0.08),
-    0 2px 6px rgba(10,12,20,0.04);
-}
-
-/* Deep-dark glass — for things floating ON TOP of the midnight wash */
-.le-glass-dark {
-  position: relative;
-  background: linear-gradient(135deg, rgba(10,14,28,0.6) 0%, rgba(5,7,16,0.75) 100%);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid rgba(255,255,255,0.09);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.15),
-    0 30px 80px rgba(0,0,0,0.6);
-}
-
 /* Ink glass — black-on-white panel for marketing moments */
 .le-ink-panel {
   position: relative;
@@ -214,49 +179,8 @@
   overflow: hidden;
 }
 
-/* ============ Midnight wash — the signature background ============ */
-.le-midnight-wash {
-  background:
-    radial-gradient(ellipse 90% 60% at 15% 0%, rgba(50,70,140,0.28), transparent 55%),
-    radial-gradient(ellipse 70% 60% at 95% 50%, rgba(25,40,100,0.35), transparent 65%),
-    radial-gradient(ellipse 80% 40% at 50% 110%, rgba(10,20,60,0.5), transparent 70%),
-    linear-gradient(180deg, #050710 0%, #030514 60%, #020309 100%);
-  position: relative;
-}
-.le-midnight-wash::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.4 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  opacity: 0.08;
-  mix-blend-mode: overlay;
-}
-
-/* Specular highlight blob — the lens flare on glass surfaces */
-.le-specular {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(ellipse 60% 40% at 30% 0%, rgba(255,255,255,0.15), transparent 60%),
-    radial-gradient(ellipse 40% 60% at 100% 100%, rgba(100,140,255,0.1), transparent 60%);
-  border-radius: inherit;
-}
-
 /* Hairline divider */
 .le-hairline { height: 1px; background: linear-gradient(90deg, transparent, var(--le-border-strong), transparent); }
-
-/* Aurora edge — faint gradient border for luxury cards */
-.le-aurora-edge {
-  position: relative;
-}
-.le-aurora-edge::before {
-  content: ""; position: absolute; inset: -1px; border-radius: inherit;
-  background: linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0) 30%, rgba(255,255,255,0) 70%, rgba(100,140,255,0.15));
-  pointer-events: none; z-index: -1;
-  padding: 1px;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
-}
 
 .le-btn {
   font-family: var(--le-font-sans);
@@ -279,17 +203,6 @@
 .le-btn-primary:hover { filter: brightness(0.9); }
 .le-btn-ghost { background: transparent; color: var(--le-text); border-color: var(--le-border-strong); }
 .le-btn-ghost:hover { background: var(--le-bg-sunken); }
-/* Glass button — for dark hero surfaces */
-.le-btn-glass {
-  background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05));
-  color: #fff;
-  border: 1px solid rgba(255,255,255,0.18);
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 8px 24px rgba(0,0,0,0.3);
-}
-.le-btn-glass:hover { background: linear-gradient(135deg, rgba(255,255,255,0.2), rgba(255,255,255,0.08)); }
-
 .le-badge {
   display: inline-flex;
   align-items: center;
@@ -408,14 +321,6 @@
   0%   { filter: blur(14px); opacity: 0; transform: scale(1.04); }
   100% { filter: blur(0); opacity: 1; transform: scale(1); }
 }
-@keyframes le-glitch {
-  0%   { transform: translate(0, 0); }
-  25%  { transform: translate(-2px, 1px); }
-  50%  { transform: translate(2px, -1px); }
-  75%  { transform: translate(-1px, 2px); }
-  100% { transform: translate(0, 0); }
-}
-
 /* ── Pricing grid — responsive collapse ──────────────────────────── */
 .le-pricing-grid {
   display: grid;

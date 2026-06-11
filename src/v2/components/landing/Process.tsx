@@ -1,4 +1,5 @@
-import { LEIcon } from "@/v2/components/primitives/LEIcon";
+import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Section } from "@/v2/components/landing/Section";
 
 // Exact image URLs from landing.jsx (IMG_SHOWCASE_1/2/3).
 const IMG_SHOWCASE_1 =
@@ -37,119 +38,119 @@ const STEPS: Step[] = [
 ];
 
 /**
- * Process — pixel-faithful port of landing.jsx lines 283-403.
+ * Process — SaaS-style step cards on a tinted band (WS1+WS2+WS3, 2026-06-11).
  *
- * Customization preserved: the heading reads "Three steps. / One day."
- * (24-hour turnaround) instead of the design's "Seventy-two hours." —
- * our shorter SLA is the marketing win, so we keep it.
+ * Cards: white on the tinted surface (#f4f6fb), radius 18, border + shadow-sm,
+ * le-card-lift hover. Step number chip replaces the old "01 / 03" text.
  */
 export function Process() {
   return (
-    <section
+    <Section
       id="process"
-      style={{
-        padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)",
-        background: "var(--le-bg)",
-      }}
+      eyebrow="— The Process"
+      title="Three steps. One day."
+      tint
     >
       <div
-        className="le-eyebrow"
-        style={{ marginBottom: 48 }}
-      >
-        — The Process
-      </div>
-
-      <div
-        className="le-cols-2-lg le-stack-sm"
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 1,
-          background: "var(--le-border)",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: 24,
         }}
       >
-        {STEPS.map(s => (
-          <div
-            key={s.n}
-            style={{
-              padding: "clamp(28px, 6vw, 44px) clamp(20px, 5vw, 40px) clamp(32px, 6vw, 48px)",
-              background: "var(--le-bg)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 32,
-              minHeight: "clamp(360px, 50vw, 520px)",
-            }}
-          >
+        {STEPS.map((s, i) => (
+          <Reveal key={s.n} delay={i * 0.12}>
             <div
+              className="le-card-lift"
               style={{
+                padding: 28,
+                background: "var(--le-surface-card, #fff)",
+                border: "1px solid var(--le-border)",
+                borderRadius: 18,
+                boxShadow: "var(--le-shadow-sm)",
                 display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
+                flexDirection: "column",
+                gap: 24,
+                height: "100%",
               }}
             >
-              <span
+              {/* Step number chip */}
+              <div
+                aria-hidden
                 style={{
-                  fontFamily: "var(--le-font-sans)",
-                  fontSize: 11,
-                  letterSpacing: "0.18em",
-                  color: "var(--le-text-faint)",
-                }}
-              >
-                {s.n} / 03
-              </span>
-              <LEIcon name="arrowUpRight" size={14} color="var(--le-text-faint)" />
-            </div>
-
-            <div
-              style={{
-                width: "100%",
-                aspectRatio: "4 / 3",
-                overflow: "hidden",
-                background: "#000",
-              }}
-            >
-              <img
-                src={s.img}
-                alt=""
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  filter: "brightness(0.9)",
-                }}
-              />
-            </div>
-
-            <div>
-              <h3
-                style={{
-                  fontSize: 34,
-                  margin: 0,
-                  fontWeight: 500,
-                  letterSpacing: "-0.025em",
-                  lineHeight: 1,
+                  width: 32,
+                  height: 32,
+                  borderRadius: "50%",
+                  border: "1px solid var(--le-border-strong)",
+                  background: "var(--le-surface-card, #fff)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 13,
+                  fontWeight: 600,
                   fontFamily: "var(--le-font-sans)",
                   color: "var(--le-text)",
+                  flexShrink: 0,
                 }}
               >
-                {s.title}
-              </h3>
-              <p
+                {s.n}
+              </div>
+
+              {/* Property image */}
+              <div
+                className="le-img-zoom"
                 style={{
-                  marginTop: 14,
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: "var(--le-text-muted)",
-                  maxWidth: 360,
-                  fontFamily: "var(--le-font-sans)",
+                  width: "100%",
+                  aspectRatio: "4 / 3",
+                  overflow: "hidden",
+                  background: "var(--le-bg-sunken)",
+                  borderRadius: 12,
                 }}
               >
-                {s.body}
-              </p>
+                <img
+                  src={s.img}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              </div>
+
+              {/* Text */}
+              <div>
+                <h3
+                  style={{
+                    fontSize: 24,
+                    margin: 0,
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1,
+                    fontFamily: "var(--le-font-sans)",
+                    color: "var(--le-text)",
+                  }}
+                >
+                  {s.title}
+                </h3>
+                <p
+                  style={{
+                    marginTop: 12,
+                    fontSize: 15,
+                    lineHeight: 1.6,
+                    color: "var(--le-text-muted)",
+                    fontFamily: "var(--le-font-sans)",
+                    margin: "12px 0 0",
+                  }}
+                >
+                  {s.body}
+                </p>
+              </div>
             </div>
-          </div>
+          </Reveal>
         ))}
       </div>
-    </section>
+    </Section>
   );
 }
