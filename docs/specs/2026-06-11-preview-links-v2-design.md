@@ -35,7 +35,7 @@ Shared Supabase across envs: **apply only with Oliver's explicit go**. Code is b
   "address_parts": { "street": "5019 San Massimo Dr", "locality": "Punta Gorda, FL 33950" }, // parsed server-side at first comma; locality strips ", USA"
   "video_url": "...",                       // unchanged back-compat field
   "videos": { "horizontal": "...", "vertical": null },
-  "thumbnail_url": "...",                   // poster + OG image (properties.thumbnail_url)
+  "thumbnail_url": "...",                   // poster + OG image — resolved from the `photos` table (selected=true preferred, then highest quality_score), via `resolveHeroPhotoUrl()` in lib/operator-studio/preview.ts; NEVER a video file (guard: rejects .mp4/.webm/.mov extensions and any URL from the property-videos bucket). Returns null when no photo is available.
   "brand": { "logo": null, "agent_name": "...", "name": "...", "headshot": null, "brokerage": null },
   "kind": "client",
   "capabilities": { "download": true, "approve": true, "revision": true },
@@ -53,7 +53,7 @@ All capability enforcement is server-side; the UI merely hides controls.
 
 ## 3. OG unfurl shim
 
-New route handler serves `/preview/:token` page requests (vercel.json route placed before the SPA fallback): fetches the deployment's own `/index.html`, injects `og:title` (street address), `og:description` ("Listing film · <locality>" / agent name), `og:image` (thumbnail_url), `twitter:card=summary_large_image`, returns HTML. Invalid/expired tokens serve untouched index.html (SPA renders its 404 state). No SSR of page content — the SPA still hydrates and fetches as today.
+New route handler serves `/preview/:token` page requests (vercel.json route placed before the SPA fallback): fetches the deployment's own `/index.html`, injects `og:title` (street address), `og:description` ("Listing film · <locality>" / agent name), `og:image` (thumbnail_url — resolved from the `photos` table, never a video file; omitted when null), `twitter:card=summary_large_image`, returns HTML. Invalid/expired tokens serve untouched index.html (SPA renders its 404 state). No SSR of page content — the SPA still hydrates and fetches as today.
 
 ## 4. PreviewPage redesign — light gallery (soft-shell)
 
