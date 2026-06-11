@@ -203,6 +203,78 @@ describe('unsupported methods', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T3 — capability enforcement on existing POST (revision note)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/preview/[token] — allow_revision enforcement (spec §2)', () => {
+  it('returns 403 when preview.allow_revision is false', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: {
+        kind: 'client',
+        allow_download: true,
+        allow_approve: true,
+        allow_revision: false,
+        approved_at: null,
+      },
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+    expect((res._body as { error: string }).error).toBe('not_allowed');
+    expect(mockInsertClientNote).not.toHaveBeenCalled();
+  });
+
+  it('allows POST when allow_revision is true', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: {
+        kind: 'client',
+        allow_download: true,
+        allow_approve: true,
+        allow_revision: true,
+        approved_at: null,
+      },
+    });
+    mockInsertClientNote.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockInsertClientNote).toHaveBeenCalled();
+  });
+
+  it('pre-migration fallback (preview null) treats allow_revision as true', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: null,
+    });
+    mockInsertClientNote.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockInsertClientNote).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T2 — superset payload shape (new fields from spec §2)
 // ---------------------------------------------------------------------------
 

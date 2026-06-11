@@ -71,6 +71,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.length > 2000) return res.status(400).json({ error: 'note too long' });
     const result = await fetchByToken(token);
     if (!result || result.expired) return res.status(404).json({ error: 'not_found' });
+    // Capability check — pre-migration fallback: null preview → treat as all-on
+    const allowRevision = result.preview?.allow_revision ?? true;
+    if (!allowRevision) return res.status(403).json({ error: 'not_allowed' });
     await insertClientNote({ property_id: result.property.id, source: 'client_preview', body });
     return res.status(201).json({ ok: true });
   }

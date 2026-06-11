@@ -82,3 +82,49 @@ export async function insertClientNote(args: { property_id: string; source: 'cli
   const { error } = await getSupabase().from('property_revision_notes').insert(args);
   if (error) throw new Error(`insertClientNote: ${error.message}`);
 }
+
+/** Insert a property_revision_notes row for any preview-originated source.
+ * Accepts 'client_preview' (revision note) or 'client_approval' (approval stamp). */
+export async function insertPreviewNote(args: {
+  property_id: string;
+  source: 'client_preview' | 'client_approval';
+  body: string;
+}) {
+  const { error } = await getSupabase().from('property_revision_notes').insert(args);
+  if (error) throw new Error(`insertPreviewNote: ${error.message}`);
+}
+
+/** Idempotently stamp approved_at on the property_previews row identified by token.
+ * Returns { approved_at, already_approved }:
+ *   - already_approved = true  → row was already stamped; approved_at is the original timestamp.
+ *   - already_approved = false → we just stamped it; approved_at is the new timestamp.
+ * Callers should only insert the client_approval revision note when already_approved is false. */
+export async function stampApproval(token: string): Promise<{ approved_at: string; already_approved: boolean }> {
+  const db = getSupabase();
+
+  // Read current approved_at first (idempotency check).
+  const { data: existing } = await db
+    .from('property_previews')
+    .select('approved_at')
+    .eq('token', token)
+    .maybeSingle();
+
+  const existingTs = (existing as { approved_at?: string | null } | null)?.approved_at ?? null;
+  if (existingTs) {
+    return { approved_at: existingTs, already_approved: true };
+  }
+
+  // Not yet approved — stamp now.
+  const now = new Date().toISOString();
+  const { data: updated, error } = await db
+    .from('property_previews')
+    .update({ approved_at: now })
+    .eq('token', token)
+    .select('approved_at')
+    .maybeSingle();
+
+  if (error) throw new Error(`stampApproval: ${error.message}`);
+
+  const stamped = (updated as { approved_at?: string | null } | null)?.approved_at ?? now;
+  return { approved_at: stamped, already_approved: false };
+}
