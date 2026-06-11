@@ -4,29 +4,50 @@ import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import { Reveal } from "@/v2/components/primitives/Reveal";
 
 /**
- * FinalCTA — light SaaS CTA band (2026-06-11).
+ * FinalCTA — clean elevated band with a radial ambient wash (WS3, 2026-06-11).
  *
- * Removed the photo background and dark scrims. Now a clean elevated
- * band on var(--le-bg-elev) with a top border — no photography, no dark.
+ * The wash (mirrored from Hero, ellipse at 30% 100%) bookends the page.
+ * Uses position:relative + pointer-events:none overlay so it never
+ * interferes with interactive elements.
  */
 export function FinalCTA() {
   const { openLogin } = useLoginDialog();
   return (
     <section
       style={{
+        position: "relative",
         background: "var(--le-bg-elev)",
         borderTop: "1px solid var(--le-border)",
-        padding: "clamp(64px, 14vw, 160px) clamp(16px, 5vw, 48px)",
+        padding: "clamp(48px, 7vw, 88px) clamp(16px, 5vw, 48px)",
+        overflow: "hidden",
       }}
     >
+      {/* Ambient radial wash — mirrors Hero, ellipse bottom-left */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse 80% 55% at 30% 100%, rgba(47, 109, 240, 0.07), transparent 60%)",
+          pointerEvents: "none",
+          zIndex: 0,
+        }}
+      />
+
       <div
         style={{
           maxWidth: 1200,
           margin: "0 auto",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <Reveal>
-          <div className="le-eyebrow" style={{ marginBottom: 24, color: "var(--le-text-muted)" }}>
+          <div
+            className="le-eyebrow"
+            style={{ marginBottom: 20, color: "var(--le-text-muted)" }}
+          >
             — Get started
           </div>
         </Reveal>
@@ -47,7 +68,10 @@ export function FinalCTA() {
           </h2>
         </Reveal>
         <Reveal delay={0.16}>
-          <div className="le-flexcol-sm" style={{ display: "flex", alignItems: "center", gap: 28 }}>
+          <div
+            className="le-flexcol-sm"
+            style={{ display: "flex", alignItems: "center", gap: 28 }}
+          >
             <LEButtonLink
               to="/upload"
               variant="primary"

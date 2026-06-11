@@ -67,6 +67,11 @@
 .le-faq-toggle { color: var(--le-text); transition: color 150ms ease; }
 .le-faq-toggle:hover { color: var(--le-text-muted); }
 
+/* Play button disc inside reel cards — scales on card hover */
+.le-card-lift:hover .le-play-btn {
+  transform: scale(1.06);
+}
+
 /* Split hero — copy left, media card right; stacks under 960px. */
 .le-hero-grid {
   display: grid;

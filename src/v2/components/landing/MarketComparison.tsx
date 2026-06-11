@@ -189,7 +189,7 @@ export function MarketComparison() {
       {/* ── Intro block ─────────────────────────────────────────────── */}
       <div
         style={{
-          padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px) clamp(24px, 4vw, 48px)",
+          padding: "clamp(48px, 7vw, 88px) clamp(16px, 5vw, 48px) clamp(24px, 4vw, 48px)",
         }}
       >
         <motion.div

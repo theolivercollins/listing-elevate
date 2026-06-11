@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getSampleReels, type SampleReel } from "@/v2/data/sampleReels";
 import { SampleBadge } from "@/v2/components/primitives/SampleBadge";
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Section } from "@/v2/components/landing/Section";
 
 export function SelectedWork() {
   const [reels, setReels] = useState<SampleReel[]>([]);
@@ -14,48 +15,41 @@ export function SelectedWork() {
   const [hero, ...rest] = reels;
 
   return (
-    <section
+    <Section
       id="showcase"
-      style={{ padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)", color: "var(--le-text)", background: "transparent" }}
+      eyebrow="— SHOWCASE"
+      title="Selected work."
+      maxWidth={1200}
+      aside={
+        <a
+          href="#showcase"
+          style={{
+            fontSize: 14,
+            color: "var(--le-text-muted)",
+            textDecoration: "none",
+            fontFamily: "var(--le-font-sans)",
+          }}
+        >
+          View the reel →
+        </a>
+      }
     >
-      <div style={{ maxWidth: 1440, margin: "0 auto" }}>
-        <Reveal>
-          <div className="le-eyebrow" style={{ marginBottom: 24, color: "var(--le-text-muted)" }}>— SHOWCASE</div>
+      <div
+        className="le-stack-lg"
+        style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}
+      >
+        <Reveal delay={0.1}>
+          <ReelCard reel={hero} large />
         </Reveal>
-        <Reveal delay={0.06}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 56 }}>
-            <h2
-              style={{
-                fontSize: "clamp(40px, 5vw, 64px)",
-                lineHeight: 1.02,
-                margin: 0,
-                fontWeight: 600,
-                letterSpacing: "-0.03em",
-                fontFamily: "var(--le-font-sans)",
-                color: "var(--le-text)",
-              }}
-            >
-              Selected work.
-            </h2>
-            <a href="#showcase" style={{ fontSize: 14, color: "var(--le-text-muted)", textDecoration: "none" }}>
-              View the reel →
-            </a>
-          </div>
-        </Reveal>
-        <div className="le-stack-lg" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
-          <Reveal delay={0.1}>
-            <ReelCard reel={hero} large />
-          </Reveal>
-          <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-            {rest.map((r, i) => (
-              <Reveal key={r.id} delay={0.1 + (i + 1) * 0.1}>
-                <ReelCard reel={r} />
-              </Reveal>
-            ))}
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {rest.map((r, i) => (
+            <Reveal key={r.id} delay={0.1 + (i + 1) * 0.1}>
+              <ReelCard reel={r} />
+            </Reveal>
+          ))}
         </div>
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -73,8 +67,12 @@ function ReelCard({ reel, large = false }: { reel: SampleReel; large?: boolean }
         boxShadow: "var(--le-shadow-md)",
       }}
     >
-      <img src={reel.posterUrl} alt={reel.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-      {/* Bottom scrim so white title/duration text reads over any poster */}
+      <img
+        src={reel.posterUrl}
+        alt={reel.title}
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+      {/* Bottom scrim so white title text reads over any poster */}
       <div
         aria-hidden
         style={{
@@ -84,8 +82,57 @@ function ReelCard({ reel, large = false }: { reel: SampleReel; large?: boolean }
           pointerEvents: "none",
         }}
       />
+      {/* Play button affordance — centered white disc */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "none",
+        }}
+      >
+        <div
+          className="le-play-btn"
+          style={{
+            width: 52,
+            height: 52,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.96)",
+            boxShadow: "var(--le-shadow-md)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1)",
+            color: "var(--le-text)",
+          }}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            fill="currentColor"
+            aria-hidden
+            style={{ marginLeft: 2 }}
+          >
+            <path d="M5 3.5l10 5.5-10 5.5V3.5z" />
+          </svg>
+        </div>
+      </div>
       <div style={{ position: "absolute", top: 16, left: 16 }}>
-        <span className="le-mono" style={{ fontSize: 10, padding: "4px 8px", borderRadius: 2, background: "rgba(0,0,0,0.5)", color: "#fff", backdropFilter: "blur(8px)" }}>
+        <span
+          className="le-mono"
+          style={{
+            fontSize: 10,
+            padding: "4px 8px",
+            borderRadius: 2,
+            background: "rgba(0,0,0,0.5)",
+            color: "#fff",
+            backdropFilter: "blur(8px)",
+          }}
+        >
           <span aria-hidden="true">▶</span> {mins}:{secs}
         </span>
       </div>
@@ -93,7 +140,9 @@ function ReelCard({ reel, large = false }: { reel: SampleReel; large?: boolean }
         <SampleBadge />
       </div>
       <div style={{ position: "absolute", bottom: 16, left: 16, right: 16, color: "#fff" }}>
-        <div style={{ fontSize: large ? 22 : 17, fontWeight: 500, marginBottom: 4 }}>{reel.title}</div>
+        <div style={{ fontSize: large ? 22 : 17, fontWeight: 500, marginBottom: 4 }}>
+          {reel.title}
+        </div>
       </div>
     </div>
   );

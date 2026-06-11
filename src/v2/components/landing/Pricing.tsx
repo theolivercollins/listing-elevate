@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getPricingTiers, type PricingTier } from "@/v2/data/pricing";
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Section } from "@/v2/components/landing/Section";
 
 // Inline SVG check — 14px, stroke var(--le-text-muted). No extra deps.
 function CheckIcon() {
@@ -33,89 +34,122 @@ export function Pricing() {
   }, []);
 
   return (
-    <section
+    <Section
       id="pricing"
-      style={{ background: "transparent", color: "var(--le-text)", padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)" }}
+      eyebrow="— PRICING"
+      title="Priced per listing."
+      tint
     >
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-        <Reveal>
-          <div className="le-eyebrow" style={{ marginBottom: 24 }}>— PRICING</div>
-        </Reveal>
-        <Reveal delay={0.06}>
-          <h2
-            style={{
-              fontSize: "clamp(40px, 5vw, 64px)",
-              lineHeight: 1.02,
-              margin: "0 0 64px",
-              fontWeight: 600,
-              letterSpacing: "-0.03em",
-              fontFamily: "var(--le-font-sans)",
-              color: "var(--le-text)",
-            }}
-          >
-            Priced per listing.
-          </h2>
-        </Reveal>
-        <div className="le-pricing-grid">
-          {tiers.map((t, i) => (
-            <Reveal key={t.id} delay={0.1 + i * 0.1}>
+      <div className="le-pricing-grid">
+        {tiers.map((t, i) => (
+          <Reveal key={t.id} delay={0.1 + i * 0.1}>
+            <div
+              className="le-card-lift"
+              style={{
+                position: "relative",
+                padding: 32,
+                paddingTop: t.isLead ? 44 : 32,
+                background: "var(--le-surface-card, #fff)",
+                border: t.isLead
+                  ? "1px solid var(--le-border-strong)"
+                  : "1px solid var(--le-border)",
+                borderRadius: "var(--le-r-lg)",
+                boxShadow: t.isLead ? "var(--le-shadow-md)" : undefined,
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+              }}
+            >
+              {/* "Most popular" badge — classic SaaS tier cue */}
+              {t.isLead && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -12,
+                    left: 24,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    padding: "3px 10px",
+                    borderRadius: 999,
+                    background: "var(--le-accent)",
+                    color: "var(--le-accent-fg)",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    letterSpacing: "0.12em",
+                    textTransform: "uppercase",
+                    fontFamily: "var(--le-font-sans)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Most popular
+                </div>
+              )}
+
+              <div className="le-eyebrow" style={{ marginBottom: 12 }}>
+                {t.name}
+              </div>
               <div
-                className="le-card-lift"
+                className="le-display"
                 style={{
-                  padding: 32,
-                  background: "var(--le-surface-card, #fff)",
-                  border: t.isLead
-                    ? "1px solid var(--le-border-strong)"
-                    : "1px solid var(--le-border)",
-                  borderRadius: "var(--le-r-lg)",
-                  boxShadow: t.isLead ? "var(--le-shadow-md)" : undefined,
-                  // Pin the CTA to the card bottom so buttons align across tiers.
-                  display: "flex",
-                  flexDirection: "column",
-                  height: "100%",
+                  fontSize: 56,
+                  lineHeight: 1,
+                  marginBottom: 8,
+                  color: "var(--le-text)",
                 }}
               >
-                <div className="le-eyebrow" style={{ marginBottom: 12 }}>{t.name}</div>
-                <div
-                  className="le-display"
-                  style={{ fontSize: 56, lineHeight: 1, marginBottom: 8, color: "var(--le-text)" }}
-                >
-                  {t.priceUsd > 0 ? `$${t.priceUsd.toLocaleString()}` : "Talk"}
-                </div>
-                <div style={{ fontSize: 15, lineHeight: 1.6, color: "var(--le-text-muted)", marginBottom: 24 }}>{t.tagline}</div>
-                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px", display: "flex", flexDirection: "column", gap: 8 }}>
-                  {t.features.map(f => (
-                    <li
-                      key={f}
-                      style={{
-                        display: "flex",
-                        gap: 10,
-                        alignItems: "flex-start",
-                        fontSize: 15,
-                        lineHeight: 1.6,
-                        color: "var(--le-text-muted)",
-                        fontFamily: "var(--le-font-sans)",
-                      }}
-                    >
-                      <CheckIcon />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <LEButtonLink
-                  to="/upload"
-                  variant={t.isLead ? "primary" : "ghost"}
-                  size="sm"
-                  className={t.isLead ? "le-cta-primary-hover" : "le-cta-ghost-hover"}
-                  style={{ width: "100%", marginTop: "auto" }}
-                >
-                  {t.priceUsd > 0 ? "Get started →" : "Contact sales →"}
-                </LEButtonLink>
+                {t.priceUsd > 0 ? `$${t.priceUsd.toLocaleString()}` : "Talk"}
               </div>
-            </Reveal>
-          ))}
-        </div>
+              <div
+                style={{
+                  fontSize: 15,
+                  lineHeight: 1.6,
+                  color: "var(--le-text-muted)",
+                  marginBottom: 24,
+                }}
+              >
+                {t.tagline}
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  padding: 0,
+                  margin: "0 0 32px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}
+              >
+                {t.features.map((f) => (
+                  <li
+                    key={f}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "flex-start",
+                      fontSize: 15,
+                      lineHeight: 1.6,
+                      color: "var(--le-text-muted)",
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    <CheckIcon />
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <LEButtonLink
+                to="/upload"
+                variant={t.isLead ? "primary" : "ghost"}
+                size="sm"
+                className={t.isLead ? "le-cta-primary-hover" : "le-cta-ghost-hover"}
+                style={{ width: "100%", marginTop: "auto" }}
+              >
+                {t.priceUsd > 0 ? "Get started →" : "Contact sales →"}
+              </LEButtonLink>
+            </div>
+          </Reveal>
+        ))}
       </div>
-    </section>
+    </Section>
   );
 }

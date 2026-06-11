@@ -46,18 +46,34 @@ export function Hero() {
   return (
     <section
       style={{
+        position: "relative",
         background: "var(--le-bg)",
-        paddingTop: 140,
-        paddingBottom: 96,
+        paddingTop: 120,
+        paddingBottom: 64,
         paddingLeft: "clamp(16px, 5vw, 48px)",
         paddingRight: "clamp(16px, 5vw, 48px)",
+        overflow: "hidden",
       }}
     >
+      {/* Ambient radial wash — sky tile blue at very low alpha, upper-right */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse 80% 55% at 70% 8%, rgba(47, 109, 240, 0.07), transparent 60%), " +
+            "radial-gradient(ellipse 60% 45% at 5% 90%, rgba(47, 109, 240, 0.04), transparent 55%)",
+          pointerEvents: "none",
+          zIndex: 0,
+        }}
+      />
+
       {/* NAV — shared, fixed at viewport top. */}
       <SiteNav />
 
       {/* Split grid — copy left, media right (stacks <960px) */}
-      <div className="le-hero-grid" style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <div className="le-hero-grid" style={{ maxWidth: 1200, margin: "0 auto", position: "relative", zIndex: 1 }}>
         <div>
 
         {/* Eyebrow */}
