@@ -30,86 +30,102 @@ const FIRST_IMPRESSION_IMAGE =
 
 function FirstImpression() {
   return (
+    // Outer wrapper provides page-rhythm padding; the inner plate is contained.
     <div
       style={{
-        position: "relative",
-        overflow: "hidden",
-        padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px)",
-        background: "#000",
+        padding: "clamp(40px, 8vw, 96px) clamp(16px, 5vw, 48px)",
       }}
     >
-      <img
-        src={FIRST_IMPRESSION_IMAGE}
-        alt=""
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          filter: "brightness(0.5) saturate(1.05)",
-        }}
-      />
+      {/* Rounded contained media plate */}
       <div
-        aria-hidden
         style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(90deg, rgba(5,7,14,0.78) 0%, rgba(5,7,14,0.35) 55%, rgba(5,7,14,0.15) 100%)",
-          pointerEvents: "none",
+          position: "relative",
+          overflow: "hidden",
+          borderRadius: 24,
+          maxWidth: 1440,
+          margin: "0 auto",
         }}
-      />
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true, amount: 0.3 }}
-        transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-        style={{ position: "relative", zIndex: 2, maxWidth: 1200, margin: "0 auto" }}
       >
+        <img
+          src={FIRST_IMPRESSION_IMAGE}
+          alt=""
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: "brightness(0.72)",
+          }}
+        />
+        {/* Left-to-right scrim so white headline stays readable on the left */}
         <div
+          aria-hidden
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 28,
+            position: "absolute",
+            inset: 0,
+            background:
+              "linear-gradient(90deg, rgba(7,8,12,0.72) 0%, rgba(7,8,12,0.25) 60%, rgba(7,8,12,0.05) 100%)",
+            pointerEvents: "none",
+          }}
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.3 }}
+          transition={{ duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: 1200,
+            margin: "0 auto",
+            padding: "clamp(40px, 7vw, 96px)",
           }}
         >
-          <div style={{ width: 20, height: 1, background: "#fff" }} />
-          <span className="le-eyebrow" style={{ color: "rgba(255,255,255,0.78)" }}>
-            First impression
-          </span>
-        </div>
-        <h2
-          style={{
-            fontFamily: "var(--le-font-sans)",
-            fontSize: "clamp(3rem, 8vw, 7rem)",
-            fontWeight: 700,
-            letterSpacing: "-0.035em",
-            lineHeight: 0.94,
-            color: "#fff",
-            margin: 0,
-            maxWidth: 980,
-          }}
-        >
-          Your marketing is
-          <br />
-          your first impression.
-        </h2>
-        <p
-          style={{
-            marginTop: 32,
-            fontFamily: "var(--le-font-sans)",
-            fontSize: 18,
-            lineHeight: 1.55,
-            color: "rgba(255,255,255,0.72)",
-            maxWidth: 560,
-          }}
-        >
-          Sellers choose the agent who looks like they do more. Listing Elevate makes that agent you.
-        </p>
-      </motion.div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 28,
+            }}
+          >
+            <div style={{ width: 20, height: 1, background: "#fff" }} />
+            <span className="le-eyebrow" style={{ color: "rgba(255,255,255,0.78)" }}>
+              First impression
+            </span>
+          </div>
+          <h2
+            style={{
+              fontFamily: "var(--le-font-sans)",
+              fontSize: "clamp(3rem, 8vw, 7rem)",
+              fontWeight: 700,
+              letterSpacing: "-0.035em",
+              lineHeight: 0.94,
+              color: "#fff",
+              margin: 0,
+              maxWidth: 980,
+            }}
+          >
+            Your marketing is
+            <br />
+            your first impression.
+          </h2>
+          <p
+            style={{
+              marginTop: 32,
+              fontFamily: "var(--le-font-sans)",
+              fontSize: 18,
+              lineHeight: 1.55,
+              color: "rgba(255,255,255,0.72)",
+              maxWidth: 560,
+            }}
+          >
+            Sellers choose the agent who looks like they do more. Listing Elevate makes that agent you.
+          </p>
+        </motion.div>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,12 @@ const HERO_IMAGE =
   "https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=2400&q=85";
 
 /**
- * Hero — pixel-faithful port of landing.jsx lines 29-240.
+ * Hero — light SaaS redesign (2026-06-11).
+ *
+ * Structure: white section, left-aligned copy, then a wide framed
+ * media card containing the interior photo. No dark scrims, no
+ * full-bleed background image — the photo is a contained element
+ * below the headline copy.
  *
  * Nav lives in the shared `SiteNav` primitive (fixed at viewport top).
  */
@@ -19,102 +24,68 @@ export function Hero() {
   return (
     <section
       style={{
-        position: "relative",
-        minHeight: "clamp(480px, 70vh, 574px)",
-        height: "auto",
-        overflow: "hidden",
         background: "var(--le-bg)",
+        paddingTop: 140,
+        paddingBottom: 96,
+        paddingLeft: "clamp(16px, 5vw, 48px)",
+        paddingRight: "clamp(16px, 5vw, 48px)",
       }}
     >
-      {/* Background image */}
-      <img
-        src={HERO_IMAGE}
-        alt=""
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          filter: "brightness(0.62) saturate(1.05)",
-        }}
-      />
-
-      {/* Legibility gradient — darkens top for nav, mid-airy, bottom for copy */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(180deg, rgba(5,7,14,0.85) 0%, rgba(5,7,14,0.15) 22%, rgba(5,7,14,0) 45%, rgba(5,7,14,0.35) 75%, rgba(5,7,14,0.7) 100%)",
-          pointerEvents: "none",
-        }}
-      />
-
       {/* NAV — shared, fixed at viewport top. */}
       <SiteNav />
 
-      {/* HERO COPY — vertically centered within the section */}
-      <div
-        style={{
-          position: "relative",
-          minHeight: "clamp(480px, 70vh, 574px)",
-          paddingLeft: "clamp(16px, 5vw, 48px)",
-          paddingRight: "clamp(16px, 5vw, 48px)",
-          paddingTop: 96,
-          paddingBottom: "clamp(40px, 8vw, 48px)",
-          color: "var(--le-text)",
-          zIndex: 2,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "center",
-        }}
-      >
+      {/* HERO COPY — left-aligned */}
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        {/* Eyebrow */}
         <div
           style={{
             fontSize: 10,
             fontWeight: 500,
             letterSpacing: "0.24em",
             textTransform: "uppercase",
-            color: "rgba(255,255,255,0.75)",
+            color: "var(--le-text-muted)",
             marginBottom: 28,
             display: "flex",
             alignItems: "center",
             gap: 10,
+            fontFamily: "var(--le-font-sans)",
           }}
         >
           <span
             style={{
               width: 18,
               height: 1,
-              background: "rgba(255,255,255,0.5)",
+              background: "var(--le-border-strong)",
               display: "inline-block",
             }}
           />
           Listing Elevate · Cinematic · On demand
         </div>
+
+        {/* Headline */}
         <h1
           style={{
-            fontSize: "clamp(56px, 9vw, 104px)",
+            fontSize: "clamp(48px, 7vw, 88px)",
             lineHeight: 0.96,
             margin: 0,
-            fontWeight: 500,
-            letterSpacing: "-0.035em",
+            fontWeight: 600,
+            letterSpacing: "-0.03em",
             maxWidth: 1100,
             fontFamily: "var(--le-font-sans)",
+            color: "var(--le-text)",
           }}
         >
           <LECyclingWord words={["Win", "Sell", "Retain"]} /> more listings.
         </h1>
+
+        {/* Subcopy */}
         <p
           style={{
             fontSize: 18,
             lineHeight: 1.5,
             maxWidth: 520,
             marginTop: 28,
-            color: "rgba(255,255,255,0.78)",
+            color: "var(--le-text-muted)",
             fontWeight: 400,
             fontFamily: "var(--le-font-sans)",
           }}
@@ -123,6 +94,7 @@ export function Hero() {
           within 24&nbsp;hours. No crew, no scheduling, no post-production.
         </p>
 
+        {/* CTAs */}
         <div
           className="le-flexcol-sm"
           style={{
@@ -146,8 +118,31 @@ export function Hero() {
             <LEIcon name="arrowUpRight" size={12} color="currentColor" />
           </button>
         </div>
-      </div>
 
+        {/* Framed media card — photo below the copy */}
+        <div
+          style={{
+            marginTop: 64,
+            borderRadius: 18,
+            overflow: "hidden",
+            aspectRatio: "21 / 9",
+            boxShadow: "var(--le-shadow-lg)",
+            border: "1px solid var(--le-border)",
+            position: "relative",
+          }}
+        >
+          <img
+            src={HERO_IMAGE}
+            alt="Luxury interior listing"
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        </div>
+      </div>
     </section>
   );
 }

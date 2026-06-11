@@ -2,6 +2,28 @@ import { useEffect, useState } from "react";
 import { getPricingTiers, type PricingTier } from "@/v2/data/pricing";
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 
+// Inline SVG check — 14px, stroke var(--le-text-muted). No extra deps.
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      fill="none"
+      style={{ flexShrink: 0, marginTop: 2 }}
+    >
+      <polyline
+        points="2,7 6,11 12,4"
+        stroke="var(--le-text-muted)"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Pricing() {
   const [tiers, setTiers] = useState<PricingTier[]>([]);
 
@@ -25,9 +47,15 @@ export function Pricing() {
               key={t.id}
               style={{
                 padding: 32,
-                background: "var(--le-bg-elev)",
-                border: `1px solid ${t.isLead ? "var(--le-border-strong)" : "var(--le-border)"}`,
-                borderRadius: 2,
+                background: "var(--le-surface-card, #fff)",
+                border: t.isLead
+                  ? "1px solid var(--le-border-strong)"
+                  : "1px solid var(--le-border)",
+                borderRadius: "var(--le-r-lg)",
+                boxShadow: t.isLead ? "var(--le-shadow-md)" : undefined,
+                // Pin the CTA to the card bottom so buttons align across tiers.
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <div className="le-eyebrow" style={{ marginBottom: 12 }}>{t.name}</div>
@@ -37,8 +65,19 @@ export function Pricing() {
               <div style={{ fontSize: 14, color: "var(--le-text-muted)", marginBottom: 24 }}>{t.tagline}</div>
               <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px", display: "flex", flexDirection: "column", gap: 8 }}>
                 {t.features.map(f => (
-                  <li key={f} style={{ fontSize: 14, color: "var(--le-text-muted)", fontFamily: "var(--le-font-sans)" }}>
-                    — {f}
+                  <li
+                    key={f}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "flex-start",
+                      fontSize: 14,
+                      color: "var(--le-text-muted)",
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    <CheckIcon />
+                    {f}
                   </li>
                 ))}
               </ul>
@@ -47,7 +86,7 @@ export function Pricing() {
                 variant={t.isLead ? "primary" : "ghost"}
                 size="sm"
                 className={t.isLead ? "le-cta-primary-hover" : "le-cta-ghost-hover"}
-                style={{ width: "100%", padding: "10px 16px" }}
+                style={{ width: "100%", padding: "10px 16px", marginTop: "auto" }}
               >
                 {t.priceUsd > 0 ? "Get started →" : "Contact sales →"}
               </LEButtonLink>

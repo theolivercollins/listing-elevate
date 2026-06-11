@@ -2,52 +2,29 @@ import { LEIcon } from "@/v2/components/primitives/LEIcon";
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 
-const BG =
-  "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=2400&q=85";
-
+/**
+ * FinalCTA — light SaaS CTA band (2026-06-11).
+ *
+ * Removed the photo background and dark scrims. Now a clean elevated
+ * band on var(--le-bg-elev) with a top border — no photography, no dark.
+ */
 export function FinalCTA() {
   const { openLogin } = useLoginDialog();
   return (
     <section
       style={{
-        position: "relative",
-        overflow: "hidden",
+        background: "var(--le-bg-elev)",
+        borderTop: "1px solid var(--le-border)",
         padding: "clamp(64px, 14vw, 160px) clamp(16px, 5vw, 48px)",
-        background: "var(--le-bg)",
       }}
     >
-      <img
-        src={BG}
-        alt=""
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          filter: "brightness(0.45) saturate(1.1)",
-        }}
-      />
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "linear-gradient(180deg, rgba(5,7,14,0.2) 0%, rgba(5,7,14,0.55) 100%)",
-          pointerEvents: "none",
-        }}
-      />
       <div
         style={{
-          position: "relative",
-          zIndex: 2,
           maxWidth: 1200,
           margin: "0 auto",
         }}
       >
-        <div className="le-eyebrow" style={{ marginBottom: 24, color: "rgba(255,255,255,0.6)" }}>
+        <div className="le-eyebrow" style={{ marginBottom: 24, color: "var(--le-text-muted)" }}>
           — Get started
         </div>
         <h2

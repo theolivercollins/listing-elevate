@@ -22,7 +22,7 @@ const labelStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
-  background: "rgba(255,255,255,0.04)",
+  background: "var(--le-bg)",
   border: "1px solid var(--le-border-strong)",
   borderRadius: 4,
   color: "var(--le-text)",
@@ -35,13 +35,14 @@ const inputStyle: React.CSSProperties = {
 };
 
 /**
- * LoginDialog — editorial modal mirroring the Hero's dark aesthetic.
+ * LoginDialog — light modal matching the SaaS surface (2026-06-11).
  *
  * Primary flow: email + password (Supabase signInWithPassword).
  * Secondary flow: one-time magic link (signInWithMagicLink).
  *
  * Mounts into document.body via a portal so it can appear over any
  * route and stack cleanly above navs, images, and page content.
+ * Dark-pin removed — dialog inherits the global theme.
  */
 export function LoginDialog({ open, onClose }: LoginDialogProps) {
   const { signInWithMagicLink, signInWithPassword } = useAuth();
@@ -113,9 +114,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
       {open && (
         <motion.div
           key="login-dialog-root"
-          // `dark` anchors the --le-* tokens to their dark values: the dialog
-          // is always editorial-dark and portals outside any themed subtree.
-          className="dark"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -138,7 +136,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(5,7,14,0.72)",
+              background: "rgba(7,8,12,0.4)",
               backdropFilter: "blur(10px) saturate(1.2)",
               WebkitBackdropFilter: "blur(10px) saturate(1.2)",
             }}
@@ -158,12 +156,12 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
               position: "relative",
               width: "100%",
               maxWidth: 440,
-              background: "var(--le-bg-elev)",
-              border: "1px solid var(--le-border-strong)",
-              borderRadius: 4,
+              background: "var(--le-bg)",
+              border: "1px solid var(--le-border)",
+              borderRadius: 16,
               padding: "40px 40px 32px",
               color: "var(--le-text)",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.55)",
+              boxShadow: "var(--le-shadow-lg)",
               fontFamily: "var(--le-font-sans)",
             }}
           >
@@ -185,7 +183,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "rgba(255,255,255,0.55)",
+                color: "var(--le-text-faint)",
                 fontFamily: "var(--le-font-sans)",
               }}
             >
@@ -194,7 +192,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
 
             {/* Logo */}
             <div style={{ marginBottom: 28 }}>
-              <LELogoMark size={30} variant="light" />
+              <LELogoMark size={30} variant="dark" />
             </div>
 
             {sent ? (
@@ -204,7 +202,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     width: 44,
                     height: 44,
                     border: "1px solid var(--le-border-strong)",
-                    background: "rgba(255,255,255,0.06)",
+                    background: "var(--le-bg-sunken)",
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -250,7 +248,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   style={{
                     marginTop: 24,
                     fontSize: 12,
-                    color: "rgba(255,255,255,0.55)",
+                    color: "var(--le-text-muted)",
                     textDecoration: "underline",
                     textUnderlineOffset: 4,
                     background: "none",
@@ -399,7 +397,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       marginTop: 4,
                       background:
                         submitting || !canSubmit
-                          ? "rgba(255,255,255,0.28)"
+                          ? "var(--le-bg-sunken)"
                           : "var(--le-accent)",
                       color: "var(--le-accent-fg)",
                       border: "none",
@@ -448,7 +446,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     }}
                     style={{
                       fontSize: 12,
-                      color: "rgba(255,255,255,0.55)",
+                      color: "var(--le-text-muted)",
                       background: "none",
                       border: "none",
                       textDecoration: "underline",

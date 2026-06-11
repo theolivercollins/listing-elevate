@@ -1,11 +1,11 @@
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 
 /**
- * Footer — pixel-faithful port of landing.jsx lines 582-606.
+ * Footer — light SaaS redesign (2026-06-11).
  *
- * Uses inert <span>s for the link list (matching the design) because
- * the legal/route targets (/terms, /privacy) do not exist in this
- * shell. Left slot holds the white logo mark for the dark background.
+ * Logo switches to `variant="dark"` (ink mark for light backgrounds).
+ * Process/Showcase/Pricing/FAQ are real anchor links; Terms/Privacy
+ * remain inert spans (routes not yet shipped).
  */
 export function Footer() {
   return (
@@ -24,13 +24,13 @@ export function Footer() {
       }}
     >
       <div style={{ display: "flex", alignItems: "center" }}>
-        <LELogoMark size={14} variant="light" />
+        <LELogoMark size={14} variant="dark" />
       </div>
       <div className="le-flexwrap-sm" style={{ display: "flex", gap: 28 }}>
-        <span>Process</span>
-        <span>Showcase</span>
-        <span>Pricing</span>
-        <span>FAQ</span>
+        <a href="#process" style={{ color: "inherit", textDecoration: "none" }}>Process</a>
+        <a href="#showcase" style={{ color: "inherit", textDecoration: "none" }}>Showcase</a>
+        <a href="#pricing" style={{ color: "inherit", textDecoration: "none" }}>Pricing</a>
+        <a href="#faq" style={{ color: "inherit", textDecoration: "none" }}>FAQ</a>
         <span>Terms</span>
         <span>Privacy</span>
       </div>

@@ -105,7 +105,8 @@ export function Process() {
                 width: "100%",
                 aspectRatio: "4 / 3",
                 overflow: "hidden",
-                background: "#000",
+                background: "var(--le-bg-sunken)",
+                borderRadius: 12,
               }}
             >
               <img
@@ -115,7 +116,6 @@ export function Process() {
                   width: "100%",
                   height: "100%",
                   objectFit: "cover",
-                  filter: "brightness(0.9)",
                 }}
               />
             </div>
@@ -123,7 +123,7 @@ export function Process() {
             <div>
               <h3
                 style={{
-                  fontSize: 34,
+                  fontSize: 28,
                   margin: 0,
                   fontWeight: 500,
                   letterSpacing: "-0.025em",

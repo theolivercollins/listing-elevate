@@ -42,8 +42,26 @@ function ReelCard({ reel, large = false }: { reel: SampleReel; large?: boolean }
   const mins = Math.floor(reel.durationSec / 60);
   const secs = (reel.durationSec % 60).toString().padStart(2, "0");
   return (
-    <div style={{ position: "relative", aspectRatio: large ? "4 / 3" : "16 / 10", borderRadius: 2, overflow: "hidden" }}>
-      <img src={reel.posterUrl} alt={reel.title} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+    <div
+      style={{
+        position: "relative",
+        aspectRatio: large ? "4 / 3" : "16 / 10",
+        borderRadius: 16,
+        overflow: "hidden",
+        boxShadow: "var(--le-shadow-md)",
+      }}
+    >
+      <img src={reel.posterUrl} alt={reel.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      {/* Bottom scrim so white title/duration text reads over any poster */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "linear-gradient(180deg, transparent 55%, rgba(7,8,12,0.65) 100%)",
+          pointerEvents: "none",
+        }}
+      />
       <div style={{ position: "absolute", top: 16, left: 16 }}>
         <span className="le-mono" style={{ fontSize: 10, padding: "4px 8px", borderRadius: 2, background: "rgba(0,0,0,0.5)", color: "#fff", backdropFilter: "blur(8px)" }}>
           <span aria-hidden="true">▶</span> {mins}:{secs}

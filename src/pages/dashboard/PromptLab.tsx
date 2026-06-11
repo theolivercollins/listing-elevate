@@ -58,9 +58,11 @@ import {
 import { HALLUCINATION_FLAGS, type HallucinationFlag } from "../../../lib/prompts/judge-rubric.js";
 import { promoteRecipe } from "@/lib/recipesApi";
 import { supabase } from "@/lib/supabase";
-import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "../../../lib/providers/router.js";
 import { surfaceAffinityForPick } from "../../../lib/providers/sku-motion-affinity.js";
-import { V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel, getSupportedResolutions } from "@/lib/labModels";
+// V1_ATLAS_SKUS/V1_DEFAULT_SKU come from the client-safe mirror in labModels —
+// the server chain (lib/providers/router → atlas) reads process.env at import
+// time and crashes the browser bundle in vite dev.
+import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku, V1_1_LAB_SKUS, V1_1_DEFAULT_SKU, type V1_1LabSku, getLabModel, getSupportedResolutions } from "@/lib/labModels";
 import { DirectorModal } from "@/components/lab/DirectorModal";
 import { ModelFeedbackPanel } from "@/components/lab/ModelFeedbackPanel";
 
