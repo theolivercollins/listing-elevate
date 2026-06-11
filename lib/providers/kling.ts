@@ -60,11 +60,20 @@ export class KlingProvider implements IVideoProvider {
     // ratio and ignores the `aspect_ratio` field — a 3:2 MLS photo yields a
     // sub-1080p ~3:2 clip (measured 1172×784 on the 2026-06-11 5019 San
     // Massimo run; see docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md).
-    // The assembler then cover-upscales it 1.64x onto the 1920×1080 canvas —
-    // the dominant quality loss in final videos. Center-crop the source photo
-    // to a true 16:9 1920×1080 frame first (same pattern Seedance uses via
-    // atlas.ts forceSourceAspectRatio) so Kling emits full 16:9 1080p-class
-    // clips. Kling bills per clip, so this changes no cost_events math.
+    // The assembler then cover-upscales it 1.64x AND crops ~204px vertically
+    // onto the 1920×1080 canvas — the dominant quality loss in final videos.
+    // Center-crop the source photo to a true 16:9 1920×1080 frame first (same
+    // pattern as atlas.ts forceSourceAspectRatio).
+    //
+    // HONEST LIMIT (ffprobe audit 2026-06-11): kling-v2-master has a FIXED
+    // ~0.92 MP output pixel budget — the exact 1280×720 area — shaped to the
+    // input aspect. It cannot emit 1080p no matter the input. With a 16:9
+    // source it returns ~1280×720, so assembly still upscales 1.5x — but
+    // uniformly, with zero crop, instead of 1.64x + crop. This provider is
+    // the degraded-mode FAILOVER (fires when Atlas is down, e.g. the 402
+    // insufficient-balance cascade on the 5019 San Massimo run); the primary
+    // Atlas SKUs are 1080p-class with the same crop applied in atlas.ts.
+    // Kling bills per clip, so this changes no cost_events math.
     //
     // Kling accepts either an HTTPS URL or base64 for `image`. Prefer URL
     // when available — large photos base64-encode past provider caps. The

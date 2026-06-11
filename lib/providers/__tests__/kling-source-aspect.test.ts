@@ -13,6 +13,11 @@
  * URL through ensureSourceAspectRatio (lib/services/source-aspect.ts), the
  * same 16:9 center-crop Seedance already uses via atlas.ts
  * forceSourceAspectRatio.
+ *
+ * HONEST LIMIT: native kling-v2-master has a FIXED ~0.92 MP output budget
+ * (ffprobe audit 2026-06-11) — the crop yields a uniform 16:9 ~1280×720 clip
+ * (clean 1.5x assembly upscale, zero crop), NOT 1080p. The 1080p-class fix
+ * for primary routes lives in atlas.ts (2.07 MP-budget SKUs + same crop).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
