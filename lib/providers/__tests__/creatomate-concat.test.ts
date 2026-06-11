@@ -60,6 +60,13 @@ describe("buildCreatomateConcatScript", () => {
     const s = buildCreatomateConcatScript(CLIPS);
     expect(s.elements.some((e) => e.type === "audio")).toBe(false);
   });
+
+  it("omits frame_rate so output follows the source clips' fps (no 24->30 resample)", () => {
+    // 2026-06-11 assembly-quality diagnosis: AI source clips are 24fps;
+    // Creatomate's default (no frame_rate) is the highest input fps.
+    const s = buildCreatomateConcatScript(CLIPS);
+    expect("frame_rate" in s).toBe(false);
+  });
 });
 
 describe("buildCreatomateConcatScript audio (WI-2)", () => {

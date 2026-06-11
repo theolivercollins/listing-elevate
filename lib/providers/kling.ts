@@ -5,6 +5,7 @@ import type {
   GenerationJob,
   GenerationResult,
 } from "./provider.interface.js";
+import { ensureSourceAspectRatio } from "../services/source-aspect.js";
 
 export class KlingProvider implements IVideoProvider {
   name = "kling" as const;
@@ -55,10 +56,22 @@ export class KlingProvider implements IVideoProvider {
   }
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
+    // Kling i2v derives its OUTPUT geometry from the INPUT image's aspect
+    // ratio and ignores the `aspect_ratio` field — a 3:2 MLS photo yields a
+    // sub-1080p ~3:2 clip (measured 1172×784 on the 2026-06-11 5019 San
+    // Massimo run; see docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md).
+    // The assembler then cover-upscales it 1.64x onto the 1920×1080 canvas —
+    // the dominant quality loss in final videos. Center-crop the source photo
+    // to a true 16:9 1920×1080 frame first (same pattern Seedance uses via
+    // atlas.ts forceSourceAspectRatio) so Kling emits full 16:9 1080p-class
+    // clips. Kling bills per clip, so this changes no cost_events math.
+    //
     // Kling accepts either an HTTPS URL or base64 for `image`. Prefer URL
-    // when available — large photos base64-encode past provider caps.
+    // when available — large photos base64-encode past provider caps. The
+    // crop applies only on the URL path (ensureSourceAspectRatio operates on
+    // URLs; all pipeline call sites pass one).
     const image = params.sourceImageUrl
-      ? params.sourceImageUrl
+      ? await ensureSourceAspectRatio(params.sourceImageUrl)
       : params.sourceImage.toString("base64");
 
     const response = await fetch(

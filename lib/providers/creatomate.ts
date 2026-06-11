@@ -175,7 +175,12 @@ export function buildCreatomateConcatScript(
     output_format: "mp4",
     width,
     height,
-    frame_rate: 30,
+    // frame_rate intentionally OMITTED — Creatomate then defaults to the
+    // highest frame rate among the input videos (docs). Our AI source clips
+    // are 24fps; forcing 30 would resample 24->30 and soften motion (see
+    // docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md). The old
+    // frame_rate: 30 here was observed NOT honored (output measured 24fps),
+    // but omitting it removes the latent risk entirely.
     // null → auto-fit the composition to the sequential clips (omitting it
     // makes /v2/renders fall back to a 5s draft, so be explicit).
     duration: null,
@@ -460,7 +465,12 @@ export function buildCreatomateTimeline(
     output_format: "mp4",
     width,
     height,
-    frame_rate: 30,
+    // frame_rate intentionally OMITTED — Creatomate then defaults to the
+    // highest frame rate among the input videos (docs). Our AI source clips
+    // are 24fps; forcing 30 would resample 24->30 and soften motion (see
+    // docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md). The old
+    // frame_rate: 30 here was observed NOT honored (output measured 24fps),
+    // but omitting it removes the latent risk entirely.
     // Explicit timeline duration — Creatomate /v2/renders defaults to 5s
     // when this is omitted, regardless of how long the elements run.
     duration: totalDuration,

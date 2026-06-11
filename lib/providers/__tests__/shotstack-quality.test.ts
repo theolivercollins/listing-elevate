@@ -2,17 +2,18 @@
  * shotstack-quality.test.ts
  *
  * Asserts that every Shotstack render payload builder emits the maximum
- * quality tier, an explicit 30fps, and 1080p resolution.
+ * quality tier, an explicit source-matched 24fps, and 1080p resolution.
  *
  * Root cause: Shotstack's default quality is "medium" and default fps is 25.
- * Both silently degrade the final assembled video vs. the source clips, which
- * are 30fps AI-generated video (Kling/Runway/Veo). Without explicit
- * quality:"high" + fps:30, every assembly ships at medium quality and gets
- * frame-rate-converted from 30fps source to 25fps output — a visible
- * sharpness and motion-smoothness regression on the final render.
- *
- * These tests follow TDD: written BEFORE the fix and expected to fail until
- * quality and fps are added to ShotstackRenderPayload.output.
+ * Both silently degrade the final assembled video vs. the source clips. Our
+ * AI-generated source clips (Kling/Seedance/Runway/Veo) measure 24fps
+ * (ffprobe, 2026-06-11 5019 San Massimo diagnosis — see
+ * docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md). Without
+ * explicit quality:"high" + fps:24, every assembly ships at medium quality
+ * and gets frame-rate-resampled 24→25 — a visible sharpness and
+ * motion-smoothness regression on the final render. fps must MATCH the
+ * sources (24), never "upgrade" them: resampling 24fps to 30fps softens
+ * motion, the exact defect this guards against.
  */
 
 import { describe, it, expect } from "vitest";
@@ -66,9 +67,9 @@ describe("buildShotstackConcatTimeline output quality", () => {
     expect((payload.output as Record<string, unknown>).quality).toBe("high");
   });
 
-  it("emits fps: 30 to match AI-generated source clips", () => {
+  it("emits fps: 24 to match AI-generated source clips", () => {
     const payload = buildShotstackConcatTimeline(CLIP_URLS);
-    expect((payload.output as Record<string, unknown>).fps).toBe(30);
+    expect((payload.output as Record<string, unknown>).fps).toBe(24);
   });
 
   it("still emits resolution: '1080' (not downgraded)", () => {
@@ -79,7 +80,7 @@ describe("buildShotstackConcatTimeline output quality", () => {
   it("carries quality and fps through for 9:16 vertical output too", () => {
     const payload = buildShotstackConcatTimeline(CLIP_URLS, "9:16");
     expect((payload.output as Record<string, unknown>).quality).toBe("high");
-    expect((payload.output as Record<string, unknown>).fps).toBe(30);
+    expect((payload.output as Record<string, unknown>).fps).toBe(24);
   });
 });
 
@@ -93,9 +94,9 @@ describe("buildShotstackTimeline output quality", () => {
     expect((payload.output as Record<string, unknown>).quality).toBe("high");
   });
 
-  it("emits fps: 30", () => {
+  it("emits fps: 24", () => {
     const payload = buildShotstackTimeline(ASSEMBLY_PARAMS);
-    expect((payload.output as Record<string, unknown>).fps).toBe(30);
+    expect((payload.output as Record<string, unknown>).fps).toBe(24);
   });
 
   it("still emits resolution: '1080'", () => {
@@ -114,9 +115,9 @@ describe("buildShotstackJustListedTimeline output quality", () => {
     expect((payload.output as Record<string, unknown>).quality).toBe("high");
   });
 
-  it("emits fps: 30", () => {
+  it("emits fps: 24", () => {
     const payload = buildShotstackJustListedTimeline(JUST_LISTED_PARAMS);
-    expect((payload.output as Record<string, unknown>).fps).toBe(30);
+    expect((payload.output as Record<string, unknown>).fps).toBe(24);
   });
 
   it("still emits resolution: '1080'", () => {

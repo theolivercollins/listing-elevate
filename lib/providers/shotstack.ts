@@ -139,9 +139,11 @@ interface ShotstackRenderPayload {
      *  "high" so the assembled video matches the source clip quality.
      *  Shotstack bills per output-minute regardless of quality tier. */
     quality: "low" | "medium" | "high";
-    /** Output frame rate. Defaults to 25fps server-side. AI-generated source
-     *  clips (Kling/Runway/Veo) are 30fps — match that to avoid a frame-rate
-     *  conversion pass that softens motion. */
+    /** Output frame rate. Defaults to 25fps server-side. Our AI-generated
+     *  source clips (Kling/Seedance/Runway/Veo) measure 24fps (ffprobe on the
+     *  2026-06-11 5019 San Massimo run — see docs/sessions/2026-06-11-assembly-
+     *  quality-drop-diagnosis.md). Match the sources at 24 so Shotstack never
+     *  runs a 24→25 frame-rate resample, which softens motion. */
     fps: number;
   };
 }
@@ -187,7 +189,7 @@ export function buildShotstackConcatTimeline(
       resolution: "1080",
       aspectRatio,
       quality: "high",
-      fps: 30,
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
     },
   };
 }
@@ -301,7 +303,7 @@ export function buildShotstackTimeline(
       resolution: "1080",
       aspectRatio,
       quality: "high",
-      fps: 30,
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
     },
   };
 }
@@ -516,7 +518,7 @@ export function buildShotstackJustListedTimeline(
       resolution: "1080",
       aspectRatio,
       quality: "high",
-      fps: 30,
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
     },
   };
 }
