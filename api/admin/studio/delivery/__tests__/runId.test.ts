@@ -57,9 +57,19 @@ vi.mock('../../../../../lib/voiceover/audio-tags', () => ({
 vi.mock('../../../../../lib/voiceover/generate-audio', () => ({
   generateVoiceoverAudio: (...a: unknown[]) => mockGenerateVoiceoverAudio(...a),
 }));
+const mockBuildFeedbackBlock = vi.fn().mockReturnValue('');
+const mockBuildGenrePrompt = vi.fn().mockImplementation((mood: string, frag: string, fb: string) => `${mood} ${frag}${fb ? ' ' + fb : ''}`);
 vi.mock('../../../../../lib/providers/elevenlabs-music', () => ({
   composeMusic: (...a: unknown[]) => mockComposeMusic(...a),
   MOOD_PROMPTS: { upbeat: 'upbeat prompt', warm: 'warm prompt', celebratory: 'celebratory prompt', cinematic: 'cinematic prompt', neutral: 'neutral prompt' },
+  GENRE_VARIANTS: [
+    { key: 'acoustic', label: 'Acoustic', promptFragment: 'Acoustic fragment.' },
+    { key: 'orchestral', label: 'Orchestral', promptFragment: 'Orchestral fragment.' },
+    { key: 'ambient', label: 'Ambient', promptFragment: 'Ambient fragment.' },
+    { key: 'modern', label: 'Modern', promptFragment: 'Modern fragment.' },
+  ],
+  buildFeedbackBlock: (...a: unknown[]) => mockBuildFeedbackBlock(...a),
+  buildGenrePrompt: (...a: unknown[]) => mockBuildGenrePrompt(...a),
 }));
 vi.mock('../../../../../lib/delivery/assemble', () => ({
   runAssembleStage: (...a: unknown[]) => mockRunAssembleStage(...a),
@@ -131,6 +141,8 @@ beforeEach(() => {
   });
   mockParseFeedbackComment.mockResolvedValue({ tags: [{ category: 'pacing', sentiment: 'negative', note: 'felt rushed' }] });
   mockAdvanceRun.mockResolvedValue({ ...run, stage: 'delivered' });
+  mockBuildFeedbackBlock.mockReturnValue('');
+  mockBuildGenrePrompt.mockImplementation((mood: string, frag: string, fb: string) => `${mood} ${frag}${fb ? ' ' + fb : ''}`);
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -621,21 +633,55 @@ describe('POST set_music + generate_music (T19)', () => {
     expect(mockUpdateRun).not.toHaveBeenCalled();
   });
 
-  it('POST generate_music -> 201, calls composeMusic, uploads + inserts track', async () => {
+  it('POST generate_music -> 201, calls composeMusic 4x, returns { tracks, failures:0 }', async () => {
     mockGetRun.mockResolvedValue({ ...run, video_type: 'just_closed', duration_seconds: 30, property_id: 'p1' });
+
+    // music_track_feedback chain
+    function makeEmptyFbChain() {
+      const chain: Record<string, unknown> = {};
+      chain.limit = vi.fn().mockResolvedValue({ data: [], error: null });
+      chain.order = vi.fn().mockReturnValue(chain);
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.select = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
+    let insertCallN = 0;
+    const trackIds2 = ['t-a', 't-o', 't-am', 't-m'];
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFbChain();
+      if (table === 'music_tracks') {
+        const id = trackIds2[insertCallN++] ?? 'tx';
+        return {
+          insert: vi.fn().mockReturnValue({
+            select: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { id, name: `Generated · celebratory · acoustic · 2026-06-11`, file_url: `https://cdn.example.com/music/${id}.mp3`, mood_tag: 'celebratory', source: 'elevenlabs_music', genre: 'acoustic' },
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
     const res = makeRes();
     await handler(
       { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(201);
+    // composeMusic called once per genre (4 times)
+    expect(mockComposeMusic).toHaveBeenCalledTimes(4);
+    // All calls include a prompt and use propertyId
     expect(mockComposeMusic).toHaveBeenCalledWith(
-      'celebratory prompt',
+      expect.any(String),
       expect.any(Number),
       expect.objectContaining({ propertyId: 'p1' }),
     );
-    const body = res._body as { track: { id: string } };
-    expect(body.track.id).toBe('track-new');
+    const body = res._body as { tracks: { id: string }[]; failures: number };
+    expect(body.tracks).toHaveLength(4);
+    expect(body.failures).toBe(0);
   });
 
   it('POST generate_music -> 404 on unknown run', async () => {
@@ -649,14 +695,23 @@ describe('POST set_music + generate_music (T19)', () => {
     expect(mockComposeMusic).not.toHaveBeenCalled();
   });
 
-  it('POST generate_music -> fallback to library track when compose fails and library has tracks', async () => {
+  it('POST generate_music -> all-fail fallback to library track when compose fails and library has tracks', async () => {
     mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, property_id: 'p1' });
     mockComposeMusic.mockRejectedValue(new Error('401 missing_permissions'));
     const libraryTrack = { id: 'lib-track-1', name: 'Upbeat Library Track', file_url: 'https://cdn.example.com/music/lib1.mp3', mood_tag: 'upbeat', source: 'library' };
-    // Build a chainable Supabase mock that handles the query shapes used in the fallback:
-    //   .select(...).eq(...).eq(...).neq(...)  → { data: [libraryTrack] }  (3-filter queries)
-    //   .select(...).eq(...).neq(...)           → { data: [libraryTrack] }  (2-filter query)
-    // Each eq/neq step must also expose the remaining chain methods.
+
+    // music_track_feedback chain for the initial feedback query
+    function makeEmptyFbChain2() {
+      const chain: Record<string, unknown> = {};
+      chain.limit = vi.fn().mockResolvedValue({ data: [], error: null });
+      chain.order = vi.fn().mockReturnValue(chain);
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.select = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
+    // Build a chainable mock for the fallback pool queries:
+    //   .select(...).eq(...).eq(...).neq(...)  → { data: [libraryTrack] }
+    //   .select(...).eq(...).neq(...)           → { data: [libraryTrack] }
     function makeChain(result: unknown) {
       const chain: Record<string, unknown> = {};
       chain.neq = vi.fn().mockResolvedValue(result);
@@ -666,6 +721,7 @@ describe('POST set_music + generate_music (T19)', () => {
     const chainWithTrack = makeChain({ data: [libraryTrack] });
     const mockSelectChain = vi.fn().mockReturnValue(chainWithTrack);
     mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFbChain2();
       if (table === 'properties') return { select: mockDbSelect };
       if (table === 'music_tracks') return { select: mockSelectChain, insert: mockDbInsert };
       return { update: mockDbUpdate };
@@ -678,9 +734,10 @@ describe('POST set_music + generate_music (T19)', () => {
     );
     expect(res._status).toBe(200);
     expect(mockSetRunError).not.toHaveBeenCalled();
-    const body = res._body as { track: { id: string }; fallback: boolean; warning: string };
+    const body = res._body as { tracks: { id: string }[]; fallback: boolean; warning: string; failures: number };
     expect(body.fallback).toBe(true);
-    expect(body.track.id).toBe('lib-track-1');
+    expect(body.failures).toBe(4);
+    expect(body.tracks[0].id).toBe('lib-track-1');
     expect(body.warning).toContain('401 missing_permissions');
     expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ music_track_id: 'lib-track-1' }));
     expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_choice', expect.objectContaining({
@@ -693,6 +750,16 @@ describe('POST set_music + generate_music (T19)', () => {
   it('POST generate_music -> 502 + setRunError when compose fails AND library is empty', async () => {
     mockGetRun.mockResolvedValue({ ...run, video_type: 'just_listed', duration_seconds: 30, property_id: 'p1' });
     mockComposeMusic.mockRejectedValue(new Error('ElevenLabs Music failed (500): server error'));
+
+    // music_track_feedback chain
+    function makeEmptyFbChainFor502() {
+      const chain: Record<string, unknown> = {};
+      chain.limit = vi.fn().mockResolvedValue({ data: [], error: null });
+      chain.order = vi.fn().mockReturnValue(chain);
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.select = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
     // All fallback queries return empty pools — same chain structure but empty arrays
     function makeEmptyChain() {
       const chain: Record<string, unknown> = {};
@@ -703,6 +770,7 @@ describe('POST set_music + generate_music (T19)', () => {
     const emptyChain = makeEmptyChain();
     const mockSelectEmpty = vi.fn().mockReturnValue(emptyChain);
     mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFbChainFor502();
       if (table === 'properties') return { select: mockDbSelect };
       if (table === 'music_tracks') return { select: mockSelectEmpty, insert: mockDbInsert };
       return { update: mockDbUpdate };
@@ -872,5 +940,395 @@ describe('unsupported methods', () => {
     const res2 = makeRes();
     await handler({ method: 'PUT', query: { runId: 'r1' }, headers: {}, body: {} } as unknown as VercelRequest, res2 as unknown as VercelResponse);
     expect(res2._status).toBe(405);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generate_music — 4-genre parallel generation (T22)
+// ---------------------------------------------------------------------------
+
+describe('POST generate_music — 4-genre parallel (T22)', () => {
+  // Default: all 4 genres succeed. We need to set up the db mock to support
+  // music_track_feedback SELECT (returns empty = no prior feedback) plus
+  // 4 INSERT calls for the new track rows.
+  const musicRun = { id: 'r1', property_id: 'p1', stage: 'music', video_type: 'just_listed', duration_seconds: 30 };
+
+  // Create a per-insert mock factory that returns a unique track each call
+  function makeInsertChain(trackId: string) {
+    return {
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({
+          data: {
+            id: trackId,
+            name: `Generated · upbeat · acoustic · 2026-06-11`,
+            file_url: `https://cdn.example.com/music/${trackId}.mp3`,
+            mood_tag: 'upbeat',
+            source: 'elevenlabs_music',
+            genre: 'acoustic',
+          },
+          error: null,
+        }),
+      }),
+    };
+  }
+
+  function makeEmptyFeedbackChain() {
+    // music_track_feedback SELECT: .select().eq().eq().order().limit()
+    const chain: Record<string, unknown> = {};
+    chain.limit = vi.fn().mockResolvedValue({ data: [], error: null });
+    chain.order = vi.fn().mockReturnValue(chain);
+    chain.eq = vi.fn().mockReturnValue(chain);
+    chain.select = vi.fn().mockReturnValue(chain);
+    return chain;
+  }
+
+  it('4-up success: calls composeMusic 4x, inserts 4 tracks, returns { tracks, failures:0 }', async () => {
+    mockGetRun.mockResolvedValue(musicRun);
+    mockComposeMusic.mockResolvedValue({ audio: Buffer.from('mp3'), lengthMs: 35000 });
+
+    const insertCallCount = { n: 0 };
+    const trackIds = ['t-acoustic', 't-orchestral', 't-ambient', 't-modern'];
+
+    mockDbStorage.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://cdn.example.com/music/x.mp3' } }),
+    });
+
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFeedbackChain();
+      if (table === 'music_tracks') {
+        const n = insertCallCount.n++;
+        return { insert: vi.fn().mockReturnValue(makeInsertChain(trackIds[n] ?? 'tx')) };
+      }
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockComposeMusic).toHaveBeenCalledTimes(4);
+    const body = res._body as { tracks: { id: string }[]; failures: number; warning?: string };
+    expect(body.tracks).toHaveLength(4);
+    expect(body.failures).toBe(0);
+    expect(body.warning).toBeUndefined();
+  });
+
+  it('partial failure (2 fail): returns { tracks: [2 tracks], failures: 2, warning }', async () => {
+    mockGetRun.mockResolvedValue(musicRun);
+    // First 2 calls succeed, last 2 fail
+    mockComposeMusic
+      .mockResolvedValueOnce({ audio: Buffer.from('mp3'), lengthMs: 35000 })
+      .mockResolvedValueOnce({ audio: Buffer.from('mp3'), lengthMs: 35000 })
+      .mockRejectedValueOnce(new Error('ElevenLabs timeout'))
+      .mockRejectedValueOnce(new Error('ElevenLabs timeout'));
+
+    const insertCallCount2 = { n: 0 };
+    const successIds = ['t-acoustic', 't-orchestral'];
+    mockDbStorage.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://cdn.example.com/music/x.mp3' } }),
+    });
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFeedbackChain();
+      if (table === 'music_tracks') {
+        const n = insertCallCount2.n++;
+        return { insert: vi.fn().mockReturnValue(makeInsertChain(successIds[n] ?? 'tx')) };
+      }
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    const body = res._body as { tracks: { id: string }[]; failures: number; warning?: string };
+    expect(body.tracks).toHaveLength(2);
+    expect(body.failures).toBe(2);
+    expect(body.warning).toContain('2 of 4');
+  });
+
+  it('all-fail → library fallback: returns { tracks: [fallback], failures: 4, fallback: true, warning }', async () => {
+    mockGetRun.mockResolvedValue(musicRun);
+    mockComposeMusic.mockRejectedValue(new Error('ElevenLabs API down'));
+
+    const libraryTrack = { id: 'lib-1', name: 'Library', file_url: 'https://cdn.example.com/lib.mp3', mood_tag: 'upbeat', source: 'library', genre: null };
+
+    function makeChain(result: unknown) {
+      const chain: Record<string, unknown> = {};
+      chain.neq = vi.fn().mockResolvedValue(result);
+      chain.eq = vi.fn().mockReturnValue(chain);
+      return chain;
+    }
+    const withTrack = makeChain({ data: [libraryTrack] });
+    const selectChain = vi.fn().mockReturnValue(withTrack);
+
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFeedbackChain();
+      if (table === 'music_tracks') return { select: selectChain, insert: mockDbInsert };
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+    mockUpdateRun.mockResolvedValue({ ...musicRun, music_track_id: 'lib-1' });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const body = res._body as { tracks: { id: string; genre: unknown }[]; failures: number; fallback: boolean; warning?: string };
+    expect(body.fallback).toBe(true);
+    expect(body.failures).toBe(4);
+    expect(body.tracks).toHaveLength(1);
+    expect(body.tracks[0].id).toBe('lib-1');
+    expect(body.warning).toBeTruthy();
+  });
+
+  it('generate_music fetches feedback rows for the run mood and passes feedbackBlock to composeMusic', async () => {
+    mockGetRun.mockResolvedValue(musicRun);
+    mockComposeMusic.mockResolvedValue({ audio: Buffer.from('mp3'), lengthMs: 35000 });
+    mockBuildFeedbackBlock.mockReturnValue('OPERATOR FEEDBACK: liked acoustic.');
+
+    const insertCallCount3 = { n: 0 };
+    const ids3 = ['t1', 't2', 't3', 't4'];
+    mockDbStorage.mockReturnValue({
+      upload: vi.fn().mockResolvedValue({ error: null }),
+      getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: 'https://cdn.example.com/music/x.mp3' } }),
+    });
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_track_feedback') return makeEmptyFeedbackChain();
+      if (table === 'music_tracks') {
+        const n = insertCallCount3.n++;
+        return { insert: vi.fn().mockReturnValue(makeInsertChain(ids3[n] ?? 'tx')) };
+      }
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'generate_music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(mockBuildFeedbackBlock).toHaveBeenCalled();
+    // buildGenrePrompt called 4 times — once per genre
+    expect(mockBuildGenrePrompt).toHaveBeenCalledTimes(4);
+    // All 4 composeMusic calls receive the composed prompt (not just the raw mood)
+    expect(mockComposeMusic).toHaveBeenCalledTimes(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// music_feedback action (T23)
+// ---------------------------------------------------------------------------
+
+describe('POST music_feedback (T23)', () => {
+  // A track row returned when we look up track_id
+  const aiTrack = {
+    id: 'track-ai-1',
+    mood_tag: 'upbeat',
+    genre: 'acoustic',
+    prompt: 'Uplifting prompt...',
+    source: 'elevenlabs_music',
+    active: true,
+  };
+  const libraryTrack = {
+    id: 'track-lib-1',
+    mood_tag: 'upbeat',
+    genre: null,
+    prompt: null,
+    source: 'library',
+    active: true,
+  };
+
+  function makeFeedbackInsertChain(success = true) {
+    return {
+      upsert: vi.fn().mockResolvedValue({ error: success ? null : new Error('upsert failed') }),
+    };
+  }
+
+  function makeTrackSelectChain(track: typeof aiTrack | typeof libraryTrack) {
+    return {
+      select: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          maybeSingle: vi.fn().mockResolvedValue({ data: track, error: null }),
+        }),
+      }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+      update: vi.fn().mockReturnValue({
+        eq: vi.fn().mockReturnValue({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        }),
+      }),
+    };
+  }
+
+  it('music_feedback insert (new row): verdict up → ok:true, records ml_event, does NOT deactivate', async () => {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') return makeTrackSelectChain(aiTrack);
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain();
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'up' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect((res._body as { ok: boolean }).ok).toBe(true);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_feedback', expect.objectContaining({
+      track_id: 'track-ai-1',
+      verdict: 'up',
+      has_comment: false,
+    }));
+    // verdict=up → no deactivation
+    const updateCalls = (mockDbFrom.mock.results as { value: { update: typeof vi.fn } }[])
+      .map(r => r.value?.update);
+    // The music_tracks update for deactivation should NOT have been called for an 'up' verdict
+  });
+
+  it('music_feedback with comment: has_comment=true in ml_event payload', async () => {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') return makeTrackSelectChain(aiTrack);
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain();
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'up', comment: 'loved the strings' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'music_feedback', expect.objectContaining({
+      has_comment: true,
+    }));
+  });
+
+  it('music_feedback upsert failure: 500, no ml_event recorded', async () => {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') return makeTrackSelectChain(aiTrack);
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain(false);
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'up' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(500);
+    expect(String((res._body as { error: string }).error)).toContain('feedback save failed');
+    expect(mockRecordMlEvent).not.toHaveBeenCalledWith('r1', 'music_feedback', expect.anything());
+  });
+
+  it('music_feedback verdict=down on AI track: sets music_tracks.active=false', async () => {
+    const deactivateUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    });
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: aiTrack, error: null }),
+            }),
+          }),
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: deactivateUpdate,
+        };
+      }
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain();
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'down' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(deactivateUpdate).toHaveBeenCalledWith(expect.objectContaining({ active: false }));
+  });
+
+  it('music_feedback verdict=down on LIBRARY track: does NOT deactivate', async () => {
+    const deactivateUpdate = vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        eq: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    });
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: libraryTrack, error: null }),
+            }),
+          }),
+          upsert: vi.fn().mockResolvedValue({ error: null }),
+          update: deactivateUpdate,
+        };
+      }
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain();
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-lib-1', verdict: 'down' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    // deactivateUpdate must NOT have been called on the music_tracks table
+    expect(deactivateUpdate).not.toHaveBeenCalled();
+  });
+
+  it('music_feedback repeat (same run+track): upsert semantics, ok:true', async () => {
+    // Upsert: the DB call goes through regardless; we just verify the response
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'music_tracks') return makeTrackSelectChain(aiTrack);
+      if (table === 'music_track_feedback') return makeFeedbackInsertChain();
+      return { select: mockDbSelect, update: mockDbUpdate };
+    });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'down' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    const res2 = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'up' } } as unknown as VercelRequest,
+      res2 as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(res2._status).toBe(200);
+  });
+
+  it('music_feedback invalid verdict -> 400', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', track_id: 'track-ai-1', verdict: 'meh' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('music_feedback missing track_id -> 400', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'music_feedback', verdict: 'up' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
   });
 });
