@@ -135,6 +135,14 @@ interface ShotstackRenderPayload {
     format: "mp4";
     resolution: "hd" | "1080";
     aspectRatio: "16:9" | "9:16";
+    /** Render quality tier. Defaults to "medium" server-side — always set to
+     *  "high" so the assembled video matches the source clip quality.
+     *  Shotstack bills per output-minute regardless of quality tier. */
+    quality: "low" | "medium" | "high";
+    /** Output frame rate. Defaults to 25fps server-side. AI-generated source
+     *  clips (Kling/Runway/Veo) are 30fps — match that to avoid a frame-rate
+     *  conversion pass that softens motion. */
+    fps: number;
   };
 }
 
@@ -178,6 +186,8 @@ export function buildShotstackConcatTimeline(
       format: "mp4",
       resolution: "1080",
       aspectRatio,
+      quality: "high",
+      fps: 30,
     },
   };
 }
@@ -290,6 +300,8 @@ export function buildShotstackTimeline(
       format: "mp4",
       resolution: "1080",
       aspectRatio,
+      quality: "high",
+      fps: 30,
     },
   };
 }
@@ -503,6 +515,8 @@ export function buildShotstackJustListedTimeline(
       format: "mp4",
       resolution: "1080",
       aspectRatio,
+      quality: "high",
+      fps: 30,
     },
   };
 }
