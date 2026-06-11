@@ -69,6 +69,7 @@
     { "src": "/api/share/([^/]+)", "dest": "/api/share/[token]?token=$1" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/preview/([^/]+)", "dest": "/api/preview-page/[token]?token=$1" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
