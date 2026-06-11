@@ -44,3 +44,17 @@ Three catches on the assembly-quality fix, all preventable:
 3. **The fix branch was cut from a feature branch, not origin/main.** Basing fix/max-quality-assembly on feat/market-update-workflow dragged 300+ unreviewed market-update lines toward a prod PR, and its stale router.ts (paired -> kling-v2-1-pair, upgraded to kling-v3-pro on main 2026-06-10) made two panel refuters disagree about which SKU paired scenes use. **Lesson:** prod-bound fix branches are cut from origin/main, full stop. `git log --oneline origin/main..HEAD` before the first commit; if commits you didn't write appear, rebase first.
 
 Also recorded: the run under diagnosis degraded because Atlas returned HTTP 402 (insufficient balance) and every v1.1 scene failed over to the 720p-class native Kling. Quality incidents can be ops incidents — check the provider error trail before assuming code.
+
+## Dated gate-catch log (one line per lesson, max 30 most recent)
+
+- 2026-06-11: tests gate caught a vi.mock factory missing a newly-imported export (stringifyDbError, 4 failures) — when a handler gains an import, update every mock factory; prefer the importOriginal pattern so real exports survive.
+- 2026-06-11: tests gate caught stale-base test files silently reverting origin/main's fixes (ingest.test.ts, MarketComparison.test.tsx) — `git diff origin/main -- <file>` before editing any test on a feature branch; restore main's copy and layer changes on top.
+- 2026-06-11: tests gate caught Edit/Write blocked for pinned subagents under the worktree-isolation guard — spawn fixer seats with cwd inside the run worktree (or isolation: worktree) so file edits use the proper tools.
+- 2026-06-11: tests gate caught a bare `tsc --noEmit` reporting 0 errors because the root tsconfig is a solution file (`files: []`) — always typecheck with `-p tsconfig.app.json` / `-p tsconfig.api.json`.
+- 2026-06-11: qa gate caught the quality fix targeting Shotstack when the failing run rendered via Creatomate — read the run's actual provider route from the data (assembly_provider, render records) before fixing anything.
+- 2026-06-11: qa gate caught fps:30 forced onto measured-24fps sources — assembly frame rate must follow the sources or be omitted; "upgrading" fps adds the resample softness being fixed.
+- 2026-06-11: qa gate caught the dominant diagnosed root cause (sub-1080p Kling clips cover-upscaled 1.64x) left unfixed while a side path was patched — implement the diagnosis's primary recommendation or explicitly rebut it.
+- 2026-06-11: qa gate caught diagnosis and fix split across two unmerged branches — one incident, one branch; cherry-pick the diagnosis commit onto the fix branch before coding.
+- 2026-06-11: adversarial panel caught an unmeasured commit claim ("1080p-class clips") disproved by ffprobe (Kling's fixed ~0.92 MP budget) — measure real provider output before claiming geometry; an invocation-stub test cannot back a resolution claim.
+- 2026-06-11: adversarial panel caught the fix covering one route of a multi-route defect (direct Kling fixed, Atlas-routed Kling SKUs not) — enumerate every SKU/route reaching the defective model and fix or rule out each; delete disproved comments in the same commit.
+- 2026-06-11: adversarial panel caught the prod-bound fix branch cut from a feature branch instead of origin/main (dragged 300+ unrelated lines, stale router confused refuters) — cut prod-bound branches from origin/main, verify with `git log origin/main..HEAD` before the first commit.
