@@ -12,9 +12,8 @@
  */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { Reorder, motion } from "framer-motion";
-import { X, Loader2, Play, HelpCircle, Copy, Pencil, Crop, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
-import { addItem, removeAt, duplicateAt, moveItem } from "./director-sequence";
+import { Reorder } from "framer-motion";
+import { X, Loader2, Play, Star, HelpCircle, Copy, Pencil, Crop, Trash2 } from "lucide-react";
 import {
   assembleLab,
   listAssemblies,
@@ -28,7 +27,6 @@ import {
   type PromptLabListingAssembly,
 } from "@/lib/promptLabApi";
 import type { LabListingIteration, LabListingScene } from "@/lib/labListingsApi";
-import type { SequenceItem } from "./director-sequence";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +43,12 @@ export interface DirectorModalProps {
 }
 
 type AssembleStatus = "idle" | "assembling" | "complete" | "failed";
+
+interface SequenceItem {
+  iteration_id: string;
+  /** Index-suffixed key so the same clip can appear multiple times. */
+  key: string;
+}
 
 // Normalized item for the library, shared between session and listing sources
 interface LibraryItem {
@@ -252,24 +256,16 @@ function SequenceCard({
   sequenceItem,
   item,
   index,
-  total,
   onRemove,
   onDuplicate,
-  onMoveLeft,
-  onMoveRight,
 }: {
   sequenceItem: SequenceItem;
   item: LibraryItem | undefined;
   index: number;
-  total: number;
   onRemove: () => void;
   onDuplicate: () => void;
-  onMoveLeft: () => void;
-  onMoveRight: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
-  const [focused, setFocused] = useState(false);
-
   const chipBtn: CSSProperties = {
     width: 22,
     height: 22,
@@ -282,48 +278,7 @@ function SequenceCard({
     alignItems: "center",
     justifyContent: "center",
     padding: 0,
-    flexShrink: 0,
   };
-
-  const chipBtnDisabled: CSSProperties = {
-    ...chipBtn,
-    opacity: 0.4,
-    cursor: "not-allowed",
-  };
-
-  const showChips = hovered || focused;
-
-  // Prevent pointer-down on chip buttons from initiating a drag
-  function stopDrag(e: React.PointerEvent | React.MouseEvent) {
-    e.stopPropagation();
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    switch (e.key) {
-      case "ArrowLeft":
-        e.preventDefault();
-        onMoveLeft();
-        break;
-      case "ArrowRight":
-        e.preventDefault();
-        onMoveRight();
-        break;
-      case "Delete":
-      case "Backspace":
-        e.preventDefault();
-        onRemove();
-        break;
-      case "d":
-      case "D":
-        e.preventDefault();
-        onDuplicate();
-        break;
-    }
-  }
-
-  const roomLabel = item?.label ?? `Clip ${index + 1}`;
-  const ariaLabel = `Clip ${index + 1} of ${total}: ${roomLabel}`;
-
   return (
     <Reorder.Item
       value={sequenceItem}
@@ -332,14 +287,8 @@ function SequenceCard({
       style={{ listStyle: "none" }}
     >
       <div
-        role="listitem"
-        tabIndex={0}
-        aria-label={ariaLabel}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onKeyDown={handleKeyDown}
         style={{
           width: 192,
           height: 108,
@@ -350,11 +299,7 @@ function SequenceCard({
           cursor: "grab",
           position: "relative",
           userSelect: "none",
-          border: focused
-            ? "2px solid var(--accent)"
-            : "1px solid var(--line)",
-          outline: focused ? "2px solid var(--accent)" : "none",
-          outlineOffset: 2,
+          border: "1px solid var(--line)",
         }}
       >
         {item?.clip_url && (
@@ -387,8 +332,8 @@ function SequenceCard({
         >
           {index + 1}
         </div>
-        {/* Action chips — visible on hover OR focus-within */}
-        {showChips && (
+        {/* Action chips */}
+        {hovered && (
           <div
             style={{
               position: "absolute",
@@ -398,62 +343,30 @@ function SequenceCard({
               gap: 3,
             }}
           >
-            {/* Move left */}
-            <button
-              type="button"
-              title="Move left"
-              disabled={index === 0}
-              onPointerDown={stopDrag}
-              onClick={(e) => { stopDrag(e); onMoveLeft(); }}
-              style={index === 0 ? chipBtnDisabled : chipBtn}
-            >
-              <ChevronLeft style={{ width: 11, height: 11 }} />
-            </button>
-            {/* Move right */}
-            <button
-              type="button"
-              title="Move right"
-              disabled={index === total - 1}
-              onPointerDown={stopDrag}
-              onClick={(e) => { stopDrag(e); onMoveRight(); }}
-              style={index === total - 1 ? chipBtnDisabled : chipBtn}
-            >
-              <ChevronRight style={{ width: 11, height: 11 }} />
-            </button>
-            {/* Duplicate */}
             <button
               type="button"
               title="Duplicate"
-              onPointerDown={stopDrag}
-              onClick={(e) => { stopDrag(e); onDuplicate(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDuplicate();
+              }}
               style={chipBtn}
             >
               <Copy style={{ width: 11, height: 11 }} />
             </button>
-            <button
-              type="button"
-              title="Edit (coming soon)"
-              disabled
-              onPointerDown={stopDrag}
-              style={chipBtnDisabled}
-            >
+            <button type="button" title="Edit (coming soon)" disabled style={{ ...chipBtn, opacity: 0.4, cursor: "not-allowed" }}>
               <Pencil style={{ width: 11, height: 11 }} />
             </button>
-            <button
-              type="button"
-              title="Crop (coming soon)"
-              disabled
-              onPointerDown={stopDrag}
-              style={chipBtnDisabled}
-            >
+            <button type="button" title="Crop (coming soon)" disabled style={{ ...chipBtn, opacity: 0.4, cursor: "not-allowed" }}>
               <Crop style={{ width: 11, height: 11 }} />
             </button>
-            {/* Remove */}
             <button
               type="button"
               title="Remove"
-              onPointerDown={stopDrag}
-              onClick={(e) => { stopDrag(e); onRemove(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onRemove();
+              }}
               style={chipBtn}
             >
               <Trash2 style={{ width: 11, height: 11 }} />
@@ -480,12 +393,6 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
-  /** Monotonic counter for sequence item keys — never resets, ensuring
-   *  keys are globally unique regardless of add/remove/add churn. */
-  const keyCounterRef = useRef(0);
-  function makeKey(iterationId: string): string {
-    return `${iterationId}-k${++keyCounterRef.current}`;
-  }
 
   // Build session library from the passed-in iterations prop (session source)
   const sessionLibrary: LibraryItem[] =
@@ -505,27 +412,11 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
   // Quick lookup map: id → LibraryItem
   const libraryMap = new Map(library.map((item) => [item.id, item]));
 
-  // ── Source identity key — used to decide when to wipe the sequence ──────────
-  const sourceIdentity =
-    source.kind === "session"
-      ? source.sessionId
-      : source.kind === "listing"
-        ? source.listingId
-        : (source as { kind: "batch"; batchLabel: string }).batchLabel;
-
-  // Track the last source identity for which the sequence was reset
-  const lastResetSourceRef = useRef<string | null>(null);
-
   // ── Fetch listing data on open ─────────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
-    // Only wipe the sequence when the SOURCE changes, not every re-open.
-    // This preserves Oliver's timeline if he accidentally closes and reopens.
-    if (lastResetSourceRef.current !== sourceIdentity) {
-      setSequence([]);
-      lastResetSourceRef.current = sourceIdentity;
-    }
-    // Always reset transient status on open
+    // Reset each time the modal opens
+    setSequence([]);
     setStatus("idle");
     setErrorMsg(null);
 
@@ -622,13 +513,17 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 const item = listingIterationToLibraryItem(it, sceneMap);
                 return item ? [item] : [];
               });
-              // Sort by scene_number — build O(1) lookup maps first to avoid O(n²)
-              const iterSceneMap = new Map((iterations ?? []).map((i) => [i.id, i.scene_id]));
-              const sceneNumMap = new Map((scenes ?? []).map((s) => [s.id, s.scene_number ?? 0]));
+              // Sort by scene_number, then iteration_number — consistent order
               items.sort((a, b) => {
-                const aNum = sceneNumMap.get(iterSceneMap.get(a.id) ?? "") ?? 0;
-                const bNum = sceneNumMap.get(iterSceneMap.get(b.id) ?? "") ?? 0;
-                return aNum - bNum;
+                const aScene = (scenes ?? []).find((s) => {
+                  const iter = (iterations ?? []).find((i) => i.id === a.id);
+                  return iter ? s.id === iter.scene_id : false;
+                });
+                const bScene = (scenes ?? []).find((s) => {
+                  const iter = (iterations ?? []).find((i) => i.id === b.id);
+                  return iter ? s.id === iter.scene_id : false;
+                });
+                return (aScene?.scene_number ?? 0) - (bScene?.scene_number ?? 0);
               });
               setListingLibrary(items);
             }
@@ -654,28 +549,26 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sourceIdentity]);
+  }, [
+    open,
+    source.kind === "session"
+      ? source.sessionId
+      : source.kind === "listing"
+        ? source.listingId
+        : (source as { kind: "batch"; batchLabel: string }).batchLabel,
+  ]);
 
   // ─── Add clip to sequence ──────────────────────────────────────────────────
   function addToSequence(iterationId: string) {
-    const k = makeKey(iterationId);
-    setSequence((prev) => addItem(prev, iterationId, k));
-  }
-
-  // ─── Add all library clips in library order ────────────────────────────────
-  function addAllToSequence() {
-    setSequence((prev) => {
-      let next = prev;
-      for (const item of library) {
-        next = addItem(next, item.id, makeKey(item.id));
-      }
-      return next;
-    });
+    setSequence((prev) => [
+      ...prev,
+      { iteration_id: iterationId, key: `${iterationId}-${prev.length}` },
+    ]);
   }
 
   // ─── Remove by index ───────────────────────────────────────────────────────
   function removeFromSequence(index: number) {
-    setSequence((prev) => removeAt(prev, index));
+    setSequence((prev) => prev.filter((_, i) => i !== index));
   }
 
   // ─── Duplicate at index ────────────────────────────────────────────────────
@@ -683,13 +576,14 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     setSequence((prev) => {
       const orig = prev[index];
       if (!orig) return prev;
-      return duplicateAt(prev, index, makeKey(orig.iteration_id));
+      const dup: SequenceItem = {
+        iteration_id: orig.iteration_id,
+        key: `${orig.iteration_id}-${prev.length}-${Date.now()}`,
+      };
+      const next = [...prev];
+      next.splice(index + 1, 0, dup);
+      return next;
     });
-  }
-
-  // ─── Move by index (non-drag reorder) ─────────────────────────────────────
-  function moveInSequence(from: number, to: number) {
-    setSequence((prev) => moveItem(prev, from, to));
   }
 
   // ─── Preferences ───────────────────────────────────────────────────────────
@@ -961,37 +855,6 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               }}
             >
               <span style={sectionLabel}>Library</span>
-              <div style={{ flex: 1 }} />
-              {library.length > 0 && !isListingLoading && (
-                <button
-                  type="button"
-                  title="Add all clips to timeline in library order"
-                  onClick={addAllToSequence}
-                  style={{
-                    border: "1px solid var(--line)",
-                    borderRadius: "var(--le-r-sm)",
-                    background: "transparent",
-                    color: "var(--muted)",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    fontFamily: "var(--le-font-sans)",
-                    padding: "3px 8px",
-                    cursor: "pointer",
-                    letterSpacing: "0.02em",
-                    transition: "background 0.12s, color 0.12s",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "var(--line-2)";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--ink)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                    (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
-                  }}
-                >
-                  Add all
-                </button>
-              )}
             </div>
             {/* Tabs */}
             <div
@@ -1288,38 +1151,6 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
 
             <div style={{ flex: 1 }} />
 
-            {/* Clear timeline button — only shown when there are clips */}
-            {sequence.length > 0 && (
-              <button
-                type="button"
-                title="Clear all clips from the timeline"
-                onClick={() => setSequence([])}
-                style={{
-                  border: "1px solid var(--line)",
-                  borderRadius: "var(--le-r-sm)",
-                  background: "transparent",
-                  color: "var(--muted)",
-                  fontSize: 10,
-                  fontWeight: 600,
-                  fontFamily: "var(--le-font-sans)",
-                  padding: "3px 8px",
-                  cursor: "pointer",
-                  letterSpacing: "0.02em",
-                  transition: "background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "var(--line-2)";
-                  (e.currentTarget as HTMLButtonElement).style.color = "var(--ink)";
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.background = "transparent";
-                  (e.currentTarget as HTMLButtonElement).style.color = "var(--muted)";
-                }}
-              >
-                Clear
-              </button>
-            )}
-
             <span style={{ fontSize: 12, color: statusColor, fontVariantNumeric: "tabular-nums" }}>
               {statusLine}
             </span>
@@ -1388,8 +1219,8 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 </div>
               ))}
             </div>
-            {/* Strips — outer div handles vertical layout only; no overflow here */}
-            <div style={{ flex: 1, padding: "12px 16px", overflowY: "hidden", display: "flex", flexDirection: "column", gap: 6 }}>
+            {/* Strips */}
+            <div style={{ flex: 1, padding: "12px 16px", overflow: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
               {/* Video strip */}
               <div style={{ minHeight: 116, display: "flex", alignItems: "center" }}>
                 {sequence.length === 0 ? (
@@ -1410,34 +1241,23 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     Click clips from the library to add them to the timeline. Drag to reorder.
                   </div>
                 ) : (
-                  // motion.div with layoutScroll fixes framer-motion drag measurements
-                  // in a scrollable container — without it, dragged items land in the
-                  // wrong slot once the strip has been scrolled.
-                  <motion.div
-                    layoutScroll
-                    style={{ overflowX: "auto", width: "100%", paddingBottom: 4 }}
+                  <Reorder.Group
+                    axis="x"
+                    values={sequence}
+                    onReorder={setSequence}
+                    style={{ display: "flex", gap: 10, listStyle: "none", margin: 0, padding: 0, flexWrap: "nowrap" }}
                   >
-                    <Reorder.Group
-                      axis="x"
-                      values={sequence}
-                      onReorder={setSequence}
-                      style={{ display: "flex", gap: 10, listStyle: "none", margin: 0, padding: "4px 2px", flexWrap: "nowrap" }}
-                    >
-                      {sequence.map((item, idx) => (
-                        <SequenceCard
-                          key={item.key}
-                          sequenceItem={item}
-                          item={libraryMap.get(item.iteration_id)}
-                          index={idx}
-                          total={sequence.length}
-                          onRemove={() => removeFromSequence(idx)}
-                          onDuplicate={() => duplicateInSequence(idx)}
-                          onMoveLeft={() => moveInSequence(idx, idx - 1)}
-                          onMoveRight={() => moveInSequence(idx, idx + 1)}
-                        />
-                      ))}
-                    </Reorder.Group>
-                  </motion.div>
+                    {sequence.map((item, idx) => (
+                      <SequenceCard
+                        key={item.key}
+                        sequenceItem={item}
+                        item={libraryMap.get(item.iteration_id)}
+                        index={idx}
+                        onRemove={() => removeFromSequence(idx)}
+                        onDuplicate={() => duplicateInSequence(idx)}
+                      />
+                    ))}
+                  </Reorder.Group>
                 )}
               </div>
               {/* VFX strip (placeholder) */}

@@ -31,7 +31,10 @@ export type AtlasResolution =
 
 export interface AtlasModelDescriptor {
   slug: string;                                   // `model` value Atlas expects
-  endFrameField: "end_image" | null;
+  // Kling SKUs accept `end_image`; Bytedance Seedance 2.0 accepts `last_image`
+  // (confirmed against the live Atlas input schema 2026-06-10:
+  // static.atlascloud.ai/model/schema/bytedance-seedance-2.0-image-to-video.json).
+  endFrameField: "end_image" | "last_image" | null;
   allowedDurations: readonly number[] | "continuous";
   durationRange?: { min: number; max: number };
   priceCentsPerSecond: number;   // canonical per-second rate
@@ -166,11 +169,38 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
   // (SEEDANCE_ATLAS_SLUG / SEEDANCE_RESOLUTION) if Atlas shuffles the
   // catalog again.
   //
-  // Note: Seedance 2.0 now supports `last_image` upstream, but enabling
-  // pairs on Seedance is out of scope — paired scenes route to Kling 3 Pro.
+  // Note: Seedance 2.0 supports `last_image` upstream. The push-in SKU keeps
+  // endFrameField null on purpose — pair renders go through the separate
+  // `seedance-pair` SKU below so the push-in prompt preamble never leaks
+  // onto paired scenes. Paired scenes still DEFAULT to kling-v3-pro.
   "seedance-pro-pushin": {
     slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
     endFrameField: null,         // Seedance pairs not enabled (see note above)
+    allowedDurations: [5, 10],   // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p-SR",
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
+    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts)
+    priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
+    priceCentsPerClip: 48,       // 9.6 × 5
+  },
+  // OPT-IN pair mode (added 2026-06-10) — Bytedance Seedance 2.0 with
+  // start+end-frame interpolation via the `last_image` input field
+  // (confirmed against the live Atlas input schema for
+  // bytedance-seedance-2.0-image-to-video; same format rules as `image`).
+  //
+  // IMPORTANT: this SKU is NEVER a routing default. Paired scenes
+  // (end_photo_id set) keep defaulting to kling-v3-pro (RULE DQ.3 in
+  // router.ts). seedance-pair is only reachable as an explicit operator /
+  // Lab choice (Checkpoint A regenerate model picker, Lab SKU pickers).
+  //
+  // A separate key (instead of reusing seedance-pro-pushin) keeps the
+  // forceSeedancePushInPrompt preamble OFF pair renders: every call site
+  // keys that override on the exact string 'seedance-pro-pushin', so pair
+  // renders use the scene's own prompt (incl. its trajectory clause).
+  "seedance-pair": {
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: "last_image", // Seedance 2.0 end-frame param (schema-confirmed 2026-06-10)
     allowedDurations: [5, 10],   // schema allows 4-15s; we stick to 5/10
     resolution: (process.env.SEEDANCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p-SR",
     supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],
@@ -225,6 +255,9 @@ export const V1_1_LAB_SKUS = [
   // Routes through VeoProvider, not Atlas. Validation accepts it
   // because the combined allow-list includes it here.
   "veo-3-1-preview",
+  // Opt-in Seedance 2.0 pair mode (2026-06-10). Only meaningful on paired
+  // scenes — never a default; paired scenes still default to kling-v3-pro.
+  "seedance-pair",
 ] as const;
 export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
 export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
@@ -251,6 +284,10 @@ export interface AtlasSubmitBody {
   cfg_scale?: number;
   negative_prompt?: string;
   end_image?: string;
+  /** Seedance 2.0 end-frame field — the video interpolates from `image` to
+   *  this frame. Only sent for descriptors with endFrameField "last_image"
+   *  (the opt-in `seedance-pair` SKU). Kling SKUs use `end_image` instead. */
+  last_image?: string;
   /** Forwarded to the underlying Replicate model when set. Seedance 2.0
    *  honors '480p' | '720p' | '720p-SR' | '1080p' | '1080p-SR' | '1440p-SR'
    *  (the -SR tiers run the FlashVSR super-resolution pass). Kling variants
@@ -399,11 +436,20 @@ export class AtlasProvider implements IVideoProvider {
     // Seedance copies the input image's aspect ratio onto its output and
     // ignores `aspect_ratio`. Crop the source to 16:9 first so the clip is
     // 1920×1080 instead of a 4:3 snap. No-op for models without the flag.
+    // For pair mode (seedance-pair: forceSourceAspectRatio + endFrameField
+    // "last_image") the END frame is cropped the same way — a 3:2 last_image
+    // against a 16:9 first frame would skew the interpolation geometry.
     let effectiveParams = params;
     if (modelForCall.forceSourceAspectRatio && params.sourceImageUrl) {
       const prepared = await ensureSourceAspectRatio(params.sourceImageUrl);
       if (prepared !== params.sourceImageUrl) {
-        effectiveParams = { ...params, sourceImageUrl: prepared };
+        effectiveParams = { ...effectiveParams, sourceImageUrl: prepared };
+      }
+      if (params.endImageUrl && modelForCall.endFrameField) {
+        const preparedEnd = await ensureSourceAspectRatio(params.endImageUrl);
+        if (preparedEnd !== params.endImageUrl) {
+          effectiveParams = { ...effectiveParams, endImageUrl: preparedEnd };
+        }
       }
     }
     const body = buildAtlasRequestBody(effectiveParams, modelForCall);

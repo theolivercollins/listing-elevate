@@ -5,6 +5,7 @@ const mockRequireAdmin = vi.fn();
 const mockGetRun = vi.fn();
 const mockGetVariantsForRun = vi.fn();
 const mockGetEventsForRun = vi.fn();
+const mockGetPairedSceneIds = vi.fn();
 const mockAdvanceRun = vi.fn();
 const mockClearRunError = vi.fn();
 const mockSetRunError = vi.fn();
@@ -28,6 +29,7 @@ vi.mock('../../../../../lib/delivery/runs', () => ({
   getRun: (...a: unknown[]) => mockGetRun(...a),
   getVariantsForRun: (...a: unknown[]) => mockGetVariantsForRun(...a),
   getEventsForRun: (...a: unknown[]) => mockGetEventsForRun(...a),
+  getPairedSceneIds: (...a: unknown[]) => mockGetPairedSceneIds(...a),
   advanceRun: (...a: unknown[]) => mockAdvanceRun(...a),
   clearRunError: (...a: unknown[]) => mockClearRunError(...a),
   setRunError: (...a: unknown[]) => mockSetRunError(...a),
@@ -94,6 +96,7 @@ beforeEach(() => {
   mockGetRun.mockResolvedValue(run);
   mockGetVariantsForRun.mockResolvedValue([]);
   mockGetEventsForRun.mockResolvedValue([]);
+  mockGetPairedSceneIds.mockResolvedValue([]);
   mockSetListingDetails.mockResolvedValue({ ...run, listing_details: { price: 899000, source: 'manual' } });
   mockRecordMlEvent.mockResolvedValue(undefined);
   mockValidateListingDetails.mockReturnValue({ ok: true, details: { price: 899000, source: 'manual' } });
@@ -136,6 +139,15 @@ describe('GET /api/admin/studio/delivery/[runId]', () => {
     await handler({ method: 'GET', query: { runId: 'r1' }, headers: {}, body: {} } as unknown as VercelRequest, res as unknown as VercelResponse);
     expect(res._status).toBe(200);
     expect((res._body as { run: unknown }).run).toEqual(run);
+  });
+
+  it('GET bundle exposes paired_scene_ids (drives the Checkpoint A regenerate model picker)', async () => {
+    mockGetPairedSceneIds.mockResolvedValue(['s-paired-1', 's-paired-2']);
+    const res = makeRes();
+    await handler({ method: 'GET', query: { runId: 'r1' }, headers: {}, body: {} } as unknown as VercelRequest, res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    expect(mockGetPairedSceneIds).toHaveBeenCalledWith('p1');
+    expect((res._body as { paired_scene_ids: string[] }).paired_scene_ids).toEqual(['s-paired-1', 's-paired-2']);
   });
 
   it('GET 404s on unknown run', async () => {
@@ -220,6 +232,85 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
     expect(res._status).toBe(200);
     expect(mockRegenerateVariant).toHaveBeenCalledWith('r1', 's1', 'B');
     expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'regenerate', expect.objectContaining({ scene_id: 's1', variant: 'B' }));
+  });
+
+  it('POST regenerate without model does not include a model field in the ml_event payload', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'A' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const regenCall = mockRecordMlEvent.mock.calls.find((c: unknown[]) => c[1] === 'regenerate');
+    expect(regenCall?.[2]).not.toHaveProperty('model');
+  });
+});
+
+describe('POST regenerate — paired-scene model choice (seedance-pair opt-in)', () => {
+  /** Points the mocked scenes table at a row with the given end_photo_id. */
+  function setSceneEndPhoto(endPhotoId: string | null) {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'scenes') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              maybeSingle: vi.fn().mockResolvedValue({ data: { end_photo_id: endPhotoId }, error: null }),
+            }),
+          }),
+        };
+      }
+      if (table === 'properties') return { select: mockDbSelect };
+      if (table === 'music_tracks') return { insert: mockDbInsert };
+      return { update: mockDbUpdate };
+    });
+  }
+
+  it('model=seedance-pair on a paired scene -> 200, threads modelOverride + records model in ml_event', async () => {
+    setSceneEndPhoto('photo-end-1');
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'A', model: 'seedance-pair' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRegenerateVariant).toHaveBeenCalledWith('r1', 's1', 'A', { modelOverride: 'seedance-pair' });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'regenerate', { scene_id: 's1', variant: 'A', model: 'seedance-pair' });
+  });
+
+  it('model=kling-v3-pro -> 200, threads modelOverride + records model in ml_event', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'B', model: 'kling-v3-pro' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRegenerateVariant).toHaveBeenCalledWith('r1', 's1', 'B', { modelOverride: 'kling-v3-pro' });
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'regenerate', { scene_id: 's1', variant: 'B', model: 'kling-v3-pro' });
+  });
+
+  it('model outside the allowlist -> 400, no regenerate fired', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'A', model: 'seedance-pro-pushin' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/not allowed/);
+    expect(mockRegenerateVariant).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('model=seedance-pair on a NON-paired scene (no end_photo_id) -> 400 with a clear message', async () => {
+    setSceneEndPhoto(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'regenerate', scene_id: 's1', variant: 'A', model: 'seedance-pair' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/paired scene/);
+    expect(mockRegenerateVariant).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
   });
 });
 

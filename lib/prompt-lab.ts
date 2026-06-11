@@ -748,11 +748,15 @@ export async function submitLabRender(params: {
     // thompson stays undefined for escape-hatch path
     staticSku = resolvedSku;
   } else if (params.endImageUrl) {
-    // Paired scene: always use kling-v3-pro via Atlas (end_image support;
-    // upgraded from kling-v2-1-pair 2026-06-10).
+    // Paired scene: DEFAULT is kling-v3-pro via Atlas (end_image support;
+    // upgraded from kling-v2-1-pair 2026-06-10). An EXPLICIT 'seedance-pair'
+    // SKU choice is honoured (opt-in Seedance 2.0 pair mode, last_image end
+    // frame, scene's own prompt — no push-in preamble). Any other requested
+    // SKU still coerces to kling-v3-pro.
     // Thompson does not run on paired scenes per P5 design.
-    resolvedSku = "kling-v3-pro" as unknown as V1AtlasSku;
-    provider = new AtlasProvider("kling-v3-pro");
+    const pairedSku = params.sku === ("seedance-pair" as V1AtlasSku) ? "seedance-pair" : "kling-v3-pro";
+    resolvedSku = pairedSku as unknown as V1AtlasSku;
+    provider = new AtlasProvider(pairedSku);
     // thompson stays undefined; staticSku equals the paired SKU itself.
     staticSku = resolvedSku;
   } else {

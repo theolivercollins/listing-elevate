@@ -35,12 +35,11 @@
      If you genuinely need monospace, define a NEW token; do not point this back at JetBrains Mono. */
   --le-font-mono: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* Radii — the canonical scale; see docs/design/DESIGN-GUIDE.md */
+  /* Radii */
   --le-r-sm: 6px;
   --le-r-md: 10px;
   --le-r-lg: 14px;
   --le-r-xl: 20px;
-  --le-r-pill: 999px;
 
   /* Shadows */
   --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);

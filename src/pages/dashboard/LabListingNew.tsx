@@ -38,6 +38,7 @@ export default function LabListingNew() {
     { key: "kling-v3-std", label: "Kling 3.0 Std", price: "$0.071" },
     { key: "kling-v2-6-pro", label: "Kling 2.6 Pro", price: "$0.060" },
     { key: "kling-v2-1-pair", label: "Kling 2.1 Start-End-Frame", price: "$0.076" },
+    { key: "seedance-pair", label: "Seedance 2.0 (start+end frame)", price: "$0.096" },
     { key: "kling-v2-master", label: "Kling 2.0 Master", price: "$0.221" },
     { key: "kling-o3-pro", label: "Kling O3 Pro", price: "$0.095" },
   ];

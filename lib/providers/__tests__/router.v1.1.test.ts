@@ -62,6 +62,30 @@ describe("selectProviderForScene — v1.1 mode", () => {
   });
 });
 
+describe("RULE DQ.3 default vs seedance-pair (opt-in only)", () => {
+  it("paired scenes still DEFAULT to kling-v3-pro in every mode — never seedance-pair", () => {
+    const paired = { ...baseScene, endPhotoId: "photo-end-id" };
+    for (const mode of ["v1", "v1.1"] as const) {
+      const decision = selectProviderForScene(paired, [], mode);
+      expect(decision.provider).toBe("atlas");
+      expect(decision.modelKey).toBe("kling-v3-pro");
+      expect(decision.modelKey).not.toBe("seedance-pair");
+      expect(decision.fallback).toBeUndefined();
+    }
+    // Default mode arg too.
+    expect(selectProviderForScene(paired, []).modelKey).toBe("kling-v3-pro");
+  });
+
+  it("seedance-pair is registered with last_image end-frame support (explicit choices only)", () => {
+    expect(ATLAS_MODELS["seedance-pair"]).toBeDefined();
+    expect(ATLAS_MODELS["seedance-pair"].endFrameField).toBe("last_image");
+  });
+
+  it("the push-in SKU keeps endFrameField null — the preamble-keyed SKU never sends an end frame", () => {
+    expect(ATLAS_MODELS["seedance-pro-pushin"].endFrameField).toBeNull();
+  });
+});
+
 describe("forceSeedancePushInPrompt", () => {
   it("prepends the canonical push-in directive", () => {
     const out = forceSeedancePushInPrompt("Wide angle of a sunlit kitchen.");

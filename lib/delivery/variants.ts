@@ -289,11 +289,27 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
   return { polled: (pending ?? []).length, completed, failed };
 }
 
+/** Atlas SKUs an operator may explicitly pick for a paired-scene regenerate.
+ *  kling-v3-pro is the DQ.3 default; seedance-pair is the opt-in Seedance 2.0
+ *  start+end-frame mode. Enforced (with a 400) in the delivery [runId] API. */
+export type PairedRegenModel = 'kling-v3-pro' | 'seedance-pair';
+
 /**
  * Re-render one variant: reset its scene_variants row and submit a fresh provider run.
  * Storage path: {property_id}/variants/scene_{n}_{variant}.mp4 (upsert:true overwrites).
+ *
+ * options.modelOverride — explicit operator model choice (Checkpoint A
+ * regenerate picker). When set, it REPLACES the selectProviderForScene
+ * decision with a fixed atlas+modelOverride decision and disables provider
+ * failover: the operator asked for THIS model, silently landing on another
+ * one would betray the choice. Errors propagate to the caller instead.
  */
-export async function regenerateVariant(runId: string, sceneId: string, variant: 'A' | 'B'): Promise<void> {
+export async function regenerateVariant(
+  runId: string,
+  sceneId: string,
+  variant: 'A' | 'B',
+  options?: { modelOverride?: PairedRegenModel },
+): Promise<void> {
   const supabase = getSupabase();
 
   const { data: scene } = await supabase
@@ -321,21 +337,27 @@ export async function regenerateVariant(runId: string, sceneId: string, variant:
   // Failover loop — mirrors runGenerationSubmit's A-path: on a permanent
   // provider error, append to excluded and retry the next decision. Throws
   // only when all providers are exhausted (the caller marks the row degraded).
+  // With an explicit modelOverride there is exactly ONE attempt (no failover
+  // — see docblock above).
   const excluded: VideoProvider[] = [];
-  const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
+  const maxFailovers = options?.modelOverride
+    ? 0
+    : Math.max(getEnabledProviders().length - 1, 1);
   let lastError: Error | unknown = null;
 
   for (let attempt = 0; attempt <= maxFailovers; attempt++) {
-    const decision = selectProviderForScene(
-      {
-        endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
-        movement: (scene.camera_movement as CameraMovement | null) ?? null,
-        roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
-        preference: (scene.provider as VideoProvider | null) ?? null,
-      },
-      excluded,
-      pipelineMode,
-    );
+    const decision = options?.modelOverride
+      ? { provider: 'atlas' as VideoProvider, modelKey: options.modelOverride, fallback: undefined }
+      : selectProviderForScene(
+          {
+            endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+            movement: (scene.camera_movement as CameraMovement | null) ?? null,
+            roomType: ((photo as { room_type?: string }).room_type as RoomType) ?? 'other',
+            preference: (scene.provider as VideoProvider | null) ?? null,
+          },
+          excluded,
+          pipelineMode,
+        );
     const provider = buildProviderFromDecision(decision);
 
     // Apply the Seedance push-in prompt directive if applicable.
