@@ -1,4 +1,5 @@
 import { LEIcon } from "@/v2/components/primitives/LEIcon";
+import { Reveal } from "@/v2/components/primitives/Reveal";
 
 // Exact image URLs from landing.jsx (IMG_SHOWCASE_1/2/3).
 const IMG_SHOWCASE_1 =
@@ -52,12 +53,14 @@ export function Process() {
         background: "var(--le-bg)",
       }}
     >
-      <div
-        className="le-eyebrow"
-        style={{ marginBottom: 48 }}
-      >
-        — The Process
-      </div>
+      <Reveal>
+        <div
+          className="le-eyebrow"
+          style={{ marginBottom: 24 }}
+        >
+          — The Process
+        </div>
+      </Reveal>
 
       <div
         className="le-cols-2-lg le-stack-sm"
@@ -68,86 +71,91 @@ export function Process() {
           background: "var(--le-border)",
         }}
       >
-        {STEPS.map(s => (
-          <div
-            key={s.n}
-            style={{
-              padding: "clamp(28px, 6vw, 44px) clamp(20px, 5vw, 40px) clamp(32px, 6vw, 48px)",
-              background: "var(--le-bg)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 32,
-              minHeight: "clamp(360px, 50vw, 520px)",
-            }}
-          >
+        {STEPS.map((s, i) => (
+          <Reveal key={s.n} delay={i * 0.12}>
             <div
+              className="le-card-lift"
               style={{
+                padding: "clamp(28px, 6vw, 44px) clamp(20px, 5vw, 40px) clamp(32px, 6vw, 48px)",
+                background: "var(--le-bg)",
                 display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
+                flexDirection: "column",
+                gap: 32,
+                minHeight: "clamp(360px, 50vw, 520px)",
+                height: "100%",
               }}
             >
-              <span
+              <div
                 style={{
-                  fontFamily: "var(--le-font-sans)",
-                  fontSize: 11,
-                  letterSpacing: "0.18em",
-                  color: "var(--le-text-faint)",
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
                 }}
               >
-                {s.n} / 03
-              </span>
-              <LEIcon name="arrowUpRight" size={14} color="var(--le-text-faint)" />
-            </div>
+                <span
+                  style={{
+                    fontFamily: "var(--le-font-sans)",
+                    fontSize: 11,
+                    letterSpacing: "0.18em",
+                    color: "var(--le-text-faint)",
+                  }}
+                >
+                  {s.n} / 03
+                </span>
+                <LEIcon name="arrowUpRight" size={14} color="var(--le-text-faint)" />
+              </div>
 
-            <div
-              style={{
-                width: "100%",
-                aspectRatio: "4 / 3",
-                overflow: "hidden",
-                background: "var(--le-bg-sunken)",
-                borderRadius: 12,
-              }}
-            >
-              <img
-                src={s.img}
-                alt=""
+              <div
+                className="le-img-zoom"
                 style={{
                   width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
+                  aspectRatio: "4 / 3",
+                  overflow: "hidden",
+                  background: "var(--le-bg-sunken)",
+                  borderRadius: 12,
                 }}
-              />
-            </div>
+              >
+                <img
+                  src={s.img}
+                  alt=""
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                />
+              </div>
 
-            <div>
-              <h3
-                style={{
-                  fontSize: 28,
-                  margin: 0,
-                  fontWeight: 500,
-                  letterSpacing: "-0.025em",
-                  lineHeight: 1,
-                  fontFamily: "var(--le-font-sans)",
-                  color: "var(--le-text)",
-                }}
-              >
-                {s.title}
-              </h3>
-              <p
-                style={{
-                  marginTop: 14,
-                  fontSize: 14,
-                  lineHeight: 1.6,
-                  color: "var(--le-text-muted)",
-                  maxWidth: 360,
-                  fontFamily: "var(--le-font-sans)",
-                }}
-              >
-                {s.body}
-              </p>
+              <div>
+                <h3
+                  style={{
+                    fontSize: 28,
+                    margin: 0,
+                    fontWeight: 600,
+                    letterSpacing: "-0.02em",
+                    lineHeight: 1,
+                    fontFamily: "var(--le-font-sans)",
+                    color: "var(--le-text)",
+                  }}
+                >
+                  {s.title}
+                </h3>
+                <p
+                  style={{
+                    marginTop: 14,
+                    fontSize: 15,
+                    lineHeight: 1.6,
+                    color: "var(--le-text-muted)",
+                    maxWidth: 360,
+                    fontFamily: "var(--le-font-sans)",
+                  }}
+                >
+                  {s.body}
+                </p>
+              </div>
             </div>
-          </div>
+          </Reveal>
         ))}
       </div>
     </section>

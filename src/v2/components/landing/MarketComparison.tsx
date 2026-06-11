@@ -84,27 +84,20 @@ function FirstImpression() {
           }}
         >
           <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              marginBottom: 28,
-            }}
+            className="le-eyebrow"
+            style={{ color: "rgba(255,255,255,0.78)", marginBottom: 24 }}
           >
-            <div style={{ width: 20, height: 1, background: "#fff" }} />
-            <span className="le-eyebrow" style={{ color: "rgba(255,255,255,0.78)" }}>
-              First impression
-            </span>
+            — First impression
           </div>
           <h2
             style={{
               fontFamily: "var(--le-font-sans)",
-              fontSize: "clamp(3rem, 8vw, 7rem)",
-              fontWeight: 700,
-              letterSpacing: "-0.035em",
-              lineHeight: 0.94,
+              fontSize: "clamp(40px, 5vw, 64px)",
+              fontWeight: 600,
+              letterSpacing: "-0.03em",
+              lineHeight: 1.02,
               color: "#fff",
-              margin: 0,
+              margin: "0 0 32px",
               maxWidth: 980,
             }}
           >
@@ -114,10 +107,10 @@ function FirstImpression() {
           </h2>
           <p
             style={{
-              marginTop: 32,
+              marginTop: 0,
               fontFamily: "var(--le-font-sans)",
-              fontSize: 18,
-              lineHeight: 1.55,
+              fontSize: 16,
+              lineHeight: 1.6,
               color: "rgba(255,255,255,0.72)",
               maxWidth: 560,
             }}
@@ -160,29 +153,27 @@ export function MarketComparison() {
           transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
           className="max-w-4xl"
         >
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-5 h-px" style={{ background: WHITE }} />
-            <span
-              className="text-[11px] uppercase"
-              style={{ color: DIM, letterSpacing: "0.22em" }}
-            >
-              The data
-            </span>
+          <div
+            className="le-eyebrow"
+            style={{ marginBottom: 24 }}
+          >
+            — The data
           </div>
           <h2
-            className="font-bold leading-[0.94] mb-6"
             style={{
               fontFamily: "var(--le-font-sans)",
-              fontSize: "clamp(2.6rem, 7vw, 5.2rem)",
+              fontSize: "clamp(40px, 5vw, 64px)",
+              fontWeight: 600,
+              lineHeight: 1.02,
+              letterSpacing: "-0.03em",
               color: WHITE,
-              letterSpacing: "-0.035em",
+              margin: "0 0 24px",
             }}
           >
             Own your market.
           </h2>
           <p
-            className="text-[15px] sm:text-[17px] max-w-2xl"
-            style={{ color: DIM, lineHeight: 1.6 }}
+            style={{ color: DIM, lineHeight: 1.6, fontSize: 16, maxWidth: 640, margin: 0 }}
           >
             Here's the data behind why agents who use Listing Elevate win, retain, and sell more listings.
           </p>
