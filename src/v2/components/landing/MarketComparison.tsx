@@ -8,19 +8,30 @@ import MarketDomination from "@/v2/components/landing/market/MarketDomination";
 // re-mounted by adding it back below. (User request, 2026-04-21.)
 // import PricingCalculator from "@/v2/components/landing/market/PricingCalculator";
 import { motion } from "framer-motion";
+import { Reveal } from "@/v2/components/primitives/Reveal";
 
 /**
  * MarketComparison — First impression + Win / Retain / Sell stack.
  *
- * Structure ported from the Manus "Market Intelligence" design bundle,
- * with a First-Impression full-bleed editorial plate slotted in above
- * "Retain every client." The pricing calculator ("The math") was
- * archived per user request; its component file is still on disk.
+ * Light-SaaS refresh (2026-06): removed full-bleed hairline dividers and
+ * square-dot SectionHeaders. Rhythm is now vertical spacing with pill labels
+ * matching the Pricing / SelectedWork section cadence. Gutters are wrapper-
+ * managed at maxWidth 1200 — children no longer carry their own px-6 sm:px-12.
+ *
+ * Structure:
+ *   Intro block  →  standard section padding + 1200 inner column
+ *   Win prong    →  pill label "Win more listings" + CostComparison + MarketGap
+ *   FirstImpression plate (contained media card)
+ *   Retain prong →  pill label "Retain every client" + TurnaroundSpeed + ConsumerDemand
+ *   Sell prong   →  pill label "Sell faster" + MarketDomination
  */
 
-const LINE = "var(--le-border)";
-const WHITE = "var(--le-text)";
 const DIM = "var(--le-text-muted)";
+
+// Dot colors for pill labels — tasteful semantic tokens
+const DOT_WIN = "var(--le-success)";      // green
+const DOT_RETAIN = "var(--le-info)";      // blue
+const DOT_SELL = "var(--le-warn)";        // amber
 
 // Luxury modern home at dusk — full-bleed backdrop for the First
 // Impression plate. Same treatment as Hero + FinalCTA (brightness(0.45)
@@ -28,9 +39,57 @@ const DIM = "var(--le-text-muted)";
 const FIRST_IMPRESSION_IMAGE =
   "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=2400&q=85";
 
+// Shared gutter wrapper — padding on the full-width outer div, maxWidth on
+// the inner one (same pattern as the intro block) so the prong column aligns
+// exactly with the "Own your market." heading at every viewport width.
+function ProngWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ padding: "0 clamp(16px, 5vw, 48px)" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>{children}</div>
+    </div>
+  );
+}
+
+// Modern pill label — replaces the old square-dot + hairline SectionHeader
+function PillLabel({ label, dotColor }: { label: string; dotColor: string }) {
+  return (
+    <Reveal>
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 14px",
+          borderRadius: 999,
+          background: "var(--le-bg-elev)",
+          border: "1px solid var(--le-border)",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.14em",
+          textTransform: "uppercase",
+          color: "var(--le-text)",
+          fontFamily: "var(--le-font-sans)",
+          marginBottom: 32,
+        }}
+      >
+        <span
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: 999,
+            background: dotColor,
+            flexShrink: 0,
+          }}
+        />
+        {label}
+      </div>
+    </Reveal>
+  );
+}
+
 function FirstImpression() {
   return (
-    // Outer wrapper provides page-rhythm padding; the inner plate is contained.
+    // Outer wrapper uses prong-consistent spacing
     <div
       style={{
         padding: "clamp(40px, 8vw, 96px) clamp(16px, 5vw, 48px)",
@@ -123,40 +182,24 @@ function FirstImpression() {
   );
 }
 
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div className="px-6 sm:px-12 py-6 flex items-center gap-3">
-      <div className="w-2 h-2" style={{ background: WHITE }} />
-      <span
-        className="text-[12px] uppercase font-semibold"
-        style={{ color: WHITE, letterSpacing: "0.2em" }}
-      >
-        {label}
-      </span>
-      <div className="flex-1 h-px ml-2" style={{ background: LINE }} />
-    </div>
-  );
-}
-
 export function MarketComparison() {
   return (
     <section id="compare" style={{ background: "var(--le-bg)", color: "var(--le-text)" }}>
-      {/* Intro headline */}
+
+      {/* ── Intro block ─────────────────────────────────────────────── */}
       <div
-        className="px-6 sm:px-12 pt-10 sm:pt-14 pb-10 sm:pb-14"
-        style={{ borderBottom: `1px solid ${LINE}` }}
+        style={{
+          padding: "clamp(56px, 12vw, 140px) clamp(16px, 5vw, 48px) clamp(24px, 4vw, 48px)",
+        }}
       >
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.2 }}
           transition={{ duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
-          className="max-w-4xl"
+          style={{ maxWidth: 1200, margin: "0 auto" }}
         >
-          <div
-            className="le-eyebrow"
-            style={{ marginBottom: 24 }}
-          >
+          <div className="le-eyebrow" style={{ marginBottom: 24 }}>
             — The data
           </div>
           <h2
@@ -166,7 +209,7 @@ export function MarketComparison() {
               fontWeight: 600,
               lineHeight: 1.02,
               letterSpacing: "-0.03em",
-              color: WHITE,
+              color: "var(--le-text)",
               margin: "0 0 24px",
             }}
           >
@@ -180,29 +223,33 @@ export function MarketComparison() {
         </motion.div>
       </div>
 
-      {/* Win */}
-      <div style={{ borderBottom: `1px solid ${LINE}` }}>
-        <SectionHeader label="Win more listings" />
-        <CostComparison />
-        <MarketGap />
+      {/* ── Win prong ───────────────────────────────────────────────── */}
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+        <ProngWrapper>
+          <PillLabel label="Win more listings" dotColor={DOT_WIN} />
+          <CostComparison />
+          <MarketGap />
+        </ProngWrapper>
       </div>
 
-      {/* First impression — editorial plate above the Retain prong */}
-      <div style={{ borderBottom: `1px solid ${LINE}` }}>
-        <FirstImpression />
+      {/* ── First impression plate ──────────────────────────────────── */}
+      <FirstImpression />
+
+      {/* ── Retain prong ────────────────────────────────────────────── */}
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+        <ProngWrapper>
+          <PillLabel label="Retain every client" dotColor={DOT_RETAIN} />
+          <TurnaroundSpeed />
+          <ConsumerDemand />
+        </ProngWrapper>
       </div>
 
-      {/* Retain */}
-      <div style={{ borderBottom: `1px solid ${LINE}` }}>
-        <SectionHeader label="Retain every client" />
-        <TurnaroundSpeed />
-        <ConsumerDemand />
-      </div>
-
-      {/* Sell */}
-      <div style={{ borderBottom: `1px solid ${LINE}` }}>
-        <SectionHeader label="Sell faster" />
-        <MarketDomination />
+      {/* ── Sell prong ──────────────────────────────────────────────── */}
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+        <ProngWrapper>
+          <PillLabel label="Sell faster" dotColor={DOT_SELL} />
+          <MarketDomination />
+        </ProngWrapper>
       </div>
 
       {/* "The math" / PricingCalculator block archived per user request

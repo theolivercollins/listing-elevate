@@ -155,18 +155,18 @@ export default function TurnaroundSpeed() {
   const { ref, progress } = useScrollProgress();
 
   return (
-    <div ref={ref} className="px-4 sm:px-6 lg:px-12 pb-8 sm:pb-10">
+    <div ref={ref} className="pb-8 sm:pb-10">
       {/* Mobile: label tabs showing which timeline is which */}
       <div className="flex gap-2 mb-4 lg:hidden">
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase font-semibold"
-          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
+          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}`, borderRadius: 999 }}
         >
           Listing Elevate · &lt;24h
         </div>
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase"
-          style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+          style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
         >
           Traditional · 72h+
         </div>
@@ -177,7 +177,7 @@ export default function TurnaroundSpeed() {
         {/* Listing Elevate timeline */}
         <div
           className="p-5 sm:p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           {/* Header — hidden on mobile (shown in tabs above) */}
           <div className="hidden lg:flex items-center justify-between mb-2">
@@ -186,7 +186,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}
+              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}
             >
               Listing Elevate
             </span>
@@ -199,7 +199,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-              style={{ color: WHITE, background: "var(--le-bg-sunken)" }}
+              style={{ color: WHITE, background: "var(--le-bg-sunken)", borderRadius: 999 }}
             >
               Listing Elevate
             </span>
@@ -231,7 +231,7 @@ export default function TurnaroundSpeed() {
         {/* Traditional timeline */}
         <div
           className="p-5 sm:p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             {/* Header — hidden on mobile (shown in tabs above) */}
@@ -241,7 +241,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-                style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
               >
                 Traditional
               </span>
@@ -254,7 +254,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-                style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
               >
                 Traditional
               </span>
@@ -300,7 +300,7 @@ export default function TurnaroundSpeed() {
         animate={progress > 0.5 ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.4 }}
         className="mt-4 lg:hidden p-4"
-        style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
+        style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

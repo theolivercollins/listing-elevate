@@ -30,12 +30,12 @@ const PROOF_POINTS = [
 ] as const;
 
 /**
- * Hero — light SaaS redesign (2026-06-11).
+ * Hero — light SaaS split layout (2026-06-11).
  *
- * Structure: white section, left-aligned copy, then a wide framed
- * media card containing the interior photo. No dark scrims, no
- * full-bleed background image — the photo is a contained element
- * below the headline copy.
+ * Structure: white section, two-column grid — copy on the left,
+ * framed media card with the interior photo on the right (stacks on
+ * narrow viewports via `.le-hero-grid`). No dark scrims, no
+ * full-bleed background image.
  *
  * Nav lives in the shared `SiteNav` primitive (fixed at viewport top).
  */
@@ -56,8 +56,9 @@ export function Hero() {
       {/* NAV — shared, fixed at viewport top. */}
       <SiteNav />
 
-      {/* HERO COPY — left-aligned */}
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      {/* Split grid — copy left, media right (stacks <960px) */}
+      <div className="le-hero-grid" style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div>
 
         {/* Eyebrow */}
         <motion.div {...fadeProps(0, reduced)}>
@@ -91,12 +92,11 @@ export function Hero() {
         <motion.div {...fadeProps(80, reduced)}>
           <h1
             style={{
-              fontSize: "clamp(48px, 7vw, 88px)",
-              lineHeight: 0.96,
+              fontSize: "clamp(44px, 4.8vw, 68px)",
+              lineHeight: 1.0,
               margin: 0,
               fontWeight: 600,
               letterSpacing: "-0.03em",
-              maxWidth: 1100,
               fontFamily: "var(--le-font-sans)",
               color: "var(--le-text)",
             }}
@@ -203,21 +203,21 @@ export function Hero() {
             ))}
           </div>
         </motion.div>
+        </div>
 
-        {/* Framed media card — photo below the copy */}
+        {/* Framed media card — photo beside the copy */}
         <motion.div
           {...(reduced
             ? { initial: { opacity: 1, scale: 1 }, animate: { opacity: 1, scale: 1 } }
             : {
-                initial: { opacity: 0, y: 18, scale: 0.985 },
-                animate: { opacity: 1, y: 0, scale: 1 },
-                transition: { duration: 0.7, delay: 0.4, ease: EASE },
+                initial: { opacity: 0, x: 24, scale: 0.985 },
+                animate: { opacity: 1, x: 0, scale: 1 },
+                transition: { duration: 0.7, delay: 0.35, ease: EASE },
               })}
           style={{
-            marginTop: 64,
             borderRadius: 18,
             overflow: "hidden",
-            aspectRatio: "21 / 9",
+            aspectRatio: "4 / 3.4",
             boxShadow: "var(--le-shadow-lg)",
             border: "1px solid var(--le-border)",
             position: "relative",

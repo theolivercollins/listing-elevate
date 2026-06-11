@@ -66,3 +66,17 @@
 /* FAQ accordion toggle — subtle dim on hover. */
 .le-faq-toggle { color: var(--le-text); transition: color 150ms ease; }
 .le-faq-toggle:hover { color: var(--le-text-muted); }
+
+/* Split hero — copy left, media card right; stacks under 960px. */
+.le-hero-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 48px;
+  align-items: center;
+}
+@media (min-width: 960px) {
+  .le-hero-grid {
+    grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+    gap: clamp(36px, 4.5vw, 72px);
+  }
+}
