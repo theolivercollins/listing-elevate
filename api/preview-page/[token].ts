@@ -132,7 +132,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const agentName = (client as { agent_name?: string | null } | null)?.agent_name ?? null;
   const description = agentName ?? `Listing film · ${locality}`;
 
-  const thumbnailUrl = (property as { thumbnail_url?: string | null }).thumbnail_url ?? null;
+  // hero_photo_url resolved from photos table — never a video file (bug fix: property.thumbnail_url was an .mp4)
+  const thumbnailUrl = result.hero_photo_url ?? null;
 
   const metaBlock = buildMetaTags({ street, description, thumbnailUrl });
   const injectedHtml = injectMeta(indexHtml, metaBlock);
