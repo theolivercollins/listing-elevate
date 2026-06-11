@@ -87,6 +87,96 @@ function PillLabel({ label, dotColor }: { label: string; dotColor: string }) {
   );
 }
 
+// Wide rounded media plate between the turnaround timelines and the consumer
+// demand / ROI cards — visual breather inside the Retain prong. Same media
+// language as FirstImpression but shorter, with a single caption line.
+const ONLINE_SHOWING_IMAGE =
+  "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=2400&q=85";
+
+function OnlineShowingPlate() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.3 }}
+      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        borderRadius: 24,
+        margin: "clamp(24px, 4vw, 48px) 0",
+        aspectRatio: "21 / 7",
+        minHeight: 260,
+      }}
+    >
+      <img
+        src={ONLINE_SHOWING_IMAGE}
+        alt=""
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit: "cover",
+          filter: "brightness(0.8)",
+        }}
+      />
+      {/* Bottom scrim for caption legibility */}
+      <div
+        aria-hidden
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "linear-gradient(180deg, rgba(7,8,12,0) 45%, rgba(7,8,12,0.62) 100%)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: "clamp(20px, 4vw, 48px)",
+          right: "clamp(20px, 4vw, 48px)",
+          bottom: "clamp(20px, 3vw, 36px)",
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontFamily: "var(--le-font-sans)",
+              fontSize: "clamp(22px, 2.6vw, 32px)",
+              fontWeight: 600,
+              letterSpacing: "-0.02em",
+              lineHeight: 1.1,
+              color: "#fff",
+            }}
+          >
+            The first showing happens online now.
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontFamily: "var(--le-font-sans)",
+              fontSize: 14,
+              lineHeight: 1.5,
+              color: "rgba(255,255,255,0.75)",
+              maxWidth: 520,
+            }}
+          >
+            Buyers tour your listing from their phone before they ever pick up the phone.
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 function FirstImpression() {
   return (
     // Outer wrapper uses prong-consistent spacing
@@ -240,6 +330,7 @@ export function MarketComparison() {
         <ProngWrapper>
           <PillLabel label="Retain every client" dotColor={DOT_RETAIN} />
           <TurnaroundSpeed />
+          <OnlineShowingPlate />
           <ConsumerDemand />
         </ProngWrapper>
       </div>
