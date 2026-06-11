@@ -1,4 +1,4 @@
--- 082_preview_links_v2.sql
+-- 083_preview_links_v2.sql
 -- Per docs/specs/2026-06-11-preview-links-v2-design.md §1 (Data model, additive only)
 --
 -- Changes:

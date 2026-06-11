@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
     const approvedAt = preview?.approved_at ?? null;
 
-    // Extended brand — headshot and brokerage are new in migration 082 client columns
+    // Extended brand — headshot and brokerage are new in migration 083 client columns
     const brand = client
       ? {
           logo: (client as { brand_logo_url: string | null }).brand_logo_url ?? null,

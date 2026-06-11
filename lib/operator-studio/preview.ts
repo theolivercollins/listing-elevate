@@ -1,7 +1,7 @@
 import { getSupabase } from '../client.js';
 import { generatePreviewToken } from './preview-tokens.js';
 
-/** Preview-link metadata including the capability columns added in migration 082.
+/** Preview-link metadata including the capability columns added in migration 083.
  * When those columns are absent (pre-migration DB), the field is null and callers
  * should fall back to client-kind / all-capabilities-on / no approved_at. */
 export interface PreviewMeta {
@@ -39,7 +39,7 @@ export async function createPreviewLink(
   return data;
 }
 
-/** Attempts to select the migration-082 capability columns from property_previews.
+/** Attempts to select the migration-083 capability columns from property_previews.
  * Returns null (not throws) when the columns are absent so callers can fall back gracefully. */
 async function fetchPreviewMeta(db: ReturnType<typeof getSupabase>, token: string): Promise<PreviewMeta | null> {
   try {

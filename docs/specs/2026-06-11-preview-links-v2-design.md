@@ -9,7 +9,7 @@ Turn `/preview/:token` from a boilerplate column into a real, polished place to 
 - **Client link** — the agent reviews the deliverable: download, approve, request a change (each toggleable per link).
 - **Public sharing link** — view-only showcase, safe to post anywhere; all action capabilities off.
 
-## 1. Data model — migration 082 (additive only)
+## 1. Data model — migration 083 (additive only)
 
 `property_previews` gains:
 
@@ -45,7 +45,7 @@ Shared Supabase across envs: **apply only with Oliver's explicit go**. Code is b
 
 **POST `/api/preview/:token`** (revision note, existing) — now 403 `{error:"not_allowed"}` unless `allow_revision`.
 
-**POST `/api/preview/:token/approve`** — 403 unless `allow_approve`. Stamps `property_previews.approved_at` (idempotent: re-approve returns ok with existing timestamp) and inserts a `property_revision_notes` row with source `'client_approval'` and body `'Approved via preview link'` so it shows in the property's existing activity surface. Does NOT mutate `properties.status`. Requires extending the `property_revision_notes` source CHECK to include `'client_approval'` (part of migration 082).
+**POST `/api/preview/:token/approve`** — 403 unless `allow_approve`. Stamps `property_previews.approved_at` (idempotent: re-approve returns ok with existing timestamp) and inserts a `property_revision_notes` row with source `'client_approval'` and body `'Approved via preview link'` so it shows in the property's existing activity surface. Does NOT mutate `properties.status`. Requires extending the `property_revision_notes` source CHECK to include `'client_approval'` (part of migration 083).
 
 **GET `/api/preview/:token/download?orientation=horizontal|vertical`** — 403 unless `allow_download`; 404 if that orientation has no URL. Proxies/streams the remote MP4 with `Content-Disposition: attachment; filename="<address-slug>-<wide|vertical>.mp4"` (videos live on Creatomate/Backblaze CDN where cross-origin `download` attributes are ignored). Plan phase verifies streaming behavior on `@vercel/node`; fallback if streaming proves unworkable: redirect for Supabase-hosted files via `?download=` and proxy only CDN files.
 
@@ -82,5 +82,5 @@ Endpoints: `POST .../preview-link` gains `{ kind }` body (defaults `client`); ne
 
 - TDD on API: kind defaults at creation, capability enforcement (403 paths), approve idempotency, download gating + filename, back-compat of GET payload, token tests extended.
 - UI: component-level tests for capability-conditional rendering; headless-browser mount check of the **built** bundle before any prod push (blank-screen lesson, 2026-05-28).
-- Rollout order: code merges safely before migration (select fallback) → Oliver green-lights migration 082 → Share dialog fully functional.
+- Rollout order: code merges safely before migration (select fallback) → Oliver green-lights migration 083 → Share dialog fully functional.
 - Out of scope: email delivery of links, per-tenant theming from `brand_primary_hex`, photo galleries on the page.

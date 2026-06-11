@@ -107,7 +107,7 @@ describe('POST /api/preview/[token]/approve', () => {
   });
 
   it('returns 503 when preview is null (pre-migration: capability columns absent, safe rejection)', async () => {
-    // When migration 082 has not yet been applied, fetchByToken returns preview: null
+    // When migration 083 has not yet been applied, fetchByToken returns preview: null
     // because the capability columns don't exist. Proceeding to stampApproval would
     // throw Postgres 42703; the route now returns 503 instead of 500/crashing.
     mockIsWellFormedToken.mockReturnValue(true);

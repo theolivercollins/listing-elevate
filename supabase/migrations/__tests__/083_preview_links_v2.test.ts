@@ -1,5 +1,5 @@
 /**
- * TDD test for migration 082_preview_links_v2.sql
+ * TDD test for migration 083_preview_links_v2.sql
  *
  * Verifies the migration file:
  * 1. Exists at the correct path
@@ -18,20 +18,20 @@ import { readFileSync, existsSync } from 'fs';
 import { describe, it, expect } from 'vitest';
 
 const MIGRATION_PATH =
-  'supabase/migrations/082_preview_links_v2.sql';
+  'supabase/migrations/083_preview_links_v2.sql';
 
 // Resolve relative to repo root (vitest runs from cwd = repo root)
 const sql = existsSync(MIGRATION_PATH)
   ? readFileSync(MIGRATION_PATH, 'utf-8')
   : null;
 
-describe('082_preview_links_v2.sql — file existence', () => {
+describe('083_preview_links_v2.sql — file existence', () => {
   it('migration file exists', () => {
     expect(existsSync(MIGRATION_PATH)).toBe(true);
   });
 });
 
-describe('082_preview_links_v2.sql — property_previews columns', () => {
+describe('083_preview_links_v2.sql — property_previews columns', () => {
   it('adds kind column with if not exists', () => {
     expect(sql).toMatch(/add\s+column\s+if\s+not\s+exists\s+kind/i);
   });
@@ -86,7 +86,7 @@ describe('082_preview_links_v2.sql — property_previews columns', () => {
   });
 });
 
-describe('082_preview_links_v2.sql — property_revision_notes source CHECK extension', () => {
+describe('083_preview_links_v2.sql — property_revision_notes source CHECK extension', () => {
   it("drops the old source CHECK constraint", () => {
     expect(sql).toMatch(/drop\s+constraint/i);
     // The auto-generated constraint name from inline CHECK on migration 062
@@ -105,7 +105,7 @@ describe('082_preview_links_v2.sql — property_revision_notes source CHECK exte
   });
 });
 
-describe('082_preview_links_v2.sql — structural safety', () => {
+describe('083_preview_links_v2.sql — structural safety', () => {
   it('targets property_previews for the new columns', () => {
     expect(sql).toMatch(/alter\s+table\s+property_previews/i);
   });

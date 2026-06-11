@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!result || result.expired) return res.status(404).json({ error: 'not_found' });
 
   // Pre-migration guard: if the property_previews capability columns (allow_approve,
-  // approved_at) haven't been added yet (migration 082 not applied), result.preview
+  // approved_at) haven't been added yet (migration 083 not applied), result.preview
   // is null. Proceeding to stampApproval would throw Postgres 42703 (column not found)
   // and insertPreviewNote would violate the un-extended CHECK constraint.
   // Return 503 so the client gets a clear, retryable signal rather than a raw 500.
