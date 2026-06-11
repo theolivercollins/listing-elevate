@@ -150,7 +150,8 @@ export type SceneVariantRow = {
 
 export type MlEventType =
   | 'reorder' | 'regenerate' | 'variant_override' | 'script_edit'
-  | 'voice_choice' | 'music_choice' | 'rating' | 'comment' | 'details_edit';
+  | 'voice_choice' | 'music_choice' | 'rating' | 'comment' | 'details_edit'
+  | 'music_feedback';
 
 export type MlEventRow = {
   id: string;

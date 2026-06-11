@@ -240,52 +240,154 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const run = await getRun(runId);
           if (!run) return res.status(404).json({ error: 'not_found' });
           const { moodForPackage, pickRandom } = await import('../../../../lib/assembly/music.js');
-          const { composeMusic, MOOD_PROMPTS } = await import('../../../../lib/providers/elevenlabs-music.js');
+          const {
+            composeMusic, MOOD_PROMPTS, GENRE_VARIANTS, buildFeedbackBlock, buildGenrePrompt,
+          } = await import('../../../../lib/providers/elevenlabs-music.js');
           const mood = moodForPackage(run.video_type);
           const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
           const db = (await import('../../../../lib/client.js')).getSupabase();
-          try {
-            const { audio } = await composeMusic(MOOD_PROMPTS[mood], lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
-            const path = `delivery/${run.id}/${Date.now()}.mp3`;
-            const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
-            if (upErr) throw new Error(upErr.message);
-            const { data: urlData } = db.storage.from('music').getPublicUrl(path);
-            const { data: track, error: insErr } = await db.from('music_tracks').insert({
-              name: `Generated · ${mood} · ${new Date().toISOString().slice(0, 10)}`,
-              file_url: urlData.publicUrl, mood_tag: mood, source: 'elevenlabs_music',
-              prompt: MOOD_PROMPTS[mood], active: true,
-            }).select('id, name, file_url, mood_tag, source').single();
-            if (insErr) throw new Error(insErr.message);
-            return res.status(201).json({ track });
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
 
-            // Auto-fallback: find a library track instead of blocking the operator.
-            // Priority: matching mood → neutral → any active track.
-            // Exclude AI-generated tracks (source = 'elevenlabs_music') so the
-            // fallback always draws from the curated library pool.
-            type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
-            const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
-            const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
-            const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
+          // Fetch the latest 5 feedback rows for this mood to build the feedback block.
+          const { data: feedbackRows } = await db
+            .from('music_track_feedback')
+            .select('verdict, genre, comment, created_at')
+            .eq('mood', mood)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          const feedbackBlock = buildFeedbackBlock(
+            (feedbackRows ?? []) as Array<{ verdict: 'up' | 'down'; genre: string | null; comment: string | null; created_at: string }>,
+          );
 
-            const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
-            if (!fallbackRow) {
-              const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
-              await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
-              return res.status(502).json({ error: msg });
-            }
+          // Fire 4 composeMusic calls in parallel — one per genre variant.
+          type TrackOption = { id: string; name: string; file_url: string; mood_tag: string; source: string; genre: string | null };
+          type SettledResult = { status: 'fulfilled'; value: TrackOption } | { status: 'rejected'; reason: unknown };
 
-            // Apply the fallback: update the run and record the event.
-            const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
-            await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
-            await rme5(runId, 'music_choice', {
-              music_track_id: (fallbackRow as LibraryTrackRow).id,
-              source: 'library_fallback',
-              generation_error: msg,
-            });
-            return res.status(200).json({ track: fallbackRow, fallback: true, warning: msg });
+          const today = new Date().toISOString().slice(0, 10);
+          const results = await Promise.allSettled(
+            GENRE_VARIANTS.map(async (variant) => {
+              const fullPrompt = buildGenrePrompt(MOOD_PROMPTS[mood], variant.promptFragment, feedbackBlock);
+              const { audio } = await composeMusic(fullPrompt, lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
+              const path = `delivery/${run.id}/${Date.now()}-${variant.key}.mp3`;
+              const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
+              if (upErr) throw new Error(upErr.message);
+              const { data: urlData } = db.storage.from('music').getPublicUrl(path);
+              const { data: track, error: insErr } = await db.from('music_tracks').insert({
+                name: `Generated · ${mood} · ${variant.key} · ${today}`,
+                file_url: urlData.publicUrl,
+                mood_tag: mood,
+                source: 'elevenlabs_music',
+                genre: variant.key,
+                prompt: fullPrompt,
+                active: true,
+              }).select('id, name, file_url, mood_tag, source, genre').single();
+              if (insErr) throw new Error(insErr.message);
+              return track as TrackOption;
+            }),
+          ) as SettledResult[];
+
+          const successTracks = results
+            .filter((r): r is { status: 'fulfilled'; value: TrackOption } => r.status === 'fulfilled')
+            .map((r) => r.value);
+          const failures = results.filter((r) => r.status === 'rejected').length;
+
+          if (successTracks.length > 0) {
+            const warning = failures > 0 ? `${failures} of 4 generations failed` : undefined;
+            const response: { tracks: TrackOption[]; failures: number; warning?: string } = {
+              tracks: successTracks, failures,
+            };
+            if (warning) response.warning = warning;
+            return res.status(201).json(response);
           }
+
+          // All 4 failed — fall back to library.
+          const firstError = results.find((r) => r.status === 'rejected');
+          const msg = firstError?.status === 'rejected'
+            ? (firstError.reason instanceof Error ? firstError.reason.message : String(firstError.reason))
+            : 'All 4 music generations failed';
+
+          type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
+          const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
+          const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
+          const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
+
+          const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
+          if (!fallbackRow) {
+            const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
+            await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
+            return res.status(502).json({ error: msg });
+          }
+
+          const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
+          await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
+          await rme5(runId, 'music_choice', {
+            music_track_id: (fallbackRow as LibraryTrackRow).id,
+            source: 'library_fallback',
+            generation_error: msg,
+          });
+          const fallbackTrack: TrackOption = { ...(fallbackRow as LibraryTrackRow), genre: null };
+          return res.status(200).json({ tracks: [fallbackTrack], failures: 4, fallback: true, warning: msg });
+        }
+        case 'music_feedback': {
+          const trackId = String(req.body?.track_id ?? '');
+          if (!trackId) return res.status(400).json({ error: 'track_id required' });
+          const verdict = req.body?.verdict;
+          if (verdict !== 'up' && verdict !== 'down') {
+            return res.status(400).json({ error: "verdict must be 'up' or 'down'" });
+          }
+          const comment = req.body?.comment ? String(req.body.comment).trim() : null;
+
+          const db = (await import('../../../../lib/client.js')).getSupabase();
+
+          // Fetch the track to denormalize mood/genre/prompt.
+          const { data: trackRow } = await db
+            .from('music_tracks')
+            .select('id, mood_tag, genre, prompt, source, active')
+            .eq('id', trackId)
+            .maybeSingle();
+          const track = trackRow as { id: string; mood_tag: string | null; genre: string | null; prompt: string | null; source: string; active: boolean } | null;
+
+          // Upsert: conflict on (run_id, track_id) → update verdict/comment.
+          // A failed write must surface as an error — returning ok would let the
+          // UI show a verdict that was never stored (and never reaches prompts).
+          const { error: feedbackErr } = await db.from('music_track_feedback').upsert(
+            {
+              track_id: trackId,
+              run_id: runId,
+              mood: track?.mood_tag ?? null,
+              genre: track?.genre ?? null,
+              prompt: track?.prompt ?? null,
+              verdict,
+              comment,
+            },
+            { onConflict: 'run_id,track_id' },
+          );
+          if (feedbackErr) {
+            console.error('[delivery] music_track_feedback upsert failed:', feedbackErr);
+            return res.status(500).json({ error: `feedback save failed: ${feedbackErr.message}` });
+          }
+
+          const { recordMlEvent: rme6 } = await import('../../../../lib/delivery/runs.js');
+          await rme6(runId, 'music_feedback', {
+            track_id: trackId,
+            verdict,
+            has_comment: Boolean(comment),
+          });
+
+          // On 'down' + source='elevenlabs_music': deactivate the track.
+          // Library tracks are never auto-deactivated (curated pool must stay intact).
+          if (verdict === 'down' && track?.source === 'elevenlabs_music') {
+            // Supabase returns errors rather than throwing — check the result
+            // (a try/catch here would never fire). Non-fatal by design.
+            const { error: deactivateErr } = await db.from('music_tracks')
+              .update({ active: false })
+              .eq('id', trackId)
+              .eq('source', 'elevenlabs_music');
+            if (deactivateErr) {
+              console.error('[delivery] music_track deactivation failed (non-fatal):', deactivateErr);
+            }
+          }
+
+          return res.status(200).json({ ok: true });
         }
         case 'assemble': {
           const run = await getRun(runId);

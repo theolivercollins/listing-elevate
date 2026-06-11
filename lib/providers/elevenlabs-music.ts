@@ -41,6 +41,110 @@ export const MOOD_PROMPTS: Record<MoodTag, string> = {
     "Understated, neutral instrumental underscore for a real-estate video. Soft ambient pads and light piano, calm and unobtrusive, modern and clean. No vocals. Designed to sit quietly under a narrator.",
 };
 
+// ---------------------------------------------------------------------------
+// Genre variants — 4 instrumentation treatments appended to any mood prompt.
+// Each fragment is narration-safe: no vocals introduced, compatible with the
+// "No vocals" clause already present in every MOOD_PROMPTS entry.
+// ---------------------------------------------------------------------------
+export type GenreKey = 'acoustic' | 'orchestral' | 'ambient' | 'modern';
+
+export interface GenreVariant {
+  key: GenreKey;
+  label: string;
+  /** Appended to the mood base prompt to steer instrumentation. */
+  promptFragment: string;
+}
+
+export const GENRE_VARIANTS: GenreVariant[] = [
+  {
+    key: 'acoustic',
+    label: 'Acoustic',
+    promptFragment:
+      'Acoustic guitar and piano treatment — warm fingerpicking, intimate feel, minimal percussion.',
+  },
+  {
+    key: 'orchestral',
+    label: 'Orchestral',
+    promptFragment:
+      'Cinematic strings and orchestral treatment — sweeping, tasteful, with light brass accents.',
+  },
+  {
+    key: 'ambient',
+    label: 'Ambient',
+    promptFragment:
+      'Minimal ambient pads treatment — sparse, atmospheric, long sustains, very subtle.',
+  },
+  {
+    key: 'modern',
+    label: 'Modern',
+    promptFragment:
+      'Contemporary electronic-pop treatment — light synth textures, subtle beat, clean and polished.',
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Feedback block builder — pure function, no I/O.
+// ---------------------------------------------------------------------------
+export interface FeedbackRow {
+  verdict: 'up' | 'down';
+  genre: string | null;
+  comment: string | null;
+  created_at: string;
+}
+
+/**
+ * Build the operator-feedback block that is appended to generation prompts.
+ * Returns '' when rows is empty so callers can check for truthiness before
+ * appending a trailing newline.
+ *
+ * Output format (when rows present):
+ *   OPERATOR FEEDBACK ON PREVIOUS TRACKS (apply these preferences):
+ *   - [2026-06-11] liked (acoustic): "loved it"
+ *   - [2026-06-10] disliked (orchestral): "too cheesy, heavy strings"
+ *   - [2026-06-09] liked a ambient track
+ */
+export function buildFeedbackBlock(rows: FeedbackRow[]): string {
+  if (rows.length === 0) return '';
+
+  const lines = rows.map((row) => {
+    const dateStr = row.created_at.slice(0, 10); // YYYY-MM-DD
+    const verdict = row.verdict === 'up' ? 'liked' : 'disliked';
+    const genreLabel = row.genre ?? 'unknown';
+
+    if (row.comment && row.comment.trim()) {
+      return `- [${dateStr}] ${verdict} (${genreLabel}): "${row.comment.trim()}"`;
+    } else {
+      return `- [${dateStr}] ${verdict} a ${genreLabel} track`;
+    }
+  });
+
+  return [
+    'OPERATOR FEEDBACK ON PREVIOUS TRACKS (apply these preferences):',
+    ...lines,
+  ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Genre prompt assembly — pure, centralized, and tested.
+// ---------------------------------------------------------------------------
+
+/**
+ * Compose the full generation prompt for a single genre candidate.
+ *
+ * @param moodPrompt   - Base mood prompt from MOOD_PROMPTS[mood]
+ * @param fragment     - GenreVariant.promptFragment
+ * @param feedbackBlock - Result of buildFeedbackBlock(); empty string = no feedback
+ */
+export function buildGenrePrompt(
+  moodPrompt: string,
+  fragment: string,
+  feedbackBlock: string,
+): string {
+  const parts = [moodPrompt.trim(), fragment.trim()];
+  if (feedbackBlock) parts.push(feedbackBlock);
+  return parts.join(' ');
+}
+
 export interface ComposeMusicRequest {
   prompt: string;
   music_length_ms: number;
