@@ -7,9 +7,13 @@ const mockManualIngest = vi.fn();
 vi.mock('../../../../lib/auth', () => ({
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
 }));
-vi.mock('../../../../lib/operator-studio/ingest', () => ({
-  manualIngest: (...args: unknown[]) => mockManualIngest(...args),
-}));
+vi.mock('../../../../lib/operator-studio/ingest', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../lib/operator-studio/ingest')>();
+  return {
+    ...actual,
+    manualIngest: (...args: unknown[]) => mockManualIngest(...args),
+  };
+});
 
 import handler from '../ingest';
 
@@ -96,6 +100,29 @@ describe('POST /api/admin/studio/ingest', () => {
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._status).toBe(500);
     expect((res._body as { error: string }).error).toMatch(/db connection error/);
+  });
+
+  it('passes video_type through without 400 (run create is non-fatal)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    mockManualIngest.mockResolvedValue('prop-vtype-001');
+    const res = makeRes();
+    await handler(
+      makeReq({
+        body: {
+          client_id: 'c1',
+          address: '470 Sorrento Ct',
+          photo_storage_paths: ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg', 'e.jpg'],
+          video_type: 'just_listed',
+          selected_duration: 30,
+        },
+      }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect((res._body as { property_id: string }).property_id).toBe('prop-vtype-001');
+    // video_type must be forwarded to manualIngest
+    const callArg = mockManualIngest.mock.calls[0][0];
+    expect(callArg.video_type).toBe('just_listed');
   });
 });
 
