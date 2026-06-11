@@ -844,6 +844,11 @@ SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the liv
 
 | 056 | `operator_studio` | `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` + `property_revision_notes` + RLS — awaiting application to prod (feat/operator-studio) |
 | 057 | `operator_studio_scenes_followup` | `scenes.director_notes` text column — awaiting application to prod (feat/operator-studio) |
+| 058–078 | *(not yet documented in this table — see HANDOFF.md shipping log for details)* | Includes Homepage Ally, Prompt Lab expansion, Creatomate, market update workflow, UI consistency, operator delivery pipeline preamble. |
+| 079 | `clients_brokerage` | `clients.brokerage` text column. Applied to shared Supabase 2026-06-10. |
+| 080 | `delivery_pipeline` | `delivery_runs`, `scene_variants`, `ml_events` tables; run-scoped variant uniqueness; lifecycle-safe partial run index; `winner_source` enum (gemini\|operator\|default). Applied to shared Supabase 2026-06-10. |
+| 081 | `realtor_suffix` | `clients.realtor_suffix` boolean. Applied to shared Supabase 2026-06-10. |
+| 083 | `preview_links_v2` | `property_previews` +5 columns: `kind text CHECK('client','public') DEFAULT 'client'`, `allow_download boolean DEFAULT true`, `allow_approve boolean DEFAULT true`, `allow_revision boolean DEFAULT true`, `approved_at timestamptz`. `property_revision_notes.source` CHECK extended: `('operator','client_preview')` → `('operator','client_preview','client_approval')`. DDL defaults keep existing rows valid; kind-based creation defaults live in `createPreviewLink()`. Back-compat: GET read path safe pre-migration (fetchPreviewMeta returns null → capabilities default all-on); POST approve returns 503 pre-migration. **NOT yet applied to prod** — apply before Share dialog goes live. Branch `feat/preview-links-v2`. |
 
 ---
 

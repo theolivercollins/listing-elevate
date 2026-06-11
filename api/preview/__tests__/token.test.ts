@@ -201,3 +201,328 @@ describe('unsupported methods', () => {
     expect(res._status).toBe(405);
   });
 });
+
+// ---------------------------------------------------------------------------
+// T3 — capability enforcement on existing POST (revision note)
+// ---------------------------------------------------------------------------
+
+describe('POST /api/preview/[token] — allow_revision enforcement (spec §2)', () => {
+  it('returns 403 when preview.allow_revision is false', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: {
+        kind: 'client',
+        allow_download: true,
+        allow_approve: true,
+        allow_revision: false,
+        approved_at: null,
+      },
+    });
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+    expect((res._body as { error: string }).error).toBe('not_allowed');
+    expect(mockInsertClientNote).not.toHaveBeenCalled();
+  });
+
+  it('allows POST when allow_revision is true', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: {
+        kind: 'client',
+        allow_download: true,
+        allow_approve: true,
+        allow_revision: true,
+        approved_at: null,
+      },
+    });
+    mockInsertClientNote.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockInsertClientNote).toHaveBeenCalled();
+  });
+
+  it('pre-migration fallback (preview null) treats allow_revision as true', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p1', address: '1 Oak', vertical_video_url: null, horizontal_video_url: null, client_id: null },
+      client: null,
+      preview: null,
+    });
+    mockInsertClientNote.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'POST', body: { body: 'please fix the music' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(201);
+    expect(mockInsertClientNote).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T2 — superset payload shape (new fields from spec §2)
+// ---------------------------------------------------------------------------
+
+type FullPayload = {
+  address: string;
+  address_parts: { street: string; locality: string };
+  video_url: string | null;
+  videos: { horizontal: string | null; vertical: string | null };
+  thumbnail_url: string | null;
+  brand: {
+    logo: string | null;
+    agent_name: string | null;
+    name: string | null;
+    headshot: string | null;
+    brokerage: string | null;
+  } | null;
+  kind: string;
+  capabilities: { download: boolean; approve: boolean; revision: boolean };
+  approved_at: string | null;
+};
+
+function makeFullResult(overrides: {
+  address?: string;
+  thumbnail_url?: string | null;
+  horizontal_video_url?: string | null;
+  vertical_video_url?: string | null;
+  client?: {
+    name: string;
+    brand_logo_url: string | null;
+    agent_name: string | null;
+    agent_headshot_url?: string | null;
+    brokerage?: string | null;
+  } | null;
+  preview?: {
+    kind?: string;
+    allow_download?: boolean;
+    allow_approve?: boolean;
+    allow_revision?: boolean;
+    approved_at?: string | null;
+  } | null;
+} = {}) {
+  return {
+    expired: false,
+    property: {
+      id: 'p1',
+      address: overrides.address ?? '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
+      horizontal_video_url: overrides.horizontal_video_url ?? 'https://cdn/h.mp4',
+      vertical_video_url: overrides.vertical_video_url ?? null,
+      client_id: overrides.client !== undefined ? (overrides.client ? 'c1' : null) : null,
+      thumbnail_url: overrides.thumbnail_url !== undefined ? overrides.thumbnail_url : 'https://cdn/thumb.jpg',
+    },
+    client: overrides.client !== undefined
+      ? overrides.client
+      : null,
+    preview: overrides.preview !== undefined
+      ? overrides.preview
+      : {
+          kind: 'client',
+          allow_download: true,
+          allow_approve: true,
+          allow_revision: true,
+          approved_at: null,
+        },
+  };
+}
+
+describe('GET superset payload — new fields (spec §2)', () => {
+  it('returns full superset shape including all new fields', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      address: '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
+      thumbnail_url: 'https://cdn/thumb.jpg',
+      horizontal_video_url: 'https://cdn/h.mp4',
+      vertical_video_url: 'https://cdn/v.mp4',
+      client: { name: 'Helgemo', brand_logo_url: 'logo.png', agent_name: 'Abby', agent_headshot_url: 'head.jpg', brokerage: 'RE/MAX' },
+      preview: { kind: 'client', allow_download: true, allow_approve: true, allow_revision: true, approved_at: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as FullPayload;
+
+    // address_parts
+    expect(body.address_parts).toEqual({ street: '5019 San Massimo Dr', locality: 'Punta Gorda, FL 33950' });
+
+    // thumbnail_url
+    expect(body.thumbnail_url).toBe('https://cdn/thumb.jpg');
+
+    // extended brand
+    expect(body.brand).toEqual({ logo: 'logo.png', agent_name: 'Abby', name: 'Helgemo', headshot: 'head.jpg', brokerage: 'RE/MAX' });
+
+    // kind + capabilities + approved_at
+    expect(body.kind).toBe('client');
+    expect(body.capabilities).toEqual({ download: true, approve: true, revision: true });
+    expect(body.approved_at).toBeNull();
+
+    // back-compat fields preserved byte-for-byte
+    expect(body.address).toBe('5019 San Massimo Dr, Punta Gorda, FL 33950, USA');
+    expect(body.video_url).toBe('https://cdn/h.mp4');
+    expect(body.videos.horizontal).toBe('https://cdn/h.mp4');
+    expect(body.videos.vertical).toBe('https://cdn/v.mp4');
+  });
+
+  it('sets approved_at when set on preview', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      preview: { kind: 'client', allow_download: false, allow_approve: true, allow_revision: false, approved_at: '2026-06-11T10:00:00Z' },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.approved_at).toBe('2026-06-11T10:00:00Z');
+    expect(body.capabilities.download).toBe(false);
+    expect(body.capabilities.revision).toBe(false);
+    expect(body.capabilities.approve).toBe(true);
+  });
+
+  it('uses kind=public when preview.kind is public', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      preview: { kind: 'public', allow_download: false, allow_approve: false, allow_revision: false, approved_at: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.kind).toBe('public');
+    expect(body.capabilities).toEqual({ download: false, approve: false, revision: false });
+  });
+});
+
+describe('address_parts parsing', () => {
+  it('splits at first comma: street is before, locality is after without leading space', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ address: '123 Main St, Springfield, IL 62701, USA' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.address_parts.street).toBe('123 Main St');
+    expect(body.address_parts.locality).toBe('Springfield, IL 62701');
+  });
+
+  it('strips trailing ", USA" from locality', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ address: '42 Oak Ave, Portland, OR 97201, USA' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.address_parts.locality).toBe('Portland, OR 97201');
+  });
+
+  it('locality without ", USA" suffix is returned unchanged', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ address: '10 Downing St, London' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.address_parts.street).toBe('10 Downing St');
+    expect(body.address_parts.locality).toBe('London');
+  });
+
+  it('address with no comma: street is full address, locality is empty string', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ address: 'NoCommaAddress' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.address_parts.street).toBe('NoCommaAddress');
+    expect(body.address_parts.locality).toBe('');
+  });
+});
+
+describe('pre-migration fallback (result.preview is null)', () => {
+  it('returns kind=client, all capabilities true, approved_at=null when preview is null', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    // Simulate pre-migration: fetchByToken returns null for preview field
+    mockFetchByToken.mockResolvedValue(makeFullResult({ preview: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as FullPayload;
+    expect(body.kind).toBe('client');
+    expect(body.capabilities).toEqual({ download: true, approve: true, revision: true });
+    expect(body.approved_at).toBeNull();
+  });
+
+  it('preserves all pre-existing GET fields even in pre-migration path', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: {
+        id: 'p1',
+        address: '7 Pine Rd, Albany, NY 12207, USA',
+        horizontal_video_url: 'https://cdn/h.mp4',
+        vertical_video_url: null,
+        client_id: null,
+        thumbnail_url: null,
+      },
+      client: null,
+      // preview absent (property has no preview key) — simulates old fetchByToken shape
+      preview: null,
+    });
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    // Pre-existing fields unchanged
+    expect(body.address).toBe('7 Pine Rd, Albany, NY 12207, USA');
+    expect(body.video_url).toBe('https://cdn/h.mp4');
+    expect(body.videos.horizontal).toBe('https://cdn/h.mp4');
+    expect(body.videos.vertical).toBeNull();
+    expect(body.brand).toBeNull();
+    // New fields fall back to safe defaults
+    expect(body.kind).toBe('client');
+    expect(body.capabilities).toEqual({ download: true, approve: true, revision: true });
+    expect(body.approved_at).toBeNull();
+  });
+});
+
+describe('brand extended fields', () => {
+  it('includes headshot and brokerage from client when present', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      client: { name: 'Acme Realty', brand_logo_url: null, agent_name: 'Jane', agent_headshot_url: 'headshot.jpg', brokerage: 'Keller Williams' },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.brand?.headshot).toBe('headshot.jpg');
+    expect(body.brand?.brokerage).toBe('Keller Williams');
+  });
+
+  it('brand headshot and brokerage are null when client fields are absent', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      client: { name: 'Solo Agent', brand_logo_url: null, agent_name: 'Bob' },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.brand?.headshot).toBeNull();
+    expect(body.brand?.brokerage).toBeNull();
+  });
+
+  it('thumbnail_url is null when property has no thumbnail', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ thumbnail_url: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.thumbnail_url).toBeNull();
+  });
+});
