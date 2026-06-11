@@ -90,7 +90,7 @@ export async function fetchByToken(token: string) {
 }
 
 export async function recordPreviewView(token: string) {
-  // increment_preview_view RPC is defined in migration 056 and is atomic.
+  // increment_preview_view RPC is defined in migration 062 and is atomic.
   await getSupabase().rpc('increment_preview_view', { p_token: token });
 }
 
