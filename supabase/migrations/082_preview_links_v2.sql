@@ -32,6 +32,15 @@
 --     ADD CONSTRAINT property_revision_notes_source_check
 --       CHECK (source IN ('operator','client_preview'));
 --
+-- Back-compat posture:
+--   GET read path (fetchByToken / preview page) — safe pre-migration: missing columns
+--     cause fetchPreviewMeta to return null → all capabilities default all-on in reads.
+--   POST approve write path — NOT safe pre-migration: stampApproval references
+--     approved_at (42703) and insertPreviewNote would violate the un-extended CHECK.
+--     The approve route now returns 503 when result.preview is null so clients get a
+--     retryable error instead of a 500 crash during the deploy-before-migrate window.
+--   Rollout order: apply this migration BEFORE the Share-dialog UI goes live on prod.
+--
 -- Applied: preview/branch only until Oliver gives explicit go on prod.
 
 -- ─── property_previews ──────────────────────────────────────────────────────

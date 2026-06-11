@@ -58,12 +58,28 @@ function buildMetaTags(opts: {
   return lines.join('\n    ');
 }
 
+/**
+ * Strip any existing og:title, og:description, og:type, and twitter:card meta tags
+ * from the HTML so injected per-listing values are always the FIRST occurrence.
+ * (OG spec: first occurrence wins — the static index.html carries generic site values.)
+ */
+function stripExistingOgTags(html: string): string {
+  // Matches <meta property="og:title" ... /> or <meta property="og:description" ... />
+  // and <meta name="twitter:card" ... /> in both self-closing and open-tag forms.
+  // Uses a non-greedy match to avoid eating multiple tags in one swallow.
+  return html
+    .replace(/<meta\s+property="og:title"[^>]*\/?>/gi, '')
+    .replace(/<meta\s+property="og:description"[^>]*\/?>/gi, '')
+    .replace(/<meta\s+name="twitter:card"[^>]*\/?>/gi, '');
+}
+
 /** Inject meta tags just before </head>. Falls back to appending if </head> absent. */
 function injectMeta(html: string, metaBlock: string): string {
+  const stripped = stripExistingOgTags(html);
   const insertBefore = '</head>';
-  const idx = html.indexOf(insertBefore);
-  if (idx === -1) return html + '\n' + metaBlock;
-  return html.slice(0, idx) + '    ' + metaBlock + '\n  ' + html.slice(idx);
+  const idx = stripped.indexOf(insertBefore);
+  if (idx === -1) return stripped + '\n' + metaBlock;
+  return stripped.slice(0, idx) + '    ' + metaBlock + '\n  ' + stripped.slice(idx);
 }
 
 /** Derive the origin for fetching index.html from the incoming request. */

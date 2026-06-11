@@ -106,8 +106,10 @@ describe('POST /api/preview/[token]/approve', () => {
     expect(mockInsertPreviewNote).not.toHaveBeenCalled();
   });
 
-  it('returns 403 when preview is null (pre-migration fallback treats as all-on, not applicable — test actual false)', async () => {
-    // When preview is null → fallback all-on → allow_approve = true → should succeed
+  it('returns 503 when preview is null (pre-migration: capability columns absent, safe rejection)', async () => {
+    // When migration 082 has not yet been applied, fetchByToken returns preview: null
+    // because the capability columns don't exist. Proceeding to stampApproval would
+    // throw Postgres 42703; the route now returns 503 instead of 500/crashing.
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue({
       expired: false,
@@ -115,12 +117,13 @@ describe('POST /api/preview/[token]/approve', () => {
       client: null,
       preview: null,
     });
-    mockStampApproval.mockResolvedValue('2026-06-11T10:00:00Z');
-    mockInsertPreviewNote.mockResolvedValue(undefined);
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
-    // pre-migration fallback → all-on → approve succeeds
-    expect(res._status).toBe(200);
+    expect(res._status).toBe(503);
+    expect((res._body as { error: string }).error).toBe('not_ready');
+    // stampApproval must never be called — the column doesn't exist yet
+    expect(mockStampApproval).not.toHaveBeenCalled();
+    expect(mockInsertPreviewNote).not.toHaveBeenCalled();
   });
 
   it('stamps approval and inserts note on first approve', async () => {

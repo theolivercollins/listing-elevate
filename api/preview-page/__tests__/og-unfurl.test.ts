@@ -36,11 +36,22 @@ import handler from '../[token].js';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+/**
+ * Mirrors the real index.html: includes static og:title, og:description, og:type,
+ * and twitter:card so tests exercise the deduplication path (P1 regression guard).
+ * Per the OG spec, first occurrence wins — injected per-listing values must appear
+ * as the ONLY occurrence, not after the generic site values.
+ */
 const INDEX_HTML = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>Listing Elevate</title>
+    <title>Listing Elevate — Cinematic Real Estate Videos</title>
+    <meta name="description" content="AI-powered cinematic listing videos for real estate professionals." />
+    <meta property="og:title" content="Listing Elevate — Cinematic Real Estate Videos" />
+    <meta property="og:description" content="AI-powered cinematic listing videos for real estate professionals." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body><div id="root"></div></body>
 </html>`;
@@ -197,6 +208,36 @@ describe('GET /preview/[token] — valid token meta injection', () => {
     const fetchedUrl: string = mockFetch.mock.calls[0][0];
     expect(fetchedUrl).toMatch(/^https?:\/\/myapp\.vercel\.app\/index\.html/);
   });
+
+  it('deduplication — index.html with static og:title/og:description/twitter:card yields exactly one of each after injection', async () => {
+    // P1 regression guard: the real index.html carries static generic og: tags.
+    // Per OG spec, first occurrence wins, so the shim must remove the static tags
+    // before injecting per-listing values, not just append after them.
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({
+      address: '99 Dedup Lane, Test City, CA 90001, USA',
+      thumbnail_url: 'https://cdn/dedup-thumb.jpg',
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const html = res._body;
+
+    // Exactly one og:title — the listing street address, not the generic site title.
+    // Note: the static <title> element is left untouched; only the og:title meta is replaced.
+    const ogTitleMatches = html.match(/<meta\s+property="og:title"/gi) ?? [];
+    expect(ogTitleMatches).toHaveLength(1);
+    expect(html).toContain('content="99 Dedup Lane"');
+    // The generic og:title content must be gone (stripped, not just buried after the listing one)
+    expect(html).not.toContain('content="Listing Elevate — Cinematic Real Estate Videos"');
+
+    // Exactly one og:description
+    const ogDescMatches = html.match(/<meta\s+property="og:description"/gi) ?? [];
+    expect(ogDescMatches).toHaveLength(1);
+
+    // Exactly one twitter:card
+    const twitterCardMatches = html.match(/<meta\s+name="twitter:card"/gi) ?? [];
+    expect(twitterCardMatches).toHaveLength(1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -208,9 +249,10 @@ describe('GET /preview/[token] — invalid or expired token', () => {
     const res = makeRes();
     await handler(makeReq({ query: { token: 'bad!' } }), res as unknown as VercelResponse);
     expect(res._status).toBe(200);
+    // Passthrough: body is exactly the raw fetched index.html with no modification.
     expect(res._body).toBe(INDEX_HTML);
-    // No injected meta — nothing was looked up
-    expect(res._body).not.toContain('og:title');
+    // No listing-specific content injected (og:title retains the generic site value).
+    expect(res._body).not.toContain('123 Main St');
   });
 
   it('returns untouched index.html (200) when token not found in DB', async () => {
@@ -220,7 +262,7 @@ describe('GET /preview/[token] — invalid or expired token', () => {
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._status).toBe(200);
     expect(res._body).toBe(INDEX_HTML);
-    expect(res._body).not.toContain('og:title');
+    expect(res._body).not.toContain('123 Main St');
   });
 
   it('returns untouched index.html (200) when token is expired', async () => {
@@ -230,7 +272,7 @@ describe('GET /preview/[token] — invalid or expired token', () => {
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._status).toBe(200);
     expect(res._body).toBe(INDEX_HTML);
-    expect(res._body).not.toContain('og:title');
+    expect(res._body).not.toContain('123 Main St');
   });
 });
 

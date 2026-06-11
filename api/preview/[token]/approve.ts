@@ -15,8 +15,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const result = await fetchByToken(token);
   if (!result || result.expired) return res.status(404).json({ error: 'not_found' });
 
-  // Capability check — pre-migration fallback: null preview → treat as all-on
-  const allowApprove = result.preview?.allow_approve ?? true;
+  // Pre-migration guard: if the property_previews capability columns (allow_approve,
+  // approved_at) haven't been added yet (migration 082 not applied), result.preview
+  // is null. Proceeding to stampApproval would throw Postgres 42703 (column not found)
+  // and insertPreviewNote would violate the un-extended CHECK constraint.
+  // Return 503 so the client gets a clear, retryable signal rather than a raw 500.
+  if (result.preview === null) {
+    return res.status(503).json({ error: 'not_ready', message: 'Preview capabilities not yet available — migration pending' });
+  }
+
+  // Capability check
+  const allowApprove = result.preview.allow_approve;
   if (!allowApprove) return res.status(403).json({ error: 'not_allowed' });
 
   const { approved_at, already_approved } = await stampApproval(token);
