@@ -57,7 +57,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         horizontal: (property as { horizontal_video_url: string | null }).horizontal_video_url ?? null,
         vertical: (property as { vertical_video_url: string | null }).vertical_video_url ?? null,
       },
-      thumbnail_url: (property as { thumbnail_url?: string | null }).thumbnail_url ?? null,
+      // hero_photo_url resolved from photos table — never a video file (bug fix: property.thumbnail_url was an .mp4)
+      thumbnail_url: result.hero_photo_url ?? null,
       brand,
       kind,
       capabilities,

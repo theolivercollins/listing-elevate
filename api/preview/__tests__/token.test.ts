@@ -298,7 +298,8 @@ type FullPayload = {
 
 function makeFullResult(overrides: {
   address?: string;
-  thumbnail_url?: string | null;
+  // hero_photo_url is what fetchByToken now returns — resolved from photos table, never a video
+  hero_photo_url?: string | null;
   horizontal_video_url?: string | null;
   vertical_video_url?: string | null;
   client?: {
@@ -324,8 +325,9 @@ function makeFullResult(overrides: {
       horizontal_video_url: overrides.horizontal_video_url ?? 'https://cdn/h.mp4',
       vertical_video_url: overrides.vertical_video_url ?? null,
       client_id: overrides.client !== undefined ? (overrides.client ? 'c1' : null) : null,
-      thumbnail_url: overrides.thumbnail_url !== undefined ? overrides.thumbnail_url : 'https://cdn/thumb.jpg',
     },
+    // hero_photo_url is resolved from photos table by fetchByToken (never property.thumbnail_url)
+    hero_photo_url: overrides.hero_photo_url !== undefined ? overrides.hero_photo_url : 'https://cdn/thumb.jpg',
     client: overrides.client !== undefined
       ? overrides.client
       : null,
@@ -346,7 +348,7 @@ describe('GET superset payload — new fields (spec §2)', () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue(makeFullResult({
       address: '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
-      thumbnail_url: 'https://cdn/thumb.jpg',
+      hero_photo_url: 'https://cdn/thumb.jpg',
       horizontal_video_url: 'https://cdn/h.mp4',
       vertical_video_url: 'https://cdn/v.mp4',
       client: { name: 'Helgemo', brand_logo_url: 'logo.png', agent_name: 'Abby', agent_headshot_url: 'head.jpg', brokerage: 'RE/MAX' },
@@ -360,7 +362,7 @@ describe('GET superset payload — new fields (spec §2)', () => {
     // address_parts
     expect(body.address_parts).toEqual({ street: '5019 San Massimo Dr', locality: 'Punta Gorda, FL 33950' });
 
-    // thumbnail_url
+    // thumbnail_url comes from hero_photo_url (photos table), not property.thumbnail_url
     expect(body.thumbnail_url).toBe('https://cdn/thumb.jpg');
 
     // extended brand
@@ -517,12 +519,62 @@ describe('brand extended fields', () => {
     expect(body.brand?.brokerage).toBeNull();
   });
 
-  it('thumbnail_url is null when property has no thumbnail', async () => {
+  it('thumbnail_url is null when hero_photo_url is null (no photo resolved)', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
-    mockFetchByToken.mockResolvedValue(makeFullResult({ thumbnail_url: null }));
+    mockFetchByToken.mockResolvedValue(makeFullResult({ hero_photo_url: null }));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
     const body = res._body as FullPayload;
+    expect(body.thumbnail_url).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5 — hero image is NEVER a video file (regression lock)
+// ---------------------------------------------------------------------------
+
+describe('GET thumbnail_url — hero is never a video', () => {
+  it('thumbnail_url is a real photo URL from hero_photo_url, not property.thumbnail_url', async () => {
+    // This is the live-repro scenario: property.thumbnail_url was a scene .mp4 video.
+    // fetchByToken now resolves hero_photo_url from the photos table instead.
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: {
+        id: 'p1',
+        address: '1 Oak, City, FL 33950, USA',
+        horizontal_video_url: 'https://cdn/h.mp4',
+        vertical_video_url: null,
+        client_id: null,
+      },
+      // hero_photo_url resolved from photos table — a real photo
+      hero_photo_url: 'https://vrhmaeywqsohlztoouxu.supabase.co/storage/v1/object/public/property-photos/uuid/photo.jpg',
+      client: null,
+      preview: null,
+    });
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    expect(body.thumbnail_url).toBe('https://vrhmaeywqsohlztoouxu.supabase.co/storage/v1/object/public/property-photos/uuid/photo.jpg');
+    // Must NOT be a video URL
+    expect(body.thumbnail_url).not.toMatch(/\.(mp4|webm|mov)$/i);
+    expect(body.thumbnail_url).not.toContain('/property-videos/');
+  });
+
+  it('thumbnail_url is null (not a video) when no photo resolved from photos table', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({
+      expired: false,
+      property: { id: 'p2', address: '2 Oak, City, FL, USA', horizontal_video_url: null, vertical_video_url: null, client_id: null },
+      // No photo found — hero_photo_url is null
+      hero_photo_url: null,
+      client: null,
+      preview: null,
+    });
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload;
+    // Should be null, not a video
     expect(body.thumbnail_url).toBeNull();
   });
 });

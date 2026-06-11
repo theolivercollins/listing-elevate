@@ -1,5 +1,6 @@
 import { getSupabase } from '../client.js';
 import { generatePreviewToken } from './preview-tokens.js';
+import { toPublicPhotoUrl } from './ingest.js';
 
 /** Preview-link metadata including the capability columns added in migration 083.
  * When those columns are absent (pre-migration DB), the field is null and callers
@@ -65,6 +66,68 @@ async function fetchPreviewMeta(db: ReturnType<typeof getSupabase>, token: strin
   }
 }
 
+/**
+ * Returns true if the URL is clearly a video file and must NOT be used as a
+ * hero image. Guards both extension-based and bucket-based detection.
+ */
+export function isVideoUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  // Reject known video extensions
+  if (/\.(mp4|webm|mov)(\?|$)/.test(lower)) return true;
+  // Reject anything from the property-videos storage bucket
+  if (lower.includes('/property-videos/')) return true;
+  return false;
+}
+
+/**
+ * Resolve the best listing photo URL for a given property.
+ * Preference order: selected=true first, then highest quality_score; limit 1.
+ * file_url may be a storage path or an absolute URL — normalised via toPublicPhotoUrl.
+ * Returns null on any failure or if no photo is found.
+ *
+ * NEVER returns a video URL (isVideoUrl guard applied after resolution).
+ */
+export async function resolveHeroPhotoUrl(
+  db: ReturnType<typeof getSupabase>,
+  propertyId: string,
+): Promise<string | null> {
+  try {
+    // Query: prefer selected, then best quality_score, limit 1.
+    // Two separate queries so we can fall back from selected→any without
+    // complex Postgres ordering on a boolean column.
+    const { data: selectedRows, error: selectedErr } = await db
+      .from('photos')
+      .select('file_url, quality_score')
+      .eq('property_id', propertyId)
+      .eq('selected', true)
+      .order('quality_score', { ascending: false })
+      .limit(1);
+
+    if (!selectedErr && selectedRows && (selectedRows as Array<{ file_url: string | null }>).length > 0) {
+      const row = (selectedRows as Array<{ file_url: string | null }>)[0];
+      const url = row.file_url ? toPublicPhotoUrl(row.file_url) : null;
+      if (url && !isVideoUrl(url)) return url;
+    }
+
+    // Fall back to any photo for this property ordered by quality_score
+    const { data: anyRows, error: anyErr } = await db
+      .from('photos')
+      .select('file_url, quality_score')
+      .eq('property_id', propertyId)
+      .order('quality_score', { ascending: false })
+      .limit(1);
+
+    if (anyErr || !anyRows || (anyRows as Array<{ file_url: string | null }>).length === 0) return null;
+    const row = (anyRows as Array<{ file_url: string | null }>)[0];
+    const url = row.file_url ? toPublicPhotoUrl(row.file_url) : null;
+    if (url && !isVideoUrl(url)) return url;
+    return null;
+  } catch {
+    // Never let a photo-lookup failure break the preview API
+    return null;
+  }
+}
+
 export async function fetchByToken(token: string) {
   const db = getSupabase();
   const { data: pv } = await db.from('property_previews').select('*').eq('token', token).maybeSingle();
@@ -72,7 +135,7 @@ export async function fetchByToken(token: string) {
   const expired = pv.expires_at ? new Date(pv.expires_at) < new Date() : false;
   const { data: property } = await db
     .from('properties')
-    .select('id, address, horizontal_video_url, vertical_video_url, client_id, brokerage, thumbnail_url')
+    .select('id, address, horizontal_video_url, vertical_video_url, client_id, brokerage')
     .eq('id', pv.property_id)
     .maybeSingle();
   if (!property) return null;
@@ -86,7 +149,9 @@ export async function fetchByToken(token: string) {
     client = c;
   }
   const preview = await fetchPreviewMeta(db, token);
-  return { property, client, expired, preview };
+  // Resolve hero image from photos table — never a video file.
+  const hero_photo_url = await resolveHeroPhotoUrl(db, (property as { id: string }).id);
+  return { property, client, expired, preview, hero_photo_url };
 }
 
 export async function recordPreviewView(token: string) {

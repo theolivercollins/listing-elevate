@@ -81,7 +81,8 @@ function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
 
 function makeValidResult(overrides: {
   address?: string;
-  thumbnail_url?: string | null;
+  // hero_photo_url is what fetchByToken returns — resolved from photos table, never a video
+  hero_photo_url?: string | null;
   agentName?: string | null;
 } = {}) {
   const address = overrides.address ?? '123 Main St, Springfield, IL 62701, USA';
@@ -93,8 +94,9 @@ function makeValidResult(overrides: {
       horizontal_video_url: 'https://cdn/h.mp4',
       vertical_video_url: null,
       client_id: overrides.agentName ? 'c1' : null,
-      thumbnail_url: overrides.thumbnail_url !== undefined ? overrides.thumbnail_url : 'https://cdn/thumb.jpg',
     },
+    // hero_photo_url resolved from photos table by fetchByToken
+    hero_photo_url: overrides.hero_photo_url !== undefined ? overrides.hero_photo_url : 'https://cdn/thumb.jpg',
     client: overrides.agentName
       ? { name: 'Acme Realty', brand_logo_url: null, agent_name: overrides.agentName, agent_headshot_url: null, brokerage: null }
       : null,
@@ -150,9 +152,9 @@ describe('GET /preview/[token] — valid token meta injection', () => {
     expect(res._body).toContain('<meta property="og:description" content="Jane Smith"');
   });
 
-  it('injects og:image with thumbnail_url', async () => {
+  it('injects og:image with hero_photo_url (real listing photo, not a video)', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
-    mockFetchByToken.mockResolvedValue(makeValidResult({ thumbnail_url: 'https://cdn/thumbnail.jpg' }));
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: 'https://cdn/thumbnail.jpg' }));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._body).toContain('<meta property="og:image" content="https://cdn/thumbnail.jpg"');
@@ -170,7 +172,7 @@ describe('GET /preview/[token] — valid token meta injection', () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue(makeValidResult({
       address: '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
-      thumbnail_url: 'https://cdn/thumb.jpg',
+      hero_photo_url: 'https://cdn/thumb.jpg',
     }));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
@@ -185,9 +187,9 @@ describe('GET /preview/[token] — valid token meta injection', () => {
     expect(html).toContain('<meta name="twitter:card" content="summary_large_image"');
   });
 
-  it('omits og:image tag when thumbnail_url is null', async () => {
+  it('omits og:image tag when hero_photo_url is null (no photo resolved)', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
-    mockFetchByToken.mockResolvedValue(makeValidResult({ thumbnail_url: null }));
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: null }));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
     // No og:image injection, but other three still present
@@ -216,7 +218,7 @@ describe('GET /preview/[token] — valid token meta injection', () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue(makeValidResult({
       address: '99 Dedup Lane, Test City, CA 90001, USA',
-      thumbnail_url: 'https://cdn/dedup-thumb.jpg',
+      hero_photo_url: 'https://cdn/dedup-thumb.jpg',
     }));
     const res = makeRes();
     await handler(makeReq(), res as unknown as VercelResponse);
@@ -273,6 +275,35 @@ describe('GET /preview/[token] — invalid or expired token', () => {
     expect(res._status).toBe(200);
     expect(res._body).toBe(INDEX_HTML);
     expect(res._body).not.toContain('123 Main St');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5 — og:image is NEVER a video (regression lock for live-repro bug)
+// ---------------------------------------------------------------------------
+
+describe('OG unfurl — og:image is never a video file', () => {
+  it('injects og:image when hero_photo_url is a real photo URL', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({
+      hero_photo_url: 'https://example.supabase.co/storage/v1/object/public/property-photos/uuid/front.jpg',
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('og:image');
+    expect(res._body).not.toMatch(/og:image.*\.mp4/i);
+    expect(res._body).not.toContain('/property-videos/');
+  });
+
+  it('omits og:image entirely when hero_photo_url is null — no video fallback', async () => {
+    // Live-repro guard: the old code would have put the .mp4 scene URL here.
+    // Now, if no photo is resolved, og:image is simply omitted rather than
+    // falling back to a video URL.
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).not.toContain('og:image');
   });
 });
 
