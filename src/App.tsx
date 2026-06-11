@@ -16,6 +16,7 @@ import Presets from "./pages/Presets";
 import Status from "./pages/Status";
 import AuthCallback from "./pages/AuthCallback";
 import { LoginDialogProvider } from "@/v2/components/auth/LoginDialogContext";
+import { ScrollToTop } from "@/components/ScrollToTop";
 import DashboardAccountProfile from "./pages/dashboard/account/Profile";
 import DashboardAccountBilling from "./pages/dashboard/account/Billing";
 import DashboardAccountListings from "./pages/dashboard/account/Listings";
@@ -78,6 +79,7 @@ const App = () => (
           <Sonner />
           <BrowserRouter>
             <LoginDialogProvider>
+              <ScrollToTop />
               <TopNav />
               <Routes>
                 {/* Public routes */}
