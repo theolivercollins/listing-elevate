@@ -10,6 +10,7 @@ import {
   ExternalLink,
   ArrowLeft,
   Download,
+  Share2,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -28,6 +29,7 @@ import type {
   PropertyPreviewRow,
   ListingDetails,
 } from '../../../../lib/types/operator-studio';
+import ShareDialog, { type ShareLinks, type CapabilityField } from './ShareDialog';
 
 // ─── Local types ───────────────────────────────────────────────────────────────
 
@@ -283,6 +285,9 @@ const PropertyCommandCenter = () => {
   const [generatingLink, setGeneratingLink] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareLinks, setShareLinks] = useState<ShareLinks>({ client: null, public: null });
+
   const [advancePending, setAdvancePending] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
 
@@ -357,6 +362,49 @@ const PropertyCommandCenter = () => {
     } finally {
       setGeneratingLink(false);
     }
+  };
+
+  const fetchShareLinks = useCallback(async () => {
+    try {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-links`);
+      if (!res.ok) return;
+      const data = (await res.json()) as ShareLinks;
+      setShareLinks(data);
+    } catch {
+      // non-critical: fail silently; dialog will show "create" state
+    }
+  }, [id]);
+
+  const handleOpenShare = async () => {
+    await fetchShareLinks();
+    setShareOpen(true);
+  };
+
+  const handleCreateLink = async (kind: 'client' | 'public') => {
+    const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    }
+    await fetchShareLinks();
+    await fetchBundle();
+  };
+
+  const handleToggle = async (pvId: string, field: CapabilityField, value: boolean) => {
+    const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-links/${pvId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    }
+    await fetchShareLinks();
   };
 
   // Generic delivery action helper — all checkpoint sections reuse this.
@@ -463,15 +511,10 @@ const PropertyCommandCenter = () => {
           <button
             type="button"
             className="studio-cta-primary"
-            onClick={handleGeneratePreviewLink}
-            disabled={generatingLink}
+            onClick={() => void handleOpenShare()}
           >
-            {generatingLink ? (
-              <Loader2 size={13} className="studio-spinner" />
-            ) : (
-              <Plus size={13} strokeWidth={2} />
-            )}
-            Generate preview link
+            <Share2 size={13} strokeWidth={1.8} />
+            Share
           </button>
         </div>
       </div>
@@ -787,15 +830,10 @@ const PropertyCommandCenter = () => {
           <button
             type="button"
             className="studio-btn-ghost"
-            onClick={handleGeneratePreviewLink}
-            disabled={generatingLink}
+            onClick={() => void handleOpenShare()}
           >
-            {generatingLink ? (
-              <Loader2 size={12} className="studio-spinner" />
-            ) : (
-              <Plus size={13} strokeWidth={2} />
-            )}
-            Generate preview link
+            <Share2 size={13} strokeWidth={1.8} />
+            Manage share links
           </button>
         </SectionCard>
 
@@ -1098,6 +1136,17 @@ const PropertyCommandCenter = () => {
           </p>
         </SectionCard>
       </div>
+
+      {shareOpen && (
+        <ShareDialog
+          propertyId={id ?? ''}
+          baseUrl={baseUrl}
+          links={shareLinks}
+          onCreateLink={handleCreateLink}
+          onToggle={handleToggle}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
     </StudioShell>
   );
 };

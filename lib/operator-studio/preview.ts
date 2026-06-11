@@ -12,11 +12,27 @@ export interface PreviewMeta {
   approved_at: string | null;
 }
 
-export async function createPreviewLink(propertyId: string, expiresAt: string | null = null) {
+export async function createPreviewLink(
+  propertyId: string,
+  expiresAt: string | null = null,
+  kind: 'client' | 'public' = 'client',
+) {
   const token = generatePreviewToken();
+  // Kind-based capability defaults (spec §1 / §5):
+  //   client → all true  (full review experience)
+  //   public → all false (view-only showcase)
+  const isClient = kind === 'client';
   const { data, error } = await getSupabase()
     .from('property_previews')
-    .insert({ property_id: propertyId, token, expires_at: expiresAt })
+    .insert({
+      property_id: propertyId,
+      token,
+      expires_at: expiresAt,
+      kind,
+      allow_download: isClient,
+      allow_approve: isClient,
+      allow_revision: isClient,
+    })
     .select('*')
     .single();
   if (error) throw new Error(`createPreviewLink: ${error.message}`);
