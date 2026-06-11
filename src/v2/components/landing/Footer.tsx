@@ -1,42 +1,59 @@
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
+import { Reveal } from "@/v2/components/primitives/Reveal";
 
 /**
- * Footer — pixel-faithful port of landing.jsx lines 582-606.
+ * Footer — light SaaS redesign (2026-06-11).
  *
- * Uses inert <span>s for the link list (matching the design) because
- * the legal/route targets (/terms, /privacy) do not exist in this
- * shell. Left slot holds the white logo mark for the dark background.
+ * Content wrapped in maxWidth 1200 with shared horizontal gutters so the
+ * left edge aligns with every Section above it.
  */
 export function Footer() {
   return (
     <footer
       style={{
-        padding: "clamp(32px, 6vw, 40px) clamp(16px, 5vw, 48px)",
         borderTop: "1px solid var(--le-border)",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        fontSize: 12,
-        color: "var(--le-text-muted)",
-        fontFamily: "var(--le-font-sans)",
-        gap: 24,
-        flexWrap: "wrap",
+        padding: "0 clamp(16px, 5vw, 48px)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <LELogoMark size={14} variant="light" />
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <Reveal
+          delay={0}
+          style={{
+            padding: "clamp(32px, 6vw, 40px) 0",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            fontSize: 12,
+            color: "var(--le-text-muted)",
+            fontFamily: "var(--le-font-sans)",
+            gap: 24,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <LELogoMark size={14} variant="dark" />
+          </div>
+          <div className="le-flexwrap-sm" style={{ display: "flex", gap: 28 }}>
+            <a href="#process" style={{ color: "inherit", textDecoration: "none" }}>
+              Process
+            </a>
+            <a href="#showcase" style={{ color: "inherit", textDecoration: "none" }}>
+              Showcase
+            </a>
+            <a href="#pricing" style={{ color: "inherit", textDecoration: "none" }}>
+              Pricing
+            </a>
+            <a href="#faq" style={{ color: "inherit", textDecoration: "none" }}>
+              FAQ
+            </a>
+            <span>Terms</span>
+            <span>Privacy</span>
+          </div>
+          <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 11 }}>
+            © 2026 Listing Elevate, Inc.
+          </span>
+        </Reveal>
       </div>
-      <div className="le-flexwrap-sm" style={{ display: "flex", gap: 28 }}>
-        <span>Process</span>
-        <span>Showcase</span>
-        <span>Pricing</span>
-        <span>FAQ</span>
-        <span>Terms</span>
-        <span>Privacy</span>
-      </div>
-      <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 11 }}>
-        © 2026 Listing Elevate, Inc.
-      </span>
     </footer>
   );
 }

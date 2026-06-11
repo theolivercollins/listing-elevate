@@ -5,14 +5,14 @@ type Variant = "primary" | "ghost";
 type Size = "sm" | "md" | "lg";
 
 const SIZE_STYLE: Record<Size, CSSProperties> = {
-  sm: { padding: "8px 16px", fontSize: 13 },
+  sm: { padding: "9px 18px", fontSize: 13 },
   md: { padding: "12px 20px", fontSize: 14 },
-  lg: { padding: "14px 24px", fontSize: 14 },
+  lg: { padding: "14px 26px", fontSize: 15 },
 };
 
 function base(variant: Variant): CSSProperties {
   return {
-    borderRadius: 4,
+    borderRadius: 999,
     fontWeight: 500,
     letterSpacing: "-0.005em",
     fontFamily: "var(--le-font-sans)",
@@ -25,6 +25,10 @@ function base(variant: Variant): CSSProperties {
     background: variant === "primary" ? "var(--le-accent)" : "transparent",
     color: variant === "primary" ? "var(--le-accent-fg)" : "var(--le-text)",
     border: variant === "primary" ? "none" : "1px solid var(--le-border-strong)",
+    boxShadow:
+      variant === "primary"
+        ? "inset 0 1px 0 rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.15)"
+        : undefined,
   };
 }
 
