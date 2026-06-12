@@ -50,10 +50,9 @@ function PipelineCard({ property }: { property: SampleProperty }) {
     <div
       className="le-lift"
       style={{
-        padding: 12, borderRadius: 12,
-        background: "rgba(255,255,255,0.7)",
-        border: "1px solid rgba(15,24,60,0.06)",
-        boxShadow: "0 1px 0 rgba(255,255,255,0.8) inset",
+        padding: 12, borderRadius: "var(--le-r-lg)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         position: "relative", overflow: "hidden",
         cursor: "pointer",
       }}
@@ -121,7 +120,7 @@ function ReviewCard({
         style={{
           aspectRatio: "16 / 9",
           background: `linear-gradient(135deg, hsl(${providerHue}, 10%, 50%), hsl(${providerHue + 15}, 12%, 32%))`,
-          borderRadius: 12, display: "grid", placeItems: "center",
+          borderRadius: "var(--le-r-lg)", display: "grid", placeItems: "center",
           color: "rgba(255,255,255,0.9)", position: "relative", overflow: "hidden",
           border: "1px solid rgba(255,255,255,0.5)",
         }}
@@ -202,7 +201,7 @@ const Pipeline = () => {
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [avgProcessingMs, setAvgProcessingMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"kanban" | "timeline">("kanban");
+  const [view, setView] = useState<"kanban" | "ledger">("ledger");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -403,7 +402,7 @@ const Pipeline = () => {
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {/* Segmented control */}
             <div className="le-seg">
-              {(["kanban", "timeline"] as const).map((v) => (
+              {(["ledger", "kanban"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -420,18 +419,59 @@ const Pipeline = () => {
           </div>
         </div>
 
-        {/* Kanban grid */}
+        {/* Pipeline views — ledger (default) or kanban */}
         {allLiveProps.length === 0 ? (
           <div
             style={{
-              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
               padding: "56px 0", textAlign: "center",
               fontSize: 13, color: "var(--muted)",
             }}
           >
             No properties in the pipeline yet. New uploads will appear here.
           </div>
+        ) : view === "ledger" ? (
+          /* ── Ledger table view (approved operator design) ── */
+          <div className="le-table-scroll is-wide">
+            <table className="le-ledger">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Stage</th>
+                  <th>Agent</th>
+                  <th>Photos</th>
+                  <th>Progress</th>
+                  <th>Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allLiveProps.map((p) => {
+                  const adapted = adaptProperty(p);
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight: 500, color: "var(--ink)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.address}
+                      </td>
+                      <td><StatusChip status={p.status} /></td>
+                      <td style={{ color: "var(--muted)", fontSize: 12 }}>{p.listing_agent ?? "—"}</td>
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--muted-2)", fontSize: 12 }}>{p.photo_count ?? 0}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span className="le-mini-progress">
+                            <span className="le-mini-progress-fill" style={{ width: `${adapted.progress}%` }} />
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{adapted.progress}%</span>
+                        </div>
+                      </td>
+                      <td style={{ color: "var(--muted-2)", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{fmtRel(adapted.created_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
+        /* ── Kanban view ── */
         <div className="le-table-scroll is-wide">
         <div
           style={{
@@ -478,7 +518,7 @@ const Pipeline = () => {
                     <div
                       style={{
                         flex: 1, display: "grid", placeItems: "center",
-                        border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+                        border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
                         color: "var(--muted-2)", fontSize: 11,
                       }}
                     >
@@ -512,7 +552,7 @@ const Pipeline = () => {
         {reviewScenes.length === 0 ? (
           <div
             style={{
-              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
               padding: "48px 0", textAlign: "center",
               fontSize: 13, color: "var(--muted)",
             }}

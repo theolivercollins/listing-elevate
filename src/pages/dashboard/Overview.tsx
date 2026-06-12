@@ -225,64 +225,33 @@ function NeedsYouStrip({
   return (
     <div
       data-testid="needs-you-strip"
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "12px 16px",
-        borderRadius: 12,
-        background: allClear ? "rgba(47, 138, 85, 0.06)" : "rgba(210, 95, 60, 0.06)",
-        border: `1px solid ${allClear ? "rgba(47, 138, 85, 0.18)" : "rgba(210, 95, 60, 0.18)"}`,
-        marginBottom: 16,
-        flexWrap: "wrap" as const,
-      }}
+      className="le-triage-strip"
+      style={{ marginBottom: 16, background: allClear ? "var(--good-soft, rgba(47,138,85,0.06))" : undefined, borderColor: allClear ? "rgba(47,138,85,0.18)" : undefined }}
     >
-      <span
-        style={{
-          fontSize: 11.5,
-          fontWeight: 600,
-          letterSpacing: "0.06em",
-          textTransform: "uppercase" as const,
-          color: allClear ? "var(--good)" : "var(--warn)",
-          marginRight: 4,
-          flexShrink: 0,
-        }}
-      >
-        {allClear ? "Needs you" : "Needs you"}
+      <span className="le-triage-eyebrow" style={{ color: allClear ? "var(--good)" : undefined }}>
+        Needs you
       </span>
-      {allClear ? (
-        <span
-          data-testid="needs-you-all-clear"
-          style={{ fontSize: 13, color: "var(--good)", fontWeight: 500 }}
-        >
-          All clear — nothing requires your attention right now.
-        </span>
-      ) : (
-        <>
-          {items.map((item, i) => (
-            <span key={item.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              {i > 0 && (
-                <span style={{ width: 3, height: 3, borderRadius: 999, background: "var(--muted-2)", flexShrink: 0 }} />
-              )}
-              <Link
-                to={item.href}
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: item.urgent ? "var(--bad)" : "var(--warn)",
-                  textDecoration: "none",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <Icon name="chevron-right" size={11} />
-                {item.label}
-              </Link>
-            </span>
-          ))}
-        </>
-      )}
+      <div className="le-triage-items">
+        {allClear ? (
+          <span
+            data-testid="needs-you-all-clear"
+            style={{ fontSize: 13, color: "var(--good)", fontWeight: 500 }}
+          >
+            All clear — nothing requires your attention right now.
+          </span>
+        ) : (
+          items.map((item) => (
+            <Link
+              key={item.key}
+              to={item.href}
+              className={`le-triage-item${item.urgent ? " is-urgent" : ""}`}
+            >
+              <span className="le-triage-count">{item.count}</span>
+              {item.label}
+            </Link>
+          ))
+        )}
+      </div>
     </div>
   );
 }
@@ -302,8 +271,8 @@ function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
         flexDirection: "column" as const,
         gap: 8,
         padding: "14px 16px",
-        borderRadius: 12,
-        background: "rgba(11,11,16,0.025)",
+        borderRadius: "var(--le-r-lg)",
+        background: "var(--surface-2, rgba(11,11,16,0.025))",
         border: "1px solid var(--line-2)",
         marginBottom: 16,
       }}
@@ -317,7 +286,7 @@ function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
             alignItems: "center",
             gap: 8,
             padding: "10px 14px",
-            borderRadius: 8,
+            borderRadius: "var(--le-r-md)",
             background: "rgba(220, 38, 38, 0.08)",
             border: "1px solid rgba(220, 38, 38, 0.22)",
             marginBottom: 8,
@@ -410,7 +379,7 @@ function DegradedBadge({
         alignItems: "center",
         gap: 8,
         padding: "6px 12px",
-        borderRadius: 8,
+        borderRadius: "var(--le-r-md)",
         background: "rgba(217, 119, 6, 0.08)",
         border: "1px solid rgba(217, 119, 6, 0.25)",
         marginBottom: 12,
@@ -430,7 +399,7 @@ function DegradedBadge({
           color: "var(--warn)",
           background: "none",
           border: "1px solid rgba(217, 119, 6, 0.35)",
-          borderRadius: 6,
+          borderRadius: "var(--le-r-sm)",
           padding: "2px 8px",
           cursor: "pointer",
           marginLeft: 4,
@@ -875,8 +844,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                   gap: 14,
                   alignItems: "center",
                   padding: "12px 14px",
-                  borderRadius: 12,
-                  background: "rgba(11,11,16,0.025)",
+                  borderRadius: "var(--le-r-lg)",
+                  background: "var(--surface-2, rgba(11,11,16,0.025))",
                 }}
               >
                 <PropertyThumb hue={p.thumb_hue} size={40} />

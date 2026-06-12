@@ -999,6 +999,9 @@
   white-space: nowrap;
 }
 .le-triage-item:hover { border-color: var(--muted-2); box-shadow: var(--shadow-md); }
+/* Urgent modifier — maps to var(--bad) spine per approved 02-operator-pipeline.html */
+.le-triage-item.is-urgent { border-color: rgba(210,60,60,0.25); }
+.le-triage-item.is-urgent:hover { border-color: rgba(210,60,60,0.45); }
 .le-triage-count {
   font-size: 10.5px; font-weight: 700;
   min-width: 18px; padding: 0 5px;
@@ -1006,6 +1009,10 @@
   color: var(--warn);
   border-radius: 99px; text-align: center;
   font-variant-numeric: tabular-nums;
+}
+.le-triage-item.is-urgent .le-triage-count {
+  background: var(--bad-soft);
+  color: var(--bad);
 }
 
 /* ── Ledger table — phase 2 operator pipeline ───────────────────── */
