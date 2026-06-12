@@ -1,5 +1,7 @@
 # Listing Elevate — Handoff
 
+Last updated: 2026-06-11 (auth-animation-fix — removed autoFocus-mid-animation glitch in LoginDialog, smooth password-field height transition, cross-fade on sent state; on branch `feat/auth-animation-fix`)
+
 Last updated: 2026-06-11 (preview-links-v2 — client/public link kinds, gallery redesign, approve/download actions, OG unfurl, Share dialog, hero photo bug fix; on branch `feat/preview-links-v2`, migration 083 NOT yet applied to prod)
 
 Last updated: 2026-06-11 (music feedback + 4-genre generation on `feat/music-feedback`; earlier same day: Seedance pair mode + Video Studio UX on main)
