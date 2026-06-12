@@ -33,7 +33,7 @@ See also:
 
 - **T2/T3/T5/T6/T7/T8 (2026-06-11)** — preview lib aggregates (`lib/operator-studio/preview.ts` extended: label, revoked_at, event aggregates), events beacon endpoint (`api/preview/[token]/events.ts`, always-204 pre-migration), admin library (`GET /api/admin/studio/videos/[id]`) + hub API, LEPlayer (`src/components/preview/LEPlayer.tsx` — hand-rolled controls, no new deps, zero `<video controls>` chrome), SharePanel extraction from ShareDialog (label input + revoke, shared by hub + PCC dialog), Videos library page (`src/pages/dashboard/studio/VideosLibrary.tsx`, route `/dashboard/studio/videos`), StudioNav "Videos" tab.
 
-**Verified (final state):** full suite 1372 pass / 2 skipped; `pnpm run build` clean; headless mount checks clean (watch page + hub); DESIGN-GUIDE §9 all pass for embed surface.
+**Verified (final state, post-merge):** full suite 1402 pass / 2 skipped (154 test files, exceeds 1376 baseline); `pnpm run build` clean; headless mount checks clean (embed); vercel.json route-coverage test passes (18 assertions); DESIGN-GUIDE §9 checklist all pass for embed surface; migration 084 numbering verified free on origin/main.
 
 **Prod gates (need Oliver):**
 1. Apply migration **084** to shared Supabase (additive only: `label`, `revoked_at` on `property_previews`; `preview_link_events` table; indexes + RLS; back-compat by design).
