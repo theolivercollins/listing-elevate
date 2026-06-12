@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-06-12 (LE Video fully built + embed at `/preview/:token/embed`, branch `feat/le-video`; migration 084 WRITTEN but NOT applied — Oliver gates prod migrations)
+Last updated: 2026-06-12 (LE Video — video hub + library + proprietary LEPlayer + preview link management. Branch `feat/le-video` (15 commits off main afefebe), migration 084 FILE-ONLY on supabase/migrations/ (not applied). All 4 gates passed: verify (embed chrome-less ✓, back-compat ✓, mount-check 100%), safety (RLS ✓, auth/injection clean). Tests: 1377/1379 pass (2 skipped integration), build clean, all routes functional. Ready to merge + apply migration 084 (Oliver approval required). Spec: `docs/specs/2026-06-11-le-video-design.md`. Not pushed per standing policy.)
 
 Last updated: 2026-06-11 (preview-links-v2 — client/public link kinds, gallery redesign, approve/download actions, OG unfurl, Share dialog, hero photo bug fix; on branch `feat/preview-links-v2`, migration 083 NOT yet applied to prod)
 
