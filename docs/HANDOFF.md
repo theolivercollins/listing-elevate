@@ -3,7 +3,6 @@
 Last updated: 2026-06-11 (preview-links-v2 — client/public link kinds, gallery redesign, approve/download actions, OG unfurl, Share dialog, hero photo bug fix; on branch `feat/preview-links-v2`, migration 083 NOT yet applied to prod)
 
 Last updated: 2026-06-11 (music feedback + 4-genre generation on `feat/music-feedback`; earlier same day: Seedance pair mode + Video Studio UX on main)
-Last updated: 2026-06-11 (market-update RunDetail draft panels — live status badges + two-step Publish to Sierra / Send via Sendy actions; commit 16888fd on `feat/market-update-workflow`)
 See also:
 - [README.md](./README.md) — folder guide + session hygiene
 - [state/PROJECT-STATE.md](./state/PROJECT-STATE.md) — authoritative state
