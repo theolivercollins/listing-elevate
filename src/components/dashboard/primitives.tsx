@@ -616,12 +616,12 @@ export interface EmptyStateCTA {
 
 export interface EmptyStateProps {
   message: string;
-  /** Optional icon name from the icon set. Defaults to "inbox". */
+  /** Optional icon name from the icon set. Defaults to "archive". */
   icon?: IconName;
   cta?: EmptyStateCTA;
 }
 
-export function EmptyState({ message, icon = "inbox", cta }: EmptyStateProps) {
+export function EmptyState({ message, icon = "archive", cta }: EmptyStateProps) {
   return (
     <div
       style={{

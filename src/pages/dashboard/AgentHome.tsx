@@ -162,8 +162,8 @@ export default function AgentHome() {
     let cancelled = false;
     (async () => {
       try {
-        // Parallel fetch of all three buckets. The server always filters by
-        // user_id — the status param narrows the result set further.
+        // Parallel fetch of all three buckets. The server now requires auth and
+        // filters by submitted_by = user_id for non-admin callers.
         const [prodRes, deliveredRes, attentionRes] = await Promise.all([
           fetchProperties({ limit: 20 }).catch(() => ({ properties: [] as Property[], total: 0 })),
           fetchProperties({ status: "complete", limit: 20 }).catch(() => ({ properties: [] as Property[], total: 0 })),
@@ -175,9 +175,11 @@ export default function AgentHome() {
         const prodProps = (prodRes.properties ?? []).filter((p: Property) =>
           IN_PRODUCTION_STATUSES.includes(p.status)
         );
-        // Pending payment: agent started checkout but didn't complete it
+        // Pending payment: agent started checkout but didn't complete it.
+        // Cast needed: "pending_payment" is a valid DB status not yet in the
+        // PropertyStatus union type (to be added when the payment flow ships).
         const pendingPaymentProps = (prodRes.properties ?? []).filter(
-          (p: Property) => p.status === "pending_payment"
+          (p: Property) => (p.status as string) === "pending_payment"
         );
         // Attention: needs_review + any ATTENTION_STATUS from the prod bucket
         const attentionFromProd = (prodRes.properties ?? []).filter((p: Property) =>

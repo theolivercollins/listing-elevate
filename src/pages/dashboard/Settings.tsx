@@ -269,13 +269,13 @@ const Settings = () => {
           <SettingRow first label="Duration" hint="Applied when a new listing's selected_duration is null.">
             <SegControl
               options={[{ label: "15s", value: "15" }, { label: "30s", value: "30" }, { label: "60s", value: "60" }]}
-              value={duration} onChange={setDuration}
+              value={duration} onChange={(v) => setDuration(v)}
             />
           </SettingRow>
           <SettingRow label="Orientation" hint="Determines aspect ratio for video export.">
             <SegControl
               options={[{ label: "Vertical", value: "vertical" }, { label: "Horizontal", value: "horizontal" }, { label: "Both", value: "both" }]}
-              value={orientation} onChange={setOrientation}
+              value={orientation} onChange={(v) => setOrientation(v)}
             />
           </SettingRow>
           <SettingRow label="Package" hint="Narrative arc applied by the director.">
@@ -286,7 +286,7 @@ const Settings = () => {
                 { label: "Closed", value: "just_closed" },
                 { label: "Life cycle", value: "life_cycle" },
               ]}
-              value={pkg} onChange={setPkg}
+              value={pkg} onChange={(v) => setPkg(v)}
             />
           </SettingRow>
           <SettingRow label="Default music" hint="Background music track mixed into the final export.">
@@ -313,7 +313,7 @@ const Settings = () => {
                 { label: "Hard stop", value: "hard-stop" },
                 { label: "Log only", value: "log-only" },
               ]}
-              value={onBreach} onChange={setOnBreach}
+              value={onBreach} onChange={(v) => setOnBreach(v)}
             />
           </SettingRow>
         </Card>
