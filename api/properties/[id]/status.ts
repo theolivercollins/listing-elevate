@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getProperty, getSupabase } from '../../../lib/db.js';
+import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
 import { verifyAuth } from '../../../lib/auth.js';
 
 /**
@@ -148,14 +148,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const isOwner = property.submitted_by === auth.user.id;
         const isAdmin = auth.profile.role === 'admin';
         if (isOwner || isAdmin) {
+          // Fetch scenes to compute real clip progress for the Status-page widget.
+          // Pre-narrowing logic (35180a9^): completedClips = scenes.filter(qc_pass).length
+          const scenes = await getScenesForProperty(id);
+          const clipsCompleted = scenes.filter(s => s.status === 'qc_pass').length;
+          const clipsTotal = scenes.length;
+
           return res.status(200).json({
             ...base,
             address: property.address,
             horizontalVideoUrl: property.horizontal_video_url ?? null,
             verticalVideoUrl: property.vertical_video_url ?? null,
             processingTimeMs: property.processing_time_ms ?? null,
-            clipsCompleted: 0,
-            clipsTotal: 0,
+            clipsCompleted,
+            clipsTotal,
             createdAt: property.created_at,
           });
         }
