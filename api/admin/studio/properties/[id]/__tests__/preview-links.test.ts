@@ -395,4 +395,205 @@ describe('PATCH /api/admin/studio/properties/[id]/preview-links/[previewId]', ()
     );
     expect(res._status).toBe(500);
   });
+
+  // ── label / revoked extension (spec §2 / §6) ─────────────────────────────────
+
+  it('PATCH {label} sets label on the row and returns it', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123',
+      token: 'clienttoken111111111111111111111',
+      kind: 'client',
+      allow_download: true,
+      allow_approve: true,
+      allow_revision: true,
+      approved_at: null,
+      label: 'Sent to Brian',
+      revoked_at: null,
+      viewed_count: 0,
+      last_viewed_at: null,
+      created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { label: 'Sent to Brian' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const body = res._body as typeof updatedRow;
+    expect(body.label).toBe('Sent to Brian');
+    // label is included in the DB update call
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect(updateArg.label).toBe('Sent to Brian');
+  });
+
+  it('PATCH {label: null} clears label (passes null to DB)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: true, allow_approve: true, allow_revision: true,
+      approved_at: null, label: null, revoked_at: null,
+      viewed_count: 0, last_viewed_at: null, created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { label: null } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect('label' in updateArg).toBe(true);
+    expect(updateArg.label).toBeNull();
+  });
+
+  it('PATCH {label} clamps label to 200 chars', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const longLabel = 'a'.repeat(300);
+    const clamped = 'a'.repeat(200);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: true, allow_approve: true, allow_revision: true,
+      approved_at: null, label: clamped, revoked_at: null,
+      viewed_count: 0, last_viewed_at: null, created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { label: longLabel } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect((updateArg.label as string).length).toBe(200);
+  });
+
+  it('PATCH {revoked: true} stamps revoked_at and returns non-null revoked_at', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: true, allow_approve: true, allow_revision: true,
+      approved_at: null, label: null, revoked_at: '2026-06-11T12:00:00Z',
+      viewed_count: 0, last_viewed_at: null, created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { revoked: true } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const body = res._body as typeof updatedRow;
+    expect(body.revoked_at).not.toBeNull();
+    // DB update must have received a non-null revoked_at value
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect(updateArg.revoked_at).toBeTruthy();
+  });
+
+  it('PATCH {revoked: false} clears revoked_at (passes null to DB)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: true, allow_approve: true, allow_revision: true,
+      approved_at: null, label: null, revoked_at: null,
+      viewed_count: 0, last_viewed_at: null, created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { revoked: false } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const body = res._body as typeof updatedRow;
+    expect(body.revoked_at).toBeNull();
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect(updateArg.revoked_at).toBeNull();
+  });
+
+  it('PATCH {revoked: "yes"} returns 400 (must be boolean)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    const res = makeRes();
+    await patchHandler(makePatchReq({ body: { revoked: 'yes' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(400);
+  });
+
+  it('existing capability PATCH still works alongside empty label/revoked', async () => {
+    // Regression: capability toggle still accepted; label/revoked absent → not sent to DB
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: false, allow_approve: true, allow_revision: true,
+      approved_at: null, label: null, revoked_at: null,
+      viewed_count: 0, last_viewed_at: null, created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { allow_download: false } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    const updateArg = update.mock.calls[0][0] as Record<string, unknown>;
+    expect(updateArg.allow_download).toBe(false);
+    // label and revoked_at must NOT appear in the patch when not supplied
+    expect('label' in updateArg).toBe(false);
+    expect('revoked_at' in updateArg).toBe(false);
+  });
 });
