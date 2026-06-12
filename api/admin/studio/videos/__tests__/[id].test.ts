@@ -263,4 +263,97 @@ describe('GET /api/admin/studio/videos/[id] — hub bundle', () => {
     expect(body.links[0].label).toBeNull();
     expect(body.links[0].revoked_at).toBeNull();
   });
+
+  // ── pre-migration back-compat guard (P1 regression fix) ─────────────────────
+  // Before this fix, the property_previews SELECT always requested label/revoked_at.
+  // Pre-migration PostgREST returns 42703 (undefined_column), so pvError was set
+  // and the handler returned 500 — the entire hub failed to load.
+  // Fix: on 42703 from the first select, retry without label/revoked_at; hub renders
+  // with null labels. Any other error is still a genuine 500.
+
+  it('property_previews 42703 (pre-migration columns absent) → status 200 with null labels', async () => {
+    const bareRows = [
+      {
+        id: 'pv1', token: 'tok1', kind: 'client',
+        allow_download: true, allow_approve: true, allow_revision: true,
+        approved_at: null, viewed_count: 0, last_viewed_at: null,
+        created_at: '2026-06-01T00:00:00Z', expires_at: null,
+        // No label / revoked_at — simulates pre-migration row shape from fallback select
+      },
+    ];
+
+    // Custom db mock: property_previews fails with 42703 on the first call,
+    // succeeds with bare rows on the second call (the fallback select).
+    let previewsCallCount = 0;
+    const db = {
+      from(table: string) {
+        const isProperty = table === 'properties';
+        const isNotes = table === 'property_revision_notes';
+        const isEvents = table === 'preview_view_events';
+        const isPreviews = table === 'property_previews';
+
+        let result: { data: unknown; error: unknown };
+        if (isProperty) {
+          result = { data: property, error: null };
+        } else if (isPreviews) {
+          previewsCallCount += 1;
+          // First call (full select with label/revoked_at) → 42703.
+          // Second call (fallback select without those columns) → success.
+          result = previewsCallCount === 1
+            ? { data: null, error: { code: '42703', message: 'column "label" of relation "property_previews" does not exist' } }
+            : { data: bareRows, error: null };
+        } else if (isEvents) {
+          result = { data: [], error: null };
+        } else if (isNotes) {
+          result = { data: [], error: null };
+        } else {
+          result = { data: null, error: null };
+        }
+
+        const chain: Record<string, unknown> = {};
+        const passthrough = () => chain;
+        chain.select = passthrough;
+        chain.eq = passthrough;
+        chain.in = passthrough;
+        chain.order = passthrough;
+        chain.limit = passthrough;
+        chain.maybeSingle = () => Promise.resolve(result);
+        chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+          Promise.resolve(result).then(resolve, reject);
+        return chain;
+      },
+    };
+
+    mockGetSupabase.mockReturnValue(db);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    // Hub must render, not 500.
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      links: Array<{ id: string; label: string | null; revoked_at: string | null }>;
+      totals: { total_plays: number };
+    };
+    expect(body.links).toHaveLength(1);
+    // label and revoked_at fall back to null when columns are absent.
+    expect(body.links[0].label).toBeNull();
+    expect(body.links[0].revoked_at).toBeNull();
+
+    // The fallback select was triggered (two calls to property_previews).
+    expect(previewsCallCount).toBe(2);
+  });
+
+  it('property_previews non-42703 error → status 500 (real errors surface)', async () => {
+    mockGetSupabase.mockReturnValue(makeDb({
+      property: { data: property, error: null },
+      previews: { data: null, error: { code: '23503', message: 'foreign key violation' } },
+      events: { data: [], error: null },
+      notes: { data: [], error: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(500);
+  });
 });

@@ -10,10 +10,10 @@ const LABEL_MAX_LEN = 200;
 /** PATCH /api/admin/studio/properties/[id]/preview-links/[previewId]
  *  Accepts a subset of capability booleans, an optional `label` (string|null),
  *  and an optional `revoked` boolean (true → stamp revoked_at=now(), false → clear).
- *  Pre-migration tolerant: label/revoked_at are only included in the patch object
- *  when the caller actually supplied them, so a column-missing DB error only occurs
- *  when those fields were intentionally provided.
- *  Returns the full updated row on success. */
+ *  Pre-migration tolerant: the RETURNING select only requests label/revoked_at when
+ *  the caller explicitly supplied those fields. Capability-only PATCHes never touch
+ *  the migration-084 columns, so PostgREST never sees them pre-migration.
+ *  Returns the updated row on success. */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
@@ -71,12 +71,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 
+  // Build the RETURNING select dynamically. Pre-migration-084, PostgREST errors with
+  // 42703 (undefined_column) if we request label/revoked_at. Only add them when the
+  // caller actually supplied those fields — capability-only PATCHes never need them.
+  const patchHasNewCols = 'label' in patch || 'revoked_at' in patch;
+  const selectCols = patchHasNewCols
+    ? 'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, viewed_count, last_viewed_at, created_at'
+    : 'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, viewed_count, last_viewed_at, created_at';
+
   const { data, error } = await getSupabase()
     .from('property_previews')
     .update(patch)
     .eq('property_id', propertyId)
     .eq('id', previewId)
-    .select('id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, viewed_count, last_viewed_at, created_at')
+    .select(selectCols)
     .single();
 
   if (error) return res.status(500).json({ error: error.message });

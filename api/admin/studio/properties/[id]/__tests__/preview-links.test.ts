@@ -596,4 +596,63 @@ describe('PATCH /api/admin/studio/properties/[id]/preview-links/[previewId]', ()
     expect('label' in updateArg).toBe(false);
     expect('revoked_at' in updateArg).toBe(false);
   });
+
+  // ── pre-migration back-compat guard (P1 regression fix) ─────────────────────
+  // Before this fix the RETURNING select ALWAYS included label/revoked_at, causing
+  // PostgREST to error with 42703 (undefined_column) pre-migration on capability-only
+  // PATCHes that already work in production. Fix: only add those columns when the
+  // caller actually supplied them; capability-only PATCH never requests them.
+
+  it('capability-only PATCH does not request label/revoked_at in RETURNING select (pre-migration safe)', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const updatedRow = {
+      id: 'pv-123', token: 't', kind: 'client',
+      allow_download: false, allow_approve: true, allow_revision: true,
+      approved_at: null, viewed_count: 0, last_viewed_at: null,
+      created_at: '2026-06-10T00:00:00Z',
+    };
+
+    const single = vi.fn().mockResolvedValue({ data: updatedRow, error: null });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { allow_download: false } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    // The select column string must NOT contain migration-084 columns for a
+    // capability-only patch — this is what prevents 42703 pre-migration.
+    const selectArg = select.mock.calls[0][0] as string;
+    expect(selectArg).not.toContain('label');
+    expect(selectArg).not.toContain('revoked_at');
+  });
+
+  it('capability-only PATCH with 42703 error from DB returns 500 (not silently swallowed)', async () => {
+    // Sanity check: if some OTHER column causes 42703 on a capability-only PATCH,
+    // we still surface the error (42703 is not blanket-swallowed in PATCH).
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const single = vi.fn().mockResolvedValue({ data: null, error: { code: '42703', message: 'column "foo" does not exist' } });
+    const select = vi.fn().mockReturnValue({ single });
+    const eqPreviewId = vi.fn().mockReturnValue({ select });
+    const eqPropertyId = vi.fn().mockReturnValue({ eq: eqPreviewId });
+    const update = vi.fn().mockReturnValue({ eq: eqPropertyId });
+
+    mockGetSupabase.mockReturnValue({ from: () => ({ update }) });
+
+    const res = makeRes();
+    await patchHandler(
+      makePatchReq({ body: { allow_download: false } }),
+      res as unknown as VercelResponse,
+    );
+    // A genuine 42703 (e.g. schema drift) is a real error → 500.
+    expect(res._status).toBe(500);
+  });
 });

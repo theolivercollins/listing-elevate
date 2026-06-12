@@ -62,14 +62,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ALL links for this property, newest-first — the hub manages every link, not
   // just the newest of each kind (that's what the v2 preview-links endpoint does).
-  const { data: pvData, error: pvError } = await db
+  // Pre-migration-084: label/revoked_at columns don't exist yet. PostgREST returns
+  // error code 42703 (undefined_column) if we request them. On that error, retry
+  // without the migration-084 columns so the hub still renders (label/revoked_at
+  // fall back to undefined → null in the map below). Any other error is a real 500.
+  let { data: pvData, error: pvError } = await db
     .from('property_previews')
     .select(
       'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, viewed_count, last_viewed_at, created_at, expires_at',
     )
     .eq('property_id', propertyId)
     .order('created_at', { ascending: false });
-  if (pvError) return res.status(500).json({ error: pvError.message });
+  if (pvError) {
+    if ((pvError as { code?: string }).code === '42703') {
+      // Migration-084 columns absent — retry without them; label/revoked_at → null.
+      const fallback = await db
+        .from('property_previews')
+        .select(
+          'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, viewed_count, last_viewed_at, created_at, expires_at',
+        )
+        .eq('property_id', propertyId)
+        .order('created_at', { ascending: false });
+      if (fallback.error) return res.status(500).json({ error: fallback.error.message });
+      pvData = fallback.data;
+    } else {
+      return res.status(500).json({ error: pvError.message });
+    }
+  }
   const previews = (pvData ?? []) as PreviewRow[];
 
   // Per-link event rows, bucketed by preview_id. Pre-migration-084 the table is
