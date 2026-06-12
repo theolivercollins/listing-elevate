@@ -24,9 +24,19 @@ interface PropertyRow {
  * GET /api/admin/studio/videos — the LE Video library (spec §1).
  * Lists every property with a delivered video (horizontal OR vertical URL non-null),
  * joined with client name + hero photo + per-property link/view aggregates.
- * Filters: ?client_id= ?q= (case-insensitive address search) ?page= (size 24).
+ * Filters: ?client_id= ?q= (case-insensitive address search) ?page= (size 24)
+ *   ?folder=<id> (only that folder) ?folder=none (only unfiled)
+ *   ?archived=1 (only archived; default = only not-archived).
+ * The library_management sidecar (video_library_meta, migration 085) supplies
+ * folder/archive/soft-delete state; deleted rows are ALWAYS excluded. Pre-migration
+ * (meta table absent, 42P01) the whole library renders as unfiled / not-archived.
  * Returns { items, total, page, pageSize }.
  */
+interface MetaRow {
+  folder_id: string | null;
+  archived_at: string | null;
+  library_deleted_at: string | null;
+}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
@@ -36,6 +46,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const clientId = typeof req.query.client_id === 'string' ? req.query.client_id : undefined;
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const folder = typeof req.query.folder === 'string' ? req.query.folder : undefined;
+  const archivedOnly = req.query.archived === '1';
   const page = Math.max(1, Number(req.query.page ?? 1) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -58,7 +70,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data, error, count } = await qb;
   if (error) return res.status(500).json({ error: error.message });
 
-  const rows = (data ?? []) as PropertyRow[];
+  const allRows = (data ?? []) as PropertyRow[];
+
+  // Library-management sidecar: folder / archive / soft-delete state lives in
+  // video_library_meta (migration 085), a separate table — NOT embeddable in the
+  // properties select (it has no FK child relationship to the properties row).
+  // Fetch the page's meta rows in one query and bucket by property_id, mirroring
+  // the property_previews aggregate below. Pre-migration the table is absent
+  // (42P01); we leave the map empty so every property reads as unfiled /
+  // not-archived / not-deleted and the library still fully renders.
+  const metaByProperty = new Map<string, MetaRow>();
+  if (allRows.length > 0) {
+    const ids = allRows.map((r) => r.id);
+    const { data: metaData, error: metaError } = await db
+      .from('video_library_meta')
+      .select('property_id, folder_id, archived_at, library_deleted_at')
+      .in('property_id', ids);
+    if (metaError && metaError.code !== '42P01') {
+      return res.status(500).json({ error: metaError.message });
+    }
+    if (!metaError) {
+      for (const m of (metaData ?? []) as Array<{ property_id: string } & MetaRow>) {
+        metaByProperty.set(m.property_id, {
+          folder_id: m.folder_id,
+          archived_at: m.archived_at,
+          library_deleted_at: m.library_deleted_at,
+        });
+      }
+    }
+  }
+
+  // Apply meta-derived exclusions in JS (the spec accepts post-fetch filtering for
+  // this sub-project): always drop soft-deleted; honour the archived + folder params.
+  const rows = allRows.filter((r) => {
+    const meta = metaByProperty.get(r.id);
+    if (meta?.library_deleted_at != null) return false;
+    const isArchived = meta?.archived_at != null;
+    if (archivedOnly ? !isArchived : isArchived) return false;
+    if (folder === 'none') {
+      if (meta != null && meta.folder_id != null) return false;
+    } else if (folder) {
+      if (meta?.folder_id !== folder) return false;
+    }
+    return true;
+  });
 
   // Per-property link count, total page-views, and approved state — fetched in one
   // query and bucketed. approved_at lives on property_previews (migration 083), NOT
@@ -94,6 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     rows.map(async (r) => {
       const client = Array.isArray(r.client) ? r.client[0] ?? null : r.client;
       const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0, approved_at: null };
+      const meta = metaByProperty.get(r.id);
       return {
         id: r.id,
         address: r.address,
@@ -105,9 +161,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         hero_photo_url: await resolveHeroPhotoUrl(db, r.id),
         link_count: agg.link_count,
         total_views: agg.total_views,
+        // Library-management state from the video_library_meta sidecar (null pre-migration).
+        folder_id: meta?.folder_id ?? null,
+        archived_at: meta?.archived_at ?? null,
       };
     }),
   );
 
-  return res.status(200).json({ items, total: count ?? 0, page, pageSize: PAGE_SIZE });
+  // total starts from the DB exact count over properties, less the rows excluded by
+  // the JS-side meta filters on THIS page. The cross-page residue (meta exclusions on
+  // pages other than the current one) is a known limitation the spec accepts for this
+  // sub-project rather than a DB-level filtered count. Floors at the page's item count.
+  const excludedOnPage = allRows.length - items.length;
+  const total = Math.max(items.length, (count ?? items.length) - excludedOnPage);
+  return res.status(200).json({ items, total, page, pageSize: PAGE_SIZE });
 }

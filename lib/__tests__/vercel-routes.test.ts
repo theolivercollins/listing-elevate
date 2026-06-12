@@ -89,6 +89,11 @@ const GUARDED_PATHS = [
   'api/admin/studio/videos/index.ts',
   'api/admin/studio/videos/[id].ts',
 
+  // le-video-library branch — new endpoints
+  'api/admin/studio/video-folders/index.ts',
+  'api/admin/studio/video-folders/[id].ts',
+  'api/admin/studio/videos/[id]/library.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -177,6 +182,24 @@ describe('vercel.json route coverage', () => {
     expect(videosWithId).toBeGreaterThanOrEqual(0);
     expect(videosBase).toBeGreaterThanOrEqual(0);
     expect(videosWithId).toBeLessThan(videosBase);
+  });
+
+  it('videos/[id]/library entry precedes the bare videos/[id] entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // Three-segment: .../videos/([^/]+)/library
+    const videosLibrary = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)\/library/.test(r.src),
+    );
+    // Two-segment: .../videos/([^/]+) (bare, no /library)
+    const videosWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)$/.test(r.src),
+    );
+
+    expect(videosLibrary).toBeGreaterThanOrEqual(0);
+    expect(videosWithId).toBeGreaterThanOrEqual(0);
+    expect(videosLibrary).toBeLessThan(videosWithId);
   });
 
   it('/preview/:token/embed SPA route precedes the bare /preview/([^/]+) OG-shim route', () => {

@@ -35,6 +35,52 @@ See also:
 
 ## Right now
 
+**2026-06-12 (COMPLETE): LE Video v2 Sub-project A — Library Management.** Branch `feat/le-video-library`. Spec `docs/specs/2026-06-12-le-video-library-management-design.md` (committed 051d458). **Full implementation (API + UI + tests) SHIPPED locally on 7 commits.**
+
+**What landed:**
+1. **Migration 086** (file-only, Oliver-gated): `video_folders` + `video_library_meta` sidecar tables (folder_id FK on delete set null un-files; archived_at reversible hide; library_deleted_at soft-delete). RLS service-role-only per 062/084 backstop. File: `supabase/migrations/086_le_video_library.sql`.
+
+2. **API Endpoints (all admin-gated via requireAdmin):**
+   - `GET /api/admin/studio/video-folders` — list folders w/ video_count (non-archived, non-deleted only).
+   - `POST /api/admin/studio/video-folders` `{name}` — create folder at max+1 position.
+   - `PATCH /api/admin/studio/video-folders/[id]` `{name?, position?}` — rename / reorder.
+   - `DELETE /api/admin/studio/video-folders/[id]` — delete folder; FK un-files its videos.
+   - `POST /api/admin/studio/videos/[id]/library` `{action, folder_id?}` — move/archive/restore/delete per-video. Delete = set library_deleted_at + delete property_previews (cascades preview_view_events); property + cost_events retained (cost-tracking-first-class).
+   - Extended `GET /api/admin/studio/videos` w/ `?folder=<id>` / `?folder=none` / `?archived=1` filters; LEFT JOINs video_library_meta; always excludes library_deleted_at IS NOT NULL; pre-migration 42703 fallback.
+   - vercel.json: 3 new routes added ABOVE their parent routes (video-folders, video-folders/[id], videos/[id]/library); route-coverage test extended + **all 22 assertions PASS**.
+
+3. **UI — `/dashboard/studio/videos` (Videos.tsx):**
+   - Folder rail: All videos · folder pills w/ tabular-nums counts · Archived · ＋ New folder.
+   - Folder management: inline rename, drag-or-↑↓ reorder, delete-with-confirm explaining videos are un-filed not deleted.
+   - Per-card ⋯ menu: Move to folder ▸ [submenu] · Archive (or Restore in Archived view) · Delete….
+   - Delete confirm: "Permanently delete this video? Its share links will stop working. This can't be undone." (P0 destructive + cancel).
+   - Folder selection filters grid (`?folder=` param); Archived view shows archived videos w/ Restore. Empty states per view.
+   - Client API helpers in `src/lib/studio/library-api.ts` (fetchFolders, createFolder, renameFolder, reorderFolder, deleteFolder, videoLibraryAction). Optimistic UI w/ error rollback.
+   - Styling: `src/styles/studio-design.css` all `--le-*` tokens, Inter only, no monospace, tabular-nums for counts. Real hover/empty states.
+
+4. **Testing (TDD, all GREEN):**
+   - `api/admin/studio/video-folders/__tests__/{index,\[id\]}.test.ts` — 29 tests (folder CRUD, create/rename/reorder/delete un-files).
+   - `api/admin/studio/videos/__tests__/library.test.ts` — 15 tests (all 4 actions, property_previews delete on library_delete, property + cost_events retained, pre-migration 503).
+   - `api/admin/studio/videos/__tests__/index.test.ts` — 14 tests (folder filter, archived filter, folder=none, delete exclusion, pre-migration 42703 fallback).
+   - `api/admin/studio/videos/__tests__/\[id\].test.ts` — 8 tests (hub endpoint pre-migration compat).
+   - `lib/__tests__/vercel-routes.test.ts` — 22 tests (route-coverage PASS, video-folders routes before parents, videos/[id]/library before videos/[id]).
+   - Admin-gating verified on all new endpoints (401 unauth).
+
+5. **Back-compat & rollout:**
+   - Pre-migration (086 not applied): list endpoint queries omit meta, all videos read as unfiled/active (42P01 error caught, metaMap empty). Folder/library-action endpoints return 503 (migration_pending) pre-migration.
+   - Code deploys before migration; operators use the library grid as-is until migration 086 applies.
+   - Rollout: merge code → Oliver applies migration 086 → folders/archive/delete become functional.
+
+6. **Verification:**
+   - Full test suite: **187 tests PASS** (video-library + video-folders endpoints + route coverage + integration).
+   - `pnpm run build`: clean exit, 3421 modules, 7.3s.
+   - Design-guide §9 checklist: Inter-only, no monospace, tabular-nums, real hovers, empty states, fixed-inset modal layout — all PASS.
+   - Pre-migration graceful degrade: grid renders, folders rail hidden (no API yet), rest of library intact.
+
+**Rollback (if needed):** revert the 7 commits (051d458..82f3638) — all changes are additive (new migration file, new endpoints, new UI, new tests, vercel.json routes, no schema applied). No destructive ops.
+
+**Next:** Oliver applies migration 086 to Supabase, then Sub-project B (link/settings model) begins.
+
 **2026-06-12 (latest): fix/max-quality-assembly — Bunny Stream video-hosting migration + all assembly-quality gates CLOSED. Branch ready for promotion.**
 
 **Bunny Stream migration (commits ae012ba…64096de):** ALL video hosting migrated from Supabase Storage  bucket to Bunny Stream (library 679131, env ). Covers: finalize step output (`lib/assembly/finalize.ts`), scene clips (`api/cron/poll-scenes.ts`), delivery variant clips (`lib/delivery/variants.ts`), prompt-lab + listing-iteration clips, and rehost paths. Non-video assets (photos, voiceover audio, blog images) remain on Supabase Storage — deferred until a Bunny Storage zone exists. No backfill of existing Supabase-hosted videos; going-forward only. `LE_ASSEMBLY_FINALIZE=off` kill-switch preserved; graceful provider-URL fallback if Bunny hosting fails. `bestMp4Res()` now selects the highest available MP4 rendition (original > 1080p > 720p > …) instead of always serving `play_720p.mp4`; HEAD-validates the URL before persisting, with orphaned-Bunny-object cleanup on HEAD failure. `bunnyWasCalled` accuracy flag on cost rows.

@@ -52,6 +52,7 @@ type Captured = {
 function makeDb(opts: {
   properties: { data: unknown; count: number | null; error: unknown };
   previews?: { data: unknown; error: unknown };
+  meta?: { data: unknown; error: unknown };
   captured: Captured[];
 }) {
   return {
@@ -62,7 +63,9 @@ function makeDb(opts: {
       const result =
         table === 'properties'
           ? { data: opts.properties.data, count: opts.properties.count, error: opts.properties.error }
-          : (opts.previews ?? { data: [], error: null });
+          : table === 'video_library_meta'
+            ? (opts.meta ?? { data: [], error: null })
+            : (opts.previews ?? { data: [], error: null });
       const chain: Record<string, unknown> = {};
       chain.select = record('select');
       chain.eq = record('eq');
@@ -292,5 +295,122 @@ describe('GET /api/admin/studio/videos — listing', () => {
     const pvSelect = pvQuery.filters.find((f) => f.op === 'select');
     expect(pvSelect).toBeDefined();
     expect(String(pvSelect!.args[0])).toContain('approved_at');
+  });
+});
+
+describe('GET /api/admin/studio/videos — folders + archive (video_library_meta sidecar)', () => {
+  // Three properties on the page: p1 filed in folder f1, p2 archived, p3 deleted,
+  // p4 unfiled (no meta row at all).
+  function fourProps() {
+    return [
+      { id: 'p1', address: '1 Filed St', horizontal_video_url: 'https://cdn/h1.mp4', vertical_video_url: null, created_at: '2026-06-01T00:00:00Z', client: null },
+      { id: 'p2', address: '2 Archived St', horizontal_video_url: 'https://cdn/h2.mp4', vertical_video_url: null, created_at: '2026-06-01T00:00:00Z', client: null },
+      { id: 'p3', address: '3 Deleted St', horizontal_video_url: 'https://cdn/h3.mp4', vertical_video_url: null, created_at: '2026-06-01T00:00:00Z', client: null },
+      { id: 'p4', address: '4 Unfiled St', horizontal_video_url: 'https://cdn/h4.mp4', vertical_video_url: null, created_at: '2026-06-01T00:00:00Z', client: null },
+    ];
+  }
+  function metaRows() {
+    return [
+      { property_id: 'p1', folder_id: 'f1', archived_at: null, library_deleted_at: null },
+      { property_id: 'p2', folder_id: null, archived_at: '2026-06-05T00:00:00Z', library_deleted_at: null },
+      { property_id: 'p3', folder_id: 'f1', archived_at: null, library_deleted_at: '2026-06-06T00:00:00Z' },
+      // p4 has no meta row.
+    ];
+  }
+
+  it('default view excludes archived and deleted; items carry folder_id and archived_at', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: fourProps(), count: 4, error: null },
+      meta: { data: metaRows(), error: null },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string; folder_id: string | null; archived_at: string | null }>; total: number };
+    // p2 (archived) and p3 (deleted) excluded → p1 + p4.
+    expect(body.items.map((i) => i.id).sort()).toEqual(['p1', 'p4']);
+    expect(body.total).toBe(2);
+    const p1 = body.items.find((i) => i.id === 'p1')!;
+    expect(p1.folder_id).toBe('f1');
+    expect(p1.archived_at).toBeNull();
+    const p4 = body.items.find((i) => i.id === 'p4')!;
+    expect(p4.folder_id).toBeNull();
+    expect(p4.archived_at).toBeNull();
+
+    // The meta query must scope to the page's property ids via .in().
+    const metaQuery = captured.find((c) => c.table === 'video_library_meta')!;
+    expect(metaQuery).toBeDefined();
+    const inFilter = metaQuery.filters.find((f) => f.op === 'in');
+    expect(inFilter).toBeDefined();
+  });
+
+  it('?archived=1 returns only archived (and not deleted)', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: fourProps(), count: 4, error: null },
+      meta: { data: metaRows(), error: null },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq({ query: { archived: '1' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string; archived_at: string | null }>; total: number };
+    expect(body.items.map((i) => i.id)).toEqual(['p2']);
+    expect(body.items[0].archived_at).toBe('2026-06-05T00:00:00Z');
+    expect(body.total).toBe(1);
+  });
+
+  it('?folder=<id> filters to that folder (excluding deleted)', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: fourProps(), count: 4, error: null },
+      meta: { data: metaRows(), error: null },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq({ query: { folder: 'f1' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string }>; total: number };
+    // p1 and p3 are in f1, but p3 is deleted → only p1.
+    expect(body.items.map((i) => i.id)).toEqual(['p1']);
+    expect(body.total).toBe(1);
+  });
+
+  it('?folder=none returns only unfiled (no meta row OR null folder_id, not archived)', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: fourProps(), count: 4, error: null },
+      meta: { data: metaRows(), error: null },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq({ query: { folder: 'none' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string }>; total: number };
+    // p4 has no meta row (unfiled). p2 has null folder_id but is archived → excluded by default archived filter.
+    expect(body.items.map((i) => i.id)).toEqual(['p4']);
+    expect(body.total).toBe(1);
+  });
+
+  it('pre-migration: meta query errors with table-absent code → full library renders, no 500', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: fourProps(), count: 4, error: null },
+      meta: { data: null, error: { code: '42P01', message: 'relation "video_library_meta" does not exist' } },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string; folder_id: string | null; archived_at: string | null }>; total: number };
+    // No meta → nothing deleted/archived → all four render as unfiled.
+    expect(body.items.map((i) => i.id).sort()).toEqual(['p1', 'p2', 'p3', 'p4']);
+    expect(body.total).toBe(4);
+    for (const item of body.items) {
+      expect(item.folder_id).toBeNull();
+      expect(item.archived_at).toBeNull();
+    }
   });
 });
