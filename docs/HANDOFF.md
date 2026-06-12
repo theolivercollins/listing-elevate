@@ -1,5 +1,7 @@
 # Listing Elevate — Handoff
 
+Last updated: 2026-06-12 (LE Video v2 Sub-project B — link/settings model + share-panel flash fix + show_branding (migration 087). Adversarial panel caught + fixed a P1: show_branding in a single .select() 42703'd on a pre-087 DB, nuking kind/capabilities for ALL public links — fixed with the 42703 retry pattern + 2 regression tests. 1896 passed. Branch feat/le-video-links-settings.)
+
 Last updated: 2026-06-12 (authed-app redesign PHASE 2 — visual overhaul on `feat/authed-app-visual-overhaul`, SYNCED WITH MAIN 224e0f90, merge-ready; all recently-landed features preserved + verified; both design languages intact; all gates green; awaiting final feat→main merge by orchestrator)
 
 Last updated: 2026-06-12 (PROMOTED to main: fix/max-quality-assembly — assembly max-quality work (Creatomate supersampling 2880×1620, 16:9 source crop, sticky-provider fix) + Bunny Stream video-hosting migration (all video write-paths off Supabase Storage). Migrations 084_scenes_provider_preference and 085_cost_events_bunny APPLIED to shared Supabase 2026-06-12 and verified live.)

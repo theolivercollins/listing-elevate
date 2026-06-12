@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Copy, Check, Plus, Loader2, Pencil, Ban, RotateCcw, Clock } from 'lucide-react';
 import { getRelativeTime } from '@/lib/types';
 
@@ -12,6 +12,9 @@ export type PreviewLinkRow = {
   allow_download: boolean;
   allow_approve: boolean;
   allow_revision: boolean;
+  /** Per-link branding flag (migration 087). Optional until T4 wires the
+   *  customer card + all consumers always supply it; defaults TRUE elsewhere. */
+  show_branding?: boolean;
   approved_at: string | null;
   revoked_at: string | null;
   expires_at: string | null;
@@ -21,6 +24,14 @@ export type PreviewLinkRow = {
 };
 
 export type CapabilityField = 'allow_download' | 'allow_approve' | 'allow_revision';
+
+/**
+ * Fields an onToggle handler accepts. Capability flags plus the per-link
+ * branding flag (show_branding) — both flow through the same PATCH path.
+ * The panel only emits the three CapabilityField values until T4 wires
+ * show_branding into the restructured customer card.
+ */
+export type ToggleField = CapabilityField | 'show_branding';
 
 /**
  * `list` (default, video hub): every link for a kind, always-on label composer.
@@ -36,7 +47,7 @@ interface SharePanelProps {
   publicLinks: PreviewLinkRow[];
   mode?: SharePanelMode;
   onCreateLink: (kind: 'client' | 'public', label?: string) => Promise<void>;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }
@@ -77,16 +88,19 @@ function CapabilityToggle({
   id,
   field,
   label,
+  description,
   checked,
   testId,
   onToggle,
 }: {
   id: string;
-  field: CapabilityField;
+  field: ToggleField;
   label: string;
+  /** One-line explanation rendered beneath the toggle label. */
+  description: string;
   checked: boolean;
   testId: string;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
 }) {
   const [pending, setPending] = useState(false);
 
@@ -104,11 +118,9 @@ function CapabilityToggle({
     <label
       style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: 7,
+        alignItems: 'flex-start',
+        gap: 8,
         cursor: pending ? 'wait' : 'pointer',
-        fontSize: 12.5,
-        color: 'var(--le-ink-2)',
       }}
     >
       <input
@@ -117,11 +129,46 @@ function CapabilityToggle({
         checked={checked}
         onChange={() => void handleChange()}
         disabled={pending}
-        style={{ cursor: 'inherit', accentColor: 'var(--le-accent)' }}
+        style={{ cursor: 'inherit', accentColor: 'var(--le-accent)', marginTop: 2 }}
       />
-      {label}
-      {pending && <Loader2 size={11} className="studio-spinner" />}
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: 'var(--le-ink)',
+          }}
+        >
+          {label}
+          {pending && <Loader2 size={11} className="studio-spinner" />}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--le-muted-2)', lineHeight: 1.4 }}>{description}</span>
+      </span>
     </label>
+  );
+}
+
+// ─── Grouped toggle subsection ───────────────────────────────────────────────
+
+function ToggleGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <span
+        style={{
+          fontSize: 10,
+          fontWeight: 700,
+          color: 'var(--le-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.12em',
+        }}
+      >
+        {label}
+      </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
+    </div>
   );
 }
 
@@ -234,7 +281,7 @@ function LinkRow({
   togglePrefix: string;
   showApprovedBadge: boolean;
   manageable: boolean;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }) {
@@ -363,33 +410,66 @@ function LinkRow({
             )}
           </div>
 
-          {/* Capability toggles */}
-          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <CapabilityToggle
-              id={link.id}
-              field="allow_download"
-              label="Download"
-              checked={link.allow_download}
-              testId={`${togglePrefix}allow_download`}
-              onToggle={onToggle}
-            />
-            <CapabilityToggle
-              id={link.id}
-              field="allow_approve"
-              label="Approve"
-              checked={link.allow_approve}
-              testId={`${togglePrefix}allow_approve`}
-              onToggle={onToggle}
-            />
-            <CapabilityToggle
-              id={link.id}
-              field="allow_revision"
-              label="Request change"
-              checked={link.allow_revision}
-              testId={`${togglePrefix}allow_revision`}
-              onToggle={onToggle}
-            />
-          </div>
+          {/* Capability toggles — grouped & explained, per spec §2/§4.
+              Agent (client) links: what the agent can do.
+              Customer (public) links: appearance + what viewers can do.
+              Approve/Request-change are agent-only — never shown on a customer link. */}
+          {link.kind === 'client' ? (
+            <ToggleGroup label="What the agent can do">
+              <CapabilityToggle
+                id={link.id}
+                field="allow_download"
+                label="Download the video"
+                description="Lets the agent save the finished video file."
+                checked={link.allow_download}
+                testId={`${togglePrefix}allow_download`}
+                onToggle={onToggle}
+              />
+              <CapabilityToggle
+                id={link.id}
+                field="allow_approve"
+                label="Approve the final cut"
+                description="Lets the agent mark the video as approved."
+                checked={link.allow_approve}
+                testId={`${togglePrefix}allow_approve`}
+                onToggle={onToggle}
+              />
+              <CapabilityToggle
+                id={link.id}
+                field="allow_revision"
+                label="Request changes"
+                description="Lets the agent ask for edits before approving."
+                checked={link.allow_revision}
+                testId={`${togglePrefix}allow_revision`}
+                onToggle={onToggle}
+              />
+            </ToggleGroup>
+          ) : (
+            <>
+              <ToggleGroup label="Appearance">
+                <CapabilityToggle
+                  id={link.id}
+                  field="show_branding"
+                  label="Show agent branding"
+                  description="Shows the agent logo, name and brokerage on the page."
+                  checked={link.show_branding ?? true}
+                  testId={`${togglePrefix}show_branding`}
+                  onToggle={onToggle}
+                />
+              </ToggleGroup>
+              <ToggleGroup label="What viewers can do">
+                <CapabilityToggle
+                  id={link.id}
+                  field="allow_download"
+                  label="Download"
+                  description="Lets viewers save the video file. Off by default."
+                  checked={link.allow_download}
+                  testId={`${togglePrefix}allow_download`}
+                  onToggle={onToggle}
+                />
+              </ToggleGroup>
+            </>
+          )}
         </>
       )}
     </div>
@@ -419,7 +499,7 @@ function LinkSection({
   showApprovedBadge: boolean;
   mode: SharePanelMode;
   onCreateLink: (kind: 'client' | 'public', label?: string) => Promise<void>;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }) {
@@ -443,29 +523,23 @@ function LinkSection({
   return (
     <div
       data-testid={`share-section-${kind}`}
-      // In single (dialog) mode the section is itself a flat card, matching v2.
-      className={isSingle ? 'studio-card-flat' : undefined}
+      // Each kind is a reasoned card on both surfaces (hub list + dialog single).
+      className="studio-card-flat"
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
-        ...(isSingle ? { padding: '16px 18px' } : {}),
+        gap: 16,
+        padding: '20px',
       }}
     >
       {/* Section heading */}
       <div>
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: 'var(--le-muted)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.12em',
-          }}
-        >
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--le-ink)', letterSpacing: '-0.01em' }}>
           {heading}
         </span>
-        <p style={{ margin: '4px 0 0', fontSize: 12, color: 'var(--le-muted-2)' }}>{description}</p>
+        <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--le-muted-2)', fontStyle: 'italic' }}>
+          {description}
+        </p>
       </div>
 
       {/* Empty hint — list mode only (dialog shows a Create CTA instead). */}
@@ -571,8 +645,8 @@ export default function SharePanel({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <LinkSection
         kind="client"
-        heading="Client review link"
-        description="Full-featured link for the agent to review, approve, or request changes."
+        heading="Agent review link"
+        description="For the agent who ordered this video."
         links={clientLinks}
         baseUrl={baseUrl}
         showApprovedBadge
@@ -584,8 +658,8 @@ export default function SharePanel({
       />
       <LinkSection
         kind="public"
-        heading="Public sharing link"
-        description="View-only link, safe to post anywhere. All action capabilities are off."
+        heading="Customer share link"
+        description="What the agent shares with their clients. No login; nothing's on unless you turn it on."
         links={publicLinks}
         baseUrl={baseUrl}
         showApprovedBadge={false}

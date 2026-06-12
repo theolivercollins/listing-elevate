@@ -16,7 +16,8 @@ interface PropertyRow {
 }
 
 /** A property_previews row as the hub needs it. label/revoked_at are migration-084
- *  columns — absent (undefined) on a pre-migration DB → normalised to null below. */
+ *  columns and show_branding is a migration-087 column — absent (undefined) on a
+ *  pre-migration DB → normalised to null/true below. */
 interface PreviewRow {
   id: string;
   token: string;
@@ -27,6 +28,7 @@ interface PreviewRow {
   approved_at: string | null;
   label?: string | null;
   revoked_at?: string | null;
+  show_branding?: boolean;
   viewed_count: number | null;
   last_viewed_at: string | null;
   created_at: string;
@@ -69,13 +71,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let { data: pvData, error: pvError } = await db
     .from('property_previews')
     .select(
-      'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, viewed_count, last_viewed_at, created_at, expires_at',
+      'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, show_branding, viewed_count, last_viewed_at, created_at, expires_at',
     )
     .eq('property_id', propertyId)
     .order('created_at', { ascending: false });
   if (pvError) {
     if ((pvError as { code?: string }).code === '42703') {
-      // Migration-084 columns absent — retry without them; label/revoked_at → null.
+      // Migration-084/087 columns absent — retry without new columns; label/revoked_at
+      // fall back to null, show_branding falls back to true (default). Do NOT add
+      // show_branding to the fallback select — it is the migration-087 column.
       const fallback = await db
         .from('property_previews')
         .select(
@@ -128,6 +132,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     kind: p.kind,
     label: p.label ?? null,
     revoked_at: p.revoked_at ?? null,
+    // show_branding is a migration-087 column; absent rows fall back to true (DB default).
+    show_branding: p.show_branding ?? true,
     capabilities: {
       download: p.allow_download,
       approve: p.allow_approve,

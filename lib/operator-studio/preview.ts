@@ -14,6 +14,8 @@ export interface PreviewMeta {
   /** Migration-084 columns. null when absent (pre-migration DB). */
   label: string | null;
   revoked_at: string | null;
+  /** Migration-087 column. true when absent (pre-migration DB) — preserves current branded behavior. */
+  show_branding: boolean;
 }
 
 export async function createPreviewLink(
@@ -49,27 +51,72 @@ export async function createPreviewLink(
 }
 
 /** Attempts to select the migration-083 capability columns from property_previews.
- * Returns null (not throws) when the columns are absent so callers can fall back gracefully. */
+ * Returns null (not throws) when the columns are absent so callers can fall back gracefully.
+ *
+ * Pre-migration-087 tolerance: show_branding is a migration-087 column. If PostgREST
+ * returns 42703 (undefined_column) we RETRY without show_branding so that kind,
+ * allow_download, allow_approve, allow_revision, approved_at, label and revoked_at are
+ * NOT lost. show_branding defaults to TRUE on the fallback path (preserves current
+ * branded behaviour). This mirrors the identical pattern in api/admin/studio/videos/[id].ts.
+ *
+ * If a 42703 also fires on the fallback (pre-083 DB), we return null as before. */
 async function fetchPreviewMeta(db: ReturnType<typeof getSupabase>, token: string): Promise<PreviewMeta | null> {
   try {
+    // First attempt — include show_branding (migration-087 column).
     const { data, error } = await db
+      .from('property_previews')
+      .select('kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, show_branding')
+      .eq('token', token)
+      .maybeSingle();
+
+    if (!error) {
+      // Success path — all columns present (087 applied).
+      if (!data) return null;
+      return {
+        kind: (data as { kind?: string }).kind ?? 'client',
+        allow_download: (data as { allow_download?: boolean }).allow_download ?? true,
+        allow_approve: (data as { allow_approve?: boolean }).allow_approve ?? true,
+        allow_revision: (data as { allow_revision?: boolean }).allow_revision ?? true,
+        approved_at: (data as { approved_at?: string | null }).approved_at ?? null,
+        label: (data as { label?: string | null }).label ?? null,
+        revoked_at: (data as { revoked_at?: string | null }).revoked_at ?? null,
+        show_branding: (data as { show_branding?: boolean }).show_branding ?? true,
+      };
+    }
+
+    // Error path. If it is NOT a missing-column 42703, surface it as null (non-500).
+    if ((error as { code?: string }).code !== '42703') return null;
+
+    // 42703 — migration-087 column (show_branding) is absent.
+    // Retry WITHOUT show_branding so kind/capabilities/approved_at are not lost.
+    // Do NOT add show_branding to this fallback select — it is the migration-087 column.
+    const fallback = await db
       .from('property_previews')
       .select('kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at')
       .eq('token', token)
       .maybeSingle();
-    // If Postgres errors because the columns don't exist, error.code will be '42703'
-    // (undefined_column). Any column-missing error → return null for fallback.
-    if (error) return null;
-    if (!data) return null;
+
+    if (fallback.error) return null; // pre-083 DB or other error — safe null
+    if (!fallback.data) return null;
+    const fd = fallback.data as {
+      kind?: string;
+      allow_download?: boolean;
+      allow_approve?: boolean;
+      allow_revision?: boolean;
+      approved_at?: string | null;
+      label?: string | null;
+      revoked_at?: string | null;
+    };
     return {
-      kind: (data as { kind?: string }).kind ?? 'client',
-      allow_download: (data as { allow_download?: boolean }).allow_download ?? true,
-      allow_approve: (data as { allow_approve?: boolean }).allow_approve ?? true,
-      allow_revision: (data as { allow_revision?: boolean }).allow_revision ?? true,
-      approved_at: (data as { approved_at?: string | null }).approved_at ?? null,
-      // Migration-084 columns — null when absent (pre-migration DB).
-      label: (data as { label?: string | null }).label ?? null,
-      revoked_at: (data as { revoked_at?: string | null }).revoked_at ?? null,
+      kind: fd.kind ?? 'client',
+      allow_download: fd.allow_download ?? true,
+      allow_approve: fd.allow_approve ?? true,
+      allow_revision: fd.allow_revision ?? true,
+      approved_at: fd.approved_at ?? null,
+      label: fd.label ?? null,
+      revoked_at: fd.revoked_at ?? null,
+      // show_branding defaults to TRUE pre-087 — preserves current branded behaviour.
+      show_branding: true,
     };
   } catch {
     // Unexpected error (network, parse) — treat as pre-migration to avoid 500s

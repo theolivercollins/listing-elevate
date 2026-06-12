@@ -533,6 +533,58 @@ describe('brand extended fields', () => {
 // T5 — hero image is NEVER a video file (regression lock)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// T5 — show_branding in GET payload (spec §3)
+// ---------------------------------------------------------------------------
+
+describe('GET /api/preview/[token] — show_branding field (spec §3)', () => {
+  it('includes show_branding=true when preview.show_branding is true', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      preview: { kind: 'client', allow_download: true, allow_approve: true, allow_revision: true, approved_at: null, show_branding: true },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as FullPayload & { show_branding: boolean };
+    expect(body.show_branding).toBe(true);
+  });
+
+  it('includes show_branding=false when preview.show_branding is false', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      preview: { kind: 'client', allow_download: true, allow_approve: true, allow_revision: true, approved_at: null, show_branding: false },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as FullPayload & { show_branding: boolean };
+    expect(body.show_branding).toBe(false);
+  });
+
+  it('falls back to show_branding=true when field is absent (pre-087)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    // preview without show_branding — simulates pre-migration row
+    mockFetchByToken.mockResolvedValue(makeFullResult({
+      preview: { kind: 'client', allow_download: true, allow_approve: true, allow_revision: true, approved_at: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as FullPayload & { show_branding: boolean };
+    expect(body.show_branding).toBe(true);
+  });
+
+  it('falls back to show_branding=true when preview is null (pre-migration, no preview row)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult({ preview: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const body = res._body as FullPayload & { show_branding: boolean };
+    expect(body.show_branding).toBe(true);
+  });
+});
+
 describe('GET thumbnail_url — hero is never a video', () => {
   it('thumbnail_url is a real photo URL from hero_photo_url, not property.thumbnail_url', async () => {
     // This is the live-repro scenario: property.thumbnail_url was a scene .mp4 video.

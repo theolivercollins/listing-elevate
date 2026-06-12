@@ -34,6 +34,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       revision: preview?.allow_revision ?? true,
     };
     const approvedAt = preview?.approved_at ?? null;
+    // show_branding: pre-087 the column is absent on the row → fall back to TRUE (preserves current behavior)
+    const showBranding = (preview as { show_branding?: boolean } | null | undefined)?.show_branding ?? true;
 
     // Extended brand — headshot and brokerage are new in migration 083 client columns
     const brand = client
@@ -63,6 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       kind,
       capabilities,
       approved_at: approvedAt,
+      show_branding: showBranding,
     });
   }
 

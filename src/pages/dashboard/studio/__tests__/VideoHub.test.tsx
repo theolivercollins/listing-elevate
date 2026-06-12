@@ -315,4 +315,32 @@ describe('Video hub page', () => {
     renderHub();
     expect(await screen.findByText(/failed to load/i)).toBeTruthy();
   });
+
+  it('does NOT flash the loading skeleton on a capability toggle — optimistic + local', async () => {
+    mockHub();
+    renderHub();
+
+    // Initial mount settled: player present, no skeleton.
+    await screen.findByTestId('le-player');
+    expect(screen.queryByTestId('hub-skeleton')).toBeNull();
+    expect(screen.getByTestId('panel-link-pv-client-download').textContent).toBe('true');
+
+    const onToggle = panelCallbacks.onToggle as (
+      id: string,
+      field: string,
+      value: boolean,
+    ) => Promise<void>;
+    expect(typeof onToggle).toBe('function');
+
+    // Toggle download off. The PATCH resolves ok; the videos/ refetch (if any)
+    // still returns download:true — so the displayed 'false' can only be local.
+    await onToggle('pv-client', 'allow_download', false);
+
+    // The loading branch must NEVER mount: skeleton stays null, player stays.
+    await waitFor(() => {
+      expect(screen.getByTestId('panel-link-pv-client-download').textContent).toBe('false');
+    });
+    expect(screen.queryByTestId('hub-skeleton')).toBeNull();
+    expect(screen.getByTestId('le-player')).toBeTruthy();
+  });
 });
