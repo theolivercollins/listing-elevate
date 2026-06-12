@@ -178,4 +178,22 @@ describe('vercel.json route coverage', () => {
     expect(videosBase).toBeGreaterThanOrEqual(0);
     expect(videosWithId).toBeLessThan(videosBase);
   });
+
+  it('/preview/:token/embed SPA route precedes the bare /preview/([^/]+) OG-shim route', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // More specific: /preview/([^/]+)/embed pointing to /index.html (SPA route)
+    const embedIdx = routes.findIndex((r) =>
+      r.src === '/preview/([^/]+)/embed' && r.dest === '/index.html',
+    );
+    // Less specific: /preview/([^/]+) pointing to OG-shim endpoint
+    const bareIdx = routes.findIndex((r) =>
+      r.src === '/preview/([^/]+)' && r.dest?.includes('/api/preview-page'),
+    );
+
+    expect(embedIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(embedIdx).toBeLessThan(bareIdx);
+  });
 });

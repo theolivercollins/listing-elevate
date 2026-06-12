@@ -25,8 +25,8 @@ The management page for one video:
 - **Beacons**: `LEPlayer` emits playback events; the watch page posts them via `navigator.sendBeacon` to the events endpoint. `session_id` = `crypto.randomUUID()` kept in `sessionStorage`. Events: `view` (page load), `play` (first play per session), `progress_25/50/75`, `complete`. Beacons must NEVER affect playback — fire-and-forget, all errors swallowed.
 - Revoked links → the existing expired state.
 
-### 4. Embed (P2, optional) — `/embed/:token`
-Minimal chrome-less page: just `<LEPlayer>` filling the viewport, `noindex`. vercel.json route before SPA fallback. Sierra custom pages accept iframes → agents can embed their film on their own site. Respects kind/capabilities (no action buttons ever; it's view-only by nature). If time-boxed out, ship P1 without it and note it.
+### 4. Embed (P2, optional) — `/preview/:token/embed`
+Minimal chrome-less page: just `<LEPlayer>` filling the viewport, `noindex`. vercel.json: SPA route `{ "src": "/preview/([^/]+)/embed", "dest": "/index.html" }` positioned ABOVE the bare `/preview/([^/]+)` OG-shim route (more-specific path wins). Sierra custom pages accept iframes → agents can embed their film on their own site. Respects kind/capabilities (no action buttons ever; it's view-only by nature). If time-boxed out, ship P1 without it and note it.
 
 ## Data — migration 084 (additive only; write file, do NOT apply — Oliver gates)
 
