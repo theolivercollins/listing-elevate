@@ -64,20 +64,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     patch.revoked_at = raw ? new Date().toISOString() : null;
   }
 
+  // ── show_branding (boolean) — migration-087 column, only added when supplied ─
+  if ('show_branding' in body) {
+    const raw = body.show_branding;
+    if (typeof raw !== 'boolean') {
+      return res.status(400).json({
+        error: 'invalid_field',
+        message: 'show_branding must be a boolean',
+      });
+    }
+    patch.show_branding = raw;
+  }
+
   if (Object.keys(patch).length === 0) {
     return res.status(400).json({
       error: 'no_fields',
-      message: `body must include at least one of: ${CAPABILITY_FIELDS.join(', ')}, label, revoked`,
+      message: `body must include at least one of: ${CAPABILITY_FIELDS.join(', ')}, label, revoked, show_branding`,
     });
   }
 
-  // Build the RETURNING select dynamically. Pre-migration-084, PostgREST errors with
-  // 42703 (undefined_column) if we request label/revoked_at. Only add them when the
-  // caller actually supplied those fields — capability-only PATCHes never need them.
+  // Build the RETURNING select dynamically. Pre-migration-084/087, PostgREST errors with
+  // 42703 (undefined_column) if we request label/revoked_at/show_branding. Only add
+  // them when the caller actually supplied those fields — capability-only PATCHes never
+  // need them. show_branding (migration-087) has its own flag, separate from the
+  // migration-084 flag, so both can be omitted independently.
   const patchHasNewCols = 'label' in patch || 'revoked_at' in patch;
-  const selectCols = patchHasNewCols
+  const patchHasBranding = 'show_branding' in patch;
+
+  let selectCols = patchHasNewCols
     ? 'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, viewed_count, last_viewed_at, created_at'
     : 'id, token, kind, allow_download, allow_approve, allow_revision, approved_at, viewed_count, last_viewed_at, created_at';
+  if (patchHasBranding) {
+    selectCols += ', show_branding';
+  }
 
   const { data, error } = await getSupabase()
     .from('property_previews')
