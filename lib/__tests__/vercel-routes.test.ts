@@ -84,6 +84,11 @@ const GUARDED_PATHS = [
   'api/admin/studio/properties/[id]/preview-links.ts',
   'api/admin/studio/properties/[id]/preview-links/[previewId].ts',
 
+  // le-video branch — new endpoints
+  'api/preview/[token]/events.ts',
+  'api/admin/studio/videos/index.ts',
+  'api/admin/studio/videos/[id].ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -142,5 +147,35 @@ describe('vercel.json route coverage', () => {
 
     expect(approveIdx).toBeLessThan(bareIdx);
     expect(downloadIdx).toBeLessThan(bareIdx);
+  });
+
+  it('preview/[token]/events entry precedes the bare preview/[token] entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const eventsIdx = routes.findIndex((r) => /\/preview\/.*\/events$/.test(r.src));
+    const bareIdx   = routes.findIndex((r) => /^\/api\/preview\/\(\[\^\/\]\+\)$/.test(r.src));
+
+    expect(eventsIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(eventsIdx).toBeLessThan(bareIdx);
+  });
+
+  it('videos/[id] entry precedes the bare videos entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // Two-segment: .../videos/([^/]+)
+    const videosWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)/.test(r.src),
+    );
+    // One-segment: ends with .../videos (no further path component)
+    const videosBase = routes.findIndex((r) =>
+      /\/admin\/studio\/videos$/.test(r.src),
+    );
+
+    expect(videosWithId).toBeGreaterThanOrEqual(0);
+    expect(videosBase).toBeGreaterThanOrEqual(0);
+    expect(videosWithId).toBeLessThan(videosBase);
   });
 });
