@@ -190,6 +190,7 @@ export default function AppRoutes() {
                 <Route path="blog" element={<Navigate to="posts" replace />} />
                 <Route path="blog/posts" element={<BlogPostsList />} />
                 <Route path="blog/market-update" element={<MarketUpdate />} />
+                <Route path="blog/market-update/:id" element={<MarketUpdate />} />
                 <Route path="blog/posts/new" element={<BlogPostDetail />} />
                 <Route path="blog/posts/:id" element={<BlogPostDetail />} />
                 <Route path="blog/ally-history" element={<BlogAllyHistory />} />

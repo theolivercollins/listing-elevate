@@ -761,6 +761,7 @@ Phases of the back-on-track plan (full spec at [`specs/2026-04-20-back-on-track-
 
 (Newest on top. Append one line per push to `main`.)
 
+- 2026-06-12 — hotfix: restore `blog/market-update/:id` route in `src/AppRoutes.tsx` — the MU merge (3a7a473) dropped the run-detail route during conflict recovery, so post-extraction navigation and past-run links 404'd on prod. One line; rollback: revert this commit.
 - 2026-06-11 — merge of `worktree-ui-refresh-light-saas` (head `99a85d9`, src `724bad5`+`4c88f9f`) — ambient animation layer on marketing landing: drifting brand-blue gradient auras + masked dot textures (Ambient/AccentDot primitives, `--le-brand-blue-rgb` token, 5 transform-only keyframes, Section `ambient` prop, full prefers-reduced-motion gating incl. back-fill on pre-existing hovers). Rollback: revert the merge commit.
 - 2026-06-11 — merge of `worktree-ui-refresh-light-saas` (head `e5b0771`) — marketing front-end light-SaaS redesign (dark pin removed, split hero, Section/Reveal primitives, one 1200px column, pill buttons + unified type scale, market block modernized, 30-min turnaround claim w/ sources) + vite-dev blank-page root-cause fix (PromptLab now imports client-safe labModels mirror, never lib/providers).
 
