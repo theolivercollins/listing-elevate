@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Listing Elevate — Agent Home (Phase 2 sample)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
+<style>
+/* ───────────────────────────────────────────────────────────────────
+   Listing Elevate — Phase 2 design sample
+   Shared shell tokens. Evolved from src/v2/styles/tokens.css (.le-dash-shell)
+   and DESIGN-GUIDE.md. Accent spine kept at #2a6fdb; neutrals re-tuned to a
+   calmer warm/cool stack; ledger-ruled tables; left-spine active nav.
+   ─────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:        #f4f5f8;
+  --bg-tint:   #eef1f7;
+  --surface:   #ffffff;
+  --surface-2: #fbfcfe;
+  --ink:       #0c0e16;
+  --ink-2:     #2b2f3a;
+  --muted:     #656b7a;
+  --muted-2:   #9aa0ad;
+  --line:      rgba(12,14,22,0.08);
+  --line-2:    rgba(12,14,22,0.045);
+
+  --accent:    #2a6fdb;
+  --accent-2:  #1f5ec2;
+  --accent-soft: #eaf1fd;
+  --accent-ink:  #1b4ea0;
+
+  --good:      #2f8a55;  --good-soft:  #e7f3ec;
+  --warn:      #b6802c;  --warn-soft:  #f6efe1;
+  --bad:       #c44a4a;  --bad-soft:   #f8eaea;
+  --info:      #2a6fdb;  --info-soft:  #eaf1fd;
+
+  --radius:      18px;
+  --radius-md:   14px;
+  --radius-sm:   10px;
+  --radius-xs:   8px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(12,14,22,0.04), 0 0 0 1px rgba(12,14,22,0.04);
+  --shadow-md: 0 2px 4px rgba(12,14,22,0.04), 0 12px 32px -16px rgba(12,14,22,0.10);
+  --shadow-lg: 0 4px 12px rgba(12,14,22,0.05), 0 28px 64px -28px rgba(12,14,22,0.18);
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+*{ box-sizing:border-box; }
+html,body{ margin:0; }
+body{
+  font-family:var(--font);
+  background:var(--bg);
+  color:var(--ink);
+  letter-spacing:-0.006em;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* ── App shell ─────────────────────────────────────────────────────── */
+.shell{ display:grid; grid-template-columns:248px minmax(0,1fr); min-height:100vh; }
+
+.sidebar{
+  position:sticky; top:0; align-self:start; height:100vh;
+  display:flex; flex-direction:column;
+  padding:18px 14px;
+  background:linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,250,253,0.86));
+  backdrop-filter:blur(20px) saturate(140%);
+  -webkit-backdrop-filter:blur(20px) saturate(140%);
+  border-right:1px solid var(--line);
+}
+.brand{ display:flex; align-items:center; gap:11px; padding:4px 8px 18px; }
+.brand-mark{
+  width:38px; height:38px; border-radius:11px; flex-shrink:0;
+  background:linear-gradient(150deg,#1f3b6e,#0c0e16);
+  display:grid; place-items:center; color:#fff;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.16), 0 4px 12px -4px rgba(12,14,22,0.4);
+}
+.brand-mark svg{ display:block; }
+.brand-text{ display:flex; flex-direction:column; line-height:1.2; min-width:0; }
+.brand-name{ font-size:14px; font-weight:600; letter-spacing:-0.018em; }
+.brand-sub{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+
+.ws{
+  display:flex; align-items:center; gap:10px; width:100%;
+  padding:9px 10px; margin-bottom:16px;
+  background:rgba(12,14,22,0.03); border:1px solid var(--line);
+  border-radius:12px; cursor:pointer; text-align:left; font:inherit;
+  transition:background .15s,border-color .15s;
+}
+.ws:hover{ background:rgba(12,14,22,0.05); }
+.ws-avatar{
+  width:28px; height:28px; flex-shrink:0; border-radius:8px;
+  background:linear-gradient(135deg,#4a5269,#2a3144); color:#fff;
+  display:grid; place-items:center; font-weight:600; font-size:12px;
+}
+.ws-info{ display:flex; flex-direction:column; line-height:1.2; flex:1; min-width:0; }
+.ws-name{ font-size:12.5px; font-weight:600; }
+.ws-sub{ font-size:11px; color:var(--muted); margin-top:1px; }
+.ws-chev{ color:var(--muted-2); flex-shrink:0; }
+
+.nav{ flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:16px; }
+.nav::-webkit-scrollbar{ width:6px; }
+.nav::-webkit-scrollbar-thumb{ background:rgba(12,14,22,0.12); border-radius:99px; }
+.nav-section-label{
+  font-size:10.5px; font-weight:600; letter-spacing:0.10em; text-transform:uppercase;
+  color:var(--muted-2); padding:2px 12px 4px;
+}
+.nav-group{ display:flex; flex-direction:column; gap:2px; }
+.nav-item{
+  position:relative; display:flex; align-items:center; gap:11px;
+  padding:9px 12px; border-radius:10px;
+  color:var(--ink-2); font-size:13px; font-weight:500;
+  text-decoration:none; cursor:pointer;
+  transition:background .15s,color .15s;
+}
+.nav-item:hover{ background:rgba(12,14,22,0.05); color:var(--ink); }
+.nav-item.active{
+  background:var(--ink); color:#fff;
+  box-shadow:0 1px 0 rgba(255,255,255,0.10) inset, 0 4px 10px -4px rgba(12,14,22,0.3);
+}
+/* distinctive: accent spine on the active item */
+.nav-item.active::before{
+  content:""; position:absolute; left:-14px; top:8px; bottom:8px; width:3px;
+  border-radius:0 3px 3px 0; background:var(--accent);
+}
+.nav-ico{ width:18px; height:18px; display:grid; place-items:center; flex-shrink:0; }
+.nav-label{ flex:1; }
+.nav-badge{
+  min-width:18px; padding:0 6px; border-radius:99px;
+  background:rgba(12,14,22,0.06); color:var(--ink-2);
+  font-size:10.5px; font-weight:600; line-height:16px; text-align:center;
+  font-variant-numeric:tabular-nums;
+}
+.nav-item.active .nav-badge{ background:rgba(255,255,255,0.18); color:#fff; }
+
+.side-foot{ flex-shrink:0; padding-top:12px; margin-top:8px; border-top:1px solid var(--line); }
+.side-user{ display:flex; align-items:center; gap:10px; padding:8px 8px; border-radius:12px; text-decoration:none; color:inherit; }
+.side-user:hover{ background:rgba(12,14,22,0.04); }
+.side-user-avatar{
+  width:34px; height:34px; flex-shrink:0; border-radius:99px;
+  background:linear-gradient(135deg,#4a5269,#2a3144); color:#fff;
+  display:grid; place-items:center; font-weight:600; font-size:11.5px;
+}
+.side-user-info{ flex:1; min-width:0; line-height:1.25; }
+.side-user-name{ font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.side-user-mail{ font-size:11px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+
+/* ── Main column ───────────────────────────────────────────────────── */
+.main{ display:flex; flex-direction:column; min-width:0; }
+.topbar{
+  position:sticky; top:0; z-index:20;
+  display:flex; align-items:center; gap:16px;
+  padding:16px 36px;
+  background:rgba(244,245,248,0.82);
+  backdrop-filter:blur(12px) saturate(140%);
+  -webkit-backdrop-filter:blur(12px) saturate(140%);
+  border-bottom:1px solid var(--line-2);
+}
+.topbar-title{ display:flex; flex-direction:column; }
+.topbar-eyebrow{ font-size:12px; color:var(--muted); }
+.topbar-h{ font-size:15px; font-weight:600; letter-spacing:-0.015em; }
+.search{
+  display:flex; align-items:center; gap:9px; width:300px;
+  padding:9px 14px; background:var(--surface);
+  border-radius:var(--radius-pill); box-shadow:var(--shadow-sm);
+  color:var(--muted-2); font-size:13px;
+}
+.search input{ border:none; outline:none; background:transparent; font:inherit; color:var(--ink); flex:1; }
+.search kbd{
+  font:inherit; font-size:10.5px; font-weight:500; color:var(--muted);
+  padding:2px 6px; border-radius:5px; background:rgba(12,14,22,0.06);
+}
+.topbar-actions{ display:flex; align-items:center; gap:10px; }
+.iconbtn{
+  width:40px; height:40px; border:none; border-radius:12px;
+  background:var(--surface); box-shadow:var(--shadow-sm); color:var(--ink-2);
+  display:grid; place-items:center; cursor:pointer; position:relative;
+  transition:box-shadow .2s;
+}
+.iconbtn:hover{ box-shadow:var(--shadow-md); }
+.iconbtn .dot{
+  position:absolute; top:9px; right:9px; width:7px; height:7px; border-radius:99px;
+  background:var(--bad); border:1.5px solid var(--surface);
+}
+.scroll{ flex:1; padding:24px 36px 48px; }
+
+/* ── Page heading ──────────────────────────────────────────────────── */
+.page-head{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:28px; }
+.page-eyebrow{ font-size:13px; color:var(--muted); margin-bottom:11px; }
+.page-h1{ margin:0; font-size:42px; font-weight:600; letter-spacing:-0.035em; line-height:1.04; }
+.page-sub{ margin:13px 0 0; font-size:16px; color:var(--muted); max-width:540px; line-height:1.5; }
+.page-actions{ display:flex; gap:10px; flex-shrink:0; }
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.btn{ display:inline-flex; align-items:center; gap:7px; border-radius:var(--radius-pill); font:inherit; font-size:13px; font-weight:500; cursor:pointer; text-decoration:none; border:1px solid transparent; transition:transform .15s,box-shadow .15s,background .15s,border-color .15s; white-space:nowrap; }
+.btn-primary{ padding:11px 19px; background:var(--ink); color:#fff; box-shadow:0 1px 0 rgba(255,255,255,0.15) inset, 0 6px 16px -6px rgba(12,14,22,0.4); }
+.btn-primary:hover{ transform:translateY(-0.5px); box-shadow:0 1px 0 rgba(255,255,255,0.18) inset, 0 10px 24px -8px rgba(12,14,22,0.45); }
+.btn-accent{ padding:11px 19px; background:var(--accent); color:#fff; box-shadow:0 1px 0 rgba(255,255,255,0.22) inset, 0 6px 16px -6px rgba(42,111,219,0.5); }
+.btn-accent:hover{ transform:translateY(-0.5px); background:var(--accent-2); }
+.btn-ghost{ padding:9px 15px; background:var(--surface); color:var(--ink-2); border-color:var(--line); font-size:12.5px; box-shadow:var(--shadow-sm); }
+.btn-ghost:hover{ border-color:rgba(12,14,22,0.16); box-shadow:var(--shadow-md); }
+.btn-sm{ padding:7px 13px; font-size:12px; }
+
+/* ── Cards ─────────────────────────────────────────────────────────── */
+.card{ background:var(--surface); border-radius:var(--radius); box-shadow:var(--shadow-sm); }
+.card-pad{ padding:24px; }
+.section-eyebrow{ font-size:10.5px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted-2); }
+.section-title{ font-size:16px; font-weight:600; letter-spacing:-0.015em; margin-top:5px; }
+
+/* ── Status pills ──────────────────────────────────────────────────── */
+.pill{ display:inline-flex; align-items:center; gap:6px; padding:3px 10px 3px 8px; border-radius:var(--radius-pill); font-size:11.5px; font-weight:500; }
+.pill .pdot{ width:5px; height:5px; border-radius:99px; background:currentColor; }
+.pill.received{ color:var(--muted); background:rgba(12,14,22,0.05); }
+.pill.rendering{ color:var(--accent-ink); background:var(--accent-soft); }
+.pill.review{ color:var(--accent-ink); background:var(--accent-soft); }
+.pill.delivered{ color:var(--good); background:var(--good-soft); }
+.pill.attention{ color:var(--warn); background:var(--warn-soft); }
+.pill.live .pdot{ animation:pulse 1.8s ease-in-out infinite; }
+@keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
+/* ── Hero film card ────────────────────────────────────────────────── */
+.hero{ display:grid; grid-template-columns:1.45fr 1fr; gap:0; overflow:hidden; }
+.hero-poster{
+  position:relative; aspect-ratio:16/10; min-height:280px;
+  background:
+    radial-gradient(120% 90% at 18% 12%, rgba(120,160,235,0.55), transparent 60%),
+    radial-gradient(140% 120% at 92% 100%, rgba(38,52,92,0.9), transparent 55%),
+    linear-gradient(155deg,#26417a 0%,#16203e 55%,#0c0e16 100%);
+  display:flex; align-items:flex-end;
+}
+.hero-poster::after{ /* faint film grain via overlay */
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background-image:repeating-linear-gradient(120deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 3px);
+  mix-blend-mode:overlay;
+}
+.hero-badge{
+  position:absolute; top:16px; left:16px; z-index:2;
+  display:inline-flex; align-items:center; gap:6px;
+  padding:5px 11px 5px 9px; border-radius:var(--radius-pill);
+  background:rgba(12,14,22,0.5); backdrop-filter:blur(6px);
+  color:#fff; font-size:11px; font-weight:500; letter-spacing:0.01em;
+}
+.hero-badge .pdot{ background:#5cd08a; }
+.hero-play{
+  position:absolute; inset:0; display:grid; place-items:center; z-index:2; cursor:pointer; text-decoration:none;
+}
+.hero-play .ring{
+  width:64px; height:64px; border-radius:50%;
+  background:rgba(255,255,255,0.94); display:grid; place-items:center;
+  box-shadow:0 8px 28px rgba(0,0,0,0.4); transition:transform .18s;
+}
+.hero-play:hover .ring{ transform:scale(1.06); }
+.hero-poster-meta{ position:relative; z-index:2; padding:18px 20px; width:100%; }
+.hero-poster-addr{ color:#fff; font-size:16px; font-weight:600; letter-spacing:-0.01em; text-shadow:0 1px 8px rgba(0,0,0,0.4); }
+.hero-poster-sub{ color:rgba(255,255,255,0.78); font-size:12px; margin-top:3px; }
+.hero-side{ padding:24px; display:flex; flex-direction:column; }
+.hero-side h3{ margin:0; font-size:20px; font-weight:600; letter-spacing:-0.02em; }
+.hero-side p{ margin:8px 0 0; font-size:13.5px; color:var(--muted); line-height:1.55; }
+.hero-specs{ display:flex; gap:20px; margin-top:18px; }
+.hero-spec-l{ font-size:11px; color:var(--muted-2); letter-spacing:0.02em; }
+.hero-spec-v{ font-size:15px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; }
+.hero-actions{ display:flex; gap:8px; margin-top:auto; padding-top:22px; }
+
+/* ── KPI tiles ─────────────────────────────────────────────────────── */
+.tiles{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+.tile{ background:var(--surface); border-radius:var(--radius); padding:20px 20px 18px; box-shadow:var(--shadow-sm); transition:box-shadow .2s,transform .2s; }
+.tile:hover{ box-shadow:var(--shadow-md); transform:translateY(-1px); }
+.tile-head{ display:flex; align-items:center; justify-content:space-between; }
+.tile-ico{ width:34px; height:34px; border-radius:10px; display:grid; place-items:center; }
+.tile-ico.sky{ background:#e8f1ff; color:#2f6df0; }
+.tile-ico.mint{ background:#e1f6ec; color:#1f9d61; }
+.tile-ico.lav{ background:#f1ebff; color:#8154e8; }
+.tile-label{ font-size:13px; color:var(--muted); font-weight:500; }
+.tile-value{ margin-top:16px; font-size:30px; font-weight:600; letter-spacing:-0.03em; line-height:1; font-variant-numeric:tabular-nums; }
+.tile-sub{ margin-top:9px; font-size:12.5px; color:var(--muted); }
+.delta{ display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:99px; font-size:11px; font-weight:600; font-variant-numeric:tabular-nums; }
+.delta.up{ color:var(--good); background:var(--good-soft); }
+
+/* ── In-flight timeline ────────────────────────────────────────────── */
+.inflight{ display:grid; grid-template-columns:48px 1fr auto; gap:14px; align-items:center; }
+.thumb{ border-radius:12px; aspect-ratio:1; display:grid; place-items:center; color:rgba(255,255,255,0.92); }
+.thumb svg{ opacity:0.85; }
+.timeline{ display:flex; align-items:center; gap:6px; margin-top:12px; }
+.tl-step{ display:flex; align-items:center; gap:6px; flex:1; min-width:0; }
+.tl-step:last-child{ flex:0 0 auto; }
+.tl-dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; background:var(--muted-2); }
+.tl-step.done .tl-dot{ background:var(--good); }
+.tl-step.active .tl-dot{ width:10px; height:10px; background:var(--accent); box-shadow:0 0 0 4px rgba(42,111,219,0.16); }
+.tl-label{ font-size:11px; font-weight:500; color:var(--muted-2); white-space:nowrap; }
+.tl-step.done .tl-label{ color:var(--muted); }
+.tl-step.active .tl-label{ color:var(--ink); font-weight:600; }
+.tl-line{ flex:1; height:2px; border-radius:1px; background:var(--line); min-width:10px; }
+.tl-step.done .tl-line{ background:var(--good); }
+.eta{ display:inline-flex; align-items:center; gap:6px; margin-top:12px; font-size:12px; color:var(--muted); }
+.eta b{ color:var(--ink-2); font-weight:600; }
+
+/* ── Recent orders list ────────────────────────────────────────────── */
+.order-row{ display:grid; grid-template-columns:44px 1fr auto auto; gap:14px; align-items:center; padding:14px 0; border-top:1px solid var(--line-2); }
+.order-row:first-of-type{ border-top:none; }
+.order-addr{ font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.order-meta{ display:flex; align-items:center; gap:8px; margin-top:4px; }
+.order-when{ font-size:11.5px; color:var(--muted-2); white-space:nowrap; }
+
+.row-between{ display:flex; align-items:flex-end; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.linkmore{ font-size:12.5px; font-weight:500; color:var(--accent-ink); text-decoration:none; }
+.linkmore:hover{ text-decoration:underline; }
+
+@media (max-width:1024px){
+  .shell{ grid-template-columns:1fr; }
+  .sidebar{ display:none; }
+  .scroll{ padding:16px; }
+  .hero{ grid-template-columns:1fr; }
+  .tiles{ grid-template-columns:1fr; }
+  .page-h1{ font-size:30px; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Sidebar (AGENT nav — Studio: Home / Order / My listings / Billing / Profile) ── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 4-4 4 4"/><path d="M7 4v9a4 4 0 0 0 4 4h9"/><path d="m17 12 4 4-4 4"/></svg>
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">Listing Elevate</span>
+        <span class="brand-sub">Client studio</span>
+      </span>
+    </div>
+
+    <button class="ws" type="button">
+      <span class="ws-avatar">AG</span>
+      <span class="ws-info"><span class="ws-name">Avery Group</span><span class="ws-sub">Agent workspace</span></span>
+      <span class="ws-chev" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+    </button>
+
+    <nav class="nav" aria-label="Primary">
+      <div class="nav-group">
+        <span class="nav-section-label">Studio</span>
+        <a class="nav-item active" href="#" aria-current="page"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="nav-label">Home</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg></span><span class="nav-label">Order a video</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 21V12h6v9"/></svg></span><span class="nav-label">My listings</span><span class="nav-badge">7</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.5-2.5 1.6-2.5 2.5"/></svg></span><span class="nav-label">Billing</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="nav-label">Profile</span></a>
+      </div>
+    </nav>
+
+    <div class="side-foot">
+      <a class="side-user" href="#">
+        <span class="side-user-avatar">JA</span>
+        <span class="side-user-info">
+          <span class="side-user-name">Jordan Avery</span>
+          <span class="side-user-mail">jordan@averygroup.co</span>
+        </span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title">
+        <span class="topbar-eyebrow">Your studio</span>
+        <span class="topbar-h">Home</span>
+      </div>
+      <div style="flex:1"></div>
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+        <input placeholder="Search your listings" />
+        <kbd>/</kbd>
+      </label>
+      <div class="topbar-actions">
+        <button class="iconbtn" aria-label="Notifications"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+      </div>
+    </header>
+
+    <main class="scroll">
+
+      <!-- Page heading -->
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Your studio</div>
+          <h1 class="page-h1">Listing videos</h1>
+          <p class="page-sub">Good to see you, Jordan. One film is in production and your latest is ready to share.</p>
+        </div>
+        <div class="page-actions">
+          <a class="btn btn-accent" href="#">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            Order a new video
+          </a>
+        </div>
+      </div>
+
+      <!-- Hero: latest film -->
+      <section class="card hero" style="margin-bottom:16px;">
+        <div class="hero-poster">
+          <span class="hero-badge"><span class="pdot"></span>Delivered · 1080p</span>
+          <a class="hero-play" href="#" aria-label="Play latest film">
+            <span class="ring"><svg width="22" height="22" viewBox="0 0 24 24" fill="var(--ink)" stroke="none" style="margin-left:3px"><path d="M8 5v14l11-7z"/></svg></span>
+          </a>
+          <div class="hero-poster-meta">
+            <div class="hero-poster-addr">412 Maple Crossing</div>
+            <div class="hero-poster-sub">Cinematic listing film · 14 scenes</div>
+          </div>
+        </div>
+        <div class="hero-side">
+          <div class="section-eyebrow">Your latest film</div>
+          <h3 style="margin-top:8px;">Ready to share</h3>
+          <p>Your 412 Maple Crossing film finished rendering and passed quality review. Download the master or send a branded share link to your seller.</p>
+          <div class="hero-specs">
+            <div><div class="hero-spec-l">RUNTIME</div><div class="hero-spec-v">0:48</div></div>
+            <div><div class="hero-spec-l">SCENES</div><div class="hero-spec-v">14</div></div>
+            <div><div class="hero-spec-l">DELIVERED</div><div class="hero-spec-v">2h ago</div></div>
+          </div>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="margin-left:1px"><path d="M8 5v14l11-7z"/></svg>Watch</a>
+            <a class="btn btn-ghost" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v10M7 15l5 5 5-5"/><path d="M4 20h16"/></svg>Download</a>
+            <a class="btn btn-ghost" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg>Share link</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- KPI tiles -->
+      <section class="tiles" style="margin-bottom:16px;">
+        <div class="tile">
+          <div class="tile-head">
+            <span class="tile-ico mint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="delta up"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>+2</span>
+          </div>
+          <div class="tile-label" style="margin-top:14px;">Films delivered</div>
+          <div class="tile-value">12</div>
+          <div class="tile-sub">All-time across your listings</div>
+        </div>
+        <div class="tile">
+          <div class="tile-head">
+            <span class="tile-ico sky"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          </div>
+          <div class="tile-label" style="margin-top:14px;">In production</div>
+          <div class="tile-value">1</div>
+          <div class="tile-sub">412 Maple Crossing · est. ready tomorrow</div>
+        </div>
+        <div class="tile">
+          <div class="tile-head">
+            <span class="tile-ico lav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 2.5 5.5L20 9l-4 4 1 6-5-3-5 3 1-6-4-4 5.5-.5z"/></svg></span>
+          </div>
+          <div class="tile-label" style="margin-top:14px;">Avg turnaround</div>
+          <div class="tile-value">21<span style="font-size:17px;font-weight:500;color:var(--muted);letter-spacing:0;"> hrs</span></div>
+          <div class="tile-sub">From upload to delivered film</div>
+        </div>
+      </section>
+
+      <!-- In production -->
+      <section class="card card-pad" style="margin-bottom:16px;">
+        <div class="section-eyebrow">Active</div>
+        <div class="section-title" style="margin-bottom:18px;">In production</div>
+
+        <div class="inflight">
+          <span class="thumb" style="background:linear-gradient(140deg,hsl(212,42%,40%),hsl(224,38%,24%));">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </span>
+          <div style="min-width:0;">
+            <div class="order-addr">128 Birchwood Lane</div>
+            <div class="order-meta">
+              <span class="pill rendering live"><span class="pdot"></span>Rendering</span>
+              <span class="order-when">Ordered yesterday · 32 photos</span>
+            </div>
+            <div class="timeline">
+              <div class="tl-step done"><span class="tl-dot"></span><span class="tl-label">Received</span><span class="tl-line"></span></div>
+              <div class="tl-step done"><span class="tl-dot"></span><span class="tl-label">Crafting scenes</span><span class="tl-line"></span></div>
+              <div class="tl-step active"><span class="tl-dot"></span><span class="tl-label">Rendering</span><span class="tl-line"></span></div>
+              <div class="tl-step"><span class="tl-dot"></span><span class="tl-label">In review</span><span class="tl-line"></span></div>
+              <div class="tl-step"><span class="tl-dot"></span><span class="tl-label">Delivered</span></div>
+            </div>
+            <div class="eta">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              Estimated ready <b>tomorrow morning</b> · usually delivered within a day
+            </div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="#" style="align-self:flex-start;">Track order
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+          </a>
+        </div>
+      </section>
+
+      <!-- Recent orders -->
+      <section class="card card-pad">
+        <div class="row-between">
+          <div>
+            <div class="section-eyebrow">History</div>
+            <div class="section-title">Recent orders</div>
+          </div>
+          <a class="linkmore" href="#">View all listings →</a>
+        </div>
+
+        <div class="order-row">
+          <span class="thumb" style="background:linear-gradient(140deg,hsl(28,42%,46%),hsl(18,40%,30%));"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <div style="min-width:0;">
+            <div class="order-addr">412 Maple Crossing</div>
+            <div class="order-meta"><span class="pill delivered"><span class="pdot"></span>Delivered</span><span class="order-when">2 hours ago</span></div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="#">Watch</a>
+          <a class="btn btn-ghost btn-sm" href="#">Copy link</a>
+        </div>
+
+        <div class="order-row">
+          <span class="thumb" style="background:linear-gradient(140deg,hsl(150,34%,42%),hsl(160,36%,26%));"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <div style="min-width:0;">
+            <div class="order-addr">76 Cedar Hollow Court</div>
+            <div class="order-meta"><span class="pill delivered"><span class="pdot"></span>Delivered</span><span class="order-when">3 days ago</span></div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="#">Watch</a>
+          <a class="btn btn-ghost btn-sm" href="#">Copy link</a>
+        </div>
+
+        <div class="order-row">
+          <span class="thumb" style="background:linear-gradient(140deg,hsl(266,34%,46%),hsl(258,36%,30%));"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span>
+          <div style="min-width:0;">
+            <div class="order-addr">9 Willow Bend</div>
+            <div class="order-meta"><span class="pill delivered"><span class="pdot"></span>Delivered</span><span class="order-when">6 days ago</span></div>
+          </div>
+          <a class="btn btn-ghost btn-sm" href="#">Watch</a>
+          <a class="btn btn-ghost btn-sm" href="#">Copy link</a>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>
