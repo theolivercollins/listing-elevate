@@ -283,6 +283,10 @@ async function rehostRow(opts: {
 
     if (!apply) {
       // Dry-run: report what WOULD happen but write nothing.
+      // The Bunny object was already uploaded above (to confirm hosting succeeds),
+      // so we must delete it now — otherwise every dry-run row creates a real,
+      // billable, persistent orphan in Bunny. Best-effort; non-fatal on failure.
+      deleteBunnyVideo(hosted.guid).catch(() => {});
       return {
         table, rowId, originalUrl, newUrl: hosted.mp4Url,
         bunnyHosted: true, costCents, error: null,

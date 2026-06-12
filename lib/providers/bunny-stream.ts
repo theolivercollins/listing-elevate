@@ -218,7 +218,7 @@ export function bunnyStreamCostCents(bytes: number): number {
  * Usage:
  *   const headRes = await fetch(url, { method: 'HEAD', headers: bunnyCdnHeaders(url) });
  */
-export function bunnyCdnHeaders(url: string): HeadersInit {
+export function bunnyCdnHeaders(url: string): Record<string, string> {
   const cdnHostname = process.env.BUNNY_STREAM_CDN_HOSTNAME;
   if (!cdnHostname) return {};
   try {

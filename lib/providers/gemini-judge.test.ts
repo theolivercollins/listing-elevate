@@ -36,6 +36,18 @@ vi.mock("@google/genai", () => {
   };
 });
 
+// Mock gemini-files.js so judgeLabIteration's uploadVideoToGeminiFiles call doesn't
+// make real network requests. uploadVideoToGeminiFiles downloads the clip server-side
+// (the change that fixes Bunny CDN 403) — tests must mock it out to stay offline.
+vi.mock("./gemini-files.js", () => ({
+  uploadVideoToGeminiFiles: vi.fn().mockResolvedValue({
+    name: "files/mock-clip-001",
+    uri: "https://files.googleapis.com/v1beta/files/mock-clip-001",
+    mimeType: "video/mp4",
+  }),
+  deleteGeminiFile: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock recordCostEvent to avoid DB calls.
 vi.mock("../db.js", () => ({
   recordCostEvent: vi.fn().mockResolvedValue(undefined),
