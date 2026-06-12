@@ -25,6 +25,7 @@ function makeClientLink(overrides: Partial<PreviewLinkRow> = {}): PreviewLinkRow
     allow_download: true,
     allow_approve: true,
     allow_revision: true,
+    show_branding: true,
     approved_at: null,
     revoked_at: null,
     expires_at: null,
@@ -44,6 +45,7 @@ function makePublicLink(overrides: Partial<PreviewLinkRow> = {}): PreviewLinkRow
     allow_download: false,
     allow_approve: false,
     allow_revision: false,
+    show_branding: true,
     approved_at: null,
     revoked_at: null,
     expires_at: null,
@@ -61,7 +63,7 @@ function renderPanel(
     clientLinks?: PreviewLinkRow[];
     publicLinks?: PreviewLinkRow[];
     onCreateLink?: (kind: 'client' | 'public', label?: string) => Promise<void>;
-    onToggle?: (id: string, field: 'allow_download' | 'allow_approve' | 'allow_revision', value: boolean) => Promise<void>;
+    onToggle?: (id: string, field: 'allow_download' | 'allow_approve' | 'allow_revision' | 'show_branding', value: boolean) => Promise<void>;
     onSetLabel?: (id: string, label: string) => Promise<void>;
     onRevoke?: (id: string, revoked: boolean) => Promise<void>;
     baseUrl?: string;
@@ -253,5 +255,52 @@ describe('SharePanel — capability toggles', () => {
       clientLinks: [makeClientLink({ approved_at: '2026-06-11T10:00:00Z' })],
     });
     expect(screen.getByTestId('client-approved-badge')).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two reasoned cards — per-kind capability sets (spec §2/§4)
+// ---------------------------------------------------------------------------
+
+describe('SharePanel — agent (client) card capabilities', () => {
+  it('renders download, approve and request-change toggles for the agent card', () => {
+    renderPanel({ clientLinks: [makeClientLink()] });
+    expect(screen.getByTestId('toggle-client-allow_download')).toBeTruthy();
+    expect(screen.getByTestId('toggle-client-allow_approve')).toBeTruthy();
+    expect(screen.getByTestId('toggle-client-allow_revision')).toBeTruthy();
+  });
+
+  it('does NOT render a branding toggle on the agent card', () => {
+    renderPanel({ clientLinks: [makeClientLink()] });
+    expect(screen.queryByTestId('toggle-client-show_branding')).toBeNull();
+  });
+});
+
+describe('SharePanel — customer (public) card capabilities', () => {
+  it('renders the show-branding and download toggles for the customer card', () => {
+    renderPanel({ publicLinks: [makePublicLink()] });
+    expect(screen.getByTestId('toggle-public-show_branding')).toBeTruthy();
+    expect(screen.getByTestId('toggle-public-allow_download')).toBeTruthy();
+  });
+
+  it('HIDES the approve and request-change toggles on the customer card', () => {
+    renderPanel({ publicLinks: [makePublicLink()] });
+    expect(screen.queryByTestId('toggle-public-allow_approve')).toBeNull();
+    expect(screen.queryByTestId('toggle-public-allow_revision')).toBeNull();
+  });
+
+  it('reflects the current show_branding value (checked when true)', () => {
+    renderPanel({ publicLinks: [makePublicLink({ show_branding: true })] });
+    const toggle = screen.getByTestId('toggle-public-show_branding') as HTMLInputElement;
+    expect(toggle.checked).toBe(true);
+  });
+
+  it('calls onToggle(id, "show_branding", value) when the branding toggle is flipped', async () => {
+    const onToggle = vi.fn().mockResolvedValue(undefined);
+    renderPanel({ publicLinks: [makePublicLink({ show_branding: true })], onToggle });
+    fireEvent.click(screen.getByTestId('toggle-public-show_branding'));
+    await waitFor(() =>
+      expect(onToggle).toHaveBeenCalledWith('pv-public-1', 'show_branding', false),
+    );
   });
 });
