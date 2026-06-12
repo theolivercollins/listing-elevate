@@ -1,4 +1,5 @@
 # Listing Elevate — Handoff
+Last updated: 2026-06-11 (market-update send-always-400 + draft_ready badge — two blocking bugs fixed entirely in UI layer; commit 96d6314 on `feat/market-update-workflow`)
 
 Last updated: 2026-06-11 (assembly quality fix — 16:9 source crop for all Kling SKUs + Shotstack quality:high + fps:24; on branch `fix/max-quality-assembly`, NOT yet merged to main)
 Last updated: 2026-06-11 (market-update RunDetail draft panels — live status badges + two-step Publish to Sierra / Send via Sendy actions; commit 16888fd on `feat/market-update-workflow`)
