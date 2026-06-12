@@ -39,6 +39,7 @@ export function Pricing() {
       eyebrow="— PRICING"
       title="Priced per listing."
       tint
+      ambient="softer"
     >
       <div className="le-pricing-grid">
         {tiers.map((t, i) => (

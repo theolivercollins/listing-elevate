@@ -85,8 +85,47 @@ Before building UI, reach for the existing primitives (`src/components/dashboard
 - [ ] Interactive elements keyboard-reachable (focusable, visible focus ring, Enter/Space/Arrows where appropriate)
 - [ ] Hover-only affordances also appear on `:focus-within` (touch + keyboard users)
 
-## 10. Known debt (fix opportunistically)
+## 10. Ambient animation system (marketing landing only)
+
+Added 2026-06-11. The marketing landing uses a CSS-only ambient motion layer to feel alive without being busy.
+
+**Primitives:**
+- `<Ambient>` (`src/v2/components/primitives/Ambient.tsx`) — aria-hidden, two radial-gradient blobs (`.le-ambient-blob`) + optional tiled dot-layer (`.le-ambient-dots`). Props: `dots` (boolean), `intensity="softer"` (halves blob alpha via `.le-ambient--softer`). The parent section must carry `position:relative; overflow:hidden` — the `Section` shell handles this automatically when `ambient` prop is set.
+- `<AccentDot>` (`src/v2/components/primitives/AccentDot.tsx`) — 6px brand-blue circle, `animated` prop adds soft pulse.
+
+**CSS classes (v2.css):**
+- `.le-ambient` / `.le-ambient-blob` / `.le-ambient-dots` / `.le-ambient--softer` / `.le-ambient--dots` — placement + structure.
+- `.le-gradient-wash` — soft 135° blue gradient for tinted background overlays.
+- `.le-accent-dot` / `.le-accent-dot-animated` — styles for `<AccentDot>`.
+
+**Keyframes (all `transform`/`opacity` only — GPU-safe, no layout-thrash):**
+- `le-drift` / `le-drift-2` — blob drift, 24–30s cycles.
+- `le-dot-drift` — dot-layer parallax drift, 40s cycle.
+- `le-pulse-soft` — soft opacity pulse (0.4→0.8), 3s cycle.
+- `le-float-gentle` — subtle translateY float, 6s cycle.
+
+**Hard rules:**
+1. All keyframes and motion-reliant transitions MUST live inside `@media (prefers-reduced-motion: no-preference)`.
+2. Colors: brand blue family only — `rgba(var(--le-brand-blue-rgb), α)` where `--le-brand-blue-rgb: 47, 109, 240`. No rainbow, no purple/violet "AI gradients".
+3. No `canvas`, no WebGL, no JS-driven particle libraries. Motion is CSS keyframes only.
+4. Blob alpha is kept low (0.05–0.07 full, halved to 0.025–0.035 in softer sections). If it looks "active" rather than "ambient", reduce alpha before widening.
+5. The `Section` shell's `ambient` prop is the right entrypoint for section-level auras. Don't add inline `<Ambient>` calls inside a component that already lives inside a `<Section>`.
+
+**Section ambient assignments (2026-06-11):**
+| Section | Ambient | Dots |
+|---|---|---|
+| Hero | full | yes |
+| Process | softer | no |
+| MarketComparison | softer | no |
+| Pricing | softer | no |
+| SelectedWork | softer | no |
+| FAQ | softer | no |
+| FinalCTA | full | yes |
+| FounderOffer | AccentDot only | — |
+
+## 11. Known debt (fix opportunistically)
 
 - ~80 hardcoded `borderRadius: <number>` / odd paddings across `EmailsList.tsx`, `BlogPostsList.tsx`, `Settings.tsx`, `Properties.tsx`, PromptLab pages — migrate to tokens when touching those files.
 - `DirectorModal.tsx` and other lab components use raw radius numbers (6/8/10/12/14) — map to tokens on next substantive edit.
 - The studio skin keeps its own background palette (`#f3f3f5` warm gray vs dashboard white). Intentional for now; revisit if surfaces ever merge.
+- The checklist in §9 has no ambient/animation row yet — add one if the ambient system expands beyond the marketing landing.

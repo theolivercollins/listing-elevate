@@ -2,6 +2,7 @@ import { LEIcon } from "@/v2/components/primitives/LEIcon";
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Ambient } from "@/v2/components/primitives/Ambient";
 
 /**
  * FinalCTA — clean elevated band with a radial ambient wash (WS3, 2026-06-11).
@@ -22,18 +23,8 @@ export function FinalCTA() {
         overflow: "hidden",
       }}
     >
-      {/* Ambient radial wash — mirrors Hero, ellipse bottom-left */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(ellipse 80% 55% at 30% 100%, rgba(47, 109, 240, 0.07), transparent 60%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
+      {/* Ambient layer — brand-blue aura + masked dot texture (animated, reduced-motion safe) */}
+      <Ambient dots />
 
       <div
         style={{

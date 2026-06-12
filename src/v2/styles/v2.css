@@ -85,3 +85,172 @@
     gap: clamp(36px, 4.5vw, 72px);
   }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Ambient motion — animated accents + subtle gradient washes
+
+   Philosophy:
+   - Soft, premium feel via low-alpha blue gradients + animated dots
+   - Long durations (12-40s) so motion is ambient, not distracting
+   - All animations gated in @media (prefers-reduced-motion: no-preference)
+   - GPU-safe: only transform/opacity/translate3d — no layout-thrashing
+   - Colors: brand blue only, via rgba(var(--le-brand-blue-rgb), α)
+
+   Classes:
+   - .le-ambient / .le-ambient-blob / .le-ambient-dots — placement + structure
+   - .le-gradient-wash — soft background gradient for tinted sections
+   - .le-accent-dot-* — small animated dots (hero, section starts, etc.)
+   ────────────────────────────────────────────────────────────────────────────── */
+
+/* (A) Base structural — ambient motion container + children */
+.le-ambient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.le-ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px); /* static blur — compositor-safe, not animated */
+  will-change: transform;
+}
+
+.le-ambient-dots {
+  position: absolute;
+  inset: -48px;
+  will-change: transform;
+  background-image: radial-gradient(
+    rgba(var(--le-brand-blue-rgb), 0.20) 1px,
+    transparent 1.4px
+  );
+  background-size: 26px 26px;
+}
+
+/* (B) Edge-fade — radial mask so dots fade out at edges (feels integrated, not pasted) */
+.le-ambient--dots {
+  mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent 75%);
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent 75%);
+}
+
+/* (C) Softer intensity — halves blob + dot opacity for subtle sections */
+.le-ambient--softer .le-ambient-blob {
+  opacity: 0.5;
+}
+
+.le-ambient--softer .le-ambient-dots {
+  opacity: 0.5;
+}
+
+/* (D) Soft gradient wash for tinted section backgrounds */
+.le-gradient-wash {
+  background: linear-gradient(
+    135deg,
+    rgba(var(--le-brand-blue-rgb), 0) 0%,
+    rgba(var(--le-brand-blue-rgb), 0.015) 50%,
+    rgba(var(--le-brand-blue-rgb), 0) 100%
+  );
+}
+
+/* (E) Small accent dots for visual interest — opacity pulse */
+.le-accent-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(var(--le-brand-blue-rgb), 0.5);
+}
+
+.le-accent-dot-animated {
+  will-change: opacity;
+}
+
+/* (F) Animation keyframes — all compositor-safe (transform/opacity only) */
+@keyframes le-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(3%, -4%, 0) scale(1.08); }
+}
+
+@keyframes le-drift-2 {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to   { transform: translate3d(-4%, 3%, 0) scale(1); }
+}
+
+@keyframes le-dot-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(13px, 26px, 0); }
+}
+
+@keyframes le-pulse-soft {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+@keyframes le-float-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* (G) Apply animations ONLY if user hasn't requested reduced motion */
+@media (prefers-reduced-motion: no-preference) {
+  /* Blob drifts — slow, smooth, infinite */
+  .le-ambient-blob {
+    animation: le-drift 24s ease-in-out infinite alternate;
+  }
+
+  .le-ambient-blob--b {
+    animation: le-drift-2 30s ease-in-out infinite alternate;
+  }
+
+  /* Dots shift subtly on a long cycle */
+  .le-ambient-dots {
+    animation: le-dot-drift 40s linear infinite alternate;
+  }
+
+  /* Accent dots pulse softly */
+  .le-accent-dot-animated {
+    animation: le-pulse-soft 3s ease-in-out infinite;
+  }
+
+  /* Elements can float gently */
+  .le-float-gentle {
+    animation: le-float-gentle 4s ease-in-out infinite;
+  }
+}
+
+/* (H) Reduced-motion fallback — all animations disabled, static appearance */
+@media (prefers-reduced-motion: reduce) {
+  .le-ambient-blob,
+  .le-ambient-blob--b,
+  .le-ambient-dots,
+  .le-accent-dot-animated,
+  .le-float-gentle {
+    animation: none;
+  }
+
+  /* Also disable existing hover transitions for reduced-motion users */
+  .le-card-lift,
+  .le-cta-primary-hover {
+    transition: none;
+  }
+
+  .le-card-lift:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .le-cta-primary-hover:hover,
+  .le-cta-primary-hover:active {
+    transform: none;
+  }
+
+  .le-img-zoom img {
+    transition: none;
+  }
+
+  .le-img-zoom:hover img {
+    transform: none;
+  }
+}

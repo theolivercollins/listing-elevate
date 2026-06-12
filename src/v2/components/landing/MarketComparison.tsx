@@ -9,6 +9,7 @@ import MarketDomination from "@/v2/components/landing/market/MarketDomination";
 // import PricingCalculator from "@/v2/components/landing/market/PricingCalculator";
 import { motion } from "framer-motion";
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Ambient } from "@/v2/components/primitives/Ambient";
 
 /**
  * MarketComparison — First impression + Win / Retain / Sell stack.
@@ -274,12 +275,24 @@ function FirstImpression() {
 
 export function MarketComparison() {
   return (
-    <section id="compare" style={{ background: "var(--le-bg)", color: "var(--le-text)" }}>
+    <section
+      id="compare"
+      style={{
+        background: "var(--le-bg)",
+        color: "var(--le-text)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* ── Ambient aura — softer brand-blue wash behind all content ── */}
+      <Ambient intensity="softer" />
 
       {/* ── Intro block ─────────────────────────────────────────────── */}
       <div
         style={{
           padding: "clamp(48px, 7vw, 88px) clamp(16px, 5vw, 48px) clamp(24px, 4vw, 48px)",
+          position: "relative",
+          zIndex: 1,
         }}
       >
         <motion.div
@@ -314,7 +327,7 @@ export function MarketComparison() {
       </div>
 
       {/* ── Win prong ───────────────────────────────────────────────── */}
-      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)", position: "relative", zIndex: 1 }}>
         <ProngWrapper>
           <PillLabel label="Win more listings" dotColor={DOT_WIN} />
           <CostComparison />
@@ -323,10 +336,12 @@ export function MarketComparison() {
       </div>
 
       {/* ── First impression plate ──────────────────────────────────── */}
-      <FirstImpression />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <FirstImpression />
+      </div>
 
       {/* ── Retain prong ────────────────────────────────────────────── */}
-      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)", position: "relative", zIndex: 1 }}>
         <ProngWrapper>
           <PillLabel label="Retain every client" dotColor={DOT_RETAIN} />
           <TurnaroundSpeed />
@@ -336,7 +351,7 @@ export function MarketComparison() {
       </div>
 
       {/* ── Sell prong ──────────────────────────────────────────────── */}
-      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)" }}>
+      <div style={{ marginBottom: "clamp(48px, 8vw, 96px)", position: "relative", zIndex: 1 }}>
         <ProngWrapper>
           <PillLabel label="Sell faster" dotColor={DOT_SELL} />
           <MarketDomination />
