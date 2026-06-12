@@ -291,6 +291,23 @@ export function aggregateViewEvents(events: ReadonlyArray<ViewEventRow>): ViewEv
   };
 }
 
+/** Fetch the UUID primary key of a property_previews row by token.
+ * Returns null (not throws) on any error or when the row is absent —
+ * callers can skip the insert and still return 204 on the events endpoint. */
+export async function lookupPreviewId(token: string): Promise<string | null> {
+  try {
+    const { data, error } = await getSupabase()
+      .from('property_previews')
+      .select('id')
+      .eq('token', token)
+      .maybeSingle();
+    if (error || !data) return null;
+    return (data as { id: string }).id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function insertClientNote(args: { property_id: string; source: 'client_preview'; body: string }) {
   const { error } = await getSupabase().from('property_revision_notes').insert(args);
   if (error) throw new Error(`insertClientNote: ${error.message}`);
