@@ -658,6 +658,74 @@ describe('PreviewPage — watch-page beacons', () => {
 // 10. Revoked link renders the expired state (T2 behavior on the watch page)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// T5 — show_branding flag (spec §3)
+// When show_branding=false: NEITHER pd-brand-row NOR pd-presented-by renders.
+// When show_branding=true (or absent): both render normally when brand data is present.
+// The 'Crafted with Listing Elevate' footer MUST always render regardless.
+// ---------------------------------------------------------------------------
+
+const BRAND_WITH_LOGO = {
+  logo: 'https://cdn/logo.png',
+  agent_name: 'Abby Smith',
+  name: 'Helgemo Team',
+  headshot: 'https://cdn/head.jpg',
+  brokerage: 'RE/MAX',
+};
+
+describe('PreviewPage — show_branding flag (spec §3)', () => {
+  it('hides pd-brand-row AND presented-by-row when show_branding=false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, { ...makePayload({ brand: BRAND_WITH_LOGO }), show_branding: false }),
+    );
+    renderPreview();
+    await waitFor(() => screen.getByTestId('preview-address'));
+    // Both agent-brand blocks must be absent
+    expect(screen.queryByTestId('brand-logo')).toBeNull();
+    expect(screen.queryByTestId('brand-name-lockup')).toBeNull();
+    expect(screen.queryByTestId('presented-by-row')).toBeNull();
+    // LE footer must still appear
+    expect(screen.getByTestId('footer-attribution').textContent).toContain('Crafted with Listing Elevate');
+  });
+
+  it('shows pd-brand-row AND presented-by-row when show_branding=true', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, { ...makePayload({ brand: BRAND_WITH_LOGO }), show_branding: true }),
+    );
+    renderPreview();
+    await waitFor(() => {
+      expect(screen.getByTestId('brand-logo')).toBeTruthy();
+    });
+    expect(screen.getByTestId('presented-by-row')).toBeTruthy();
+    expect(screen.getByTestId('footer-attribution').textContent).toContain('Crafted with Listing Elevate');
+  });
+
+  it('shows brand blocks when show_branding is absent (true-fallback)', async () => {
+    // Payload without show_branding key at all — pre-087 shape
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, makePayload({ brand: BRAND_WITH_LOGO })),
+    );
+    renderPreview();
+    await waitFor(() => {
+      expect(screen.getByTestId('brand-logo')).toBeTruthy();
+    });
+    expect(screen.getByTestId('presented-by-row')).toBeTruthy();
+  });
+
+  it('LE footer always present when show_branding=false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, { ...makePayload({ brand: BRAND_WITH_LOGO }), show_branding: false }),
+    );
+    renderPreview();
+    await waitFor(() => screen.getByTestId('footer-attribution'));
+    expect(screen.getByTestId('footer-attribution').textContent).toContain('Crafted with Listing Elevate');
+  });
+});
+
 describe('PreviewPage — revoked link', () => {
   it('shows the expired/not-found state for a revoked link (API returns 404)', async () => {
     // T2: fetchByToken treats revoked_at as expired -> the API returns 404.

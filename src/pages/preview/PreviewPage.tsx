@@ -117,6 +117,10 @@ type PreviewData = {
   kind: 'client' | 'public';
   capabilities: { download: boolean; approve: boolean; revision: boolean };
   approved_at: string | null;
+  /** When false, all agent-brand surfaces (logo, name lockup, headshot, brokerage) are hidden.
+   *  The 'Crafted with Listing Elevate' footer is NOT affected — it's the LE mark, not agent brand.
+   *  Defaults to true (pre-migration fallback / default true in migration 087). */
+  show_branding: boolean;
 };
 
 type Orientation = 'wide' | 'vertical';
@@ -215,6 +219,8 @@ export default function PreviewPage() {
         kind: d.kind ?? 'client',
         capabilities: d.capabilities ?? { download: true, approve: true, revision: true },
         approved_at: d.approved_at ?? null,
+        // Pre-087 fallback: field absent → true (preserves existing behavior where brand always shows)
+        show_branding: d.show_branding ?? true,
       };
       setData(payload);
       setApproved(payload.approved_at);
@@ -262,7 +268,7 @@ export default function PreviewPage() {
   if (notFound) return <NotFoundScreen />;
   if (!data) return <LoadingScreen />;
 
-  const { address_parts, videos, thumbnail_url, brand, kind, capabilities } = data;
+  const { address_parts, videos, thumbnail_url, brand, kind, capabilities, show_branding } = data;
 
   const hasHorizontal = Boolean(videos.horizontal);
   const hasVertical = Boolean(videos.vertical);
@@ -308,7 +314,7 @@ export default function PreviewPage() {
       <main className="pd-container pd-fade-up">
 
         {/* ── Brand row ── */}
-        {brand && (
+        {show_branding && brand && (
           <div className="pd-brand-row">
             {brand.logo ? (
               <img
@@ -400,7 +406,7 @@ export default function PreviewPage() {
         </div>
 
         {/* ── Presented-by row ── */}
-        {brand && (brand.agent_name || brand.headshot || brand.brokerage) && (
+        {show_branding && brand && (brand.agent_name || brand.headshot || brand.brokerage) && (
           <div className="pd-presented-by" data-testid="presented-by-row" aria-label="Presented by">
             {brand.headshot && (
               <img
