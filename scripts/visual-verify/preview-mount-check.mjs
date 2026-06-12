@@ -103,11 +103,16 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
     const root = document.getElementById("root");
     const lePlayer = document.querySelector('[data-testid="le-player"]');
     const embedNotAvailable = document.querySelector('[data-testid="embed-not-available"]');
+    // TopNav renders a <header> as the first child of <body> (outside #root).
+    // On the embed page it must be absent — LE marketing chrome must not appear
+    // inside agents' Sierra customer iframe embeds.
+    const topNavPresent = Boolean(document.querySelector("header.sticky"));
     return {
       rootChildCount: root?.children.length ?? 0,
       bodyText: (document.body.innerText || "").trim().slice(0, 400),
       lePlayerPresent: Boolean(lePlayer),
       embedNotAvailablePresent: Boolean(embedNotAvailable),
+      topNavPresent,
     };
   });
   await page.screenshot({ path: `${OUT_DIR}/preview-embed-mount-check.png`, fullPage: false });
@@ -131,9 +136,18 @@ const browser = await chromium.launch({ executablePath: CHROME, headless: true }
     );
     process.exit(1);
   }
+  if (probe.topNavPresent) {
+    await browser.close();
+    console.error(
+      "FAIL: /preview/<fake-token>/embed has TopNav chrome (header.sticky found) — " +
+        "embed must be chrome-less for agent Sierra iframe use",
+    );
+    process.exit(1);
+  }
   console.log(
     "PASS: [data-testid='le-player'] mounted from the built bundle at /preview/<fake-token>/embed with zero console errors",
   );
+  console.log("PASS: TopNav chrome absent from embed page (chrome-less confirmed)");
 }
 
 await browser.close();
