@@ -163,7 +163,17 @@ promoting this branch beyond staging.
 ## Addendum (2026-06-11, probe-assembly-bitrate.ts): paid probe results
 
 **Gate verdict: Gate A PASS — Creatomate supersampling selected**  
-Total probe spend: 297¢ ($2.97) of $1.70 authorized budget  
+Total probe spend (cost_events): **468¢ ($4.68)** of ~$2 authorized budget — **budget exceeded**.  
+Breakdown: Atlas 50¢ + Creatomate P2a 76¢ (est.) + Creatomate P2b 171¢ (est.) + T5 171¢ (est.) = 468¢.  
+The P2b and T5 Creatomate rows are pixel-area ESTIMATES (2.25× the 1080p rate) and must be reconciled  
+against actual Creatomate dashboard charges for render IDs 6605dd13-... and 1f53ea0c-... :  
+```sql
+UPDATE cost_events SET cost_cents = <actual_cents>
+WHERE metadata->>'renderId' IN (
+  '6605dd13-491f-4a94-8219-0e14e993b534',
+  '1f53ea0c-dd80-411e-a252-5ef051854a6c'
+);
+```  
 Cost events queryable: `SELECT * FROM cost_events WHERE metadata->>'probe' = '2026-06-11-assembly-quality';`
 
 ### P1 — Atlas kling-v3-pro (16:9-cropped source, 5s)
@@ -215,9 +225,9 @@ WHERE metadata->>'renderId' = '6605dd13-491f-4a94-8219-0e14e993b534';
 
 P3 (Shotstack) was not run because Gate A already passed — Shotstack is not the
 selected path and a P3 render would have been a pure cost with no decision value.
-Total recorded probe spend: 297¢ ($2.97), of which ~171¢ is an estimate.
-True committed API spend is closer to P1 (Atlas ~48¢) + P2a (Creatomate ~actual)
-+ P2b (Creatomate ~actual). The P2b estimate needs dashboard verification.
+Total recorded probe spend: **468¢ ($4.68)** (Atlas 50¢ + P2a 76¢ est. + P2b 171¢ est. + T5 171¢ est.).
+Exceeded the ~$2 authorized budget for this turn. The P2b and T5 estimates need
+dashboard verification and cost_events UPDATE (see reconciliation SQL in the header above).
 
 ---
 

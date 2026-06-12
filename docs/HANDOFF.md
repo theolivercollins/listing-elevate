@@ -2,6 +2,8 @@
 
 Last updated: 2026-06-11 (scroll-to-top fix + auth-animation fix — /upload no longer loads scrolled to the bottom (new ScrollToTop component, resets scroll on every route change); LoginDialog sign-in/sign-up/get-started entry glitch removed (deferred focus + animated height + cross-fade); both merged to main)
 
+Last updated: 2026-06-11 (review-gate fixes on fix/max-quality-assembly: P0 insertScenes + resubmitScene made migration-084-safe; P2 finalize.ts comment + session-doc spend corrected. **Migration 084 (scenes.provider_preference) NOT yet applied to prod — apply before this branch deploys.**)
+
 Last updated: 2026-06-11 (preview-links-v2 — client/public link kinds, gallery redesign, approve/download actions, OG unfurl, Share dialog, hero photo bug fix; on branch `feat/preview-links-v2`, migration 083 NOT yet applied to prod)
 
 Last updated: 2026-06-11 (music feedback + 4-genre generation on `feat/music-feedback`; earlier same day: Seedance pair mode + Video Studio UX on main)

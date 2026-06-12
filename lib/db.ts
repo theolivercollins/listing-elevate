@@ -496,8 +496,27 @@ export async function insertScenes(
     end_image_url?: string | null;
   }>
 ): Promise<Scene[]> {
-  const { data, error } = await getSupabase().from("scenes").insert(scenes).select();
-  if (error) throw error;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("scenes").insert(scenes).select();
+  if (error) {
+    // Migration 084 (provider_preference column) may not yet be applied on the
+    // shared Supabase. If PostgREST returns 42703 (undefined_column), strip the
+    // provider_preference key and retry so the pipeline doesn't hard-fail before
+    // the migration lands. The feature degrades to legacy routing (scenes.provider)
+    // on pre-084 databases — no data loss, just reduced rerun intelligence.
+    // HANDOFF note: apply migration 084 before promoting this branch to prod.
+    if ((error as { code?: string }).code === "42703") {
+      const stripped = scenes.map((s) => {
+        const row = { ...s } as Record<string, unknown>;
+        delete row["provider_preference"];
+        return row;
+      });
+      const { data: data2, error: error2 } = await supabase.from("scenes").insert(stripped).select();
+      if (error2) throw error2;
+      return data2 as Scene[];
+    }
+    throw error;
+  }
   return data as Scene[];
 }
 

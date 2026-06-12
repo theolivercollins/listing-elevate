@@ -38,9 +38,12 @@ export interface FinalizeParams {
   /** Render duration in seconds — required for bitrate computation. */
   durationSeconds: number;
   /**
-   * Version counter for idempotent reruns. Appended to the storage filename
-   * so reruns produce distinct objects rather than overwriting with upsert.
-   * Typically the pipeline's attempt / run counter; 1 for first run.
+   * Version suffix appended to the storage filename (e.g. "v1" → final_horizontal_v1.mp4).
+   * Both call sites in pipeline.ts pass the literal 1, and the upload uses upsert:true,
+   * so reruns currently overwrite the same object in place — stable URL, not distinct
+   * per-rerun objects. That behaviour is intentional for now: a fixed public URL
+   * simplifies delivery. Wire a real run/attempt counter here when per-rerun history
+   * is needed.
    */
   version: number;
   /**

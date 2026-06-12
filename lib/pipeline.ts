@@ -1134,12 +1134,40 @@ export async function resubmitScene(
 ): Promise<{ ok: boolean; provider?: string; jobId?: string; attempt?: number; error?: string; kind?: string; retryable?: boolean; excluded?: VideoProvider[] }> {
   const supabase = getSupabase();
 
-  const { data: scene, error } = await supabase
-    .from("scenes")
-    .select("id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider, provider_preference")
-    .eq("id", sceneId)
-    .single();
-  if (error || !scene) return { ok: false, error: "scene not found" };
+  // Fetch scene — prefer the full column list including provider_preference
+  // (migration 084). If the column doesn't exist yet (42703), fall back to the
+  // pre-084 list; resolveRoutingPreference treats undefined provider_preference
+  // as null and degrades to legacy routing so no runtime error occurs.
+  const selectFull = "id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider, provider_preference";
+  const selectLegacy = "id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider";
+  let rawScene: Record<string, unknown> | null = null;
+  {
+    const { data, error } = await supabase
+      .from("scenes")
+      .select(selectFull)
+      .eq("id", sceneId)
+      .single();
+    if (error && (error as { code?: string }).code === "42703") {
+      // Migration 084 not yet applied — retry without provider_preference.
+      const { data: data2, error: error2 } = await supabase
+        .from("scenes")
+        .select(selectLegacy)
+        .eq("id", sceneId)
+        .single();
+      if (error2 || !data2) return { ok: false, error: "scene not found" };
+      rawScene = data2 as Record<string, unknown>;
+    } else if (error || !data) {
+      return { ok: false, error: "scene not found" };
+    } else {
+      rawScene = data as Record<string, unknown>;
+    }
+  }
+  const scene = rawScene as typeof rawScene & {
+    id: string; property_id: string; photo_id: string; scene_number: number;
+    camera_movement: string; prompt: string; duration_seconds: number;
+    attempt_count: number; end_photo_id: string | null; end_image_url: string | null;
+    provider: string | null; provider_preference?: string | null;
+  };
 
   const { data: photo } = await supabase
     .from("photos")
