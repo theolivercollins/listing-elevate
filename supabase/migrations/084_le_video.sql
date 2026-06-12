@@ -58,3 +58,10 @@ create table if not exists preview_view_events (
 
 create index if not exists idx_preview_events_preview on preview_view_events(preview_id, created_at desc);
 create index if not exists idx_preview_events_session on preview_view_events(preview_id, session_id);
+
+-- ─── RLS ────────────────────────────────────────────────────────────────────
+-- Access is service-role only (api/preview/[token]/events.ts uses lib/client.ts
+-- service-role key). JWT-authenticated anon/authenticated clients are deny-all
+-- by design — matches the 062 backstop pattern for all sibling tables.
+-- No policies are intentional: zero policies = deny-all for non-service-role.
+alter table preview_view_events enable row level security;

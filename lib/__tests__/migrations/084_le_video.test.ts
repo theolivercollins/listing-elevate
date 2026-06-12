@@ -152,6 +152,14 @@ describe('084_le_video.sql — structural safety', () => {
   });
 });
 
+describe('084_le_video.sql — RLS', () => {
+  it('enables row level security on preview_view_events (deny-all backstop, matches 062 pattern)', () => {
+    // Strip comments so we only match executable SQL, not comment text
+    const executableSql = sql?.replace(/--[^\n]*\n/g, '\n').replace(/\/\*[\s\S]*?\*\//g, '') ?? '';
+    expect(executableSql).toMatch(/alter\s+table\s+preview_view_events\s+enable\s+row\s+level\s+security\s*;/i);
+  });
+});
+
 describe('084_le_video.sql — spec compliance', () => {
   it('references docs/specs/2026-06-11-le-video-design.md in header comment', () => {
     expect(sql).toMatch(/2026-06-11-le-video-design/i);
