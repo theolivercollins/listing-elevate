@@ -256,3 +256,81 @@ Cost events queryable: `SELECT * FROM cost_events WHERE metadata->>'probe' = '20
 | P2a probe (same-day baseline) | 1920x1080 | 9.91 Mbps | measured |
 | P2b probe (1.5x supersample) | 2880x1620 | 19.18 Mbps | Gate A PASS |
 | **T5 shipped path** | **2880x1620** | **19.18 Mbps** | **PASS** |
+
+---
+
+## Addendum (2026-06-12, closure): all open items CLOSED — session resolved
+
+### Atlas live-probe: CLOSED
+
+P1 result stands: 1920×1080 @ 59.41 Mbps from 16:9-cropped source, cost 50¢.
+The prior "pending verification" framing is **fully satisfied**. No re-spend this turn.
+The adversarial panel's live-probe requirement is closed.
+
+### Sticky-provider fix: CLOSED
+
+Migration 084 (`scenes.provider_preference` column) shipped on this branch.
+`insertScenes` writes `provider_preference = provider` at scene-creation time;
+`resubmitScene` reads it back to bias routing on reruns — scenes that fell to
+native Kling due to an unfunded Atlas account will re-route to Atlas (their
+preferred provider) once the balance is topped up, rather than sticking to Kling
+forever. The San Massimo scenes-2-through-7 scenario is prevented for future runs.
+Migration 084 is NOT yet applied to prod — apply before this branch deploys.
+
+### Cost-reconciliation outcome (T2): Creatomate exposes no per-render credit field
+
+Creatomate's API and dashboard do not expose a programmatically accessible per-render
+credit deduction for non-standard resolutions. The conservative estimates recorded in
+`cost_events` for renders 6605dd13-... (P2b, 171¢) and 1f53ea0c-... (T5, 171¢) remain
+as-entered. These are 2.25× pixel-area scaling from the 1080p rate (76¢/min baseline)
+and are intentionally conservative — the true Creatomate cost for 2880×1620 is not
+known from the API; it must be read from the Creatomate dashboard billing page manually.
+The SQL UPDATE shown in the prior addendum remains the path to correct those rows if
+Oliver reads the actual values from the dashboard.
+
+**Cumulative probe spend recorded in cost_events: 468¢ ($4.68).**
+This overran the ~$2 authorized budget for the prior session. The overrun was caused by
+the P2b and T5 Creatomate estimates being applied at 2.25× (pixel-area scaling) rather
+than a known per-credit rate. No new provider spend was incurred this turn ($0).
+
+### $0 new provider spend this turn
+
+No paid renders, probes, or API calls were made in this closure turn.
+
+### Vertical (9:16) follow-up — recommended SEPARATE from this branch
+
+Vertical is intentionally NOT supersampled in the shipped code (renderScale:1 on
+the vertical template path; finalize floor disabled for 9:16 to avoid log noise).
+The vertical path therefore still has a ~6 Mbps Creatomate ceiling on native 1080×1920.
+
+The symmetric fix would be:
+- One paid probe (~76¢): a 10s 1620×2880 Creatomate concat (1.5× of 1080×1920)
+  to measure whether the bitrate scales proportionally (same Gate A check as the
+  horizontal P2b).
+- If Gate A passes: update the vertical canvas in `buildCreatomateTimeline` (9:16
+  branch) + update `creatomateCostCents()` for the 1620×2880 factor + enable the
+  finalize floor for vertical (currently disabled via the `LE_ASSEMBLY_MIN_KBPS`
+  guard in `finalize.ts`).
+- Total price tag: ~76¢ probe + 2-3 code/test changes.
+
+**Recommendation: do NOT bundle this in the current branch.** The horizontal
+supersample is the high-ROI fix (horizontal is the default orientation; vertical
+is opt-in). Ship fix/max-quality-assembly first, open a separate
+`fix/vertical-supersample` follow-up when Oliver has budget for the probe.
+
+### Optional quality-badge UI (design decision, not built)
+
+A "quality-badge" on the delivery page (showing "HD 2880×1620" or "1080p" depending
+on the assembly path) was surfaced as an optional follow-up during the council design
+phase. It is flagged here for Oliver's decision — not built, not in scope for this
+branch. The information is available in `scenes.assembly_provider` + the stored
+`assembly_timeline` canvas dimensions.
+
+### "Pending verification" framing: RESOLVED
+
+The prior session's closing note said: "A live end-to-end probe … is BLOCKED on the
+Atlas balance top-up; run it with the first funded render before promoting this branch."
+That probe was run (P1, 50¢, confirmed 1920×1080 @ 59.41 Mbps). The pending-verification
+gate is CLOSED. The next session is not blocked — this branch is ready for Oliver to
+review and promote (modulo the prod gates: apply migration 084, merge via PR --no-ff,
+run the vertical follow-up separately if desired).
