@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,151 +14,24 @@ import {
   UserCircle,
   Upload as UploadIcon,
   User,
-  LayoutGrid,
-  GitBranch,
-  Building2,
-  FileText,
-  Settings as SettingsIcon,
-  DollarSign,
-  Beaker,
-  BookOpen,
-  Code2,
-  ChevronDown,
-  GitPullRequest,
-  ListChecks,
-  Activity,
-  Image as ImageIcon,
-  Newspaper,
-  LayoutTemplate,
-  Mail,
-  Clapperboard,
-  Menu,
-  X,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { useTheme } from "@/lib/theme";
 
-const dashboardNav = [
-  { to: "/dashboard", label: "Overview", icon: LayoutGrid, end: true },
-  { to: "/dashboard/pipeline", label: "Pipeline", icon: GitBranch },
-  { to: "/dashboard/properties", label: "Listings", icon: Building2 },
-  { to: "/dashboard/logs", label: "Logs", icon: FileText },
-  { to: "/dashboard/finances", label: "Finances", icon: DollarSign },
-  { to: "/dashboard/studio", label: "Studio", icon: Clapperboard },
-  { to: "/dashboard/settings", label: "Settings", icon: SettingsIcon },
-];
-
-function DevelopmentNav() {
-  const location = useLocation();
-  const active = location.pathname.startsWith("/dashboard/development");
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={`relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic outline-none ${
-            active ? "text-foreground after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Code2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-          Development
-          <ChevronDown className="h-3 w-3 opacity-70" strokeWidth={1.5} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/development" className="cursor-pointer">
-            <Code2 className="mr-2 h-3.5 w-3.5" /> Overview
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/development/prompt-lab" className="cursor-pointer">
-            <Beaker className="mr-2 h-3.5 w-3.5" /> Prompt Lab
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/development/prompt-lab/recipes" className="cursor-pointer">
-            <BookOpen className="mr-2 h-3.5 w-3.5" /> Recipes
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/development/proposals" className="cursor-pointer">
-            <GitPullRequest className="mr-2 h-3.5 w-3.5" /> Proposals
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/rating-ledger" className="cursor-pointer">
-            <ListChecks className="mr-2 h-3.5 w-3.5" /> Rating ledger
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/development/system-status" className="cursor-pointer">
-            <Activity className="mr-2 h-3.5 w-3.5" /> System status
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function BlogNav() {
-  const location = useLocation();
-  const active =
-    location.pathname.startsWith("/dashboard/studio/blog") ||
-    location.pathname.startsWith("/dashboard/studio/email");
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className={`relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic outline-none ${
-            active ? "text-foreground after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Newspaper className="h-3.5 w-3.5" strokeWidth={1.5} />
-          Blog
-          <ChevronDown className="h-3 w-3 opacity-70" strokeWidth={1.5} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/studio/blog/posts" className="cursor-pointer">
-            <FileText className="mr-2 h-3.5 w-3.5" /> Posts
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/studio/blog/images" className="cursor-pointer">
-            <ImageIcon className="mr-2 h-3.5 w-3.5" /> Image library
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/studio/blog/templates" className="cursor-pointer">
-            <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Templates
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/studio/email/messages" className="cursor-pointer">
-            <Mail className="mr-2 h-3.5 w-3.5" /> Emails
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link to="/dashboard/studio/email/templates" className="cursor-pointer">
-            <LayoutTemplate className="mr-2 h-3.5 w-3.5" /> Email templates
-          </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
+/**
+ * TopNav — non-dashboard chrome only.
+ *
+ * The dashboard has its own left sidebar (DashboardSidebar), so TopNav
+ * suppresses itself on /dashboard/* routes. The old `dashboardNav` constant
+ * and the duplicate horizontal sub-nav that lived here have been removed;
+ * the sidebar is now the single navigation system for the authed app.
+ */
 export function TopNav() {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { theme } = useTheme();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // v2 shell mounts its own navigation; suppress the legacy TopNav on /v2/*.
   if (location.pathname.startsWith("/v2")) return null;
@@ -170,12 +42,11 @@ export function TopNav() {
   // Login + auth callback render their own editorial branding.
   if (location.pathname === "/login" || location.pathname.startsWith("/auth")) return null;
 
-  // Dashboard renders its own left sidebar; suppress the legacy horizontal
-  // sub-nav to avoid double-navigation.
+  // Dashboard renders its own left sidebar; suppress TopNav completely.
   if (location.pathname.startsWith("/dashboard")) return null;
 
-  // /upload renders its own SiteNav inside Upload.tsx — suppress the legacy TopNav
-  // so the page doesn't stack two nav bars (was leaving ~100px of empty space).
+  // /upload renders its own SiteNav inside Upload.tsx — suppress to avoid
+  // stacking two nav bars.
   if (location.pathname === "/upload") return null;
 
   // /preview/:token/embed is a chrome-less iframe surface embedded in agents'
@@ -183,7 +54,7 @@ export function TopNav() {
   if (/^\/preview\/[^/]+\/embed$/.test(location.pathname)) return null;
 
   const isAdmin = profile?.role === "admin";
-  const inDashboard = location.pathname.startsWith("/dashboard");
+  const inDashboard = false; // always false here — /dashboard suppressed above
 
   async function handleSignOut() {
     await signOut();
@@ -196,83 +67,18 @@ export function TopNav() {
       style={{ fontFamily: "var(--le-font-sans)" }}
     >
       <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-6 md:h-[72px] md:px-10">
-        {/* Brand — identical size/layout on every page */}
+        {/* Brand */}
         <div className="flex items-center gap-3">
           <Link
-            to={inDashboard ? "/dashboard" : "/"}
+            to="/"
             className="inline-flex items-center"
             aria-label="Listing Elevate"
           >
             <LELogoMark size={30} variant={theme === "dark" ? "light" : "dark"} />
           </Link>
-          {inDashboard && (
-            <>
-              <span className="h-3 w-px bg-border" aria-hidden />
-              <span className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-                Studio
-              </span>
-            </>
-          )}
         </div>
 
-        {/* Dashboard sub-nav — lives in the header when we're in /dashboard */}
-        {inDashboard && isAdmin && (
-          <nav className="ml-10 hidden items-center gap-8 md:flex">
-            {dashboardNav.slice(0, -1).map(({ to, label, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  `relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic ${
-                    isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  } ${
-                    isActive
-                      ? "after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground"
-                      : ""
-                  }`
-                }
-              >
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
-                {label}
-              </NavLink>
-            ))}
-            <DevelopmentNav />
-            <BlogNav />
-            {dashboardNav.slice(-1).map(({ to, label, icon: Icon, end }) => (
-              <NavLink
-                key={to}
-                to={to}
-                end={end}
-                className={({ isActive }) =>
-                  `relative flex items-center gap-2 whitespace-nowrap py-[26px] text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-500 ease-cinematic ${
-                    isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                  } ${
-                    isActive
-                      ? "after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[1px] after:bg-foreground"
-                      : ""
-                  }`
-                }
-              >
-                <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
-        )}
-
         <div className="ml-auto flex items-center gap-2 md:gap-4">
-          {inDashboard && isAdmin && (
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen((o) => !o)}
-              className="flex h-9 w-9 items-center justify-center border border-border text-foreground transition-colors duration-300 ease-cinematic hover:border-foreground/40 hover:bg-secondary md:hidden"
-              aria-label="Toggle navigation menu"
-              aria-expanded={mobileMenuOpen}
-            >
-              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            </button>
-          )}
           {user ? (
             <>
               {!inDashboard && (
@@ -370,44 +176,6 @@ export function TopNav() {
           )}
         </div>
       </div>
-
-      {/* Mobile dashboard sub-nav — replaces the md:flex nav hidden below 768px */}
-      {inDashboard && isAdmin && mobileMenuOpen && (
-        <nav className="border-t border-border/60 bg-background/95 px-6 py-2 md:hidden">
-          {dashboardNav.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              onClick={() => setMobileMenuOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] transition-colors duration-300 ease-cinematic ${
-                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                }`
-              }
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
-              {label}
-            </NavLink>
-          ))}
-          <Link
-            to="/dashboard/development"
-            onClick={() => setMobileMenuOpen(false)}
-            className="flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-300 ease-cinematic hover:text-foreground"
-          >
-            <Code2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Development
-          </Link>
-          <Link
-            to="/dashboard/studio/blog/posts"
-            onClick={() => setMobileMenuOpen(false)}
-            className="flex items-center gap-3 py-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground transition-colors duration-300 ease-cinematic hover:text-foreground"
-          >
-            <Newspaper className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Blog
-          </Link>
-        </nav>
-      )}
     </header>
   );
 }
