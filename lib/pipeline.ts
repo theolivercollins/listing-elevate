@@ -1644,11 +1644,30 @@ async function runAssemblyStep(
         if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
           throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
         }
-        horizontalUrl = horizontalResult.videoUrl;
         horizontalRenderMs = horizontalResult.renderTimeMs ?? null;
 
         const horizontalDuration =
           horizontalResult.durationSeconds ?? timelineDurationSeconds;
+
+        // Finalize: mirror the render to Supabase Storage for long-term
+        // retention (provider URLs have undocumented TTLs). Also computes
+        // delivered_bitrate_kbps from file size — no ffprobe needed.
+        // Falls back to providerUrl on any error (HITL-free).
+        // Disable with LE_ASSEMBLY_FINALIZE=off.
+        const { finalizeAssemblyRender } = await import("./assembly/finalize.js");
+        const hFinalize = await finalizeAssemblyRender({
+          propertyId,
+          aspectRatio: "16:9",
+          providerUrl: horizontalResult.videoUrl,
+          durationSeconds: horizontalDuration,
+          version: 1,
+          supabase: getSupabase(),
+        });
+        horizontalUrl = hFinalize.url;
+        await log(propertyId, "assembly", "info",
+          `Horizontal finalize: bitrate=${hFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${hFinalize.outputBytes ?? "n/a"}`,
+          { delivered_bitrate_kbps: hFinalize.bitrateKbps, output_bytes: hFinalize.outputBytes, url: hFinalize.url });
+
         const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration, "16:9");
         await recordCostEvent({
           propertyId,
@@ -1664,6 +1683,8 @@ async function runAssemblyStep(
             render_time_ms: horizontalResult.renderTimeMs ?? null,
             job_id: horizontalJob.jobId,
             reason,
+            delivered_bitrate_kbps: hFinalize.bitrateKbps,
+            output_bytes: hFinalize.outputBytes,
           },
         });
       } else {
@@ -1704,10 +1725,25 @@ async function runAssemblyStep(
         if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
           throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
         }
-        verticalUrl = verticalResult.videoUrl;
-
         const verticalDuration =
           verticalResult.durationSeconds ?? timelineDurationSeconds;
+
+        // Finalize: mirror the 9:16 render to Supabase Storage.
+        // Same fallback and kill-switch semantics as the horizontal render above.
+        const { finalizeAssemblyRender: finalizeV } = await import("./assembly/finalize.js");
+        const vFinalize = await finalizeV({
+          propertyId,
+          aspectRatio: "9:16",
+          providerUrl: verticalResult.videoUrl,
+          durationSeconds: verticalDuration,
+          version: 1,
+          supabase: getSupabase(),
+        });
+        verticalUrl = vFinalize.url;
+        await log(propertyId, "assembly", "info",
+          `Vertical finalize: bitrate=${vFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${vFinalize.outputBytes ?? "n/a"}`,
+          { delivered_bitrate_kbps: vFinalize.bitrateKbps, output_bytes: vFinalize.outputBytes, url: vFinalize.url });
+
         const verticalCents = assemblyProviderCostCents(providerName, verticalDuration, "9:16");
         await recordCostEvent({
           propertyId,
@@ -1723,6 +1759,8 @@ async function runAssemblyStep(
             render_time_ms: verticalResult.renderTimeMs ?? null,
             job_id: verticalJob.jobId,
             reason,
+            delivered_bitrate_kbps: vFinalize.bitrateKbps,
+            output_bytes: vFinalize.outputBytes,
           },
         });
       }
