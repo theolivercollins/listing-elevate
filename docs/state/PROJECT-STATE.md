@@ -7,7 +7,7 @@ See also:
 - [../plans/back-on-track-plan.md](../plans/back-on-track-plan.md) — active roadmap
 - [../specs/2026-04-20-back-on-track-design.md](../specs/2026-04-20-back-on-track-design.md) — full roadmap spec
 
-Last updated: **2026-06-12 (migrations table: added 082 + 084; feat/le-video docs-sync gate).** Migrations-table-only update — body sections remain accurate for the features they describe. For current right-now state and the complete shipping log, read HANDOFF.md first. Earlier body entry: 2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).
+Last updated: **2026-06-12 (MU merge to main: Market Update workflow complete E2E — RunDetail draft panels, two-step publish/send, template token-coverage validation, E2E verification scripts, P0 GET /api/properties auth gate; merge commit 3a7a473).** For current right-now state and the complete shipping log, read HANDOFF.md first. Earlier header updates: migrations table (added 082 + 084; feat/le-video docs-sync gate). Earlier body entry: 2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).
 
 Authoritative state doc. Read first when entering the repo. If anything here conflicts with the code, trust the code and update this doc.
 
