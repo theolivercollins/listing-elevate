@@ -32,9 +32,12 @@ describe("MarketComparison", () => {
 
   it("renders the section headers for each pitch prong", () => {
     render(<MarketComparison />);
-    expect(screen.getByText(/Win more listings/i)).toBeTruthy();
+    // "Win more listings" appears in both the SectionHeader and in the
+    // MarketDomination flywheel step list — use getAllByText to allow multiple.
+    expect(screen.getAllByText(/Win more listings/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Retain every client/i)).toBeTruthy();
     expect(screen.getByText(/Sell faster/i)).toBeTruthy();
-    expect(screen.getByText(/The math/i)).toBeTruthy();
+    // "The math" section (PricingCalculator) was archived 2026-04-21;
+    // no longer rendered in MarketComparison — assertion removed.
   });
 });

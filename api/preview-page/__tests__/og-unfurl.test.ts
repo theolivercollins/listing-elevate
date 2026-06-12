@@ -1,0 +1,327 @@
+/**
+ * T4 — OG unfurl shim: /preview/:token page handler
+ *
+ * Spec §3: serverless route that serves /preview/:token requests.
+ * - Valid token → fetches /index.html, injects og:title, og:description,
+ *   og:image, twitter:card=summary_large_image, returns modified HTML.
+ * - Invalid/expired token → returns untouched index.html (SPA shows 404 state).
+ *
+ * Route must appear in vercel.json BEFORE the SPA catch-all.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+const mockIsWellFormedToken = vi.fn();
+const mockFetchByToken = vi.fn();
+const mockFetch = vi.fn();
+
+vi.mock('../../../lib/operator-studio/preview-tokens.js', () => ({
+  isWellFormedToken: (t: string) => mockIsWellFormedToken(t),
+}));
+vi.mock('../../../lib/operator-studio/preview.js', () => ({
+  fetchByToken: (t: string) => mockFetchByToken(t),
+}));
+
+// Stub global fetch used to retrieve index.html
+vi.stubGlobal('fetch', mockFetch);
+
+// ---------------------------------------------------------------------------
+// Import handler AFTER mocks are established
+// ---------------------------------------------------------------------------
+import handler from '../[token].js';
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+/**
+ * Mirrors the real index.html: includes static og:title, og:description, og:type,
+ * and twitter:card so tests exercise the deduplication path (P1 regression guard).
+ * Per the OG spec, first occurrence wins — injected per-listing values must appear
+ * as the ONLY occurrence, not after the generic site values.
+ */
+const INDEX_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Listing Elevate — Cinematic Real Estate Videos</title>
+    <meta name="description" content="AI-powered cinematic listing videos for real estate professionals." />
+    <meta property="og:title" content="Listing Elevate — Cinematic Real Estate Videos" />
+    <meta property="og:description" content="AI-powered cinematic listing videos for real estate professionals." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body><div id="root"></div></body>
+</html>`;
+
+function makeRes() {
+  const res = {
+    _status: 0,
+    _body: '',
+    _headers: {} as Record<string, string>,
+    status(code: number) { this._status = code; return this; },
+    send(body: string) { this._body = body; return this; },
+    setHeader(key: string, value: string) { this._headers[key.toLowerCase()] = value; return this; },
+    end() { return this; },
+  };
+  return res;
+}
+
+function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
+  return {
+    method: 'GET',
+    query: { token: 'validtoken1234567890validtoken12' },
+    body: {},
+    headers: { host: 'listingelevate.com' },
+    ...overrides,
+  } as unknown as VercelRequest;
+}
+
+function makeValidResult(overrides: {
+  address?: string;
+  // hero_photo_url is what fetchByToken returns — resolved from photos table, never a video
+  hero_photo_url?: string | null;
+  agentName?: string | null;
+} = {}) {
+  const address = overrides.address ?? '123 Main St, Springfield, IL 62701, USA';
+  return {
+    expired: false,
+    property: {
+      id: 'p1',
+      address,
+      horizontal_video_url: 'https://cdn/h.mp4',
+      vertical_video_url: null,
+      client_id: overrides.agentName ? 'c1' : null,
+    },
+    // hero_photo_url resolved from photos table by fetchByToken
+    hero_photo_url: overrides.hero_photo_url !== undefined ? overrides.hero_photo_url : 'https://cdn/thumb.jpg',
+    client: overrides.agentName
+      ? { name: 'Acme Realty', brand_logo_url: null, agent_name: overrides.agentName, agent_headshot_url: null, brokerage: null }
+      : null,
+    preview: { kind: 'client', allow_download: true, allow_approve: true, allow_revision: true, approved_at: null },
+  };
+}
+
+beforeEach(() => {
+  mockIsWellFormedToken.mockReset();
+  mockFetchByToken.mockReset();
+  mockFetch.mockReset();
+  // Default: fetch index.html succeeds
+  mockFetch.mockResolvedValue({
+    ok: true,
+    text: async () => INDEX_HTML,
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Valid token — meta tag injection
+// ---------------------------------------------------------------------------
+describe('GET /preview/[token] — valid token meta injection', () => {
+  it('responds with 200 and text/html content-type', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult());
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    expect(res._headers['content-type']).toMatch(/text\/html/);
+  });
+
+  it('injects og:title with the street address (before first comma)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ address: '456 Elm Ave, Portland, OR 97201, USA' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('<meta property="og:title" content="456 Elm Ave"');
+  });
+
+  it('injects og:description with "Listing film · <locality>" when no agent name', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ address: '789 Oak Blvd, Austin, TX 78701, USA' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('<meta property="og:description" content="Listing film · Austin, TX 78701"');
+  });
+
+  it('injects og:description with agent name when client has agent_name', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ agentName: 'Jane Smith' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('<meta property="og:description" content="Jane Smith"');
+  });
+
+  it('injects og:image with hero_photo_url (real listing photo, not a video)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: 'https://cdn/thumbnail.jpg' }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('<meta property="og:image" content="https://cdn/thumbnail.jpg"');
+  });
+
+  it('injects twitter:card=summary_large_image', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult());
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('<meta name="twitter:card" content="summary_large_image"');
+  });
+
+  it('injects all four meta tags in one response', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({
+      address: '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
+      hero_photo_url: 'https://cdn/thumb.jpg',
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const html = res._body;
+    // og:title = street address
+    expect(html).toContain('<meta property="og:title" content="5019 San Massimo Dr"');
+    // og:description = Listing film · locality (no trailing ", USA")
+    expect(html).toContain('<meta property="og:description" content="Listing film · Punta Gorda, FL 33950"');
+    // og:image = thumbnail_url
+    expect(html).toContain('<meta property="og:image" content="https://cdn/thumb.jpg"');
+    // twitter:card
+    expect(html).toContain('<meta name="twitter:card" content="summary_large_image"');
+  });
+
+  it('omits og:image tag when hero_photo_url is null (no photo resolved)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    // No og:image injection, but other three still present
+    expect(res._body).not.toContain('og:image');
+    expect(res._body).toContain('og:title');
+    expect(res._body).toContain('og:description');
+    expect(res._body).toContain('twitter:card');
+  });
+
+  it('fetches index.html from the deployment origin, not an external URL', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult());
+    const res = makeRes();
+    await handler(
+      makeReq({ headers: { host: 'myapp.vercel.app' } }),
+      res as unknown as VercelResponse,
+    );
+    const fetchedUrl: string = mockFetch.mock.calls[0][0];
+    expect(fetchedUrl).toMatch(/^https?:\/\/myapp\.vercel\.app\/index\.html/);
+  });
+
+  it('deduplication — index.html with static og:title/og:description/twitter:card yields exactly one of each after injection', async () => {
+    // P1 regression guard: the real index.html carries static generic og: tags.
+    // Per OG spec, first occurrence wins, so the shim must remove the static tags
+    // before injecting per-listing values, not just append after them.
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({
+      address: '99 Dedup Lane, Test City, CA 90001, USA',
+      hero_photo_url: 'https://cdn/dedup-thumb.jpg',
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const html = res._body;
+
+    // Exactly one og:title — the listing street address, not the generic site title.
+    // Note: the static <title> element is left untouched; only the og:title meta is replaced.
+    const ogTitleMatches = html.match(/<meta\s+property="og:title"/gi) ?? [];
+    expect(ogTitleMatches).toHaveLength(1);
+    expect(html).toContain('content="99 Dedup Lane"');
+    // The generic og:title content must be gone (stripped, not just buried after the listing one)
+    expect(html).not.toContain('content="Listing Elevate — Cinematic Real Estate Videos"');
+
+    // Exactly one og:description
+    const ogDescMatches = html.match(/<meta\s+property="og:description"/gi) ?? [];
+    expect(ogDescMatches).toHaveLength(1);
+
+    // Exactly one twitter:card
+    const twitterCardMatches = html.match(/<meta\s+name="twitter:card"/gi) ?? [];
+    expect(twitterCardMatches).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Invalid / expired token — untouched index.html returned
+// ---------------------------------------------------------------------------
+describe('GET /preview/[token] — invalid or expired token', () => {
+  it('returns untouched index.html (200) for malformed token', async () => {
+    mockIsWellFormedToken.mockReturnValue(false);
+    const res = makeRes();
+    await handler(makeReq({ query: { token: 'bad!' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    // Passthrough: body is exactly the raw fetched index.html with no modification.
+    expect(res._body).toBe(INDEX_HTML);
+    // No listing-specific content injected (og:title retains the generic site value).
+    expect(res._body).not.toContain('123 Main St');
+  });
+
+  it('returns untouched index.html (200) when token not found in DB', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe(INDEX_HTML);
+    expect(res._body).not.toContain('123 Main St');
+  });
+
+  it('returns untouched index.html (200) when token is expired', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue({ expired: true, property: {}, client: null, preview: null });
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    expect(res._body).toBe(INDEX_HTML);
+    expect(res._body).not.toContain('123 Main St');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5 — og:image is NEVER a video (regression lock for live-repro bug)
+// ---------------------------------------------------------------------------
+
+describe('OG unfurl — og:image is never a video file', () => {
+  it('injects og:image when hero_photo_url is a real photo URL', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({
+      hero_photo_url: 'https://example.supabase.co/storage/v1/object/public/property-photos/uuid/front.jpg',
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).toContain('og:image');
+    expect(res._body).not.toMatch(/og:image.*\.mp4/i);
+    expect(res._body).not.toContain('/property-videos/');
+  });
+
+  it('omits og:image entirely when hero_photo_url is null — no video fallback', async () => {
+    // Live-repro guard: the old code would have put the .mp4 scene URL here.
+    // Now, if no photo is resolved, og:image is simply omitted rather than
+    // falling back to a video URL.
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeValidResult({ hero_photo_url: null }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._body).not.toContain('og:image');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// vercel.json route order assertion
+// ---------------------------------------------------------------------------
+describe('vercel.json route order', () => {
+  it('preview-page shim route appears before the SPA catch-all /(.*)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const vercelJson = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'vercel.json'), 'utf8'),
+    ) as { routes: Array<{ src?: string; dest?: string; handle?: string }> };
+    const routes = vercelJson.routes;
+    const shimIdx = routes.findIndex((r) => r.src === '/preview/([^/]+)');
+    const spaIdx = routes.findIndex((r) => r.src === '/(.*)');
+    expect(shimIdx).toBeGreaterThan(-1); // shim route must exist
+    expect(spaIdx).toBeGreaterThan(-1);  // SPA catch-all must exist
+    expect(shimIdx).toBeLessThan(spaIdx); // shim must come first
+  });
+});
