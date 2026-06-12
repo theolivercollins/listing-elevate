@@ -27,19 +27,22 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 // ── Mock API so Status doesn't actually poll ──────────────────────────────────
+// Shape matches the updated fetchPropertyStatus return type: minimal fields
+// always present, rich delivery fields present for authenticated owners/admins.
 vi.mock("@/lib/api", () => ({
   fetchPropertyStatus: vi.fn().mockResolvedValue({
-    id: "test-prop",
-    address: "99 Test Street",
     status: "complete",
+    label: "Delivered",
     currentStage: 6,
     totalStages: 6,
-    clipsCompleted: 6,
-    clipsTotal: 6,
+    // Rich fields (authenticated owner/admin path)
+    address: "99 Test Street",
     horizontalVideoUrl: "https://cdn.example.com/vid.mp4",
     verticalVideoUrl: null,
     createdAt: new Date().toISOString(),
     processingTimeMs: 90000,
+    clipsCompleted: 6,
+    clipsTotal: 6,
   }),
 }));
 
@@ -121,6 +124,77 @@ describe("C1 — Status.tsx 'View all videos' link targets /dashboard", () => {
     expect(hrefs).toContain("/dashboard");
     // It must NOT target the old /account/properties
     expect(hrefs).not.toContain("/account/properties");
+  });
+});
+
+describe("C3 — Status.tsx delivered state renders video links (P1 regression guard)", () => {
+  /**
+   * Asserts that when fetchPropertyStatus returns rich delivery fields
+   * (the authenticated owner/admin shape), the horizontal video link is rendered.
+   * This guards against the P1 regression where the GET /status endpoint was
+   * narrowed to 4 keys and Status.tsx still read the old camelCase fields.
+   */
+  it("renders a video link using horizontalVideoUrl when status is complete", async () => {
+    const { default: Status } = await import("@/pages/Status");
+    const { Routes, Route } = await import("react-router-dom");
+    const { container } = render(
+      <MemoryRouter initialEntries={["/status/test-prop"]}>
+        <Routes>
+          <Route path="/status/:id" element={<Status />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await new Promise((r) => setTimeout(r, 120));
+
+    // The delivery section should contain an anchor pointing to the video URL
+    const allLinks = Array.from(container.querySelectorAll("a"));
+    const hrefs = allLinks.map((a) => a.getAttribute("href") ?? "");
+    expect(hrefs).toContain("https://cdn.example.com/vid.mp4");
+  });
+
+  it("renders the address heading when address is present in the response", async () => {
+    const { default: Status } = await import("@/pages/Status");
+    const { Routes, Route } = await import("react-router-dom");
+    const { container } = render(
+      <MemoryRouter initialEntries={["/status/test-prop"]}>
+        <Routes>
+          <Route path="/status/:id" element={<Status />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await new Promise((r) => setTimeout(r, 120));
+
+    // The address should appear in a heading
+    expect(container.textContent).toContain("99 Test Street");
+  });
+
+  it("does not crash when only minimal (unauthenticated) fields are returned", async () => {
+    const { fetchPropertyStatus } = await import("@/lib/api");
+    (fetchPropertyStatus as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      status: "generating",
+      label: "Rendering",
+      currentStage: 3,
+      totalStages: 6,
+      // no rich fields — unauthenticated email link view
+    });
+
+    const { default: Status } = await import("@/pages/Status");
+    const { Routes, Route } = await import("react-router-dom");
+    const { container } = render(
+      <MemoryRouter initialEntries={["/status/test-prop"]}>
+        <Routes>
+          <Route path="/status/:id" element={<Status />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await new Promise((r) => setTimeout(r, 120));
+
+    // Should render the pipeline stepper without crashing
+    expect(container.textContent).toContain("In production");
+    // No video link when horizontalVideoUrl is absent
+    const allLinks = Array.from(container.querySelectorAll("a"));
+    const hrefs = allLinks.map((a) => a.getAttribute("href") ?? "");
+    expect(hrefs).not.toContain("https://cdn.example.com/vid.mp4");
   });
 });
 

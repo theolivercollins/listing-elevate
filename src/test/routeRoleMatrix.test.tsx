@@ -205,6 +205,7 @@ vi.mock("@/pages/dashboard/studio/Share", () => ({
 // ── Mock Dashboard shell to just render the Outlet ─────────────────────────
 vi.mock("@/pages/Dashboard", () => ({
   default: ({ children }: { children?: React.ReactNode }) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Outlet } = require("react-router-dom");
     return (
       <div data-testid="dashboard-shell">

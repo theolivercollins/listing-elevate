@@ -16,18 +16,25 @@ const stages = [
   { key: "complete", label: "Delivered", desc: "Ready to share" },
 ];
 
+/**
+ * Mirrors fetchPropertyStatus return type — minimal fields always present,
+ * rich fields present only for authenticated owners/admins. All rich fields
+ * must be treated as optional so unauthenticated delivery-email links still
+ * render correctly (they just see the pipeline progress, not the video player).
+ */
 interface StatusData {
-  id: string;
-  address: string;
   status: string;
+  label: string;
   currentStage: number;
   totalStages: number;
-  clipsCompleted: number;
-  clipsTotal: number;
-  horizontalVideoUrl: string | null;
-  verticalVideoUrl: string | null;
-  createdAt: string;
-  processingTimeMs: number | null;
+  // Rich fields — present when authenticated as owner or admin
+  address?: string;
+  horizontalVideoUrl?: string | null;
+  verticalVideoUrl?: string | null;
+  processingTimeMs?: number | null;
+  clipsCompleted?: number;
+  clipsTotal?: number;
+  createdAt?: string;
 }
 
 const Status = () => {
@@ -99,6 +106,8 @@ const Status = () => {
   const isComplete = data.status === "complete";
   const isFailed = data.status === "failed";
   const elapsedHours = data.processingTimeMs ? Math.max(0, data.processingTimeMs / 1000 / 3600) : null;
+  const clipsTotal = data.clipsTotal ?? 0;
+  const clipsCompleted = data.clipsCompleted ?? 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
@@ -107,8 +116,9 @@ const Status = () => {
         <div className="mx-auto flex max-w-[1200px] items-center justify-between px-8 py-10 md:px-12">
           <div>
             <span className="label text-muted-foreground">— Tracking</span>
-            <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{data.address}</h1>
-            <p className="tabular mt-2 text-xs text-muted-foreground">{data.id}</p>
+            {data.address && (
+              <h1 className="mt-3 text-2xl font-semibold tracking-[-0.02em] md:text-3xl">{data.address}</h1>
+            )}
           </div>
           <Button asChild variant="outline" size="sm" className="hidden md:inline-flex">
             <Link to="/">
@@ -163,12 +173,12 @@ const Status = () => {
                       <span className="text-muted-foreground/40"> / {String(stages.length).padStart(2, "0")}</span>
                     </div>
                   </div>
-                  {data.clipsTotal > 0 && (
+                  {clipsTotal > 0 && (
                     <div>
                       <span className="label text-muted-foreground">Clips</span>
                       <div className="tabular mt-3 text-3xl font-semibold tracking-[-0.02em]">
-                        {data.clipsCompleted}
-                        <span className="text-muted-foreground/40"> / {data.clipsTotal}</span>
+                        {clipsCompleted}
+                        <span className="text-muted-foreground/40"> / {clipsTotal}</span>
                       </div>
                     </div>
                   )}
@@ -273,7 +283,7 @@ const Status = () => {
                 </h2>
 
                 <div className="mt-12 grid gap-1 md:grid-cols-2">
-                  {data.horizontalVideoUrl && (
+                  {data.horizontalVideoUrl ? (
                     <a
                       href={data.horizontalVideoUrl}
                       target="_blank"
@@ -291,6 +301,11 @@ const Status = () => {
                         <Download className="h-4 w-4 text-white/80" />
                       </div>
                     </a>
+                  ) : (
+                    /* Authenticated delivery links not yet available — show a neutral placeholder */
+                    <div className="flex aspect-video items-center justify-center border border-border bg-secondary/20 text-sm text-muted-foreground">
+                      Video processing
+                    </div>
                   )}
                   {data.verticalVideoUrl && (
                     <a
