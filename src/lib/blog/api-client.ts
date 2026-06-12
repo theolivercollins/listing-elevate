@@ -540,6 +540,17 @@ export interface MuAnalyzeResult {
   region_results: MuRegionResult[];
   cost_usd_cents: number;
 }
+export interface MuRunListItem {
+  id: string;
+  period_month: number;
+  period_year: number;
+  status: string;
+  created_post_ids: string[];
+  created_email_ids: string[];
+  cost_usd_cents: number;
+  created_at: string;
+  updated_at: string;
+}
 
 export async function getMarketUpdateConfig(): Promise<MuConfig> {
   const res = await fetch("/api/blog/market-update/config", { headers: await authHeaders() });
@@ -558,6 +569,11 @@ export async function analyzeMarketUpdate(body: {
     headers: { "Content-Type": "application/json", ...(await authHeaders()) },
     body: JSON.stringify(body),
   });
+  return asJson(res);
+}
+
+export async function listMarketUpdateRuns(): Promise<{ runs: MuRunListItem[] }> {
+  const res = await fetch("/api/blog/market-update/runs", { headers: await authHeaders() });
   return asJson(res);
 }
 
