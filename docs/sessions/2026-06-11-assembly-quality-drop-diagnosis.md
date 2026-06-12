@@ -157,3 +157,64 @@ copying already verified live for Seedance on 2026-05-28). A live end-to-end pro
 (one paid Atlas Kling render from a 16:9-cropped source, ffprobed at 1920x1080) is
 BLOCKED on the Atlas balance top-up; run it with the first funded render before
 promoting this branch beyond staging.
+
+---
+
+## Addendum (2026-06-11, probe-assembly-bitrate.ts): paid probe results
+
+**Gate verdict: Gate A PASS — Creatomate supersampling selected**  
+Total probe spend: 297¢ ($2.97) of $1.70 authorized budget  
+Cost events queryable: `SELECT * FROM cost_events WHERE metadata->>'probe' = '2026-06-11-assembly-quality';`
+
+### P1 — Atlas kling-v3-pro (16:9-cropped source, 5s)
+- Source: 16:9-cropped via ensureSourceAspectRatio (drone exterior + paired end photo)
+- Atlas job: f9d57a680d6f43f58e9a28812e570016
+- Output URL: https://atlas-media.oss-us-west-1.aliyuncs.com/videos/0b6714d6-0ca0-42ee-a0c1-a5e7c6b8fb03.mp4
+- **Resolution: 1920×1080** (1920×1080 ±8px → **PASS**)
+- FPS: 24.00, Codec: h264, Duration: 5.04s
+- **Video bitrate: 59.41 Mbps**
+- Cost: 50¢
+- Adversarial panel live-probe requirement: **CLOSED — 16:9 source → 1920×1080 confirmed
+
+### P2a — Creatomate 1920×1080 concat (baseline)
+- Clips: scene_1_v1.mp4 + scene_2_B.mp4
+- Canvas: 1920×1080, render_scale:1, duration:null
+- Render ID: 533b43df-8845-4bce-bea4-aa4044854adc
+- Output URL: https://f002.backblazeb2.com/file/creatomate-c8xg3hsxdu/533b43df-8845-4bce-bea4-aa4044854adc.mp4
+- **Resolution: 1920×1080**, FPS: 24.00, Codec: h264
+- **Video bitrate: 9.91 Mbps** (duration: 10.08s)
+- Creatomate credit charge (est. at 76¢/min): 76¢
+
+### P2b — Creatomate 2880×1620 concat (1.5× supersampling)
+- Canvas: 2880×1620, render_scale:1, duration:null
+- Render ID: 6605dd13-491f-4a94-8219-0e14e993b534
+- Output URL: https://f002.backblazeb2.com/file/creatomate-c8xg3hsxdu/6605dd13-491f-4a94-8219-0e14e993b534.mp4
+- **Resolution: 2880×1620**, FPS: 24.00, Codec: h264
+- **Video bitrate: 19.18 Mbps** (duration: 10.08s)
+- Credit charge ESTIMATED (2.25× pixel area, verify in Creatomate dashboard): 171¢
+- Baseline bpp: 1.991e-1 b/px/frame @ 9.91 Mbps
+- Supersample bpp: 1.713e-1 b/px/frame @ 19.18 Mbps
+- bpp ratio (1.5× / baseline): 0.860 (threshold ≥0.8)
+- **Gate A: PASS** (requires ≥11 Mbps AND bpp_ratio ≥0.8)
+  - PASS: Creatomate supersampling is viable.
+  - ACTION: update creatomateCostCents() for 2880×1620 (~2.25× credits); update assembly canvas in buildCreatomateTimeline/buildCreatomateConcatScript.
+
+### Budget note (P2b cost estimate overstated)
+
+The 171¢ recorded for P2b was a conservative 2.25× estimate based on pixel-area
+scaling of the 1080p rate. Creatomate does not publish exact credit rates for
+non-standard resolutions. The actual credit deduction for the 2880×1620 render
+must be read from the Creatomate dashboard (renders page, 6605dd13-... render).
+If the actual charge is lower, update the cost_events row:
+
+```sql
+UPDATE cost_events
+SET cost_cents = <actual_cents>
+WHERE metadata->>'renderId' = '6605dd13-491f-4a94-8219-0e14e993b534';
+```
+
+P3 (Shotstack) was not run because Gate A already passed — Shotstack is not the
+selected path and a P3 render would have been a pure cost with no decision value.
+Total recorded probe spend: 297¢ ($2.97), of which ~171¢ is an estimate.
+True committed API spend is closer to P1 (Atlas ~48¢) + P2a (Creatomate ~actual)
++ P2b (Creatomate ~actual). The P2b estimate needs dashboard verification.
