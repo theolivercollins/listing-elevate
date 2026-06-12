@@ -734,3 +734,70 @@
   .pd-address-headline { font-size: 24px; }
   .pd-action-row { gap: 8px; }
 }
+
+/* ─── LE Video embed — chrome-less, full-viewport ────────────────── */
+/*
+ * .le-embed wraps the /preview/:token/embed page.
+ * Dark/neutral backdrop via --pd-ink; LEPlayer fills the viewport.
+ * No site chrome, no action buttons. Inter only, no monospace.
+ * Must be a .preview-scope descendant so --pd-* tokens are in scope.
+ */
+.le-embed {
+  position: fixed;
+  inset: 0;
+  background: var(--pd-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* LEPlayer inside the embed stretches to fill — override its default
+   max-width: 320px for vertical so it still centers correctly. */
+.le-embed .le-player {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  border-radius: 0;
+  max-height: none;
+}
+
+/* Vertical embed: constrain width so portrait content doesn't stretch
+   beyond a sensible bound. Uses the same 320px guard as the watch page
+   but lets height fill naturally. */
+.le-embed .le-player--vertical {
+  width: auto;
+  max-width: min(320px, 100vw);
+  height: 100%;
+  max-height: none;
+  margin: 0 auto;
+}
+
+/* Not-available state — centered message on dark canvas */
+.le-embed--not-available {
+  background: var(--pd-ink);
+}
+
+.le-embed__not-available-inner {
+  text-align: center;
+  max-width: 320px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.le-embed__not-available-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.le-embed__not-available-body {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.55;
+}

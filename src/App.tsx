@@ -62,6 +62,7 @@ import StudioVideoHub from "./pages/dashboard/studio/VideoHub";
 import SharePresentation from "./pages/share/Presentation";
 import ShareEmbed from "./pages/share/Embed";
 import PreviewPage from "./pages/preview/PreviewPage";
+import EmbedPage from "./pages/preview/EmbedPage";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -90,6 +91,8 @@ const App = () => (
                 <Route path="/login" element={<Navigate to="/?login=1" replace />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/status/:id" element={<Status />} />
+                {/* LE Video embed — more-specific path MUST be above the bare token route */}
+                <Route path="/preview/:token/embed" element={<EmbedPage />} />
                 <Route path="/preview/:token" element={<PreviewPage />} />
                 {/* Public Vimeo-style share viewer (presentation + embed) */}
                 <Route path="/v/:token" element={<SharePresentation />} />
