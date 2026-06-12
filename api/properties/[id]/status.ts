@@ -1,6 +1,43 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
+import { getProperty, getSupabase } from '../../../lib/db.js';
 import { verifyAuth } from '../../../lib/auth.js';
+
+/**
+ * Minimal inline label map for the GET response.
+ *
+ * This is intentionally a subset of src/lib/order-status.ts: the GET branch
+ * is unauthenticated (delivery-email links) so we only need a safe, non-sensitive
+ * label string. The canonical ORDER_STATUS_MAP in src/ cannot be imported here
+ * because tsconfig.api.json only covers api/ and lib/ — not src/.
+ *
+ * Keep in sync with src/lib/order-status.ts (labels only; colors/bg not needed here).
+ */
+const STATUS_LABEL: Record<string, string> = {
+  queued:          'Received',
+  pending:         'Received',
+  pending_payment: 'Awaiting payment',
+  ingesting:       'Crafting scenes',
+  analyzing:       'Crafting scenes',
+  scripting:       'Crafting scenes',
+  generating:      'Rendering',
+  retry_1:         'Rendering',
+  retry_2:         'Rendering',
+  qc:              'In review',
+  assembling:      'In review',
+  qc_pass:         'Delivered',
+  complete:        'Delivered',
+  delivered:       'Delivered',
+  needs_review:    'Needs attention',
+  qc_soft_reject:  'Needs attention',
+  qc_hard_reject:  'Needs attention',
+  failed:          'Needs attention',
+  archived:        'Archived',
+};
+
+/** Returns the user-facing label for a status string, falling back to the raw value. */
+function statusLabel(status: string): string {
+  return STATUS_LABEL[status] ?? status;
+}
 
 // Statuses that any authenticated caller (owner or admin) may set.
 // The full set is available to admins only; owners are further restricted
@@ -78,27 +115,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Unauthenticated GET — intentionally minimal to avoid leaking address,
+  // video URLs, timing data, and clip counts to anyone with the property id.
+  // This path is used by delivery-email progress links and must stay open.
   try {
     const id = req.query.id as string;
     const property = await getProperty(id);
-    const scenes = await getScenesForProperty(id);
 
     const stages = ['queued', 'analyzing', 'scripting', 'generating', 'qc', 'assembling', 'complete'];
     const currentStageIndex = stages.indexOf(property.status);
-    const completedClips = scenes.filter((s: any) => s.status === 'qc_pass').length;
 
     return res.status(200).json({
-      id: property.id,
-      address: property.address,
       status: property.status,
+      label: statusLabel(property.status),
       currentStage: currentStageIndex,
       totalStages: stages.length,
-      clipsCompleted: completedClips,
-      clipsTotal: scenes.length,
-      horizontalVideoUrl: property.horizontal_video_url,
-      verticalVideoUrl: property.vertical_video_url,
-      createdAt: property.created_at,
-      processingTimeMs: property.processing_time_ms,
     });
   } catch {
     return res.status(404).json({ error: 'Property not found' });

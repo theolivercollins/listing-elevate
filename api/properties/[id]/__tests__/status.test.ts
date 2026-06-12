@@ -215,4 +215,51 @@ describe('GET /api/properties/:id/status — no auth required', () => {
     expect(mockVerifyAuth).not.toHaveBeenCalled();
     expect(res._status).toBe(200);
   });
+
+  it('returns exactly { status, label, currentStage, totalStages } — no sensitive fields', async () => {
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'GET', headers: {} }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+
+    const body = res._body as Record<string, unknown>;
+
+    // Required fields must be present
+    expect(body).toHaveProperty('status');
+    expect(body).toHaveProperty('label');
+    expect(body).toHaveProperty('currentStage');
+    expect(body).toHaveProperty('totalStages');
+
+    // Sensitive fields must NOT be present
+    const forbidden = [
+      'address',
+      'horizontalVideoUrl',
+      'verticalVideoUrl',
+      'createdAt',
+      'processingTimeMs',
+      'clipsCompleted',
+      'clipsTotal',
+    ];
+    for (const field of forbidden) {
+      expect(body).not.toHaveProperty(field);
+    }
+
+    // The body must have EXACTLY the four allowed keys (no extras)
+    const allowedKeys = new Set(['status', 'label', 'currentStage', 'totalStages']);
+    for (const key of Object.keys(body)) {
+      expect(allowedKeys.has(key)).toBe(true);
+    }
+  });
+
+  it('returns a human-readable label derived from the status', async () => {
+    // baseProperty.status = 'complete' — label should be 'Delivered'
+    const res = makeRes();
+    await handler(
+      makeReq({ method: 'GET', headers: {} }),
+      res as unknown as VercelResponse,
+    );
+    expect((res._body as { label: string }).label).toBe('Delivered');
+  });
 });
