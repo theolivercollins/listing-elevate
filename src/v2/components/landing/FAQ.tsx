@@ -16,6 +16,8 @@ export function FAQ() {
       eyebrow="— FAQ"
       title="Questions, briefly."
       maxWidth={1200}
+      tint
+      ambient="softer"
     >
       {/* Constrain question list to 760px left-aligned so left edge holds */}
       <div style={{ maxWidth: 760 }}>

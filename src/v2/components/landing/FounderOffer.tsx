@@ -1,4 +1,5 @@
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
+import { AccentDot } from "@/v2/components/primitives/AccentDot";
 import { Reveal } from "@/v2/components/primitives/Reveal";
 
 export function FounderOffer() {
@@ -25,6 +26,7 @@ export function FounderOffer() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <AccentDot animated />
             <span className="le-mono" style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.2em", color: "var(--le-text-muted)" }}>
               Founding agents
             </span>
