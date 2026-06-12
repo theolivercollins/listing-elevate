@@ -86,7 +86,7 @@ Key decisions:
 
 **Operator Today** (`Overview.tsx` restructured): a **NeedsYouStrip** (needs_review count + failed-today count, deep-linked) and a **ProviderHealthRow** (per-provider 24h error chips with named balance-error alerts — would have surfaced the Atlas-402 outage at a glance) now sit above the KPI rows. Calm "All clear" state when nothing needs intervention.
 
-**Shared kit + honesty pass:** `StatusChip`, `EmptyState`, `MoneyValue` added to `src/components/dashboard/primitives.tsx`. `MoneyValue` is the only way costs render: null → "—", never a fabricated $0. Overview's sample-data fallbacks (fake activity feed, fake provider mix) were removed — a fresh tenant now sees honest empty states instead of an invented business. Navigation dead-ends closed: `Status.tsx` "View all videos" pointed at a dead route (`/account/properties` → now `/dashboard`); `UploadSuccess` gained a "View my orders" primary CTA; `TopNav`'s unreachable dashboard nav code deleted; `Profile.tsx` converted from 29 inline-style objects to canon Tailwind.
+**Shared kit + honesty pass:** `StatusChip`, `EmptyState`, `MoneyValue` added to `src/components/dashboard/primitives.tsx`. `MoneyValue` is well-built (null → "—", never fabricated $0) and tested, but production cost call sites (Overview, Finances) still use the existing `fmtCents` helper — `MoneyValue` has zero live call sites as of this branch (see §5 correction note). Overview's sample-data fallbacks (fake activity feed, fake provider mix) were removed — a fresh tenant now sees honest empty states instead of an invented business. Navigation dead-ends closed: `Status.tsx` "View all videos" pointed at a dead route (`/account/properties` → now `/dashboard`); `UploadSuccess` gained a "View my orders" primary CTA; `TopNav`'s unreachable dashboard nav code deleted; `Profile.tsx` converted from 29 inline-style objects to canon Tailwind.
 
 ---
 
@@ -112,6 +112,7 @@ Opening `/dashboard` to non-admins forced an audit of every API the agent surfac
 3. **CSS / L1–L2 consolidation.** The deliberate two-language split (L1 editorial-dark marketing/auth · L2 soft app-shell) stands, but inside L2 there are still scoped-var islands (`.studio-scope`, glass.css) that should converge on the shared primitives kit page-by-page.
 4. **`pending_payment` in the `PropertyStatus` union.** AgentHome carries a commented `as string` cast until the payment flow ships the type update.
 5. ~~Pre-existing TSC debt~~ — resolved during the run: main's 28-error baseline was driven to **0** (`tsc --noEmit` clean at branch close), so no debt carries forward.
+6. **Adopt `MoneyValue` at remaining `fmtCents` call sites.** `MoneyValue` is the intended single rendering path for costs (null-safe, never fabricated $0), but the production call sites in Overview, Finances, Billing, and Listings still use `fmtCents`. Wire these up in a future pass to make the contract real.
 
 ---
 
@@ -120,4 +121,5 @@ Opening `/dashboard` to non-admins forced an audit of every API the agent surfac
 - `pnpm vitest run --maxWorkers=2` — 150 files / 1333 tests passed, 2 skipped (pre-existing integration skip), 0 failed.
 - `pnpm exec tsc --noEmit` — 0 errors at branch close (main baseline was 28; gate was ≤23).
 - Every commit on the branch is forensic (what/why/files/before→after/rollback); each is independently revertible — no migrations, no schema changes, no env changes anywhere on the branch.
-- Hard rules held: no sample-data KPIs (removed, not added), costs render via `MoneyValue` (no null/0 fabrication), Inter only, no Helgemo branding, marketing/auth (L1) untouched.
+- Hard rules held: no sample-data KPIs (removed, not added), Inter only, no Helgemo branding, marketing/auth (L1) untouched.
+- **Correction (QA gate, 2026-06-11):** The claim "costs render via `MoneyValue`" was false. `MoneyValue` is built and tested but has zero production call sites — `fmtCents` is used throughout Overview, Finances, Billing, and Listings. Additionally, the Delivery SLA card shipped with three fabricated values (hardcoded `↑ 2.1%` delta, hardcoded `of 156` denominator, hardcoded `42m`/`1h 12m` MiniStats) and three unwired buttons ("Today's brief", "View pipeline", "All agents"). These were fixed by the QA-gate fix pass on this branch. Adoption of `MoneyValue` at remaining `fmtCents` call sites is added as a follow-up item (§4).

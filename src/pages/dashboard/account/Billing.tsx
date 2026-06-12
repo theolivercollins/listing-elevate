@@ -21,9 +21,11 @@ export default function AccountBilling() {
   const { data: properties, isLoading } = useQuery({
     queryKey: ["account-billing", user?.id],
     queryFn: async () => {
+      // Select stripe_amount_cents — what the agent actually paid — never total_cost_cents
+      // (that field holds internal provider cost and must never reach agent surfaces).
       const { data, error } = await supabase
         .from("properties")
-        .select("id, address, status, total_cost_cents, created_at")
+        .select("id, address, status, stripe_amount_cents, created_at")
         .eq("submitted_by", user!.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -32,8 +34,8 @@ export default function AccountBilling() {
     enabled: !!user,
   });
 
-  const totalCost = properties?.reduce((sum, p) => sum + (p.total_cost_cents || 0), 0) ?? 0;
-  const completedCount = properties?.filter((p) => p.status === "complete").length ?? 0;
+  const totalCost = properties?.reduce((sum, p) => sum + ((p as { stripe_amount_cents?: number }).stripe_amount_cents || 0), 0) ?? 0;
+  const completedCount = properties?.filter((p) => p.status === "complete" || (p.status as string) === "delivered").length ?? 0;
   const avgCost = completedCount > 0 ? Math.round(totalCost / completedCount) : null;
 
   return (
@@ -119,7 +121,10 @@ export default function AccountBilling() {
                       textAlign: "right",
                     }}
                   >
-                    {p.total_cost_cents > 0 ? fmtCents(p.total_cost_cents) : "—"}
+                    {/* Render stripe_amount_cents (what agent paid); never internal total_cost_cents */}
+                    {(p as { stripe_amount_cents?: number }).stripe_amount_cents
+                      ? fmtCents((p as { stripe_amount_cents?: number }).stripe_amount_cents)
+                      : "—"}
                   </span>
                 </div>
               ))}

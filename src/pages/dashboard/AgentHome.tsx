@@ -27,6 +27,10 @@ import {
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
+// "delivered" is in the PropertyStatus union but absent from the API status
+// filter calls below — include it so those orders appear in the Delivered bucket.
+const DELIVERED_STATUSES = ["complete", "delivered"] as const;
+
 // ─── Production statuses (non-terminal) ──────────────────────────────────────
 const IN_PRODUCTION_STATUSES = [
   "queued",
@@ -157,17 +161,24 @@ export default function AgentHome() {
   const [delivered, setDelivered] = useState<Property[]>([]);
   const [attention, setAttention] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
+  // fetchError: surface API outages honestly rather than silently rendering
+  // "No orders yet" when the user may have active orders.
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // Parallel fetch of all three buckets. The server now requires auth and
-        // filters by submitted_by = user_id for non-admin callers.
-        const [prodRes, deliveredRes, attentionRes] = await Promise.all([
-          fetchProperties({ limit: 20 }).catch(() => ({ properties: [] as Property[], total: 0 })),
-          fetchProperties({ status: "complete", limit: 20 }).catch(() => ({ properties: [] as Property[], total: 0 })),
-          fetchProperties({ status: "needs_review", limit: 20 }).catch(() => ({ properties: [] as Property[], total: 0 })),
+        // Parallel fetch. Server requires auth and filters by submitted_by for
+        // non-admin callers. Errors propagate rather than silently returning [].
+        const [prodRes, completedRes, deliveredRes, attentionRes] = await Promise.all([
+          fetchProperties({ limit: 50 }),
+          // "complete" status
+          fetchProperties({ status: "complete", limit: 50 }),
+          // "delivered" status — present in PropertyStatus union; must be fetched
+          // separately since the API takes a single status string.
+          fetchProperties({ status: "delivered" as Property["status"], limit: 50 }),
+          fetchProperties({ status: "needs_review", limit: 50 }),
         ]);
         if (cancelled) return;
 
@@ -176,8 +187,6 @@ export default function AgentHome() {
           IN_PRODUCTION_STATUSES.includes(p.status)
         );
         // Pending payment: agent started checkout but didn't complete it.
-        // Cast needed: "pending_payment" is a valid DB status not yet in the
-        // PropertyStatus union type (to be added when the payment flow ships).
         const pendingPaymentProps = (prodRes.properties ?? []).filter(
           (p: Property) => (p.status as string) === "pending_payment"
         );
@@ -192,10 +201,24 @@ export default function AgentHome() {
           (p: Property, idx, arr) => arr.findIndex((x) => x.id === p.id) === idx
         );
 
+        // Merge complete + delivered, de-duplicate by id
+        const deliveredAll = [
+          ...(completedRes.properties ?? []),
+          ...(deliveredRes.properties ?? []),
+        ].filter(
+          (p: Property, idx, arr) => arr.findIndex((x) => x.id === p.id) === idx
+        );
+
         setPendingPayment(pendingPaymentProps);
         setInProd(prodProps);
-        setDelivered(deliveredRes.properties ?? []);
+        setDelivered(deliveredAll);
         setAttention(attentionAll);
+      } catch (err) {
+        if (!cancelled) {
+          setFetchError(
+            err instanceof Error ? err.message : "Could not load orders. Please refresh.",
+          );
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -208,7 +231,7 @@ export default function AgentHome() {
   const firstName = profile?.first_name ?? null;
   const greeting = firstName ? `Good to see you, ${firstName}.` : "Good to see you.";
 
-  const allEmpty = !loading && pendingPayment.length === 0 && inProd.length === 0 && delivered.length === 0 && attention.length === 0;
+  const allEmpty = !loading && !fetchError && pendingPayment.length === 0 && inProd.length === 0 && delivered.length === 0 && attention.length === 0;
 
   return (
     <div data-testid="agent-home" className="flex flex-col gap-6 p-6">
@@ -228,6 +251,15 @@ export default function AgentHome() {
           </Link>
         }
       />
+
+      {/* ── Fetch error — surface honestly, not as "No orders yet" ────── */}
+      {fetchError && !loading && (
+        <Section>
+          <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: "var(--bad)" }}>
+            {fetchError}
+          </div>
+        </Section>
+      )}
 
       {/* ── All empty ─────────────────────────────────────────────────── */}
       {allEmpty && (

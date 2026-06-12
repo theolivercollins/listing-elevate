@@ -146,6 +146,8 @@ function deriveActivity(props: UIProperty[]): ActivityEntry[] {
 }
 
 // ─── sparkline: weekly buckets from completed properties (case-insensitive) ──
+// Returns real weekly delivery buckets for an agent — zero fill when no
+// history exists; never fabricates a wave pattern.
 function agentSparkline(agentName: string, allProps: Property[]): number[] {
   const now = Date.now();
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -158,14 +160,6 @@ function agentSparkline(agentName: string, allProps: Property[]): number[] {
     if (weekIndex >= 0 && weekIndex < 12) {
       buckets[11 - weekIndex] += 1;
     }
-  }
-  const total = buckets.reduce((s, v) => s + v, 0);
-  if (total === 0) {
-    const videoCount = allProps.filter(
-      (p) => p.status === "complete" && (p.listing_agent ?? "").trim().toLowerCase() === target,
-    ).length;
-    const base = Math.max(1, Math.floor(videoCount / 12));
-    return Array.from({ length: 12 }, (_, i) => base + (i % 3));
   }
   return buckets;
 }
@@ -433,7 +427,6 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         date: d.date,
         cost: d.total_cost_cents ?? 0,
         videos: d.properties_completed ?? 0,
-        sla: 90,
       }))
     : [];
 
@@ -535,10 +528,13 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   const chartData = dailyForUI.slice(-rangeLen);
 
   // ── SLA ring ─────────────────────────────────────────────────────────────
-  const avgSla = dailyForUI.length > 0
-    ? Math.round(dailyForUI.reduce((s, d) => s + d.sla, 0) / dailyForUI.length)
-    : 0;
-  const slaMof = Math.round((avgSla / 100) * 156);
+  // Compute on-time rate from live delivery data: completed / (completed + failed)
+  // over the last 30 days. Degrades to null when no data yet.
+  const totalCompleted = DAILY ? DAILY.reduce((s, d) => s + (d.properties_completed ?? 0), 0) : 0;
+  const totalFailed = DAILY ? DAILY.reduce((s, d) => s + (d.properties_failed ?? 0), 0) : 0;
+  const slaTotal = totalCompleted + totalFailed;
+  // slaRate: 0-100 representing on-time percentage; null when no data
+  const slaRate: number | null = slaTotal > 0 ? Math.round((totalCompleted / slaTotal) * 100) : null;
 
   // ── Activity feed — live only, no sample fallback ────────────────────────
   const activityForUI = allProps.length > 0 ? deriveActivity(propsForUI) : [];
@@ -592,10 +588,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         sub={subHeadline(completedToday, inFlightCount, needsReviewCount)}
         actions={
           <>
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/logs" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
               <Icon name="play" size={13} />
               Today's brief
-            </button>
+            </Link>
             <Link to="/upload" className="le-btn-dark">
               <Icon name="plus" size={13} />
               New listing
@@ -682,7 +678,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           )}
         </div>
 
-        {/* Delivery SLA */}
+        {/* Delivery SLA — live data only, no fabricated deltas or denominators */}
         <div className="le-card" style={{ padding: 24, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
             <div>
@@ -691,19 +687,31 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                 Under 72 hours
               </h3>
             </div>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: "var(--good)",
-              padding: "3px 8px", borderRadius: 999, background: "rgba(47, 138, 85, 0.10)",
-            }}>
-              ↑ 2.1%
-            </span>
           </div>
           <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-            <Ring value={avgSla} size={170} stroke={12} label="On-time" sub={`${slaMof} of 156`} />
+            {slaRate === null ? (
+              <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>
+                No delivery data yet.
+              </div>
+            ) : (
+              <Ring
+                value={slaRate}
+                size={170}
+                stroke={12}
+                label="On-time"
+                sub={`${totalCompleted} of ${slaTotal}`}
+              />
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
-            <MiniStat label="Avg turnaround" value="42m" />
-            <MiniStat label="P95" value="1h 12m" />
+            <MiniStat
+              label="Completed · 30d"
+              value={slaTotal > 0 ? String(totalCompleted) : "—"}
+            />
+            <MiniStat
+              label="Failed · 30d"
+              value={slaTotal > 0 ? String(totalFailed) : "—"}
+            />
           </div>
         </div>
       </section>
@@ -715,10 +723,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <SectionTitle eyebrow="In production" title={`${inProgressForUI.length} listings moving`} />
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/pipeline" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               View pipeline
               <Icon name="chevron-right" size={12} />
-            </button>
+            </Link>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {inProgressForUI.length === 0 && (
@@ -823,10 +831,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <SectionTitle eyebrow="Leaderboard" title="Top agents this month" />
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/users" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               All agents
               <Icon name="chevron-right" size={12} />
-            </button>
+            </Link>
           </div>
           <div className="le-table-scroll is-wide">
             {agentsForUI.length === 0 && (
@@ -835,12 +843,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               </div>
             )}
             {agentsForUI.map((a, i) => {
-              const sparkData = allProps.length > 0
-                ? agentSparkline(a.name, allProps)
-                : (() => {
-                    const base = Math.max(1, Math.floor(a.videos / 12));
-                    return Array.from({ length: 12 }, (_, j) => base + (j % 3));
-                  })();
+              // Always derive from live data — no synthetic fallback.
+              const sparkData = agentSparkline(a.name, allProps);
               return (
                 <div
                   key={a.name}

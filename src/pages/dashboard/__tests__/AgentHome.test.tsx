@@ -131,9 +131,11 @@ describe("AgentHome", () => {
     mockFetchProperties
       // first call: in-production (non-terminal statuses)
       .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
-      // second call: delivered (complete status)
+      // second call: complete status
       .mockResolvedValueOnce({ properties: [], total: 0 })
-      // third call: needs_review / failed
+      // third call: delivered status (separate fetch added to include "delivered" status)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review / failed
       .mockResolvedValueOnce({ properties: [], total: 0 });
 
     render(wrap());
@@ -150,6 +152,8 @@ describe("AgentHome", () => {
     mockFetchProperties
       .mockResolvedValueOnce({ properties: [], total: 0 })
       .mockResolvedValueOnce({ properties: [deliveredOrder], total: 1 })
+      // third call: delivered status fetch (separate from complete)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
       .mockResolvedValueOnce({ properties: [], total: 0 });
 
     render(wrap());
@@ -166,6 +170,9 @@ describe("AgentHome", () => {
     mockFetchProperties
       .mockResolvedValueOnce({ properties: [], total: 0 })
       .mockResolvedValueOnce({ properties: [], total: 0 })
+      // third call: delivered status
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review
       .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
 
     render(wrap());
@@ -184,6 +191,9 @@ describe("AgentHome", () => {
     mockFetchProperties
       .mockResolvedValueOnce({ properties: [], total: 0 })
       .mockResolvedValueOnce({ properties: [], total: 0 })
+      // third call: delivered status
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review
       .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
 
     const { container } = render(wrap());
@@ -209,6 +219,8 @@ describe("AgentHome", () => {
     mockFetchProperties
       .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
       .mockResolvedValueOnce({ properties: [deliveredOrder], total: 1 })
+      // third call: delivered status (separate fetch)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
       .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
 
     const { container } = render(wrap());
