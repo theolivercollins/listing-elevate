@@ -1,6 +1,6 @@
 # LE Video v2 — Sub-project B: Link & Settings Model
 
-Date: 2026-06-12 · Status: DRAFT (awaiting Oliver review) · Branch: `feat/le-video-links-settings`
+Date: 2026-06-12 · Status: approved (Oliver, in-session — proceed to plan+build) · Branch: `feat/le-video-links-settings`
 Part of: LE Video v2 (A library ✓ → **B link/settings model** → C engagement → D watch-page redesign)
 Builds on: preview-links-v2 (link `kind` client/public + `label` + capability toggles + revoke, all shipped); LE Video hub + SharePanel (`src/components/studio/share/SharePanel.tsx`).
 
@@ -75,6 +75,14 @@ Replace the flat toggle list with two clearly-reasoned link cards:
 - Expiry + Revoke.
 
 Each card carries a short italic explainer (the "reasoning"), and toggles are grouped under labeled subsections ("What the agent can do" / "Appearance" / "What viewers can do") rather than a flat switch list. Inter only, no monospace, DESIGN-GUIDE §9. The panel is shared by the video hub and the existing ShareDialog (both already consume SharePanel) — restructure once, both update.
+
+## 4b. Glitch fix — no screen flash on toggle/create/select (Oliver-reported, REQUIRED)
+
+**Symptom:** clicking any capability toggle (download/approve/request-change), creating a link, or selecting a link makes the whole panel/screen flash every time.
+
+**Root cause (confirmed):** in `src/pages/dashboard/studio/VideoHub.tsx`, every mutation handler (`onToggle`, `onCreateLink`, `onSetLabel`, `onRevoke`) ends with `await fetchBundle()`, and `fetchBundle()` calls `setLoading(true)` → the entire hub unmounts to its loading state → `setLoading(false)` re-renders → visible flash. The same blocking-refetch pattern exists in the `ShareDialog`/`Share.tsx` consumers.
+
+**Fix (foundational — do this FIRST; the restructure sits on it):** make mutations **optimistic + local** — update the specific link's field in local `bundle` state immediately, fire the PATCH/POST in the background, and reconcile/roll-back on error. Do **not** call the loading-flipping `fetchBundle()` on a mutation. If a server reconcile is wanted, do a **silent** refetch that never touches the global `loading` flag (which must drive only the initial mount). Result: toggling a switch updates that switch in place with zero flash; creating a link appends it without a full reload; selecting a link doesn't remount. Apply the same fix to every SharePanel consumer (hub + ShareDialog). Add a regression test asserting `setLoading(true)` / the loading branch is NOT entered on a capability toggle.
 
 ## 5. API surface (all admin-gated)
 
