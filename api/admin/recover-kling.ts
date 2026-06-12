@@ -23,7 +23,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const { KlingProvider } = await import('../../lib/providers/kling.js');
-    const { getSupabase } = await import('../../lib/db.js');
+    const { getSupabase, recordCostEvent } = await import('../../lib/db.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
     const kling = new KlingProvider();
     const supabase = getSupabase();
 
@@ -62,13 +63,59 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const clipBuffer = await kling.downloadClip(status.videoUrl);
-        const clipPath = `${propertyId}/clips/recovered_kling_${taskId}.mp4`;
-        const { error: uploadErr } = await supabase.storage
-          .from('property-videos')
-          .upload(clipPath, clipBuffer, { contentType: 'video/mp4', upsert: true });
-        if (uploadErr) throw uploadErr;
 
-        const { data: urlData } = supabase.storage.from('property-videos').getPublicUrl(clipPath);
+        // Host the recovered clip on Bunny Stream (going-forward video hosting
+        // target; replaced the Supabase Storage property-videos mirror 2026-06-12).
+        // The old clipPath string is reused as the Bunny title — it uniquely
+        // identifies the clip. A Bunny outage or misconfig must NEVER break
+        // recovery (zero-HITL): on unconfigured/failure we fall back to the Kling
+        // videoUrl and continue. Replaces the prior `throw uploadErr`.
+        const clipPath = `${propertyId}/clips/recovered_kling_${taskId}.mp4`;
+        let clipUrl = status.videoUrl;
+        if (isBunnyConfigured()) {
+          try {
+            const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
+            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
+            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
+            // clip_url would break the Gemini judge and SPA player (zero-HITL).
+            let mp4Valid = false;
+            try {
+              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
+              mp4Valid = headRes.ok;
+              if (!mp4Valid) {
+                console.warn(`[recover-kling] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
+                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
+                deleteBunnyVideo(hosted.guid).catch(() => {});
+              }
+            } catch (headErr) {
+              console.warn(`[recover-kling] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
+                headErr instanceof Error ? headErr.message : String(headErr));
+              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+              deleteBunnyVideo(hosted.guid).catch(() => {});
+            }
+            if (mp4Valid) {
+              clipUrl = hosted.mp4Url;
+            }
+            // Cost row regardless of HEAD result — Bunny was called either way.
+            recordCostEvent({
+              propertyId,
+              sceneId: null,
+              stage: 'generation',
+              provider: 'bunny',
+              unitsConsumed: 1,
+              unitType: 'renders',
+              costCents: bunnyStreamCostCents(clipBuffer.byteLength),
+              metadata: { bunny_hosted: mp4Valid, clip_path: clipPath, source: 'recover' },
+            }).catch((e) => console.error('[recover-kling] bunny cost_event failed:', e));
+          } catch (bunnyErr) {
+            console.warn(
+              `[recover-kling] bunny host failed for ${clipPath} — keeping provider URL:`,
+              bunnyErr instanceof Error ? bunnyErr.message : String(bunnyErr),
+            );
+          }
+        } else {
+          console.warn(`[recover-kling] bunny not configured — keeping provider URL for ${clipPath}`);
+        }
 
         const sceneNum = nextSceneNum++;
         const { error: insertErr } = await supabase.from('scenes').insert({
@@ -80,14 +127,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           duration_seconds: 5,
           status: 'qc_pass',
           provider: 'kling',
-          clip_url: urlData.publicUrl,
+          clip_url: clipUrl,
           attempt_count: 1,
           qc_verdict: 'auto_pass',
           qc_confidence: 1.0,
         });
         if (insertErr) throw insertErr;
 
-        results.push({ taskId, ok: true, scene_number: sceneNum, clip_url: urlData.publicUrl });
+        results.push({ taskId, ok: true, scene_number: sceneNum, clip_url: clipUrl });
       } catch (err) {
         results.push({ taskId, ok: false, reason: err instanceof Error ? err.message : String(err) });
       }

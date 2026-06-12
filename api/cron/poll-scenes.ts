@@ -35,6 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
     const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     const { resubmitScene } = await import('../../lib/pipeline.js');
 
@@ -166,16 +167,62 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // Complete — download + store. (No speed-ramp; see comment block above.)
+        // Complete — download + host on Bunny Stream. (No speed-ramp; see comment block above.)
         const clipBuffer = await provider.downloadClip(status.videoUrl);
 
+        // Host the new clip on Bunny Stream (going-forward video hosting target;
+        // replaced the Supabase Storage property-videos mirror 2026-06-12). The
+        // old clipPath string is reused as the Bunny title — it uniquely
+        // identifies the clip. A Bunny outage or misconfig must NEVER break this
+        // autonomous cron (zero-HITL): on unconfigured/failure we fall back to the
+        // provider videoUrl and continue. Replaces the prior `throw uploadErr`.
         const clipPath = `${scene.property_id}/clips/scene_${scene.scene_number}_v${scene.attempt_count ?? 1}.mp4`;
-        const { error: uploadErr } = await supabase.storage
-          .from('property-videos')
-          .upload(clipPath, clipBuffer, { contentType: 'video/mp4', upsert: true });
-        if (uploadErr) throw uploadErr;
-
-        const { data: urlData } = supabase.storage.from('property-videos').getPublicUrl(clipPath);
+        let clipUrl = status.videoUrl;
+        if (isBunnyConfigured()) {
+          try {
+            const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
+            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
+            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
+            // clip_url would break the Gemini judge and SPA player (zero-HITL).
+            let mp4Valid = false;
+            try {
+              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
+              mp4Valid = headRes.ok;
+              if (!mp4Valid) {
+                console.warn(`[poll-scenes] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
+                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
+                deleteBunnyVideo(hosted.guid).catch(() => {});
+              }
+            } catch (headErr) {
+              console.warn(`[poll-scenes] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
+                headErr instanceof Error ? headErr.message : String(headErr));
+              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+              deleteBunnyVideo(hosted.guid).catch(() => {});
+            }
+            if (mp4Valid) {
+              clipUrl = hosted.mp4Url;
+            }
+            // Cost row regardless of HEAD result — Bunny was called either way.
+            // Wrapped in .catch so a cost-row failure never breaks the run.
+            recordCostEvent({
+              propertyId: scene.property_id,
+              sceneId: scene.id,
+              stage: 'generation',
+              provider: 'bunny',
+              unitsConsumed: 1,
+              unitType: 'renders',
+              costCents: bunnyStreamCostCents(clipBuffer.byteLength),
+              metadata: { bunny_hosted: mp4Valid, clip_path: clipPath, source: 'cron' },
+            }).catch((e) => console.error('[poll-scenes] bunny cost_event failed:', e));
+          } catch (bunnyErr) {
+            console.warn(
+              `[poll-scenes] bunny host failed for ${clipPath} — keeping provider URL:`,
+              bunnyErr instanceof Error ? bunnyErr.message : String(bunnyErr),
+            );
+          }
+        } else {
+          console.warn(`[poll-scenes] bunny not configured — keeping provider URL for ${clipPath}`);
+        }
 
         // Fallback cost estimate when the provider doesn't return credit
         // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
@@ -226,7 +273,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // Run Gemini judge against the completed clip.
         const judged = await judgeProductionScene({
-          clipUrl: urlData.publicUrl,
+          clipUrl: clipUrl,
           sceneId: scene.id,
           directorPrompt: (scene as unknown as { prompt?: string }).prompt ?? '',
           cameraMovement: (scene as unknown as { camera_movement?: string }).camera_movement ?? 'unknown',
@@ -289,7 +336,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // for review rather than dangling. Never let this kill the cron loop.
           await supabase.from('scenes').update({
             status: 'needs_review',
-            clip_url: urlData.publicUrl,
+            clip_url: clipUrl,
             generation_cost_cents: costCents,
             generation_time_ms: genTimeMs,
             qc_verdict: judged.verdict,
@@ -317,7 +364,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         await supabase.from('scenes').update({
           status: newStatus,
-          clip_url: urlData.publicUrl,
+          clip_url: clipUrl,
           generation_cost_cents: costCents,
           generation_time_ms: genTimeMs,
           qc_verdict: judged.judgeRan ? judged.verdict : 'auto_pass',

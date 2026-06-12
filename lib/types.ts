@@ -211,6 +211,10 @@ export interface Scene {
   // Phase 2.7: end-frame keyframe support
   end_photo_id: string | null;
   end_image_url: string | null;
+  // T4-provider-preference: director intent separate from the actual-ran provider.
+  // Migration 084 adds this column; null = router decides (no director preference).
+  // scenes.provider remains the pure what-actually-ran audit record for poll-scenes.
+  provider_preference: VideoProvider | null;
 }
 
 export interface PipelineLog {
