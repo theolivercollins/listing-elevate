@@ -1,4 +1,5 @@
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { AccentDot } from "@/v2/components/primitives/AccentDot";
 import { Section } from "@/v2/components/landing/Section";
 
 // Exact image URLs from landing.jsx (IMG_SHOWCASE_1/2/3).
@@ -99,7 +100,7 @@ export function Process() {
 
               {/* Property image */}
               <div
-                className="le-img-zoom"
+                className="le-img-zoom le-float-gentle"
                 style={{
                   width: "100%",
                   aspectRatio: "4 / 3",

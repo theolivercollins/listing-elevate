@@ -20,6 +20,8 @@ export function SelectedWork() {
       eyebrow="— SHOWCASE"
       title="Selected work."
       maxWidth={1200}
+      tint
+      ambient="softer"
       aside={
         <a
           href="#showcase"

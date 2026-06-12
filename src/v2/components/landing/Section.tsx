@@ -48,7 +48,9 @@ export function Section({
     <section
       id={id}
       style={{
-        background: tint ? "var(--le-surface-page, #f4f6fb)" : "var(--le-bg)",
+        background: tint
+          ? "linear-gradient(135deg, var(--le-surface-page, #f4f6fb), rgba(var(--le-brand-blue-rgb), 0.01) 50%, var(--le-surface-page, #f4f6fb))"
+          : "var(--le-bg)",
         padding: "clamp(48px, 7vw, 88px) clamp(16px, 5vw, 48px)",
         ...(ambient ? { position: "relative", overflow: "hidden" } : {}),
         ...style,
