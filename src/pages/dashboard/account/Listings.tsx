@@ -70,10 +70,7 @@ export default function AccountListings() {
               <EmptyState
                 message="You haven't submitted any listings yet."
                 icon="home"
-                cta={{
-                  label: "Upload your first listing",
-                  onClick: () => { window.location.href = "/upload"; },
-                }}
+                cta={{ label: "Upload your first listing", to: "/upload" }}
               />
             </div>
           ) : (

@@ -203,10 +203,7 @@ describe("getSections — agent nav role-split boundary (no operator leak)", () 
       OPERATOR_ONLY_PREFIXES.some((prefix) => route.startsWith(prefix))
     );
 
-    expect(operatorLeaks).toEqual(
-      [],
-      `Agent nav leaked operator routes: ${operatorLeaks.join(", ")}`
-    );
+    expect(operatorLeaks, `Agent nav leaked operator routes: ${operatorLeaks.join(", ")}`).toEqual([]);
   });
 
   it("agent nav routes are exactly the allowed set", () => {
@@ -214,10 +211,7 @@ describe("getSections — agent nav role-split boundary (no operator leak)", () 
     const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to)).sort();
     const allowedRoutes = AGENT_ALLOWED_ROUTES.sort();
 
-    expect(agentRoutes).toEqual(
-      allowedRoutes,
-      "Agent nav routes must match the exact allowed set"
-    );
+    expect(agentRoutes, "Agent nav routes must match the exact allowed set").toEqual(allowedRoutes);
   });
 
   it("operator nav DOES contain operator routes (sanity check)", () => {
@@ -225,28 +219,16 @@ describe("getSections — agent nav role-split boundary (no operator leak)", () 
     const operatorRoutes = operatorSections.flatMap((s) => s.items.map((i) => i.to));
 
     // Spot-check: /dashboard/users (Agents) must be present
-    expect(operatorRoutes).toContain(
-      "/dashboard/users",
-      "Operator nav must include /dashboard/users"
-    );
+    expect(operatorRoutes, "Operator nav must include /dashboard/users").toContain("/dashboard/users");
 
     // Spot-check: /dashboard/pipeline (Orders) must be present
-    expect(operatorRoutes).toContain(
-      "/dashboard/pipeline",
-      "Operator nav must include /dashboard/pipeline"
-    );
+    expect(operatorRoutes, "Operator nav must include /dashboard/pipeline").toContain("/dashboard/pipeline");
 
     // Spot-check: /dashboard/finances must be present
-    expect(operatorRoutes).toContain(
-      "/dashboard/finances",
-      "Operator nav must include /dashboard/finances"
-    );
+    expect(operatorRoutes, "Operator nav must include /dashboard/finances").toContain("/dashboard/finances");
 
     // Spot-check: /dashboard/logs must be present
-    expect(operatorRoutes).toContain(
-      "/dashboard/logs",
-      "Operator nav must include /dashboard/logs"
-    );
+    expect(operatorRoutes, "Operator nav must include /dashboard/logs").toContain("/dashboard/logs");
   });
 
   it("agent nav does NOT contain /dashboard/users (operator-only)", () => {
@@ -283,17 +265,14 @@ describe("getSections — agent nav role-split boundary (no operator leak)", () 
     const agentSections = getSections("user");
     const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
     const studioRoutes = agentRoutes.filter((r) => r.startsWith("/dashboard/studio"));
-    expect(studioRoutes).toEqual([], "Agent nav must not contain /dashboard/studio routes");
+    expect(studioRoutes, "Agent nav must not contain /dashboard/studio routes").toEqual([]);
   });
 
   it("agent nav does NOT contain /dashboard/development routes (operator-only lab/system)", () => {
     const agentSections = getSections("user");
     const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
     const devRoutes = agentRoutes.filter((r) => r.startsWith("/dashboard/development"));
-    expect(devRoutes).toEqual(
-      [],
-      "Agent nav must not contain /dashboard/development routes"
-    );
+    expect(devRoutes, "Agent nav must not contain /dashboard/development routes").toEqual([]);
   });
 });
 
