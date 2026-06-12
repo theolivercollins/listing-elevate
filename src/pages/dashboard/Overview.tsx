@@ -15,8 +15,9 @@ import {
   MiniStat,
   ActivityItem,
   SectionTitle,
-  fmtCents,
+  fmtMoney,
   fmtRel,
+  MoneyValue,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { EmptyState } from "@/components/dashboard/primitives";
@@ -622,7 +623,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         />
         <KpiCard
           label="Spend · 7d"
-          value={fmtCents(last7Cost)}
+          value={<MoneyValue cents={last7Cost} />}
           sub="all providers"
           delta={costDelta}
           deltaPositiveIsGood={false}
@@ -644,7 +645,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             <div>
               <span className="le-d-label">Spend insights</span>
               <h3 style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 600, letterSpacing: "-0.022em", color: "var(--ink)" }}>
-                {fmtCents(last7Cost)}{" "}
+                <MoneyValue cents={last7Cost} />{" "}
                 <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 14 }}>· this week</span>
               </h3>
             </div>
@@ -670,7 +671,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               data={chartData.map((d) => ({
                 label: d.date.slice(3),
                 value: d.cost,
-                tooltip: fmtCents(d.cost),
+                tooltip: fmtMoney(d.cost),
               }))}
               accentIndex={chartData.length - 1}
               height={220}
@@ -876,7 +877,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     {a.videos}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
-                    {fmtCents(a.spend)}
+                    <MoneyValue cents={a.spend} />
                   </span>
                   <div style={{ width: 100, marginLeft: "auto" }}>
                     <Sparkline data={sparkData} color="var(--ink)" height={26} />

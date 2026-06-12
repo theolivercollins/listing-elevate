@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { PageHeading, Card, KpiCard, StatusPill, fmtCents } from "@/components/dashboard/primitives";
+import { PageHeading, Card, KpiCard, StatusPill, MoneyValue } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
 
@@ -49,11 +49,11 @@ export default function AccountBilling() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
           <KpiCard
             label="Total spend"
-            value={isLoading ? "—" : fmtCents(totalCost)}
+            value={isLoading ? "—" : <MoneyValue cents={totalCost} />}
           />
           <KpiCard
             label="Average / video"
-            value={isLoading ? "—" : avgCost != null ? fmtCents(avgCost) : "—"}
+            value={isLoading ? "—" : <MoneyValue cents={avgCost} />}
           />
           <KpiCard
             label="Videos delivered"
@@ -122,9 +122,10 @@ export default function AccountBilling() {
                     }}
                   >
                     {/* Render stripe_amount_cents (what agent paid); never internal total_cost_cents */}
-                    {(p as { stripe_amount_cents?: number }).stripe_amount_cents
-                      ? fmtCents((p as { stripe_amount_cents?: number }).stripe_amount_cents)
-                      : "—"}
+                    <MoneyValue
+                      cents={(p as { stripe_amount_cents?: number }).stripe_amount_cents}
+                      tooltipWhenAbsent="Not yet charged"
+                    />
                   </span>
                 </div>
               ))}
@@ -150,7 +151,7 @@ export default function AccountBilling() {
                     textAlign: "right",
                   }}
                 >
-                  {fmtCents(totalCost)}
+                  <MoneyValue cents={totalCost} />
                 </span>
               </div>
             </>

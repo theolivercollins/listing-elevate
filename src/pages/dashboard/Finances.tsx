@@ -26,12 +26,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-// New-dashboard primitives (Card, KpiCard, Sparkline, fmtCents)
+// New-dashboard primitives (Card, KpiCard, Sparkline, MoneyValue, fmtMoney)
 import {
   KpiCard,
   Card,
   Sparkline,
-  fmtCents as fmtCentsPrim,
+  MoneyValue,
+  fmtMoney,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
@@ -835,12 +836,12 @@ export default function Finances() {
       <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Revenue (all time)"
-          value={fmtCentsPrim(totalRevenueCents)}
+          value={<MoneyValue cents={totalRevenueCents} />}
           sub="from revenue_entries"
         />
         <KpiCard
           label="Spend (all time)"
-          value={fmtCentsPrim(totalSpendCents)}
+          value={<MoneyValue cents={totalSpendCents} />}
           sub="token purchases + expenses"
           deltaPositiveIsGood={false}
         />
@@ -848,14 +849,14 @@ export default function Finances() {
           label="Net (all time)"
           value={
             <span style={{ color: netColor }}>
-              {netCents >= 0 ? "+" : "−"}{fmtCentsPrim(Math.abs(netCents))}
+              {netCents >= 0 ? "+" : "−"}<MoneyValue cents={Math.abs(netCents)} />
             </span>
           }
           sub="revenue − spend"
         />
         <KpiCard
           label="Cost / video"
-          value={deliveredCount > 0 ? fmtCentsPrim(costPerVideoCents) : "—"}
+          value={deliveredCount > 0 ? <MoneyValue cents={costPerVideoCents} /> : "—"}
           sub={deliveredCount > 0 ? `${deliveredCount} delivered` : "no deliveries yet"}
           deltaPositiveIsGood={false}
         />
@@ -865,14 +866,14 @@ export default function Finances() {
       <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
         <KpiCard
           label="Spend · MTD"
-          value={fmtCentsPrim(mtdCents)}
+          value={<MoneyValue cents={mtdCents} />}
           sub="rolling 30d from cost_events"
           delta={hasAnySpend ? mtdDelta : null}
           deltaPositiveIsGood={false}
         />
         <KpiCard
           label="Avg / video (7d)"
-          value={fmtCentsPrim(avgPerVideo)}
+          value={<MoneyValue cents={avgPerVideo} />}
           sub="vs prior 7 days"
           delta={hasAnySpend ? avgVideoDelta : null}
           deltaPositiveIsGood={false}
@@ -896,7 +897,7 @@ export default function Finances() {
             <span className="le-d-label">Cashflow · 30 days</span>
             <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
               <span style={{ color: netColor }}>
-                {netCents >= 0 ? "+" : "−"}{fmtCentsPrim(Math.abs(netCents))} net
+                {netCents >= 0 ? "+" : "−"}<MoneyValue cents={Math.abs(netCents)} /> net
               </span>
             </h3>
           </div>
@@ -940,7 +941,7 @@ export default function Finances() {
                   fontSize: 11,
                   padding: 10,
                 }}
-                formatter={(v: number, name: string) => [fmtCentsPrim(v), name]}
+                formatter={(v: number, name: string) => [fmtMoney(v), name]}
               />
               <Area type="monotone" dataKey="revenue" stroke="oklch(0.7 0.14 168)" strokeWidth={1.5} fill="url(#revArea)" />
               <Area type="monotone" dataKey="spend" stroke="var(--accent)" strokeWidth={1.5} fill="url(#spendArea)" />
@@ -955,7 +956,7 @@ export default function Finances() {
           <div>
             <span className="le-d-label">API spend over time</span>
             <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
-              {fmtCentsPrim(totalSpend14)} · last 14 days
+              <MoneyValue cents={totalSpend14} /> · last 14 days
             </h3>
           </div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
@@ -1027,9 +1028,9 @@ export default function Finances() {
                 style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.2fr", gap: 16, padding: "14px 14px", borderBottom: "1px solid rgba(15,24,60,0.04)", alignItems: "center" }}
               >
                 <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{r.name}</span>
-                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{fmtCentsPrim(r.today)}</span>
-                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{fmtCentsPrim(r.week)}</span>
-                <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>{fmtCentsPrim(r.month)}</span>
+                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.today} /></span>
+                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.week} /></span>
+                <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.month} /></span>
                 <span className="le-tabular" style={{ fontSize: 12, textAlign: "right", color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{r.events.toLocaleString()}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: 999, overflow: "hidden" }}>
@@ -1071,7 +1072,7 @@ export default function Finances() {
                         {row.label}
                       </span>
                       <div style={{ marginTop: 10, fontSize: 22, fontWeight: 700, color: balanceColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
-                        {balanceCents < 0 ? "−" : ""}{fmtCentsPrim(Math.abs(balanceCents))}
+                        {balanceCents < 0 ? "−" : ""}<MoneyValue cents={Math.abs(balanceCents)} />
                       </div>
                       <p style={{ marginTop: 2, fontSize: 11, color: "var(--muted)" }}>remaining</p>
                     </div>
@@ -1092,8 +1093,8 @@ export default function Finances() {
                     />
                   </div>
                   <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
-                    <span>{fmtCentsPrim(row.spentCents)} spent</span>
-                    <span>{fmtCentsPrim(row.purchasedCents)} bought</span>
+                    <span><MoneyValue cents={row.spentCents} /> spent</span>
+                    <span><MoneyValue cents={row.purchasedCents} /> bought</span>
                   </div>
                   {row.purchasedUnits > 0 && (
                     <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
@@ -1249,7 +1250,7 @@ export default function Finances() {
             <div style={{ display: "flex", alignItems: "baseline", gap: 20, marginTop: 8 }}>
               <div>
                 <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
-                  {fmtCentsPrim(estimatedMonthlyCents)}
+                  <MoneyValue cents={estimatedMonthlyCents} />
                 </span>
                 <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: 6 }}>/ mo estimated</span>
               </div>
@@ -1319,7 +1320,7 @@ export default function Finances() {
                     )}
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
-                    {fmtCentsPrim(sub.amount_cents)}
+                    <MoneyValue cents={sub.amount_cents} />
                   </span>
                   <span style={{ fontSize: 12, color: "var(--muted)", textTransform: "capitalize" }}>
                     {sub.billing_period}
@@ -1383,7 +1384,7 @@ export default function Finances() {
             { value: p.units ? `${p.units} ${p.unit_type || ""}` : "—", mono: true, color: "var(--muted)" },
             { value: p.note || "—", color: "var(--muted)", truncate: true },
             { value: new Date(p.purchased_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtCentsPrim(p.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
+            { value: fmtMoney(p.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
           ],
         }))}
         columns={["Provider", "Units", "Note", "Date", "Amount"]}
@@ -1400,7 +1401,7 @@ export default function Finances() {
             { value: e.description || "—", color: "var(--muted)", truncate: true },
             { value: "", color: "" },
             { value: new Date(e.incurred_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtCentsPrim(e.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
+            { value: fmtMoney(e.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
           ],
         }))}
         columns={["Category", "Description", "", "Date", "Amount"]}
@@ -1417,7 +1418,7 @@ export default function Finances() {
             { value: r.note || "—", color: "var(--muted)", truncate: true },
             { value: "", color: "" },
             { value: new Date(r.received_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtCentsPrim(r.amount_cents), mono: true, color: "var(--good)", align: "right", weight: 600 },
+            { value: fmtMoney(r.amount_cents), mono: true, color: "var(--good)", align: "right", weight: 600 },
           ],
         }))}
         columns={["Source", "Note", "", "Date", "Amount"]}

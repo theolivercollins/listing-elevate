@@ -8,6 +8,16 @@ export const fmtCents = (c: number | null | undefined) =>
     ? "—"
     : "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
+/**
+ * String-safe money formatter. Returns "—" for absent/NaN values; "$n" otherwise.
+ * Use ONLY in string contexts (recharts tooltip formatters, LedgerTable col values, etc.)
+ * where JSX components are not accepted. For JSX render sites use <MoneyValue> instead.
+ */
+export const fmtMoney = (c: number | null | undefined): string => {
+  if (c == null || Number.isNaN(c)) return "—";
+  return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+};
+
 export const fmtCentsK = (c: number | null | undefined) => {
   if (c == null) return "—";
   const dollars = c / 100;
@@ -675,7 +685,7 @@ export interface MoneyValueProps {
 }
 
 export function MoneyValue({ cents, tooltipWhenAbsent, style }: MoneyValueProps) {
-  if (cents == null) {
+  if (cents == null || Number.isNaN(cents)) {
     return (
       <span
         title={tooltipWhenAbsent}
