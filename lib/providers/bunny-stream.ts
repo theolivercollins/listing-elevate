@@ -203,6 +203,55 @@ export function bunnyStreamCostCents(bytes: number): number {
   return Math.max(0, Math.round((bytes / 1_073_741_824) * centsPerGb));
 }
 
+// ── CDN fetch helpers ─────────────────────────────────────────────────────
+
+/**
+ * Returns HTTP headers that include `Referer: https://www.listingelevate.com/`
+ * only when the URL is on the Bunny CDN hostname. This header is required by
+ * Bunny library 679131's referrer allow-listing: server-side fetches send no
+ * Referer by default, which causes 403. Browsers send it automatically;
+ * server code must supply it explicitly.
+ *
+ * Safe to call for any URL — non-Bunny URLs get an empty headers object (no
+ * spurious Referer leakage to external services).
+ *
+ * Usage:
+ *   const headRes = await fetch(url, { method: 'HEAD', headers: bunnyCdnHeaders(url) });
+ */
+export function bunnyCdnHeaders(url: string): HeadersInit {
+  const cdnHostname = process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  if (!cdnHostname) return {};
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === cdnHostname) {
+      return { Referer: "https://www.listingelevate.com/" };
+    }
+  } catch {
+    // Malformed URL — no headers.
+  }
+  return {};
+}
+
+/**
+ * HEAD-validate a Bunny MP4 URL before persisting it. Sends the required
+ * Referer header so the Bunny CDN referrer allow-list passes.
+ *
+ * Returns `true` when the URL responds 2xx. Returns `false` on non-ok status
+ * or network error (never throws). Callers should call `deleteBunnyVideo(guid)`
+ * and fall back to the provider URL when this returns false.
+ */
+export async function validateBunnyMp4Url(mp4Url: string): Promise<boolean> {
+  try {
+    const headRes = await fetch(mp4Url, {
+      method: "HEAD",
+      headers: bunnyCdnHeaders(mp4Url),
+    });
+    return headRes.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ── hostVideoOnBunny ──────────────────────────────────────────────────────
 
 export interface HostVideoOnBunnyOptions {

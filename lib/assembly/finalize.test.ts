@@ -30,14 +30,18 @@ vi.mock("../providers/bunny-stream.js", () => ({
   hostVideoOnBunny: vi.fn(),
   isBunnyConfigured: vi.fn(),
   deleteBunnyVideo: vi.fn(),
+  // validateBunnyMp4Url: defaults true so the happy-path test exercises the
+  // mp4Valid branch. Tests exercising the HEAD-failure path override per-test.
+  validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
 }));
 
-import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url } from "../providers/bunny-stream.js";
 import { finalizeAssemblyRender } from "./finalize.js";
 
 const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
 const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
 const deleteBunnyVideoMock = vi.mocked(deleteBunnyVideo);
+const validateBunnyMp4UrlMock = vi.mocked(validateBunnyMp4Url);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -68,32 +72,6 @@ function makeFetchResponse(bytes: Uint8Array) {
   } as unknown as Response;
 }
 
-/** HEAD response helpers */
-function makeHeadOk(): Response {
-  return { ok: true, status: 200 } as unknown as Response;
-}
-function makeHeadNotFound(): Response {
-  return { ok: false, status: 404 } as unknown as Response;
-}
-
-/**
- * Build a sequential fetch stub: first call returns the download response,
- * second call returns the HEAD response. Finalize calls fetch twice on
- * the success path: once to download, once to HEAD-validate the mp4Url.
- */
-function makeSequentialFetch(
-  downloadResponse: Response,
-  headResponse: Response,
-): ReturnType<typeof vi.fn> {
-  const calls = [downloadResponse, headResponse];
-  let idx = 0;
-  return vi.fn(() => {
-    const r = calls[idx] ?? calls[calls.length - 1];
-    idx++;
-    return Promise.resolve(r);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Base params for every call
 // ---------------------------------------------------------------------------
@@ -122,11 +100,14 @@ describe("finalizeAssemblyRender", () => {
     hostVideoOnBunnyMock.mockReset();
     isBunnyConfiguredMock.mockReset();
     deleteBunnyVideoMock.mockReset();
+    validateBunnyMp4UrlMock.mockReset();
     // Default: Bunny configured and host succeeds.
     isBunnyConfiguredMock.mockReturnValue(true);
     hostVideoOnBunnyMock.mockResolvedValue(bunnySuccess());
     // Default: deleteBunnyVideo resolves cleanly.
     deleteBunnyVideoMock.mockResolvedValue(undefined);
+    // Default: HEAD check passes (Referer header now sent by validateBunnyMp4Url).
+    validateBunnyMp4UrlMock.mockResolvedValue(true);
 
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
@@ -262,7 +243,7 @@ describe("finalizeAssemblyRender", () => {
   it("returns Bunny mp4 URL and correct metadata on success", async () => {
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -292,7 +273,7 @@ describe("finalizeAssemblyRender", () => {
   it("encodes vertical orientation in the Bunny title for 9:16 aspect ratio", async () => {
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -310,7 +291,7 @@ describe("finalizeAssemblyRender", () => {
     // 1 MB over 30 s → ~267 kbps — far below 9000 kbps floor
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(SMALL_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(SMALL_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -331,7 +312,7 @@ describe("finalizeAssemblyRender", () => {
     // 40 MB over 30 s → ~10 667 kbps — above 9000 kbps floor
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -350,7 +331,7 @@ describe("finalizeAssemblyRender", () => {
     process.env.ASSEMBLY_MIN_KBPS = "20000";
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -366,7 +347,7 @@ describe("finalizeAssemblyRender", () => {
     process.env.ASSEMBLY_MIN_KBPS = "0";
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(SMALL_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(SMALL_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -384,7 +365,7 @@ describe("finalizeAssemblyRender", () => {
     process.env.LE_ALLOW_NONPROD_WRITES = "true";
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadOk()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
 
     const result = await finalizeAssemblyRender(BASE_PARAMS);
@@ -396,9 +377,13 @@ describe("finalizeAssemblyRender", () => {
   // ── 11. HEAD check: mp4Url 404 → fallback ─────────────────────────────────
 
   it("falls back to provider URL when HEAD check returns non-ok (MP4 Fallback disabled)", async () => {
+    // validateBunnyMp4Url returns false — simulates 403/404 from Bunny's
+    // referrer allow-listing or disabled MP4 Fallback. The global fetch stub
+    // only needs to handle the download step now.
+    validateBunnyMp4UrlMock.mockResolvedValueOnce(false);
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadNotFound()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -420,15 +405,14 @@ describe("finalizeAssemblyRender", () => {
     );
   });
 
-  it("falls back to provider URL when HEAD check throws (network error)", async () => {
-    // First fetch (download) resolves; second (HEAD) throws.
-    let callIdx = 0;
+  it("falls back to provider URL when HEAD check fails due to network error", async () => {
+    // validateBunnyMp4Url catches internal throws and returns false — so
+    // finalize sees the same false result whether it was a 403, 404, or network
+    // error. The "HEAD check failed" warn fires in all cases.
+    validateBunnyMp4UrlMock.mockResolvedValueOnce(false);
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(() => {
-        if (callIdx++ === 0) return Promise.resolve(makeFetchResponse(LARGE_BYTES));
-        return Promise.reject(new Error("head network error"));
-      }),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 
@@ -441,8 +425,10 @@ describe("finalizeAssemblyRender", () => {
     expect(result.bunnyWasCalled).toBe(true);
     // Orphaned Bunny object must be cleaned up.
     expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
+    // validateBunnyMp4Url absorbs network errors internally and returns false;
+    // finalize emits a single "HEAD check failed" warn for all HEAD failures.
     expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[assembly-finalize] mp4Url HEAD check threw"),
+      expect.stringContaining("[assembly-finalize] mp4Url HEAD check failed"),
       expect.anything(),
     );
   });
@@ -450,10 +436,11 @@ describe("finalizeAssemblyRender", () => {
   // ── 12. Orphan cleanup: deleteBunnyVideo is called when HEAD fails ──────────
 
   it("emits cost row context and deletes orphaned video when HEAD check fails after successful upload", async () => {
-    // Arrange: download succeeds, host succeeds, but HEAD returns 404.
+    // Arrange: download succeeds, host succeeds, but HEAD returns 404 (or 403).
+    validateBunnyMp4UrlMock.mockResolvedValueOnce(false);
     vi.stubGlobal(
       "fetch",
-      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadNotFound()),
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
     process.env.VERCEL_ENV = "production";
 

@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
-    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } = await import('../../lib/providers/bunny-stream.js');
     const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     const { resubmitScene } = await import('../../lib/pipeline.js');
 
@@ -181,22 +181,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isBunnyConfigured()) {
           try {
             const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
-            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
-            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
-            // clip_url would break the Gemini judge and SPA player (zero-HITL).
-            let mp4Valid = false;
-            try {
-              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
-              mp4Valid = headRes.ok;
-              if (!mp4Valid) {
-                console.warn(`[poll-scenes] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
-                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
-                deleteBunnyVideo(hosted.guid).catch(() => {});
-              }
-            } catch (headErr) {
-              console.warn(`[poll-scenes] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
-                headErr instanceof Error ? headErr.message : String(headErr));
-              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+            // HEAD-validate before persisting — sends the Referer header required
+            // by Bunny library 679131's referrer allow-listing (server-side fetches
+            // have no Referer by default → 403). If MP4 Fallback is also disabled,
+            // Bunny returns FINISHED but the URL 404s — either way a bad URL must
+            // never reach the DB or the Gemini judge (zero-HITL).
+            const mp4Valid = await validateBunnyMp4Url(hosted.mp4Url);
+            if (!mp4Valid) {
+              console.warn(`[poll-scenes] bunny mp4Url HEAD failed for ${clipPath} — keeping provider URL`);
+              // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
               deleteBunnyVideo(hosted.guid).catch(() => {});
             }
             if (mp4Valid) {
@@ -272,8 +265,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         // Run Gemini judge against the completed clip.
+        // IMPORTANT: Pass the PROVIDER url (status.videoUrl), not the Bunny CDN
+        // clipUrl. Gemini's fetchers send no Referer and would 403 against the
+        // Bunny CDN referrer allow-list. The provider URL (still alive at judge
+        // time) is what the judge must receive.
         const judged = await judgeProductionScene({
-          clipUrl: clipUrl,
+          clipUrl: status.videoUrl,
           sceneId: scene.id,
           directorPrompt: (scene as unknown as { prompt?: string }).prompt ?? '',
           cameraMovement: (scene as unknown as { camera_movement?: string }).camera_movement ?? 'unknown',
