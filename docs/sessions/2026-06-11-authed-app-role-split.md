@@ -19,19 +19,30 @@ Team-code run (council mode) on Oliver's request: "freshen up the listing elevat
 - Commit `93d6d17` — operator Today landing: NeedsYouStrip (needs_review + failed-today, deep-linked) + ProviderHealthRow (24h error chips, named balance-error alerts — would have caught the Atlas-402 outage); sidebar regrouped Operate / Studio / Business; TopNav dead nav code deleted.
 - Commit `1bd0285` — idiom sweep: Profile.tsx 29 inline styles → canon Tailwind; 7 pre-existing TSC errors fixed (28 → 21).
 - Commit `bc5ef6f` — safety gate: **P0** GET `/api/properties` was unauthenticated + tenant-unscoped (leaked all customers' data); **P1** GET `/api/properties/:id` leaked cost_events to anyone; **P2** owners could set ops statuses. All gated + 13 new tests.
-- Commit (this one) — design rationale spec, HANDOFF update, this note.
+- Commit `d5b1ebd` — design rationale spec, HANDOFF update, this note (original docs(finish)).
 
 (`bca774e`/`8288c20` at the branch root are a stray docs commit + its own revert — net zero.)
 
-## Verification (closing gate)
+## Post-docs(finish) commits (8 additional, 2026-06-11–12)
 
-- `pnpm vitest run --maxWorkers=2` — 150 files / 1333 tests passed, 2 skipped (pre-existing integration skip), 0 failed.
-- `pnpm exec tsc --noEmit` — 0 errors at branch close (main baseline 28; gate was ≤ 23).
+- `b71f42d` — review-gate P1/P2: `StatusPill` delegates to `orderStatusEntry` (kills internal vocab on agent surfaces); `/api/logs` gains `requireAdmin` guard (was firing unauthenticated for every agent page load); `useUnreadCount` made role-aware — skips both fetches when `isAdmin=false`.
+- `60d36c5` — QA-gate fixes: agent Billing → `stripe_amount_cents` (not `total_cost_cents`); Listings rows → `/status/:id` (not admin-gated `/dashboard/properties/:id`); Overview SLA card live data + three dead buttons wired; AgentHome "delivered" status bucket added + API errors surfaced explicitly; spec §2/§5 corrected (MoneyValue zero-call-sites at docs(finish) time).
+- `5726450` — MoneyValue fully adopted: all JSX cost render sites in Overview, Finances, Billing, Listings, LabListings, LabListingDetail, Properties replaced with `<MoneyValue>`; string contexts use new `fmtMoney` helper; 10 new tests.
+- `fba1e0e` — ESLint ban: `no-restricted-syntax` rule on `fmtCents` calls in `src/pages/dashboard/**` + `src/components/dashboard/**`; remaining three files (LabListings, LabListingDetail, Properties) swept to finish WS1a.
+- `447b89c` — degraded badges: `costFailed`/`healthFailed` state on Overview and `costBreakdownFailed` on Finances; amber `DegradedBadge` + Retry replaces silent $0/empty when a fetch rejects; 4 new tests.
+- `35180a9` — GET `/api/properties/:id/status` narrowed: returns `{status,label,currentStage,totalStages}` only; address, video URLs, timing data, clip counts stripped; 2 new tests for exact key-set and label correctness.
+- `4e6b7f0` — AgentHome: 5-stage progress strip (Received → Crafting scenes → Rendering → In review → Delivered) on every In-Production card; qualitative ETA phrase (omitted unless ≥3 delivered samples; digit-free); 3 new tests.
+- `49ae204` — AgentHome: hero card for newest delivered order with `horizontal_video_url`; Watch/Download/Share actions; degrades if no URL; 2 new tests.
+
+## Verification (branch tip, 2026-06-12)
+
+- `pnpm vitest run --maxWorkers=2` — 153 files / 1349 tests passed, 2 skipped, 0 failed.
+- `pnpm exec tsc --noEmit` — 0 errors.
 - No migrations, no env changes, no API contract breaks anywhere on the branch.
 
 ## What's next
 
-Oliver reviews the design rationale spec + branch; push/preview-deploy/promotion is his call. Deferred follow-ups (spec §4): move emailed status links to preview-token rails then close GET `/api/properties/:id/status`; Upload re-shell into L2; L2-internal CSS consolidation; add `pending_payment` to the PropertyStatus union with the payment flow.
+Oliver reviews the design rationale spec + branch; push/preview-deploy/promotion is his call. Remaining deferred follow-ups (spec §4): move emailed status links to preview-token rails then fully close GET `/api/properties/:id/status`; Upload re-shell into L2; L2-internal CSS consolidation; add `pending_payment` to the PropertyStatus union with the payment flow. (MoneyValue adoption — §4 item 6 — is now closed.)
 
 ## Questions answered this session
 
