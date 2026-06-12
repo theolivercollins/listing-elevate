@@ -12,6 +12,9 @@ export type PreviewLinkRow = {
   allow_download: boolean;
   allow_approve: boolean;
   allow_revision: boolean;
+  /** Per-link branding flag (migration 087). Optional until T4 wires the
+   *  customer card + all consumers always supply it; defaults TRUE elsewhere. */
+  show_branding?: boolean;
   approved_at: string | null;
   revoked_at: string | null;
   expires_at: string | null;
@@ -21,6 +24,14 @@ export type PreviewLinkRow = {
 };
 
 export type CapabilityField = 'allow_download' | 'allow_approve' | 'allow_revision';
+
+/**
+ * Fields an onToggle handler accepts. Capability flags plus the per-link
+ * branding flag (show_branding) — both flow through the same PATCH path.
+ * The panel only emits the three CapabilityField values until T4 wires
+ * show_branding into the restructured customer card.
+ */
+export type ToggleField = CapabilityField | 'show_branding';
 
 /**
  * `list` (default, video hub): every link for a kind, always-on label composer.
@@ -36,7 +47,7 @@ interface SharePanelProps {
   publicLinks: PreviewLinkRow[];
   mode?: SharePanelMode;
   onCreateLink: (kind: 'client' | 'public', label?: string) => Promise<void>;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }
@@ -234,7 +245,7 @@ function LinkRow({
   togglePrefix: string;
   showApprovedBadge: boolean;
   manageable: boolean;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }) {
@@ -419,7 +430,7 @@ function LinkSection({
   showApprovedBadge: boolean;
   mode: SharePanelMode;
   onCreateLink: (kind: 'client' | 'public', label?: string) => Promise<void>;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onSetLabel: (id: string, label: string) => Promise<void>;
   onRevoke: (id: string, revoked: boolean) => Promise<void>;
 }) {

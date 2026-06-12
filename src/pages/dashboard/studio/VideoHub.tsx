@@ -6,7 +6,7 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import LEPlayer from '@/components/preview/LEPlayer';
 import SharePanel, {
   type PreviewLinkRow,
-  type CapabilityField,
+  type ToggleField,
 } from '@/components/studio/share/SharePanel';
 import { getRelativeTime } from '@/lib/types';
 import { authedFetch } from '@/lib/api';
@@ -28,6 +28,7 @@ interface HubLink {
   label: string | null;
   revoked_at: string | null;
   capabilities: { download: boolean; approve: boolean; revision: boolean };
+  show_branding: boolean;
   approved_at: string | null;
   viewed_count: number;
   last_viewed_at: string | null;
@@ -64,6 +65,7 @@ function toPanelRow(link: HubLink): PreviewLinkRow {
     allow_download: link.capabilities.download,
     allow_approve: link.capabilities.approve,
     allow_revision: link.capabilities.revision,
+    show_branding: link.show_branding,
     approved_at: link.approved_at,
     revoked_at: link.revoked_at,
     expires_at: link.expires_at,
@@ -118,6 +120,15 @@ const VideoHub = () => {
 
   const baseUrl = window.location.origin;
 
+  // Normalize incoming links: server payloads pre-migration-087 may omit
+  // show_branding — default it TRUE (today's behavior: brand shows unless off).
+  const normalizeBundle = useCallback((data: HubBundle): HubBundle => {
+    return {
+      ...data,
+      links: data.links.map((l) => ({ ...l, show_branding: l.show_branding ?? true })),
+    };
+  }, []);
+
   const fetchBundle = useCallback(async () => {
     if (!propertyId) return;
     setLoading(true);
@@ -125,7 +136,7 @@ const VideoHub = () => {
       const res = await authedFetch(`/api/admin/studio/videos/${propertyId}`);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       const data: HubBundle = await res.json();
-      setBundle(data);
+      setBundle(normalizeBundle(data));
       setError(null);
       // Default the player to whichever render exists (prefer horizontal).
       setOrientation(data.property.videos.horizontal ? 'horizontal' : 'vertical');
@@ -134,59 +145,142 @@ const VideoHub = () => {
     } finally {
       setLoading(false);
     }
-  }, [propertyId]);
+  }, [propertyId, normalizeBundle]);
+
+  // Silent refresh: refetch the bundle WITHOUT touching the `loading` flag, so
+  // the hub never remounts into its skeleton (the screen-flash). Used after a
+  // link is created (the POST returns only {token,url}, so the new row must be
+  // pulled in) — mutations on existing links update local state optimistically
+  // instead and never refetch.
+  const refreshBundleSilently = useCallback(async () => {
+    if (!propertyId) return;
+    try {
+      const res = await authedFetch(`/api/admin/studio/videos/${propertyId}`);
+      if (!res.ok) return;
+      const data: HubBundle = await res.json();
+      setBundle(normalizeBundle(data));
+    } catch {
+      // Silent: a failed refresh leaves current state intact, no flash.
+    }
+  }, [propertyId, normalizeBundle]);
 
   useEffect(() => {
     void fetchBundle();
   }, [fetchBundle]);
 
-  // ── Share wiring — reuse the existing preview-link endpoints. ──────────────
+  // Apply a partial update to one link in local bundle state. Returns the
+  // prior link snapshot (for rollback) or null if the link/bundle is missing.
+  const patchLocalLink = useCallback(
+    (id: string, patch: Partial<HubLink>): HubLink | null => {
+      let prior: HubLink | null = null;
+      setBundle((cur) => {
+        if (!cur) return cur;
+        const links = cur.links.map((l) => {
+          if (l.id !== id) return l;
+          prior = l;
+          return { ...l, ...patch };
+        });
+        return prior ? { ...cur, links } : cur;
+      });
+      return prior;
+    },
+    [],
+  );
+
+  // ── Share wiring — optimistic + local; never flips `loading`. ─────────────
   const onCreateLink = useCallback(
     async (kind: 'client' | 'public', label?: string) => {
-      await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-link`, {
+      const res = await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-link`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kind, ...(label ? { label } : {}) }),
       });
-      await fetchBundle();
+      // Pull the new row in via a loading-flag-free refresh. On POST failure do
+      // nothing — no optimistic insert (we lack the server-assigned token/id).
+      if (res.ok) await refreshBundleSilently();
     },
-    [propertyId, fetchBundle],
+    [propertyId, refreshBundleSilently],
   );
 
   const onToggle = useCallback(
-    async (id: string, field: CapabilityField, value: boolean) => {
-      await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value }),
-      });
-      await fetchBundle();
+    async (id: string, field: ToggleField, value: boolean) => {
+      // Map the flat PATCH field to its local-state location and apply
+      // optimistically, capturing the prior link for rollback.
+      let prior: HubLink | null;
+      if (field === 'show_branding') {
+        // show_branding is a flat per-link flag.
+        prior = patchLocalLink(id, { show_branding: value });
+      } else {
+        // capabilities are nested — rebuild the object from the current link.
+        const key = field === 'allow_download' ? 'download' : field === 'allow_approve' ? 'approve' : 'revision';
+        let snapshot: HubLink | null = null;
+        setBundle((cur) => {
+          if (!cur) return cur;
+          const links = cur.links.map((l) => {
+            if (l.id !== id) return l;
+            snapshot = l;
+            return { ...l, capabilities: { ...l.capabilities, [key]: value } };
+          });
+          return snapshot ? { ...cur, links } : cur;
+        });
+        prior = snapshot;
+      }
+
+      const rollback = () => {
+        if (prior) patchLocalLink(id, prior);
+      };
+      try {
+        const res = await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [field]: value }),
+        });
+        if (!res.ok) rollback();
+      } catch {
+        rollback();
+      }
     },
-    [propertyId, fetchBundle],
+    [propertyId, patchLocalLink],
   );
 
   const onSetLabel = useCallback(
     async (id: string, label: string) => {
-      await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ label }),
-      });
-      await fetchBundle();
+      const prior = patchLocalLink(id, { label });
+      const rollback = () => {
+        if (prior) patchLocalLink(id, prior);
+      };
+      try {
+        const res = await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label }),
+        });
+        if (!res.ok) rollback();
+      } catch {
+        rollback();
+      }
     },
-    [propertyId, fetchBundle],
+    [propertyId, patchLocalLink],
   );
 
   const onRevoke = useCallback(
     async (id: string, revoked: boolean) => {
-      await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ revoked }),
-      });
-      await fetchBundle();
+      const prior = patchLocalLink(id, { revoked_at: revoked ? new Date().toISOString() : null });
+      const rollback = () => {
+        if (prior) patchLocalLink(id, prior);
+      };
+      try {
+        const res = await authedFetch(`/api/admin/studio/properties/${propertyId}/preview-links/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ revoked }),
+        });
+        if (!res.ok) rollback();
+      } catch {
+        rollback();
+      }
     },
-    [propertyId, fetchBundle],
+    [propertyId, patchLocalLink],
   );
 
   // ── Derived state ──────────────────────────────────────────────────────────
