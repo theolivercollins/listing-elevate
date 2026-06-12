@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { hostVideoOnBunny, bunnyStreamCostCents, BUNNY_STATUS } from "./bunny-stream.js";
+import { hostVideoOnBunny, bunnyStreamCostCents, bestMp4Res, BUNNY_STATUS } from "./bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -115,10 +115,15 @@ describe("hostVideoOnBunny", () => {
 
     expect(result.guid).toBe(FAKE_GUID);
     expect(result.status).toBe(BUNNY_STATUS.FINISHED);
-    // mp4Url must contain the guid -- bunnyMp4Url(guid) = https://{cdn}/{guid}/play_720p.mp4
+    // mp4Url must contain the guid and resolve to the highest available rendition
+    // (mock returns availableResolutions:"720p,1080p" → bestMp4Res picks "1080p")
     expect(result.mp4Url).toContain(FAKE_GUID);
     expect(result.mp4Url).toContain(FAKE_CDN);
     expect(result.mp4Url).toMatch(/\.mp4$/);
+    // Resolution must be >=1080p — this is the core regression guard.
+    // bestMp4Res("720p,1080p") must return "1080p", not "720p".
+    expect(result.mp4Url).toContain("1080p");
+    expect(result.mp4Url).not.toContain("720p");
     // hlsUrl also returned
     expect(result.hlsUrl).toContain(FAKE_GUID);
     expect(result.hlsUrl).toContain("playlist.m3u8");
@@ -215,5 +220,44 @@ describe("bunnyStreamCostCents", () => {
   it("larger videos accumulate non-zero cost (10 GB)", () => {
     const tenGb = 10 * 1_073_741_824;
     expect(bunnyStreamCostCents(tenGb)).toBe(10);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bestMp4Res — resolution selection
+// ---------------------------------------------------------------------------
+
+describe("bestMp4Res", () => {
+  it("picks 1080p when available alongside 720p", () => {
+    expect(bestMp4Res("240p,360p,480p,720p,1080p")).toBe("1080p");
+  });
+
+  it("picks original when present (highest priority)", () => {
+    expect(bestMp4Res("480p,720p,1080p,original")).toBe("original");
+  });
+
+  it("picks 720p as best when only lower resolutions absent", () => {
+    expect(bestMp4Res("240p,480p,720p")).toBe("720p");
+  });
+
+  it("falls back to 720p for null availableResolutions", () => {
+    expect(bestMp4Res(null)).toBe("720p");
+  });
+
+  it("falls back to 720p for empty string", () => {
+    expect(bestMp4Res("")).toBe("720p");
+  });
+
+  it("is case-insensitive", () => {
+    expect(bestMp4Res("240P,720P,1080P")).toBe("1080p");
+  });
+
+  it("trims whitespace from Bunny comma-separated values", () => {
+    expect(bestMp4Res("720p, 1080p")).toBe("1080p");
+  });
+
+  it("never returns a resolution not in the allowed list (rejects unknown labels)", () => {
+    // "2160p" is not in RESOLUTION_PREFERENCE, so fallback to 720p
+    expect(bestMp4Res("2160p")).toBe("720p");
   });
 });

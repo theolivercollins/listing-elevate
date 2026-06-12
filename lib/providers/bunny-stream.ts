@@ -164,6 +164,27 @@ export function bunnyMp4Url(guid: string, res = "720p"): string {
   return `https://${cdnHostname}/${guid}/play_${res}.mp4`;
 }
 
+// Ordered from best to worst so the first match wins.
+const RESOLUTION_PREFERENCE = ["original", "1080p", "720p", "480p", "360p", "240p"] as const;
+
+/**
+ * Pick the best available MP4 rendition from the comma-separated
+ * `availableResolutions` string returned by Bunny's video API (e.g.
+ * "240p,360p,480p,720p,1080p"). Falls back to "720p" when the field is null
+ * or none of the known labels are present.
+ *
+ * This is intentionally conservative — only known resolution labels are
+ * matched so an unexpected future Bunny label doesn't produce a malformed URL.
+ */
+export function bestMp4Res(availableResolutions: string | null): string {
+  if (!availableResolutions) return "720p";
+  const available = availableResolutions.split(",").map((s) => s.trim().toLowerCase());
+  for (const candidate of RESOLUTION_PREFERENCE) {
+    if (available.includes(candidate)) return candidate;
+  }
+  return "720p";
+}
+
 // ── Cost model ────────────────────────────────────────────────────────────
 
 /**
@@ -243,9 +264,10 @@ export async function hostVideoOnBunny(
     const video = await getBunnyVideo(guid);
 
     if (video.status === BUNNY_STATUS.FINISHED) {
+      const res = bestMp4Res(video.availableResolutions);
       return {
         guid,
-        mp4Url: bunnyMp4Url(guid),
+        mp4Url: bunnyMp4Url(guid, res),
         hlsUrl: bunnyHlsUrl(guid),
         status: video.status,
       };

@@ -206,6 +206,27 @@ export async function finalizeAssemblyRender(
 
   try {
     const hosted = await hostVideoOnBunny(bunnyTitle, videoBytes);
+    // Validate the MP4 URL with a HEAD check before persisting. If the library
+    // doesn't have "MP4 Fallback" enabled, Bunny returns status FINISHED but the
+    // rendition URL 404s. A 404 would persist a dead URL as horizontal_video_url;
+    // we must fall back to providerUrl instead (zero-HITL guarantee).
+    try {
+      const headRes = await fetch(hosted.mp4Url, { method: "HEAD" });
+      if (!headRes.ok) {
+        console.warn(
+          "[assembly-finalize] mp4Url HEAD check failed — falling back to provider URL",
+          { status: headRes.status, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
+        );
+        return { url: providerUrl, bitrateKbps, outputBytes };
+      }
+    } catch (headErr) {
+      const headMsg = headErr instanceof Error ? headErr.message : String(headErr);
+      console.warn(
+        "[assembly-finalize] mp4Url HEAD check threw — falling back to provider URL",
+        { headMsg, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
+      );
+      return { url: providerUrl, bitrateKbps, outputBytes };
+    }
     return { url: hosted.mp4Url, bitrateKbps, outputBytes };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
