@@ -20,7 +20,7 @@ import { PageHeading, Card } from "@/components/dashboard/primitives";
 // ─── Design-system input primitives ───────────────────────────────────────────
 const INPUT_STYLE: CSSProperties = {
   padding: "9px 14px",
-  borderRadius: 12,
+  borderRadius: "var(--le-r-lg)",
   border: "1px solid var(--line)",
   background: "var(--surface)",
   color: "var(--ink)",
@@ -833,7 +833,7 @@ function BatchGroups({ sessions, onReload, showArchived, setShowArchived, versio
                 title={`Expand "${batch}"`}
                 style={{ display: "flex", flexDirection: "column", width: "100%", padding: 12, textAlign: "left", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius)", cursor: "pointer", aspectRatio: "1" }}
               >
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, flex: 1, minHeight: 0, marginBottom: 10, overflow: "hidden", borderRadius: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr", gap: 3, flex: 1, minHeight: 0, marginBottom: 10, overflow: "hidden", borderRadius: "var(--le-r-md)" }}>
                   {previewImages.map((src, i) => (
                     <div key={i} style={{ overflow: "hidden", background: "rgba(11,11,16,0.06)" }}>
                       {src ? (
@@ -1024,7 +1024,7 @@ function ListingSelectionSection({ batchLabel, version }: { batchLabel: string |
                         key={u.session_id}
                         type="button"
                         onClick={() => navigate(versionedLabPath(u.session_id, version))}
-                        style={{ width: 40, height: 40, overflow: "hidden", border: "1px solid var(--line)", borderRadius: 8, background: "var(--surface)", cursor: "pointer", padding: 0 }}
+                        style={{ width: 40, height: 40, overflow: "hidden", border: "1px solid var(--line)", borderRadius: "var(--le-r-sm)", background: "var(--surface)", cursor: "pointer", padding: 0 }}
                         title={u.label ?? ""}
                       >
                         {u.image_url && (
@@ -1098,7 +1098,7 @@ function SelectionColumn({
               onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(11,11,16,0.02)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--surface)"; }}
             >
-              <div style={{ width: 56, height: 56, flexShrink: 0, overflow: "hidden", borderRadius: 8, background: "rgba(11,11,16,0.06)" }}>
+              <div style={{ width: 56, height: 56, flexShrink: 0, overflow: "hidden", borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)" }}>
                 {i.image_url && (
                   <img src={i.image_url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 )}
@@ -1279,7 +1279,7 @@ function SessionCard({
               style={{
                 width: 18,
                 height: 18,
-                borderRadius: 4,
+                borderRadius: "var(--le-r-sm)",
                 border: selected ? "2px solid var(--ink)" : "2px solid rgba(255,255,255,0.8)",
                 background: selected ? "var(--ink)" : "rgba(0,0,0,0.3)",
                 color: selected ? "var(--surface)" : "transparent",
@@ -1295,19 +1295,19 @@ function SessionCard({
         <img src={session.image_url} alt={session.label ?? "session"} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", display: "block" }} />
         {session.pending_render && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, background: "rgba(182,128,44,0.9)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.9)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
               <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
               Rendering
             </div>
           </div>
         )}
         {session.archived && (
-          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6, background: "rgba(100,100,110,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "rgba(100,100,110,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
             Archived
           </div>
         )}
         {!session.archived && session.completed && (
-          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6, background: "rgba(47,138,85,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
             Completed
           </div>
         )}
@@ -1612,7 +1612,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
               {/* Version badge — read-only. Switch version via SessionList. */}
               <span
                 style={{
-                  borderRadius: 6,
+                  borderRadius: "var(--le-r-sm)",
                   background: isV11 ? 'rgba(115,80,195,0.10)' : 'rgba(11,11,16,0.06)',
                   padding: '2px 8px',
                   fontSize: 10,
@@ -1649,7 +1649,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
                 alignItems: "center",
                 gap: 6,
                 padding: "5px 12px",
-                borderRadius: 8,
+                borderRadius: "var(--le-r-sm)",
                 border: "1px solid var(--line)",
                 background: "var(--surface)",
                 cursor: "pointer",
@@ -1897,7 +1897,7 @@ function PromoteRecipeControl({
 
   if (promoted) {
     return (
-      <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 8, background: "rgba(47,138,85,0.08)", padding: "6px 12px", fontSize: 12, color: "var(--good)" }}>
+      <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.08)", padding: "6px 12px", fontSize: 12, color: "var(--good)" }}>
         Promoted to recipe library
       </div>
     );
@@ -1965,7 +1965,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
   const losers = metadata.losers ?? [];
   const recipe = metadata.recipe;
   if (exemplars.length === 0 && losers.length === 0 && !recipe) return null;
-  const chipBase: CSSProperties = { borderRadius: 6, padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" };
+  const chipBase: CSSProperties = { borderRadius: "var(--le-r-sm)", padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" };
   return (
     <>
       {exemplars.length > 0 && (
@@ -2015,7 +2015,7 @@ function JudgeChip({
     return (
       <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)" }}>
-          <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }}>
+          <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }}>
             Judge failed
           </span>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200, color: "var(--muted-2)" }} title={iteration.judge_error}>
@@ -2060,12 +2060,12 @@ function JudgeChip({
     <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
       {/* Chip row — dim when a stale retry error is also present */}
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, fontSize: 11, fontVariantNumeric: "tabular-nums", color: "var(--muted)", opacity: hasStaleError ? 0.6 : 1 }}>
-        <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontWeight: 600, color: "var(--ink)" }}>
+        <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontWeight: 600, color: "var(--ink)" }}>
           Judge: {iteration.judge_rating_overall}/5
         </span>
         {hasStaleError && (
           <span
-            style={{ borderRadius: 6, background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
+            style={{ borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
             title={iteration.judge_error ?? "retry error"}
           >
             retry err
@@ -2089,7 +2089,7 @@ function JudgeChip({
               {flags.map((f) => (
                 <span
                   key={f}
-                  style={{ marginRight: 4, borderRadius: 5, background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
+                  style={{ marginRight: 4, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
                 >
                   {f}
                 </span>
@@ -2229,7 +2229,7 @@ function OverridePanel({
                 type="button"
                 onClick={() => toggleFlag(f as HallucinationFlag)}
                 style={{
-                  borderRadius: 6,
+                  borderRadius: "var(--le-r-sm)",
                   border: `1px solid ${active ? "var(--ink)" : "var(--line)"}`,
                   background: active ? "var(--ink)" : "transparent",
                   color: active ? "var(--surface)" : "var(--muted)",
@@ -2488,12 +2488,12 @@ function IterationCard({
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
             <span className="le-d-label">Iteration {iteration.iteration_number}</span>
             {iteration.order_id && (
-              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 6px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 6px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 {iteration.order_id}
               </span>
             )}
             {(iteration.model_used || iteration.provider) && (
-              <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }} title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
+              <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--ink-2)" }} title={iteration.model_used ? `provider: ${iteration.provider ?? "—"}` : undefined}>
                 {iteration.model_used ?? iteration.provider}
               </span>
             )}
@@ -2530,7 +2530,7 @@ function IterationCard({
         {director && (
           <div style={{ marginTop: 20, borderLeft: "2px solid rgba(11,11,16,0.12)", paddingLeft: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ borderRadius: 6, background: "var(--ink)", color: "var(--surface)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span style={{ borderRadius: "var(--le-r-sm)", background: "var(--ink)", color: "var(--surface)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 {director.camera_movement}
               </span>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{director.duration_seconds}s</span>
@@ -2547,7 +2547,7 @@ function IterationCard({
 
         {/* Queued for render (waiting for provider slot) */}
         {!iteration.clip_url && !iteration.provider_task_id && iteration.render_queued_at && !iteration.render_error && (
-          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, background: "rgba(115,80,195,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--accent)" }}>
+          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", background: "rgba(115,80,195,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--accent)" }}>
             <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
             Queued for {iteration.provider ?? "render"} — waiting for slot
             <span style={{ opacity: 0.7 }}>
@@ -2558,7 +2558,7 @@ function IterationCard({
 
         {/* Pending render indicator */}
         {!iteration.clip_url && iteration.provider_task_id && !iteration.render_error && (
-          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: 8, background: "rgba(182,128,44,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--warn)" }}>
+          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--warn)" }}>
             <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
             Rendering on {iteration.provider}
             {iteration.render_submitted_at && (
@@ -2612,7 +2612,7 @@ function IterationCard({
           && iteration.judge_error == null
           && (
             <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--muted)" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                 <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
                 Judging…
               </span>
@@ -2858,7 +2858,7 @@ function IterationCard({
                     </option>
                   ))}
                 </select>
-                <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, color: "var(--muted)" }}>
+                <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontSize: 10, color: "var(--muted)" }}>
                   {v11SkuCostLabel(sku as V1_1LabSku)}
                 </span>
 
@@ -2898,7 +2898,7 @@ function IterationCard({
                       </option>
                     ))}
                   </select>
-                  <span style={{ borderRadius: 6, background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
+                  <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
                     {isNativeKlingSku(sku as SkuChoice) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku as SkuChoice] / 100).toFixed(2)}/5s`}
                   </span>
                 </div>

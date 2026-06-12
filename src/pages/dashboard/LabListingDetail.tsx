@@ -315,7 +315,7 @@ export default function LabListingDetail() {
                 justifyContent: "center",
                 width: 34,
                 height: 34,
-                borderRadius: 10,
+                borderRadius: "var(--le-r-md)",
                 background: "transparent",
                 border: "1px solid var(--line)",
                 color: "var(--muted)",
@@ -424,7 +424,7 @@ export default function LabListingDetail() {
                     position: "relative",
                     aspectRatio: "16/9",
                     overflow: "hidden",
-                    borderRadius: 6,
+                    borderRadius: "var(--le-r-sm)",
                     background: "var(--bg)",
                     border: "1px solid var(--line-2)",
                   }}
@@ -445,7 +445,7 @@ export default function LabListingDetail() {
                       background: "rgba(0,0,0,0.6)",
                       color: "#fff",
                       padding: "1px 4px",
-                      borderRadius: 3,
+                      borderRadius: "var(--le-r-sm)",
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
@@ -553,7 +553,7 @@ export default function LabListingDetail() {
                           position: "relative",
                           aspectRatio: "16/9",
                           overflow: "hidden",
-                          borderRadius: 6,
+                          borderRadius: "var(--le-r-sm)",
                           background: "var(--bg)",
                         }}
                       >

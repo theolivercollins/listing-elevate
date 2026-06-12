@@ -108,7 +108,7 @@ function LibraryThumbnail({ item, onClick }: { item: LibraryItem; onClick: () =>
       style={{
         position: "relative",
         aspectRatio: "16 / 9",
-        borderRadius: 8,
+        borderRadius: "var(--le-r-sm)",
         overflow: "hidden",
         border: `1px solid ${hovered ? "rgba(11,11,16,0.35)" : "var(--line)"}`,
         background: "rgba(11,11,16,0.08)",
@@ -165,7 +165,7 @@ function LibraryCard({
   const thumbStyle: CSSProperties = {
     width: 96,
     height: 54,
-    borderRadius: 6,
+    borderRadius: "var(--le-r-sm)",
     overflow: "hidden",
     flexShrink: 0,
     background: "rgba(11,11,16,0.08)",
@@ -185,7 +185,7 @@ function LibraryCard({
         width: "100%",
         padding: "8px 10px",
         border: "1px solid var(--line)",
-        borderRadius: 8,
+        borderRadius: "var(--le-r-sm)",
         background: "var(--surface)",
         cursor: "pointer",
         fontFamily: "var(--le-font-sans)",
@@ -273,7 +273,7 @@ function SequenceCard({
   const chipBtn: CSSProperties = {
     width: 22,
     height: 22,
-    borderRadius: 6,
+    borderRadius: "var(--le-r-sm)",
     border: "none",
     background: "rgba(0,0,0,0.55)",
     color: "#fff",
@@ -344,7 +344,7 @@ function SequenceCard({
           width: 192,
           height: 108,
           flexShrink: 0,
-          borderRadius: 10,
+          borderRadius: "var(--le-r-md)",
           overflow: "hidden",
           background: "rgba(11,11,16,0.08)",
           cursor: "grab",
@@ -374,7 +374,7 @@ function SequenceCard({
             left: 6,
             width: 22,
             height: 22,
-            borderRadius: 6,
+            borderRadius: "var(--le-r-sm)",
             background: "rgba(0,0,0,0.65)",
             color: "#fff",
             fontSize: 11,
@@ -787,7 +787,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     display: "inline-flex",
     padding: 3,
     background: "rgba(11,11,16,0.05)",
-    borderRadius: 10,
+    borderRadius: "var(--le-r-md)",
     gap: 2,
     width: "100%",
   };
@@ -795,7 +795,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
   const prefToggleBtn = (active: boolean): CSSProperties => ({
     flex: 1,
     padding: "8px 10px",
-    borderRadius: 8,
+    borderRadius: "var(--le-r-sm)",
     border: "none",
     background: active ? "var(--surface)" : "transparent",
     color: active ? "var(--ink)" : "var(--muted)",
@@ -843,7 +843,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
           maxHeight: "100%",
           background: "var(--surface)",
           border: "1px solid var(--line)",
-          borderRadius: 14,
+          borderRadius: "var(--le-r-lg)",
           boxShadow: "0 40px 80px -20px rgba(0,0,0,0.5)",
           display: "flex",
           flexDirection: "column",
@@ -875,7 +875,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
             </span>
             <span
               style={{
-                borderRadius: 6,
+                borderRadius: "var(--le-r-sm)",
                 background: "rgba(115,80,195,0.10)",
                 padding: "2px 8px",
                 fontSize: 10,
@@ -890,7 +890,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
             {source.kind === "listing" && (
               <span
                 style={{
-                  borderRadius: 6,
+                  borderRadius: "var(--le-r-sm)",
                   background: "rgba(11,11,16,0.06)",
                   padding: "2px 8px",
                   fontSize: 10,
@@ -912,7 +912,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 cursor: "pointer",
                 color: "var(--muted)",
                 padding: 6,
-                borderRadius: 6,
+                borderRadius: "var(--le-r-sm)",
                 display: "inline-flex",
               }}
             >
@@ -927,7 +927,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 cursor: "pointer",
                 color: "var(--muted)",
                 padding: 6,
-                borderRadius: 6,
+                borderRadius: "var(--le-r-sm)",
                 display: "inline-flex",
               }}
               title="Close"
@@ -1022,7 +1022,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                   >
                     {tab}
                     {tab === "vfx" && (
-                      <span style={{ marginLeft: 5, padding: "1px 5px", borderRadius: 6, fontSize: 9, background: "rgba(217,70,160,0.12)", color: "rgb(217,70,160)" }}>
+                      <span style={{ marginLeft: 5, padding: "1px 5px", borderRadius: "var(--le-r-sm)", fontSize: 9, background: "rgba(217,70,160,0.12)", color: "rgb(217,70,160)" }}>
                         NEW
                       </span>
                     )}
@@ -1103,7 +1103,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                   style={{
                     maxWidth: "100%",
                     maxHeight: "100%",
-                    borderRadius: 12,
+                    borderRadius: "var(--le-r-lg)",
                     background: "#000",
                     boxShadow: "0 20px 40px -16px rgba(0,0,0,0.35)",
                   }}
@@ -1115,7 +1115,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     width: "100%",
                     maxWidth: 560,
                     aspectRatio: "16 / 9",
-                    borderRadius: 12,
+                    borderRadius: "var(--le-r-lg)",
                     overflow: "hidden",
                     background: "rgba(11,11,16,0.03)",
                     border: "1.5px dashed rgba(11,11,16,0.16)",
@@ -1189,7 +1189,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                   style={{
                     width: "100%",
                     padding: "9px 12px",
-                    borderRadius: 10,
+                    borderRadius: "var(--le-r-md)",
                     border: "1px solid var(--line)",
                     background: "var(--surface)",
                     fontSize: 12.5,
@@ -1332,7 +1332,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 alignItems: "center",
                 gap: 6,
                 padding: "10px 18px",
-                borderRadius: 12,
+                borderRadius: "var(--le-r-lg)",
                 border: "none",
                 background:
                   sequence.length === 0 || status === "assembling"
@@ -1400,7 +1400,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                       alignItems: "center",
                       justifyContent: "center",
                       border: "1px dashed var(--line)",
-                      borderRadius: 10,
+                      borderRadius: "var(--le-r-md)",
                       padding: "24px",
                       fontSize: 12,
                       color: "var(--muted)",
@@ -1442,7 +1442,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
               </div>
               {/* VFX strip (placeholder) */}
               <div style={{ minHeight: 32, display: "flex", alignItems: "center" }}>
-                <div style={{ width: "100%", height: 28, borderRadius: 8, background: "rgba(11,11,16,0.025)", border: "1px dashed var(--line)" }} />
+                <div style={{ width: "100%", height: 28, borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.025)", border: "1px dashed var(--line)" }} />
               </div>
             </div>
           </div>

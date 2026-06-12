@@ -25,7 +25,7 @@ function SkeletonTile() {
     <div
       style={{
         aspectRatio: "4/3",
-        borderRadius: 12,
+        borderRadius: "var(--le-r-lg)",
         background: "rgba(11,11,16,0.06)",
         animation: "le-pulse 1.5s ease-in-out infinite",
       }}
@@ -62,7 +62,7 @@ function ImageTile({
       style={{
         position: "relative",
         aspectRatio: "4/3",
-        borderRadius: 12,
+        borderRadius: "var(--le-r-lg)",
         overflow: "hidden",
         background: "rgba(11,11,16,0.06)",
         border: selected ? "2px solid var(--accent, #2a6fdb)" : "2px solid transparent",
@@ -189,7 +189,7 @@ function UploadTile({ onUploaded }: { onUploaded: (img: BlogImage) => void }) {
         onClick={() => ref.current?.click()}
         style={{
           aspectRatio: "4/3",
-          borderRadius: 12,
+          borderRadius: "var(--le-r-lg)",
           border: "2px dashed rgba(11,11,16,0.18)",
           background: "rgba(11,11,16,0.025)",
           display: "flex",
@@ -311,7 +311,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
           width: "95vw",
           padding: 0,
           overflow: "hidden",
-          borderRadius: 18,
+          borderRadius: "var(--le-r-xl)",
           display: "flex",
           flexDirection: "column",
           maxHeight: "88vh",

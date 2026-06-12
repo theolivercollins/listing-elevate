@@ -1,7 +1,7 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useEffect } from "react";
 import type { Property, Scene, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
-import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
+import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, SkeletonRow, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { SAMPLE_STAGES } from "@/components/dashboard/sample-data";
 import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
@@ -37,36 +37,8 @@ function hueForId(id: string): number {
   return 200 + (h % 160);
 }
 
-// ─── Style constants ──────────────────────────────────────────────
-const ghostBtn: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6,
-  padding: "8px 12px", borderRadius: 10,
-  border: "1px solid rgba(15,24,60,0.08)", background: "rgba(255,255,255,0.5)",
-  color: "var(--ink-2)", fontSize: 12, fontWeight: 500, cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-
-const primaryAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "9px 14px", borderRadius: 10,
-  background: "var(--ink)", color: "#fff", border: "none",
-  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-  boxShadow: "0 6px 18px -8px rgba(11,18,32,0.55), 0 1px 0 rgba(255,255,255,0.18) inset",
-};
-
-const secondaryAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "9px 14px", borderRadius: 10,
-  background: "rgba(255,255,255,0.7)", color: "var(--ink)", border: "1px solid rgba(15,24,60,0.1)",
-  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-};
-
-const ghostAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "8px 14px", borderRadius: 10,
-  background: "transparent", color: "var(--muted)", border: "none",
-  fontSize: 11.5, fontWeight: 500, cursor: "pointer",
-};
+// Style constants removed — buttons now use .le-btn-ghost / .le-btn-dark CSS classes
+// to keep all border-radius and color values in the token layer.
 
 // ─── PipelineCard ─────────────────────────────────────────────────
 function PipelineCard({ property }: { property: SampleProperty }) {
@@ -78,10 +50,9 @@ function PipelineCard({ property }: { property: SampleProperty }) {
     <div
       className="le-lift"
       style={{
-        padding: 12, borderRadius: 12,
-        background: "rgba(255,255,255,0.7)",
-        border: "1px solid rgba(15,24,60,0.06)",
-        boxShadow: "0 1px 0 rgba(255,255,255,0.8) inset",
+        padding: 12, borderRadius: "var(--le-r-lg)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         position: "relative", overflow: "hidden",
         cursor: "pointer",
       }}
@@ -149,7 +120,7 @@ function ReviewCard({
         style={{
           aspectRatio: "16 / 9",
           background: `linear-gradient(135deg, hsl(${providerHue}, 10%, 50%), hsl(${providerHue + 15}, 12%, 32%))`,
-          borderRadius: 12, display: "grid", placeItems: "center",
+          borderRadius: "var(--le-r-lg)", display: "grid", placeItems: "center",
           color: "rgba(255,255,255,0.9)", position: "relative", overflow: "hidden",
           border: "1px solid rgba(255,255,255,0.5)",
         }}
@@ -200,21 +171,21 @@ function ReviewCard({
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions — token-based classes, no hardcoded radii or rgba colors */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", minWidth: 150 }}>
-        <button type="button" style={{ ...primaryAction, opacity }} disabled={actionLoading} onClick={onApprove}>
+        <button type="button" className="le-btn-dark" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onApprove}>
           <Icon name="check" size={14} />Approve
         </button>
-        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onResubmit}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onResubmit}>
           <Icon name="retry" size={14} />Resubmit
         </button>
-        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onTryOther}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onTryOther}>
           <Icon name="retry" size={14} />Try {otherProvider}
         </button>
-        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onEditPrompt}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onEditPrompt}>
           <Icon name="sparkles" size={13} />Edit prompt
         </button>
-        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onSkip}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onSkip}>
           <Icon name="skip" size={13} />Skip
         </button>
       </div>
@@ -230,7 +201,7 @@ const Pipeline = () => {
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [avgProcessingMs, setAvgProcessingMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"kanban" | "timeline">("kanban");
+  const [view, setView] = useState<"kanban" | "ledger">("ledger");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -375,11 +346,21 @@ const Pipeline = () => {
 
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ display: "flex", justifyContent: "center", padding: "96px 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13 }}>
-          <Icon name="clock" size={16} />
-          Loading pipeline...
-        </div>
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <SkeletonRow />
+            </div>
+          ))}
+        </section>
+        <Card padding={20}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
@@ -421,7 +402,7 @@ const Pipeline = () => {
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {/* Segmented control */}
             <div className="le-seg">
-              {(["kanban", "timeline"] as const).map((v) => (
+              {(["ledger", "kanban"] as const).map((v) => (
                 <button
                   key={v}
                   type="button"
@@ -432,24 +413,65 @@ const Pipeline = () => {
                 </button>
               ))}
             </div>
-            <button type="button" style={ghostBtn}>
+            <button type="button" className="le-btn-ghost">
               <Icon name="filter" size={14} />Filter
             </button>
           </div>
         </div>
 
-        {/* Kanban grid */}
+        {/* Pipeline views — ledger (default) or kanban */}
         {allLiveProps.length === 0 ? (
           <div
             style={{
-              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
               padding: "56px 0", textAlign: "center",
               fontSize: 13, color: "var(--muted)",
             }}
           >
             No properties in the pipeline yet. New uploads will appear here.
           </div>
+        ) : view === "ledger" ? (
+          /* ── Ledger table view (approved operator design) ── */
+          <div className="le-table-scroll is-wide">
+            <table className="le-ledger">
+              <thead>
+                <tr>
+                  <th>Address</th>
+                  <th>Stage</th>
+                  <th>Agent</th>
+                  <th>Photos</th>
+                  <th>Progress</th>
+                  <th>Submitted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allLiveProps.map((p) => {
+                  const adapted = adaptProperty(p);
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight: 500, color: "var(--ink)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.address}
+                      </td>
+                      <td><StatusChip status={p.status} /></td>
+                      <td style={{ color: "var(--muted)", fontSize: 12 }}>{p.listing_agent ?? "—"}</td>
+                      <td style={{ fontVariantNumeric: "tabular-nums", color: "var(--muted-2)", fontSize: 12 }}>{p.photo_count ?? 0}</td>
+                      <td>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span className="le-mini-progress">
+                            <span className="le-mini-progress-fill" style={{ width: `${adapted.progress}%` }} />
+                          </span>
+                          <span style={{ fontSize: 11, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{adapted.progress}%</span>
+                        </div>
+                      </td>
+                      <td style={{ color: "var(--muted-2)", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{fmtRel(adapted.created_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
+        /* ── Kanban view ── */
         <div className="le-table-scroll is-wide">
         <div
           style={{
@@ -496,7 +518,7 @@ const Pipeline = () => {
                     <div
                       style={{
                         flex: 1, display: "grid", placeItems: "center",
-                        border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+                        border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
                         color: "var(--muted-2)", fontSize: 11,
                       }}
                     >
@@ -530,7 +552,7 @@ const Pipeline = () => {
         {reviewScenes.length === 0 ? (
           <div
             style={{
-              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)",
               padding: "48px 0", textAlign: "center",
               fontSize: 13, color: "var(--muted)",
             }}

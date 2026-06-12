@@ -13,7 +13,7 @@ const inputStyle: React.CSSProperties = {
   color: "var(--ink)",
   background: "var(--surface)",
   border: "1px solid var(--line)",
-  borderRadius: 12,
+  borderRadius: "var(--le-r-lg)",
   outline: "none",
   boxSizing: "border-box",
 };

@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Listing Elevate — Operator Pipeline (Phase 2 sample)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet" />
+<style>
+/* Shared shell tokens — identical to 01-agent-home.html */
+:root{
+  --bg:#f4f5f8; --bg-tint:#eef1f7; --surface:#ffffff; --surface-2:#fbfcfe;
+  --ink:#0c0e16; --ink-2:#2b2f3a; --muted:#656b7a; --muted-2:#9aa0ad;
+  --line:rgba(12,14,22,0.08); --line-2:rgba(12,14,22,0.045);
+  --accent:#2a6fdb; --accent-2:#1f5ec2; --accent-soft:#eaf1fd; --accent-ink:#1b4ea0;
+  --good:#2f8a55; --good-soft:#e7f3ec; --warn:#b6802c; --warn-soft:#f6efe1;
+  --bad:#c44a4a; --bad-soft:#f8eaea; --info:#2a6fdb; --info-soft:#eaf1fd;
+  --radius:18px; --radius-md:14px; --radius-sm:10px; --radius-xs:8px; --radius-pill:999px;
+  --shadow-sm:0 1px 2px rgba(12,14,22,0.04),0 0 0 1px rgba(12,14,22,0.04);
+  --shadow-md:0 2px 4px rgba(12,14,22,0.04),0 12px 32px -16px rgba(12,14,22,0.10);
+  --shadow-lg:0 4px 12px rgba(12,14,22,0.05),0 28px 64px -28px rgba(12,14,22,0.18);
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box;} html,body{margin:0;}
+body{font-family:var(--font);background:var(--bg);color:var(--ink);letter-spacing:-0.006em;-webkit-font-smoothing:antialiased;}
+
+.shell{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh;}
+.sidebar{position:sticky;top:0;align-self:start;height:100vh;display:flex;flex-direction:column;padding:18px 14px;background:linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,250,253,0.86));backdrop-filter:blur(20px) saturate(140%);-webkit-backdrop-filter:blur(20px) saturate(140%);border-right:1px solid var(--line);}
+.brand{display:flex;align-items:center;gap:11px;padding:4px 8px 18px;}
+.brand-mark{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:linear-gradient(150deg,#1f3b6e,#0c0e16);display:grid;place-items:center;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16),0 4px 12px -4px rgba(12,14,22,0.4);}
+.brand-text{display:flex;flex-direction:column;line-height:1.2;min-width:0;}
+.brand-name{font-size:14px;font-weight:600;letter-spacing:-0.018em;}
+.brand-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.ws{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;margin-bottom:16px;background:rgba(12,14,22,0.03);border:1px solid var(--line);border-radius:12px;cursor:pointer;text-align:left;font:inherit;transition:background .15s;}
+.ws:hover{background:rgba(12,14,22,0.05);}
+.ws-avatar{width:28px;height:28px;flex-shrink:0;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:600;font-size:12px;}
+.ws-info{display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0;}
+.ws-name{font-size:12.5px;font-weight:600;}
+.ws-sub{font-size:11px;color:var(--muted);margin-top:1px;}
+.ws-chev{color:var(--muted-2);flex-shrink:0;}
+.nav{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;}
+.nav::-webkit-scrollbar{width:6px;} .nav::-webkit-scrollbar-thumb{background:rgba(12,14,22,0.12);border-radius:99px;}
+.nav-section-label{font-size:10.5px;font-weight:600;letter-spacing:0.10em;text-transform:uppercase;color:var(--muted-2);padding:2px 12px 4px;}
+.nav-group{display:flex;flex-direction:column;gap:2px;}
+.nav-item{position:relative;display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:10px;color:var(--ink-2);font-size:13px;font-weight:500;text-decoration:none;cursor:pointer;transition:background .15s,color .15s;}
+.nav-item:hover{background:rgba(12,14,22,0.05);color:var(--ink);}
+.nav-item.active{background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,0.10) inset,0 4px 10px -4px rgba(12,14,22,0.3);}
+.nav-item.active::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;border-radius:0 3px 3px 0;background:var(--accent);}
+.nav-ico{width:18px;height:18px;display:grid;place-items:center;flex-shrink:0;}
+.nav-label{flex:1;}
+.nav-badge{min-width:18px;padding:0 6px;border-radius:99px;background:rgba(12,14,22,0.06);color:var(--ink-2);font-size:10.5px;font-weight:600;line-height:16px;text-align:center;font-variant-numeric:tabular-nums;}
+.nav-item.active .nav-badge{background:rgba(255,255,255,0.18);color:#fff;}
+.nav-badge.warn{background:var(--warn-soft);color:var(--warn);}
+.side-foot{flex-shrink:0;padding-top:12px;margin-top:8px;border-top:1px solid var(--line);}
+.side-user{display:flex;align-items:center;gap:10px;padding:8px;border-radius:12px;text-decoration:none;color:inherit;}
+.side-user:hover{background:rgba(12,14,22,0.04);}
+.side-user-avatar{width:34px;height:34px;flex-shrink:0;border-radius:99px;background:linear-gradient(135deg,#4a5269,#2a3144);color:#fff;display:grid;place-items:center;font-weight:600;font-size:11.5px;}
+.side-user-info{flex:1;min-width:0;line-height:1.25;}
+.side-user-name{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.side-user-mail{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px;}
+
+.main{display:flex;flex-direction:column;min-width:0;}
+.topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:16px 36px;background:rgba(244,245,248,0.82);backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);border-bottom:1px solid var(--line-2);}
+.topbar-title{display:flex;flex-direction:column;}
+.topbar-eyebrow{font-size:12px;color:var(--muted);}
+.topbar-h{font-size:15px;font-weight:600;letter-spacing:-0.015em;}
+.search{display:flex;align-items:center;gap:9px;width:300px;padding:9px 14px;background:var(--surface);border-radius:var(--radius-pill);box-shadow:var(--shadow-sm);color:var(--muted-2);font-size:13px;}
+.search input{border:none;outline:none;background:transparent;font:inherit;color:var(--ink);flex:1;}
+.search kbd{font:inherit;font-size:10.5px;font-weight:500;color:var(--muted);padding:2px 6px;border-radius:5px;background:rgba(12,14,22,0.06);}
+.topbar-actions{display:flex;align-items:center;gap:10px;}
+.iconbtn{width:40px;height:40px;border:none;border-radius:12px;background:var(--surface);box-shadow:var(--shadow-sm);color:var(--ink-2);display:grid;place-items:center;cursor:pointer;position:relative;transition:box-shadow .2s;}
+.iconbtn:hover{box-shadow:var(--shadow-md);}
+.iconbtn .dot{position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:99px;background:var(--bad);border:1.5px solid var(--surface);}
+.scroll{flex:1;padding:24px 36px 48px;}
+
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;margin-bottom:24px;}
+.page-eyebrow{font-size:13px;color:var(--muted);margin-bottom:11px;}
+.page-h1{margin:0;font-size:42px;font-weight:600;letter-spacing:-0.035em;line-height:1.04;}
+.page-sub{margin:13px 0 0;font-size:16px;color:var(--muted);max-width:540px;line-height:1.5;}
+.page-actions{display:flex;gap:10px;flex-shrink:0;}
+
+.btn{display:inline-flex;align-items:center;gap:7px;border-radius:var(--radius-pill);font:inherit;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;border:1px solid transparent;transition:transform .15s,box-shadow .15s,background .15s,border-color .15s;white-space:nowrap;}
+.btn-primary{padding:11px 19px;background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,0.15) inset,0 6px 16px -6px rgba(12,14,22,0.4);}
+.btn-primary:hover{transform:translateY(-0.5px);}
+.btn-accent{padding:9px 16px;background:var(--accent);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,0.22) inset,0 6px 16px -6px rgba(42,111,219,0.5);}
+.btn-accent:hover{background:var(--accent-2);}
+.btn-ghost{padding:9px 15px;background:var(--surface);color:var(--ink-2);border-color:var(--line);font-size:12.5px;box-shadow:var(--shadow-sm);}
+.btn-ghost:hover{border-color:rgba(12,14,22,0.16);box-shadow:var(--shadow-md);}
+.btn-sm{padding:7px 13px;font-size:12px;}
+.btn-warn{background:var(--warn);color:#fff;padding:8px 14px;font-size:12px;border:none;box-shadow:0 4px 12px -5px rgba(182,128,44,0.55);}
+.btn-warn:hover{filter:brightness(0.95);}
+
+.card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow-sm);}
+.card-pad{padding:24px;}
+.section-eyebrow{font-size:10.5px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted-2);}
+.section-title{font-size:16px;font-weight:600;letter-spacing:-0.015em;margin-top:5px;}
+
+/* Status pills — operator vocabulary, same colour map as order-status.ts */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px 3px 8px;border-radius:var(--radius-pill);font-size:11.5px;font-weight:500;white-space:nowrap;}
+.pill .pdot{width:5px;height:5px;border-radius:99px;background:currentColor;}
+.pill.received{color:var(--muted);background:rgba(12,14,22,0.05);}
+.pill.rendering{color:var(--accent-ink);background:var(--accent-soft);}
+.pill.review{color:var(--accent-ink);background:var(--accent-soft);}
+.pill.delivered{color:var(--good);background:var(--good-soft);}
+.pill.attention{color:var(--warn);background:var(--warn-soft);}
+.pill.failed{color:var(--bad);background:var(--bad-soft);}
+.pill.live .pdot{animation:pulse 1.8s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+/* Triage strip */
+.triage-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.triage-head .section-title{margin-top:0;}
+.triage-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 7px;border-radius:99px;background:var(--warn);color:#fff;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;}
+.triage{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;}
+.triage-card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);padding:16px 16px 14px;box-shadow:var(--shadow-sm);overflow:hidden;}
+.triage-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;}
+.triage-card.warn::before{background:var(--warn);}
+.triage-card.bad::before{background:var(--bad);}
+.triage-card.accent::before{background:var(--accent);}
+.triage-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.triage-kind{font-size:11px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted);}
+.triage-card.warn .triage-kind{color:var(--warn);}
+.triage-card.bad .triage-kind{color:var(--bad);}
+.triage-addr{font-size:14.5px;font-weight:600;margin-top:9px;letter-spacing:-0.01em;}
+.triage-why{font-size:12.5px;color:var(--muted);margin-top:5px;line-height:1.45;}
+.triage-foot{display:flex;align-items:center;gap:8px;margin-top:13px;}
+.triage-age{font-size:11.5px;color:var(--muted-2);margin-left:auto;font-variant-numeric:tabular-nums;}
+
+/* KPI tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;}
+.tile{background:var(--surface);border-radius:var(--radius);padding:20px 20px 18px;box-shadow:var(--shadow-sm);transition:box-shadow .2s,transform .2s;}
+.tile:hover{box-shadow:var(--shadow-md);transform:translateY(-1px);}
+.tile-head{display:flex;align-items:center;justify-content:space-between;}
+.tile-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;}
+.tile-ico.sky{background:#e8f1ff;color:#2f6df0;} .tile-ico.mint{background:#e1f6ec;color:#1f9d61;}
+.tile-ico.peach{background:#fff0e1;color:#e07a1a;} .tile-ico.lav{background:#f1ebff;color:#8154e8;}
+.tile-label{font-size:13px;color:var(--muted);font-weight:500;margin-top:14px;}
+.tile-value{margin-top:14px;font-size:30px;font-weight:600;letter-spacing:-0.03em;line-height:1;font-variant-numeric:tabular-nums;}
+.tile-sub{margin-top:9px;font-size:12.5px;color:var(--muted);}
+.delta{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;}
+.delta.up{color:var(--good);background:var(--good-soft);}
+.delta.down{color:var(--bad);background:var(--bad-soft);}
+
+/* Pipeline table — ledger-ruled, dense, scannable */
+.table-head-row{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:6px;}
+.seg{display:inline-flex;padding:4px;background:rgba(12,14,22,0.045);border-radius:999px;}
+.seg-item{padding:6px 14px;border-radius:999px;border:none;background:transparent;color:var(--muted);font:inherit;font-size:12px;font-weight:500;cursor:pointer;}
+.seg-item.active{background:var(--ink);color:#fff;}
+.ptable{width:100%;border-collapse:collapse;}
+.ptable thead th{
+  text-align:left;font-size:10.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+  color:var(--muted-2);padding:0 14px 12px;border-bottom:1px solid var(--line);
+}
+.ptable thead th.num{text-align:right;}
+.ptable tbody td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle;}
+.ptable tbody tr:last-child td{border-bottom:none;}
+.ptable tbody tr{transition:background .12s;}
+.ptable tbody tr:hover{background:rgba(42,111,219,0.035);}
+.cell-prop{display:flex;align-items:center;gap:11px;min-width:0;}
+.cell-thumb{width:36px;height:36px;border-radius:9px;flex-shrink:0;display:grid;place-items:center;color:rgba(255,255,255,0.9);}
+.cell-addr{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.cell-sub{font-size:11.5px;color:var(--muted-2);margin-top:1px;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.agent-chip{display:inline-flex;align-items:center;gap:7px;}
+.agent-av{width:24px;height:24px;border-radius:99px;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:600;flex-shrink:0;}
+.muted{color:var(--muted);} .ink2{color:var(--ink-2);}
+/* mini progress in-row */
+.mini-prog{width:84px;height:4px;border-radius:99px;background:rgba(12,14,22,0.07);overflow:hidden;}
+.mini-prog > span{display:block;height:100%;border-radius:99px;background:var(--accent);}
+.rowbtn{display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border-radius:99px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font:inherit;font-size:12px;font-weight:500;cursor:pointer;text-decoration:none;}
+.rowbtn:hover{border-color:rgba(12,14,22,0.16);box-shadow:var(--shadow-sm);}
+.rowbtn.warn{border-color:transparent;background:var(--warn-soft);color:var(--warn);}
+
+@media (max-width:1180px){ .tiles{grid-template-columns:repeat(2,1fr);} .triage{grid-template-columns:1fr;} }
+@media (max-width:1024px){ .shell{grid-template-columns:1fr;} .sidebar{display:none;} .scroll{padding:16px;} .page-h1{font-size:30px;} }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Sidebar (OPERATOR nav — Operate / Studio / Business) ── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 4-4 4 4"/><path d="M7 4v9a4 4 0 0 0 4 4h9"/><path d="m17 12 4 4-4 4"/></svg></span>
+      <span class="brand-text"><span class="brand-name">Listing Elevate</span><span class="brand-sub">Operator</span></span>
+    </div>
+    <button class="ws" type="button">
+      <span class="ws-avatar">OP</span>
+      <span class="ws-info"><span class="ws-name">Operations</span><span class="ws-sub">Admin workspace</span></span>
+      <span class="ws-chev" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+    </button>
+
+    <nav class="nav" aria-label="Primary">
+      <div class="nav-group">
+        <span class="nav-section-label">Operate</span>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span class="nav-label">Today</span></a>
+        <a class="nav-item active" href="#" aria-current="page"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></span><span class="nav-label">Orders</span><span class="nav-badge warn">3</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><span class="nav-label">Listings</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.6"/><path d="M16 14.5a4.6 4.6 0 0 1 4.5 5.5"/></svg></span><span class="nav-label">Agents</span></a>
+      </div>
+      <div class="nav-group">
+        <span class="nav-section-label">Studio</span>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg></span><span class="nav-label">Video</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h11l5 5v11H4z"/><path d="M8 11h8M8 15h6"/></svg></span><span class="nav-label">Blog</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></span><span class="nav-label">Email</span></a>
+      </div>
+      <div class="nav-group">
+        <span class="nav-section-label">Business</span>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.5-2.5 1.6-2.5 2.5"/></svg></span><span class="nav-label">Finances</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span><span class="nav-label">Logs</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-12 2 6h6"/></svg></span><span class="nav-label">System status</span></a>
+        <a class="nav-item" href="#"><span class="nav-ico"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.2A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4 13.6H4a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5.6 7l-.1-.1A2 2 0 1 1 8.3 4.1l.1.1A1.6 1.6 0 0 0 11 3.3V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg></span><span class="nav-label">Settings</span></a>
+      </div>
+    </nav>
+
+    <div class="side-foot">
+      <a class="side-user" href="#">
+        <span class="side-user-avatar">CR</span>
+        <span class="side-user-info"><span class="side-user-name">Casey Reed</span><span class="side-user-mail">casey@listingelevate.com</span></span>
+      </a>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-title"><span class="topbar-eyebrow">Operate</span><span class="topbar-h">Orders</span></div>
+      <div style="flex:1"></div>
+      <label class="search">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg>
+        <input placeholder="Search orders, agents, addresses" />
+        <kbd>/</kbd>
+      </label>
+      <div class="topbar-actions">
+        <button class="iconbtn" aria-label="Notifications"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="dot"></span></button>
+      </div>
+    </header>
+
+    <main class="scroll">
+
+      <div class="page-head">
+        <div>
+          <div class="page-eyebrow">Operate</div>
+          <h1 class="page-h1">Pipeline</h1>
+          <p class="page-sub">9 listings in flight, 3 waiting on you. Everything else is moving on its own.</p>
+        </div>
+        <div class="page-actions">
+          <a class="btn btn-ghost" href="#"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 5h18M6 12h12M10 19h4"/></svg>Filter</a>
+          <a class="btn btn-primary" href="#"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New order</a>
+        </div>
+      </div>
+
+      <!-- ── Needs you (triage strip) ── -->
+      <section style="margin-bottom:20px;">
+        <div class="triage-head">
+          <div class="section-eyebrow" style="margin-bottom:2px;">Needs you</div>
+          <span class="triage-count">3</span>
+        </div>
+        <div class="triage">
+          <div class="triage-card warn">
+            <div class="triage-meta"><span class="triage-kind">Scene review</span><span class="pill attention"><span class="pdot"></span>Needs attention</span></div>
+            <div class="triage-addr">88 Sterling Avenue</div>
+            <div class="triage-why">Scene 04 flagged — interior motion above threshold. Approve, re-render, or try Runway.</div>
+            <div class="triage-foot"><a class="btn btn-warn" href="#">Review scene</a><a class="rowbtn" href="#">Open order</a><span class="triage-age">42 min</span></div>
+          </div>
+          <div class="triage-card bad">
+            <div class="triage-meta"><span class="triage-kind">Render failed</span><span class="pill failed"><span class="pdot"></span>Failed</span></div>
+            <div class="triage-addr">17 Harbor View Road</div>
+            <div class="triage-why">Provider timeout on 2 retries. Re-queue on Kling v2.6 or hold for manual.</div>
+            <div class="triage-foot"><a class="btn btn-warn" href="#" style="background:var(--bad);box-shadow:0 4px 12px -5px rgba(196,74,74,0.55);">Re-queue</a><a class="rowbtn" href="#">Open order</a><span class="triage-age">1h 12m</span></div>
+          </div>
+          <div class="triage-card accent">
+            <div class="triage-meta"><span class="triage-kind">Approval</span><span class="pill review"><span class="pdot"></span>In review</span></div>
+            <div class="triage-addr">203 Linden Park</div>
+            <div class="triage-why">Final cut assembled and passed auto-QC. Release the film to the agent.</div>
+            <div class="triage-foot"><a class="btn btn-accent btn-sm" href="#">Deliver film</a><a class="rowbtn" href="#">Preview</a><span class="triage-age">8 min</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── KPI tiles ── -->
+      <section class="tiles" style="margin-bottom:20px;">
+        <div class="tile">
+          <div class="tile-head"><span class="tile-ico sky"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/></svg></span><span class="delta up">+4</span></div>
+          <div class="tile-label">Orders today</div>
+          <div class="tile-value">11</div>
+          <div class="tile-sub">vs 7 yesterday</div>
+        </div>
+        <div class="tile">
+          <div class="tile-head"><span class="tile-ico peach"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span></div>
+          <div class="tile-label">In pipeline</div>
+          <div class="tile-value">9</div>
+          <div class="tile-sub">3 need a decision</div>
+        </div>
+        <div class="tile">
+          <div class="tile-head"><span class="tile-ico mint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span><span class="delta up">+12%</span></div>
+          <div class="tile-label">Delivered (7d)</div>
+          <div class="tile-value">58</div>
+          <div class="tile-sub">Auto-resolved 24h: 9</div>
+        </div>
+        <div class="tile">
+          <div class="tile-head"><span class="tile-ico lav"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.5-2.5 1.6-2.5 2.5"/></svg></span><span class="delta down">+6%</span></div>
+          <div class="tile-label">Spend today</div>
+          <div class="tile-value">$148.20</div>
+          <div class="tile-sub">$13.47 avg / film</div>
+        </div>
+      </section>
+
+      <!-- ── Pipeline table ── -->
+      <section class="card card-pad">
+        <div class="table-head-row">
+          <div>
+            <div class="section-eyebrow">Live</div>
+            <div class="section-title">In the pipeline</div>
+          </div>
+          <div class="seg">
+            <button class="seg-item active">All stages</button>
+            <button class="seg-item">Rendering</button>
+            <button class="seg-item">In review</button>
+            <button class="seg-item">Needs you</button>
+          </div>
+        </div>
+
+        <div style="overflow-x:auto;margin-top:14px;">
+        <table class="ptable">
+          <thead>
+            <tr>
+              <th style="width:34%">Property</th>
+              <th>Agent</th>
+              <th>Status</th>
+              <th>Stage</th>
+              <th class="num">Photos</th>
+              <th class="num">Cost</th>
+              <th class="num">Age</th>
+              <th style="text-align:right;">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(212,42%,42%),hsl(224,38%,26%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">128 Birchwood Lane</div><div class="cell-sub">Suite 3 · 14 scenes</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#5b6b9a,#34406b)">JA</span><span class="ink2">Jordan Avery</span></span></td>
+              <td><span class="pill rendering live"><span class="pdot"></span>Rendering</span></td>
+              <td><div class="mini-prog"><span style="width:64%"></span></div></td>
+              <td class="num ink2">32</td>
+              <td class="num ink2">$12.40</td>
+              <td class="num muted">18h</td>
+              <td style="text-align:right;"><a class="rowbtn" href="#">Open</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(28,42%,46%),hsl(18,40%,30%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">88 Sterling Avenue</div><div class="cell-sub">Scene 04 flagged</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#9a6b5b,#6b3f34)">MK</span><span class="ink2">Morgan Kapoor</span></span></td>
+              <td><span class="pill attention"><span class="pdot"></span>Needs attention</span></td>
+              <td><div class="mini-prog"><span style="width:80%;background:var(--warn)"></span></div></td>
+              <td class="num ink2">26</td>
+              <td class="num ink2">$9.80</td>
+              <td class="num muted">42m</td>
+              <td style="text-align:right;"><a class="rowbtn warn" href="#">Review</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(266,34%,46%),hsl(258,36%,30%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">203 Linden Park</div><div class="cell-sub">Final cut ready</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#6b5b9a,#3f346b)">TQ</span><span class="ink2">Taylor Quinn</span></span></td>
+              <td><span class="pill review"><span class="pdot"></span>In review</span></td>
+              <td><div class="mini-prog"><span style="width:96%"></span></div></td>
+              <td class="num ink2">41</td>
+              <td class="num ink2">$15.10</td>
+              <td class="num muted">8m</td>
+              <td style="text-align:right;"><a class="rowbtn" href="#">Deliver</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(150,34%,42%),hsl(160,36%,26%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">17 Harbor View Road</div><div class="cell-sub">Provider timeout ×2</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#5b9a7a,#346b4f)">RB</span><span class="ink2">Riley Brooks</span></span></td>
+              <td><span class="pill failed"><span class="pdot"></span>Failed</span></td>
+              <td><span class="muted" style="font-size:12px;">Stalled · retry 2/2</span></td>
+              <td class="num ink2">29</td>
+              <td class="num ink2">$6.20</td>
+              <td class="num muted">1h 12m</td>
+              <td style="text-align:right;"><a class="rowbtn warn" href="#" style="background:var(--bad-soft);color:var(--bad)">Re-queue</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(192,40%,42%),hsl(204,40%,26%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">54 Orchard Terrace</div><div class="cell-sub">Crafting scenes</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#5b6b9a,#34406b)">JA</span><span class="ink2">Jordan Avery</span></span></td>
+              <td><span class="pill rendering"><span class="pdot"></span>Rendering</span></td>
+              <td><div class="mini-prog"><span style="width:38%"></span></div></td>
+              <td class="num ink2">22</td>
+              <td class="num ink2">$4.10</td>
+              <td class="num muted">3h</td>
+              <td style="text-align:right;"><a class="rowbtn" href="#">Open</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(330,30%,46%),hsl(340,34%,30%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">9 Willow Bend</div><div class="cell-sub">Just received</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#9a5b8a,#6b346b)">DV</span><span class="ink2">Dana Vega</span></span></td>
+              <td><span class="pill received"><span class="pdot"></span>Received</span></td>
+              <td><div class="mini-prog"><span style="width:8%"></span></div></td>
+              <td class="num ink2">18</td>
+              <td class="num muted">—</td>
+              <td class="num muted">6m</td>
+              <td style="text-align:right;"><a class="rowbtn" href="#">Open</a></td>
+            </tr>
+            <tr>
+              <td><div class="cell-prop"><span class="cell-thumb" style="background:linear-gradient(140deg,hsl(238,34%,46%),hsl(248,36%,30%));"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke-linejoin="round"/></svg></span><span style="min-width:0"><div class="cell-addr">76 Cedar Hollow Court</div><div class="cell-sub">14 scenes · 0:46</div></span></div></td>
+              <td><span class="agent-chip"><span class="agent-av" style="background:linear-gradient(135deg,#5b6b9a,#34406b)">JA</span><span class="ink2">Jordan Avery</span></span></td>
+              <td><span class="pill delivered"><span class="pdot"></span>Delivered</span></td>
+              <td><span class="muted" style="font-size:12px;">Released to agent</span></td>
+              <td class="num ink2">35</td>
+              <td class="num ink2">$13.90</td>
+              <td class="num muted">3d</td>
+              <td style="text-align:right;"><a class="rowbtn" href="#">View</a></td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+</body>
+</html>

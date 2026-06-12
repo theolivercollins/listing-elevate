@@ -314,7 +314,7 @@ export function PropertyThumb({ hue = 220, size = 44 }: PropertyThumbProps) {
       style={{
         width: size,
         height: size,
-        borderRadius: 10,
+        borderRadius: "var(--le-r-md)",
         flexShrink: 0,
         background: `linear-gradient(135deg, hsl(${hue}, 10%, 78%), hsl(${hue + 30}, 10%, 62%))`,
         display: "grid",
@@ -368,7 +368,7 @@ export function AIBanner({ headline, body, cta }: AIBannerProps) {
 // ─── MiniStat ────────────────────────────────────────────────────
 export function MiniStat({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
-    <div style={{ padding: "10px 14px", background: "rgba(11,11,16,0.03)", borderRadius: 10 }}>
+    <div style={{ padding: "10px 14px", background: "rgba(11,11,16,0.03)", borderRadius: "var(--le-r-md)" }}>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
       <div
         style={{
@@ -422,7 +422,7 @@ export function ActivityItem({
         style={{
           width: 28,
           height: 28,
-          borderRadius: 8,
+          borderRadius: "var(--le-r-sm)",
           background: "rgba(11,11,16,0.04)",
           display: "grid",
           placeItems: "center",
@@ -479,7 +479,7 @@ export function HealthCard({
         style={{
           width: 44,
           height: 44,
-          borderRadius: 12,
+          borderRadius: "var(--le-r-lg)",
           background: "rgba(15,24,60,0.04)",
           display: "grid",
           placeItems: "center",
@@ -596,8 +596,8 @@ export function StatusChip({ status, labelOverride }: StatusChipProps) {
 }
 
 // ─── EmptyState ──────────────────────────────────────────────────────────────
-// Used wherever a data section has no rows. Replaces ad-hoc inline empty
-// messages. Renders icon + message + optional CTA.
+// Phase 2 design: accent-soft icon container, clear headline, optional CTA.
+// Used wherever a data section has no rows — never hand-roll per page.
 
 export interface EmptyStateCTA {
   label: string;
@@ -617,47 +617,98 @@ export function EmptyState({ message, icon = "archive", cta }: EmptyStateProps) 
   return (
     <div
       style={{
-        border: "1px dashed rgba(15,24,60,0.12)",
-        borderRadius: 12,
-        padding: "40px 0",
-        textAlign: "center",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
-        gap: 10,
+        textAlign: "center",
+        padding: "32px 20px",
       }}
     >
       <span
         data-empty-icon
         style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          background: "rgba(11,11,16,0.04)",
+          width: 54,
+          height: 54,
+          borderRadius: "var(--le-r-xl)",
+          background: "var(--accent-soft)",
+          color: "var(--accent)",
           display: "grid",
           placeItems: "center",
-          color: "var(--muted)",
+          marginBottom: 16,
         }}
       >
-        <Icon name={icon} size={16} strokeWidth={1.5} />
+        <Icon name={icon} size={22} strokeWidth={1.5} />
       </span>
-      <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{message}</p>
+      <p
+        style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: "var(--ink)",
+          margin: 0,
+        }}
+      >
+        {message}
+      </p>
       {cta && (
         cta.to ? (
-          <Link to={cta.to} className="le-btn-ghost" style={{ marginTop: 4 }}>
+          <Link
+            to={cta.to}
+            className="le-btn-ghost"
+            style={{ marginTop: 14 }}
+          >
             {cta.label}
           </Link>
         ) : (
           <button
             type="button"
             className="le-btn-ghost"
-            style={{ marginTop: 4 }}
+            style={{ marginTop: 14 }}
             onClick={cta.onClick}
           >
             {cta.label}
           </button>
         )
       )}
+    </div>
+  );
+}
+
+// ─── Skeleton ────────────────────────────────────────────────────────────────
+// Phase 2 shimmer loading state. Use width/height props to size the box.
+// Uses .le-skeleton CSS class (defined in tokens.css) for the shimmer animation.
+
+export interface SkeletonProps {
+  width?: number | string;
+  height?: number | string;
+  borderRadius?: number | string;
+  style?: CSSProperties;
+}
+
+export function Skeleton({
+  width = "100%",
+  height = 16,
+  borderRadius = "var(--radius-xs, 8px)",
+  style,
+}: SkeletonProps) {
+  return (
+    <span
+      className="le-skeleton"
+      aria-hidden="true"
+      style={{ display: "block", width, height, borderRadius, ...style }}
+    />
+  );
+}
+
+// ─── SkeletonRow — shimmer row for table/list loading states ─────────────────
+export function SkeletonRow() {
+  return (
+    <div className="le-skeleton-row">
+      <Skeleton width={36} height={36} borderRadius="var(--radius-xs, 8px)" style={{ flexShrink: 0 }} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+        <Skeleton width="55%" height={13} />
+        <Skeleton width="35%" height={11} />
+      </div>
+      <Skeleton width={60} height={22} borderRadius="var(--radius-pill, 999px)" style={{ flexShrink: 0 }} />
     </div>
   );
 }

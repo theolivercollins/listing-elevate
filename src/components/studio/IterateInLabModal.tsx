@@ -187,7 +187,7 @@ export function IterateInLabModal({
             type="button"
             onClick={onClose}
             className="studio-btn-ghost"
-            style={{ padding: '6px 8px', borderRadius: 10 }}
+            style={{ padding: '6px 8px', borderRadius: "var(--le-r-md)" }}
             aria-label="Close"
           >
             <X size={15} strokeWidth={1.6} />

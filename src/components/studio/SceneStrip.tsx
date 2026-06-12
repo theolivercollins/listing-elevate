@@ -97,7 +97,7 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
                   left: 6,
                   background: 'rgba(11,11,16,0.65)',
                   backdropFilter: 'blur(4px)',
-                  borderRadius: 6,
+                  borderRadius: "var(--le-r-sm)",
                   padding: '2px 6px',
                   fontSize: 10,
                   fontWeight: 600,

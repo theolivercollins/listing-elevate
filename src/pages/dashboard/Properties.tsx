@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { KpiCard, StatusChip, PropertyThumb, Card, MoneyValue, fmtDuration } from "@/components/dashboard/primitives";
+import { KpiCard, StatusChip, PropertyThumb, Card, MoneyValue, Skeleton, SkeletonRow, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { fetchProperties, archiveProperty, rerunProperty, updatePropertyStatus } from "@/lib/api";
 import type { Property } from "@/lib/types";
@@ -70,7 +70,7 @@ const ghostBtn: React.CSSProperties = {
   alignItems: "center",
   gap: 6,
   padding: "9px 13px",
-  borderRadius: 10,
+  borderRadius: "var(--le-r-md)",
   border: "1px solid rgba(15,24,60,0.08)",
   background: "rgba(255,255,255,0.6)",
   color: "var(--ink-2)",
@@ -85,7 +85,7 @@ const selBtn: React.CSSProperties = {
   alignItems: "center",
   gap: 6,
   padding: "7px 12px",
-  borderRadius: 10,
+  borderRadius: "var(--le-r-md)",
   background: "rgba(255,255,255,0.1)",
   color: "#fff",
   border: "none",
@@ -380,8 +380,24 @@ const Properties = () => {
 
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+              <Skeleton width="70%" height={30} style={{ marginBottom: 10 }} />
+              <Skeleton width="45%" height={12} />
+            </div>
+          ))}
+        </section>
+        <Card padding={20}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
@@ -545,7 +561,7 @@ const Properties = () => {
             transform: "translateX(-50%)",
             zIndex: 60,
             padding: "10px 12px 10px 18px",
-            borderRadius: 16,
+            borderRadius: "var(--le-r-xl)",
             background: "var(--ink)",
             color: "#fff",
             display: "flex",
@@ -601,7 +617,7 @@ const Properties = () => {
                 onClick={() => setSelected(new Set())}
                 style={{
                   padding: "8px 14px",
-                  borderRadius: 10,
+                  borderRadius: "var(--le-r-md)",
                   background: "#fff",
                   color: "var(--ink)",
                   border: "none",
@@ -677,7 +693,7 @@ function ConfirmModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           background: "#fff",
-          borderRadius: 20,
+          borderRadius: "var(--le-r-xl)",
           padding: "28px 32px",
           width: 400,
           maxWidth: "calc(100vw - 40px)",
@@ -698,7 +714,7 @@ function ConfirmModal({
             onClick={onCancel}
             style={{
               padding: "9px 18px",
-              borderRadius: 10,
+              borderRadius: "var(--le-r-md)",
               border: "1px solid rgba(15,24,60,0.12)",
               background: "transparent",
               fontSize: 13,
@@ -714,7 +730,7 @@ function ConfirmModal({
             onClick={onConfirm}
             style={{
               padding: "9px 18px",
-              borderRadius: 10,
+              borderRadius: "var(--le-r-md)",
               border: "none",
               background: isDestructive ? "rgb(239,68,68)" : "var(--ink)",
               color: "#fff",
