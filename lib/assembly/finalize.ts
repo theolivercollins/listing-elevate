@@ -90,21 +90,31 @@ export interface FinalizeResult {
 const DEFAULT_MIN_KBPS_AT_1080P = 9_000;
 
 /**
- * Compute the pixel-scaled bitrate floor for the given output resolution.
- * A 1080p output uses DEFAULT_MIN_KBPS_AT_1080P. Larger outputs scale up
- * proportionally (pixel area ratio). 1920×1080 is the reference.
+ * Compute the bitrate floor for the given aspect ratio.
  *
- * Currently both AR paths produce 1920×1080-class outputs (horizontal is
- * supersampled to 2880×1620 by Creatomate but returned as 1080p-equivalent
- * content), so we use 1080p reference for both. Future: pass outputWidth +
- * outputHeight when the pipeline records them on AssemblyResult.
+ * Horizontal (16:9): Creatomate renders at a 2880×1620 supersampled canvas,
+ * producing ~19 Mbps — well above the 9 Mbps floor.
+ *
+ * Vertical (9:16): Creatomate renders at the native 1080×1920 canvas (no
+ * supersample). Its bitrate ceiling is ~6 Mbps, which is BELOW the 9 Mbps
+ * horizontal floor. Applying the same floor to vertical would cause a
+ * guaranteed warn on every single vertical render — pure log noise with no
+ * actionable signal. Until a supersampled vertical path is implemented,
+ * the vertical floor is disabled (returns 0) unless ASSEMBLY_MIN_KBPS is
+ * explicitly set by the operator.
+ *
+ * Override with ASSEMBLY_MIN_KBPS env var (integer kbps; 0 disables check;
+ * applies to BOTH orientations when set).
  */
-function bitrateFloorKbps(): number {
+function bitrateFloorKbps(aspectRatio: '16:9' | '9:16'): number {
   const envVal = process.env.ASSEMBLY_MIN_KBPS;
   if (envVal !== undefined) {
     const parsed = parseInt(envVal, 10);
     if (!Number.isNaN(parsed)) return parsed;
   }
+  // Vertical stays at Creatomate's ~6 Mbps ceiling (no supersample); disable
+  // the floor to avoid guaranteed-firing log noise on every vertical render.
+  if (aspectRatio === '9:16') return 0;
   return DEFAULT_MIN_KBPS_AT_1080P;
 }
 
@@ -150,7 +160,7 @@ export async function finalizeAssemblyRender(
     ? Math.round((outputBytes * 8) / durationSeconds / 1000)
     : null;
 
-  const floor = bitrateFloorKbps();
+  const floor = bitrateFloorKbps(aspectRatio);
   if (floor > 0 && bitrateKbps !== null && bitrateKbps < floor) {
     console.warn(
       "[assembly-finalize] low bitrate warning — assembly output below quality floor",

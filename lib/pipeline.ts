@@ -1786,10 +1786,13 @@ async function runAssemblyStep(
         const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
               modifications: templateMods,
-              // Template canvas is designed for the target AR; renderScale upscales it
-              // by ASSEMBLY_SUPERSAMPLE (default 1.5) for higher bitrate output.
-              // Rollback: ASSEMBLY_SUPERSAMPLE=1 → renderScale=1 (native canvas).
-              renderScale: assembleSuperSampleFactor(),
+              // Vertical (9:16) is NOT supersampled — template canvas renders at native
+              // 1080x1920. Supersample only applies to horizontal (16:9) builds.
+              // This aligns cost model (creatomateCostCents factor=1 for 9:16), concat
+              // builder (emits 1080x1920), and test assertions in
+              // creatomate-supersample.test.ts ("vertical is NOT supersampled").
+              // Rollback: this line only; horizontal rollback is ASSEMBLY_SUPERSAMPLE=1.
+              renderScale: 1,
             })
           : await provider.assemble({
               ...assembleParams,

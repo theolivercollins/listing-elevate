@@ -288,7 +288,13 @@ async function main(): Promise<void> {
   const p2a = await ffprobeUrl(p2aUrl, "P2a-creatomate-1080p");
   console.log(`  ${p2a.width}x${p2a.height} ${p2a.fps.toFixed(2)}fps ${p2a.videoBitrateMbps.toFixed(2)} Mbps`);
 
-  const p2aCost = creatomateCostCents(p2aDur > 0 ? p2aDur : 10);
+  // P2a was submitted at 1920×1080 (no supersample) — compute cost at factor=1.
+  // creatomateCostCents() reads ASSEMBLY_SUPERSAMPLE; set to '1' for this call
+  // so it returns the baseline rate (76¢/min) not the 2.25× supersampled rate.
+  const _savedSS = process.env.ASSEMBLY_SUPERSAMPLE;
+  process.env.ASSEMBLY_SUPERSAMPLE = '1';
+  const p2aCost = creatomateCostCents(p2aDur > 0 ? p2aDur : 10, '16:9');
+  process.env.ASSEMBLY_SUPERSAMPLE = _savedSS ?? '1.5';
   await recordCostEvent({ propertyId:null, stage:"assembly", provider:"creatomate", unitsConsumed:1, unitType:"renders", costCents:p2aCost, metadata:{ ...PROBE_META, canvas:"1920x1080", renderId:p2aId, measuredBitrateMbps:parseFloat(p2a.videoBitrateMbps.toFixed(2)) } });
   totalCents += p2aCost;
   console.log(`  Cost: ${p2aCost}¢ | total: ${totalCents}¢`);
@@ -312,8 +318,10 @@ async function main(): Promise<void> {
   const p2b = await ffprobeUrl(p2bUrl, "P2b-creatomate-1620p");
   console.log(`  ${p2b.width}x${p2b.height} ${p2b.fps.toFixed(2)}fps ${p2b.videoBitrateMbps.toFixed(2)} Mbps`);
 
-  // 2880×1620 has 2.25× the pixel area of 1920×1080 — scale credit estimate accordingly.
-  const p2bCost = Math.round(creatomateCostCents(p2bDur > 0 ? p2bDur : 10) * 2.25);
+  // P2b was submitted at 2880×1620 (1.5× supersampled canvas).
+  // creatomateCostCents('16:9') already applies factor²=2.25× at default
+  // ASSEMBLY_SUPERSAMPLE=1.5 — do NOT multiply again (would be 5.06× actual cost).
+  const p2bCost = creatomateCostCents(p2bDur > 0 ? p2bDur : 10, '16:9');
   await recordCostEvent({ propertyId:null, stage:"assembly", provider:"creatomate", unitsConsumed:1, unitType:"renders", costCents:p2bCost, metadata:{ ...PROBE_META, canvas:"2880x1620", renderId:p2bId, measuredBitrateMbps:parseFloat(p2b.videoBitrateMbps.toFixed(2)), note:"cost_estimated_verify_dashboard" } });
   totalCents += p2bCost;
   console.log(`  Cost (est.): ${p2bCost}¢ | total: ${totalCents}¢`);
