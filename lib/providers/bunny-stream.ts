@@ -163,3 +163,106 @@ export function bunnyMp4Url(guid: string, res = "720p"): string {
   const { cdnHostname } = cfg();
   return `https://${cdnHostname}/${guid}/play_${res}.mp4`;
 }
+
+// ── Cost model ────────────────────────────────────────────────────────────
+
+/**
+ * Conservative delivery cost estimate for Bunny Stream.
+ *
+ * Bunny Stream bundles storage, encoding, and delivery for ~$0.005/GB.
+ * We record a conservative 1¢/GB so every call appears in cost_events even
+ * when actual spend rounds to $0. Sub-1GB videos legitimately produce 0¢ —
+ * callers must still record the event (cost_events.cost_cents may be 0).
+ *
+ * Override via BUNNY_STREAM_CENTS_PER_GB (integer cents per GB delivered).
+ * Read per-call so tests can set process.env after module load.
+ */
+export function bunnyStreamCostCents(bytes: number): number {
+  const centsPerGb = parseInt(process.env.BUNNY_STREAM_CENTS_PER_GB ?? "1", 10);
+  return Math.max(0, Math.round((bytes / 1_073_741_824) * centsPerGb));
+}
+
+// ── hostVideoOnBunny ──────────────────────────────────────────────────────
+
+export interface HostVideoOnBunnyOptions {
+  /** Maximum number of poll attempts before throwing a timeout error. Default: 40. */
+  maxAttempts?: number;
+  /** Milliseconds between poll attempts. Default: 3000. */
+  intervalMs?: number;
+}
+
+export interface HostVideoOnBunnyResult {
+  guid: string;
+  /** Direct MP4 download/playback URL (requires "MP4 Fallback" enabled on library). */
+  mp4Url: string;
+  /** Raw HLS playlist URL. */
+  hlsUrl: string;
+  /** Final Bunny status (always BUNNY_STATUS.FINISHED on success). */
+  status: number;
+}
+
+/**
+ * Upload raw video bytes to Bunny Stream and wait for encoding to finish.
+ *
+ * Flow:
+ *   1. createBunnyVideo(title)           — allocate a video slot, get guid
+ *   2. uploadBunnyVideoBytes(guid, bytes) — PUT the bytes (Bunny encodes async)
+ *   3. Poll getBunnyVideo(guid) until status === FINISHED (4), or throw on
+ *      ERROR (5) / UPLOAD_FAILED (6) / poll timeout.
+ *   4. Return { guid, mp4Url, hlsUrl, status }.
+ *
+ * mp4Url is a directly-fetchable MP4 (requires "MP4 Fallback" on the library,
+ * which the existing creatives flow already assumes). Downstream consumers
+ * (download.ts, inline SPA player) need a fetchable URL, not an HLS or iframe.
+ *
+ * @param title      Human-readable title stored in Bunny for the video.
+ * @param bytes      Raw video bytes to upload.
+ * @param opts       Optional poll tuning (maxAttempts / intervalMs) — set
+ *                   small values in tests to keep the loop instant.
+ */
+export async function hostVideoOnBunny(
+  title: string,
+  bytes: Uint8Array | Buffer,
+  opts: HostVideoOnBunnyOptions = {},
+): Promise<HostVideoOnBunnyResult> {
+  const maxAttempts = opts.maxAttempts ?? 40;
+  const intervalMs = opts.intervalMs ?? 3_000;
+
+  // Step 1: create the video slot
+  const { guid } = await createBunnyVideo(title);
+
+  // Step 2: upload bytes
+  await uploadBunnyVideoBytes(guid, bytes);
+
+  // Step 3: poll until FINISHED, ERROR, or UPLOAD_FAILED
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0 && intervalMs > 0) {
+      await new Promise<void>((r) => setTimeout(r, intervalMs));
+    }
+
+    const video = await getBunnyVideo(guid);
+
+    if (video.status === BUNNY_STATUS.FINISHED) {
+      return {
+        guid,
+        mp4Url: bunnyMp4Url(guid),
+        hlsUrl: bunnyHlsUrl(guid),
+        status: video.status,
+      };
+    }
+
+    if (video.status === BUNNY_STATUS.ERROR || video.status === BUNNY_STATUS.UPLOAD_FAILED) {
+      throw new Error(
+        `Bunny Stream encoding failed for guid ${guid}: status=${video.status} (${
+          video.status === BUNNY_STATUS.ERROR ? "ERROR" : "UPLOAD_FAILED"
+        })`,
+      );
+    }
+
+    // CREATED(0), UPLOADED(1), PROCESSING(2), TRANSCODING(3) — keep polling
+  }
+
+  throw new Error(
+    `Bunny Stream encoding timed out for guid ${guid}: exceeded ${maxAttempts} poll attempts`,
+  );
+}
