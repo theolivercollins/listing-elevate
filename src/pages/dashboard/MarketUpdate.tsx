@@ -19,6 +19,7 @@ import {
   type MuRegionResult,
   type MuRunListItem,
 } from "@/lib/blog/api-client";
+import { validateTemplateTokens } from "../../../lib/blog-engine/market-update/validate-template";
 import { PageHeading, Card } from "@/components/dashboard/primitives";
 import { Icon, type IconName } from "@/components/dashboard/icons";
 
@@ -69,17 +70,28 @@ function RunIndex() {
   const uploadTemplate = useMutation({
     mutationFn: async ({ role, file }: { role: "blog" | "email"; file: File }) => {
       const html = await file.text();
+      // Validate token coverage before committing to the DB.
+      const validation = validateTemplateTokens(html, role);
+      if (validation.errors.length > 0) {
+        throw new Error(validation.errors.join("\n"));
+      }
       const name = file.name.replace(/\.html?$/i, "") || `Market Update ${role}`;
       const metadata = { kind: "market_update", mu_role: role };
       const { id } = role === "blog"
         ? await createTemplate({ name, body_html: html, default_category_label: "Market Update", metadata })
         : await createEmailTemplate({ name, body_html: html, metadata });
-      return { role, id, name };
+      return { role, id, name, warnings: validation.warnings };
     },
-    onSuccess: async ({ role, id, name }) => {
+    onSuccess: async ({ role, id, name, warnings }) => {
       await qc.invalidateQueries({ queryKey: ["mu-config"] });
       if (role === "blog") setBlogTemplateId(id); else setEmailTemplateId(id);
       toast.success(`Uploaded "${name}" and selected it.`);
+      // Surface missing-token warnings as non-blocking toasts so Oliver can
+      // decide whether the template has the coverage he needs.
+      if (warnings.length > 0) {
+        const missing = warnings.map((w) => w.replace(/ — canonical token not used in this template$/, "")).join(", ");
+        toast.warning(`Template is missing ${warnings.length} canonical token${warnings.length === 1 ? "" : "s"}: ${missing}`);
+      }
     },
     onError: (e: any) => toast.error(e?.message ?? "Template upload failed"),
   });
