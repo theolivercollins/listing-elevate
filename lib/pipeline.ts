@@ -72,6 +72,7 @@ import {
   REQUIRED_ROOM_TYPES,
 } from "./pipeline/selection.js";
 import { tryClaimPipelineRun } from "./pipeline-claim.js";
+import { emitBunnyFinalizeCostEvent } from "./assembly/bunny-finalize-cost.js";
 
 // Used by analyzer batching; keep here since it's only a concern of this file.
 const BATCH_SIZE = 8;
@@ -1725,8 +1726,8 @@ async function runAssemblyStep(
         const horizontalDuration =
           horizontalResult.durationSeconds ?? timelineDurationSeconds;
 
-        // Finalize: mirror the render to Supabase Storage for long-term
-        // retention (provider URLs have undocumented TTLs). Also computes
+        // Finalize: host the render on Bunny Stream for long-term retention
+        // (provider URLs have undocumented TTLs). Also computes
         // delivered_bitrate_kbps from file size — no ffprobe needed.
         // Falls back to providerUrl on any error (HITL-free).
         // Disable with LE_ASSEMBLY_FINALIZE=off.
@@ -1737,12 +1738,23 @@ async function runAssemblyStep(
           providerUrl: horizontalResult.videoUrl,
           durationSeconds: horizontalDuration,
           version: 1,
-          supabase: getSupabase(),
         });
         horizontalUrl = hFinalize.url;
         await log(propertyId, "assembly", "info",
           `Horizontal finalize: bitrate=${hFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${hFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: hFinalize.bitrateKbps, output_bytes: hFinalize.outputBytes, url: hFinalize.url });
+
+        // Bunny Stream cost row — emitted when finalize actually hosted on Bunny
+        // (url differs from providerUrl). Zero-HITL: errors are swallowed inside
+        // emitBunnyFinalizeCostEvent so a cost-row failure never blocks delivery.
+        await emitBunnyFinalizeCostEvent({
+          propertyId,
+          aspectRatio: "16:9",
+          providerUrl: horizontalResult.videoUrl,
+          finalizeUrl: hFinalize.url,
+          outputBytes: hFinalize.outputBytes,
+          bitrateKbps: hFinalize.bitrateKbps,
+        });
 
         const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration, "16:9");
         await recordCostEvent({
@@ -1807,7 +1819,7 @@ async function runAssemblyStep(
         const verticalDuration =
           verticalResult.durationSeconds ?? timelineDurationSeconds;
 
-        // Finalize: mirror the 9:16 render to Supabase Storage.
+        // Finalize: host the 9:16 render on Bunny Stream.
         // Same fallback and kill-switch semantics as the horizontal render above.
         const { finalizeAssemblyRender: finalizeV } = await import("./assembly/finalize.js");
         const vFinalize = await finalizeV({
@@ -1816,12 +1828,21 @@ async function runAssemblyStep(
           providerUrl: verticalResult.videoUrl,
           durationSeconds: verticalDuration,
           version: 1,
-          supabase: getSupabase(),
         });
         verticalUrl = vFinalize.url;
         await log(propertyId, "assembly", "info",
           `Vertical finalize: bitrate=${vFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${vFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: vFinalize.bitrateKbps, output_bytes: vFinalize.outputBytes, url: vFinalize.url });
+
+        // Bunny Stream cost row — same pattern as horizontal above.
+        await emitBunnyFinalizeCostEvent({
+          propertyId,
+          aspectRatio: "9:16",
+          providerUrl: verticalResult.videoUrl,
+          finalizeUrl: vFinalize.url,
+          outputBytes: vFinalize.outputBytes,
+          bitrateKbps: vFinalize.bitrateKbps,
+        });
 
         const verticalCents = assemblyProviderCostCents(providerName, verticalDuration, "9:16");
         await recordCostEvent({
