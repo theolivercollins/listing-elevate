@@ -17,6 +17,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { fetchProperties } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Property } from "@/lib/types";
+import { orderStatusEntry } from "@/lib/order-status";
 import {
   EmptyState,
   PageHeading,
@@ -46,6 +47,136 @@ const IN_PRODUCTION_STATUSES = [
 
 // ─── Attention statuses (failed / needs_review) ───────────────────────────────
 const ATTENTION_STATUSES = ["needs_review", "failed", "qc_hard_reject", "qc_soft_reject"];
+
+// ─── Progress timeline ────────────────────────────────────────────────────────
+// The 5 user-facing pipeline stages, in order. These are the canonical labels
+// from ORDER_STATUS_MAP (via orderStatusEntry) — we never invent new stages.
+// "Needs attention" is deliberately NOT here: those orders live in a different
+// section and show no timeline.
+const STAGE_ORDER = [
+  "Received",
+  "Crafting scenes",
+  "Rendering",
+  "In review",
+  "Delivered",
+] as const;
+
+// Coarse human ETA buckets — qualitative only, NO countdown, NO invented number.
+const SIX_HOURS_MS = 6 * 3600 * 1000;
+const ONE_DAY_MS = 24 * 3600 * 1000;
+
+/** Median of a numeric array (returns null if empty). */
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+}
+
+/**
+ * Qualitative ETA phrase derived from the agent's OWN delivered orders.
+ * Returns null (phrase OMITTED) unless there are >= 3 delivered samples with a
+ * truthy processing_time_ms to compute a stable median. The returned phrase
+ * carries NO digits — coarse human bucket only.
+ */
+function etaPhrase(delivered: Property[]): string | null {
+  const samples = delivered
+    .map((p) => p.processing_time_ms)
+    .filter((ms): ms is number => typeof ms === "number" && ms > 0);
+  if (samples.length < 3) return null;
+  const med = median(samples);
+  if (med == null) return null;
+  if (med < SIX_HOURS_MS) return "Usually ready within a few hours";
+  if (med < ONE_DAY_MS) return "Usually ready within a day";
+  return "Usually ready within a couple of days";
+}
+
+// ─── Per-order progress timeline strip ────────────────────────────────────────
+function OrderTimeline({ property }: { property: Property }) {
+  const activeLabel = orderStatusEntry(property.status).label;
+  const activeIdx = STAGE_ORDER.indexOf(activeLabel as (typeof STAGE_ORDER)[number]);
+
+  return (
+    <div
+      data-testid={`order-timeline-${property.id}`}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 10,
+      }}
+    >
+      {STAGE_ORDER.map((stage, idx) => {
+        const isDone = activeIdx >= 0 && idx < activeIdx;
+        const isActive = idx === activeIdx;
+        // checked → --good, lit → --accent, muted → --muted-2
+        const dotColor = isDone
+          ? "var(--good)"
+          : isActive
+            ? "var(--accent)"
+            : "var(--muted-2)";
+        const labelColor = isActive
+          ? "var(--ink)"
+          : isDone
+            ? "var(--muted)"
+            : "var(--muted-2)";
+        return (
+          <div
+            key={stage}
+            data-stage={stage}
+            data-stage-active={isActive ? "true" : "false"}
+            data-stage-done={isDone ? "true" : "false"}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 5,
+              flex: idx < STAGE_ORDER.length - 1 ? 1 : "0 0 auto",
+              minWidth: 0,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: isActive ? 9 : 7,
+                height: isActive ? 9 : 7,
+                borderRadius: "50%",
+                background: dotColor,
+                flexShrink: 0,
+                boxShadow: isActive ? "0 0 0 3px rgba(42,111,219,0.14)" : "none",
+              }}
+            />
+            <span
+              style={{
+                fontSize: 10.5,
+                fontWeight: isActive ? 600 : 500,
+                color: labelColor,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {stage}
+            </span>
+            {idx < STAGE_ORDER.length - 1 && (
+              <span
+                aria-hidden
+                style={{
+                  flex: 1,
+                  height: 1.5,
+                  borderRadius: 1,
+                  background: isDone ? "var(--good)" : "var(--line-2)",
+                  minWidth: 8,
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 // Derive a stable hue from an id string so PropertyThumb is consistent
 function hueFromId(id: string): number {
@@ -233,6 +364,10 @@ export default function AgentHome() {
 
   const allEmpty = !loading && !fetchError && pendingPayment.length === 0 && inProd.length === 0 && delivered.length === 0 && attention.length === 0;
 
+  // Qualitative ETA derived from the agent's OWN delivered orders. null when
+  // there are < 3 samples — in which case the phrase is omitted entirely.
+  const eta = etaPhrase(delivered);
+
   return (
     <div data-testid="agent-home" className="flex flex-col gap-6 p-6">
       {/* ── Page heading ────────────────────────────────────────────────── */}
@@ -333,6 +468,23 @@ export default function AgentHome() {
               <OrderRow
                 key={p.id}
                 property={p}
+                note={
+                  <>
+                    <OrderTimeline property={p} />
+                    {eta && (
+                      <div
+                        data-testid={`order-eta-${p.id}`}
+                        style={{
+                          fontSize: 11.5,
+                          color: "var(--muted)",
+                          marginTop: 8,
+                        }}
+                      >
+                        {eta}
+                      </div>
+                    )}
+                  </>
+                }
                 actions={
                   <Link
                     to={`/status/${p.id}`}

@@ -144,8 +144,11 @@ describe("AgentHome", () => {
       expect(screen.queryByText("45 Maple Street")).toBeTruthy();
     });
 
-    // StatusChip for "generating" → "Rendering"
-    expect(screen.queryByText("Rendering")).toBeTruthy();
+    // StatusChip for "generating" → "Rendering". Note: the In-Production card
+    // now also renders a progress timeline that includes a "Rendering" stage
+    // label, so "Rendering" appears more than once — assert >= 1 rather than a
+    // single match.
+    expect(screen.queryAllByText("Rendering").length).toBeGreaterThan(0);
   });
 
   it("renders 'Delivered' section with delivered order address", async () => {
@@ -252,5 +255,78 @@ describe("AgentHome", () => {
     const link = screen.getByRole("link", { name: /order a video/i });
     expect(link).toBeTruthy();
     expect(link.getAttribute("href")).toBe("/upload");
+  });
+
+  // ── WS4a: Per-order progress timeline on In-Production cards ───────────────
+  it("renders a 5-stage timeline with the active stage matching the order status lit", async () => {
+    mockFetchProperties
+      // first call: in-production — "generating" → Rendering stage
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    // Timeline strip present with all 5 stages
+    const timeline = screen.getByTestId(`order-timeline-${activeOrder.id}`);
+    expect(timeline).toBeTruthy();
+    expect(timeline.querySelectorAll("[data-stage]")).toHaveLength(5);
+
+    // The active stage is the one matching the order's status label ("Rendering")
+    const active = timeline.querySelector("[data-stage-active='true']");
+    expect(active).toBeTruthy();
+    expect(active?.getAttribute("data-stage")).toBe("Rendering");
+  });
+
+  // ── WS4a: ETA phrase omission guard ───────────────────────────────────────
+  it("omits the 'Usually ready' ETA phrase when fewer than 3 delivered samples exist", async () => {
+    // Only 2 delivered orders with processing_time_ms → below the median threshold
+    const twoDelivered = [
+      { ...deliveredOrder, id: "d1", processing_time_ms: 1000000 },
+      { ...deliveredOrder, id: "d2", processing_time_ms: 2000000 },
+    ];
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: twoDelivered, total: 2 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    const { container } = render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    expect(container.textContent).not.toContain("Usually ready");
+  });
+
+  it("renders a number-free bucketed ETA phrase when 3+ delivered samples exist", async () => {
+    // 3 delivered orders, all under 6h → "Usually ready within a few hours"
+    const threeDelivered = [
+      { ...deliveredOrder, id: "d1", processing_time_ms: 2 * 3600 * 1000 },
+      { ...deliveredOrder, id: "d2", processing_time_ms: 3 * 3600 * 1000 },
+      { ...deliveredOrder, id: "d3", processing_time_ms: 4 * 3600 * 1000 },
+    ];
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: threeDelivered, total: 3 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    const eta = screen.getByTestId(`order-eta-${activeOrder.id}`);
+    expect(eta.textContent).toContain("Usually ready");
+    // Hard rule: NO digits — qualitative phrase only, no countdown / invented number
+    expect(eta.textContent ?? "").not.toMatch(/\d/);
   });
 });
