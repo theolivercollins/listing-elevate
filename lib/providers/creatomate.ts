@@ -129,8 +129,13 @@ export function buildCreatomateConcatScript(
   }
 
   const isVertical = aspectRatio === "9:16";
-  const width = isVertical ? 1080 : 1920;
-  const height = isVertical ? 1920 : 1080;
+  // Landscape renders use a 2880×1620 supersampled canvas so Creatomate's
+  // encoder allocates ~2× more bitrate (~19 Mbps vs ~10 Mbps at 1920×1080).
+  // Measured 2026-06-11: bpp_ratio = 0.860 (Gate A PASS). Vertical stays at
+  // the 1080×1920 baseline — the probe only covered 16:9 and vertical clips
+  // are typically 1080×1920 already.
+  const width = isVertical ? 1080 : 2880;
+  const height = isVertical ? 1920 : 1620;
 
   // One video element per clip, all on track 1 with no `time` (→ sequential)
   // and no `duration` (→ each uses its source length).
@@ -204,8 +209,12 @@ export function buildCreatomateTimeline(
   }
 
   const isVertical = aspectRatio === "9:16";
-  const width = isVertical ? 1080 : 1920;
-  const height = isVertical ? 1920 : 1080;
+  // Landscape renders use a 2880×1620 supersampled canvas so Creatomate's
+  // encoder allocates ~2× more bitrate (~19 Mbps vs ~10 Mbps at 1920×1080).
+  // Measured 2026-06-11: bpp_ratio = 0.860 (Gate A PASS). Vertical stays at
+  // the 1080×1920 baseline — not probed; kept at native resolution.
+  const width = isVertical ? 1080 : 2880;
+  const height = isVertical ? 1920 : 1620;
 
   // Branding: brand color tints the closing accent bar; logo (if provided)
   // becomes a corner watermark visible for the entire timeline.
@@ -711,19 +720,35 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
 // Cost helpers
 // ---------------------------------------------------------------------------
 
-// Creatomate credit consumption: ~28 credits per minute of 1080p 30fps video.
+// Creatomate credit consumption: ~28 credits per minute of 1080p30 video.
 // At Essential plan ($54/mo for 2,000 credits), that's ~$0.76 per output minute.
-// We express cost in cents for consistency with the rest of the system.
+// Landscape renders now use a 2880×1620 supersampled canvas (2.25× pixel area),
+// so the encoder allocates ~2× more bitrate. Creatomate credits scale with pixel
+// area, so landscape costs 2.25× the baseline: ~$1.71/min.
+// Measured 2026-06-11: P2b gate A PASS (19.18 Mbps, bpp_ratio 0.860).
 const CREATOMATE_CENTS_PER_MINUTE = parseInt(
   process.env.CREATOMATE_CENTS_PER_MINUTE ?? "76",
   10,
 );
+// Supersampling multiplier for 2880×1620 vs 1920×1080 (pixel-area ratio).
+// Creatomate charges credits proportional to pixel area × duration.
+const CREATOMATE_LANDSCAPE_SUPERSAMPLE_MULTIPLIER = 2.25;
 
 /**
  * Compute Creatomate cost in cents for a rendered output of the given duration.
- * Rounds duration up to the nearest minute for simplicity.
+ *
+ * Landscape (16:9) renders use a 2880×1620 supersampled canvas and cost 2.25×
+ * more than the 1920×1080 baseline. Vertical (9:16) stays at the 1080×1920
+ * baseline rate. Rounds duration up to the nearest minute.
  */
-export function creatomateCostCents(outputDurationSeconds: number): number {
+export function creatomateCostCents(
+  outputDurationSeconds: number,
+  aspectRatio: "16:9" | "9:16" = "16:9",
+): number {
   const minutes = Math.ceil(outputDurationSeconds / 60);
-  return minutes * CREATOMATE_CENTS_PER_MINUTE;
+  const multiplier =
+    aspectRatio === "16:9"
+      ? CREATOMATE_LANDSCAPE_SUPERSAMPLE_MULTIPLIER
+      : 1;
+  return Math.round(minutes * CREATOMATE_CENTS_PER_MINUTE * multiplier);
 }

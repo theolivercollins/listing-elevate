@@ -172,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       provider: "creatomate",
       unitsConsumed: 1,
       unitType: "renders",
-      costCents: creatomateCostCents(durationSeconds),
+      costCents: creatomateCostCents(durationSeconds, aspectRatio),
       metadata: {
         source: "prompt-lab-assemble-listing",
         assembly_id: assemblyId,

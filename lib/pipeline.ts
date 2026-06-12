@@ -1645,7 +1645,7 @@ async function runAssemblyStep(
 
         const horizontalDuration =
           horizontalResult.durationSeconds ?? timelineDurationSeconds;
-        const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
+        const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration, "16:9");
         await recordCostEvent({
           propertyId,
           stage: "assembly",
@@ -1701,7 +1701,7 @@ async function runAssemblyStep(
 
         const verticalDuration =
           verticalResult.durationSeconds ?? timelineDurationSeconds;
-        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
+        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration, "9:16");
         await recordCostEvent({
           propertyId,
           stage: "assembly",
