@@ -14,6 +14,8 @@ export interface PreviewMeta {
   /** Migration-084 columns. null when absent (pre-migration DB). */
   label: string | null;
   revoked_at: string | null;
+  /** Migration-087 column. true when absent (pre-migration DB) — preserves current branded behavior. */
+  show_branding: boolean;
 }
 
 export async function createPreviewLink(
@@ -54,7 +56,7 @@ async function fetchPreviewMeta(db: ReturnType<typeof getSupabase>, token: strin
   try {
     const { data, error } = await db
       .from('property_previews')
-      .select('kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at')
+      .select('kind, allow_download, allow_approve, allow_revision, approved_at, label, revoked_at, show_branding')
       .eq('token', token)
       .maybeSingle();
     // If Postgres errors because the columns don't exist, error.code will be '42703'
@@ -70,6 +72,8 @@ async function fetchPreviewMeta(db: ReturnType<typeof getSupabase>, token: strin
       // Migration-084 columns — null when absent (pre-migration DB).
       label: (data as { label?: string | null }).label ?? null,
       revoked_at: (data as { revoked_at?: string | null }).revoked_at ?? null,
+      // Migration-087 column — default TRUE pre-migration (preserves current branded behavior).
+      show_branding: (data as { show_branding?: boolean }).show_branding ?? true,
     };
   } catch {
     // Unexpected error (network, parse) — treat as pre-migration to avoid 500s

@@ -137,6 +137,57 @@ describe('fetchByToken', () => {
   });
 });
 
+describe('fetchByToken — show_branding via fetchPreviewMeta (P1 regression)', () => {
+  /** Build a standard from() chain that can satisfy either a maybeSingle or chain ending. */
+  function makeSimpleChain(data: unknown) {
+    return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data, error: null }) }) }) };
+  }
+
+  /** Build a photos chain for resolveHeroPhotoUrl (two-eq selected query). */
+  function makePhotosChain() {
+    return { select: () => ({ eq: () => ({ eq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }) }) }) };
+  }
+
+  it('passes show_branding=false from the DB row through to preview.show_branding', async () => {
+    // Call order: (1) property_previews select * (pv row), (2) properties select, (3) fetchPreviewMeta select w/ show_branding,
+    // (4+5) resolveHeroPhotoUrl photos queries
+    const selectSpy = vi.fn().mockReturnValue({ eq: () => ({ maybeSingle: () => Promise.resolve({
+      data: { kind: 'public', allow_download: false, allow_approve: false, allow_revision: false, approved_at: null, label: null, revoked_at: null, show_branding: false },
+      error: null,
+    }) }) });
+    mockFrom
+      .mockReturnValueOnce(makeSimpleChain({ property_id: 'p1', expires_at: null }))        // 1: pv row
+      .mockReturnValueOnce(makeSimpleChain({ id: 'p1', address: '1 Main', client_id: null, horizontal_video_url: null, vertical_video_url: null, brokerage: null })) // 2: property
+      .mockReturnValueOnce({ select: selectSpy })  // 3: fetchPreviewMeta — spy on select
+      .mockReturnValueOnce(makePhotosChain())       // 4: resolveHeroPhotoUrl selected-photos
+      .mockReturnValueOnce(makePhotosChain());      // 5: resolveHeroPhotoUrl any-photos fallback
+
+    const r = await fetchByToken('tok');
+    // Assert the column list passed to select includes show_branding
+    expect(selectSpy).toHaveBeenCalledWith(expect.stringContaining('show_branding'));
+    // Assert the returned PreviewMeta carries show_branding=false (not undefined ?? true)
+    expect(r?.preview?.show_branding).toBe(false);
+  });
+
+  it('defaults show_branding=true when column is absent from DB row (pre-087 fallback)', async () => {
+    const selectSpy = vi.fn().mockReturnValue({ eq: () => ({ maybeSingle: () => Promise.resolve({
+      // Row WITHOUT show_branding — simulates pre-migration DB returning the column as undefined
+      data: { kind: 'public', allow_download: false, allow_approve: false, allow_revision: false, approved_at: null, label: null, revoked_at: null },
+      error: null,
+    }) }) });
+    mockFrom
+      .mockReturnValueOnce(makeSimpleChain({ property_id: 'p1', expires_at: null }))
+      .mockReturnValueOnce(makeSimpleChain({ id: 'p1', address: '1 Main', client_id: null, horizontal_video_url: null, vertical_video_url: null, brokerage: null }))
+      .mockReturnValueOnce({ select: selectSpy })
+      .mockReturnValueOnce(makePhotosChain())
+      .mockReturnValueOnce(makePhotosChain());
+
+    const r = await fetchByToken('tok');
+    // Pre-087: column absent → default true (preserves branded behavior)
+    expect(r?.preview?.show_branding).toBe(true);
+  });
+});
+
 describe('recordPreviewView', () => {
   it('calls the increment_preview_view RPC', async () => {
     await recordPreviewView('tok');
