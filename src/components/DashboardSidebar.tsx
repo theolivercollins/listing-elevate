@@ -22,7 +22,27 @@ interface SidebarSection {
   items: SidebarItem[];
 }
 
-const SECTIONS: SidebarSection[] = [
+/**
+ * Agent (non-admin) nav — 5 items total, single section.
+ * Brand sub-label: "Client studio" (no version string).
+ */
+const AGENT_SECTIONS: SidebarSection[] = [
+  {
+    label: "Studio",
+    items: [
+      { to: "/dashboard", label: "Home", icon: "grid", end: true },
+      { to: "/upload", label: "Order a video", icon: "upload" },
+      { to: "/dashboard/account/listings", label: "My listings", icon: "home" },
+      { to: "/dashboard/account/billing", label: "Billing", icon: "dollar" },
+      { to: "/dashboard/account/profile", label: "Profile", icon: "user" },
+    ],
+  },
+];
+
+/**
+ * Operator (admin) nav — full set, multiple sections.
+ */
+const OPERATOR_SECTIONS: SidebarSection[] = [
   {
     label: "Workspace",
     items: [
@@ -74,6 +94,14 @@ const SECTIONS: SidebarSection[] = [
     ],
   },
 ];
+
+/**
+ * getSections — returns the nav section set for the given role.
+ * @param role "admin" for operators; anything else for agents.
+ */
+export function getSections(role: string | null | undefined): SidebarSection[] {
+  return role === "admin" ? OPERATOR_SECTIONS : AGENT_SECTIONS;
+}
 
 function useCollapsedState() {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -317,8 +345,12 @@ const menuItemStyle = {
 };
 
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const location = useLocation();
+  const isAdmin = profile?.role === "admin";
+  const sections = getSections(profile?.role);
+  const brandSub = isAdmin ? "Operator studio" : "Client studio";
+
   const initials = (user?.email ?? "Listing Elevate")
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -337,13 +369,13 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
         {!collapsed && (
           <span className="le-sidebar-brand-text">
             <span className="le-sidebar-brand-name">Listing Elevate</span>
-            <span className="le-sidebar-brand-sub">Studio · v2.4</span>
+            <span className="le-sidebar-brand-sub">{brandSub}</span>
           </span>
         )}
       </Link>
 
       <nav className="le-sidebar-nav" aria-label="Dashboard navigation">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div className="le-sidebar-section" key={section.label}>
             {!collapsed && <div className="le-sidebar-section-label">{section.label}</div>}
             {section.items.map((item) => {
