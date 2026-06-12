@@ -11,7 +11,7 @@ import {
   ANALYSIS_PROMPT_HASH,
   DIRECTOR_PROMPT_HASH,
 } from "../../../lib/prompt-lab.js";
-import { V1_ATLAS_SKUS, type V1AtlasSku } from "../../../lib/providers/atlas.js";
+import { V1_ATLAS_SKUS, type V1AtlasSku, V1_1_LAB_SKUS } from "../../../lib/providers/atlas.js";
 
 // Audit A C2: wrap critical UPDATE calls that follow a remote POST (Atlas charge).
 // If the UPDATE fails, the provider has already billed us but we can't retrieve
@@ -48,21 +48,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { source_iteration_id, provider, sku: skuParam } = (req.body ?? {}) as {
+  const { source_iteration_id, provider, sku: skuParam, resolution: resolutionParam } = (req.body ?? {}) as {
     source_iteration_id?: string;
     provider?: "kling" | "runway";
     sku?: string | null;
+    resolution?: string | null;
   };
   if (!source_iteration_id || !provider) {
     return res.status(400).json({ error: "source_iteration_id and provider required" });
   }
 
-  // Validate sku if explicitly provided.
+  // Validate resolution if provided — must be in the known set.
+  // -SR values are Seedance 2.0's super-resolution tiers (2026-06 Atlas catalog).
+  const VALID_RESOLUTIONS = ["480p", "720p", "720p-SR", "1080p", "1080p-SR", "1440p-SR", "4k"] as const;
+  if (resolutionParam != null && !(VALID_RESOLUTIONS as readonly string[]).includes(resolutionParam)) {
+    return res.status(400).json({
+      error: `resolution="${resolutionParam}" is not valid. Must be one of: ${VALID_RESOLUTIONS.join(", ")}`,
+    });
+  }
+  const resolution = resolutionParam ?? null;
+
+  // Validate sku if explicitly provided — accept both V1 and V1.1 catalogs.
+  // Pipeline version is fetched below; both are allowed here and the v1.1
+  // resolution block below enforces V1_1_LAB_SKUS membership.
   let explicitSku: V1AtlasSku | null = null;
   if (skuParam != null) {
-    if (!(V1_ATLAS_SKUS as readonly string[]).includes(skuParam)) {
+    const allValidSkus = [...(V1_ATLAS_SKUS as readonly string[]), ...(V1_1_LAB_SKUS as readonly string[])];
+    if (!allValidSkus.includes(skuParam)) {
       return res.status(400).json({
-        error: `sku="${skuParam}" is not a valid V1 Atlas SKU. Valid: ${V1_ATLAS_SKUS.join(", ")}`,
+        error: `sku="${skuParam}" is not a recognised Lab SKU. V1: ${V1_ATLAS_SKUS.join(", ")}; V1.1: ${V1_1_LAB_SKUS.join(", ")}`,
       });
     }
     explicitSku = skuParam as V1AtlasSku;
@@ -71,10 +85,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
   const { data: source, error: sErr } = await supabase
     .from("prompt_lab_iterations")
-    .select("*, prompt_lab_sessions(image_url)")
+    .select("*, prompt_lab_sessions(image_url, pipeline_version)")
     .eq("id", source_iteration_id)
     .single();
   if (sErr || !source) return res.status(404).json({ error: "source iteration not found" });
+
+  // Read pipeline_version from the parent session. Defaults to 'v1' for
+  // sessions created before migration 067.
+  const pipelineVersion: "v1" | "v1.1" =
+    ((source.prompt_lab_sessions as { pipeline_version?: string } | null)?.pipeline_version ?? "v1") === "v1.1"
+      ? "v1.1"
+      : "v1";
   if (!source.director_output_json) {
     return res.status(400).json({ error: "source iteration has no director output" });
   }
@@ -98,6 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       embedding_model: source.embedding_model ?? null,
       retrieval_metadata: source.retrieval_metadata ?? null,
       user_comment: `[rerender] Same prompt, trying ${provider} (source: iteration ${source.iteration_number})`,
+      pipeline_version: pipelineVersion,
     })
     .select()
     .single();
@@ -106,15 +128,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const scene = source.director_output_json as any;
     const roomType = (source.analysis_json as any)?.room_type ?? "other";
-    // "rerender with same SKU" is frictionless: explicit body sku wins, else
-    // fall back to the source iteration's model_used, then null (router default).
-    const effectiveSku: V1AtlasSku | null = explicitSku ?? ((source.model_used as V1AtlasSku | null | undefined) ?? null);
-    const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku } = await submitLabRender({
+    // v1.1 SKU resolution:
+    //   - If user-supplied sku is in V1_1_LAB_SKUS → honour it.
+    //   - Else (missing / not in the catalog) → default to seedance-pro-pushin.
+    // v1: "rerender with same SKU" is frictionless: explicit body sku wins,
+    //     then source iteration's model_used, then null (router default).
+    const effectiveSku: V1AtlasSku | null = pipelineVersion === "v1.1"
+      ? ((explicitSku && (V1_1_LAB_SKUS as readonly string[]).includes(explicitSku))
+          ? explicitSku
+          : ("seedance-pro-pushin" as V1AtlasSku))
+      : (explicitSku ?? ((source.model_used as V1AtlasSku | null | undefined) ?? null));
+
+    // v1.1 Seedance: force Atlas by nulling providerOverride (Seedance is Atlas-only).
+    // v1.1 non-Seedance (Kling 3, etc.): let user's provider choice flow through.
+    // v1: pass user's provider choice through as before.
+    const effectiveProviderOverride = (pipelineVersion === "v1.1" && effectiveSku === ("seedance-pro-pushin" as V1AtlasSku))
+      ? null
+      : provider;
+
+    const { jobId, provider: usedProvider, sku: resolvedSku, thompson, staticSku, resolutionUsed } = await submitLabRender({
       imageUrl,
       scene,
       roomType,
-      providerOverride: provider,
+      providerOverride: effectiveProviderOverride,
       sku: effectiveSku,
+      pipelineVersion,
+      resolution,
     });
 
     // Audit A C2: Atlas POST has already fired (account charged). Retry the
@@ -130,6 +169,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             render_error: null,
             model_used: resolvedSku,
             sku_source: "captured_at_render",
+            pipeline_version: pipelineVersion,
+            resolution_used: resolutionUsed,
           })
           .eq("id", newIteration.id)
           .select()

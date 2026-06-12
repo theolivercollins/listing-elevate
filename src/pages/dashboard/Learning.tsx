@@ -1,20 +1,38 @@
-import { useEffect, useState, type CSSProperties } from "react";
-import { Loader2, AlertTriangle, Star, ChevronDown, ChevronUp } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useEffect, useState } from "react";
+import { LabSubNav } from "@/components/dashboard/LabSubNav";
+import { Icon } from "@/components/dashboard/icons";
+import { PageHeading, KpiCard, Card, SectionTitle } from "@/components/dashboard/primitives";
 import type { LearningData, PromptRevision } from "@/lib/types";
 import { fetchLearningData, fetchPromptRevisions } from "@/lib/api";
-import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" };
-const PAGE_H1: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: "clamp(28px, 4vw, 44px)", fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 0.98, color: "#fff", margin: 0 };
-const SECTION_H3: CSSProperties = { fontFamily: "var(--le-font-sans)", fontSize: 20, fontWeight: 500, letterSpacing: "-0.025em", color: "#fff", margin: 0 };
-const MONO_VALUE: CSSProperties = { fontFamily: "var(--le-font-mono)", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: "#fff" };
+// ─── star row ─────────────────────────────────────────────────────
+function StarRow({ value }: { value: number }) {
+  return (
+    <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <svg
+          key={n}
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill={n <= value ? "var(--ink)" : "transparent"}
+          stroke={n <= value ? "var(--ink)" : "var(--line)"}
+          strokeWidth={1.8}
+          strokeLinejoin="round"
+        >
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 6.91-1.01z" />
+        </svg>
+      ))}
+    </span>
+  );
+}
 
 const Learning = () => {
   const [learning, setLearning] = useState<LearningData | null>(null);
   const [revisions, setRevisions] = useState<Array<{ prompt_name: string; revisions: PromptRevision[] }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"feedback" | "changelog">("feedback");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -40,266 +58,425 @@ const Learning = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
+        <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+        </svg>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
+
   if (error || !learning || !revisions) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 py-24">
-        <AlertTriangle className="h-6 w-6 text-destructive" />
-        <p className="text-sm text-destructive">{error ?? "Failed to load"}</p>
+      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <Icon name="alert" size={20} style={{ color: "var(--bad)" }} />
+        <p style={{ fontSize: 13, color: "var(--bad)" }}>{error ?? "Failed to load"}</p>
       </div>
     );
   }
 
-  const renderStars = (r: number) => (
-    <span className="inline-flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Star
-          key={n}
-          className={`h-3 w-3 ${n <= r ? "fill-foreground text-foreground" : "text-muted-foreground/30"}`}
-          strokeWidth={1.5}
-        />
-      ))}
-    </span>
-  );
-
   return (
-    <div className="space-y-16">
-      <div>
-        <span style={EYEBROW}>— Learning</span>
-        <h2 className="mt-3" style={PAGE_H1}>Feedback &amp; prompt changelog</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Every rated scene feeds into the next director run as in-context learning. The changelog tracks how system prompts have evolved.
-        </p>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+
+      <LabSubNav />
+      <PageHeading
+        eyebrow="Lab"
+        title="Learning &amp; changelog"
+        sub="Every rated scene feeds into the next director run as in-context learning. The changelog tracks how system prompts have evolved."
+      />
+
+      {/* KPI strip */}
+      <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+        <KpiCard
+          label="Total ratings"
+          value={learning.totalRatings}
+          sub="all surfaces"
+          delta={null}
+        />
+        <KpiCard
+          label="Average rating"
+          value={learning.avgAll != null ? `${learning.avgAll} / 5` : "—"}
+          sub="all rated scenes"
+          delta={null}
+        />
+        <KpiCard
+          label="14-day trend"
+          value={learning.trend.length > 0 ? `${learning.trend.length} days` : "no data"}
+          sub="daily rating activity"
+          delta={null}
+        />
+      </section>
+
+      {/* Tabs */}
+      <div className="le-seg" style={{ alignSelf: "flex-start" }}>
+        <button
+          type="button"
+          className={`le-seg-item${activeTab === "feedback" ? " is-active" : ""}`}
+          onClick={() => setActiveTab("feedback")}
+        >
+          Feedback ({learning.totalRatings})
+        </button>
+        <button
+          type="button"
+          className={`le-seg-item${activeTab === "changelog" ? " is-active" : ""}`}
+          onClick={() => setActiveTab("changelog")}
+        >
+          Prompt changelog
+        </button>
       </div>
 
-      <Tabs defaultValue="feedback">
-        <TabsList>
-          <TabsTrigger value="feedback">Feedback ({learning.totalRatings})</TabsTrigger>
-          <TabsTrigger value="changelog">Prompt changelog</TabsTrigger>
-        </TabsList>
+      {/* ─── Feedback tab ─── */}
+      {activeTab === "feedback" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-        {/* ─── Feedback tab ─── */}
-        <TabsContent value="feedback" className="mt-10 space-y-16">
-          {/* Summary strip */}
-          <div className="grid gap-px border border-border bg-border md:grid-cols-3" style={{ borderRadius: 0 }}>
-            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
-              <span style={EYEBROW}>Total ratings</span>
-              <div className="mt-4" style={MONO_VALUE}>{learning.totalRatings}</div>
-            </div>
-            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
-              <span style={EYEBROW}>Average</span>
-              <div className="mt-4" style={MONO_VALUE}>
-                {learning.avgAll != null ? `${learning.avgAll} / 5` : "—"}
-              </div>
-            </div>
-            <div className="bg-background p-6" style={{ borderRadius: 0 }}>
-              <span style={EYEBROW}>14-day trend</span>
-              <div className="tabular mt-4 flex items-end gap-1 text-[10px] text-muted-foreground">
-                {learning.trend.length === 0 ? (
-                  <span>no data yet</span>
-                ) : (
-                  learning.trend.map((d) => (
+          {/* 14-day mini chart */}
+          {learning.trend.length > 0 && (
+            <Card padding={20}>
+              <SectionTitle eyebrow="14-day trend" title="Daily rating activity" />
+              <div
+                style={{
+                  marginTop: 16,
+                  display: "flex",
+                  alignItems: "flex-end",
+                  gap: 4,
+                  height: 60,
+                }}
+              >
+                {learning.trend.map((d) => (
+                  <div
+                    key={d.day}
+                    style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}
+                    title={`${d.day}: ${d.avg_rating} (n=${d.count})`}
+                  >
                     <div
-                      key={d.day}
-                      className="flex flex-col items-center"
-                      title={`${d.day}: ${d.avg_rating} (n=${d.count})`}
-                    >
-                      <div
-                        className="w-3 bg-foreground/60"
-                        style={{ height: `${Math.max(d.avg_rating * 8, 2)}px` }}
-                      />
-                      <span className="tabular mt-1 text-[8px]">{d.day.slice(5)}</span>
-                    </div>
-                  ))
-                )}
+                      style={{
+                        width: "100%",
+                        background: "var(--ink)",
+                        borderRadius: "var(--radius-sm)",
+                        opacity: 0.6,
+                        height: `${Math.max(d.avg_rating * 8, 2)}px`,
+                      }}
+                    />
+                    <span style={{ marginTop: 4, fontSize: 8, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                      {d.day.slice(5)}
+                    </span>
+                  </div>
+                ))}
               </div>
-            </div>
-          </div>
+            </Card>
+          )}
 
           {/* Winners */}
-          <section>
-            <span style={EYEBROW}>— Top winners</span>
-            <h3 className="mt-3" style={SECTION_H3}>What's working</h3>
+          <Card padding={24}>
+            <SectionTitle eyebrow="Top winners" title="What's working" />
             {learning.winners.length === 0 ? (
-              <p className="mt-6 text-sm text-muted-foreground">No 4–5 star ratings yet.</p>
+              <p style={{ marginTop: 16, fontSize: 13, color: "var(--muted)" }}>No 4–5 star ratings yet.</p>
             ) : (
-              <div className="mt-6 space-y-1 border-t border-border">
-                {learning.winners.map((w) => (
-                  <div key={w.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-6 border-b border-border py-4">
-                    <div className="tabular w-24">{renderStars(w.rating)}</div>
-                    <div className="min-w-0">
-                      <div className="tabular text-[10px] uppercase text-muted-foreground">
-                        {w.room_type.replace(/_/g, " ")} · {w.camera_movement.replace(/_/g, " ")} · {w.provider ?? "—"}
+              <div style={{ marginTop: 16 }}>
+                {/* Table header */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "80px 1fr auto",
+                    gap: 16,
+                    padding: "10px 14px",
+                    borderBottom: "1px solid var(--line)",
+                    alignItems: "center",
+                  }}
+                >
+                  <span className="le-d-label">Rating</span>
+                  <span className="le-d-label">Scene</span>
+                  <span className="le-d-label">Clip</span>
+                </div>
+                {learning.winners.map((w, i) => (
+                  <div
+                    key={w.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "80px 1fr auto",
+                      gap: 16,
+                      padding: "14px 14px",
+                      borderBottom: i < learning.winners.length - 1 ? "1px solid var(--line-2)" : "none",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div><StarRow value={w.rating} /></div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums", marginBottom: 4 }}>
+                        {w.room_type.replace(/_/g, " ")} &middot; {w.camera_movement.replace(/_/g, " ")} &middot; {w.provider ?? "—"}
                       </div>
-                      <p className="mt-1 font-mono text-xs leading-snug">{w.prompt}</p>
+                      <p style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{w.prompt}</p>
                       {w.comment && (
-                        <p className="mt-2 text-xs italic text-muted-foreground">"{w.comment}"</p>
+                        <p style={{ marginTop: 6, fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>"{w.comment}"</p>
                       )}
                       {w.tags && w.tags.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
+                        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
                           {w.tags.map((t) => (
-                            <span key={t} className="label bg-foreground/5 px-2 py-0.5 text-foreground">
+                            <span
+                              key={t}
+                              style={{
+                                padding: "2px 7px",
+                                borderRadius: "var(--radius-pill)",
+                                background: "rgba(11,11,16,0.05)",
+                                fontSize: 10.5,
+                                color: "var(--ink-2)",
+                              }}
+                            >
                               {t}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-                    {w.clip_url && (
-                      <a
-                        href={w.clip_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="label text-muted-foreground hover:text-foreground"
-                      >
-                        Watch →
-                      </a>
-                    )}
+                    <div>
+                      {w.clip_url ? (
+                        <a
+                          href={w.clip_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+                        >
+                          <Icon name="external" size={12} />
+                          Watch
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "var(--muted-2)" }}>—</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-          </section>
+          </Card>
 
           {/* Losers */}
-          <section>
-            <span style={EYEBROW}>— Top losers</span>
-            <h3 className="mt-3" style={SECTION_H3}>What's failing</h3>
+          <Card padding={24}>
+            <SectionTitle eyebrow="Top losers" title="What's failing" />
             {learning.losers.length === 0 ? (
-              <p className="mt-6 text-sm text-muted-foreground">No 1–2 star ratings with comments yet.</p>
+              <p style={{ marginTop: 16, fontSize: 13, color: "var(--muted)" }}>No 1–2 star ratings with comments yet.</p>
             ) : (
-              <div className="mt-6 space-y-1 border-t border-border">
-                {learning.losers.map((l) => (
-                  <div key={l.id} className="grid grid-cols-[auto_1fr_auto] items-start gap-6 border-b border-border py-4">
-                    <div className="tabular w-24">{renderStars(l.rating)}</div>
-                    <div className="min-w-0">
-                      <div className="tabular text-[10px] uppercase text-muted-foreground">
-                        {l.room_type.replace(/_/g, " ")} · {l.camera_movement.replace(/_/g, " ")} · {l.provider ?? "—"}
+              <div style={{ marginTop: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "80px 1fr auto",
+                    gap: 16,
+                    padding: "10px 14px",
+                    borderBottom: "1px solid var(--line)",
+                    alignItems: "center",
+                  }}
+                >
+                  <span className="le-d-label">Rating</span>
+                  <span className="le-d-label">Scene</span>
+                  <span className="le-d-label">Clip</span>
+                </div>
+                {learning.losers.map((l, i) => (
+                  <div
+                    key={l.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "80px 1fr auto",
+                      gap: 16,
+                      padding: "14px 14px",
+                      borderBottom: i < learning.losers.length - 1 ? "1px solid var(--line-2)" : "none",
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div><StarRow value={l.rating} /></div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums", marginBottom: 4 }}>
+                        {l.room_type.replace(/_/g, " ")} &middot; {l.camera_movement.replace(/_/g, " ")} &middot; {l.provider ?? "—"}
                       </div>
-                      <p className="mt-1 font-mono text-xs leading-snug">{l.prompt}</p>
+                      <p style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{l.prompt}</p>
                       {l.comment && (
-                        <p className="mt-2 text-xs italic text-destructive">"{l.comment}"</p>
+                        <p style={{ marginTop: 6, fontSize: 12, fontStyle: "italic", color: "var(--bad)" }}>"{l.comment}"</p>
                       )}
                       {l.tags && l.tags.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
+                        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 4 }}>
                           {l.tags.map((t) => (
-                            <span key={t} className="label bg-destructive/10 px-2 py-0.5 text-destructive">
+                            <span
+                              key={t}
+                              style={{
+                                padding: "2px 7px",
+                                borderRadius: "var(--radius-pill)",
+                                background: "rgba(196,74,74,0.08)",
+                                fontSize: 10.5,
+                                color: "var(--bad)",
+                              }}
+                            >
                               {t}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-                    {l.clip_url && (
-                      <a
-                        href={l.clip_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="label text-muted-foreground hover:text-foreground"
-                      >
-                        Watch →
-                      </a>
-                    )}
+                    <div>
+                      {l.clip_url ? (
+                        <a
+                          href={l.clip_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--accent)", textDecoration: "none", fontWeight: 500 }}
+                        >
+                          <Icon name="external" size={12} />
+                          Watch
+                        </a>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "var(--muted-2)" }}>—</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-          </section>
+          </Card>
 
           {/* Combo table */}
-          <section>
-            <span style={EYEBROW}>— Room + movement</span>
-            <h3 className="mt-3" style={SECTION_H3}>Average rating per combo</h3>
+          <Card padding={24}>
+            <SectionTitle eyebrow="Room + movement" title="Average rating per combo" />
             {learning.combos.length === 0 ? (
-              <p className="mt-6 text-sm text-muted-foreground">No data yet.</p>
+              <p style={{ marginTop: 16, fontSize: 13, color: "var(--muted)" }}>No data yet.</p>
             ) : (
-              <div className="mt-6 border-t border-border">
-                <div className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-6 border-b border-border py-3">
-                  <span className="label text-muted-foreground">Room</span>
-                  <span className="label text-muted-foreground">Movement</span>
-                  <span className="label text-right text-muted-foreground">Avg</span>
-                  <span className="label text-right text-muted-foreground">N</span>
+              <div style={{ marginTop: 16 }}>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "2fr 2fr 1fr 1fr",
+                    gap: 16,
+                    padding: "10px 14px",
+                    borderBottom: "1px solid var(--line)",
+                  }}
+                >
+                  <span className="le-d-label">Room</span>
+                  <span className="le-d-label">Movement</span>
+                  <span className="le-d-label" style={{ textAlign: "right" }}>Avg</span>
+                  <span className="le-d-label" style={{ textAlign: "right" }}>N</span>
                 </div>
-                {learning.combos.map((c) => (
+                {learning.combos.map((c, i) => (
                   <div
                     key={`${c.room_type}-${c.camera_movement}`}
-                    className="grid grid-cols-[2fr_2fr_1fr_1fr] gap-6 border-b border-border py-3 text-xs"
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "2fr 2fr 1fr 1fr",
+                      gap: 16,
+                      padding: "12px 14px",
+                      borderBottom: i < learning.combos.length - 1 ? "1px solid var(--line-2)" : "none",
+                      fontSize: 12.5,
+                      color: "var(--ink-2)",
+                    }}
                   >
                     <span>{c.room_type.replace(/_/g, " ")}</span>
                     <span>{c.camera_movement.replace(/_/g, " ")}</span>
-                    <span className={`tabular text-right ${c.avg_rating >= 4 ? "text-accent" : c.avg_rating <= 2 ? "text-destructive" : ""}`}>
+                    <span
+                      style={{
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        color: c.avg_rating >= 4 ? "var(--good)" : c.avg_rating <= 2 ? "var(--bad)" : "var(--ink-2)",
+                        fontWeight: c.avg_rating >= 4 ? 600 : 400,
+                      }}
+                    >
                       {c.avg_rating}
                     </span>
-                    <span className="tabular text-right text-muted-foreground">{c.count}</span>
+                    <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>{c.count}</span>
                   </div>
                 ))}
               </div>
             )}
-          </section>
+          </Card>
 
           {/* Provider breakdown */}
           {learning.providers.length > 0 && (
-            <section>
-              <span style={EYEBROW}>— By provider</span>
-              <h3 className="mt-3" style={SECTION_H3}>Average rating per provider</h3>
-              <div className="mt-6 grid gap-px border border-border bg-border md:grid-cols-3" style={{ borderRadius: 0 }}>
-                {learning.providers.map((p) => (
-                  <div key={p.provider} className="bg-background p-6" style={{ borderRadius: 0 }}>
-                    <span style={EYEBROW}>{p.provider}</span>
-                    <div className="mt-4" style={MONO_VALUE}>{p.avg_rating} / 5</div>
-                    <div className="tabular mt-1 text-[10px] text-muted-foreground">{p.count} ratings</div>
+            <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
+              {learning.providers.map((p) => (
+                <div key={p.provider} className="le-kpi-card">
+                  <span className="le-d-label">{p.provider}</span>
+                  <div
+                    style={{
+                      marginTop: 10,
+                      fontSize: 28,
+                      fontWeight: 600,
+                      letterSpacing: "-0.025em",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {p.avg_rating} / 5
                   </div>
-                ))}
-              </div>
+                  <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                    {p.count} ratings
+                  </div>
+                </div>
+              ))}
             </section>
           )}
-        </TabsContent>
+        </div>
+      )}
 
-        {/* ─── Changelog tab ─── */}
-        <TabsContent value="changelog" className="mt-10 space-y-12">
+      {/* ─── Changelog tab ─── */}
+      {activeTab === "changelog" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           {revisions.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p style={{ fontSize: 13, color: "var(--muted)" }}>
               No prompt revisions recorded yet. The first pipeline run will snapshot the current prompt versions.
             </p>
           ) : (
             revisions.map((group) => (
-              <section key={group.prompt_name}>
-                <span style={EYEBROW}>— {group.prompt_name}</span>
-                <h3 className="mt-3" style={SECTION_H3}>
-                  {group.revisions.length} {group.revisions.length === 1 ? "revision" : "revisions"}
-                </h3>
-                <div className="mt-6 space-y-1 border-t border-border">
+              <Card key={group.prompt_name} padding={24}>
+                <SectionTitle
+                  eyebrow={group.prompt_name}
+                  title={`${group.revisions.length} ${group.revisions.length === 1 ? "revision" : "revisions"}`}
+                />
+                <div style={{ marginTop: 16 }}>
                   {group.revisions.map((rev) => {
                     const key = `${group.prompt_name}-${rev.version}`;
                     const isOpen = expanded[key] ?? false;
                     return (
-                      <div key={rev.id} className="border-b border-border">
+                      <div key={rev.id} style={{ borderBottom: "1px solid var(--line-2)" }}>
                         <button
                           type="button"
-                          className="flex w-full items-center justify-between py-3 text-left"
+                          style={{
+                            display: "flex",
+                            width: "100%",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            padding: "12px 0",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            fontFamily: "var(--le-font-sans)",
+                            textAlign: "left",
+                          }}
                           onClick={() => setExpanded((prev) => ({ ...prev, [key]: !isOpen }))}
                         >
-                          <div className="flex items-center gap-4">
-                            <span className="tabular text-xs font-semibold">v{rev.version}</span>
-                            <span className="tabular text-[10px] uppercase text-muted-foreground">
+                          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                            <span style={{ fontSize: 12.5, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
+                              v{rev.version}
+                            </span>
+                            <span style={{ fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                               {new Date(rev.created_at).toLocaleString()}
                             </span>
                             {rev.note && (
-                              <span className="text-xs italic text-muted-foreground">{rev.note}</span>
+                              <span style={{ fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>{rev.note}</span>
                             )}
                           </div>
-                          {isOpen ? (
-                            <ChevronUp className="h-3 w-3 text-muted-foreground" />
-                          ) : (
-                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-                          )}
+                          <Icon name={isOpen ? "chevron-up" : "chevron-down"} size={12} style={{ color: "var(--muted)", flexShrink: 0 }} />
                         </button>
                         {isOpen && (
-                          <pre className="mb-4 max-h-[500px] overflow-auto border border-border/50 bg-secondary/30 p-4 text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+                          <pre
+                            className="le-card-flat"
+                            style={{
+                              marginBottom: 14,
+                              maxHeight: 500,
+                              overflow: "auto",
+                              padding: 14,
+                              fontSize: 11,
+                              fontFamily: "var(--le-font-mono)",
+                              lineHeight: 1.65,
+                              whiteSpace: "pre-wrap",
+                              color: "var(--ink-2)",
+                            }}
+                          >
                             {rev.body}
                           </pre>
                         )}
@@ -307,11 +484,11 @@ const Learning = () => {
                     );
                   })}
                 </div>
-              </section>
+              </Card>
             ))
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 };

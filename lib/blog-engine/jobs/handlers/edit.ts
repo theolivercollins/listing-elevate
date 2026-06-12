@@ -1,7 +1,7 @@
 // lib/blog-engine/jobs/handlers/edit.ts
 import type { JobHandler } from "../runner.js";
 import type { EditableField } from "../../publishers/sierra/edit.js";
-import { createSierraPublisher } from "../../publishers/sierra.js";
+import { createSierraPublisher } from "../../publishers/sierra/index.js";
 import { getOrCreatePersistentContextId } from "../../browserbase.js";
 import { resolveSiteOpts } from "./_site-opts.js";
 import { recordBlogCost } from "../../cost.js";

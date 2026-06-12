@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -11,12 +12,14 @@ import type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 } from "./types.js";
 import { buildAnalysisText, embedTextSafe, toPgVector } from "./embeddings.js";
 
 export type {
   Property,
   PropertyStatus,
+  PipelineMode,
   Photo,
   Scene,
   SceneStatus,
@@ -26,6 +29,7 @@ export type {
   CameraMovement,
   LogStage,
   LogLevel,
+  UserProfile,
 };
 
 let client: SupabaseClient | null = null;
@@ -58,6 +62,13 @@ export async function createProperty(data: {
   custom_request_text?: string | null;
   days_on_market?: number | null;
   sold_price?: number | null;
+  // Stripe billing — migration 059
+  status?: string;
+  stripe_payment_status?: string;
+  // Auth — populated on POST /api/properties when user is signed in.
+  submitted_by?: string;
+  // v1.1 Seedance push-in toggle — migration 062.
+  pipeline_mode?: PipelineMode;
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")
@@ -382,10 +393,10 @@ export async function recordCostEvent(event: {
    */
   propertyId: string | null;
   sceneId?: string | null;
-  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision";
-  provider: "anthropic" | "google" | "runway" | "kling" | "luma" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas";
+  stage: "analysis" | "scripting" | "generation" | "qc" | "assembly" | "revision" | "voiceover";
+  provider: "anthropic" | "google" | "runway" | "kling" | "higgsfield" | "shotstack" | "creatomate" | "openai" | "atlas" | "apify" | "elevenlabs" | "veo" | "bunny";
   unitsConsumed?: number;
-  unitType?: "tokens" | "credits" | "kling_units" | "renders" | null;
+  unitType?: "tokens" | "credits" | "kling_units" | "renders" | "compute_units" | "characters" | null;
   costCents: number;
   metadata?: Record<string, unknown>;
 }): Promise<void> {
@@ -477,12 +488,35 @@ export async function insertScenes(
     prompt: string;
     duration_seconds: number;
     provider?: VideoProvider;
+    // T4-provider-preference: director intent column (migration 084).
+    // Passed separately from `provider` so the routing preference survives
+    // rerun without being overwritten by the actual-ran provider.
+    provider_preference?: VideoProvider | null;
     end_photo_id?: string | null;
     end_image_url?: string | null;
   }>
 ): Promise<Scene[]> {
-  const { data, error } = await getSupabase().from("scenes").insert(scenes).select();
-  if (error) throw error;
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from("scenes").insert(scenes).select();
+  if (error) {
+    // Migration 084 (provider_preference column) may not yet be applied on the
+    // shared Supabase. If PostgREST returns 42703 (undefined_column), strip the
+    // provider_preference key and retry so the pipeline doesn't hard-fail before
+    // the migration lands. The feature degrades to legacy routing (scenes.provider)
+    // on pre-084 databases — no data loss, just reduced rerun intelligence.
+    // HANDOFF note: apply migration 084 before promoting this branch to prod.
+    if ((error as { code?: string }).code === "42703") {
+      const stripped = scenes.map((s) => {
+        const row = { ...s } as Record<string, unknown>;
+        delete row["provider_preference"];
+        return row;
+      });
+      const { data: data2, error: error2 } = await supabase.from("scenes").insert(stripped).select();
+      if (error2) throw error2;
+      return data2 as Scene[];
+    }
+    throw error;
+  }
   return data as Scene[];
 }
 

@@ -16,6 +16,8 @@ interface PendingRow {
   provider_task_id: string;
   cost_cents: number | null;
   render_submitted_at: string | null;
+  pipeline_version: string | null;
+  model_used: string | null;
 }
 
 interface QueuedRow {
@@ -108,7 +110,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   // ── Phase 2: finalize in-flight renders ──
   const { data, error } = await supabase
     .from("prompt_lab_iterations")
-    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at")
+    .select("id, session_id, provider, provider_task_id, cost_cents, render_submitted_at, pipeline_version, model_used")
     .not("provider_task_id", "is", null)
     .is("clip_url", null)
     .is("render_error", null)
@@ -118,7 +120,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
   const rows = (data ?? []) as PendingRow[];
 
   for (const row of rows) {
-    if (!row.provider || !["kling", "runway", "atlas"].includes(row.provider)) {
+    if (!row.provider || !["kling", "runway", "atlas", "veo"].includes(row.provider)) {
       results.push({ id: row.id, phase: "finalize", status: "skip: unknown provider" });
       continue;
     }
@@ -138,7 +140,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       const outcome = await finalizeLabRender({
         iterationId: row.id,
         sessionId: row.session_id,
-        provider: row.provider as "kling" | "runway" | "atlas",
+        provider: row.provider as "kling" | "runway" | "atlas" | "veo",
         providerTaskId: row.provider_task_id,
       });
       if (!outcome.done) {
@@ -185,10 +187,17 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         results.push({ id: row.id, phase: "finalize", status: "failed", err: outcome.error });
         continue;
       }
+
+      // Speed-ramp polish removed 2026-05-27. The previous code re-downloaded
+      // Seedance push-in clips and re-uploaded a head/tail-slowed version, but
+      // the effect wasn't producing the intended cinematic breath. Crons no
+      // longer touch ffmpeg — clip stays as finalizeLabRender uploaded it.
+      const finalClipUrl = outcome.clipUrl ?? "";
+
       await supabase
         .from("prompt_lab_iterations")
         .update({
-          clip_url: outcome.clipUrl,
+          clip_url: finalClipUrl,
           cost_cents: Math.round((row.cost_cents ?? 0) + (outcome.costCents ?? 0)),
         })
         .eq("id", row.id);

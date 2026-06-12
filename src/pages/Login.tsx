@@ -10,19 +10,21 @@ import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
+// Inline mirror of .le-eyebrow — kept as an object for the shadcn <Label>,
+// whose own text-sm/font-medium classes would otherwise compete with the class.
 const eyebrowStyle: React.CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 10,
   letterSpacing: "0.22em",
   textTransform: "uppercase",
-  color: "rgba(255,255,255,0.55)",
+  color: "var(--le-text-muted)",
 };
 
 const inputStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(220,230,255,0.18)",
+  border: "1px solid var(--le-border-strong)",
   borderRadius: 4,
-  color: "#fff",
+  color: "var(--le-text)",
   fontFamily: "var(--le-font-sans)",
   height: 48,
 };
@@ -69,13 +71,16 @@ export default function Login() {
   }
 
   return (
+    // `dark` anchors the --le-* tokens to their dark values: this page is
+    // always editorial-dark regardless of the document-level theme class.
     <div
+      className="dark"
       style={{
         display: "grid",
         minHeight: "100vh",
         gridTemplateColumns: "1fr 1fr",
-        background: "#050710",
-        color: "#fff",
+        background: "var(--le-bg)",
+        color: "var(--le-text)",
         fontFamily: "var(--le-font-sans)",
       }}
     >
@@ -85,8 +90,8 @@ export default function Login() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          borderRight: "1px solid rgba(220,230,255,0.09)",
-          background: "#0b0f1c",
+          borderRight: "1px solid var(--le-border)",
+          background: "var(--le-bg-elev)",
           padding: "48px",
           position: "relative",
           overflow: "hidden",
@@ -124,7 +129,7 @@ export default function Login() {
           transition={{ duration: 1, ease: EASE, delay: 0.1 }}
           style={{ maxWidth: 400, position: "relative", zIndex: 1 }}
         >
-          <span style={eyebrowStyle}>— Listing Elevate</span>
+          <span className="le-eyebrow">— Listing Elevate</span>
           <h1
             style={{
               fontSize: "clamp(40px, 5vw, 64px)",
@@ -132,7 +137,7 @@ export default function Login() {
               letterSpacing: "-0.035em",
               lineHeight: 0.98,
               margin: "24px 0 0",
-              color: "#fff",
+              color: "var(--le-text)",
               fontFamily: "var(--le-font-sans)",
             }}
           >
@@ -145,7 +150,7 @@ export default function Login() {
               marginTop: 32,
               fontSize: 14,
               lineHeight: 1.6,
-              color: "rgba(255,255,255,0.62)",
+              color: "var(--le-text-muted)",
               fontFamily: "var(--le-font-sans)",
             }}
           >
@@ -162,7 +167,7 @@ export default function Login() {
             color: "rgba(255,255,255,0.55)",
             textDecoration: "none",
             fontSize: 12,
-            fontFamily: "var(--le-font-mono)",
+            fontFamily: "var(--le-font-sans)",
             letterSpacing: "0.1em",
             position: "relative",
             zIndex: 1,
@@ -179,7 +184,7 @@ export default function Login() {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "48px 64px",
-          background: "#050710",
+          background: "var(--le-bg)",
           fontFamily: "var(--le-font-sans)",
         }}
       >
@@ -197,14 +202,14 @@ export default function Login() {
             alignSelf: "center",
           }}
         >
-          <span style={eyebrowStyle}>— Sign in</span>
+          <span className="le-eyebrow">— Sign in</span>
           <h2
             style={{
               fontSize: 32,
               fontWeight: 500,
               letterSpacing: "-0.035em",
               margin: "16px 0 0",
-              color: "#fff",
+              color: "var(--le-text)",
               fontFamily: "var(--le-font-sans)",
             }}
           >
@@ -213,7 +218,7 @@ export default function Login() {
           <p
             style={{
               fontSize: 14,
-              color: "rgba(255,255,255,0.62)",
+              color: "var(--le-text-muted)",
               marginTop: 12,
               fontFamily: "var(--le-font-sans)",
             }}
@@ -230,7 +235,7 @@ export default function Login() {
               transition={{ duration: 0.6, ease: EASE }}
               style={{
                 marginTop: 48,
-                border: "1px solid rgba(220,230,255,0.18)",
+                border: "1px solid var(--le-border-strong)",
                 background: "rgba(255,255,255,0.04)",
                 padding: 32,
               }}
@@ -242,12 +247,12 @@ export default function Login() {
                   justifyContent: "center",
                   width: 48,
                   height: 48,
-                  border: "1px solid rgba(220,230,255,0.18)",
+                  border: "1px solid var(--le-border-strong)",
                   background: "rgba(255,255,255,0.06)",
                   borderRadius: 0,
                 }}
               >
-                <CheckCircle2 style={{ width: 20, height: 20, color: "#fff" }} strokeWidth={1.5} />
+                <CheckCircle2 style={{ width: 20, height: 20, color: "var(--le-text)" }} strokeWidth={1.5} />
               </div>
               <h3
                 style={{
@@ -255,7 +260,7 @@ export default function Login() {
                   fontSize: 18,
                   fontWeight: 500,
                   letterSpacing: "-0.02em",
-                  color: "#fff",
+                  color: "var(--le-text)",
                   fontFamily: "var(--le-font-sans)",
                 }}
               >
@@ -265,12 +270,12 @@ export default function Login() {
                 style={{
                   marginTop: 12,
                   fontSize: 14,
-                  color: "rgba(255,255,255,0.62)",
+                  color: "var(--le-text-muted)",
                   fontFamily: "var(--le-font-sans)",
                 }}
               >
                 Magic link sent to{" "}
-                <span style={{ fontWeight: 500, color: "#fff" }}>{email}</span>. Click it to sign in.
+                <span style={{ fontWeight: 500, color: "var(--le-text)" }}>{email}</span>. Click it to sign in.
               </p>
               <button
                 type="button"
@@ -300,16 +305,7 @@ export default function Login() {
               style={{ marginTop: 48, display: "flex", flexDirection: "column", gap: 20 }}
             >
               <div>
-                <Label
-                  htmlFor="email"
-                  style={{
-                    fontFamily: "var(--le-font-mono)",
-                    fontSize: 10,
-                    letterSpacing: "0.22em",
-                    textTransform: "uppercase",
-                    color: "rgba(255,255,255,0.55)",
-                  }}
-                >
+                <Label htmlFor="email" style={eyebrowStyle}>
                   Email
                 </Label>
                 <div style={{ position: "relative", marginTop: 12 }}>
@@ -322,7 +318,7 @@ export default function Login() {
                       transform: "translateY(-50%)",
                       width: 16,
                       height: 16,
-                      color: "rgba(255,255,255,0.32)",
+                      color: "var(--le-text-faint)",
                     }}
                   />
                   <Input
@@ -348,16 +344,7 @@ export default function Login() {
                       justifyContent: "space-between",
                     }}
                   >
-                    <Label
-                      htmlFor="password"
-                      style={{
-                        fontFamily: "var(--le-font-mono)",
-                        fontSize: 10,
-                        letterSpacing: "0.22em",
-                        textTransform: "uppercase",
-                        color: "rgba(255,255,255,0.55)",
-                      }}
-                    >
+                    <Label htmlFor="password" style={eyebrowStyle}>
                       Password
                     </Label>
                   </div>
@@ -371,7 +358,7 @@ export default function Login() {
                         transform: "translateY(-50%)",
                         width: 16,
                         height: 16,
-                        color: "rgba(255,255,255,0.32)",
+                        color: "var(--le-text-faint)",
                       }}
                     />
                     <Input
@@ -391,8 +378,8 @@ export default function Login() {
               {error && (
                 <div
                   style={{
-                    border: "1px solid rgba(255,80,80,0.4)",
-                    background: "rgba(255,80,80,0.08)",
+                    border: "1px solid var(--le-danger)",
+                    background: "var(--le-danger-soft)",
                     padding: 16,
                     borderRadius: 4,
                   }}
@@ -400,7 +387,7 @@ export default function Login() {
                   <p
                     style={{
                       fontSize: 12,
-                      color: "rgba(255,120,120,0.9)",
+                      color: "var(--le-danger)",
                       margin: 0,
                       fontFamily: "var(--le-font-sans)",
                     }}
@@ -418,8 +405,8 @@ export default function Login() {
                   background:
                     submitting || !email || (mode === "password" && !password)
                       ? "rgba(255,255,255,0.3)"
-                      : "#fff",
-                  color: "#07080c",
+                      : "var(--le-accent)",
+                  color: "var(--le-accent-fg)",
                   border: "none",
                   padding: "14px 24px",
                   fontSize: 14,
@@ -494,7 +481,7 @@ export default function Login() {
                 Don't have an account?{" "}
                 <Link
                   to="/"
-                  style={{ color: "#fff", textDecoration: "underline", textUnderlineOffset: 4 }}
+                  style={{ color: "var(--le-text)", textDecoration: "underline", textUnderlineOffset: 4 }}
                 >
                   Sign up on the home page
                 </Link>
@@ -506,9 +493,9 @@ export default function Login() {
         <p
           style={{
             fontSize: 11,
-            color: "rgba(255,255,255,0.32)",
+            color: "var(--le-text-faint)",
             marginTop: 48,
-            fontFamily: "var(--le-font-mono)",
+            fontFamily: "var(--le-font-sans)",
           }}
         >
           © 2026 Listing Elevate

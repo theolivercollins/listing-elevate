@@ -20,45 +20,10 @@ export async function imageToBase64(buffer: Buffer): Promise<string> {
   return buffer.toString("base64");
 }
 
-export async function extractFramesFromClip(
-  clipPath: string,
-  outputDir: string,
-  frameCount: number = 5
-): Promise<string[]> {
-  // Use ffprobe to get duration, then extract evenly spaced frames
-  const { execFile } = await import("child_process");
-  const { promisify } = await import("util");
-  const exec = promisify(execFile);
-
-  // Get video duration
-  const { stdout } = await exec("ffprobe", [
-    "-v", "quiet",
-    "-print_format", "json",
-    "-show_format",
-    clipPath,
-  ]);
-  const duration = parseFloat(JSON.parse(stdout).format.duration);
-  const interval = duration / (frameCount + 1);
-
-  await fs.mkdir(outputDir, { recursive: true });
-  const framePaths: string[] = [];
-
-  for (let i = 1; i <= frameCount; i++) {
-    const timestamp = interval * i;
-    const framePath = path.join(outputDir, `frame_${i}.jpg`);
-    await exec("ffmpeg", [
-      "-ss", timestamp.toString(),
-      "-i", clipPath,
-      "-frames:v", "1",
-      "-q:v", "2",
-      "-y",
-      framePath,
-    ]);
-    framePaths.push(framePath);
-  }
-
-  return framePaths;
-}
+// extractFramesFromClip was removed 2026-05-27 — had no callers and pinned
+// this module to ffmpeg-static/ffprobe-static deps. If we need to surface
+// video frames again, import { ffmpegBin, ffprobeBin } from "./ffmpeg.js"
+// once those helpers are exported.
 
 export function getMediaType(
   fileName: string

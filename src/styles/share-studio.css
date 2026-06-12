@@ -1,0 +1,571 @@
+/* ───────────────────────────────────────────────────────────────────────────
+   share-studio.css — Operator Studio "Share" tab specific styling.
+   Builds on the .studio-* design tokens (--le-*). Sans-serif only (project
+   rule: no monospace UI text). Scoped under .studio-scope so tokens resolve.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ─── Toolbar ─── */
+.studio-scope .share-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 22px;
+}
+
+/* ─── Library grid ─── */
+.studio-scope .share-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.studio-scope .share-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 64px 24px;
+  text-align: center;
+  border: 1px dashed var(--le-line);
+  border-radius: var(--le-radius);
+  color: var(--le-muted);
+}
+.studio-scope .share-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--le-ink);
+}
+.studio-scope .share-empty-sub {
+  font-size: 13px;
+  color: var(--le-muted);
+  max-width: 320px;
+}
+
+/* ─── Creative card ─── */
+.studio-scope .share-card {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  background: var(--le-surface);
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.16s ease, transform 0.16s ease, border-color 0.16s ease;
+  padding: 0;
+  font: inherit;
+}
+.studio-scope .share-card:hover {
+  border-color: rgba(11, 11, 16, 0.14);
+  box-shadow: 0 8px 24px rgba(11, 11, 16, 0.08);
+  transform: translateY(-2px);
+}
+.studio-scope .share-card:focus-visible {
+  outline: 2px solid var(--le-accent);
+  outline-offset: 2px;
+}
+
+.studio-scope .share-card-poster {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background:
+    linear-gradient(135deg, hsl(220, 12%, 90%), hsl(220, 10%, 80%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: var(--le-muted-2);
+}
+.studio-scope .share-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.studio-scope .share-card-kind {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(11, 11, 16, 0.62);
+  color: #fff;
+  border-radius: var(--le-radius-pill);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.studio-scope .share-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 14px;
+}
+.studio-scope .share-card-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .share-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--le-muted);
+}
+.studio-scope .share-card-views {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Visibility badge ─── */
+.studio-scope .share-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--le-radius-pill);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.studio-scope .share-badge.public {
+  background: rgba(47, 138, 85, 0.1);
+  color: var(--le-good);
+}
+.studio-scope .share-badge.unlisted {
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+
+/* ─── Settings drawer (Vimeo-style slide-over) ─── */
+.studio-scope .share-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 11, 16, 0.32);
+  backdrop-filter: blur(2px);
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+}
+.studio-scope .share-drawer {
+  width: min(480px, 100vw);
+  height: 100%;
+  background: var(--le-surface);
+  box-shadow: -16px 0 48px rgba(11, 11, 16, 0.16);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.studio-scope .share-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--le-line);
+  position: sticky;
+  top: 0;
+  background: var(--le-surface);
+  z-index: 1;
+}
+.studio-scope .share-drawer-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  color: var(--le-ink);
+}
+.studio-scope .share-drawer-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--le-radius-pill);
+  border: none;
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+  cursor: pointer;
+}
+.studio-scope .share-drawer-close:hover {
+  background: rgba(11, 11, 16, 0.09);
+  color: var(--le-ink);
+}
+
+.studio-scope .share-drawer-player {
+  background: #0b0b10;
+  aspect-ratio: 16 / 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.studio-scope .share-drawer-player video,
+.studio-scope .share-drawer-player img,
+.studio-scope .share-drawer-player iframe {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border: 0;
+}
+
+.studio-scope .share-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 20px;
+}
+
+/* ─── Drawer sections ─── */
+.studio-scope .share-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.studio-scope .share-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--le-muted-2);
+}
+.studio-scope .share-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.studio-scope .share-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--le-ink-2);
+}
+
+/* ─── Toggle row ─── */
+.studio-scope .share-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.studio-scope .share-toggle-row .label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--le-ink);
+}
+.studio-scope .share-toggle-row .hint {
+  font-size: 12px;
+  color: var(--le-muted);
+  margin-top: 2px;
+}
+.studio-scope .share-toggle {
+  flex-shrink: 0;
+  position: relative;
+  width: 40px;
+  height: 23px;
+  border-radius: var(--le-radius-pill);
+  border: none;
+  background: rgba(11, 11, 16, 0.16);
+  cursor: pointer;
+  transition: background 0.16s ease;
+  padding: 0;
+}
+.studio-scope .share-toggle[aria-checked='true'] {
+  background: var(--le-ink);
+}
+.studio-scope .share-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(11, 11, 16, 0.3);
+  transition: transform 0.16s ease;
+}
+.studio-scope .share-toggle[aria-checked='true']::after {
+  transform: translateX(17px);
+}
+
+/* ─── Embed snippet ─── */
+.studio-scope .share-embed-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.studio-scope .share-code {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-sm);
+  background: rgba(11, 11, 16, 0.03);
+  padding: 10px 12px;
+  font-family: inherit; /* sans only — no monospace */
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--le-ink-2);
+}
+.studio-scope .share-code:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── Sharing / QR ─── */
+.studio-scope .share-link-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.studio-scope .share-link-input {
+  flex: 1;
+  min-width: 0;
+}
+.studio-scope .share-qr {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-sm);
+}
+.studio-scope .share-qr svg {
+  display: block;
+  border-radius: 6px;
+}
+.studio-scope .share-qr-note {
+  font-size: 12px;
+  color: var(--le-muted);
+}
+
+/* ─── Drawer footer actions ─── */
+.studio-scope .share-drawer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px solid var(--le-line);
+  margin-top: 2px;
+}
+.studio-scope .share-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(196, 74, 74, 0.24);
+  background: rgba(196, 74, 74, 0.06);
+  color: var(--le-bad);
+  border-radius: var(--le-radius-pill);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.studio-scope .share-btn-danger:hover {
+  background: rgba(196, 74, 74, 0.12);
+}
+
+/* ─── Render picker rows ─── */
+.studio-scope .share-render-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.studio-scope .share-render-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-sm);
+}
+.studio-scope .share-render-row .addr {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .share-render-orients {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* small inline progress bar for the dropzone */
+.studio-scope .share-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--le-radius-pill);
+  background: rgba(11, 11, 16, 0.08);
+  overflow: hidden;
+}
+.studio-scope .share-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--le-ink);
+  transition: width 0.2s ease;
+}
+
+/* ─── Fullscreen creative detail (shadcn Dialog) ─────────────────────────
+   Clicking a creative opens a near-fullscreen dialog: a big player on the left
+   and the scrollable settings on the right. The dialog portals to <body>, so
+   the content is re-wrapped in `.studio-scope` to recover the token + styles. */
+.studio-scope.is-embedded {
+  min-height: 0;
+  position: static;
+}
+.share-fs-srtitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.share-fs {
+  height: 100%;
+  background: var(--le-bg);
+  color: var(--le-ink);
+}
+.share-fs-grid {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 440px;
+}
+.share-fs-player {
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+.share-fs-player iframe,
+.share-fs-player video,
+.share-fs-player img {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 0;
+  display: block;
+}
+.share-fs-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--le-surface);
+  border-left: 1px solid var(--le-line);
+}
+.share-fs-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--le-line);
+}
+.share-fs-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The settings list scrolls inside the panel (beats the drawer-body rule). */
+.studio-scope .share-fs-panel .share-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 1024px) {
+  .share-fs-grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .share-fs-player {
+    aspect-ratio: 16 / 9;
+  }
+  .share-fs-panel {
+    border-left: 0;
+    border-top: 1px solid var(--le-line);
+  }
+}
+
+/* ─── Focus-visible rings (a11y) ─────────────────────────────────────
+   Canonical keyboard-focus outline for share-tab interactive elements.
+   (.share-card already has its own identical rule above.) */
+.studio-scope .share-btn-danger:focus-visible,
+.studio-scope .share-drawer-close:focus-visible,
+.studio-scope .share-toggle:focus-visible,
+.studio-scope .share-code:focus-visible {
+  outline: 2px solid var(--le-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Dark mode ──────────────────────────────────────────────────────
+   Var-driven rules (surface, line, ink…) invert automatically via
+   `.dark .studio-scope` in studio-design.css. The rules below patch the
+   hardcoded light values only. Media chrome (.share-drawer-player
+   #0b0b10, .share-fs-player #000) intentionally stays dark. */
+.dark .studio-scope .share-card:hover {
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+.dark .studio-scope .share-card-poster {
+  background:
+    linear-gradient(135deg, hsl(225, 20%, 16%), hsl(225, 18%, 11%));
+}
+.dark .studio-scope .share-badge.unlisted {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dark .studio-scope .share-drawer-overlay {
+  background: rgba(0, 0, 0, 0.55);
+}
+.dark .studio-scope .share-drawer {
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.6);
+}
+.dark .studio-scope .share-drawer-close {
+  background: rgba(255, 255, 255, 0.06);
+}
+.dark .studio-scope .share-drawer-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.dark .studio-scope .share-toggle {
+  background: rgba(255, 255, 255, 0.18);
+}
+/* Track inverts to light ink in dark mode, so the knob goes dark navy. */
+.dark .studio-scope .share-toggle::after {
+  background: var(--le-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.dark .studio-scope .share-code {
+  background: rgba(255, 255, 255, 0.04);
+}
+.dark .studio-scope .share-progress {
+  background: rgba(255, 255, 255, 0.1);
+}

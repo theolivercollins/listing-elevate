@@ -34,7 +34,7 @@ NPM: `@anthropic-ai/sdk ^0.39.0`, `@google/genai ^1.50`. OpenAI called via raw f
 | **Kling (native)** | Active (Lab listings) | Oliver's pre-paid Kling credits; $0 variable cost | Model key `kling-v2-native`. Routes via `lib/providers/kling.ts`. 402/credit-exhaustion auto-failovers to Atlas `kling-v2-master`. Cost events: `provider='kling', billing='prepaid_credits'`. Wired 2026-04-20. |
 | Kling (legacy) | Active (legacy Lab + prod) | Interiors, dolly/parallax/reveal | 5-concurrent trial cap, auto-fallback to Runway |
 | Runway Gen-4 Turbo | Active (legacy Lab + prod) | Exteriors, push_in/pull_out/drone | URL-based image input |
-| Luma Ray2 | Coded, not wired | | `lib/providers/luma.ts` |
+| ~~Luma Ray2~~ | **Removed 2026-05-18** | | Provider file and type-enum entries deleted; never used by production routing. Historical `cost_events` constraint still lists `'luma'` for legacy rows. |
 | Higgsfield | Scaffolded, deferred permanently | | See `docs/HIGGSFIELD-INTEGRATION.md` |
 | Shotstack | Active when `SHOTSTACK_API_KEY` set | Video assembly | Used by prod + legacy Lab. Listings Lab does NOT yet assemble |
 
@@ -117,7 +117,6 @@ Legacy: `match_lab_iterations` (unused since unified embeddings shipped).
 |---|---|
 | `ATLASCLOUD_API_KEY` | Atlas Cloud (Lab listings — required for Lab video generation) |
 | `ATLAS_VIDEO_MODEL` | Atlas Cloud default model (default: `kling-v2-6-pro`, changed 2026-04-20) |
-| `LUMA_API_KEY` | Luma Ray2 (coded, not wired) |
 | `SHOTSTACK_API_KEY` | Shotstack production |
 | `SHOTSTACK_API_KEY_STAGE` | Shotstack staging (fallback to `SHOTSTACK_API_KEY`) |
 | `HIGGSFIELD_API_KEY` | Higgsfield (deferred) |
@@ -154,7 +153,7 @@ api/                    Vercel serverless functions
   pipeline/             Production pipeline entrypoint
   scenes/[id]/          Scene actions (resubmit, rate, approve, skip, retry)
 lib/                    Shared server-side code
-  providers/            Kling, Runway, Luma, Higgsfield, Shotstack, router, errors, dispatch
+  providers/            Atlas, Kling (native), Runway, Higgsfield, Shotstack, router, errors, dispatch
   prompts/              System prompts (director, photo-analysis, style-guide, resolve)
   pipeline.ts           Production orchestrator
   prompt-lab.ts         Lab core helpers

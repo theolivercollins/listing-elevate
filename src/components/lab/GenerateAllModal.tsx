@@ -15,7 +15,9 @@ export function GenerateAllModal({ sceneLabel, useEndFrame, usedModels = [], onG
   const usedSet = new Set(usedModels);
   const visibleModels = LAB_MODELS.filter((m) => !m.hidden);
   const [selected, setSelected] = useState<Set<string>>(
-    new Set(visibleModels.filter((m) => m.key !== "kling-v2-master" && m.key !== "kling-v2-native" && !usedSet.has(m.key)).map((m) => m.key))
+    // seedance-pair is excluded from the default selection: it's the opt-in
+    // pair-mode SKU and only meaningful on paired scenes. Still selectable.
+    new Set(visibleModels.filter((m) => m.key !== "kling-v2-master" && m.key !== "kling-v2-native" && m.key !== "seedance-pair" && !usedSet.has(m.key)).map((m) => m.key))
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -91,7 +93,7 @@ export function GenerateAllModal({ sceneLabel, useEndFrame, usedModels = [], onG
                     <div className="mt-0.5 text-[10px] text-amber-700">Scene has end-frame on; this model will render start-only.</div>
                   )}
                 </div>
-                <span className="font-mono tabular-nums text-muted-foreground">{m.priceLabel}</span>
+                <span className="font-sans tabular-nums text-muted-foreground">{m.priceLabel}</span>
               </button>
             );
           })}
@@ -99,7 +101,7 @@ export function GenerateAllModal({ sceneLabel, useEndFrame, usedModels = [], onG
 
         <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
           <div className="text-xs text-muted-foreground">
-            {chosen.length} model{chosen.length === 1 ? "" : "s"} · total <span className="font-mono tabular-nums text-foreground">${(totalCents / 100).toFixed(2)}</span>
+            {chosen.length} model{chosen.length === 1 ? "" : "s"} · total <span className="font-sans tabular-nums text-foreground">${(totalCents / 100).toFixed(2)}</span>
           </div>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={onClose}>Cancel</Button>

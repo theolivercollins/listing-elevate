@@ -3,12 +3,12 @@
 export type BlogPostState =
   | 'research_due' | 'topics_proposed' | 'topic_picked'
   | 'draft_due' | 'draft_ready' | 'awaiting_approval'
-  | 'publish_due' | 'publishing' | 'live'
+  | 'publish_due' | 'publishing' | 'live' | 'on_hold'
   | 'edit_pending' | 'editing' | 'quarantined';
 
 export type BlogJobKind =
   | 'research' | 'distill_topics' | 'draft' | 'image_match'
-  | 'publish' | 'edit' | 'fetch_taxonomy' | 'distill_correction';
+  | 'publish' | 'edit' | 'unpublish' | 'fetch_taxonomy' | 'distill_correction';
 
 export type BlogJobState = 'queued' | 'running' | 'done' | 'failed';
 

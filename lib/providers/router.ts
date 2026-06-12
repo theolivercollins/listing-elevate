@@ -1,8 +1,10 @@
 import type { RoomType, VideoProvider, CameraMovement } from "../db.js";
+import type { PipelineMode } from "../types.js";
 import type { IVideoProvider } from "./provider.interface.js";
 import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
 import { RunwayProvider } from "./runway.js";
+import { VeoProvider } from "./veo.js";
 import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "./atlas.js";
 import { pickArm, type ThompsonDecision, type BucketArms } from "./thompson-router.js";
 
@@ -48,10 +50,10 @@ export function resolveDecision(input: ResolveDecisionInput): ProviderDecision {
 // Phase C.1: ProviderDecision is the structured routing result used by
 // pipeline.ts and the resubmit / retry endpoints. It carries enough
 // information to instantiate the provider AND pass the correct model
-// override (e.g. "kling-v2-1-pair" for paired scenes).
+// override (e.g. "kling-v3-pro" for paired scenes).
 //
 // provider:  which backend to call
-// modelKey:  for "atlas" routes — which Atlas SKU (e.g. "kling-v2-1-pair").
+// modelKey:  for "atlas" routes — which Atlas SKU (e.g. "kling-v3-pro").
 //            When absent, AtlasProvider uses the ATLAS_VIDEO_MODEL env var.
 // fallback:  next decision to try if the primary errors with shouldFailover=true.
 //
@@ -64,33 +66,35 @@ export function resolveDecision(input: ResolveDecisionInput): ProviderDecision {
 // return ProviderDecision.
 
 export interface ProviderDecision {
-  provider: VideoProvider;            // "kling" | "atlas" | "runway" | "luma"
+  provider: VideoProvider;            // "atlas" | "kling" | "runway" | "higgsfield"
   modelKey?: string;                   // atlas SKU key; undefined → use env default
   fallback?: ProviderDecision;
 }
 
 // ─── PRODUCTION ROUTING TABLE ────────────────────────────────────────────────
 //
+// Lab-parity routing: production picks the SAME SKU Prompt Lab uses by default
+// (Atlas kling-v2-6-pro = V1_DEFAULT_SKU). Native Kling and Runway are kept as
+// movement-specific failovers, not primaries. This closes the quality gap
+// between Lab iterations and customer renders that surfaced on the 13fe5a96
+// rerun (2026-05-18) — native Kling v2 looked visibly worse than the Lab-
+// rendered iterations Oliver had been reviewing.
+//
 // Priority rules:
 //
-//   1. PAIRED SCENES: scenes with end_photo_id ALWAYS route to atlas +
-//      kling-v2-1-pair via selectProviderForScene(). This rule is outside the
-//      table — it short-circuits before movement is consulted.
+//   1. PAIRED SCENES (end_photo_id set): atlas + kling-v3-pro. Short-
+//      circuits in selectProviderForScene() before movement is consulted.
 //
-//   2. NATIVE KLING FIRST for interior shots (pre-paid credits → $0 cash).
-//      On 402 / insufficient-credit, failover to atlas kling-v2-master
-//      (same v2-master semantics, billed via Atlas cash balance).
+//   2. ALL OTHER SCENES: atlas + kling-v2-6-pro (Lab default). Failover
+//      branches by movement:
+//        - drone / exterior (RUNWAY_MOVEMENTS) → Runway gen4_turbo
+//        - interior (INTERIOR_MOVEMENTS) → native Kling (free pre-paid credits)
+//        - unknown / null → no failover
 //
-//   3. RUNWAY for exterior / drone / closeup shots (its strength; pending
-//      Phase B validation).
-//
-// ⚠️  PENDING PHASE B VALIDATION — every row below reflects Oliver's
-// pre-Phase-B intuition. Phase B produces lib/providers/router-table.ts
-// with evidence-based (room × movement) rows; when that lands this table
-// is replaced by a lookup into router-table.ts.
+// Failover only fires on a permanent Atlas error in the current attempt; see
+// runGenerationSubmit's `excluded` tracking.
 
-// Interior movements — native Kling v2 first, Atlas v2-master on credit fail.
-// Pending Phase B validation.
+// Interior movements: Atlas primary, native Kling failover.
 const INTERIOR_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "push_in",
   "orbit",
@@ -102,29 +106,18 @@ const INTERIOR_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "rack_focus",
 ]);
 
-// Exterior / drone / closeup — Runway preferred (its strength per Oliver's
-// intuition); Atlas generic as failover. Pending Phase B validation.
+// Drone / exterior / closeup movements: Atlas primary, Runway failover.
 const RUNWAY_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
   "drone_push_in",
   "top_down",
   "feature_closeup",
 ]);
 
-// Reused fallback decisions:
-
-// Atlas kling-v2-master: equivalent semantics to native Kling v2-master,
-// billed as cash via Atlas. Used as the credit-exhaustion failover for
-// interior shots.
-const ATLAS_V2_MASTER_FALLBACK: ProviderDecision = {
+// Lab-parity primary decision — Atlas + V1_DEFAULT_SKU, used as the bottom of
+// every fallback chain (last resort when everything else is excluded).
+const LAB_PARITY_PRIMARY: ProviderDecision = {
   provider: "atlas",
-  modelKey: "kling-v2-master",
-  fallback: undefined, // terminal
-};
-
-// Generic Atlas fallback for Runway failures (exteriors/drone). Uses whatever
-// ATLAS_VIDEO_MODEL env var is set (currently kling-v2-6-pro).
-const ATLAS_GENERIC_FALLBACK: ProviderDecision = {
-  provider: "atlas",
+  modelKey: V1_DEFAULT_SKU,
   fallback: undefined, // terminal
 };
 
@@ -147,33 +140,34 @@ function resolveMovementDecision(
   if (preference && !excluded.includes(preference)) {
     return {
       provider: preference,
-      fallback: excluded.length === 0 ? ATLAS_V2_MASTER_FALLBACK : undefined,
+      fallback: excluded.length === 0 ? LAB_PARITY_PRIMARY : undefined,
     };
   }
 
-  const runwayExcluded = excluded.includes("runway");
-  const klingExcluded = excluded.includes("kling");
-
-  if (movement && RUNWAY_MOVEMENTS.has(movement)) {
-    // Exterior / drone / closeup: Runway first (pending Phase B validation).
-    if (!runwayExcluded) {
-      return { provider: "runway", fallback: ATLAS_GENERIC_FALLBACK };
-    }
-    return ATLAS_GENERIC_FALLBACK;
+  // Compute the movement-specific failover (Runway for drone niche, native
+  // Kling for interior efficiency). Skipped if that provider already failed
+  // this attempt or there's no natural failover for the movement.
+  const drone = !!movement && RUNWAY_MOVEMENTS.has(movement);
+  const interior = !!movement && INTERIOR_MOVEMENTS.has(movement);
+  let movementFailover: ProviderDecision | undefined;
+  if (drone && !excluded.includes("runway")) {
+    movementFailover = { provider: "runway", fallback: undefined };
+  } else if (interior && !excluded.includes("kling")) {
+    movementFailover = { provider: "kling", fallback: undefined };
   }
 
-  if (movement && INTERIOR_MOVEMENTS.has(movement)) {
-    // Interior: native Kling first — pre-paid credits, $0 cash cost.
-    // On 402 / credit-exhaustion, failover to Atlas kling-v2-master.
-    // Pending Phase B validation.
-    if (!klingExcluded) {
-      return { provider: "kling", fallback: ATLAS_V2_MASTER_FALLBACK };
-    }
-    return ATLAS_V2_MASTER_FALLBACK;
+  // Lab parity: Atlas kling-v2-6-pro primary for everything.
+  if (!excluded.includes("atlas")) {
+    return {
+      provider: "atlas",
+      modelKey: V1_DEFAULT_SKU,
+      fallback: movementFailover,
+    };
   }
 
-  // Unknown / null / legacy movement — default to Atlas env SKU.
-  return { provider: "atlas", fallback: undefined };
+  // Atlas already failed this attempt — fall through to movement-specific
+  // provider as primary, or last-resort Atlas if no failover is available.
+  return movementFailover ?? LAB_PARITY_PRIMARY;
 }
 
 // ─── PROVIDER INSTANTIATION ─────────────────────────────────────────────────
@@ -191,8 +185,12 @@ export function buildProviderFromDecision(decision: ProviderDecision): IVideoPro
       return new KlingProvider();
     case "runway":
       return new RunwayProvider();
+    case "veo":
+      // Lane B (2026-05-26): Veo 3.1 Preview — Premium 4K SKU.
+      // Routes direct to the Gemini API; does NOT go through Atlas.
+      return new VeoProvider();
     default:
-      // luma / higgsfield / unknown — fall back to Atlas (always available).
+      // higgsfield / unknown — fall back to Atlas (always available).
       return new AtlasProvider();
   }
 }
@@ -217,8 +215,8 @@ export function selectDecision(
  * selectProviderForScene — routing entry point for runGenerationSubmit.
  *
  * Handles the paired-scene rule FIRST:
- * - Paired scenes (end_photo_id set) ALWAYS route to atlas + kling-v2-1-pair,
- *   the purpose-built start+end-frame SKU. This mirrors DQ.3 in the Lab.
+ * - Paired scenes (end_photo_id set) ALWAYS route to atlas + kling-v3-pro
+ *   (declares endFrameField "end_image"). This mirrors DQ.3 in the Lab.
  * - Unpaired scenes fall through to the movement-based routing table.
  *
  * @param scene.endPhotoId  end_photo_id from the scene row
@@ -235,19 +233,63 @@ export function selectProviderForScene(
     preference: VideoProvider | null;
   },
   excluded: VideoProvider[] = [],
+  mode: PipelineMode = "v1",
 ): ProviderDecision {
-  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v2-1-pair.
+  // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v3-pro (Kling 3.0 Pro,
+  // endFrameField "end_image" — upgraded from kling-v2-1-pair 2026-06-10).
+  // This rule wins over pipeline_mode — v1.1 never replaces the paired path.
   // If atlas itself is excluded, fall through to the movement table
   // as best-effort (better to try something than nothing).
   if (scene.endPhotoId && !excluded.includes("atlas")) {
     return {
       provider: "atlas",
-      modelKey: "kling-v2-1-pair",
+      modelKey: "kling-v3-pro",
       fallback: undefined, // terminal — no fallback preserves paired semantics
     };
   }
 
+  // v1.1 — Seedance push-in for every non-paired scene, routed through
+  // Atlas (Seedance is hosted as an Atlas SKU; no separate provider).
+  // Falls back to the default V1 Atlas SKU if the Seedance render hits
+  // a permanent error (e.g. capacity / model outage). Skips when atlas
+  // is already excluded mid-failover — there's no other home for Seedance.
+  if (mode === "v1.1" && !excluded.includes("atlas")) {
+    return {
+      provider: "atlas",
+      modelKey: "seedance-pro-pushin",
+      fallback: {
+        provider: "atlas",
+        modelKey: V1_DEFAULT_SKU,
+        fallback: undefined,
+      },
+    };
+  }
+
   return resolveMovementDecision(scene.roomType, scene.movement, scene.preference, excluded);
+}
+
+// ─── SEEDANCE PROMPT NORMALIZATION ───────────────────────────────────────────
+//
+// Seedance under v1.1 only ever does push-in. The scene's stored prompt may
+// contain orbit/parallax/tilt language carried over from the v1 prompt grader
+// — strip that and prepend a stable push-in directive at render time. The
+// stored scene.prompt is NOT mutated; this is render-time only so the audit
+// trail in the DB stays human-authored.
+
+const MOVEMENT_VERB_PATTERN =
+  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
+
+export function stripMovementVerbs(prompt: string): string {
+  return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
+const SEEDANCE_PUSHIN_PREAMBLE =
+  "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
+
+export function forceSeedancePushInPrompt(originalPrompt: string): string {
+  const stripped = stripMovementVerbs(originalPrompt);
+  if (!stripped) return SEEDANCE_PUSHIN_PREAMBLE;
+  return `${SEEDANCE_PUSHIN_PREAMBLE} ${stripped}`;
 }
 
 /**
@@ -371,5 +413,8 @@ export function getEnabledProviders(): VideoProvider[] {
   if (process.env.ATLASCLOUD_API_KEY) enabled.push("atlas");
   if (process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY) enabled.push("kling");
   if (process.env.RUNWAY_API_KEY) enabled.push("runway");
+  // Lane B (2026-05-26): Veo uses the same GEMINI_API_KEY as the photo
+  // analyzer. No extra credential — just gate on key presence.
+  if (process.env.GEMINI_API_KEY) enabled.push("veo");
   return enabled;
 }

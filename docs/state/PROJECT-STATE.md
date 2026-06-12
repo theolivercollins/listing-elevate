@@ -7,7 +7,7 @@ See also:
 - [../plans/back-on-track-plan.md](../plans/back-on-track-plan.md) — active roadmap
 - [../specs/2026-04-20-back-on-track-design.md](../specs/2026-04-20-back-on-track-design.md) — full roadmap spec
 
-Last updated: **2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).** Earlier: P1 V1 Foundation 2026-04-22; DA.1 Gemini-eyes 2026-04-21; Phases A, M.1, DQ, DM, CI.1–CI.5, C, M.2 shipped through 2026-04-20. V1 Prompt Lab is the daily-driver iteration surface with Atlas routing, per-iteration SKU capture, SKU selector UI, cost tracking compliance. Multi-day V1 + ML roadmap (P1–P7) at [`../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md`](../specs/2026-04-22-v1-primary-tool-and-ml-roadmap-design.md); supersedes back-on-track plan for V1/ML work.
+Last updated: **2026-06-12 (MU merge to main: Market Update workflow complete E2E — RunDetail draft panels, two-step publish/send, template token-coverage validation, E2E verification scripts, P0 GET /api/properties auth gate; merge commit 3a7a473).** For current right-now state and the complete shipping log, read HANDOFF.md first. Earlier header updates: migrations table (added 082 + 084; feat/le-video docs-sync gate). Earlier body entry: 2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).
 
 Authoritative state doc. Read first when entering the repo. If anything here conflicts with the code, trust the code and update this doc.
 
@@ -437,7 +437,7 @@ Banners are based on the LATEST iteration per session (not the union of all iter
 
 **Detail view (`/dashboard/development/prompt-lab/:sessionId`):** click-to-edit label in header; iteration stack with newest on top. Latest iteration has 2px foreground border + "Latest · active" pill. Older iterations muted. Each iteration card shows analysis summary, director prompt, retrieval chips ("Based on N similar wins" / "Recipe · archetype"), render controls on latest, rating widget + chat.
 
-**Render (async — shipped 2026-04-14 PM, concurrency guard 2026-04-15):** fire-and-forget. Render endpoint submits to Kling/Runway and stores `provider_task_id`. `/api/cron/poll-lab-renders` runs every minute in two phases: Phase 1 submits queued renders when a slot opens, Phase 2 finalizes in-flight renders (downloads clips, uploads to Supabase Storage `property-videos/prompt-lab/<session>/<iteration>.mp4`, sets `clip_url`). Safe to navigate away mid-render. Provider picker (Auto / Kling / Runway) on each render control.
+**Render (async — shipped 2026-04-14 PM, concurrency guard 2026-04-15):** fire-and-forget. Render endpoint submits to Kling/Runway and stores `provider_task_id`. `/api/cron/poll-lab-renders` runs every minute in two phases: Phase 1 submits queued renders when a slot opens, Phase 2 finalizes in-flight renders (downloads clips, uploads to Bunny Stream (library 679131); `clip_url` is set to the Bunny CDN URL). Safe to navigate away mid-render. Provider picker (Auto / Kling / Runway) on each render control.
 
 **Kling concurrency guard (shipped 2026-04-15):** `countKlingInFlight()` checks Lab + prod in-flight Kling jobs against 4-concurrent cap. Auto mode falls back to Runway when Kling is full. Explicit Kling selection queues the render (`render_queued_at` column, migration 012). Queued renders auto-submit when a slot opens; 30-min expiry. Violet "Queued — waiting for slot" UI indicator.
 
@@ -545,6 +545,7 @@ Development landing (`/dashboard/development`) shows:
 | Shotstack | Active if key set. Stage + prod keys exist in `.env`. Per-minute pricing: `SHOTSTACK_CENTS_PER_MINUTE=20` (Ingest plan). | |
 | OpenAI | Embeddings for Lab + prod scene retrieval (unified pool). `OPENAI_API_KEY` live in Vercel prod + preview. Costs tracked in `cost_events` since CI.2. |
 | Anthropic | Sonnet 4.6 (director, refine-prompt), Haiku 4.5 (scene chat, streaming SSE). Model-aware pricing since CI.1. |
+| **Bunny Stream** | Active (video hosting) | All finalized video clips (scenes, delivery variants, prompt-lab, listing-iteration clips) hosted on Bunny Stream library 679131 "ListingElevate". Env: `BUNNY_STREAM_API_KEY`, `BUNNY_STREAM_LIBRARY_ID`, `BUNNY_STREAM_CDN_HOSTNAME`. Non-video assets stay on Supabase Storage. `hostVideoOnBunny()` in `lib/providers/bunny-stream.ts`. Active from 2026-06-12. |
 
 ---
 
@@ -789,7 +790,7 @@ Lab iterations include analysis + director + render cost in `prompt_lab_iteratio
 - **Auto-promote 5★ to recipe** with cosine-distance dedup (0.2 threshold).
 - **Rating-weighted retrieval** — 5★ rank 15% closer than 4★ at same cosine distance.
 - **Save rating** button (no forced refine).
-- **Render persistence** — downloads provider CDN URL + re-uploads to Supabase Storage so clips survive CDN expiry + CORS.
+- **Render persistence** — downloads provider CDN URL + re-uploads to Bunny Stream (library 679131) so clips survive provider CDN expiry + CORS. Non-video assets (photos, audio, blog images) remain on Supabase Storage.
 - **Fire-and-forget render + cron finalizer** — render endpoint submits + returns; `/api/cron/poll-lab-renders` every minute downloads completed + sets clip_url. 30-min hard timeout.
 - **Render UI**: provider picker (Auto/Kling/Runway), pending badge, render_error display, "open in new tab" link.
 - **Rule-mining system** (M-L-4): DIRECTOR_PATCH_SYSTEM meta-prompt, mine endpoint, proposals page with diff + evidence buckets, apply → `lab_prompt_overrides` that Lab's director resolves at call time (prod untouched).
@@ -841,6 +842,24 @@ Lab iterations include analysis + director + render cost in `prompt_lab_iteratio
 | 027 | `scene_archived` | scene.archived BOOLEAN |
 
 SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the live path.
+
+| 056 | `operator_studio` | `clients` table + `properties.order_mode` + `properties.client_id` FK + `property_preview_tokens` + `property_revision_notes` + RLS — awaiting application to prod (feat/operator-studio) |
+| 057 | `operator_studio_scenes_followup` | `scenes.director_notes` text column — awaiting application to prod (feat/operator-studio) |
+| 058–078 | *(not yet documented in this table — see HANDOFF.md shipping log for details)* | Includes Homepage Ally, Prompt Lab expansion, Creatomate, market update workflow, UI consistency, operator delivery pipeline preamble. |
+| 079 | `clients_brokerage` | `clients.brokerage` text column. Applied to shared Supabase 2026-06-10. |
+| 080 | `delivery_pipeline` | `delivery_runs`, `scene_variants`, `ml_events` tables; run-scoped variant uniqueness; lifecycle-safe partial run index; `winner_source` enum (gemini\|operator\|default). Applied to shared Supabase 2026-06-10. |
+| 081 | `realtor_suffix` | `clients.realtor_suffix` boolean. Applied to shared Supabase 2026-06-10. |
+| 082 | `music_track_feedback` | `music_track_feedback` table (run_id, track_id unique NON-partial index, thumbs up/down + optional comment); `ml_events` CHECK extended with `music_feedback` event type. Applied to shared Supabase 2026-06-11. |
+| 083 | `preview_links_v2` | `property_previews` +5 columns: `kind text CHECK('client','public') DEFAULT 'client'`, `allow_download boolean DEFAULT true`, `allow_approve boolean DEFAULT true`, `allow_revision boolean DEFAULT true`, `approved_at timestamptz`. `property_revision_notes.source` CHECK extended: `('operator','client_preview')` → `('operator','client_preview','client_approval')`. DDL defaults keep existing rows valid; kind-based creation defaults live in `createPreviewLink()`. Back-compat: GET read path safe pre-migration (fetchPreviewMeta returns null → capabilities default all-on); POST approve returns 503 pre-migration. **NOT yet applied to prod** — apply before Share dialog goes live. Branch `feat/preview-links-v2`. |
+| 084 | `le_video` | `property_previews` +2 columns: `label text` (user-facing link alias), `revoked_at timestamptz` (when set, link is expired on watch page). New table `preview_view_events`: id, preview_id (FK→property_previews cascade), session_id, event CHECK('view','play','progress_25','progress_50','progress_75','complete'), position_seconds, orientation, referrer, user_agent, created_at. Two indexes: `idx_preview_events_preview(preview_id, created_at desc)`, `idx_preview_events_session(preview_id, session_id)`. RLS enabled, no policies (service-role only). **Applied to shared Supabase 2026-06-12** (verified in supabase_migrations as 084_le_video). Back-compat: beacon endpoint always returns 204 pre-migration; library/hub reads fall back to null label/revoked_at/empty event aggregates. Rollback: drop `preview_view_events`; drop columns `label`, `revoked_at` from `property_previews`. Branch `feat/le-video`. |
+| 084 | `scenes_provider_preference` | `scenes.provider_preference text` — sticky-provider fix: written at scene-creation time by `insertScenes`; read by `resubmitScene` to bias routing on reruns. **Applied to shared Supabase 2026-06-12.** Branch `fix/max-quality-assembly`. |
+| 085 | `cost_events_bunny` | Widens `cost_events` provider CHECK constraint to add `'bunny'` and `'veo'`. Required by Bunny Stream video-hosting writes and forward-compatible with Veo. **Applied to shared Supabase 2026-06-12.** Branch `fix/max-quality-assembly`. |
+
+---
+
+## Operator Studio — internal operator workflow surface (Phase 1 on feat/operator-studio, awaiting push)
+
+Admin-only surface at `/dashboard/studio` for Oliver to manage operator-mode properties on behalf of brokerage clients; provides a Kanban pipeline view, Clients CRUD, manual listing ingest form, and a Property Command Center with brand-kit injection into Creatomate renders, preview-link generation, inline clip-swap to Lab iterations, and director's notes. Migrations 056 + 057 apply the required schema. See `docs/specs/2026-05-15-operator-studio-design.md`.
 
 ---
 

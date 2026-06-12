@@ -58,13 +58,21 @@ async function main() {
   // prompt_lab_sessions (sessions schema has only id/created_by/image_url/
   // image_path/label/archetype/batch_label/archived/created_at). Fall back
   // to sessions.archetype only if analysis_json is absent.
+  // v1/v1.1 isolation — exclude EVERY v1.1 iteration regardless of SKU.
+  // v1.1 sessions can now render any of the V1_1_LAB_SKUS (Seedance,
+  // Kling 3, Kling 2.6, Kling 2.0 Master, Runway gen4), so the prior
+  // SKU-name exclusion (`neq model_used seedance-pro-pushin`) was too
+  // narrow — a v1.1 user rating a kling-v3-pro 5★ would have polluted
+  // v1's Thompson alpha/beta. Filter by pipeline_version directly so
+  // ALL v1.1 ratings stay out of v1's exploration history.
   const { data, error } = await supabase
     .from("prompt_lab_iterations")
     .select(
       "id, rating, model_used, director_output_json, analysis_json, session_id, prompt_lab_sessions!inner(archetype)",
     )
     .not("rating", "is", null)
-    .not("model_used", "is", null);
+    .not("model_used", "is", null)
+    .eq("pipeline_version", "v1");
 
   if (error) {
     console.error("Query failed:", error);

@@ -88,7 +88,7 @@ export function ChatPanel({ messages: initialMessages, onSend, onClear, onPinMes
       {promptRewritten && (
         <div className="mb-2 border border-indigo-500/40 bg-indigo-500/10 p-2 text-[11px] text-indigo-800">
           <div className="font-semibold">Director prompt rewritten</div>
-          <pre className="mt-1 whitespace-pre-wrap font-mono text-[10px]">{promptRewritten}</pre>
+          <pre className="mt-1 whitespace-pre-wrap font-sans text-[10px]">{promptRewritten}</pre>
           <button type="button" onClick={() => setPromptRewritten(null)} className="mt-1 underline-offset-2 hover:underline">dismiss</button>
         </div>
       )}

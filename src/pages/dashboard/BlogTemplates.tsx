@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@/components/ui/button";
 import { deleteTemplate, listTemplates } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import type { BlogTemplate } from "@/lib/blog/types";
 import { toast } from "sonner";
+import { PageHeading, Card } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 
 export default function BlogTemplates() {
   const qc = useQueryClient();
@@ -21,37 +22,114 @@ export default function BlogTemplates() {
   });
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Templates <span className="ml-2 text-sm font-normal text-muted-foreground">{templates.length}</span></h1>
-        <Link to="/dashboard/blog/templates/new"><Button><Plus className="mr-1 h-4 w-4" /> New template</Button></Link>
-      </div>
-      {isLoading ? <div>Loading…</div> : templates.length === 0 ? (
-        <div className="rounded-md border p-8 text-center text-muted-foreground">
-          No templates yet. <Link to="/dashboard/blog/templates/new" className="underline">Create one</Link>.
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+
+      <PageHeading
+        eyebrow="Content · Blog · Templates"
+        title="Templates"
+        sub={`${templates.length} template${templates.length === 1 ? "" : "s"} saved for reuse.`}
+        actions={
+          <Link to="/dashboard/studio/blog/templates/new" style={{ textDecoration: "none" }}>
+            <button className="le-btn-dark" style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
+              <Icon name="plus" size={13} />
+              New template
+            </button>
+          </Link>
+        }
+      />
+
+      {isLoading ? (
+        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
+          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+          </svg>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
+      ) : templates.length === 0 ? (
+        <Card padding={48}>
+          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            No templates yet.{" "}
+            <Link to="/dashboard/studio/blog/templates/new" style={{ color: "var(--accent)", fontWeight: 500 }}>
+              Create one
+            </Link>
+            .
+          </div>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
           {templates.map(t => (
-            <div key={t.id} className="overflow-hidden rounded-md border bg-card">
-              <HtmlPreview html={t.body_html} style={{ width: "100%", height: 180, border: "none", display: "block" }} />
-              <div className="space-y-1 p-3">
-                <div className="font-medium">{t.name}</div>
-                {t.description && <div className="text-xs text-muted-foreground">{t.description}</div>}
-                <div className="flex gap-2 pt-2">
-                  <Link to={`/dashboard/blog/templates/${t.id}`}>
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-xs"><Pencil className="mr-1 h-3 w-3" /> Edit</Button>
-                  </Link>
-                  <Link to={`/dashboard/blog/posts/new?template=${t.id}`}>
-                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs">Use in new post</Button>
-                  </Link>
-                  <Button size="sm" variant="ghost" className="h-7 px-2 text-xs ml-auto" onClick={() => del.mutate(t.id)}><Trash2 className="h-3 w-3" /></Button>
-                </div>
-              </div>
-            </div>
+            <TemplateCard key={t.id} t={t} onDelete={() => del.mutate(t.id)} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── template card ────────────────────────────────────────────────
+function TemplateCard({ t, onDelete }: { t: BlogTemplate; onDelete: () => void }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      className="le-lift"
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        background: "var(--surface)",
+        borderRadius: "var(--radius)",
+        boxShadow: hov ? "var(--shadow-md)" : "var(--shadow-sm)",
+        transform: hov ? "translateY(-1px)" : "translateY(0)",
+        transition: "box-shadow .15s, transform .15s",
+        overflow: "hidden",
+      }}
+    >
+      {/* Preview thumbnail */}
+      <div style={{ borderBottom: "1px solid var(--line-2)" }}>
+        <HtmlPreview html={t.body_html} style={{ width: "100%", height: 180, border: "none", display: "block" }} />
+      </div>
+
+      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.015em" }}>{t.name}</div>
+        {t.description && (
+          <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>{t.description}</div>
+        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4 }}>
+          <Link to={`/dashboard/studio/blog/templates/${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
+            <button
+              className="le-btn-ghost"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center", fontSize: 12 }}
+            >
+              <Icon name="settings" size={12} />
+              Edit
+            </button>
+          </Link>
+          <Link to={`/dashboard/studio/blog/posts/new?template=${t.id}`} style={{ textDecoration: "none", flex: 1 }}>
+            <button
+              className="le-btn-ghost"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center", fontSize: 12 }}
+            >
+              <Icon name="plus" size={12} />
+              Use
+            </button>
+          </Link>
+          <button
+            onClick={onDelete}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "7px 10px",
+              borderRadius: "var(--radius-pill)",
+              border: "1px solid var(--line)",
+              background: "transparent",
+              cursor: "pointer",
+              color: "var(--bad)",
+              fontFamily: "var(--le-font-sans)",
+            }}
+          >
+            <Icon name="x" size={13} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,21 +1,7 @@
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import LinkExt from "@tiptap/extension-link";
-import ImageExt from "@tiptap/extension-image";
-import Underline from "@tiptap/extension-underline";
-import TextAlign from "@tiptap/extension-text-align";
-// All table extensions come from @tiptap/extension-table — the sub-packages
-// (@tiptap/extension-table-row, etc.) are aliases that re-export from here.
-// Using named imports avoids "default not exported" rollup errors.
-import { Table, TableRow, TableCell, TableHeader } from "@tiptap/extension-table";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { Editor as TinyMCEEditor } from "@tinymce/tinymce-react";
 import { Button } from "@/components/ui/button";
-import {
-  Bold, Italic, Underline as UIcon, Heading2, Heading3,
-  Link2, Image as ImageIcon, List, ListOrdered, Quote,
-  Undo, Redo, Code2, AlignLeft, AlignCenter, AlignRight,
-  Table as TableIcon, Eye,
-} from "lucide-react";
+import { Code2, Eye } from "lucide-react";
 import { HtmlPreview } from "./HtmlPreview";
 
 export type EditorMode = "rich" | "source" | "preview";
@@ -23,76 +9,43 @@ export type EditorMode = "rich" | "source" | "preview";
 interface PostEditorProps {
   value: string;
   onChange: (html: string) => void;
-  onInsertImageClick: () => void;
+  onInsertImageClick?: () => void;
   mode?: EditorMode;
   onModeChange?: (m: EditorMode) => void;
   minHeight?: number;
 }
+
+// Pin a specific TinyMCE version on jsDelivr. Self-hosted bundle = no API key
+// needed and no "domain not registered" notice. Sierra uses TinyMCE 8 too
+// (`res/tinymce8/tinymce.min.js`), so this matches their renderer.
+const TINYMCE_SCRIPT_SRC = "https://cdn.jsdelivr.net/npm/tinymce@7.6.1/tinymce.min.js";
 
 export function PostEditor({
   value, onChange, onInsertImageClick,
   mode = "rich", onModeChange,
   minHeight = 500,
 }: PostEditorProps) {
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      LinkExt.configure({ openOnClick: false }),
-      ImageExt,
-      Underline,
-      TextAlign.configure({ types: ["heading", "paragraph"] }),
-      Table.configure({ resizable: true }),
-      TableRow, TableHeader, TableCell,
-    ],
-    content: value,
-    onUpdate: ({ editor }) => onChange(editor.getHTML()),
-    editorProps: {
-      attributes: { class: "prose prose-sm max-w-none focus:outline-none" },
-    },
-  });
+  const editorRef = useRef<any>(null);
 
-  // When the parent flips mode rich→source, sync the latest Tiptap HTML out
-  // first; when flipping source→rich, push the textarea value into Tiptap.
+  // Push external value changes (template applied, Ally chat patch, mode
+  // toggle) into TinyMCE. Sync on every value change regardless of mode so
+  // chat-driven edits actually appear in the editor — previously this only
+  // synced on rich mode, which made Apply look like a no-op when the user
+  // was on Source/Preview.
   useEffect(() => {
-    if (!editor) return;
-    if (mode === "rich" && editor.getHTML() !== value) {
-      editor.commands.setContent(value, false, { preserveWhitespace: "full" });
+    const ed = editorRef.current;
+    if (ed && typeof ed.setContent === "function") {
+      const current = typeof ed.getContent === "function" ? ed.getContent() : "";
+      if (current !== value) {
+        ed.setContent(value || "");
+      }
     }
-  }, [mode, value, editor]);
-
-  if (!editor) return null;
+  }, [value, mode]);
 
   return (
     <div className="rounded-md border bg-card">
       <div className="flex flex-wrap items-center gap-1 border-b p-2">
-        {mode === "rich" ? (
-          <>
-            <ToolbarButton active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()} icon={Bold} />
-            <ToolbarButton active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()} icon={Italic} />
-            <ToolbarButton active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()} icon={UIcon} />
-            <Sep />
-            <ToolbarButton active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} icon={Heading2} />
-            <ToolbarButton active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} icon={Heading3} />
-            <Sep />
-            <ToolbarButton active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()} icon={List} />
-            <ToolbarButton active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()} icon={ListOrdered} />
-            <ToolbarButton active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()} icon={Quote} />
-            <Sep />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().setTextAlign("left").run()} icon={AlignLeft} />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().setTextAlign("center").run()} icon={AlignCenter} />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().setTextAlign("right").run()} icon={AlignRight} />
-            <Sep />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} icon={TableIcon} />
-            <ToolbarButton active={false} onClick={() => {
-              const url = window.prompt("Link URL");
-              if (url) editor.chain().focus().setLink({ href: url }).run();
-            }} icon={Link2} />
-            <ToolbarButton active={false} onClick={onInsertImageClick} icon={ImageIcon} />
-            <Sep />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().undo().run()} icon={Undo} />
-            <ToolbarButton active={false} onClick={() => editor.chain().focus().redo().run()} icon={Redo} />
-          </>
-        ) : (
+        {mode !== "rich" && (
           <span className="px-2 text-xs text-muted-foreground">
             {mode === "source" ? "HTML source" : "Preview (read-only)"}
           </span>
@@ -110,18 +63,61 @@ export function PostEditor({
         </div>
       </div>
 
-      {mode === "rich" && (
-        <EditorContent
-          editor={editor}
-          className="p-4 prose prose-sm max-w-none focus-within:outline-none"
-          style={{ minHeight }}
+      {/* TinyMCE is always mounted so its editor state survives mode toggles.
+          Hidden via inline style when not in rich mode rather than unmounted. */}
+      <div style={{ display: mode === "rich" ? "block" : "none" }}>
+        <TinyMCEEditor
+          tinymceScriptSrc={TINYMCE_SCRIPT_SRC}
+          licenseKey="gpl"
+          onInit={(_evt, ed) => { editorRef.current = ed; }}
+          value={value}
+          onEditorChange={(html) => onChange(html)}
+          init={{
+            height: minHeight,
+            menubar: false,
+            branding: false,
+            promotion: false,
+            statusbar: true,
+            plugins: [
+              "advlist", "autolink", "lists", "link", "image", "charmap",
+              "anchor", "searchreplace", "code", "fullscreen", "media",
+              "table", "wordcount", "preview", "visualblocks",
+            ],
+            toolbar:
+              "undo redo | blocks | bold italic underline | " +
+              "alignleft aligncenter alignright | bullist numlist outdent indent | " +
+              "link image table | code preview fullscreen",
+            block_formats: "Paragraph=p; Heading 2=h2; Heading 3=h3; Heading 4=h4; Blockquote=blockquote",
+            content_style: `
+              body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.65; color: #1f2937; padding: 16px; max-width: 720px; margin: 0 auto; }
+              h2 { font-size: 22px; font-weight: 700; margin: 24px 0 10px; }
+              h3 { font-size: 18px; font-weight: 600; margin: 20px 0 8px; }
+              p { margin: 12px 0; }
+              table { border-collapse: collapse; width: 100%; margin: 16px 0; }
+              th, td { border: 1px solid #e5e7eb; padding: 8px 12px; }
+              th { background: #f9fafb; font-weight: 600; }
+              ul, ol { padding-left: 24px; margin: 12px 0; }
+              blockquote { border-left: 3px solid #e5e7eb; padding-left: 16px; color: #6b7280; font-style: italic; }
+              img { max-width: 100%; height: auto; }
+            `,
+            file_picker_types: "image",
+            file_picker_callback: onInsertImageClick
+              ? (_callback, _value, meta) => {
+                  if (meta.filetype === "image") onInsertImageClick();
+                }
+              : undefined,
+            // Keep TinyMCE conservative: no relative URLs, no auto-cleanup that strips inline styles.
+            convert_urls: false,
+            element_format: "html",
+            entity_encoding: "raw",
+          }}
         />
-      )}
+      </div>
       {mode === "source" && (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="block w-full resize-y border-0 bg-background p-4 font-mono text-xs leading-relaxed focus:outline-none"
+          className="block w-full resize-y border-0 bg-background p-4 font-sans text-xs leading-relaxed focus:outline-none"
           spellCheck={false}
           style={{ minHeight }}
         />
@@ -132,12 +128,3 @@ export function PostEditor({
     </div>
   );
 }
-
-function ToolbarButton({ active, onClick, icon: Icon }: { active: boolean; onClick: () => void; icon: React.ComponentType<{ className?: string }> }) {
-  return (
-    <Button type="button" variant={active ? "secondary" : "ghost"} size="sm" onClick={onClick} className="h-7 w-7 p-0">
-      <Icon className="h-3.5 w-3.5" />
-    </Button>
-  );
-}
-function Sep() { return <span className="mx-1 h-5 w-px bg-border" />; }

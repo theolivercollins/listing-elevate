@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { TokenPurchase, Expense, RevenueEntry, TokenProvider, CostEvent } from "./types";
+import type { TokenPurchase, Expense, RevenueEntry, TokenProvider, CostEvent, Subscription, BillingPeriod } from "./types";
 
 // ─── Token purchases ──────────────────────────────────────────────
 
@@ -177,4 +177,61 @@ export async function listCostEvents(limit = 500): Promise<CostEvent[]> {
     .limit(limit);
   if (error) throw error;
   return (data || []) as CostEvent[];
+}
+
+// ─── Subscriptions ─────────────────────────────────────────────────
+
+export async function listSubscriptions(): Promise<Subscription[]> {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []) as Subscription[];
+}
+
+export async function createSubscription(input: {
+  provider: string;
+  amount_cents: number;
+  billing_period: BillingPeriod;
+  started_at: string;
+  next_charge_at: string;
+  note?: string;
+}): Promise<Subscription> {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .insert({
+      provider: input.provider,
+      amount_cents: input.amount_cents,
+      billing_period: input.billing_period,
+      started_at: input.started_at,
+      next_charge_at: input.next_charge_at,
+      note: input.note || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Subscription;
+}
+
+export async function updateSubscription(
+  id: string,
+  patch: Partial<Pick<Subscription, "provider" | "amount_cents" | "billing_period" | "next_charge_at" | "status" | "note">>,
+): Promise<Subscription> {
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as Subscription;
+}
+
+export async function deleteSubscription(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("subscriptions")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
 }

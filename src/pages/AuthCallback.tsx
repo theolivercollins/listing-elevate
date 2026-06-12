@@ -23,11 +23,8 @@ export default function AuthCallback() {
           // Wait a tick for profile to load via auth state change
           setTimeout(() => {
             if (cancelled) return;
-            if (profile?.role === "admin") {
-              navigate("/dashboard", { replace: true });
-            } else {
-              navigate("/account", { replace: true });
-            }
+            // All authed users land on /dashboard; role determines what they see there.
+            navigate("/dashboard", { replace: true });
           }, 500);
         } else {
           navigate("/?login=1", { replace: true });

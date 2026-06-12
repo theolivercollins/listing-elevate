@@ -4,6 +4,7 @@ import type {
   GenerationJob,
   GenerationResult,
 } from "./provider.interface.js";
+import { ensureSourceAspectRatio } from "../services/source-aspect.js";
 
 // Atlas Cloud model descriptors. Add new entries here to make them
 // selectable via ATLAS_VIDEO_MODEL without touching call sites.
@@ -14,13 +15,86 @@ import type {
 // `priceCentsPerClip` below is the per-second rate × 5 (default clip
 // length). If the render duration differs, compute dynamically via
 // priceCentsPerSecond × actualSeconds.
+// Resolution values accepted across Atlas-hosted models. The `-SR` variants
+// are Seedance 2.0's super-resolution tiers (FlashVSR pass folded into the
+// main model 2026-06 — they replaced the retired standalone "upscaled"/2K
+// variant). Kling SKUs only ever use "1080p"; "4k" is reserved for future
+// SKUs (Veo-class) so UI mirrors can share the union.
+export type AtlasResolution =
+  | "480p"
+  | "720p"
+  | "720p-SR"
+  | "1080p"
+  | "1080p-SR"
+  | "1440p-SR"
+  | "4k";
+
 export interface AtlasModelDescriptor {
   slug: string;                                   // `model` value Atlas expects
-  endFrameField: "end_image" | null;
+  // Kling SKUs accept `end_image`; Bytedance Seedance 2.0 accepts `last_image`
+  // (confirmed against the live Atlas input schema 2026-06-10:
+  // static.atlascloud.ai/model/schema/bytedance-seedance-2.0-image-to-video.json).
+  endFrameField: "end_image" | "last_image" | null;
   allowedDurations: readonly number[] | "continuous";
   durationRange?: { min: number; max: number };
   priceCentsPerSecond: number;   // canonical per-second rate
   priceCentsPerClip: number;     // priceCentsPerSecond × 5 (standard clip)
+  /**
+   * Optional render resolution forwarded to the underlying Replicate model
+   * via the `resolution` input field. When set, Atlas passes it through to
+   * the model (Seedance 2.0 accepts '480p' | '720p' | '720p-SR' | '1080p' |
+   * '1080p-SR' | '1440p-SR'). When unset, the model uses its own default —
+   * for Bytedance Seedance that's '720p', which observably underuses the
+   * model's native quality.
+   * Kling variants IGNORE this field entirely. MEASURED 2026-06-11 (ffprobe
+   * audit; docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md):
+   * each Kling SKU has a fixed output PIXEL BUDGET whose shape follows the
+   * INPUT image's aspect ratio — v2.6 Pro / v3 Pro ≈ 2.07 MP (the exact
+   * 1920×1080 area: 3:2 in → 1760×1176 out), v2 Master ≈ 0.92 MP (the exact
+   * 1280×720 area: 3:2 in → 1172×784 out). Kling geometry is therefore
+   * controlled via `forceSourceAspectRatio`, not this field.
+   *
+   * This is the descriptor-level DEFAULT. It can be overridden per-render
+   * via `GenerateClipParams.resolution` (UI quality dropdown).
+   */
+  resolution?: AtlasResolution;
+  /**
+   * Ordered list of resolutions the underlying model can produce. First
+   * entry is the default selection in the UI. When unset or single-element,
+   * the UI hides the resolution picker (no meaningful choice to make).
+   * Seedance has a real multi-res picker; Kling SKUs have no picker — their
+   * pixel budget is fixed per-SKU (1080p-class on v2.6/v3, 720p-class on
+   * v2 Master; see `resolution` docblock above).
+   */
+  supportedResolutions?: ReadonlyArray<AtlasResolution>;
+  /**
+   * Optional `generate_audio` flag forwarded to the underlying Replicate
+   * model. Only Bytedance Seedance 2.0 generates audio by default — set
+   * this to `false` on the Seedance descriptor so we get silent video.
+   * Kling/Runway etc. don't generate audio so this is a no-op there.
+   *
+   * Real-estate listing clips never want model-generated music; the
+   * assembly stage adds curated music from a separate track.
+   */
+  generateAudio?: boolean;
+  /**
+   * When set, the source image (and the end image, when the SKU takes one)
+   * is center-cropped to this aspect ratio (and uploaded to Storage) BEFORE
+   * submission. Required for every i2v model that derives its OUTPUT aspect
+   * ratio from the INPUT image and ignores the `aspect_ratio` field:
+   * - Bytedance Seedance 2.0 — a 3:2 listing photo otherwise yields a 4:3
+   *   clip (1664×1248) instead of 16:9 1080p (verified live 2026-05-28).
+   * - ALL Kling SKUs — measured 2026-06-11 (ffprobe audit across scene clips
+   *   and Lab iterations): Kling copies the input aspect onto its fixed
+   *   per-SKU pixel budget, so a 3:2 photo yields a 3:2 clip (1760×1176 on
+   *   v2.6 Pro / v3 Pro, 1172×784 on v2 Master) that the assembler must
+   *   cover-upscale + crop onto the 1920×1080 canvas — the dominant quality
+   *   loss diagnosed on the 5019 San Massimo run. The earlier comment here
+   *   claiming Kling geometry is "fixed in-model" was wrong.
+   * "16:9" → a 1920×1080 crop. Runway stays unset: it takes an explicit
+   * output `ratio` parameter of its own.
+   */
+  forceSourceAspectRatio?: "16:9";
 }
 
 // Default clip duration in seconds for cost estimation. Atlas accepts
@@ -44,6 +118,8 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 10,     // $0.095/s
     priceCentsPerClip: 48,       // $0.475 for 5s
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget (measured 1660×1244 from a 4:3 pair, 2026-06-11); 16:9 in → 1920×1080
+    forceSourceAspectRatio: "16:9",   // copies input aspect (NOT fixed in-model) — crop start+end to 16:9 for true 1080p
   },
   "kling-v3-std": {
     slug: "kwaivgi/kling-v3.0-std/image-to-video",
@@ -51,6 +127,8 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 8,      // $0.071/s
     priceCentsPerClip: 36,       // $0.355 for 5s
+    supportedResolutions: ["1080p"],  // budget not yet measured for this SKU; v3 family measures ~2.07 MP
+    forceSourceAspectRatio: "16:9",   // copies input aspect (NOT fixed in-model) — crop start+end to 16:9
   },
   "kling-v2-6-pro": {
     slug: "kwaivgi/kling-v2.6-pro/image-to-video",
@@ -65,6 +143,8 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     // Atlas invoice before high-volume Phase B work.
     priceCentsPerSecond: 12,     // $0.120/s (observed — 2x our original reading; pending Atlas invoice verification)
     priceCentsPerClip: 60,       // $0.600 for 5s
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget (measured 1760×1176 / 1688×1224 from 3:2 sources, 2026-06-11); 16:9 in → 1920×1080
+    forceSourceAspectRatio: "16:9",   // copies input aspect (NOT fixed in-model) — crop start+end to 16:9 for true 1080p
   },
   "kling-v2-1-pair": {
     slug: "kwaivgi/kling-v2.1-i2v-pro/start-end-frame",
@@ -72,6 +152,8 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 8,      // $0.076/s
     priceCentsPerClip: 38,       // $0.380 for 5s
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget (measured 1660×1244 on 2026-06-04 paired run); 16:9 in → 1920×1080
+    forceSourceAspectRatio: "16:9",   // copies input aspect (NOT fixed in-model) — BOTH frames cropped so pair geometry matches
   },
   "kling-v2-master": {
     slug: "kwaivgi/kling-v2.0-i2v-master",
@@ -79,6 +161,8 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 23,     // $0.221/s
     priceCentsPerClip: 111,      // $1.105 for 5s
+    supportedResolutions: ["720p"],   // ~0.92 MP budget (measured 1172×784 from 3:2 sources, 2026-06-11) — 720p-class, NOT 1080p; 16:9 in → ~1280×720
+    forceSourceAspectRatio: "16:9",   // copies input aspect — crop still removes the assembler's cover-crop (uniform 1.5x upscale instead)
   },
   "kling-o3-pro": {
     slug: "kwaivgi/kling-video-o3-pro/image-to-video",
@@ -86,6 +170,65 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     allowedDurations: [5, 10],
     priceCentsPerSecond: 10,     // $0.095/s
     priceCentsPerClip: 48,       // $0.475 for 5s
+    supportedResolutions: ["1080p"],  // budget not yet measured for this SKU; modern Kling pro SKUs measure ~2.07 MP
+    forceSourceAspectRatio: "16:9",   // copies input aspect (NOT fixed in-model) — crop start+end to 16:9
+  },
+  // v1.1 pipeline mode (added 2026-05-23) — Bytedance Seedance 2.0 push-in via Atlas.
+  //
+  // Slug fixed 2026-06-10 against the LIVE Atlas catalog (GET /api/v1/models):
+  // the standalone "image-to-video-upscaled" variant was RETIRED by Atlas —
+  // every submit against it returned 400 "not found", which silently failed
+  // all v1.1 scenes over to the Kling fallback. Atlas folded the upscaled/2K
+  // tier into the main model as resolution values: the schema now enumerates
+  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR']
+  // (default 720p) — "2k" is no longer valid. The `-SR` tiers run the
+  // FlashVSR super-resolution pass that the old upscaled variant provided.
+  //
+  // Default resolution "1080p-SR": SR is the quality tier that replaced the
+  // old 2K upscale, and 1080p matches our delivery output. Both slug and
+  // resolution remain env-overridable for instant rollback without a deploy
+  // (SEEDANCE_ATLAS_SLUG / SEEDANCE_RESOLUTION) if Atlas shuffles the
+  // catalog again.
+  //
+  // Note: Seedance 2.0 supports `last_image` upstream. The push-in SKU keeps
+  // endFrameField null on purpose — pair renders go through the separate
+  // `seedance-pair` SKU below so the push-in prompt preamble never leaks
+  // onto paired scenes. Paired scenes still DEFAULT to kling-v3-pro.
+  "seedance-pro-pushin": {
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: null,         // Seedance pairs not enabled (see note above)
+    allowedDurations: [5, 10],   // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p-SR",
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
+    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts)
+    priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
+    priceCentsPerClip: 48,       // 9.6 × 5
+  },
+  // OPT-IN pair mode (added 2026-06-10) — Bytedance Seedance 2.0 with
+  // start+end-frame interpolation via the `last_image` input field
+  // (confirmed against the live Atlas input schema for
+  // bytedance-seedance-2.0-image-to-video; same format rules as `image`).
+  //
+  // IMPORTANT: this SKU is NEVER a routing default. Paired scenes
+  // (end_photo_id set) keep defaulting to kling-v3-pro (RULE DQ.3 in
+  // router.ts). seedance-pair is only reachable as an explicit operator /
+  // Lab choice (Checkpoint A regenerate model picker, Lab SKU pickers).
+  //
+  // A separate key (instead of reusing seedance-pro-pushin) keeps the
+  // forceSeedancePushInPrompt preamble OFF pair renders: every call site
+  // keys that override on the exact string 'seedance-pro-pushin', so pair
+  // renders use the scene's own prompt (incl. its trajectory clause).
+  "seedance-pair": {
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: "last_image", // Seedance 2.0 end-frame param (schema-confirmed 2026-06-10)
+    allowedDurations: [5, 10],   // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p-SR",
+    supportedResolutions: ["1080p-SR", "1440p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,        // Seedance 2.0 generates music by default — kill it; assembly adds curated audio
+    forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts)
+    priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
+    priceCentsPerClip: 48,       // 9.6 × 5
   },
 };
 
@@ -115,6 +258,31 @@ export type V1AtlasSku = (typeof V1_ATLAS_SKUS)[number];
 
 export const V1_DEFAULT_SKU: V1AtlasSku = "kling-v2-6-pro";
 
+// ─── v1.1 SKU ALLOW-LIST ─────────────────────────────────────────────────────
+//
+// SKUs valid for v1.1 Lab sessions (multi-model picker).  Seedance is the
+// default; the rest are modern Kling/Runway variants.  Kept in sync with
+// `V1_1_LAB_SKUS` in `src/lib/labModels.ts` (which the UI imports).
+//
+// API-layer files import from here (not from src/) so tsconfig.api.json
+// can resolve the constant without expanding its include globs.
+export const V1_1_LAB_SKUS = [
+  "seedance-pro-pushin",
+  "kling-v3-pro",
+  "kling-v2-6-pro",
+  "kling-v2-master",
+  "runway-gen4-native",
+  // Lane B (2026-05-26): Veo 3.1 Preview added as Premium 4K SKU.
+  // Routes through VeoProvider, not Atlas. Validation accepts it
+  // because the combined allow-list includes it here.
+  "veo-3-1-preview",
+  // Opt-in Seedance 2.0 pair mode (2026-06-10). Only meaningful on paired
+  // scenes — never a default; paired scenes still default to kling-v3-pro.
+  "seedance-pair",
+] as const;
+export type V1_1LabSku = (typeof V1_1_LAB_SKUS)[number];
+export const V1_1_DEFAULT_SKU: V1_1LabSku = "seedance-pro-pushin";
+
 /** Compute the expected cost in cents for a finalized Atlas render.
  *  Uses the model's per-second rate × clip duration (defaults to 5s).
  *  Returns 0 if the model key is unknown.
@@ -137,6 +305,19 @@ export interface AtlasSubmitBody {
   cfg_scale?: number;
   negative_prompt?: string;
   end_image?: string;
+  /** Seedance 2.0 end-frame field — the video interpolates from `image` to
+   *  this frame. Only sent for descriptors with endFrameField "last_image"
+   *  (the opt-in `seedance-pair` SKU). Kling SKUs use `end_image` instead. */
+  last_image?: string;
+  /** Forwarded to the underlying Replicate model when set. Seedance 2.0
+   *  honors '480p' | '720p' | '720p-SR' | '1080p' | '1080p-SR' | '1440p-SR'
+   *  (the -SR tiers run the FlashVSR super-resolution pass). Kling variants
+   *  ignore it (their output res is fixed per-SKU). Atlas passes through
+   *  unrecognized fields to the model's input schema, so it's safe to send. */
+  resolution?: AtlasResolution;
+  /** Forwarded to Seedance 2.0 to disable native audio/music generation.
+   *  Ignored by other models. */
+  generate_audio?: boolean;
 }
 
 // Kling v3-pro introduces noticeable camera shake/vibration on push-ins
@@ -168,6 +349,24 @@ export function buildAtlasRequestBody(
   };
   if (params.endImageUrl && model.endFrameField) {
     body[model.endFrameField] = params.endImageUrl;
+  }
+  // Resolution priority: explicit per-render override (UI quality dropdown) wins
+  // over the descriptor's static default. Falls back to the descriptor's `resolution`
+  // field (currently only Seedance opts in). Kling SKUs leave this unset — Kling
+  // ignores the field; its output pixel budget is fixed per-SKU and shaped by the
+  // input image's aspect, which we control via forceSourceAspectRatio instead.
+  const effectiveResolution = params.resolution ?? model.resolution;
+  if (effectiveResolution) {
+    // AtlasSubmitBody.resolution accepts the AtlasResolution union. Cast is
+    // safe: the UI only offers values from the SKU's supportedResolutions array,
+    // and the descriptor default is one of these.
+    body.resolution = effectiveResolution as AtlasResolution;
+  }
+  // Forward generate_audio when the descriptor opts in (Seedance 2.0 only —
+  // kills its default music track). Atlas passes through to Replicate's
+  // Seedance input schema. Other models ignore the field.
+  if (model.generateAudio !== undefined) {
+    body.generate_audio = model.generateAudio;
   }
   return body;
 }
@@ -256,7 +455,30 @@ export class AtlasProvider implements IVideoProvider {
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
     const modelForCall = this.resolveModel(params.modelOverride);
-    const body = buildAtlasRequestBody(params, modelForCall);
+    // Seedance AND every Kling SKU copy the input image's aspect ratio onto
+    // their output and ignore `aspect_ratio` (Kling measured 2026-06-11 —
+    // see forceSourceAspectRatio docblock). Crop the source to 16:9 first so
+    // the clip fills the SKU's pixel budget at 16:9 (1920×1080 on the
+    // 2.07 MP SKUs) instead of a 3:2/4:3 snap the assembler would have to
+    // cover-upscale + crop. No-op for models without the flag.
+    // For pair SKUs (forceSourceAspectRatio + an endFrameField — seedance-pair,
+    // kling-v3-pro, kling-v2-1-pair, …) the END frame is cropped the same
+    // way — a 3:2 end frame against a 16:9 first frame would skew the
+    // interpolation geometry.
+    let effectiveParams = params;
+    if (modelForCall.forceSourceAspectRatio && params.sourceImageUrl) {
+      const prepared = await ensureSourceAspectRatio(params.sourceImageUrl);
+      if (prepared !== params.sourceImageUrl) {
+        effectiveParams = { ...effectiveParams, sourceImageUrl: prepared };
+      }
+      if (params.endImageUrl && modelForCall.endFrameField) {
+        const preparedEnd = await ensureSourceAspectRatio(params.endImageUrl);
+        if (preparedEnd !== params.endImageUrl) {
+          effectiveParams = { ...effectiveParams, endImageUrl: preparedEnd };
+        }
+      }
+    }
+    const body = buildAtlasRequestBody(effectiveParams, modelForCall);
     const res = await fetch(ENDPOINT, {
       method: "POST",
       headers: this.authHeaders(),

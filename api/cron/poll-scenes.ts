@@ -2,6 +2,22 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const maxDuration = 300;
 
+/**
+ * buildCorrectiveSuffix — turn a judge's hallucination_flags into corrective
+ * render guidance appended to the prompt on a QC re-render. Pure; no I/O.
+ *
+ * Always emits the standing grounding directive (keep the camera inside the
+ * room; do not invent geometry/walls/viewpoints not in the source photo). When
+ * flags are present it prepends an "Avoid these defects:" list naming each one.
+ */
+export function buildCorrectiveSuffix(flags: string[]): string {
+  const standing =
+    "Keep the camera inside the room at all times; do not invent geometry, walls, doorways, or viewpoints that are not present in the source photo. Stay faithful to the photographed space.";
+  const cleaned = (flags ?? []).map((f) => String(f).trim()).filter((f) => f.length > 0);
+  if (cleaned.length === 0) return standing;
+  return `Avoid these defects: ${cleaned.join(", ")}. ${standing}`;
+}
+
 // Backstop poller for scenes that were submitted to a provider but never
 // had their completed clip collected (e.g. because the pipeline function
 // hit maxDuration mid-poll). Runs on a Vercel Cron every minute. Each
@@ -19,6 +35,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
+    const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
+    const { resubmitScene } = await import('../../lib/pipeline.js');
+
+    // Cap on TOTAL render attempts per scene (gate is `attempt_count < cap`,
+    // and attempt_count starts at 1 from the original submit). So the default
+    // of 2 allows the original render + ONE judge-driven corrective re-render,
+    // after which a still-hallucinated scene is surfaced as needs_review. Set
+    // MAX_QC_RERENDERS=3 for two corrective re-renders. NOTE on v1.1: a re-render
+    // reuses the same Seedance push-in SKU + source frame and only appends
+    // corrective grounding text, so the loop is a safety net that surfaces bad
+    // clips for review — the actual hallucination prevention is the analyzer
+    // headroom gate + director push-in coercion, which run BEFORE the render.
+    // Dormant until JUDGE_ENABLED (judgeProductionScene returns judgeRan:false /
+    // verdict:qc_pass when disabled).
+    const MAX_QC_RERENDERS = Number(process.env.MAX_QC_RERENDERS ?? 2);
+    // Speed-ramp removed 2026-05-27 — see api/admin/prompt-lab/assemble.ts.
+    // No more ffmpeg in this cron, so no dynamic import + no pipeline_mode
+    // dispatch needed (we used to only ramp v1.1 clips). Every clip is
+    // stored as the provider returned it.
 
     const supabase = getSupabase();
 
@@ -26,7 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // yet have a stored clip. Limit batch size to avoid function timeout.
     const { data: pending, error: pendingErr } = await supabase
       .from('scenes')
-      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at')
+      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type')
       .not('provider_task_id', 'is', null)
       .is('clip_url', null)
       .order('submitted_at', { ascending: true })
@@ -34,7 +70,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (pendingErr) throw pendingErr;
     if (!pending || pending.length === 0) {
-      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0 });
+      // Operator delivery: B-variant renders can outlive the scenes queue
+      // (all A clips collected while B is still rendering), so poll them
+      // even when no scenes are pending — otherwise a delivery run would
+      // stall in 'generating' forever. No-op when none exist.
+      let variants: { polled: number; completed: number; failed: number } | null = null;
+      try {
+        const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+        variants = await pollPendingVariants();
+      } catch (err) {
+        console.error('[poll-scenes] variant polling failed:', err);
+      }
+      // Re-attempt judge passes for delivery runs whose B variants just
+      // settled — the finalize loop below never fires once a property has
+      // no pending scenes, so this sweep is what un-stalls 'generating'.
+      let judgeSweep: { swept: number; advanced: number } | null = null;
+      try {
+        const { sweepActiveJudgePasses } = await import('../../lib/delivery/judge.js');
+        judgeSweep = await sweepActiveJudgePasses();
+      } catch (err) {
+        console.error('[poll-scenes] delivery judge sweep failed:', err);
+      }
+      return res.status(200).json({ polled: 0, completed: 0, failed: 0, processing: 0, variants, judgeSweep });
     }
 
     let completedCount = 0;
@@ -110,19 +167,74 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        // Complete — download + store.
+        // Complete — download + host on Bunny Stream. (No speed-ramp; see comment block above.)
         const clipBuffer = await provider.downloadClip(status.videoUrl);
-        const clipPath = `${scene.property_id}/clips/scene_${scene.scene_number}_v${scene.attempt_count ?? 1}.mp4`;
-        const { error: uploadErr } = await supabase.storage
-          .from('property-videos')
-          .upload(clipPath, clipBuffer, { contentType: 'video/mp4', upsert: true });
-        if (uploadErr) throw uploadErr;
 
-        const { data: urlData } = supabase.storage.from('property-videos').getPublicUrl(clipPath);
+        // Host the new clip on Bunny Stream (going-forward video hosting target;
+        // replaced the Supabase Storage property-videos mirror 2026-06-12). The
+        // old clipPath string is reused as the Bunny title — it uniquely
+        // identifies the clip. A Bunny outage or misconfig must NEVER break this
+        // autonomous cron (zero-HITL): on unconfigured/failure we fall back to the
+        // provider videoUrl and continue. Replaces the prior `throw uploadErr`.
+        const clipPath = `${scene.property_id}/clips/scene_${scene.scene_number}_v${scene.attempt_count ?? 1}.mp4`;
+        let clipUrl = status.videoUrl;
+        if (isBunnyConfigured()) {
+          try {
+            const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
+            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
+            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
+            // clip_url would break the Gemini judge and SPA player (zero-HITL).
+            let mp4Valid = false;
+            try {
+              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
+              mp4Valid = headRes.ok;
+              if (!mp4Valid) {
+                console.warn(`[poll-scenes] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
+                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
+                deleteBunnyVideo(hosted.guid).catch(() => {});
+              }
+            } catch (headErr) {
+              console.warn(`[poll-scenes] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
+                headErr instanceof Error ? headErr.message : String(headErr));
+              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+              deleteBunnyVideo(hosted.guid).catch(() => {});
+            }
+            if (mp4Valid) {
+              clipUrl = hosted.mp4Url;
+            }
+            // Cost row regardless of HEAD result — Bunny was called either way.
+            // Wrapped in .catch so a cost-row failure never breaks the run.
+            recordCostEvent({
+              propertyId: scene.property_id,
+              sceneId: scene.id,
+              stage: 'generation',
+              provider: 'bunny',
+              unitsConsumed: 1,
+              unitType: 'renders',
+              costCents: bunnyStreamCostCents(clipBuffer.byteLength),
+              metadata: { bunny_hosted: mp4Valid, clip_path: clipPath, source: 'cron' },
+            }).catch((e) => console.error('[poll-scenes] bunny cost_event failed:', e));
+          } catch (bunnyErr) {
+            console.warn(
+              `[poll-scenes] bunny host failed for ${clipPath} — keeping provider URL:`,
+              bunnyErr instanceof Error ? bunnyErr.message : String(bunnyErr),
+            );
+          }
+        } else {
+          console.warn(`[poll-scenes] bunny not configured — keeping provider URL for ${clipPath}`);
+        }
 
         // Fallback cost estimate when the provider doesn't return credit
         // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
         // Kling v2-master is 10 units/clip (5s) regardless of duration.
+        // Atlas: use atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds) — the
+        // model key isn't stored on scenes at poll time, so we use the
+        // established per-second price map with the current default SKU.
+        // If status.costCents is already populated by AtlasProvider
+        // (it returns this.model.priceCentsPerClip on success), this branch
+        // is a safety net for any edge case where that field is null.
+        // keep in sync with lib/delivery/variants.ts cost fallback
+        const { atlasClipCostCents, V1_DEFAULT_SKU } = await import('../../lib/providers/atlas.js');
         const durationSeconds = scene.duration_seconds ?? 5;
         let fallbackUnits: number | undefined;
         let fallbackUnitType: 'credits' | 'kling_units' | undefined;
@@ -135,6 +247,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fallbackUnits = 10;
           fallbackUnitType = 'kling_units';
           fallbackCents = Math.round(fallbackUnits * parseFloat(process.env.KLING_CENTS_PER_UNIT ?? '0'));
+        } else if (provider.name === 'atlas') {
+          fallbackCents = atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds);
+          if (fallbackCents === 0) {
+            await log(scene.property_id, 'generation', 'warn',
+              `[cost] atlas render missing costCents for scene ${scene.scene_number} — using V1_DEFAULT_SKU fallback`,
+              undefined, scene.id);
+          }
         }
 
         const costCents = status.costCents ?? fallbackCents;
@@ -142,14 +261,123 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const providerUnitType = status.providerUnitType ?? fallbackUnitType ?? null;
         const genTimeMs = scene.submitted_at ? Date.now() - new Date(scene.submitted_at).getTime() : null;
 
+        // Fetch source photo URL for judge grounding (non-fatal if missing).
+        let sourcePhotoUrl: string | null = null;
+        if (scene.photo_id) {
+          const { data: photoRow } = await supabase
+            .from('photos')
+            .select('id, file_url')
+            .eq('id', scene.photo_id);
+          sourcePhotoUrl = (photoRow as Array<{ id: string; file_url: string | null }> | null)?.[0]?.file_url ?? null;
+        }
+
+        // Run Gemini judge against the completed clip.
+        const judged = await judgeProductionScene({
+          clipUrl: clipUrl,
+          sceneId: scene.id,
+          directorPrompt: (scene as unknown as { prompt?: string }).prompt ?? '',
+          cameraMovement: (scene as unknown as { camera_movement?: string }).camera_movement ?? 'unknown',
+          roomType: (scene as unknown as { room_type?: string }).room_type ?? 'other',
+          sourcePhotoUrl,
+        });
+
+        // QC re-render loop: when the judge hard-rejects a hallucinated clip
+        // and we're still under the per-scene cap, feed the hallucination_flags
+        // back as corrective guidance and re-submit the scene to a provider.
+        // resubmitScene resets the scene to status:'generating' with a fresh
+        // provider_task_id, so the next cron tick re-polls and re-judges it.
+        //
+        // We DON'T write qc_hard_reject in this branch (the scene is back in
+        // flight). We DO record the cost of the failed render below before
+        // resubmitting — the clip was generated and billed even though it's
+        // being discarded — so accounting stays accurate.
+        const currentAttempt = (scene.attempt_count ?? 1);
+        if (judged.judgeRan && judged.shouldRerender && currentAttempt < MAX_QC_RERENDERS) {
+          // Record the cost of this (failed/discarded) render before re-submitting.
+          try {
+            await recordCostEvent({
+              propertyId: scene.property_id,
+              sceneId: scene.id,
+              stage: 'generation',
+              provider: provider.name,
+              unitsConsumed: providerUnits,
+              unitType: providerUnitType,
+              costCents,
+              metadata: {
+                scene_number: scene.scene_number,
+                duration_seconds: scene.duration_seconds,
+                generation_time_ms: genTimeMs,
+                render_outcome: 'qc_rerender_discarded',
+                source: 'cron',
+              },
+            });
+          } catch (costErr) {
+            const costMsg = costErr instanceof Error ? costErr.message : String(costErr);
+            await log(scene.property_id, 'generation', 'warn',
+              `Scene ${scene.scene_number}: failed cost_events insert before re-render: ${costMsg}`, undefined, scene.id);
+          }
+
+          const flags = (judged.rubric?.hallucination_flags as string[] | undefined) ?? [];
+          const promptSuffix = buildCorrectiveSuffix(flags);
+
+          await log(scene.property_id, 'qc', 'info',
+            `Scene ${scene.scene_number}: re-rendering after judge hard-reject (attempt ${currentAttempt}/${MAX_QC_RERENDERS}) — ${judged.reason}`,
+            { verdict: judged.verdict, attempt: currentAttempt, flags }, scene.id);
+
+          const resubmit = await resubmitScene(scene.id, { promptSuffix });
+          if (resubmit.ok) {
+            // Scene is back in flight (status:'generating', fresh task_id) and
+            // will be re-polled + re-judged next tick. Don't write any QC status.
+            completedCount++;
+            continue;
+          }
+
+          // Resubmit failed — fall back to needs_review so the property surfaces
+          // for review rather than dangling. Never let this kill the cron loop.
+          await supabase.from('scenes').update({
+            status: 'needs_review',
+            clip_url: clipUrl,
+            generation_cost_cents: costCents,
+            generation_time_ms: genTimeMs,
+            qc_verdict: judged.verdict,
+            qc_confidence: judged.rubric ? judged.rubric.overall / 5 : 1.0,
+            qc_issues: flags.length ? { issues: flags } : null,
+          }).eq('id', scene.id);
+          await log(scene.property_id, 'qc', 'warn',
+            `Scene ${scene.scene_number}: QC re-render submit failed (${resubmit.error ?? 'unknown'}); marking needs_review`,
+            { error: resubmit.error }, scene.id);
+          failedCount++;
+          continue;
+        }
+
+        const newStatus =
+          judged.verdict === 'qc_pass' ? 'qc_pass'
+          : judged.verdict === 'qc_soft_reject' ? 'needs_review'
+          : judged.judgeRan && judged.shouldRerender ? 'needs_review' // cap reached → review, not dangling hard-reject
+          : 'qc_hard_reject';
+
+        // Shape matches the dashboard consumer (Pipeline.tsx reads
+        // `qc_issues.issues` as string[]). null when there are no flags.
+        const qcIssues = judged.rubric?.hallucination_flags?.length
+          ? { issues: judged.rubric.hallucination_flags as string[] }
+          : null;
+
         await supabase.from('scenes').update({
-          status: 'qc_pass',
-          clip_url: urlData.publicUrl,
+          status: newStatus,
+          clip_url: clipUrl,
           generation_cost_cents: costCents,
           generation_time_ms: genTimeMs,
-          qc_verdict: 'auto_pass',
-          qc_confidence: 1.0,
+          qc_verdict: judged.judgeRan ? judged.verdict : 'auto_pass',
+          qc_confidence: judged.rubric ? judged.rubric.overall / 5 : 1.0,
+          qc_issues: qcIssues,
         }).eq('id', scene.id);
+
+        if (judged.judgeRan) {
+          await log(scene.property_id, 'qc', 'info',
+            `Scene ${scene.scene_number}: judge verdict=${judged.verdict} — ${judged.reason}`,
+            { verdict: judged.verdict, judgeRan: judged.judgeRan },
+            scene.id);
+        }
 
         await recordCostEvent({
           propertyId: scene.property_id,
@@ -176,6 +404,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await log(scene.property_id, 'generation', 'warn',
           `Cron poll failed for scene ${scene.scene_number}: ${msg}`, undefined, scene.id);
       }
+    }
+
+    // Operator delivery: poll pending B-variant renders (no-op when none exist).
+    try {
+      const { pollPendingVariants } = await import('../../lib/delivery/variants.js');
+      await pollPendingVariants();
+    } catch (err) {
+      console.error('[poll-scenes] variant polling failed:', err);
+    }
+    // Operator delivery: re-attempt judge passes for runs stuck in
+    // generating/judging whose pairs may have settled via the variant poll
+    // above (their properties no longer appear in affectedProperties once
+    // every A clip is collected). No-op when no active delivery runs exist.
+    try {
+      const { sweepActiveJudgePasses } = await import('../../lib/delivery/judge.js');
+      await sweepActiveJudgePasses();
+    } catch (err) {
+      console.error('[poll-scenes] delivery judge sweep failed:', err);
     }
 
     // For every property we touched, check if all its scenes have settled
@@ -227,6 +473,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const startTs = (prop as { pipeline_started_at?: string | null }).pipeline_started_at
         ?? prop.created_at;
       const processingTimeMs = Date.now() - new Date(startTs).getTime();
+
+      // Operator delivery: a property with an ACTIVE delivery run never
+      // auto-assembles. Judge the A/B pairs instead; the operator drives the
+      // rest via checkpoints. Run lookup matches lib/pipeline.ts's variant
+      // gate: most-recent run whose stage <> 'delivered' (the partial unique
+      // index on (property_id, video_type) allows multiple rows, and a
+      // delivered run must never re-capture its property).
+      const { data: deliveryRun } = await supabase
+        .from('delivery_runs')
+        .select('id, stage')
+        .eq('property_id', propertyId)
+        .neq('stage', 'delivered')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (deliveryRun) {
+        try {
+          const { runJudgePass } = await import('../../lib/delivery/judge.js');
+          const { ready } = await runJudgePass(deliveryRun.id as string);
+          if (ready) {
+            await updatePropertyStatus(propertyId, 'needs_review', {
+              processing_time_ms: processingTimeMs,
+              thumbnail_url: scenes.find(s => s.clip_url)?.clip_url ?? null,
+            });
+          }
+        } catch (err) {
+          console.error('[poll-scenes] delivery judge pass failed:', err);
+        }
+        continue; // never falls through to runAssembly
+      }
 
       if (finalStatus === 'complete') {
         // All scenes passed QC — hand off to runAssembly. runAssembly

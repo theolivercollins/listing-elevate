@@ -5,24 +5,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { PageHeading } from "@/components/dashboard/primitives";
 import { PostEditor } from "@/components/blog/PostEditor";
 import { AIDraftModal } from "@/components/blog/AIDraftModal";
+import { AIChatModal } from "@/components/blog/AIChatModal";
+import { AllyFloatingChat } from "@/components/blog/AllyFloatingChat";
+import BlogPostChatCompose from "./BlogPostChatCompose";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
-  listTemplates, getTemplate, getTaxonomy, generateAIDraft,
+  listTemplates, getTemplate, getTaxonomy, generateAIDraft, setHold,
+  aiEmailFromPost, createEmail,
 } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { DeletePostDialog } from "@/components/blog/DeletePostDialog";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage, CreatePostInput, UpdatePostInput } from "@/lib/blog/types";
 import type { AIDraftInput, AIDraftResult } from "@/lib/blog/types";
 import type { EditorMode } from "@/components/blog/PostEditor";
-import { Eye, Loader2, Sparkles } from "lucide-react";
+import { Eye, Loader2, Mail, MessageSquare, Pause, Play, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "readonly";
+type Mode = "compose" | "edit-manual" | "review-auto" | "edit-live" | "on-hold" | "readonly";
 
 interface FormState {
   title: string;
@@ -44,11 +50,21 @@ const empty: FormState = {
 export default function BlogPostDetailPage() {
   const { id } = useParams<{ id: string }>();
   const isCompose = !id || id === "new";
+  const [searchParams] = useSearchParams();
+
+  // /posts/new?chat=1 now renders a dedicated AI-first compose page that
+  // takes over the whole route — chat on the left, form sidebar on the right,
+  // Save draft / Publish now pinned in the header. The old "Chat with AI"
+  // modal (AIChatModal) is still wired below for the edit flow.
+  if (isCompose && searchParams.get("chat") === "1") {
+    return <BlogPostChatCompose />;
+  }
+
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [searchParams] = useSearchParams();
   const [editorMode, setEditorMode] = useState<EditorMode>("rich");
   const [aiOpen, setAIOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   // AI generation state — lifted out of modal
@@ -72,6 +88,7 @@ export default function BlogPostDetailPage() {
     if (isCompose) return "compose";
     if (!post) return "readonly";
     if (post.state === "live") return "edit-live";
+    if (post.state === "on_hold") return "on-hold";
     if (post.state === "awaiting_approval") {
       return post.authored === "auto" ? "review-auto" : "edit-manual";
     }
@@ -132,12 +149,11 @@ export default function BlogPostDetailPage() {
     });
   }, [searchParams, isCompose]);
 
-  // Auto-open the AI modal when /posts/new?ai=1
+  // Auto-open the quick-AI-draft modal when /posts/new?ai=1.
+  // (?chat=1 routes to BlogPostChatCompose above, not the modal.)
   useEffect(() => {
     if (!isCompose) return;
-    if (searchParams.get("ai") === "1") {
-      setAIOpen(true);
-    }
+    if (searchParams.get("ai") === "1") setAIOpen(true);
   }, [searchParams, isCompose]);
 
   // AI generation mutation
@@ -217,7 +233,7 @@ export default function BlogPostDetailPage() {
       initial_state: "awaiting_approval",
       authored: "manual",
     } as CreatePostInput),
-    onSuccess: (r) => { toast.success("Saved as draft"); navigate(`/dashboard/blog/posts/${r.id}`); },
+    onSuccess: (r) => { toast.success("Saved as draft"); navigate(`/dashboard/studio/blog/posts/${r.id}`); },
     onError: (e: any) => toast.error(`Save failed: ${e.message}`),
   });
 
@@ -227,7 +243,7 @@ export default function BlogPostDetailPage() {
       initial_state: "publish_due",
       authored: "manual",
     } as CreatePostInput),
-    onSuccess: (r) => { toast.success("Publishing — should be live within 60s"); navigate(`/dashboard/blog/posts/${r.id}`); },
+    onSuccess: (r) => { toast.success("Publishing — should be live within 60s"); navigate(`/dashboard/studio/blog/posts/${r.id}`); },
     onError: (e: any) => toast.error(`Publish failed: ${e.message}`),
   });
 
@@ -268,45 +284,119 @@ export default function BlogPostDetailPage() {
 
   const reject = useMutation({
     mutationFn: () => rejectPost(id!),
-    onSuccess: () => { toast.success("Rejected"); navigate("/dashboard/blog/posts"); },
+    onSuccess: () => { toast.success("Rejected"); navigate("/dashboard/studio/blog/posts"); },
     onError: (e: any) => toast.error(`Reject failed: ${e.message}`),
   });
 
-  if (!isCompose && isLoading) return <div>Loading…</div>;
+  const hold = useMutation({
+    mutationFn: (next: boolean) => setHold(id!, next),
+    onSuccess: (r) => {
+      toast.success(r.state === "on_hold" ? "Put on hold" : "Resumed");
+      qc.invalidateQueries({ queryKey: ["blog-post", id] });
+    },
+    onError: (e: any) => toast.error(`Status change failed: ${e.message}`),
+  });
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // "Send as email" — converts the post body to an email draft via Ally then
+  // navigates to the new email detail page.
+  const sendAsEmail = useMutation({
+    mutationFn: async () => {
+      if (!id) throw new Error("Post not yet saved");
+      const result = await aiEmailFromPost(id);
+      const { id: emailId } = await createEmail({
+        subject: result.subject,
+        preheader: result.preheader,
+        body_html: result.body_html,
+        from_name: result.from_name,
+        from_email: result.from_email,
+        audience: result.audience,
+        source_post_id: id,
+        authored: "auto",
+        initial_state: "draft",
+      });
+      return emailId;
+    },
+    onSuccess: (emailId) => {
+      toast.success("Email draft created");
+      navigate(`/dashboard/studio/email/messages/${emailId}`);
+    },
+    onError: (e: any) => toast.error(`Email conversion failed: ${e?.message ?? e}`),
+  });
+
+  if (!isCompose && isLoading) return (
+    <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
+      <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+    </div>
+  );
 
   const readOnly = mode === "readonly";
 
   return (
-    <div>
-      <h1 className="mb-4 text-2xl font-bold">{isCompose ? "New post" : form.title || "Post"}</h1>
+    <div className="le-fade-up">
+      <PageHeading
+        title={isCompose ? "New post" : form.title || "Post"}
+        eyebrow={isCompose ? "Blog" : "Blog · post"}
+      />
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div className="mb-4 flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-sm">
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           {aiInput ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-              <span className="flex-1">
-                <span className="font-medium">AI draft in queue</span>
-                <span className="ml-2 text-muted-foreground">— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
+              <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>
+                <span style={{ fontWeight: 600, color: "var(--ink)" }}>AI draft in queue</span>
+                <span style={{ marginLeft: 8, color: "var(--muted)" }}>— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
               </span>
-              <Button size="sm" variant="ghost" onClick={cancelAIGen}>Cancel</Button>
+              <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }} onClick={cancelAIGen}>Cancel</button>
             </>
           ) : aiResult ? (
             <>
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="flex-1"><span className="font-medium">✨ AI draft ready</span></span>
-              <Button size="sm" variant="default" onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</Button>
-              <Button size="sm" variant="ghost" onClick={discardAIResult}>Discard</Button>
+              <Sparkles style={{ width: 16, height: 16, color: "var(--accent)", flexShrink: 0 }} />
+              <span style={{ flex: 1 }}><span style={{ fontWeight: 600, color: "var(--ink)" }}>✨ AI draft ready</span></span>
+              <button type="button" className="le-btn-dark" style={{ fontSize: 12, padding: "5px 12px" }} onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</button>
+              <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }} onClick={discardAIResult}>Discard</button>
             </>
           ) : null}
+        </div>
+      )}
+
+      {/* Publish progress banner */}
+      {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+          <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            <span style={{ fontWeight: 600, color: "var(--ink)" }}>
+              {post.state === "editing" ? "Updating Sierra" : "Publishing to Sierra"}
+            </span>
+            <span style={{ marginLeft: 8, color: "var(--muted)" }}>— usually live within 60s · this page refreshes automatically</span>
+          </span>
+        </div>
+      )}
+      {post && post.state === "live" && post.external_post_url && (
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(47,138,85,0.3)", background: "rgba(47,138,85,0.06)", padding: "12px 16px", fontSize: 13.5 }}>
+          <span style={{ fontWeight: 600, color: "var(--good)" }}>✓ Live on Sierra</span>
+          <a href={post.external_post_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+            View on Sierra ↗
+          </a>
+        </div>
+      )}
+      {post && post.state === "on_hold" && (
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
+          <Pause style={{ width: 16, height: 16, color: "var(--muted)", flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            <span style={{ fontWeight: 600, color: "var(--ink-2)" }}>On hold</span>
+            <span style={{ marginLeft: 8, color: "var(--muted)" }}>— hidden from the "Live" filter. Sierra-side copy is untouched.</span>
+          </span>
         </div>
       )}
 
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <div className="md:col-span-2 space-y-4">
           {isCompose && (
-            <div className="mb-4 flex flex-wrap items-center gap-2">
+            <div style={{ marginBottom: 16, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
               <select
                 value=""
                 onChange={(e) => {
@@ -327,14 +417,17 @@ export default function BlogPostDetailPage() {
                   }
                   e.target.value = "";
                 }}
-                className="rounded-md border bg-background px-2 py-1.5 text-sm"
+                style={{ borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 12px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">Start from template…</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
-              <Button variant="outline" size="sm" onClick={() => setAIOpen(true)}>
-                <Sparkles className="mr-1 h-3.5 w-3.5" /> Generate with AI
-              </Button>
+              <button type="button" className="le-btn-dark" style={{ fontSize: 12.5, padding: "7px 14px" }} onClick={() => setChatOpen(true)}>
+                <MessageSquare style={{ width: 13, height: 13, marginRight: 6 }} /> Chat with AI
+              </button>
+              <button type="button" className="le-btn-ghost" style={{ fontSize: 12.5, padding: "7px 14px" }} onClick={() => setAIOpen(true)}>
+                <Sparkles style={{ width: 13, height: 13, marginRight: 6 }} /> Quick draft
+              </button>
             </div>
           )}
           <div>
@@ -369,12 +462,12 @@ export default function BlogPostDetailPage() {
             )}
           </div>
           <div>
-            <Label>Author</Label>
+            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>Author</Label>
             <select
               value={form.author_label ?? ""}
               onChange={e => setForm({ ...form, author_label: e.target.value })}
               disabled={readOnly}
-              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select author —</option>
               {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
@@ -383,12 +476,12 @@ export default function BlogPostDetailPage() {
             </select>
           </div>
           <div>
-            <Label>Category</Label>
+            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>Category</Label>
             <select
               value={form.category_label ?? ""}
               onChange={e => setForm({ ...form, category_label: e.target.value })}
               disabled={readOnly}
-              className="block w-full rounded-md border bg-background px-2 py-1.5 text-sm"
+              style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select category —</option>
               {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
@@ -403,40 +496,97 @@ export default function BlogPostDetailPage() {
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap gap-2">
+      <div style={{ marginTop: 24, display: "flex", flexWrap: "wrap", gap: 8 }}>
         {mode === "compose" && (
           <>
-            <Button onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>Save as draft</Button>
-            <Button onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>Publish now</Button>
+            <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => createDraft.mutate()} disabled={createDraft.isPending}>
+              {createDraft.isPending && <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} />}
+              {createDraft.isPending ? "Saving…" : "Save as draft"}
+            </button>
+            <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => createPublish.mutate()} disabled={createPublish.isPending}>
+              {createPublish.isPending && <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} />}
+              {createPublish.isPending ? "Publishing…" : "Publish now"}
+            </button>
           </>
         )}
         {mode === "edit-manual" && (
           <>
-            <Button variant="outline" onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Save</Button>
-            <Button onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>Publish now</Button>
+            <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>
+              {saveEdit.isPending && <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} />}
+              {saveEdit.isPending ? "Saving…" : "Save"}
+            </button>
+            <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => publishIt.mutate()} disabled={publishIt.isPending}>
+              {publishIt.isPending && <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} />}
+              {publishIt.isPending ? "Publishing…" : "Publish now"}
+            </button>
           </>
         )}
         {mode === "review-auto" && (
           <>
-            <Button variant="outline" onClick={() => saveEdit.mutate()}>Save changes</Button>
-            <Button onClick={() => publishIt.mutate()}>Approve &amp; publish</Button>
-            <Button variant="destructive" onClick={() => reject.mutate()}>Reject</Button>
+            <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => saveEdit.mutate()}>Save changes</button>
+            <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => publishIt.mutate()}>Approve &amp; publish</button>
+            <button type="button" style={{ fontSize: 13, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.3)", background: "rgba(196,74,74,0.07)", color: "var(--bad)", cursor: "pointer", fontFamily: "var(--le-font-sans)", fontWeight: 500 }} onClick={() => reject.mutate()}>Reject</button>
           </>
         )}
         {mode === "edit-live" && (
           <>
-            <Button onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</Button>
-            {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer"><Button variant="outline">View on Sierra</Button></a>}
+            <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => updateSierra.mutate()} disabled={updateSierra.isPending}>Save &amp; update Sierra</button>
+            {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }}>View on Sierra</a>}
+            <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => hold.mutate(true)} disabled={hold.isPending}>
+              {hold.isPending ? <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} /> : <Pause style={{ width: 14, height: 14, marginRight: 6 }} />}
+              Put on hold
+            </button>
           </>
         )}
-        <Button variant="outline" onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
-          <Eye className="mr-1 h-4 w-4" /> Preview
-        </Button>
+        {mode === "on-hold" && (
+          <>
+            <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => hold.mutate(false)} disabled={hold.isPending}>
+              {hold.isPending ? <Loader2 style={{ width: 14, height: 14, marginRight: 6, animation: "spin 1s linear infinite" }} /> : <Play style={{ width: 14, height: 14, marginRight: 6 }} />}
+              Resume (back to Live)
+            </button>
+            {post?.external_post_url && <a href={post.external_post_url} target="_blank" rel="noreferrer" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }}>View on Sierra</a>}
+          </>
+        )}
+        <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px", opacity: !form.body_html.trim() ? 0.4 : 1 }} onClick={() => setPreviewOpen(true)} disabled={!form.body_html.trim()}>
+          <Eye style={{ width: 14, height: 14, marginRight: 6 }} /> Preview
+        </button>
+        {!isCompose && (
+          <button
+            type="button"
+            onClick={() => sendAsEmail.mutate()}
+            disabled={sendAsEmail.isPending || !form.body_html.trim()}
+            title="Convert this post to an email draft using Ally"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
+          >
+            {sendAsEmail.isPending
+              ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
+              : <Mail style={{ width: 14, height: 14 }} />}
+            Send as email
+          </button>
+        )}
+        {!isCompose && (
+          <button
+            type="button"
+            onClick={() => setDeleteOpen(true)}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.25)", background: "transparent", color: "var(--bad)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
+          >
+            <Trash2 style={{ width: 14, height: 14 }} /> Delete
+          </button>
+        )}
       </div>
+
+      <DeletePostDialog
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        postId={id ?? null}
+        postTitle={form.title || post?.title || ""}
+        hasSierraCopy={!!post?.external_post_id}
+        onSuccess={() => navigate("/dashboard/studio/blog/posts")}
+      />
 
       {!isCompose && id && <PublishHistoryPanel postId={id} />}
 
-      <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={(img) => setForm({ ...form, image: img })} />
+      <ImagePickerModal open={pickerOpen} onClose={() => setPickerOpen(false)} onSelect={(img) => setForm({ ...form, image: img })} selectedId={form.image?.id ?? null} />
 
       <AIDraftModal
         open={aiOpen}
@@ -444,6 +594,54 @@ export default function BlogPostDetailPage() {
         onSubmit={(input) => { startAIGen(input); setAIOpen(false); }}
         currentHtml={form.body_html}
       />
+
+      <AIChatModal
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        initialHtml={form.body_html}
+        onApply={(html) => {
+          setForm((f) => ({ ...f, body_html: html }));
+          setEditorMode("rich");
+        }}
+      />
+
+      {/* Improve-with-Ally floating chat — only mount on existing posts; the
+          dedicated chat-compose page handles new-post flow. */}
+      {!isCompose && id && (
+        <AllyFloatingChat
+          postId={id}
+          contextLabel={
+            mode === "edit-live" ? "Editing the live post"
+              : mode === "on-hold" ? "Editing a held post"
+              : mode === "review-auto" ? "Reviewing AI draft"
+              : "Editing this post"
+          }
+          currentBodyHtml={form.body_html}
+          current={{
+            title: form.title,
+            meta_title: form.meta_title,
+            meta_description: form.meta_description,
+            meta_tags: form.meta_tags
+              ? form.meta_tags.split(",").map((t) => t.trim()).filter(Boolean)
+              : [],
+            author_label: form.author_label,
+            category_label: form.category_label,
+          }}
+          onApply={(patch) => {
+            setForm((f) => ({
+              ...f,
+              ...(patch.title !== undefined ? { title: patch.title } : {}),
+              ...(patch.body_html !== undefined ? { body_html: patch.body_html } : {}),
+              ...(patch.meta_title !== undefined ? { meta_title: patch.meta_title } : {}),
+              ...(patch.meta_description !== undefined ? { meta_description: patch.meta_description } : {}),
+              ...(patch.meta_tags !== undefined ? { meta_tags: patch.meta_tags.join(", ") } : {}),
+              ...(patch.author_label !== undefined ? { author_label: patch.author_label } : {}),
+              ...(patch.category_label !== undefined ? { category_label: patch.category_label } : {}),
+            }));
+            if (patch.body_html !== undefined) setEditorMode("rich");
+          }}
+        />
+      )}
 
       {/* Post body preview dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>

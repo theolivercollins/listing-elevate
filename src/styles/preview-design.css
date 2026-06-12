@@ -1,0 +1,803 @@
+/*
+ * preview-design.css
+ * Light warm-white gallery — dashboard L2 soft-shell language.
+ * Self-contained scoped stylesheet for /preview/:token.
+ *
+ * Design decisions:
+ * - Tokens mirror --le-surface-page / --le-surface-card from tokens.css
+ *   (the dashboard L2 soft-shell), NOT the L1 editorial-dark studio language.
+ * - No .studio-scope: this is an independent design surface.
+ * - 18px card radius per spec §4 (--pd-r-card). Uses --le-card-radius
+ *   token value from tokens.css (18px); defined locally so this file is
+ *   self-contained even if tokens.css is not loaded.
+ * - Inter ONLY — no monospace, per the global no-JetBrains-Mono rule.
+ * - Mobile-first: all layout rules use min-width breakpoints.
+ */
+
+/* ─── Inter font ─────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ─── Scoped root ────────────────────────────────────────────────── */
+.preview-scope {
+  /* Warm-white gallery palette */
+  --pd-bg:         #f5f4f2;          /* warm white page canvas */
+  --pd-surface:    #ffffff;          /* card surface */
+  --pd-surface-2:  #fafaf9;         /* subtle inset */
+  --pd-ink:        #0b0c10;
+  --pd-ink-2:      #292b32;
+  --pd-muted:      #6b6f7a;
+  --pd-muted-2:    #9aa0aa;
+  --pd-line:       rgba(11, 12, 16, 0.07);
+  --pd-line-2:     rgba(11, 12, 16, 0.04);
+  --pd-accent:     #2a6fdb;
+  --pd-good:       #2f8a55;
+
+  /* Radius scale — canonical names from DESIGN-GUIDE.md */
+  --pd-r-sm:   6px;
+  --pd-r-md:   10px;
+  --pd-r-lg:   14px;
+  --pd-r-card: 18px;   /* spec §4: 18px-radius elevated card */
+  --pd-r-pill: 999px;
+
+  /* Shadow scale */
+  --pd-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);
+  --pd-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04);
+  --pd-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 30px rgba(15, 23, 42, 0.05);
+
+  /* Type */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-feature-settings: "ss01";
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--pd-ink);
+}
+
+/* ─── Page shell ─────────────────────────────────────────────────── */
+.pd-page {
+  min-height: 100vh;
+  background: var(--pd-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Subtle warm radial glow on the canvas */
+.pd-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(900px 600px at -5% -5%, rgba(255, 250, 240, 0.6), transparent 55%),
+    radial-gradient(700px 500px at 105% 105%, rgba(240, 244, 252, 0.4), transparent 50%);
+}
+
+/* ─── Content container ──────────────────────────────────────────── */
+.pd-container {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 680px;
+  padding: 40px 20px 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+@media (min-width: 640px) {
+  .pd-container {
+    padding: 56px 24px 96px;
+  }
+}
+
+/* ─── Page fade-in ───────────────────────────────────────────────── */
+@keyframes pd-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.pd-fade-up {
+  animation: pd-fade-up 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* ─── Brand row ──────────────────────────────────────────────────── */
+.pd-brand-row {
+  margin-bottom: 32px;
+  display: flex;
+  align-items: center;
+}
+
+.pd-brand-logo {
+  height: 36px;
+  max-width: 160px;
+  object-fit: contain;
+}
+
+.pd-brand-name-lockup {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--pd-ink-2);
+  letter-spacing: -0.01em;
+}
+
+/* ─── Address section ────────────────────────────────────────────── */
+.pd-address-section {
+  margin-bottom: 28px;
+}
+
+.pd-address-headline {
+  margin: 0 0 6px 0;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--pd-ink);
+}
+
+@media (min-width: 640px) {
+  .pd-address-headline {
+    font-size: 34px;
+  }
+}
+
+.pd-address-locality {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--pd-muted);
+  letter-spacing: -0.005em;
+}
+
+/* ─── Video card ─────────────────────────────────────────────────── */
+.pd-video-card {
+  background: var(--pd-surface);
+  border-radius: var(--pd-r-card);
+  box-shadow: var(--pd-shadow-card);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+/* Orientation toggle pill row — sits inside the card, above the player */
+.pd-orientation-toggle {
+  display: flex;
+  justify-content: center;
+  padding: 14px 16px 0;
+  gap: 4px;
+}
+
+.pd-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border-radius: var(--pd-r-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--pd-muted);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.13s cubic-bezier(0.2, 0.8, 0.2, 1),
+              color 0.13s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pd-toggle-pill:hover {
+  color: var(--pd-ink-2);
+  background: var(--pd-line-2);
+}
+
+.pd-toggle-pill[aria-pressed="true"],
+.pd-toggle-pill.active {
+  background: var(--pd-ink);
+  color: #ffffff;
+}
+
+.pd-toggle-pill:focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 2px;
+}
+
+/* Video player wrapper */
+.pd-video-wrap {
+  padding: 14px 14px 16px;
+}
+
+/* Horizontal / wide player — fills the card width */
+.pd-video-player {
+  display: block;
+  width: 100%;
+  border-radius: var(--pd-r-lg);
+  background: var(--pd-ink);
+}
+
+/* Vertical player — constrained width, centered; looks deliberate on desktop */
+.pd-video-player--vertical {
+  width: auto;
+  max-width: 320px;
+  max-height: min(70vh, 580px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Rendering-in-progress placeholder inside the card */
+.pd-video-placeholder {
+  padding: 56px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.pd-video-placeholder-label {
+  font-size: 14px;
+  color: var(--pd-muted);
+  line-height: 1.5;
+}
+
+/* ─── LEPlayer — proprietary hand-rolled player chrome ──────────────
+ * Zero default-browser <video controls>. Dark control bar floats over the
+ * frame; auto-hides during playback. Inter only, tabular-nums on the clock.
+ */
+.le-player {
+  position: relative;
+  display: block;
+  width: 100%;
+  border-radius: var(--pd-r-lg);
+  overflow: hidden;
+  background: var(--pd-ink);
+  font-family: inherit;
+  outline: none;
+  line-height: 0;
+}
+
+.le-player:focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 2px;
+}
+
+/* Vertical render — constrained, centered, looks deliberate on desktop */
+.le-player--vertical {
+  width: auto;
+  max-width: 320px;
+  max-height: min(70vh, 580px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.le-player--fs {
+  border-radius: 0;
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+}
+
+.le-player__video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  background: var(--pd-ink);
+}
+
+.le-player--fs .le-player__video {
+  object-fit: contain;
+  max-height: 100vh;
+}
+
+/* ── Center play affordance over the poster ── */
+.le-player__center-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 4px; /* optical centering of the triangle */
+  border: none;
+  border-radius: var(--pd-r-pill);
+  background: rgba(11, 12, 16, 0.46);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1),
+              background 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.le-player__center-play:hover {
+  transform: translate(-50%, -50%) scale(1.06);
+  background: rgba(11, 12, 16, 0.6);
+}
+
+.le-player__center-play:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+/* ── Control bar ── */
+.le-player__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 22px 14px 12px;
+  line-height: 1;
+  background: linear-gradient(
+    to top,
+    rgba(11, 12, 16, 0.78) 0%,
+    rgba(11, 12, 16, 0.42) 52%,
+    rgba(11, 12, 16, 0) 100%
+  );
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.22s cubic-bezier(0.2, 0.8, 0.2, 1),
+              transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  pointer-events: none;
+}
+
+.le-player--controls .le-player__bar {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.le-player__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--pd-r-md);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.92);
+  cursor: pointer;
+  transition: background 0.13s cubic-bezier(0.2, 0.8, 0.2, 1),
+              color 0.13s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.le-player__btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.le-player__btn:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ── Scrubber: buffered range + played range + invisible range input ── */
+.le-player__scrub {
+  position: relative;
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: var(--pd-r-pill);
+  background: rgba(255, 255, 255, 0.24);
+  cursor: pointer;
+}
+
+.le-player__scrub-buffered,
+.le-player__scrub-played {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  border-radius: var(--pd-r-pill);
+  pointer-events: none;
+}
+
+.le-player__scrub-buffered {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.le-player__scrub-played {
+  background: #ffffff;
+}
+
+/* The native range fills the track, fully transparent, on top for input. */
+.le-player__scrubber {
+  position: absolute;
+  inset: -7px 0;
+  width: 100%;
+  height: calc(100% + 14px);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.le-player__scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--pd-r-pill);
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.13s;
+}
+
+.le-player__scrubber::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: var(--pd-r-pill);
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.13s;
+}
+
+.le-player:hover .le-player__scrubber::-webkit-slider-thumb,
+.le-player__scrubber:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.le-player:hover .le-player__scrubber::-moz-range-thumb,
+.le-player__scrubber:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}
+
+.le-player__scrubber:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 4px;
+  border-radius: var(--pd-r-pill);
+}
+
+/* ── Elapsed / total clock ── */
+.le-player__time {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit; /* Inter — NEVER monospace */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  color: rgba(255, 255, 255, 0.86);
+  letter-spacing: 0;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+/* ─── Loading spinner ────────────────────────────────────────────── */
+@keyframes pd-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pd-spinner {
+  animation: pd-spin 1s linear infinite;
+  display: block;
+}
+
+/* ─── Presented-by row ───────────────────────────────────────────── */
+.pd-presented-by {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  margin-bottom: 28px;
+}
+
+.pd-agent-headshot {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--pd-r-pill);
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1.5px solid var(--pd-line);
+}
+
+.pd-presented-by-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pd-agent-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pd-ink-2);
+  letter-spacing: -0.01em;
+}
+
+.pd-brokerage-name {
+  font-size: 12px;
+  color: var(--pd-muted);
+}
+
+/* ─── Action row ─────────────────────────────────────────────────── */
+.pd-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* Primary approve button */
+.pd-btn-approve {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  background: var(--pd-ink);
+  color: #ffffff;
+  border: none;
+  border-radius: var(--pd-r-md);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: -0.005em;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset,
+              0 4px 12px -4px rgba(11,12,16,0.32);
+  transition: transform 0.13s cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 0.13s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pd-btn-approve:hover {
+  transform: translateY(-0.5px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset,
+              0 8px 20px -6px rgba(11,12,16,0.38);
+}
+
+.pd-btn-approve:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pd-btn-approve:focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 2px;
+}
+
+/* Ghost secondary buttons (Download, Request a change) */
+.pd-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  background: var(--pd-surface);
+  color: var(--pd-ink-2);
+  border: 1px solid var(--pd-line);
+  border-radius: var(--pd-r-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0;
+  box-shadow: var(--pd-shadow-sm);
+  text-decoration: none;
+  transition: border-color 0.13s cubic-bezier(0.2, 0.8, 0.2, 1),
+              box-shadow 0.13s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.pd-btn-ghost:hover {
+  border-color: rgba(11,12,16,0.13);
+  box-shadow: var(--pd-shadow-md);
+}
+
+.pd-btn-ghost:focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 2px;
+}
+
+/* Approved confirmed state (replaces the Approve button) */
+.pd-approved-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  background: rgba(47, 138, 85, 0.09);
+  color: var(--pd-good);
+  border: 1px solid rgba(47, 138, 85, 0.18);
+  border-radius: var(--pd-r-md);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  cursor: default;
+}
+
+/* ─── Note box (Request a change) ───────────────────────────────── */
+.pd-note-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 18px;
+  background: var(--pd-surface);
+  border-radius: var(--pd-r-card);
+  box-shadow: var(--pd-shadow-card);
+  margin-bottom: 12px;
+}
+
+.pd-note-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--pd-muted);
+}
+
+.pd-note-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--pd-surface-2);
+  border: 1px solid var(--pd-line);
+  border-radius: var(--pd-r-md);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--pd-ink);
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+  min-height: 96px;
+  transition: border-color 0.13s, box-shadow 0.13s;
+}
+
+.pd-note-textarea::placeholder {
+  color: var(--pd-muted-2);
+}
+
+.pd-note-textarea:focus {
+  border-color: rgba(11,12,16,0.16);
+  box-shadow: 0 0 0 3px rgba(11,12,16,0.04);
+}
+
+.pd-note-textarea:focus-visible {
+  outline: 2px solid var(--pd-accent);
+  outline-offset: 0;
+  outline-width: 2px;
+}
+
+.pd-note-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pd-note-submit-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ─── State pages (loading, 404, in-progress) ────────────────────── */
+.pd-state-page {
+  min-height: 100vh;
+  background: var(--pd-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.pd-state-inner {
+  text-align: center;
+  max-width: 360px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.pd-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0b0c10;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.pd-state-body {
+  font-size: 14px;
+  color: #6b6f7a;
+  margin: 0;
+  line-height: 1.55;
+}
+
+/* ─── Footer ─────────────────────────────────────────────────────── */
+.pd-footer {
+  margin-top: auto;
+  padding-top: 40px;
+  text-align: center;
+}
+
+.pd-footer-attribution {
+  font-size: 12px;
+  color: var(--pd-muted-2);
+  letter-spacing: 0;
+}
+
+/* ─── Mobile refinements ─────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .pd-container { padding: 28px 16px 64px; }
+  .pd-address-headline { font-size: 24px; }
+  .pd-action-row { gap: 8px; }
+}
+
+/* ─── LE Video embed — chrome-less, full-viewport ────────────────── */
+/*
+ * .le-embed wraps the /preview/:token/embed page.
+ * Dark/neutral backdrop via --pd-ink; LEPlayer fills the viewport.
+ * No site chrome, no action buttons. Inter only, no monospace.
+ * Must be a .preview-scope descendant so --pd-* tokens are in scope.
+ */
+.le-embed {
+  position: fixed;
+  inset: 0;
+  background: var(--pd-ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* LEPlayer inside the embed stretches to fill — override its default
+   max-width: 320px for vertical so it still centers correctly. */
+.le-embed .le-player {
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  border-radius: 0;
+  max-height: none;
+}
+
+/* Vertical embed: constrain width so portrait content doesn't stretch
+   beyond a sensible bound. Uses the same 320px guard as the watch page
+   but lets height fill naturally. */
+.le-embed .le-player--vertical {
+  width: auto;
+  max-width: min(320px, 100vw);
+  height: 100%;
+  max-height: none;
+  margin: 0 auto;
+}
+
+/* Not-available state — centered message on dark canvas */
+.le-embed--not-available {
+  background: var(--pd-ink);
+}
+
+.le-embed__not-available-inner {
+  text-align: center;
+  max-width: 320px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.le-embed__not-available-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.72);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.le-embed__not-available-body {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0;
+  line-height: 1.55;
+}

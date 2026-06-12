@@ -43,12 +43,21 @@ export interface AssembleVideoParams {
   transition?: ClipTransition;
   /** Background music. Creatomate honors this; Shotstack currently ignores it. */
   music?: AssemblyMusic | null;
+  /** AI voiceover narration. Creatomate honors this; Shotstack ignores it. */
+  voiceover?: AssemblyVoiceover | null;
 }
 
 export interface AssemblyMusic {
   /** Public URL Creatomate can fetch (mp3/m4a/wav). */
   url: string;
   /** Volume in 0..1. Default 0.18 keeps the music subtle under overlays. */
+  volume?: number;
+}
+
+export interface AssemblyVoiceover {
+  /** Public URL Creatomate can fetch (mp3). */
+  url: string;
+  /** Volume in 0..1. Default 1.0 — narration sits on top of ducked music. */
   volume?: number;
 }
 
@@ -75,8 +84,11 @@ type ShotstackTransition = { in?: string; out?: string };
 
 interface ShotstackVideoClip {
   asset: { type: "video"; src: string; trim?: number };
-  start: number;
-  length: number;
+  // "auto" lets Shotstack place clips sequentially (start) and use each
+  // asset's natural duration (length) — used by the plain concat path where
+  // per-clip durations aren't known up front.
+  start: number | "auto";
+  length: number | "auto";
   transition?: ShotstackTransition;
 }
 
@@ -123,12 +135,64 @@ interface ShotstackRenderPayload {
     format: "mp4";
     resolution: "hd" | "1080";
     aspectRatio: "16:9" | "9:16";
+    /** Render quality tier. Defaults to "medium" server-side — always set to
+     *  "high" so the assembled video matches the source clip quality.
+     *  Shotstack bills per output-minute regardless of quality tier. */
+    quality: "low" | "medium" | "high";
+    /** Output frame rate. Defaults to 25fps server-side. Our AI-generated
+     *  source clips (Kling/Seedance/Runway/Veo) measure 24fps (ffprobe on the
+     *  2026-06-11 5019 San Massimo run — see docs/sessions/2026-06-11-assembly-
+     *  quality-drop-diagnosis.md). Match the sources at 24 so Shotstack never
+     *  runs a 24→25 frame-rate resample, which softens motion. */
+    fps: number;
   };
 }
 
 const TRANSITION_OVERLAP_SECONDS = 0.5;
 const OPENING_OVERLAY_DURATION = 2.5;
 const CLOSING_OVERLAY_DURATION = 4.0;
+
+/**
+ * Build a minimal Shotstack render payload that concatenates the given clip
+ * URLs back-to-back with hard cuts — no overlays, no music, no transitions.
+ *
+ * This is the Prompt Lab "Create Video" assembly path: it replaces the old
+ * local-FFmpeg concat (which produced a single large MP4 that blew past
+ * Supabase's storage upload size limit). Shotstack renders in the cloud and
+ * hosts the result, so nothing large is uploaded to our own storage.
+ *
+ * Uses `start: "auto"` + `length: "auto"` so Shotstack sequences the clips
+ * using each asset's natural duration — we don't need to know per-clip
+ * durations (Prompt Lab iterations don't store them).
+ */
+export function buildShotstackConcatTimeline(
+  clipUrls: string[],
+  aspectRatio: "16:9" | "9:16" = "16:9",
+): ShotstackRenderPayload {
+  if (clipUrls.length === 0) {
+    throw new Error("buildShotstackConcatTimeline: clipUrls array is empty");
+  }
+
+  const videoClips: ShotstackVideoClip[] = clipUrls.map((src) => ({
+    asset: { type: "video", src },
+    start: "auto",
+    length: "auto",
+  }));
+
+  return {
+    timeline: {
+      background: "#000000",
+      tracks: [{ clips: videoClips }],
+    },
+    output: {
+      format: "mp4",
+      resolution: "1080",
+      aspectRatio,
+      quality: "high",
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
+    },
+  };
+}
 
 export function buildShotstackTimeline(
   params: AssembleVideoParams
@@ -238,6 +302,8 @@ export function buildShotstackTimeline(
       format: "mp4",
       resolution: "1080",
       aspectRatio,
+      quality: "high",
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
     },
   };
 }
@@ -451,6 +517,8 @@ export function buildShotstackJustListedTimeline(
       format: "mp4",
       resolution: "1080",
       aspectRatio,
+      quality: "high",
+      fps: 24, // match 24fps AI source clips — never resample (Shotstack default is 25)
     },
   };
 }
@@ -465,33 +533,85 @@ function escapeHtml(s: string): string {
   );
 }
 
+/**
+ * Resolve which Shotstack environment to use and the matching API key.
+ *
+ * The endpoint MUST match the key: sending a production key to the sandbox
+ * endpoint (or vice-versa) is a 403 ("This API key belongs to the Production
+ * environment and cannot be used with the Sandbox API"). The previous logic
+ * defaulted to "stage" and then reused the production key on the sandbox
+ * endpoint when no stage key was set — which is exactly that 403.
+ *
+ * Rules (endpoint and key can never mismatch):
+ *   - Honor SHOTSTACK_ENV ("production"/"v1" or "stage"/"sandbox") only when
+ *     that environment's key is actually configured.
+ *   - Otherwise use whichever single key IS configured (prod key → v1,
+ *     stage key → sandbox). This makes prod work with only SHOTSTACK_API_KEY
+ *     set, regardless of SHOTSTACK_ENV.
+ *   - If both keys exist and SHOTSTACK_ENV is unset, default to sandbox.
+ *   - If neither key exists, throw a clear configuration error.
+ */
+export function resolveShotstackConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): { environment: "stage" | "v1"; apiKey: string } {
+  const prodKey = env.SHOTSTACK_API_KEY?.trim() || undefined;
+  const stageKey = env.SHOTSTACK_API_KEY_STAGE?.trim() || undefined;
+  const raw = (env.SHOTSTACK_ENV ?? "").toLowerCase().trim();
+  const explicit =
+    raw === "production" || raw === "v1"
+      ? "v1"
+      : raw === "stage" || raw === "sandbox"
+        ? "stage"
+        : undefined;
+
+  if (!prodKey && !stageKey) {
+    throw new Error(
+      "Shotstack is not configured: set SHOTSTACK_API_KEY (production) or " +
+        "SHOTSTACK_API_KEY_STAGE (sandbox).",
+    );
+  }
+
+  let environment: "stage" | "v1";
+  if (explicit === "v1" && prodKey) environment = "v1";
+  else if (explicit === "stage" && stageKey) environment = "stage";
+  else if (prodKey && !stageKey) environment = "v1";
+  else if (stageKey && !prodKey) environment = "stage";
+  else environment = explicit ?? "stage"; // both keys present, no usable explicit → sandbox
+
+  const apiKey = (environment === "v1" ? prodKey : stageKey)!;
+  return { environment, apiKey };
+}
+
 export class ShotstackProvider implements IVideoAssemblyProvider {
   readonly name = "shotstack" as const;
   private readonly apiKey: string;
-  private readonly environment: "stage" | "v1";
+  readonly environment: "stage" | "v1";
   private readonly baseUrl: string;
 
   constructor() {
-    const env = (process.env.SHOTSTACK_ENV ?? "stage").toLowerCase();
-    this.environment = env === "production" || env === "v1" ? "v1" : "stage";
-
-    const key =
-      this.environment === "v1"
-        ? process.env.SHOTSTACK_API_KEY
-        : process.env.SHOTSTACK_API_KEY_STAGE ?? process.env.SHOTSTACK_API_KEY;
-
-    if (!key) {
-      throw new Error(
-        "SHOTSTACK_API_KEY (or SHOTSTACK_API_KEY_STAGE for sandbox) is required"
-      );
-    }
-    this.apiKey = key;
+    const { environment, apiKey } = resolveShotstackConfig();
+    this.environment = environment;
+    this.apiKey = apiKey;
     this.baseUrl = `https://api.shotstack.io/edit/${this.environment}`;
   }
 
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
-    const payload = buildShotstackTimeline(params);
+    return this.submitRender(buildShotstackTimeline(params));
+  }
 
+  /**
+   * Concatenate the given clip URLs into a single video (hard cuts, no
+   * overlays/music) and submit the render. Used by the Prompt Lab
+   * "Create Video" assembly path.
+   */
+  async assembleConcat(
+    clipUrls: string[],
+    aspectRatio: "16:9" | "9:16" = "16:9",
+  ): Promise<AssemblyJob> {
+    return this.submitRender(buildShotstackConcatTimeline(clipUrls, aspectRatio));
+  }
+
+  private async submitRender(payload: ShotstackRenderPayload): Promise<AssemblyJob> {
     const response = await fetch(`${this.baseUrl}/render`, {
       method: "POST",
       headers: {

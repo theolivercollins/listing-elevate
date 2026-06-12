@@ -13,7 +13,14 @@ import type {
   AIDraftResult,
   AnalyzeTemplateResult,
   Taxonomy,
+  EmailTemplate,
+  EmailListItem,
+  EmailDetail,
+  CreateEmailInput,
+  UpdateEmailInput,
+  AIEmailChatResponse,
 } from "./types";
+import type { AIAttachment } from "./types";
 
 async function authHeaders(): Promise<HeadersInit> {
   const { data } = await supabase.auth.getSession();
@@ -100,6 +107,30 @@ export async function rejectPost(id: string): Promise<{ ok: true }> {
   return asJson(res);
 }
 
+export async function deletePost(
+  id: string,
+  opts: { fromDashboard?: boolean; fromSierra?: boolean } = {},
+): Promise<{ ok: true; job_id: string | null }> {
+  const res = await fetch(`/api/blog/posts/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      fromDashboard: opts.fromDashboard !== false,
+      fromSierra: opts.fromSierra === true,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function setHold(id: string, hold: boolean): Promise<{ ok: true; state: string }> {
+  const res = await fetch(`/api/blog/posts/${id}/hold`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ hold }),
+  });
+  return asJson(res);
+}
+
 export async function editOnSierra(
   id: string,
   fields_changed: string[]
@@ -178,6 +209,7 @@ export async function createTemplate(input: {
   default_meta_title?: string | null;
   default_meta_description?: string | null;
   default_meta_tags?: string[];
+  metadata?: Record<string, unknown>;
 }): Promise<{ id: string }> {
   const res = await fetch("/api/blog/templates", {
     method: "POST",
@@ -224,6 +256,78 @@ export async function generateAIDraft(input: AIDraftInput): Promise<AIDraftResul
   return asJson(res);
 }
 
+// Ally persistent memory (per-site facts the user told her to remember).
+export interface AllyMemory {
+  id: string;
+  site_id: string;
+  content: string;
+  created_at: string;
+  active: boolean;
+}
+export async function listAllyMemories(): Promise<{ memories: AllyMemory[] }> {
+  const res = await fetch("/api/blog/ai/memories", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function deleteAllyMemory(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/ai/memories?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: await authHeaders(),
+  });
+  return asJson(res);
+}
+
+// AI multi-turn chat — builds a post conversationally.
+export interface AIChatMessage { role: "user" | "assistant"; content: string; }
+export interface AIResearchSource { url: string; title: string; snippet?: string; }
+export interface AIChatOptions {
+  templateId?: string | null;
+  includeRecentPosts?: boolean;
+  /**
+   * "auto"   — Ally decides per turn (default)
+   * "always" — research every turn
+   * "never"  — never research
+   */
+  researchMode?: "auto" | "always" | "never";
+  attachments?: AIAttachment[];
+}
+export interface AIChatResponse {
+  reply: string;
+  body_html: string;
+  title: string | null;
+  meta_title: string | null;
+  meta_description: string | null;
+  meta_tags: string[] | null;
+  author: string | null;
+  category: string | null;
+  action: "publish" | "save_draft" | null;
+  suggest_research: boolean;
+  changes_summary: string | null;
+  new_memory: { id: string; content: string } | null;
+  research_sources: AIResearchSource[];
+  cost_cents: number;
+  usage: { input_tokens: number; output_tokens: number };
+  model: string;
+}
+export async function aiChat(
+  messages: AIChatMessage[],
+  currentHtml: string,
+  opts: AIChatOptions = {},
+): Promise<AIChatResponse> {
+  const res = await fetch("/api/blog/ai/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      messages,
+      current_html: currentHtml,
+      template_id: opts.templateId ?? null,
+      include_recent_posts: opts.includeRecentPosts === true,
+      research_mode: opts.researchMode ?? "auto",
+      attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
+    }),
+  });
+  return asJson(res);
+}
+
 // Analyze template
 export async function analyzeTemplate(body_html: string): Promise<AnalyzeTemplateResult> {
   const res = await fetch("/api/blog/ai/analyze-template", {
@@ -232,4 +336,274 @@ export async function analyzeTemplate(body_html: string): Promise<AnalyzeTemplat
     body: JSON.stringify({ body_html }),
   });
   return asJson(res);
+}
+
+// ---------------------------------------------------------------------------
+// Email Templates
+// ---------------------------------------------------------------------------
+export async function listEmailTemplates(): Promise<{ templates: EmailTemplate[] }> {
+  const res = await fetch("/api/blog/email-templates", { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function getEmailTemplate(id: string): Promise<{ template: EmailTemplate }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function createEmailTemplate(input: {
+  name: string;
+  description?: string | null;
+  design_json?: any;
+  body_html?: string;
+  default_subject?: string | null;
+  default_preheader?: string | null;
+  default_from_name?: string | null;
+  default_from_email?: string | null;
+  default_audience?: string | null;
+  metadata?: Record<string, unknown>;
+}): Promise<{ id: string }> {
+  const res = await fetch("/api/blog/email-templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+export async function updateEmailTemplate(id: string, patch: Partial<{
+  name: string;
+  description: string | null;
+  design_json: any;
+  body_html: string;
+  default_subject: string | null;
+  default_preheader: string | null;
+  default_from_name: string | null;
+  default_from_email: string | null;
+  default_audience: string | null;
+  active: boolean;
+}>): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+export async function deleteEmailTemplate(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/email-templates/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+
+// ---------------------------------------------------------------------------
+// Emails
+// ---------------------------------------------------------------------------
+export async function listEmails(
+  params: { state?: string; q?: string; limit?: number } = {}
+): Promise<{ emails: EmailListItem[] }> {
+  const qs = new URLSearchParams();
+  if (params.state) qs.set("state", params.state);
+  if (params.q) qs.set("q", params.q);
+  if (params.limit) qs.set("limit", String(params.limit));
+  const res = await fetch(`/api/blog/emails?${qs.toString()}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function getEmail(id: string): Promise<{ email: EmailDetail }> {
+  const res = await fetch(`/api/blog/emails/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+export async function createEmail(input: CreateEmailInput): Promise<{ id: string }> {
+  const res = await fetch("/api/blog/emails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(input),
+  });
+  return asJson(res);
+}
+export async function updateEmail(id: string, patch: UpdateEmailInput): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/emails/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(patch),
+  });
+  return asJson(res);
+}
+export async function deleteEmail(id: string): Promise<{ ok: true }> {
+  const res = await fetch(`/api/blog/emails/${id}`, { method: "DELETE", headers: await authHeaders() });
+  return asJson(res);
+}
+export async function sendEmail(
+  id: string,
+  opts?: { list_ids?: string[] }
+): Promise<{ ok: true; message_id: string | null; sent_to_list_ids: string[]; sendy_response: string }> {
+  const res = await fetch(`/api/blog/emails/${id}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(opts ?? {}),
+  });
+  return asJson(res);
+}
+export async function testSendEmail(
+  id: string,
+  listId?: string,
+): Promise<{ ok: true; message_id: string | null; sent_to_list_id: string; subject: string; sendy_response: string }> {
+  const res = await fetch(`/api/blog/emails/${id}/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(listId ? { list_id: listId } : {}),
+  });
+  return asJson(res);
+}
+
+// ---------------------------------------------------------------------------
+// Ally Email AI
+// ---------------------------------------------------------------------------
+export async function aiEmailChat(
+  messages: AIChatMessage[],
+  currentBodyHtml: string,
+  opts: {
+    researchMode?: "auto" | "always" | "never";
+    attachments?: AIAttachment[];
+    sourcePostId?: string | null;
+  } = {}
+): Promise<AIEmailChatResponse> {
+  const res = await fetch("/api/blog/ai/email-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({
+      messages,
+      current_html: currentBodyHtml,
+      research_mode: opts.researchMode ?? "auto",
+      attachments: opts.attachments && opts.attachments.length ? opts.attachments : undefined,
+      source_post_id: opts.sourcePostId ?? null,
+    }),
+  });
+  return asJson(res);
+}
+
+export async function aiEmailFromPost(postId: string): Promise<{
+  subject: string;
+  preheader: string;
+  body_html: string;
+  from_name: string;
+  from_email: string;
+  audience: string;
+  cost_cents: number;
+  model: string;
+}> {
+  const res = await fetch("/api/blog/ai/email-from-post", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ post_id: postId }),
+  });
+  return asJson(res);
+}
+
+
+// ─── Market Update workflow ───────────────────────────────────────
+export interface MuRegionConfig {
+  slug: string;
+  display_name: string;
+  strip_images: boolean;
+  emits_email: boolean;
+  sort_order: number;
+}
+export interface MuTemplateOption {
+  id: string;
+  name: string;
+  description: string | null;
+  metadata: { kind?: string; mu_role?: string } | null;
+}
+export interface MuConfig {
+  regions: MuRegionConfig[];
+  blog_templates: MuTemplateOption[];
+  email_templates: MuTemplateOption[];
+}
+export interface MuIssue {
+  severity: "error" | "warning";
+  field: string;
+  message: string;
+  expected?: string | number;
+  got?: string | number;
+}
+export interface MuRegionResult {
+  region_slug: string;
+  region_name: string;
+  strip_images: boolean;
+  emits_email: boolean;
+  metrics: any | null;
+  issues: MuIssue[];
+  post_id?: string | null;
+  email_id?: string | null;
+  error?: string | null;
+}
+export interface MuAnalyzeResult {
+  run_id: string;
+  status: string;
+  region_results: MuRegionResult[];
+  cost_usd_cents: number;
+}
+export interface MuRunListItem {
+  id: string;
+  period_month: number;
+  period_year: number;
+  status: string;
+  created_post_ids: string[];
+  created_email_ids: string[];
+  cost_usd_cents: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getMarketUpdateConfig(): Promise<MuConfig> {
+  const res = await fetch("/api/blog/market-update/config", { headers: await authHeaders() });
+  return asJson(res);
+}
+
+export async function analyzeMarketUpdate(body: {
+  period_month: number;
+  period_year: number;
+  blog_template_id: string;
+  email_template_id: string | null;
+  regions: { slug: string; pdf_base64: string; filename?: string }[];
+}): Promise<MuAnalyzeResult> {
+  const res = await fetch("/api/blog/market-update/runs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify(body),
+  });
+  return asJson(res);
+}
+
+export async function listMarketUpdateRuns(): Promise<{ runs: MuRunListItem[] }> {
+  const res = await fetch("/api/blog/market-update/runs", { headers: await authHeaders() });
+  return asJson(res);
+}
+
+export async function getMarketUpdateRun(id: string): Promise<{ run: any }> {
+  const res = await fetch(`/api/blog/market-update/runs/${id}`, { headers: await authHeaders() });
+  return asJson(res);
+}
+
+export async function generateMarketUpdate(
+  id: string,
+  acknowledgeWarnings: boolean,
+): Promise<{ status: string; post_ids: string[]; email_ids: string[]; cost_usd_cents: number }> {
+  const res = await fetch(`/api/blog/market-update/runs/${id}/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+    body: JSON.stringify({ acknowledge_warnings: acknowledgeWarnings }),
+  });
+  return asJson(res);
+}
+
+/** Read a File into a bare base64 string (no data: prefix). */
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const comma = result.indexOf(",");
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

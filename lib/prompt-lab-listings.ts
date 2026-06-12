@@ -268,17 +268,30 @@ export async function directListingScenes(listingId: string): Promise<void> {
   const supabase = getSupabase();
   const { data: listing } = await supabase
     .from("prompt_lab_listings")
-    .select("id")
+    .select("id, pipeline_version")
     .eq("id", listingId)
     .single();
   if (!listing) throw new Error(`Listing ${listingId} not found`);
+  // pipeline_version scopes recipe retrieval so that v1.1 renders don't
+  // see v1 recipes and vice versa. Falls back to 'v1' for rows created
+  // before migration 063.
+  const listingPipelineVersion = (listing as { id: string; pipeline_version?: string | null }).pipeline_version ?? "v1";
 
-  const { data: photos } = await supabase
+  const { data: photosRaw } = await supabase
     .from("prompt_lab_listing_photos")
     .select("id, photo_index, image_url, analysis_json, embedding")
     .eq("listing_id", listingId)
     .order("photo_index");
-  if (!photos || photos.length === 0) throw new Error(`Listing ${listingId} has no photos`);
+  // Supabase select() returns `unknown[]` without a generic; cast once so the
+  // downstream Maps/Records don't fight TS over `.analysis_json` etc.
+  const photos = (photosRaw ?? []) as Array<{
+    id: string;
+    photo_index: number;
+    image_url: string;
+    analysis_json: Record<string, unknown> | null;
+    embedding: unknown;
+  }>;
+  if (photos.length === 0) throw new Error(`Listing ${listingId} has no photos`);
 
   // Map each photo's analysis_json into the shape buildDirectorUserPrompt
   // expects. The production director is trained on this exact layout —
@@ -338,9 +351,10 @@ export async function directListingScenes(listingId: string): Promise<void> {
     if (!vec) continue;
     try {
       const [recipes, winners, losers] = await Promise.all([
-        retrieveMatchingRecipes(vec, pdata.room_type, { limit: 1 }),
-        retrieveSimilarIterations(vec, { minRating: 4, limit: 3 }),
-        retrieveSimilarLosers(vec, { maxRating: 2, limit: 2 }),
+        retrieveMatchingRecipes(vec, pdata.room_type, { limit: 1, pipelineVersion: listingPipelineVersion }),
+        // v1/v1.1 isolation — scope winners + losers to this listing's pipeline_version.
+        retrieveSimilarIterations(vec, { minRating: 4, limit: 3, pipelineVersion: listingPipelineVersion }),
+        retrieveSimilarLosers(vec, { maxRating: 2, limit: 2, pipelineVersion: listingPipelineVersion }),
       ]);
       for (const r of recipes) if (!recipeDedupe.has(r.archetype)) recipeDedupe.set(r.archetype, r);
       for (const w of winners) if (!exemplarDedupe.has(w.id)) exemplarDedupe.set(w.id, w);

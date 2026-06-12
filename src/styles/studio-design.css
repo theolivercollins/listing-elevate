@@ -1,0 +1,1312 @@
+/*
+ * studio-design.css
+ * "Apple-clean × Noteflow-soft" design tokens + utility classes
+ * ALL selectors are scoped under .studio-scope so they never leak
+ * into the rest of the app.
+ *
+ * Tokens use --le-* prefix (matching the project convention).
+ * Note: --le-font-mono already aliased to Inter elsewhere — do NOT redefine it.
+ */
+
+/* ─── Inter font (if not already loaded by the rest of the app) ─── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+/* ─── Scoped token root ─────────────────────────────────────────── */
+.studio-scope {
+  /* Color tokens */
+  --le-bg:         #f3f3f5;
+  --le-surface:    #ffffff;
+  --le-ink:        #0b0b10;
+  --le-ink-2:      #2a2c34;
+  --le-muted:      #6b6f7a;
+  --le-muted-2:    #9aa0aa;
+  --le-line:       rgba(11, 11, 16, 0.07);
+  --le-line-2:     rgba(11, 11, 16, 0.04);
+  --le-accent:     #2a6fdb;
+  --le-good:       #2f8a55;
+  --le-warn:       #b6802c;
+  --le-bad:        #c44a4a;
+
+  /* Radius tokens — aliased to the canonical scale (docs/design/DESIGN-GUIDE.md).
+     Do NOT diverge from the v2 scale: sm 6 / md 10 / lg 14 / xl 20 / pill 999. */
+  --le-radius:      14px; /* = --le-r-lg */
+  --le-radius-sm:   10px; /* = --le-r-md */
+  --le-radius-pill: 999px;
+
+  /* Shadow tokens — identical to v2 tokens.css so cards sit at the same depth
+     everywhere (was a darker rgba(11,11,16) variant; see DESIGN-GUIDE.md). */
+  --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);
+  --le-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04);
+  --le-shadow-lg: 0 12px 40px rgba(20, 18, 15, 0.08), 0 2px 8px rgba(20, 18, 15, 0.04);
+
+  /* Typography base */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-feature-settings: "ss01";
+  letter-spacing: -0.005em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Canvas */
+  background: var(--le-bg);
+  color: var(--le-ink);
+  min-height: 100vh;
+  position: relative;
+}
+
+/* ─── Background layers ──────────────────────────────────────────── */
+.studio-scope .studio-bg-base {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 800px at -10% -10%, rgba(255, 250, 240, 0.5), transparent 60%),
+    radial-gradient(900px 600px at 110% 110%, rgba(240, 244, 250, 0.4), transparent 55%),
+    var(--le-bg);
+}
+
+.studio-scope .studio-grain {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.4 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* ─── Page scroll area ───────────────────────────────────────────── */
+.studio-scope .studio-main {
+  position: relative;
+  z-index: 2;
+  /* No padding here: Studio pages render inside the dashboard's
+     .le-main-scroll, which already pads 24px 36px 48px (responsive).
+     Duplicating it indented every Studio heading 72px from the left while
+     blog/email headings sat at 36px — the misalignment Oliver reported. */
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(11,11,16,0.12) transparent;
+}
+
+.studio-scope .studio-main::-webkit-scrollbar { width: 8px; }
+.studio-scope .studio-main::-webkit-scrollbar-thumb {
+  background: rgba(11,11,16,0.12);
+  border-radius: var(--le-radius-pill);
+}
+
+/* ─── Page heading ───────────────────────────────────────────────── */
+.studio-scope .studio-page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+
+.studio-scope .studio-page-eyebrow {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--le-muted);
+  margin-bottom: 12px;
+  letter-spacing: -0.003em; /* match .le-page-eyebrow */
+}
+
+.studio-scope .studio-page-h1 {
+  margin: 0;
+  font-size: 56px;
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  color: var(--le-ink);
+}
+
+.studio-scope .studio-page-sub {
+  margin: 14px 0 0;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--le-muted);
+  max-width: 540px;
+  line-height: 1.5;
+  letter-spacing: -0.005em;
+}
+
+.studio-scope .studio-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* ─── Segmented control / StudioNav ─────────────────────────────── */
+.studio-scope .studio-segmented {
+  display: inline-flex;
+  padding: 4px;
+  background: rgba(11,11,16,0.04);
+  border-radius: var(--le-radius-pill);
+  gap: 2px;
+  margin-bottom: 24px;
+}
+
+.studio-scope .studio-segmented-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 16px;
+  border-radius: var(--le-radius-pill);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--le-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s cubic-bezier(.2,.8,.2,1), color 0.15s cubic-bezier(.2,.8,.2,1);
+  white-space: nowrap;
+}
+
+.studio-scope .studio-segmented-item:hover {
+  color: var(--le-ink-2);
+}
+
+.studio-scope .studio-segmented-item.active,
+.studio-scope .studio-segmented-item[data-active="true"] {
+  background: var(--le-ink);
+  color: var(--le-surface);
+}
+
+/* ─── Buttons ────────────────────────────────────────────────────── */
+.studio-scope .studio-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  background: var(--le-surface);
+  color: var(--le-ink-2);
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  letter-spacing: 0;
+  transition: border-color 0.15s cubic-bezier(.2,.8,.2,1), box-shadow 0.15s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-btn-ghost:hover {
+  border-color: rgba(11,11,16,0.14);
+  box-shadow: var(--le-shadow-sm);
+}
+
+.studio-scope .studio-cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 16px;
+  background: var(--le-ink);
+  color: var(--le-surface);
+  border: none;
+  border-radius: var(--le-radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  letter-spacing: 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset, 0 4px 12px -4px rgba(11,11,16,0.3);
+  transition: transform 0.15s cubic-bezier(.2,.8,.2,1), box-shadow 0.15s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-cta-primary:hover {
+  transform: translateY(-0.5px);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.18) inset, 0 8px 20px -6px rgba(11,11,16,0.35);
+}
+
+.studio-scope .studio-cta-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.studio-scope .studio-btn-dark {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  background: var(--le-ink);
+  color: var(--le-surface);
+  border: none;
+  border-radius: var(--le-radius-pill);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+  letter-spacing: 0;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 4px 10px -4px rgba(11,11,16,0.3);
+  transition: transform 0.15s cubic-bezier(.2,.8,.2,1), box-shadow 0.15s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-btn-dark:hover {
+  transform: translateY(-0.5px);
+}
+
+.studio-scope .studio-btn-dark:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Small-button modifier — the ONE compact size for studio buttons.
+   Replaces ad-hoc inline fontSize/padding overrides on .studio-btn-* /
+   .studio-cta-primary. Declared after the base button classes so the
+   equal-specificity tie resolves in its favour. */
+.studio-scope .studio-btn-sm {
+  font-size: 11.5px;
+  padding: 4px 10px;
+  gap: 5px;
+}
+
+/* ─── Focus-visible rings (a11y) ─────────────────────────────────── */
+/* Canonical keyboard-focus outline. Additive: the soft :focus
+   box-shadow on inputs/textareas stays for pointer focus. */
+.studio-scope .studio-btn-ghost:focus-visible,
+.studio-scope .studio-btn-dark:focus-visible,
+.studio-scope .studio-cta-primary:focus-visible,
+.studio-scope .studio-segmented-item:focus-visible,
+.studio-scope .studio-kanban-card:focus-visible,
+.studio-scope .studio-dropzone:focus-visible,
+.studio-scope .studio-input:focus-visible,
+.studio-scope .studio-textarea:focus-visible,
+.studio-scope select:focus-visible {
+  outline: 2px solid var(--le-accent);
+  outline-offset: 2px;
+}
+
+/* ─── Cards ──────────────────────────────────────────────────────── */
+.studio-scope .studio-card {
+  background: var(--le-surface);
+  border-radius: var(--le-radius);
+  box-shadow: var(--le-shadow-sm);
+  transition: box-shadow 0.2s cubic-bezier(.2,.8,.2,1), transform 0.2s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-card:hover {
+  box-shadow: var(--le-shadow-md);
+}
+
+.studio-scope .studio-card-flat {
+  background: rgba(11,11,16,0.025);
+  border-radius: var(--le-radius-sm);
+}
+
+.studio-scope .studio-card-strong {
+  background: var(--le-surface);
+  border-radius: var(--le-radius);
+  box-shadow: var(--le-shadow-lg);
+}
+
+/* ─── KPI card ───────────────────────────────────────────────────── */
+.studio-scope .studio-kpi-card {
+  background: var(--le-surface);
+  border-radius: var(--le-radius);
+  padding: 22px 22px 20px;
+  box-shadow: var(--le-shadow-sm);
+  transition: box-shadow 0.15s cubic-bezier(.2,.8,.2,1), transform 0.15s cubic-bezier(.2,.8,.2,1);
+  cursor: default;
+}
+
+.studio-scope .studio-kpi-card:hover {
+  box-shadow: var(--le-shadow-md);
+  transform: translateY(-1px);
+}
+
+.studio-scope .studio-kpi-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.studio-scope .studio-kpi-label {
+  font-size: 13px;
+  color: var(--le-muted);
+  font-weight: 500;
+}
+
+.studio-scope .studio-kpi-value {
+  margin-top: 16px;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--le-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.studio-scope .studio-kpi-sub {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--le-muted);
+}
+
+/* ─── Status pill ────────────────────────────────────────────────── */
+.studio-scope .studio-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--le-radius-pill);
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.studio-scope .studio-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--le-radius-pill);
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+/* Status color variants */
+.studio-scope .studio-status-pill.complete  { background: rgba(47,138,85,0.10); color: var(--le-good); }
+.studio-scope .studio-status-pill.queued    { background: rgba(11,11,16,0.05); color: var(--le-muted); }
+.studio-scope .studio-status-pill.needs_review { background: rgba(182,128,44,0.10); color: var(--le-warn); }
+.studio-scope .studio-status-pill.failed    { background: rgba(196,74,74,0.10); color: var(--le-bad); }
+.studio-scope .studio-status-pill.generating,
+.studio-scope .studio-status-pill.analyzing,
+.studio-scope .studio-status-pill.scripting,
+.studio-scope .studio-status-pill.qc,
+.studio-scope .studio-status-pill.ingesting,
+.studio-scope .studio-status-pill.assembling { background: rgba(42,111,219,0.08); color: var(--le-accent); }
+
+/* ─── Label / eyebrow utility ────────────────────────────────────── */
+.studio-scope .studio-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--le-muted);
+  letter-spacing: 0;
+}
+
+.studio-scope .studio-section-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--le-muted);
+  display: block;
+  margin-bottom: 6px;
+}
+
+/* ─── Section card headers ───────────────────────────────────────── */
+.studio-scope .studio-section-eyebrow {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--le-muted);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.studio-scope .studio-section-h3 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--le-ink);
+  margin: 0 0 16px 0;
+}
+
+/* ─── AI banner ──────────────────────────────────────────────────── */
+.studio-scope .studio-ai-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 18px;
+  background: var(--le-surface);
+  border-radius: var(--le-radius);
+  box-shadow: var(--le-shadow-sm);
+  margin-bottom: 24px;
+}
+
+.studio-scope .studio-ai-banner-spark {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f6a16a, #d6618a);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px -2px rgba(214,97,138,0.35);
+}
+
+/* ─── Form inputs ────────────────────────────────────────────────── */
+.studio-scope .studio-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--le-surface);
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-sm);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--le-ink);
+  outline: none;
+  transition: border-color 0.15s cubic-bezier(.2,.8,.2,1), box-shadow 0.15s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-input::placeholder {
+  color: var(--le-muted-2);
+}
+
+.studio-scope .studio-input:focus {
+  border-color: rgba(11,11,16,0.16);
+  box-shadow: 0 0 0 3px rgba(11,11,16,0.04);
+}
+
+.studio-scope .studio-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--le-surface);
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-radius-sm);
+  padding: 10px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: var(--le-ink);
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+  transition: border-color 0.15s cubic-bezier(.2,.8,.2,1), box-shadow 0.15s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-textarea::placeholder {
+  color: var(--le-muted-2);
+}
+
+.studio-scope .studio-textarea:focus {
+  border-color: rgba(11,11,16,0.16);
+  box-shadow: 0 0 0 3px rgba(11,11,16,0.04);
+}
+
+/* ─── Mini stat tile ─────────────────────────────────────────────── */
+.studio-scope .studio-mini-stat {
+  background: rgba(11,11,16,0.025);
+  border-radius: var(--le-radius-sm);
+  padding: 10px 12px;
+}
+
+/* ─── Kanban card ────────────────────────────────────────────────── */
+.studio-scope .studio-kanban-card {
+  background: var(--le-surface);
+  border-radius: var(--le-radius-sm);
+  box-shadow: var(--le-shadow-sm);
+  padding: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+  transition: box-shadow 0.15s cubic-bezier(.2,.8,.2,1), transform 0.15s cubic-bezier(.2,.8,.2,1);
+  color: var(--le-ink);
+}
+
+.studio-scope .studio-kanban-card:hover {
+  box-shadow: var(--le-shadow-md);
+  transform: translateY(-1px);
+}
+
+.studio-scope .studio-kanban-empty {
+  border: 1.5px dashed rgba(11,11,16,0.08);
+  border-radius: var(--le-radius-sm);
+  padding: 24px;
+  text-align: center;
+  color: var(--le-muted);
+  font-size: 12.5px;
+}
+
+/* ─── Property thumbnail ─────────────────────────────────────────── */
+.studio-scope .studio-prop-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255,255,255,0.5);
+}
+
+/* ─── Table ──────────────────────────────────────────────────────── */
+.studio-scope .studio-table-header-row {
+  display: grid;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--le-line-2);
+  background: transparent;
+}
+
+.studio-scope .studio-table-row {
+  display: grid;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--le-line-2);
+  align-items: center;
+  transition: background 0.12s cubic-bezier(.2,.8,.2,1);
+}
+
+.studio-scope .studio-table-row:hover {
+  background: rgba(11,11,16,0.02);
+}
+
+/* ─── Fade-up page enter ─────────────────────────────────────────── */
+@keyframes studio-fade-up {
+  from { opacity: 1; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.studio-scope .studio-fade-up {
+  animation: studio-fade-up 0.5s cubic-bezier(.2,.8,.2,1) both;
+}
+
+/* ─── Warning / alert strip ──────────────────────────────────────── */
+.studio-scope .studio-warn-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(182,128,44,0.08);
+  border: 1px solid rgba(182,128,44,0.2);
+  border-radius: var(--le-radius-sm);
+  color: var(--le-warn);
+  font-size: 13px;
+}
+
+/* ─── Tabular numbers ────────────────────────────────────────────── */
+.studio-scope .studio-tabnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Scrollbar for horizontal strips ───────────────────────────── */
+.studio-scope .studio-hscroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(11,11,16,0.10) transparent;
+}
+
+.studio-scope .studio-hscroll::-webkit-scrollbar { height: 6px; }
+.studio-scope .studio-hscroll::-webkit-scrollbar-thumb {
+  background: rgba(11,11,16,0.10);
+  border-radius: var(--le-radius-pill);
+}
+
+/* ─── Loading spinner ────────────────────────────────────────────── */
+@keyframes studio-spin {
+  to { transform: rotate(360deg); }
+}
+
+.studio-scope .studio-spinner {
+  animation: studio-spin 1s linear infinite;
+}
+
+/* ─── Video player ───────────────────────────────────────────────── */
+.studio-scope .studio-video {
+  border-radius: var(--le-radius-sm);
+  box-shadow: var(--le-shadow-md);
+  background: var(--le-ink);
+  width: 100%;
+  display: block;
+}
+
+/* Vertical (9:16) variant — height-constrained so it never dominates
+   the viewport. Width: auto preserves aspect ratio. */
+.studio-scope .studio-video--vertical {
+  width: auto;
+  max-height: min(70vh, 640px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ─── Scene strip card ───────────────────────────────────────────── */
+.studio-scope .studio-scene-card {
+  flex: none;
+  width: 200px;
+  background: var(--le-surface);
+  border-radius: var(--le-radius-sm);
+  box-shadow: var(--le-shadow-sm);
+  overflow: hidden;
+}
+
+/* ─── Modal overlay ──────────────────────────────────────────────── */
+.studio-scope .studio-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11,11,16,0.55);
+}
+
+.studio-scope .studio-modal {
+  position: relative;
+  background: var(--le-surface);
+  border-radius: var(--le-radius);
+  box-shadow: var(--le-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  overflow: hidden;
+}
+
+/* ─── Drop zone ──────────────────────────────────────────────────── */
+.studio-scope .studio-dropzone {
+  border: 2px dashed rgba(11,11,16,0.12);
+  border-radius: var(--le-radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: transparent;
+}
+
+.studio-scope .studio-dropzone:hover,
+.studio-scope .studio-dropzone.dragging {
+  border-color: rgba(11,11,16,0.22);
+  background: rgba(11,11,16,0.02);
+}
+
+/* ─── Inline brand-dot ───────────────────────────────────────────── */
+.studio-scope .studio-brand-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--le-radius-pill);
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* ─── Error / success inline banners ────────────────────────────── */
+.studio-scope .studio-error-strip {
+  padding: 10px 14px;
+  background: rgba(196,74,74,0.06);
+  border: 1px solid rgba(196,74,74,0.18);
+  border-radius: var(--le-radius-sm);
+  font-size: 13px;
+  color: var(--le-bad);
+}
+
+.studio-scope .studio-success-strip {
+  padding: 10px 14px;
+  background: rgba(47,138,85,0.06);
+  border: 1px solid rgba(47,138,85,0.18);
+  border-radius: var(--le-radius-sm);
+  font-size: 13px;
+  color: var(--le-good);
+}
+
+/* ─── Preview page specific ──────────────────────────────────────── */
+.studio-scope.studio-preview {
+  display: flex;
+  justify-content: center;
+  padding: 48px 24px 80px;
+}
+
+.studio-scope.studio-preview .studio-preview-container {
+  width: 100%;
+  max-width: 720px;
+}
+
+.studio-scope.studio-preview .studio-preview-h1 {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  color: var(--le-ink);
+  margin: 0 0 24px 0;
+}
+
+/* ─── Responsive (mobile / tablet) ───────────────────────────────── */
+@media (max-width: 1024px) {
+  /* .le-main-scroll provides the responsive gutter — never re-pad here */
+  .studio-scope .studio-main { padding: 0; }
+}
+@media (max-width: 640px) {
+  .studio-scope .studio-main { padding: 0; }
+
+  /* Segmented nav: allow wrap + horizontal scroll so tabs never clip */
+  .studio-scope .studio-segmented {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .studio-scope .studio-segmented-item { padding: 6px 12px; }
+
+  .studio-scope.studio-preview { padding: 24px 14px 56px; }
+  .studio-scope.studio-preview .studio-preview-h1 { font-size: 24px; }
+}
+
+/* ─── LE Video library (spec §1) ─────────────────────────────────────
+   Cinematic poster grid. The card is the showcase moment: real hover with
+   a poster zoom + scrim play affordance, tabular-nums stats, styled empty
+   and skeleton states. All radii/shadows/colors are canonical tokens. */
+
+.studio-scope .le-video-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+}
+.studio-scope .le-video-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.studio-scope .le-video-filter-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.studio-scope .le-video-select {
+  height: 38px;
+  padding: 0 32px 0 12px;
+  min-width: 180px;
+  appearance: none;
+  cursor: pointer;
+}
+.studio-scope .le-video-select-chevron {
+  position: absolute;
+  right: 11px;
+  color: var(--le-muted);
+  pointer-events: none;
+}
+.studio-scope .le-video-date {
+  height: 38px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Grid */
+.studio-scope .le-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 20px;
+}
+
+/* Card */
+.studio-scope .le-video-card {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--le-radius);
+  background: var(--le-surface);
+  box-shadow: var(--le-shadow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.22s cubic-bezier(.2,.8,.2,1), transform 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover,
+.studio-scope .le-video-card:focus-visible {
+  box-shadow: var(--le-shadow-lg);
+  transform: translateY(-3px);
+  outline: none;
+}
+.studio-scope .le-video-card:focus-visible {
+  box-shadow: var(--le-shadow-lg), 0 0 0 2px var(--le-ink);
+}
+
+.studio-scope .le-video-card-poster {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: rgba(11,11,16,0.04);
+  overflow: hidden;
+}
+.studio-scope .le-video-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.4s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-poster img,
+.studio-scope .le-video-card:focus-visible .le-video-card-poster img {
+  transform: scale(1.04);
+}
+.studio-scope .le-video-card-poster-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--le-muted-2);
+}
+
+/* Hover scrim + center play */
+.studio-scope .le-video-card-scrim {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(11,11,16,0) 40%, rgba(11,11,16,0.28) 100%);
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-scrim,
+.studio-scope .le-video-card:focus-visible .le-video-card-scrim {
+  opacity: 1;
+}
+.studio-scope .le-video-card-play {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--le-r-pill);
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.92);
+  color: var(--le-ink);
+  box-shadow: var(--le-shadow-md);
+  transform: scale(0.86);
+  transition: transform 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-play,
+.studio-scope .le-video-card:focus-visible .le-video-card-play {
+  transform: scale(1);
+}
+
+/* Badges */
+.studio-scope .le-video-card-badges {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+}
+.studio-scope .le-video-orient-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #fff;
+  background: rgba(11,11,16,0.62);
+  backdrop-filter: blur(6px);
+  border-radius: var(--le-r-sm);
+  padding: 3px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-scope .le-video-approved-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--le-good);
+  border-radius: var(--le-r-pill);
+  padding: 3px 8px;
+}
+
+/* Meta */
+.studio-scope .le-video-card-meta {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.studio-scope .le-video-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-locality {
+  font-size: 12.5px;
+  color: var(--le-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--le-line-2);
+}
+.studio-scope .le-video-card-client {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--le-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-card-views {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--le-ink-2);
+}
+.studio-scope .le-video-card-views-label {
+  font-weight: 500;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-card-date {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skeleton */
+.studio-scope .le-skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(11,11,16,0.05) 25%, rgba(11,11,16,0.09) 37%, rgba(11,11,16,0.05) 63%);
+  background-size: 400% 100%;
+  animation: le-video-shimmer 1.4s ease infinite;
+}
+.studio-scope .le-video-card-skeleton {
+  box-shadow: var(--le-shadow-sm);
+}
+.studio-scope .le-skeleton-line {
+  height: 12px;
+  border-radius: var(--le-r-sm);
+}
+@keyframes le-video-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Empty state */
+.studio-scope .le-video-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 72px 24px;
+  background: rgba(11,11,16,0.02);
+  border: 1px dashed var(--le-line);
+  border-radius: var(--le-radius);
+}
+.studio-scope .le-video-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--le-r-pill);
+  display: grid;
+  place-items: center;
+  background: var(--le-surface);
+  box-shadow: var(--le-shadow-sm);
+  color: var(--le-muted);
+  margin-bottom: 8px;
+}
+.studio-scope .le-video-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--le-ink);
+  margin: 0;
+}
+.studio-scope .le-video-empty-sub {
+  font-size: 13px;
+  color: var(--le-muted);
+  margin: 0;
+  max-width: 360px;
+}
+
+/* Pagination */
+.studio-scope .le-video-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 28px;
+}
+.studio-scope .le-video-page-indicator {
+  font-size: 12.5px;
+  color: var(--le-muted);
+}
+
+/* ─── Video hub (spec §2) ──────────────────────────────────────────── */
+.studio-scope .le-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+.studio-scope .le-hub-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.studio-scope .le-hub-side {
+  position: sticky;
+  top: 24px;
+}
+@media (max-width: 1024px) {
+  .studio-scope .le-hub-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-scope .le-hub-side { position: static; }
+}
+
+.studio-scope .le-hub-skeleton { padding: 8px 0; }
+
+/* Orientation switcher — segmented control over the player */
+.studio-scope .le-hub-orient-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--le-line-2);
+  border-radius: var(--le-radius-pill);
+  align-self: flex-start;
+}
+.studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: var(--le-surface);
+  color: var(--le-ink);
+  box-shadow: var(--le-shadow-sm);
+}
+
+.studio-scope .le-hub-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--le-line);
+}
+
+/* Analytics stat cards */
+.studio-scope .le-hub-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .studio-scope .le-hub-stats { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Per-link analytics table */
+.studio-scope .le-hub-table { width: 100%; }
+.studio-scope .le-hub-table-head,
+.studio-scope .le-hub-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 0.7fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 20px;
+}
+.studio-scope .le-hub-table-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--le-muted);
+  border-bottom: 1px solid var(--le-line);
+}
+.studio-scope .le-hub-table-row {
+  border-bottom: 1px solid var(--le-line-2);
+  font-size: 13px;
+  color: var(--le-ink-2);
+}
+.studio-scope .le-hub-table-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-table-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-scope .le-hub-table-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-hub-table-empty {
+  padding: 20px;
+  font-size: 13px;
+  color: var(--le-muted-2);
+  font-style: italic;
+}
+.studio-scope .le-hub-kind-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--le-r-pill);
+}
+.studio-scope .le-hub-kind-client {
+  background: rgba(42, 111, 219, 0.10);
+  color: var(--le-accent);
+}
+.studio-scope .le-hub-kind-public {
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+
+/* Activity feed */
+.studio-scope .le-hub-activity-row {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--le-line-2);
+}
+.studio-scope .le-hub-activity-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-activity-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--le-r-pill);
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+.studio-scope .le-hub-activity-client_approval {
+  background: rgba(47, 138, 85, 0.12);
+  color: var(--le-good);
+}
+.studio-scope .le-hub-activity-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.studio-scope .le-hub-activity-source {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-activity-time {
+  font-size: 11.5px;
+  color: var(--le-muted-2);
+}
+.studio-scope .le-hub-activity-body {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--le-ink-2);
+  line-height: 1.45;
+}
+
+.dark .studio-scope .le-hub-orient-switch { background: rgba(255,255,255,0.04); }
+.dark .studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: rgba(255,255,255,0.08);
+}
+.dark .studio-scope .le-hub-kind-public { background: rgba(255,255,255,0.06); }
+.dark .studio-scope .le-hub-activity-icon { background: rgba(255,255,255,0.06); }
+
+.dark .studio-scope .le-video-orient-badge {
+  background: rgba(0,0,0,0.55);
+}
+.dark .studio-scope .le-video-empty {
+  background: rgba(255,255,255,0.02);
+  border-color: rgba(255,255,255,0.1);
+}
+.dark .studio-scope .le-skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%);
+  background-size: 400% 100%;
+}
+
+/* ─── Dark mode ──────────────────────────────────────────────────────
+   The studio scope shares the dashboard shell's design language, so the
+   dark palette MIRRORS `.dark .le-dash-shell` in src/v2/styles/tokens.css.
+   Keep the two in sync if the dash-shell dark palette ever changes. */
+.dark .studio-scope {
+  --le-bg:      #050710;
+  --le-surface: #0b0f1c;
+  --le-ink:     #f4f5fb;
+  --le-ink-2:   #d3d6dd;
+  --le-muted:   #9aa0aa;
+  --le-muted-2: #6b6f7a;
+  --le-line:    rgba(255,255,255,0.08);
+  --le-line-2:  rgba(255,255,255,0.05);
+  --le-accent:  #6f8df5;
+  --le-good:    #4cb37b;
+  --le-warn:    #d8a458;
+  --le-bad:     #e07474;
+  --le-shadow-sm: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  --le-shadow-md: 0 2px 4px rgba(0,0,0,0.4), 0 12px 32px -16px rgba(0,0,0,0.55);
+  --le-shadow-lg: 0 4px 12px rgba(0,0,0,0.45), 0 24px 60px -24px rgba(0,0,0,0.7);
+}
+
+/* Warm-paper radial gradients are light-only — dark uses the flat navy
+   canvas, matching the dash shell's dark background treatment. */
+.dark .studio-scope .studio-bg-base {
+  background: var(--le-bg);
+}
+
+/* Black-noise multiply grain muddies the navy canvas; the dash shell has
+   no grain in dark, so hide it. */
+.dark .studio-scope .studio-grain {
+  display: none;
+}
+
+/* Hardcoded near-black alphas → white-alpha equivalents (mirrors the
+   .dark .le-card-flat / .dark .le-seg pattern in tokens.css). */
+.dark .studio-scope .studio-main {
+  scrollbar-color: rgba(255,255,255,0.14) transparent;
+}
+.dark .studio-scope .studio-main::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.14);
+}
+.dark .studio-scope .studio-segmented {
+  background: rgba(255,255,255,0.06);
+}
+.dark .studio-scope .studio-btn-ghost:hover {
+  border-color: rgba(255,255,255,0.16);
+}
+.dark .studio-scope .studio-card-flat,
+.dark .studio-scope .studio-mini-stat {
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-status-pill.queued {
+  background: rgba(255,255,255,0.06);
+}
+.dark .studio-scope .studio-input:focus,
+.dark .studio-scope .studio-textarea:focus {
+  border-color: rgba(255,255,255,0.18);
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+}
+.dark .studio-scope .studio-kanban-empty {
+  border-color: rgba(255,255,255,0.1);
+}
+.dark .studio-scope .studio-table-row:hover {
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-modal-overlay {
+  background: rgba(0,0,0,0.65);
+}
+.dark .studio-scope .studio-dropzone {
+  border-color: rgba(255,255,255,0.14);
+}
+.dark .studio-scope .studio-dropzone:hover,
+.dark .studio-scope .studio-dropzone.dragging {
+  border-color: rgba(255,255,255,0.24);
+  background: rgba(255,255,255,0.03);
+}
+.dark .studio-scope .studio-hscroll {
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
+}
+.dark .studio-scope .studio-hscroll::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+}
+
+/* Media chrome stays dark — intentional, not a theme surface. */
+.dark .studio-scope .studio-video {
+  background: #0b0b10;
+}

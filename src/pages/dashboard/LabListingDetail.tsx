@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, RefreshCw, Play, Archive, Images } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2, RefreshCw, Play, Archive, Images, ArrowLeft, Clapperboard } from "lucide-react";
+import { DirectorModal } from "@/components/lab/DirectorModal";
 import { NextActionBanner } from "@/components/lab/NextActionBanner";
 import { SceneCard } from "@/components/lab/SceneCard";
 import { ShotPlanTable } from "@/components/lab/ShotPlanTable";
@@ -19,6 +19,19 @@ import {
 } from "@/lib/labListingsApi";
 import { rateIteration as rateIterationApi } from "@/lib/labListingsApi";
 import { getLabModel } from "@/lib/labModels";
+import { PageHeading, StatusChip, Card, fmtMoney } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
+
+// Map lab listing statuses → design system status tokens
+const LAB_STATUS_MAP: Record<string, string> = {
+  draft: "queued",
+  analyzing: "analyzing",
+  directing: "scripting",
+  ready_to_render: "complete",
+  rendering: "generating",
+  complete: "complete",
+  failed: "failed",
+};
 
 export default function LabListingDetail() {
   const { id = "" } = useParams();
@@ -31,6 +44,7 @@ export default function LabListingDetail() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selectedSceneId, setSelectedSceneId] = useState<string | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [directorOpen, setDirectorOpen] = useState(false);
 
   async function reload() {
     if (!id) return;
@@ -72,7 +86,8 @@ export default function LabListingDetail() {
       if (unrenderedScenes.length === 0) return;
       const totalCents = unrenderedScenes.reduce((sum, s) => {
         const isPaired = Boolean(s.use_end_frame && s.end_image_url);
-        const modelKey = isPaired ? "kling-v2-1-pair" : (listing?.model_name ?? "kling-v2-6-pro");
+        // Mirrors server-side DQ.3: paired scenes auto-route to kling-v3-pro.
+        const modelKey = isPaired ? "kling-v3-pro" : (listing?.model_name ?? "kling-v2-6-pro");
         return sum + (getLabModel(modelKey)?.priceCents ?? 0);
       }, 0);
       const confirmed = window.confirm(
@@ -201,60 +216,239 @@ export default function LabListingDetail() {
     ? iterations.filter((i) => i.scene_id === selectedScene.id).sort((a, b) => a.iteration_number - b.iteration_number)
     : [];
 
-  if (loading && !listing) return <div className="p-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
-  if (!listing) return <p className="p-8 text-sm text-muted-foreground">Listing not found.</p>;
+  if (loading && !listing) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 32, color: "var(--muted)", fontSize: 13 }}>
+        <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
+        Loading…
+      </div>
+    );
+  }
+  if (!listing) {
+    return (
+      <p style={{ padding: 32, fontSize: 13, color: "var(--muted)" }}>Listing not found.</p>
+    );
+  }
+
+  const dsStatus = LAB_STATUS_MAP[listing.status] ?? "queued";
+  const byModelStr = Object.entries(stats.byModel)
+    .map(([m, c]) => `${m}: ${fmtMoney(c)}`)
+    .join(" · ");
 
   return (
-    <div className="space-y-5">
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <PageHeading
+        eyebrow="Lab · Listing"
+        title={listing.name}
+        sub={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            <StatusChip status={dsStatus} />
+            <span style={{ color: "var(--muted-2)" }}>{listing.model_name}</span>
+            {listing.notes && (
+              <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{listing.notes}</span>
+            )}
+          </span>
+        }
+        actions={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              type="button"
+              className="le-btn-ghost"
+              onClick={reload}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <RefreshCw style={{ width: 13, height: 13 }} />
+              Refresh
+            </button>
+            <button
+              type="button"
+              className="le-btn-ghost"
+              onClick={rerunDirector}
+              disabled={actionLoading === "direct"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: actionLoading === "direct" ? 0.5 : 1,
+              }}
+            >
+              {actionLoading === "direct" && (
+                <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
+              )}
+              Re-direct
+            </button>
+            <button
+              type="button"
+              className="le-btn-ghost"
+              onClick={() => setDirectorOpen(true)}
+              title="Open Director — assemble rendered clips into a final video"
+              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+            >
+              <Clapperboard style={{ width: 13, height: 13 }} />
+              Direct
+            </button>
+            <button
+              type="button"
+              className="le-btn-dark"
+              onClick={renderAllUnrendered}
+              disabled={actionLoading === "render-all"}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                opacity: actionLoading === "render-all" ? 0.5 : 1,
+              }}
+            >
+              {actionLoading === "render-all" ? (
+                <Loader2 style={{ width: 13, height: 13, animation: "spin 1s linear infinite" }} />
+              ) : (
+                <Play style={{ width: 13, height: 13 }} />
+              )}
+              Render all
+            </button>
+            <button
+              type="button"
+              onClick={archive}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 10,
+                background: "transparent",
+                border: "1px solid var(--line)",
+                color: "var(--muted)",
+                cursor: "pointer",
+              }}
+              title="Archive listing"
+            >
+              <Archive style={{ width: 13, height: 13 }} />
+            </button>
+          </div>
+        }
+      />
+
+      {/* Back link */}
       <div>
-        <Link to="/dashboard/development/lab" className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> back to listings
+        <Link
+          to="/dashboard/development/lab"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 11.5,
+            color: "var(--muted)",
+            textDecoration: "none",
+          }}
+        >
+          <ArrowLeft style={{ width: 11, height: 11 }} />
+          Back to listings
         </Link>
       </div>
 
-      <div className="border border-border bg-background">
-        <div className="flex flex-wrap items-start justify-between gap-4 px-5 py-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-2xl font-semibold tracking-[-0.02em]">{listing.name}</h2>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-              <span className="border border-border px-2 py-0.5 uppercase tracking-wider">{listing.status}</span>
-              <span className="border border-border px-2 py-0.5 uppercase tracking-wider">{listing.model_name}</span>
-              {listing.notes && <span className="truncate italic">{listing.notes}</span>}
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={reload}>
-              <RefreshCw className="mr-1 h-3 w-3" /> Refresh
-            </Button>
-            <Button variant="outline" size="sm" onClick={rerunDirector} disabled={actionLoading === "direct"}>
-              {actionLoading === "direct" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-              Re-direct
-            </Button>
-            <Button size="sm" onClick={renderAllUnrendered} disabled={actionLoading === "render-all"}>
-              {actionLoading === "render-all" ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Play className="mr-1 h-3 w-3" />}
-              Render all
-            </Button>
-            <Button variant="ghost" size="sm" onClick={archive}><Archive className="h-3 w-3" /></Button>
-          </div>
+      {/* Stats strip */}
+      <Card padding={0}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(5, 1fr)",
+          }}
+        >
+          <StatCell
+            label="Scenes"
+            value={`${stats.rendered} / ${scenes.length}`}
+            sub="rendered"
+          />
+          <StatCell
+            label="Iterations"
+            value={String(iterations.filter((i) => !i.archived).length)}
+            sub={iterations.length !== iterations.filter((i) => !i.archived).length ? `${iterations.length} total` : undefined}
+          />
+          <StatCell
+            label="Cost"
+            value={fmtMoney(stats.totalCents)}
+            sub={byModelStr || undefined}
+          />
+          <StatCell
+            label="Photos"
+            value={String(photos.length)}
+            sub={
+              <button
+                type="button"
+                onClick={() => setPhotosOpen((o) => !o)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  fontSize: 11,
+                  color: "var(--accent)",
+                  cursor: "pointer",
+                  fontFamily: "var(--le-font-sans)",
+                }}
+              >
+                <Images style={{ width: 11, height: 11 }} />
+                {photosOpen ? "hide" : "show"}
+              </button>
+            }
+          />
+          <StatCell
+            label="Created"
+            value={new Date(listing.created_at).toLocaleDateString()}
+            sub={new Date(listing.created_at).toLocaleTimeString()}
+            last
+          />
         </div>
-        <div className="grid grid-cols-2 border-t border-border text-xs sm:grid-cols-4 lg:grid-cols-5">
-          <Stat label="Scenes" value={`${stats.rendered} / ${scenes.length}`} sub="rendered" />
-          <Stat label="Iterations" value={String(iterations.filter((i) => !i.archived).length)} sub={iterations.length !== iterations.filter((i) => !i.archived).length ? `${iterations.length} total` : undefined} />
-          <Stat label="Cost" value={`$${(stats.totalCents / 100).toFixed(2)}`} sub={Object.entries(stats.byModel).map(([m, c]) => `${m}: $${(c / 100).toFixed(2)}`).join(" • ") || undefined} />
-          <Stat label="Photos" value={String(photos.length)} sub={
-            <button type="button" onClick={() => setPhotosOpen((o) => !o)} className="inline-flex items-center gap-1 underline-offset-2 hover:underline">
-              <Images className="h-3 w-3" /> {photosOpen ? "hide" : "show"}
-            </button>
-          } />
-          <Stat label="Created" value={new Date(listing.created_at).toLocaleDateString()} sub={new Date(listing.created_at).toLocaleTimeString()} />
-        </div>
+
         {photosOpen && (
-          <div className="border-t border-border px-5 py-3">
-            <div className="grid grid-cols-6 gap-1 md:grid-cols-10 lg:grid-cols-12">
+          <div
+            style={{
+              borderTop: "1px solid var(--line-2)",
+              padding: "12px 20px",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(12, 1fr)",
+                gap: 4,
+              }}
+            >
               {photos.map((p) => (
-                <div key={p.id} className="relative aspect-video overflow-hidden border border-border bg-muted">
-                  <img src={p.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                  <span className="absolute bottom-0.5 left-0.5 bg-black/60 px-1 py-0.5 text-[8px] uppercase tracking-wider text-white">
+                <div
+                  key={p.id}
+                  style={{
+                    position: "relative",
+                    aspectRatio: "16/9",
+                    overflow: "hidden",
+                    borderRadius: 6,
+                    background: "var(--bg)",
+                    border: "1px solid var(--line-2)",
+                  }}
+                >
+                  <img
+                    src={p.image_url}
+                    alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                    loading="lazy"
+                  />
+                  <span
+                    style={{
+                      position: "absolute",
+                      bottom: 2,
+                      left: 3,
+                      fontSize: 8,
+                      fontWeight: 600,
+                      background: "rgba(0,0,0,0.6)",
+                      color: "#fff",
+                      padding: "1px 4px",
+                      borderRadius: 3,
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
                     {p.photo_index}
                   </span>
                 </div>
@@ -262,16 +456,32 @@ export default function LabListingDetail() {
             </div>
           </div>
         )}
-      </div>
+      </Card>
 
-      {error && <div className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>}
+      {/* Error banner */}
+      {error && (
+        <div
+          style={{
+            padding: "12px 16px",
+            borderRadius: "var(--radius-sm)",
+            background: "rgba(196,74,74,0.07)",
+            border: "1px solid rgba(196,74,74,0.18)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {scenes.length === 0 ? (
-        <div className="border border-border bg-background p-8 text-center text-sm text-muted-foreground">
-          {listing.status === "analyzing" || listing.status === "directing"
-            ? "Director is planning scenes…"
-            : "No scenes yet. Click Re-direct to run the director."}
-        </div>
+        <Card padding={40}>
+          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            {listing.status === "analyzing" || listing.status === "directing"
+              ? "Director is planning scenes…"
+              : "No scenes yet. Click Re-direct to run the director."}
+          </div>
+        </Card>
       ) : (
         <>
           <NextActionBanner
@@ -282,38 +492,135 @@ export default function LabListingDetail() {
             onRetry={handleRetryFailed}
             onIterate={handleIterate}
           />
-          <ShotPlanTable
-            scenes={scenes}
-            iterations={iterations}
-            photos={photos}
-            selectedSceneId={selectedSceneId}
-            onSelect={setSelectedSceneId}
-          />
 
-          {selectedScene && (
-            <SceneCard
-              listingId={id}
-              scene={selectedScene}
-              iterations={selectedIterations}
-              photos={photos}
-              defaultModel={listing.model_name}
-              onReload={reload}
-              onRateOptimistic={rateOptimistic}
-              onArchiveSceneOptimistic={archiveSceneOptimistic}
-            />
-          )}
+          {/* 2-column layout: scene grid left, side panel right */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 320px",
+              gap: 16,
+              alignItems: "start",
+            }}
+          >
+            {/* Left: shot plan */}
+            <Card padding={20}>
+              <ShotPlanTable
+                scenes={scenes}
+                iterations={iterations}
+                photos={photos}
+                selectedSceneId={selectedSceneId}
+                onSelect={setSelectedSceneId}
+              />
+            </Card>
+
+            {/* Right: selected scene detail + photos strip */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {selectedScene && (
+                <Card padding={20}>
+                  <SceneCard
+                    listingId={id}
+                    scene={selectedScene}
+                    iterations={selectedIterations}
+                    photos={photos}
+                    defaultModel={listing.model_name}
+                    onReload={reload}
+                    onRateOptimistic={rateOptimistic}
+                    onArchiveSceneOptimistic={archiveSceneOptimistic}
+                  />
+                </Card>
+              )}
+
+              {/* Photos metadata side panel */}
+              {photos.length > 0 && (
+                <Card padding={20}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 500,
+                      color: "var(--muted)",
+                      marginBottom: 12,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.04em",
+                    }}
+                  >
+                    Photos · {photos.length}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 4 }}>
+                    {photos.slice(0, 16).map((p) => (
+                      <div
+                        key={p.id}
+                        style={{
+                          position: "relative",
+                          aspectRatio: "16/9",
+                          overflow: "hidden",
+                          borderRadius: 6,
+                          background: "var(--bg)",
+                        }}
+                      >
+                        <img
+                          src={p.image_url}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                          loading="lazy"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {photos.length > 16 && (
+                    <p style={{ marginTop: 8, fontSize: 11, color: "var(--muted)" }}>
+                      +{photos.length - 16} more
+                    </p>
+                  )}
+                </Card>
+              )}
+            </div>
+          </div>
         </>
       )}
+
+      {/* Director modal — assembles rendered listing clips into a final video */}
+      <DirectorModal
+        source={{ kind: "listing", listingId: id }}
+        open={directorOpen}
+        onClose={() => setDirectorOpen(false)}
+      />
     </div>
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub?: React.ReactNode }) {
+function StatCell({
+  label,
+  value,
+  sub,
+  last = false,
+}: {
+  label: string;
+  value: string;
+  sub?: React.ReactNode;
+  last?: boolean;
+}) {
   return (
-    <div className="border-r border-border px-5 py-3 last:border-r-0">
-      <div className="label text-muted-foreground">{label}</div>
-      <div className="mt-0.5 text-lg font-semibold tabular-nums">{value}</div>
-      {sub && <div className="mt-0.5 text-[10px] text-muted-foreground">{sub}</div>}
+    <div
+      style={{
+        padding: "16px 20px",
+        borderRight: last ? "none" : "1px solid var(--line-2)",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 500, color: "var(--muted)", marginBottom: 4 }}>{label}</div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 600,
+          color: "var(--ink)",
+          fontVariantNumeric: "tabular-nums",
+          letterSpacing: "-0.015em",
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ marginTop: 3, fontSize: 11, color: "var(--muted)" }}>{sub}</div>
+      )}
     </div>
   );
 }

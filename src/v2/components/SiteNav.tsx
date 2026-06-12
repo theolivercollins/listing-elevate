@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { LEIcon } from "@/v2/components/primitives/LEIcon";
+import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import { useTheme } from "@/lib/theme";
@@ -13,10 +14,11 @@ export interface SiteNavProps {
    */
   showSectionLinks?: boolean;
   /**
-   * When true, render with an opaque theme-aware surface (for app pages
-   * like /account and /upload that sit on top of the page background and
-   * shouldn't bleed through). Default false keeps the gradient scrim +
-   * backdrop blur used on the landing hero.
+   * When true, render with a fully opaque `var(--le-bg)` surface — used on
+   * app pages (/account, /upload) where the nav must sit on the page
+   * background without bleed-through. Default false renders the translucent
+   * frosted bar (`var(--le-nav-bg)` + backdrop-blur), which is white/0.85 in
+   * light mode and near-black/0.7 in dark mode.
    */
   solid?: boolean;
 }
@@ -29,16 +31,16 @@ const navLinkStyle = {
 /**
  * SiteNav — shared top navigation primitive.
  *
- * Fixed to the viewport top (zIndex 20). In the default (gradient) mode
- * it uses a dark scrim + backdrop blur so it stays legible over any hero
- * image. Left: logo mark linking home. Center: optional section anchors.
- * Right: sign-in affordances (or account/dashboard/sign-out when
- * authenticated) plus a theme-toggle sun/moon button wired to the global
- * ThemeProvider.
+ * Fixed to the viewport top (zIndex 20). In the default mode it renders
+ * as a light translucent bar (white/0.85 + backdrop blur) with a 1px
+ * bottom border — clean SaaS product nav. Left: logo mark linking home.
+ * Center: optional section anchors. Right: sign-in affordances (or
+ * account/dashboard/sign-out when authenticated) plus a theme-toggle
+ * sun/moon button wired to the global ThemeProvider.
  *
  * When `solid` is true, renders against an opaque `var(--le-bg)` surface
  * with a 1px bottom border and theme-reactive text colors — used on app
- * pages where the gradient scrim would otherwise bleed through.
+ * pages where the nav needs a fully opaque backdrop.
  */
 export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps) {
   const { user, profile, signOut } = useAuth();
@@ -53,51 +55,40 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
     navigate("/");
   }
 
-  // Color palette — gradient mode uses hardcoded white-on-dark; solid mode
-  // pulls from CSS vars so the nav follows the global theme.
-  const textPrimary = solid ? "var(--le-text)" : "#fff";
-  const textMuted = solid ? "var(--le-text-muted)" : "rgba(255,255,255,0.82)";
-  const textSoft = solid ? "var(--le-text-muted)" : "rgba(255,255,255,0.92)";
-  const textDim = solid ? "var(--le-text-faint)" : "rgba(255,255,255,0.65)";
-  const textBody = solid ? "var(--le-text-muted)" : "rgba(255,255,255,0.85)";
-  const iconBorder = solid ? "1px solid var(--le-border-strong)" : "1px solid rgba(255,255,255,0.22)";
-  const iconColor = solid ? "var(--le-text)" : "#fff";
+  // Both default and solid modes are now light-first; pull from CSS vars.
+  const textMuted = "var(--le-text-muted)";
+  const textSoft = "var(--le-text-muted)";
+  const textDim = "var(--le-text-faint)";
+  const textBody = "var(--le-text-muted)";
+  const iconBorder = "1px solid var(--le-border-strong)";
+  const iconColor = "var(--le-text)";
+
+  // Shared base — both modes are translucent white bars on a light surface.
+  const navBase: CSSProperties = {
+    position: "fixed",
+    top: 0,
+    left: 0,
+    right: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "16px 48px",
+    color: "var(--le-text)",
+    zIndex: 20,
+    borderBottom: "1px solid var(--le-border)",
+    backdropFilter: "blur(16px) saturate(1.4)",
+    WebkitBackdropFilter: "blur(16px) saturate(1.4)",
+    "--le-nav-hover-color": "var(--le-text)",
+  } as CSSProperties;
 
   const navStyle: CSSProperties = solid
-    ? {
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "26px 48px",
-        color: "var(--le-text)",
-        zIndex: 20,
-        background: "var(--le-bg)",
-        borderBottom: "1px solid var(--le-border)",
-      }
-    : {
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "26px 48px",
-        color: "#fff",
-        zIndex: 20,
-        background:
-          "linear-gradient(180deg, rgba(5,7,16,0.82) 0%, rgba(5,7,16,0.55) 65%, rgba(5,7,16,0) 100%)",
-        backdropFilter: "blur(14px) saturate(1.2)",
-        WebkitBackdropFilter: "blur(14px) saturate(1.2)",
-      };
+    ? { ...navBase, background: "var(--le-bg)" }
+    : { ...navBase, background: "var(--le-nav-bg)" };
 
-  // In solid mode, pick a logo variant that reads on the current bg.
-  // In gradient mode we're always on a dark scrim, so "light" (white) logo.
-  const logoVariant = solid ? (theme === "dark" ? "light" : "dark") : "light";
+  // In default (translucent) mode the bar colour follows the theme, so the
+  // logo must invert with it: light/white logo on the dark bar, dark-ink logo
+  // on the light bar. Solid mode always sits on --le-bg, same rule applies.
+  const logoVariant = theme === "dark" ? "light" : "dark";
 
   const toggleIconName = theme === "dark" ? "sun" : "moon";
   const toggleAriaLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
@@ -128,16 +119,16 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             fontFamily: "var(--le-font-sans)",
           }}
         >
-          <a href="#process" style={navLinkStyle}>
+          <a href="#process" className="le-nav-link" style={navLinkStyle}>
             Process
           </a>
-          <a href="#showcase" style={navLinkStyle}>
+          <a href="#showcase" className="le-nav-link" style={navLinkStyle}>
             Showcase
           </a>
-          <a href="#pricing" style={navLinkStyle}>
+          <a href="#pricing" className="le-nav-link" style={navLinkStyle}>
             Pricing
           </a>
-          <a href="#faq" style={navLinkStyle}>
+          <a href="#faq" className="le-nav-link" style={navLinkStyle}>
             FAQ
           </a>
         </div>
@@ -170,6 +161,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
           <>
             <Link
               to="/account"
+              className="le-nav-link"
               style={{
                 fontSize: 11,
                 fontWeight: 500,
@@ -185,6 +177,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             {isAdmin && (
               <Link
                 to="/dashboard"
+                className="le-nav-link"
                 style={{
                   fontSize: 11,
                   fontWeight: 500,
@@ -201,6 +194,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <button
               type="button"
               onClick={handleSignOut}
+              className="le-nav-link"
               style={{
                 background: "transparent",
                 border: "none",
@@ -222,6 +216,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <button
               type="button"
               onClick={openLogin}
+              className="le-nav-link"
               style={{
                 background: "transparent",
                 border: "none",
@@ -235,27 +230,9 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             >
               Sign in
             </button>
-            <Link
-              to="/upload"
-              style={{
-                background: "var(--le-accent)",
-                color: "var(--le-accent-fg)",
-                border: "none",
-                padding: "8px 16px",
-                borderRadius: 4,
-                fontSize: 13,
-                fontWeight: 500,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                cursor: "pointer",
-                letterSpacing: "-0.005em",
-                textDecoration: "none",
-                fontFamily: "var(--le-font-sans)",
-              }}
-            >
+            <LEButtonLink to="/upload" variant="primary" size="sm" className="le-cta-primary-hover">
               Get started <LEIcon name="arrow" size={12} color="var(--le-accent-fg)" />
-            </Link>
+            </LEButtonLink>
           </>
         )}
       </div>

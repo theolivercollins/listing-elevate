@@ -14,7 +14,7 @@ export function PublishHistoryPanel({ postId }: Props) {
         {jobs.map(j => (
           <li key={j.id} className="flex items-center gap-2">
             <span className="text-muted-foreground">{new Date(j.created_at).toLocaleString()}</span>
-            <span className="font-mono">{j.kind}</span>
+            <span className="font-sans">{j.kind}</span>
             <span className={j.state === "done" ? "text-green-600" : j.state === "failed" ? "text-red-600" : "text-muted-foreground"}>{j.state}</span>
             {j.last_error && <span className="text-red-500">— {j.last_error.slice(0, 80)}</span>}
             {j.replay_url && <a href={j.replay_url} target="_blank" rel="noreferrer" className="text-primary underline">replay ↗</a>}

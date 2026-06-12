@@ -33,6 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       default_meta_title: b.default_meta_title ?? null,
       default_meta_description: b.default_meta_description ?? null,
       default_meta_tags: Array.isArray(b.default_meta_tags) ? b.default_meta_tags : [],
+      metadata: b.metadata ?? {},
     }]).select("id").single();
     if (error) return res.status(500).json({ error: error.message });
     return res.status(201).json({ id: data!.id });

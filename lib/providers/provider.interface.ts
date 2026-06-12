@@ -21,6 +21,15 @@ export interface GenerateClipParams {
    * model A/B work without env gymnastics.
    */
   modelOverride?: string;
+  /**
+   * Optional per-render resolution override. When set, takes precedence over
+   * the model descriptor's default `resolution` field. Lets the UI quality
+   * dropdown override the model's default without a code deploy.
+   * Only the Atlas Seedance SKU meaningfully honors this today; Kling SKUs
+   * ignore it (their output resolution is fixed in-model). The -SR values
+   * are Seedance 2.0's super-resolution (FlashVSR) tiers.
+   */
+  resolution?: "480p" | "720p" | "720p-SR" | "1080p" | "1080p-SR" | "1440p-SR" | "4k";
   prompt: string;
   durationSeconds: number;
   aspectRatio: "16:9" | "9:16";

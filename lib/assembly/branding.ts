@@ -18,6 +18,8 @@ export interface PropertyBranding {
   logoUrl: string | null;
   primaryColor: string;
   secondaryColor: string;
+  /** Agent contact phone (user_profiles.phone), or null when unset. */
+  phone: string | null;
 }
 
 interface ColorsBlob {
@@ -58,12 +60,13 @@ export async function fetchPropertyBranding(
       logoUrl: null,
       primaryColor: DEFAULT_PRIMARY,
       secondaryColor: DEFAULT_SECONDARY,
+      phone: null,
     };
   }
 
   const { data: profile } = await supabase
     .from("user_profiles")
-    .select("brokerage, logo_url, colors")
+    .select("brokerage, logo_url, colors, phone")
     .eq("user_id", prop.submitted_by)
     .maybeSingle();
 
@@ -73,6 +76,7 @@ export async function fetchPropertyBranding(
       logoUrl: null,
       primaryColor: DEFAULT_PRIMARY,
       secondaryColor: DEFAULT_SECONDARY,
+      phone: null,
     };
   }
 
@@ -83,5 +87,6 @@ export async function fetchPropertyBranding(
     logoUrl: (profile.logo_url as string | null) ?? null,
     primaryColor: pickColor(colors.primary, DEFAULT_PRIMARY),
     secondaryColor: pickColor(colors.secondary, DEFAULT_SECONDARY),
+    phone: (profile.phone as string | null) ?? null,
   };
 }

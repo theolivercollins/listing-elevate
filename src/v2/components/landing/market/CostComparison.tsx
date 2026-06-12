@@ -21,7 +21,7 @@ export default function CostComparison() {
   const savings = useCountUp(86, 2400, isInView);
 
   return (
-    <div ref={ref} className="px-6 sm:px-12 pb-10">
+    <div ref={ref} className="pb-10">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* Left: Price comparison with animated bars */}
@@ -30,13 +30,13 @@ export default function CostComparison() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           className="p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div className="flex items-center justify-between mb-6">
             <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: DIM }}>
               Cost per listing
             </span>
-            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}>
+            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}>
               Listing Elevate
             </span>
           </div>
@@ -69,7 +69,7 @@ export default function CostComparison() {
                   <AnimatedCircleCheck isInView={isInView} delay={0.4} size={14} />
                   <span className="text-[12px] font-medium" style={{ color: WHITE }}>Listing Elevate</span>
                 </div>
-                <span className="text-[12px] font-semibold tabular-nums" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>${ourPrice}</span>
+                <span className="text-[12px] font-semibold tabular-nums" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>${ourPrice}</span>
               </div>
               <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
@@ -97,7 +97,7 @@ export default function CostComparison() {
                   <AnimatedCircleX isInView={isInView} delay={0.7} size={14} />
                   <span className="text-[12px]" style={{ color: DIM }}>Industry average</span>
                 </div>
-                <span className="text-[12px] tabular-nums" style={{ color: DIM, fontFamily: "'JetBrains Mono', monospace" }}>${avgPrice}</span>
+                <span className="text-[12px] tabular-nums" style={{ color: DIM, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>${avgPrice}</span>
               </div>
               <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
@@ -117,7 +117,7 @@ export default function CostComparison() {
                   <AnimatedCircleX isInView={isInView} delay={0.9} size={14} />
                   <span className="text-[12px]" style={{ color: DIMMER }}>Premium videography</span>
                 </div>
-                <span className="text-[12px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>$1,500</span>
+                <span className="text-[12px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>$1,500</span>
               </div>
               <div className="w-full h-3" style={{ background: "var(--le-border)" }}>
                 <motion.div
@@ -138,7 +138,7 @@ export default function CostComparison() {
           animate={isInView ? { opacity: 1, y: 0 } : {}}
           transition={{ duration: 0.55, delay: 0.15, ease: [0.22, 1, 0.36, 1] }}
           className="p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             <span className="text-[10px] tracking-[0.2em] uppercase block mb-6" style={{ color: DIM }}>
@@ -198,7 +198,7 @@ export default function CostComparison() {
             className="mt-6 pt-4"
             style={{ borderTop: `1px solid ${LINE}` }}
           >
-            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <span className="text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Source: HomeJab Real Estate Videography Pricing Guide (2024)
             </span>
           </motion.div>

@@ -6,7 +6,7 @@ import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { submitLabRender, ProviderCapacityError } from "../../../lib/prompt-lab.js";
 import { resolveEndFrameUrl } from "../../../lib/services/end-frame.js";
-import { V1_ATLAS_SKUS, type V1AtlasSku } from "../../../lib/providers/atlas.js";
+import { V1_ATLAS_SKUS, type V1AtlasSku, V1_1_LAB_SKUS } from "../../../lib/providers/atlas.js";
 
 // Audit A C2: wrap critical UPDATE calls that follow a remote POST (Atlas charge).
 // If the UPDATE fails, the provider has already billed us but we can't retrieve
@@ -43,19 +43,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
 
-  const { iteration_id, provider: providerOverride, sku: skuParam } = (req.body ?? {}) as {
+  const { iteration_id, provider: providerOverride, sku: skuParam, resolution: resolutionParam } = (req.body ?? {}) as {
     iteration_id?: string;
     provider?: "kling" | "runway" | null;
     sku?: string | null;
+    resolution?: string | null;
   };
   if (!iteration_id) return res.status(400).json({ error: "iteration_id required" });
 
-  // Validate sku if provided — must be one of the V1 allow-list SKUs.
+  // Validate resolution if provided — must be in the known set.
+  // -SR values are Seedance 2.0's super-resolution tiers (2026-06 Atlas catalog).
+  const VALID_RESOLUTIONS = ["480p", "720p", "720p-SR", "1080p", "1080p-SR", "1440p-SR", "4k"] as const;
+  if (resolutionParam != null && !(VALID_RESOLUTIONS as readonly string[]).includes(resolutionParam)) {
+    return res.status(400).json({
+      error: `resolution="${resolutionParam}" is not valid. Must be one of: ${VALID_RESOLUTIONS.join(", ")}`,
+    });
+  }
+  const resolution = resolutionParam ?? null;
+
+  // Validate sku if provided — must be in either the V1 or V1.1 allow-list.
+  // We don't yet know the session's pipeline_version (fetched below), so we
+  // accept both catalogs here. The v1.1-specific resolution block below then
+  // checks V1_1_LAB_SKUS membership and defaults to seedance when unrecognised.
+  // v1 sessions hit the normal router path and only V1_ATLAS_SKUS are routable.
   let sku: V1AtlasSku | null = null;
   if (skuParam != null) {
-    if (!(V1_ATLAS_SKUS as readonly string[]).includes(skuParam)) {
+    const allValidSkus = [...(V1_ATLAS_SKUS as readonly string[]), ...(V1_1_LAB_SKUS as readonly string[])];
+    if (!allValidSkus.includes(skuParam)) {
       return res.status(400).json({
-        error: `sku="${skuParam}" is not a valid V1 Atlas SKU. Valid: ${V1_ATLAS_SKUS.join(", ")}`,
+        error: `sku="${skuParam}" is not a recognised Lab SKU. V1: ${V1_ATLAS_SKUS.join(", ")}; V1.1: ${V1_1_LAB_SKUS.join(", ")}`,
       });
     }
     sku = skuParam as V1AtlasSku;
@@ -64,10 +80,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
   const { data: iteration, error: iErr } = await supabase
     .from("prompt_lab_iterations")
-    .select("*, prompt_lab_sessions(image_url)")
+    .select("*, prompt_lab_sessions(image_url, pipeline_version)")
     .eq("id", iteration_id)
     .single();
   if (iErr || !iteration) return res.status(404).json({ error: "iteration not found" });
+
+  // Read the pipeline_version from the parent session. Defaults to 'v1' for
+  // sessions created before migration 067 (ADD COLUMN IF NOT EXISTS DEFAULT 'v1').
+  const pipelineVersion: "v1" | "v1.1" =
+    ((iteration.prompt_lab_sessions as { pipeline_version?: string } | null)?.pipeline_version ?? "v1") === "v1.1"
+      ? "v1.1"
+      : "v1";
+
+  // v1.1 SKU resolution:
+  //   - If user-supplied sku is in V1_1_LAB_SKUS → honour it.
+  //   - Else (missing / not in the catalog) → default to seedance-pro-pushin.
+  // V1_ATLAS_SKUS validation above only runs for v1; v1.1 has its own catalog.
+  if (pipelineVersion === "v1.1") {
+    const userSku = skuParam ?? null;
+    sku = (userSku && (V1_1_LAB_SKUS as readonly string[]).includes(userSku))
+      ? (userSku as V1AtlasSku)
+      : ("seedance-pro-pushin" as V1AtlasSku);
+  }
   if (!iteration.director_output_json) {
     return res.status(400).json({ error: "iteration has no director output to render" });
   }
@@ -85,10 +119,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // session (via director_output_json.end_photo_id). Single-image Prompt Lab
   // renders — the V1 default — must NOT get a synthetic center-crop, because
   // submitLabRender treats any non-null endImageUrl as a paired render and
-  // forces model_used = "kling-v2-1-pair" regardless of the user's SKU
-  // selection. That routes Atlas through its paired-image endpoint and stalls
-  // on single-photo sessions (2026-04-23 bug: 3 iterations stuck 85+ min on
-  // kling-v2-1-pair with no real end photo).
+  // forces model_used = "kling-v3-pro" (the paired SKU) regardless of the
+  // user's SKU selection. That routes Atlas through its paired-image path and
+  // stalls on single-photo sessions (2026-04-23 bug: 3 iterations stuck 85+
+  // min on the then-paired SKU kling-v2-1-pair with no real end photo).
   const director = iteration.director_output_json as { end_photo_id?: string } | null;
   let endImageUrl: string | null = null;
   if (director?.end_photo_id) {
@@ -116,13 +150,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .eq("id", iteration_id);
 
   try {
-    const { jobId, provider, sku: resolvedSku, thompson, staticSku } = await submitLabRender({
+    const { jobId, provider, sku: resolvedSku, thompson, staticSku, resolutionUsed } = await submitLabRender({
       imageUrl,
       scene: iteration.director_output_json,
       roomType: iteration.analysis_json?.room_type ?? "other",
-      providerOverride: providerOverride === "kling" || providerOverride === "runway" ? providerOverride : null,
+      // v1.1 Seedance: force Atlas by nulling providerOverride (Seedance is Atlas-only).
+      // v1.1 non-Seedance (Kling 3, etc.): pass user's provider choice through normally.
+      // v1: pass user's provider choice through as before.
+      providerOverride: (pipelineVersion === "v1.1" && sku === ("seedance-pro-pushin" as V1AtlasSku))
+        ? null
+        : (providerOverride === "kling" || providerOverride === "runway" ? providerOverride : null),
       endImageUrl,
       sku,
+      pipelineVersion,
+      resolution,
     });
 
     // Audit A C2: Atlas POST has already fired (account charged). Retry the
@@ -138,6 +179,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             render_error: null,
             model_used: resolvedSku,
             sku_source: "captured_at_render",
+            pipeline_version: pipelineVersion,
+            resolution_used: resolutionUsed,
           })
           .eq("id", iteration_id)
           .select()

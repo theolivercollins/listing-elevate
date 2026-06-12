@@ -1,11 +1,12 @@
 // lib/blog-engine/publishers/sierra/index.ts
-import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult } from "../types.js";
+import type { Publisher, PublisherOpts, PublishResult, EditResult, TaxonomyResult, UnpublishResult } from "../types.js";
 import type { BlogPost } from "../../types.js";
 import { runInSession } from "../../browserbase.js";
 import type { SierraCreds } from "./auth.js";
 import { fetchTaxonomy } from "./taxonomy.js";
 import { sierraPublish, type SierraPublishInput } from "./publish.js";
 import { sierraEdit, type SierraEditInput, type EditableField } from "./edit.js";
+import { sierraUnpublish } from "./unpublish.js";
 
 export interface SierraPublisherDeps {
   loadImage: (post: BlogPost) => Promise<{ buffer: Buffer; filename: string } | null>;
@@ -57,6 +58,20 @@ export function createSierraPublisher(deps: SierraPublisherDeps): SierraPublishe
       };
       const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
         sierraEdit(page, input),
+      );
+      trace.last = { sessionId, replayUrl };
+      publisher.lastSession = trace.last;
+      return result;
+    },
+
+    async unpublish(externalPostId: string, postTitle: string | null, opts: PublisherOpts): Promise<UnpublishResult> {
+      const { result, sessionId, replayUrl } = await runInSession(opts.contextId, async ({ page }) =>
+        sierraUnpublish(page, {
+          baseUrl: opts.baseUrl,
+          creds: toCreds(opts),
+          externalPostId,
+          postTitle,
+        }),
       );
       trace.last = { sessionId, replayUrl };
       publisher.lastSession = trace.last;

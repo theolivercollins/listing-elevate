@@ -112,15 +112,15 @@ describe("submitLabRender — SKU threading", () => {
     expect(result.sku).toBe(V1_DEFAULT_SKU);
   });
 
-  it("uses kling-v2-1-pair for paired scenes (endImageUrl set)", async () => {
+  it("uses kling-v3-pro for paired scenes (endImageUrl set) — upgraded from kling-v2-1-pair 2026-06-10", async () => {
     const result = await submitLabRender({
       imageUrl: "https://cdn.example.com/photo.jpg",
       scene: baseScene,
       roomType: "living_room",
       endImageUrl: "https://cdn.example.com/end.jpg",
     });
-    expect(result.sku).toBe("kling-v2-1-pair");
-    expect(atlasConstructorCalls).toContain("kling-v2-1-pair");
+    expect(result.sku).toBe("kling-v3-pro");
+    expect(atlasConstructorCalls).toContain("kling-v3-pro");
   });
 });
 

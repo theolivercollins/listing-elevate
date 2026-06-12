@@ -76,6 +76,36 @@ interface CreatomateRenderResponse {
   status: "planned" | "waiting" | "transcribing" | "rendering" | "succeeded" | "failed";
   url?: string;
   error_message?: string;
+  /** Output duration in seconds, present once the render succeeds. */
+  duration?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Supersampling helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Round n up to the nearest even integer (H.264 macroblock alignment).
+ * Odd dimensions cause encoder errors on some platforms.
+ */
+function roundToEven(n: number): number {
+  const rounded = Math.round(n);
+  return rounded % 2 === 0 ? rounded : rounded + 1;
+}
+
+/**
+ * Read the ASSEMBLY_SUPERSAMPLE env var (float, default 1.5, clamped [1, 2]).
+ * This is the single source of truth for how much larger than 1920×1080 the
+ * landscape Creatomate canvas is. At 1.5 (default): 2880×1620, giving
+ * ~19 Mbps vs ~10 Mbps at 1920×1080 (Gate A measured 2026-06-11).
+ *
+ * Rollback: set ASSEMBLY_SUPERSAMPLE=1 in the environment — both builders
+ * and the cost model drop back to the 1920×1080 baseline.
+ */
+export function assembleSuperSampleFactor(): number {
+  const raw = parseFloat(process.env.ASSEMBLY_SUPERSAMPLE ?? "1.5");
+  const factor = Number.isFinite(raw) ? raw : 1.5;
+  return Math.min(2, Math.max(1, factor));
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +119,109 @@ const OPENING_OVERLAY_RATIO = 0.25;
 const OPENING_OVERLAY_MIN = 4.0;
 const CLOSING_OVERLAY_DURATION = 4.0;
 
+/** Optional audio for the concat path (owner-lab "Create Video" — WI-2). */
+export interface ConcatAudioOptions {
+  /** Background music URL + optional volume (0..1, default 0.18). */
+  music?: { url: string; volume?: number } | null;
+  /** Voiceover narration URL + optional volume (0..1, default 1.0). */
+  voiceover?: { url: string; volume?: number } | null;
+  /**
+   * Total video length in seconds, when known. Used to trim the music element
+   * so it doesn't extend the composition past the clips. When omitted (Prompt
+   * Lab iterations don't store per-clip durations), the music plays its source
+   * length and the composition auto-fits to the LONGEST element — so only pass
+   * music here once you can supply this, or keep music short.
+   */
+  totalDurationSeconds?: number;
+}
+
+/**
+ * Build a Creatomate RenderScript that concatenates the given clip URLs
+ * back-to-back with hard cuts. With no audio options it's the original
+ * clips-only path; pass `audio` to layer a music track (track 5) and/or a
+ * voiceover narration track (track 6) — the owner-lab "Create Video" upgrade.
+ *
+ * Relies on Creatomate's auto-timing: video elements sharing a track with no
+ * `time` play sequentially, and a video with no `duration` uses its source
+ * length — so we don't need per-clip durations. The composition `duration` is
+ * null, which auto-fits to the clips (unless an untrimmed music track is
+ * longer — see ConcatAudioOptions.totalDurationSeconds).
+ */
+export function buildCreatomateConcatScript(
+  clipUrls: string[],
+  aspectRatio: "16:9" | "9:16" = "16:9",
+  audio: ConcatAudioOptions = {},
+): CreatomateRenderScript {
+  if (clipUrls.length === 0) {
+    throw new Error("buildCreatomateConcatScript: clipUrls array is empty");
+  }
+
+  const isVertical = aspectRatio === "9:16";
+  // Landscape renders use a supersampled canvas controlled by ASSEMBLY_SUPERSAMPLE
+  // (default 1.5 → 2880×1620). Measured 2026-06-11: Gate A PASS at 1.5×
+  // (19.18 Mbps, bpp_ratio 0.860). Vertical stays at the 1080×1920 baseline
+  // (not probed; vertical clips are typically already at native resolution).
+  // Rollback: set ASSEMBLY_SUPERSAMPLE=1 → reverts to 1920×1080.
+  const factor = assembleSuperSampleFactor();
+  const width = isVertical ? 1080 : roundToEven(1920 * factor);
+  const height = isVertical ? 1920 : roundToEven(1080 * factor);
+
+  // One video element per clip, all on track 1 with no `time` (→ sequential)
+  // and no `duration` (→ each uses its source length).
+  const elements: CreatomateElement[] = clipUrls.map((source) => ({
+    type: "video",
+    source,
+    track: 1,
+  }));
+
+  // Background music — track 5, ducked. Trimmed to the video length when known.
+  if (audio.music?.url) {
+    const musicEl: CreatomateElement = {
+      type: "audio",
+      source: audio.music.url,
+      track: 5,
+      time: 0,
+      volume: `${Math.round((audio.music.volume ?? 0.18) * 100)}%`,
+      animations: [
+        { type: "fade", time: "start", duration: "1.0", fade: true },
+        { type: "fade", time: "end", duration: "1.5", fade: false },
+      ],
+    };
+    if (audio.totalDurationSeconds && audio.totalDurationSeconds > 0) {
+      musicEl.duration = audio.totalDurationSeconds;
+    }
+    elements.push(musicEl);
+  }
+
+  // Voiceover narration — track 6, full volume above the ducked music.
+  if (audio.voiceover?.url) {
+    elements.push({
+      type: "audio",
+      source: audio.voiceover.url,
+      track: 6,
+      time: 0,
+      volume: `${Math.round((audio.voiceover.volume ?? 1.0) * 100)}%`,
+      animations: [{ type: "fade", time: "end", duration: "0.5", fade: false }],
+    });
+  }
+
+  return {
+    output_format: "mp4",
+    width,
+    height,
+    // frame_rate intentionally OMITTED — Creatomate then defaults to the
+    // highest frame rate among the input videos (docs). Our AI source clips
+    // are 24fps; forcing 30 would resample 24->30 and soften motion (see
+    // docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md). The old
+    // frame_rate: 30 here was observed NOT honored (output measured 24fps),
+    // but omitting it removes the latent risk entirely.
+    // null → auto-fit the composition to the sequential clips (omitting it
+    // makes /v2/renders fall back to a 5s draft, so be explicit).
+    duration: null,
+    elements,
+  };
+}
+
 /**
  * Build a Creatomate RenderScript from the same params the Shotstack
  * builder uses. Default is hard cuts between clips with simple fade
@@ -98,15 +231,19 @@ const CLOSING_OVERLAY_DURATION = 4.0;
 export function buildCreatomateTimeline(
   params: AssembleVideoParams,
 ): CreatomateRenderScript {
-  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music } = params;
+  const { clips, overlays, aspectRatio, transition: clipTransition = "none", music, voiceover } = params;
 
   if (clips.length === 0) {
     throw new Error("buildCreatomateTimeline: clips array is empty");
   }
 
   const isVertical = aspectRatio === "9:16";
-  const width = isVertical ? 1080 : 1920;
-  const height = isVertical ? 1920 : 1080;
+  // Landscape renders use a supersampled canvas controlled by ASSEMBLY_SUPERSAMPLE
+  // (default 1.5 → 2880×1620). See buildCreatomateConcatScript for details.
+  // Rollback: set ASSEMBLY_SUPERSAMPLE=1 → reverts to 1920×1080.
+  const factor = assembleSuperSampleFactor();
+  const width = isVertical ? 1080 : roundToEven(1920 * factor);
+  const height = isVertical ? 1920 : roundToEven(1080 * factor);
 
   // Branding: brand color tints the closing accent bar; logo (if provided)
   // becomes a corner watermark visible for the entire timeline.
@@ -344,11 +481,34 @@ export function buildCreatomateTimeline(
       ]
     : [];
 
+  // Voiceover narration — full-volume audio element on track 6, sitting on
+  // top of the ducked music. Starts at 0; fades out at the tail so it doesn't
+  // clip hard if the narration runs to the very end.
+  const voiceoverElements: CreatomateElement[] = voiceover?.url
+    ? [
+        {
+          type: "audio",
+          source: voiceover.url,
+          track: 6,
+          time: 0,
+          volume: `${Math.round((voiceover.volume ?? 1.0) * 100)}%`,
+          animations: [
+            { type: "fade", time: "end", duration: "0.5", fade: false },
+          ],
+        },
+      ]
+    : [];
+
   return {
     output_format: "mp4",
     width,
     height,
-    frame_rate: 30,
+    // frame_rate intentionally OMITTED — Creatomate then defaults to the
+    // highest frame rate among the input videos (docs). Our AI source clips
+    // are 24fps; forcing 30 would resample 24->30 and soften motion (see
+    // docs/sessions/2026-06-11-assembly-quality-drop-diagnosis.md). The old
+    // frame_rate: 30 here was observed NOT honored (output measured 24fps),
+    // but omitting it removes the latent risk entirely.
     // Explicit timeline duration — Creatomate /v2/renders defaults to 5s
     // when this is omitted, regardless of how long the elements run.
     duration: totalDuration,
@@ -362,6 +522,7 @@ export function buildCreatomateTimeline(
       closingAgent,
       ...logoElements,
       ...musicElements,
+      ...voiceoverElements,
     ],
   };
 }
@@ -372,8 +533,9 @@ export function buildCreatomateTimeline(
 
 /** Options for assembleFromTemplate. */
 export interface TemplateRenderOptions {
-  /** Modification dict keyed by template element name (e.g. "St#/StName.text"). */
-  modifications: Record<string, string | number | null>;
+  /** Modification dict keyed by template element name (e.g. "St#/StName.text").
+   *  Booleans are valid RenderScript property values (e.g. `.text_wrap`). */
+  modifications: Record<string, string | number | boolean | null>;
   /** Multiplier on the template's canvas (verified 2026-05-14). Output
    *  dimensions = canvas × renderScale. Top-level `width`/`height` in the
    *  request body are silently ignored by /v2/renders when a template is
@@ -406,8 +568,25 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
   /** Code-generated RenderScript path — used when no template_id is configured.
    *  Builds a timeline from clips + overlays via buildCreatomateTimeline(). */
   async assemble(params: AssembleVideoParams): Promise<AssemblyJob> {
-    const renderScript = buildCreatomateTimeline(params);
+    return this.submitRenderScript(buildCreatomateTimeline(params));
+  }
 
+  /**
+   * Concatenate the given clip URLs into a single video (hard cuts, no
+   * overlays/music) and submit the render. Used by the Prompt Lab
+   * "Create Video" assembly path.
+   */
+  async assembleConcat(
+    clipUrls: string[],
+    aspectRatio: "16:9" | "9:16" = "16:9",
+    audio: ConcatAudioOptions = {},
+  ): Promise<AssemblyJob> {
+    return this.submitRenderScript(buildCreatomateConcatScript(clipUrls, aspectRatio, audio));
+  }
+
+  private async submitRenderScript(
+    renderScript: CreatomateRenderScript,
+  ): Promise<AssemblyJob> {
     // /v2/renders expects the RenderScript fields spread at the TOP LEVEL —
     // NOT wrapped in a `source:` object (that was the v1 convention).
     // Wrapping causes Creatomate to silently fall back to a default 5-second
@@ -511,6 +690,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       return {
         status: "complete",
         videoUrl: render.url,
+        durationSeconds: render.duration,
       };
     }
 
@@ -546,7 +726,9 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       source?: {
         width?: number;
         height?: number;
-        elements?: Array<{ name?: string; type?: string; dynamic?: string[] }>;
+        // Creatomate returns `dynamic` as a string[] of property names for
+        // some elements but a plain boolean for others — normalize below.
+        elements?: Array<{ name?: string; type?: string; dynamic?: string[] | boolean }>;
       };
     };
     const src = data.source ?? {};
@@ -557,7 +739,7 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
       elements: (src.elements ?? []).map((e) => ({
         name: e.name ?? "",
         type: e.type ?? "",
-        dynamic: e.dynamic ?? [],
+        dynamic: Array.isArray(e.dynamic) ? e.dynamic : [],
       })),
     };
   }
@@ -567,9 +749,11 @@ export class CreatomateProvider implements IVideoAssemblyProvider {
 // Cost helpers
 // ---------------------------------------------------------------------------
 
-// Creatomate credit consumption: ~28 credits per minute of 1080p 30fps video.
+// Creatomate credit consumption: ~28 credits per minute of 1080p30 video.
 // At Essential plan ($54/mo for 2,000 credits), that's ~$0.76 per output minute.
-// We express cost in cents for consistency with the rest of the system.
+// Landscape renders now use a supersampled canvas (ASSEMBLY_SUPERSAMPLE, default
+// 1.5 → 2880×1620 → 2.25× pixel area → 2.25× credits). Creatomate charges
+// proportional to pixel area × duration. Measured 2026-06-11: Gate A PASS.
 const CREATOMATE_CENTS_PER_MINUTE = parseInt(
   process.env.CREATOMATE_CENTS_PER_MINUTE ?? "76",
   10,
@@ -577,9 +761,21 @@ const CREATOMATE_CENTS_PER_MINUTE = parseInt(
 
 /**
  * Compute Creatomate cost in cents for a rendered output of the given duration.
- * Rounds duration up to the nearest minute for simplicity.
+ *
+ * Landscape (16:9) renders use a supersampled canvas (ASSEMBLY_SUPERSAMPLE,
+ * default 1.5 → 2.25× pixel area → 2.25× credits vs the 1920×1080 baseline).
+ * Vertical (9:16) stays at the 1080×1920 baseline rate (not supersampled).
+ * Rounds duration up to the nearest minute. Always returns an integer.
+ *
+ * At ASSEMBLY_SUPERSAMPLE=1 (rollback): 16:9 cost equals baseline (76¢/min).
  */
-export function creatomateCostCents(outputDurationSeconds: number): number {
+export function creatomateCostCents(
+  outputDurationSeconds: number,
+  aspectRatio: "16:9" | "9:16" = "16:9",
+): number {
   const minutes = Math.ceil(outputDurationSeconds / 60);
-  return minutes * CREATOMATE_CENTS_PER_MINUTE;
+  // Pixel-area ratio = factor²; vertical is not supersampled (factor=1 always).
+  const factor = aspectRatio === "16:9" ? assembleSuperSampleFactor() : 1;
+  const pixelAreaMultiplier = factor * factor;
+  return Math.round(minutes * CREATOMATE_CENTS_PER_MINUTE * pixelAreaMultiplier);
 }

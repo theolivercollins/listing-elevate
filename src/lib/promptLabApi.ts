@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { JudgeRubricResult } from "../../lib/prompts/judge-rubric.js";
+import type { PromptLabAssembly, PromptLabListingAssembly, PromptLabModelFeedback } from "../../lib/types.js";
 
 export interface LabSession {
   id: string;
@@ -11,6 +12,8 @@ export interface LabSession {
   batch_label: string | null;
   archived: boolean;
   created_at: string;
+  /** Pipeline version this session was created under. v1 = legacy mixed-movement; v1.1 = Seedance push-in. */
+  pipeline_version: 'v1' | 'v1.1';
   iteration_count?: number;
   best_rating?: number | null;
   completed?: boolean;
@@ -79,6 +82,8 @@ export interface LabIteration {
   judge_error: string | null;
   judge_model: string | null;
   judge_version: string | null;
+  /** Pipeline version inherited from the parent session. */
+  pipeline_version: 'v1' | 'v1.1';
 }
 
 export type { JudgeRubricResult };
@@ -113,13 +118,20 @@ export async function uploadLabImage(file: File): Promise<{ url: string; path: s
   return { url: pub.publicUrl, path };
 }
 
-export function listSessions(opts?: { includeArchived?: boolean }): Promise<{ sessions: LabSession[] }> {
-  const params = opts?.includeArchived ? "?include_archived=true" : "";
+export function listSessions(opts?: { includeArchived?: boolean; pipelineVersion?: 'v1' | 'v1.1' }): Promise<{ sessions: LabSession[] }> {
+  const parts: string[] = [];
+  if (opts?.includeArchived) parts.push("include_archived=true");
+  if (opts?.pipelineVersion) parts.push(`pipeline_version=${encodeURIComponent(opts.pipelineVersion)}`);
+  const params = parts.length ? `?${parts.join("&")}` : "";
   return fetchJSON(`/api/admin/prompt-lab/sessions${params}`);
 }
 
-export function createSession(body: { image_url: string; image_path: string; label?: string; archetype?: string; batch_label?: string }): Promise<LabSession> {
-  return fetchJSON("/api/admin/prompt-lab/sessions", { method: "POST", body: JSON.stringify(body) });
+export function createSession(body: { image_url: string; image_path: string; label?: string; archetype?: string; batch_label?: string; pipelineVersion?: 'v1' | 'v1.1' }): Promise<LabSession> {
+  const { pipelineVersion, ...rest } = body;
+  return fetchJSON("/api/admin/prompt-lab/sessions", {
+    method: "POST",
+    body: JSON.stringify({ ...rest, ...(pipelineVersion ? { pipeline_version: pipelineVersion } : {}) }),
+  });
 }
 
 export function getSession(sessionId: string): Promise<{ session: LabSession; iterations: LabIteration[] }> {
@@ -160,22 +172,34 @@ export function rateIteration(body: {
 export function renderIteration(
   iterationId: string,
   provider?: "kling" | "runway" | null,
-  sku?: string | null
+  sku?: string | null,
+  resolution?: string | null,
 ): Promise<LabIteration & { renderError?: string }> {
   return fetchJSON("/api/admin/prompt-lab/render", {
     method: "POST",
-    body: JSON.stringify({ iteration_id: iterationId, provider: provider ?? null, sku: sku ?? undefined }),
+    body: JSON.stringify({
+      iteration_id: iterationId,
+      provider: provider ?? null,
+      sku: sku ?? undefined,
+      resolution: resolution ?? undefined,
+    }),
   });
 }
 
 export function rerenderWithProvider(
   sourceIterationId: string,
   provider: "kling" | "runway" | "atlas",
-  sku?: string | null
+  sku?: string | null,
+  resolution?: string | null,
 ): Promise<{ iteration: LabIteration; queued?: boolean; message?: string }> {
   return fetchJSON("/api/admin/prompt-lab/rerender", {
     method: "POST",
-    body: JSON.stringify({ source_iteration_id: sourceIterationId, provider, sku: sku ?? undefined }),
+    body: JSON.stringify({
+      source_iteration_id: sourceIterationId,
+      provider,
+      sku: sku ?? undefined,
+      resolution: resolution ?? undefined,
+    }),
   });
 }
 
@@ -214,6 +238,134 @@ export function fetchBatchSelection(batchLabel: string | null): Promise<BatchSel
     method: "POST",
     body: JSON.stringify({ batch_label: batchLabel }),
   });
+}
+
+// ─── Assembly API ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/prompt-lab/assemble
+ * Assembles the given iterations (in order) into a single MP4 via Shotstack
+ * (cloud concat). Returns the assembly id, the URL of the assembled video,
+ * and its duration. `aspectRatio` defaults to 16:9 server-side.
+ */
+export async function assembleLab(
+  sessionId: string,
+  iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble", {
+    method: "POST",
+    body: JSON.stringify({ session_id: sessionId, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
+  });
+}
+
+/**
+ * Batch-level assembly: assemble a single MP4 from iterations across MULTIPLE
+ * sessions sharing the same batch_label. Backend validates that every
+ * iteration belongs to a session whose batch_label matches.
+ */
+export async function assembleLabBatch(
+  batchLabel: string,
+  iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble", {
+    method: "POST",
+    body: JSON.stringify({ batch_label: batchLabel, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
+  });
+}
+
+/**
+ * GET /api/admin/prompt-lab/assemblies?session_id=<>
+ * Returns the most recent assemblies for the given session (newest first).
+ */
+export async function listAssemblies(sessionId: string): Promise<PromptLabAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/assemblies?session_id=${encodeURIComponent(sessionId)}`);
+}
+
+/**
+ * GET /api/admin/prompt-lab/assemblies?batch_label=<>
+ * Returns the most recent batch-level assemblies for the given batch.
+ */
+export async function listBatchAssemblies(batchLabel: string): Promise<PromptLabAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/assemblies?batch_label=${encodeURIComponent(batchLabel)}`);
+}
+
+export type { PromptLabAssembly };
+
+// ─── Listing Assembly API ─────────────────────────────────────────────────────
+
+/**
+ * POST /api/admin/prompt-lab/assemble-listing
+ * Assembles the given listing iterations (in order) into a single MP4 via
+ * Shotstack (cloud concat). Returns the assembly id, the URL of the assembled
+ * video, and its duration. `aspectRatio` defaults to 16:9 server-side.
+ */
+export async function assembleListing(
+  listingId: string,
+  iterationIds: string[],
+  aspectRatio?: "16:9" | "9:16",
+): Promise<{ id: string; assembled_url: string; duration_seconds: number }> {
+  return fetchJSON("/api/admin/prompt-lab/assemble-listing", {
+    method: "POST",
+    body: JSON.stringify({ listing_id: listingId, iteration_ids: iterationIds, aspect_ratio: aspectRatio }),
+  });
+}
+
+/**
+ * GET /api/admin/prompt-lab/listing-assemblies?listing_id=<>
+ * Returns the most recent assemblies for the given listing (newest first).
+ */
+export async function listListingAssemblies(listingId: string): Promise<PromptLabListingAssembly[]> {
+  return fetchJSON(`/api/admin/prompt-lab/listing-assemblies?listing_id=${encodeURIComponent(listingId)}`);
+}
+
+export type { PromptLabListingAssembly };
+
+// ─── Model Feedback API ───────────────────────────────────────────────────────
+
+export { type PromptLabModelFeedback };
+
+/**
+ * Returns all qualitative feedback rows for one iteration, ordered ASC by
+ * created_at. Used by ModelFeedbackPanel on mount.
+ */
+export function listIterationFeedback(iterationId: string): Promise<PromptLabModelFeedback[]> {
+  return fetchJSON(
+    `/api/admin/prompt-lab/model-feedback?iteration_id=${encodeURIComponent(iterationId)}`
+  );
+}
+
+/**
+ * Creates a new feedback row for an iteration. The server fills the
+ * denormalized fields (session_id, model_used, pipeline_version,
+ * resolution_used, author) from the parent iteration row and auth context.
+ */
+export function createIterationFeedback(
+  iterationId: string,
+  comment: string
+): Promise<PromptLabModelFeedback> {
+  return fetchJSON("/api/admin/prompt-lab/model-feedback", {
+    method: "POST",
+    body: JSON.stringify({ iteration_id: iterationId, comment }),
+  });
+}
+
+/**
+ * Returns recent feedback for a given model + pipeline_version, newest first.
+ * Used by the aggregate model-level view (future) and retrieval debugging.
+ */
+export function listRecentModelFeedback(
+  model: string,
+  pipelineVersion: string,
+  limit?: number
+): Promise<PromptLabModelFeedback[]> {
+  const parts = [
+    `model=${encodeURIComponent(model)}`,
+    `pipeline_version=${encodeURIComponent(pipelineVersion)}`,
+  ];
+  if (limit != null) parts.push(`limit=${limit}`);
+  return fetchJSON(`/api/admin/prompt-lab/model-feedback?${parts.join("&")}`);
 }
 
 export function overrideJudgeRating(

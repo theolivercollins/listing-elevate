@@ -102,7 +102,7 @@ export default function PricingCalculator() {
                 What does Listing Elevate cost you?
               </h3>
             </div>
-            <div className="flex items-center gap-1 text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
+            <div className="flex items-center gap-1 text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
               Based on avg. US home price: ${formatNumber(AVG_HOME_PRICE)}
             </div>
           </div>
@@ -176,8 +176,8 @@ export default function PricingCalculator() {
                   }
                 `}</style>
                 <div className="flex justify-between mt-2">
-                  <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>1</span>
-                  <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>100</span>
+                  <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>1</span>
+                  <span className="text-[9px] tabular-nums" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>100</span>
                 </div>
               </div>
 
@@ -189,7 +189,7 @@ export default function PricingCalculator() {
                     onClick={() => setListings(n)}
                     className="px-3 py-1.5 text-[11px] tabular-nums transition-all duration-200"
                     style={{
-                      fontFamily: "'JetBrains Mono', monospace",
+                      fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
                       color: listings === n ? WHITE : DIM,
                       border: `1px solid ${listings === n ? "var(--le-border-strong)" : LINE}`,
                       background: listings === n ? "var(--le-bg-sunken)" : "transparent",
@@ -347,7 +347,7 @@ export default function PricingCalculator() {
             <div className="mb-4">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px]" style={{ color: DIM }}>Commission earned</span>
-                <span className="text-[11px] tabular-nums font-medium" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
+                <span className="text-[11px] tabular-nums font-medium" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
                   {formatCurrency(calc.totalCommission)}
                 </span>
               </div>
@@ -366,7 +366,7 @@ export default function PricingCalculator() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[11px]" style={{ color: DIM }}>Listing Elevate cost</span>
-                <span className="text-[11px] tabular-nums font-medium" style={{ color: WHITE, fontFamily: "'JetBrains Mono', monospace" }}>
+                <span className="text-[11px] tabular-nums font-medium" style={{ color: WHITE, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
                   {formatCurrency(calc.totalCost)}
                 </span>
               </div>

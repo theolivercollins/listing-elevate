@@ -74,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         director_output_json: prev.director_output_json,
         embedding: prev.embedding,
         provider: prev.provider,
+        pipeline_version: (prev as Record<string, unknown>).pipeline_version as string | null ?? null,
       },
       rating: effectiveRating,
       promotedBy: auth.user.id,
@@ -97,12 +98,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       parentVec = JSON.parse(prev.embedding) as number[];
     } catch { /* no-op */ }
   }
+  // Hoisted out of the retrieval `if (parentVec)` block so the INSERT below
+  // can also tag the new iteration row with the parent's pipeline_version.
+  const parentPipelineVersion = (prev as Record<string, unknown>).pipeline_version as string | null ?? null;
   if (parentVec) {
     const parentRoomType = (prev.analysis_json as { room_type?: string } | null)?.room_type ?? null;
     [exemplars, losers, recipes] = await Promise.all([
-      retrieveSimilarIterations(parentVec, { minRating: 4, limit: 5, sessionId: prev.session_id }),
-      retrieveSimilarLosers(parentVec, { maxRating: 2, limit: 3, sessionId: prev.session_id }),
-      retrieveMatchingRecipes(parentVec, parentRoomType, { sessionId: prev.session_id }),
+      // v1/v1.1 isolation — refinement on a v1.1 iteration should only see
+      // v1.1 exemplars/losers, otherwise the refined prompt drifts toward
+      // v1 director patterns we explicitly walled off.
+      retrieveSimilarIterations(parentVec, {
+        minRating: 4,
+        limit: 5,
+        sessionId: prev.session_id,
+        ...(parentPipelineVersion ? { pipelineVersion: parentPipelineVersion } : {}),
+      }),
+      retrieveSimilarLosers(parentVec, {
+        maxRating: 2,
+        limit: 3,
+        sessionId: prev.session_id,
+        ...(parentPipelineVersion ? { pipelineVersion: parentPipelineVersion } : {}),
+      }),
+      retrieveMatchingRecipes(parentVec, parentRoomType, {
+        sessionId: prev.session_id,
+        ...(parentPipelineVersion ? { pipelineVersion: parentPipelineVersion } : {}),
+      }),
     ]);
   }
 
@@ -141,6 +161,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         user_comment: null,
         embedding: prev.embedding ?? null,
         embedding_model: prev.embedding_model ?? null,
+        // v1/v1.1 isolation — inherit pipeline_version from the parent iteration.
+        // Without this the refined child defaults to 'v1' (column DEFAULT) and a
+        // v1.1 refinement silently leaks into v1's training signal.
+        ...(parentPipelineVersion ? { pipeline_version: parentPipelineVersion } : {}),
         retrieval_metadata: {
           parent_iteration_id: prev.id,
           exemplars: exemplars.map((e) => ({ id: e.id, prompt: e.prompt, rating: e.rating, distance: e.distance, room_type: e.room_type, camera_movement: e.camera_movement })),

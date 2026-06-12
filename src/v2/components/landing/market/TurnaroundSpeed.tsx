@@ -20,17 +20,17 @@ interface TimelineStep {
 }
 
 const ELEVATE_STEPS: TimelineStep[] = [
-  { time: "0h", label: "Photos uploaded", detail: "Upload your listing photos to Listing Elevate" },
-  { time: "2h", label: "AI processing", detail: "Scene analysis, motion planning, voiceover" },
-  { time: "8h", label: "Quality review", detail: "Automated QC + human review pass" },
-  { time: "<24h", label: "Video delivered", detail: "16:9 + 9:16, ready to post everywhere" },
+  { time: "0 min", label: "Photos uploaded", detail: "Upload your listing photos to Listing Elevate" },
+  { time: "5 min", label: "AI processing", detail: "Scene analysis, motion planning, voiceover" },
+  { time: "20 min", label: "Quality review", detail: "Automated QC + human review pass" },
+  { time: "30 min", label: "Video delivered", detail: "16:9 + 9:16, ready to post everywhere" },
 ];
 
 const TRADITIONAL_STEPS: TimelineStep[] = [
-  { time: "0h", label: "Request quote", detail: "Find a videographer, negotiate pricing" },
-  { time: "24h", label: "Schedule shoot", detail: "Coordinate calendars, hope for good weather" },
-  { time: "48h", label: "On-site filming", detail: "2–4 hour shoot, crew setup and teardown" },
-  { time: "72h+", label: "Maybe delivered", detail: "Editing, revisions, back-and-forth" },
+  { time: "Day 0", label: "Request quote", detail: "Find a videographer, negotiate pricing" },
+  { time: "Day 1–2", label: "Schedule shoot", detail: "Coordinate calendars, hope for good weather" },
+  { time: "Day 3–4", label: "On-site filming", detail: "2–4 hour shoot, crew setup and teardown" },
+  { time: "Day 7+", label: "Maybe delivered", detail: "Editing, revisions, back-and-forth" },
 ];
 
 function TimelineTrack({
@@ -106,7 +106,7 @@ function TimelineTrack({
                     className="text-[12px] sm:text-[11px] tabular-nums font-semibold shrink-0"
                     style={{
                       color: isActive ? (isElevate ? WHITE : DIM) : DIMMER,
-                      fontFamily: "'JetBrains Mono', monospace",
+                      fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
                       transition: "color 0.4s ease-out",
                     }}
                   >
@@ -155,20 +155,20 @@ export default function TurnaroundSpeed() {
   const { ref, progress } = useScrollProgress();
 
   return (
-    <div ref={ref} className="px-4 sm:px-6 lg:px-12 pb-8 sm:pb-10">
+    <div ref={ref} className="pb-8 sm:pb-10">
       {/* Mobile: label tabs showing which timeline is which */}
       <div className="flex gap-2 mb-4 lg:hidden">
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase font-semibold"
-          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
+          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}`, borderRadius: 999 }}
         >
-          Listing Elevate · &lt;24h
+          Listing Elevate · 30 min
         </div>
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase"
-          style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+          style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
         >
-          Traditional · 72h+
+          Traditional · ~1 week
         </div>
       </div>
 
@@ -177,7 +177,7 @@ export default function TurnaroundSpeed() {
         {/* Listing Elevate timeline */}
         <div
           className="p-5 sm:p-8"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           {/* Header — hidden on mobile (shown in tabs above) */}
           <div className="hidden lg:flex items-center justify-between mb-2">
@@ -186,7 +186,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)" }}
+              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}
             >
               Listing Elevate
             </span>
@@ -199,7 +199,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-              style={{ color: WHITE, background: "var(--le-bg-sunken)" }}
+              style={{ color: WHITE, background: "var(--le-bg-sunken)", borderRadius: 999 }}
             >
               Listing Elevate
             </span>
@@ -216,14 +216,14 @@ export default function TurnaroundSpeed() {
               lineHeight: 0.85,
             }}
           >
-            &lt;24h
+            30 min
           </span>
 
           <TimelineTrack steps={ELEVATE_STEPS} progress={progress} isElevate={true} />
 
           <div className="mt-4 sm:mt-5">
-            <span className="text-[9px] sm:text-[10px]" style={{ color: DIMMER, fontFamily: "'JetBrains Mono', monospace" }}>
-              Source: Fotober Real Estate Video Pricing (2025)
+            <span className="text-[9px] sm:text-[10px]" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
+              Source: Recasi Media
             </span>
           </div>
         </div>
@@ -231,7 +231,7 @@ export default function TurnaroundSpeed() {
         {/* Traditional timeline */}
         <div
           className="p-5 sm:p-8 flex flex-col justify-between"
-          style={{ background: CARD_BG, border: `1px solid ${LINE}` }}
+          style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
         >
           <div>
             {/* Header — hidden on mobile (shown in tabs above) */}
@@ -241,7 +241,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-                style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
               >
                 Traditional
               </span>
@@ -254,7 +254,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-                style={{ color: DIMMER, border: `1px solid ${LINE}` }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
               >
                 Traditional
               </span>
@@ -270,7 +270,7 @@ export default function TurnaroundSpeed() {
                 lineHeight: 0.85,
               }}
             >
-              48–72h
+              ~1 week
             </span>
 
             <TimelineTrack steps={TRADITIONAL_STEPS} progress={progress} isElevate={false} />
@@ -290,6 +290,9 @@ export default function TurnaroundSpeed() {
             <span className="text-[12px] block mt-1.5 leading-relaxed" style={{ color: DIM }}>
               Every day without video is a day your listing underperforms.
             </span>
+            <span className="text-[9px] sm:text-[10px] block mt-3" style={{ color: DIMMER, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
+              Source: Fotober Real Estate Video Pricing (2025)
+            </span>
           </motion.div>
         </div>
       </div>
@@ -300,24 +303,24 @@ export default function TurnaroundSpeed() {
         animate={progress > 0.5 ? { opacity: 1, y: 0 } : {}}
         transition={{ duration: 0.4 }}
         className="mt-4 lg:hidden p-4"
-        style={{ background: "var(--le-bg-sunken)", border: `1px solid ${LINE}` }}
+        style={{ background: "var(--le-surface-card, #fff)", border: `1px solid ${LINE}`, borderRadius: 16, boxShadow: "var(--le-shadow-sm)" }}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AnimatedCircleCheck isInView={progress > 0.5} delay={0} size={16} />
             <div>
-              <span className="text-[12px] font-semibold block" style={{ color: WHITE }}>3× faster</span>
+              <span className="text-[12px] font-semibold block" style={{ color: WHITE }}>Minutes, not weeks</span>
               <span className="text-[10px]" style={{ color: DIM }}>with Listing Elevate</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <span className="text-[11px] font-medium block" style={{ color: WHITE }}>&lt;24h</span>
+              <span className="text-[11px] font-medium block" style={{ color: WHITE }}>30 min</span>
               <span className="text-[9px]" style={{ color: DIMMER }}>Elevate</span>
             </div>
             <span className="text-[10px]" style={{ color: DIMMER }}>vs</span>
             <div className="text-right">
-              <span className="text-[11px] font-medium block" style={{ color: DIM }}>72h+</span>
+              <span className="text-[11px] font-medium block" style={{ color: DIM }}>1 week+</span>
               <span className="text-[9px]" style={{ color: DIMMER }}>Traditional</span>
             </div>
           </div>

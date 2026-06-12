@@ -138,6 +138,23 @@
     font-feature-settings: 'tnum';
   }
 
+  /* Chat composer textarea: kill every focus chrome the browser tries to
+     draw (outline, box-shadow ring, native widget border, focus-visible).
+     The outer pill provides the only focus indicator. !important is needed
+     because Chrome's user-agent focus-visible style outranks Tailwind's
+     `outline-none` utility (which renders a transparent ring for a11y). */
+  .ally-composer-input,
+  .ally-composer-input:focus,
+  .ally-composer-input:focus-visible,
+  .ally-composer-input:active {
+    outline: none !important;
+    outline-offset: 0 !important;
+    box-shadow: none !important;
+    border: 0 !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+  }
+
   /* Hero typewriter caret blink — soft pulse to feel premium, not arcade */
   @keyframes hero-caret {
     0%, 49% { opacity: 1; }

@@ -138,3 +138,112 @@ export interface AnalyzeTemplateResult {
   cost_cents: number;
   model: string;
 }
+
+// ---------------------------------------------------------------------------
+// Email types
+// ---------------------------------------------------------------------------
+
+export type EmailState = "draft" | "ready" | "sending" | "sent" | "failed";
+
+export interface EmailTemplate {
+  id: string;
+  site_id: string | null;
+  name: string;
+  description: string | null;
+  design_json: any;
+  body_html: string;
+  thumbnail_url: string | null;
+  default_subject: string | null;
+  default_preheader: string | null;
+  default_from_name: string | null;
+  default_from_email: string | null;
+  default_audience: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmailListItem {
+  id: string;
+  subject: string;
+  state: EmailState;
+  preheader: string | null;
+  audience: string | null;
+  updated_at: string;
+  sent_at: string | null;
+  cost_usd_cents: number;
+  source_post_id: string | null;
+  authored: "manual" | "auto";
+}
+
+export interface EmailDetail extends EmailListItem {
+  site_id: string;
+  template_id: string | null;
+  from_name: string | null;
+  from_email: string | null;
+  reply_to: string | null;
+  recipients_json: string[];
+  design_json: any;
+  body_html: string;
+  body_text: string | null;
+  send_provider: string | null;
+  send_provider_message_id: string | null;
+  sent_to: string[] | null;
+  send_error: string | null;
+  created_at: string;
+}
+
+export interface CreateEmailInput {
+  subject?: string;
+  preheader?: string | null;
+  from_name?: string | null;
+  from_email?: string | null;
+  reply_to?: string | null;
+  audience?: string | null;
+  recipients_json?: string[];
+  template_id?: string | null;
+  source_post_id?: string | null;
+  design_json?: any;
+  body_html?: string;
+  body_text?: string | null;
+  authored?: "manual" | "auto";
+  initial_state?: EmailState;
+}
+
+export interface UpdateEmailInput {
+  subject?: string;
+  preheader?: string | null;
+  from_name?: string | null;
+  from_email?: string | null;
+  reply_to?: string | null;
+  audience?: string | null;
+  recipients_json?: string[];
+  design_json?: any;
+  body_html?: string;
+  body_text?: string | null;
+  state?: EmailState;
+}
+
+export interface AIEmailChatResponse {
+  reply: string;
+  subject: string | null;
+  preheader: string | null;
+  body_html: string;
+  from_name: string | null;
+  from_email: string | null;
+  audience: string | null;
+  action: "send" | "save_draft" | "test_send" | null;
+  suggest_research: boolean;
+  changes_summary: string | null;
+  new_memory: { id: string; content: string } | null;
+  research_sources: AIResearchSource[];
+  cost_cents: number;
+  usage: { input_tokens: number; output_tokens: number };
+  model: string;
+}
+
+export interface AIResearchSource {
+  url: string;
+  title: string;
+  snippet?: string;
+}

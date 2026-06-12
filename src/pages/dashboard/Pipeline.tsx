@@ -1,117 +1,323 @@
 import { useState, useEffect, type CSSProperties } from "react";
-import { AlertTriangle, Check, RotateCcw, SkipForward, Loader2, Clock } from "lucide-react";
-import { statusStages, getRelativeTime } from "@/lib/types";
-import type { Property, Scene } from "@/lib/types";
-import { fetchProperties, fetchProperty, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
-import { motion } from "framer-motion";
-import "@/v2/styles/v2.css";
+import type { Property, Scene, DailyStat } from "@/lib/types";
+import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
+import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
+import { SAMPLE_STAGES } from "@/components/dashboard/sample-data";
+import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
 
-const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
-  fontSize: 10,
-  letterSpacing: "0.22em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.45)",
-};
-const PAGE_H1: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: "clamp(28px, 4vw, 44px)",
-  fontWeight: 500,
-  letterSpacing: "-0.035em",
-  lineHeight: 0.98,
-  color: "#fff",
-  margin: 0,
-};
-const SECTION_H3: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: 20,
-  fontWeight: 500,
-  letterSpacing: "-0.025em",
-  color: "#fff",
-  margin: 0,
-};
-const GHOST_BTN: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 12px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "#fff",
-  border: "1px solid rgba(220,230,255,0.18)",
-  borderRadius: 2,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-const GHOST_LIGHT_BTN: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "6px 12px",
-  fontSize: 11,
-  fontWeight: 500,
-  background: "transparent",
-  color: "rgba(255,255,255,0.62)",
-  border: "none",
-  borderRadius: 2,
-  cursor: "pointer",
+// ─── Adapter: live Property → SampleProperty shape ───────────────
+function adaptProperty(p: Property): SampleProperty {
+  return {
+    id: p.id,
+    address: p.address,
+    status: p.status,
+    photos: p.photo_count,
+    scenes: 0,
+    cost: p.total_cost_cents,
+    duration_ms: p.processing_time_ms || null,
+    agent: p.listing_agent,
+    created_at: new Date(p.created_at).getTime(),
+    progress: progressForStatus(p.status),
+    thumb_hue: hueForId(p.id),
+  };
+}
+
+function progressForStatus(status: string): number {
+  const map: Record<string, number> = {
+    queued: 4, ingesting: 14, analyzing: 26, scripting: 42,
+    generating: 64, qc: 82, assembling: 94, complete: 100, needs_review: 80,
+  };
+  return map[status] ?? 0;
+}
+
+function hueForId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff;
+  return 200 + (h % 160);
+}
+
+// ─── Style constants ──────────────────────────────────────────────
+const ghostBtn: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 6,
+  padding: "8px 12px", borderRadius: 10,
+  border: "1px solid rgba(15,24,60,0.08)", background: "rgba(255,255,255,0.5)",
+  color: "var(--ink-2)", fontSize: 12, fontWeight: 500, cursor: "pointer",
   fontFamily: "var(--le-font-sans)",
 };
 
-const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const primaryAction: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
+  padding: "9px 14px", borderRadius: 10,
+  background: "var(--ink)", color: "#fff", border: "none",
+  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+  boxShadow: "0 6px 18px -8px rgba(11,18,32,0.55), 0 1px 0 rgba(255,255,255,0.18) inset",
+};
 
+const secondaryAction: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
+  padding: "9px 14px", borderRadius: 10,
+  background: "rgba(255,255,255,0.7)", color: "var(--ink)", border: "1px solid rgba(15,24,60,0.1)",
+  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+};
+
+const ghostAction: CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
+  padding: "8px 14px", borderRadius: 10,
+  background: "transparent", color: "var(--muted)", border: "none",
+  fontSize: 11.5, fontWeight: 500, cursor: "pointer",
+};
+
+// ─── PipelineCard ─────────────────────────────────────────────────
+function PipelineCard({ property }: { property: SampleProperty }) {
+  const isActive = !["complete", "queued"].includes(property.status);
+  const parts = property.address.split(",");
+  const line1 = parts[0] ?? property.address;
+  const line2 = parts.slice(1).join(",").trim();
+  return (
+    <div
+      className="le-lift"
+      style={{
+        padding: 12, borderRadius: 12,
+        background: "rgba(255,255,255,0.7)",
+        border: "1px solid rgba(15,24,60,0.06)",
+        boxShadow: "0 1px 0 rgba(255,255,255,0.8) inset",
+        position: "relative", overflow: "hidden",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <PropertyThumb hue={property.thumb_hue} size={36} />
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 600, lineHeight: 1.25, color: "var(--ink)" }}>
+            {line1}
+          </div>
+          {line2 && (
+            <div style={{ fontSize: 10, color: "var(--muted-2)", marginTop: 2 }}>{line2}</div>
+          )}
+        </div>
+      </div>
+      <div
+        style={{
+          marginTop: 10, display: "flex", justifyContent: "space-between",
+          alignItems: "center", fontSize: 10,
+          fontVariantNumeric: "tabular-nums",
+          color: "var(--muted-2)",
+        }}
+      >
+        <span>{property.photos} photos</span>
+        <span>{fmtRel(property.created_at)}</span>
+      </div>
+      {isActive && property.progress < 100 && (
+        <div style={{ marginTop: 10, height: 3, background: "rgba(15,24,60,0.06)", borderRadius: 999, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${property.progress}%`, background: "var(--accent)", borderRadius: 999 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ReviewCard ───────────────────────────────────────────────────
+function ReviewCard({
+  scene,
+  actionLoading,
+  onApprove,
+  onResubmit,
+  onTryOther,
+  onEditPrompt,
+  onSkip,
+}: {
+  scene: SampleReviewScene & { propertyAddress?: string };
+  actionLoading: boolean;
+  onApprove: () => void;
+  onResubmit: () => void;
+  onTryOther: () => void;
+  onEditPrompt: () => void;
+  onSkip: () => void;
+}) {
+  const providerHue = scene.provider === "kling" ? 215 : 250;
+  const otherProvider = scene.provider === "kling" ? "Runway" : "Kling";
+  const opacity = actionLoading ? 0.4 : 1;
+
+  return (
+    <div
+      className="le-card-flat"
+      style={{ padding: 18, display: "grid", gridTemplateColumns: "160px 1fr auto", gap: 18, alignItems: "flex-start" }}
+    >
+      {/* Preview */}
+      <div
+        style={{
+          aspectRatio: "16 / 9",
+          background: `linear-gradient(135deg, hsl(${providerHue}, 10%, 50%), hsl(${providerHue + 15}, 12%, 32%))`,
+          borderRadius: 12, display: "grid", placeItems: "center",
+          color: "rgba(255,255,255,0.9)", position: "relative", overflow: "hidden",
+          border: "1px solid rgba(255,255,255,0.5)",
+        }}
+      >
+        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.4))" }} />
+        <Icon name="play" size={26} style={{ position: "absolute", zIndex: 1 }} />
+        <span
+          style={{
+            position: "absolute", top: 8, left: 8, fontSize: 9.5, fontWeight: 600,
+            padding: "2px 6px", borderRadius: 999, background: "rgba(0,0,0,0.35)",
+            color: "#fff", zIndex: 1, textTransform: "uppercase",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {scene.provider}
+        </span>
+      </div>
+
+      {/* Body */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
+            Scene 0{scene.scene_number}
+          </span>
+          <StatusChip status="needs_review" />
+          <span
+            style={{
+              fontSize: 11, color: "var(--muted)", padding: "2px 8px", borderRadius: 999,
+              background: "rgba(15,24,60,0.05)", fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            Confidence {(scene.confidence * 100).toFixed(0)}%
+          </span>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+          {scene.propertyAddress ?? scene.property}
+        </div>
+        <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 10, lineHeight: 1.5 }}>
+          {scene.prompt}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 14 }}>
+          {scene.issues.map((issue, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "var(--bad)" }}>
+              <Icon name="alert" size={12} strokeWidth={1.8} />
+              {issue}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", minWidth: 150 }}>
+        <button type="button" style={{ ...primaryAction, opacity }} disabled={actionLoading} onClick={onApprove}>
+          <Icon name="check" size={14} />Approve
+        </button>
+        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onResubmit}>
+          <Icon name="retry" size={14} />Resubmit
+        </button>
+        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onTryOther}>
+          <Icon name="retry" size={14} />Try {otherProvider}
+        </button>
+        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onEditPrompt}>
+          <Icon name="sparkles" size={13} />Edit prompt
+        </button>
+        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onSkip}>
+          <Icon name="skip" size={13} />Skip
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Pipeline page ────────────────────────────────────────────────
 const Pipeline = () => {
-  const [propertiesByStatus, setPropertiesByStatus] = useState<Record<string, Property[]>>({});
-  const [reviewScenes, setReviewScenes] = useState<(Scene & { propertyAddress?: string })[]>([]);
+  const [propsByStage, setPropsByStage] = useState<Record<string, SampleProperty[]>>({});
+  const [reviewScenes, setReviewScenes] = useState<(SampleReviewScene & { propertyAddress?: string })[]>([]);
+  const [allLiveProps, setAllLiveProps] = useState<Property[]>([]);
+  const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
+  const [avgProcessingMs, setAvgProcessingMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"kanban" | "timeline">("kanban");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const stagePromises = statusStages.map((stage) => fetchProperties({ status: stage.key, limit: 50 }));
-        const stageResults = await Promise.all(stagePromises);
+        // Fetch all stage buckets + overview + daily stats in parallel
+        const stageFetches = SAMPLE_STAGES.map((s) =>
+          fetchProperties({ status: s.key, limit: 50 }),
+        );
+        const [stageResults, overviewRes, dailyRes] = await Promise.all([
+          Promise.all(stageFetches),
+          fetchStatsOverview().catch(() => null),
+          fetchDailyStats(14).catch(() => null),
+        ]);
         if (cancelled) return;
-        const byStatus: Record<string, Property[]> = {};
-        statusStages.forEach((stage, i) => {
-          byStatus[stage.key] = stageResults[i].properties;
-        });
-        setPropertiesByStatus(byStatus);
 
+        const allLive: Property[] = stageResults.flatMap((r) => r.properties);
+        setAllLiveProps(allLive);
+
+        if (overviewRes?.avgProcessingMs != null) {
+          setAvgProcessingMs(overviewRes.avgProcessingMs);
+        }
+        if (dailyRes?.stats) {
+          setDailyStats(dailyRes.stats);
+        }
+
+        // Group live props by stage — no sample fallback
+        const byStage: Record<string, SampleProperty[]> = {};
+        SAMPLE_STAGES.forEach((s) => { byStage[s.key] = []; });
+        allLive.map(adaptProperty).forEach((p) => {
+          if (byStage[p.status]) byStage[p.status].push(p);
+        });
+        setPropsByStage(byStage);
+
+        // Review scenes — live only
         const reviewRes = await fetchProperties({ status: "needs_review", limit: 20 });
         if (cancelled) return;
-        const scenesWithAddress: (Scene & { propertyAddress?: string })[] = [];
+        const liveScenes: (SampleReviewScene & { propertyAddress?: string })[] = [];
         for (const prop of reviewRes.properties) {
           try {
             const detail = await fetchProperty(prop.id);
             if (cancelled) return;
             const failed = detail.scenes.filter(
-              (s) => s.status === "qc_hard_reject" || s.status === "qc_soft_reject" || s.status === "needs_review",
+              (s: Scene) =>
+                s.status === "qc_hard_reject" ||
+                s.status === "qc_soft_reject" ||
+                s.status === "needs_review",
             );
-            failed.forEach((s) => scenesWithAddress.push({ ...s, propertyAddress: prop.address }));
+            failed.forEach((s: Scene) => {
+              liveScenes.push({
+                id: s.id,
+                property: prop.address,
+                propertyAddress: prop.address,
+                scene_number: s.scene_number,
+                status: s.status,
+                confidence: s.qc_confidence,
+                provider: s.provider,
+                prompt: s.prompt,
+                issues: (s.qc_issues as { issues?: string[] } | null)?.issues ?? [],
+              });
+            });
           } catch {
-            // skip
+            // skip individual property errors
           }
         }
-        setReviewScenes(scenesWithAddress);
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to load pipeline");
+        // Only real scene-level rows are surfaced here — the Skip/Approve/Retry
+        // buttons all POST to /api/scenes/{id}/*, which 404s if given a
+        // property UUID. If a property is `needs_review` at the property level
+        // without any failing scene rows (e.g. awaiting assembly approval),
+        // it shows in the kanban above, not in this scene-decision queue.
+        setReviewScenes(liveScenes);
+      } catch {
+        // On error: show empty state (no sample fallback)
+        const byStage: Record<string, SampleProperty[]> = {};
+        SAMPLE_STAGES.forEach((s) => { byStage[s.key] = []; });
+        setPropsByStage(byStage);
+        setReviewScenes([]);
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  const wrap = async (sceneId: string, fn: () => Promise<void>) => {
+  const wrapAction = async (sceneId: string, fn: () => Promise<void>) => {
     setActionLoading((p) => ({ ...p, [sceneId]: true }));
     try {
       await fn();
@@ -123,193 +329,241 @@ const Pipeline = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-24">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+  // Derive "in flight" count — live only
+  const inFlight = allLiveProps.filter(
+    (p) => !["complete", "queued", "needs_review"].includes(p.status),
+  ).length;
+
+  // ── Avg stage time delta: today vs avg of last week ───────────────────────
+  const avgStageDisplay = avgProcessingMs != null ? fmtDuration(avgProcessingMs) : "—";
+  let avgStageDelta: number | undefined = undefined;
+  if (dailyStats.length >= 2) {
+    const lastStat = dailyStats[dailyStats.length - 1];
+    const todayAvg = lastStat?.avg_processing_time_ms ?? 0;
+    const weekSlice = dailyStats.slice(-8, -1);
+    const weekVals = weekSlice.map((d) => d.avg_processing_time_ms ?? 0).filter((v) => v > 0);
+    if (weekVals.length > 0 && todayAvg > 0) {
+      const lastWeekAvg = weekVals.reduce((s, v) => s + v, 0) / weekVals.length;
+      if (lastWeekAvg > 0) {
+        avgStageDelta = ((todayAvg - lastWeekAvg) / lastWeekAvg) * 100;
+      }
+    }
   }
 
-  if (error) {
+  // ── Auto-resolved 24h: completed in last 24h vs previous 24h ─────────────
+  const now = Date.now();
+  const H24 = 24 * 60 * 60 * 1000;
+  const autoResolved24h = allLiveProps.filter(
+    (p) => p.status === "complete" && now - new Date(p.updated_at).getTime() < H24,
+  ).length;
+  const autoResolvedPrev24h = allLiveProps.filter(
+    (p) =>
+      p.status === "complete" &&
+      now - new Date(p.updated_at).getTime() >= H24 &&
+      now - new Date(p.updated_at).getTime() < 2 * H24,
+  ).length;
+  let autoResolvedDelta: number | undefined = undefined;
+  if (allLiveProps.length > 0) {
+    const prev = Math.max(autoResolvedPrev24h, 1);
+    autoResolvedDelta = ((autoResolved24h - autoResolvedPrev24h) / prev) * 100;
+  }
+
+  // ── Manual review delta: current vs 24h ago (needs_review is "now") ───────
+  const manualReviewCount = reviewScenes.length;
+  // We can't easily compute "was" from static snapshot; leave delta undefined when no live data
+  const manualReviewDelta: number | undefined = undefined;
+
+  if (loading) {
     return (
-      <div className="border border-destructive/40 bg-destructive/5 p-10">
-        <div className="flex items-start gap-5">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center border border-destructive/40 bg-destructive/10 text-destructive">
-            <AlertTriangle className="h-5 w-5" strokeWidth={1.5} />
-          </div>
-          <div>
-            <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>— Error</span>
-            <p className="mt-3 text-sm text-muted-foreground">{error}</p>
-          </div>
+      <div className="le-fade-up" style={{ display: "flex", justifyContent: "center", padding: "96px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13 }}>
+          <Icon name="clock" size={16} />
+          Loading pipeline...
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-20">
-      {/* Stage columns */}
-      <section>
-        <span style={EYEBROW}>— Pipeline</span>
-        <h2 className="mt-3" style={PAGE_H1}>By stage.</h2>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-        <div className="mt-12 grid gap-px bg-border md:grid-cols-3 xl:grid-cols-6">
-          {statusStages.map((stage, idx) => {
-            const props = propertiesByStatus[stage.key] || [];
+      {/* ── 1. Health row (4-up) ── */}
+      <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+        <HealthCard label="In flight" value={inFlight} icon="pipeline" tone="accent" />
+        <HealthCard
+          label="Avg stage time"
+          value={avgStageDisplay}
+          icon="clock"
+          tone="neutral"
+          delta={avgStageDelta}
+        />
+        <HealthCard
+          label="Auto-resolved 24h"
+          value={allLiveProps.length > 0 ? autoResolved24h : 0}
+          icon="sparkles"
+          tone="good"
+          delta={autoResolvedDelta}
+        />
+        <HealthCard
+          label="Manual review"
+          value={manualReviewCount}
+          icon="alert"
+          tone="warn"
+          delta={manualReviewDelta}
+        />
+      </section>
+
+      {/* ── 2. Kanban section ── */}
+      <Card padding={20}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+          <SectionTitle eyebrow="Stages" title="Live pipeline" />
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {/* Segmented control */}
+            <div className="le-seg">
+              {(["kanban", "timeline"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`le-seg-item${view === v ? " is-active" : ""}`}
+                  onClick={() => setView(v)}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button type="button" style={ghostBtn}>
+              <Icon name="filter" size={14} />Filter
+            </button>
+          </div>
+        </div>
+
+        {/* Kanban grid */}
+        {allLiveProps.length === 0 ? (
+          <div
+            style={{
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              padding: "56px 0", textAlign: "center",
+              fontSize: 13, color: "var(--muted)",
+            }}
+          >
+            No properties in the pipeline yet. New uploads will appear here.
+          </div>
+        ) : (
+        <div className="le-table-scroll is-wide">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: `repeat(${SAMPLE_STAGES.length}, minmax(0, 1fr))`,
+            gap: 12,
+          }}
+        >
+          {SAMPLE_STAGES.map((stage) => {
+            const props = propsByStage[stage.key] ?? [];
             return (
-              <div key={stage.key} className="flex min-h-[260px] flex-col bg-background p-5">
-                <div className="mb-5 flex items-center justify-between">
-                  <span style={{ ...EYEBROW, color: "#fff" }}>
-                    <span style={{ color: "rgba(255,255,255,0.45)" }}>0{idx + 1}</span> {stage.label}
+              <div
+                key={stage.key}
+                className="le-card-flat"
+                style={{ padding: 12, minHeight: 380, display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {/* Column header */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 10, color: "var(--muted-2)", fontWeight: 600,
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {stage.short}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>{stage.label}</span>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 11, fontWeight: 600, padding: "2px 7px",
+                      borderRadius: 999, background: "rgba(15,24,60,0.06)", color: "var(--ink-2)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {props.length}
                   </span>
-                  <span className="text-xs" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>{props.length}</span>
                 </div>
-                <div className="flex-1 space-y-2">
+
+                {/* Cards */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, overflow: "hidden" }}>
                   {props.length === 0 ? (
-                    <div className="border border-dashed border-border py-6 text-center">
-                      <p className="text-[11px] text-muted-foreground/60">Empty</p>
+                    <div
+                      style={{
+                        flex: 1, display: "grid", placeItems: "center",
+                        border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+                        color: "var(--muted-2)", fontSize: 11,
+                      }}
+                    >
+                      Empty
                     </div>
                   ) : (
-                    props.map((p, i) => (
-                      <motion.div
-                        key={p.id}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.4, delay: i * 0.03, ease: EASE }}
-                        className="group cursor-pointer border border-border bg-secondary/30 p-3 transition-colors duration-500 hover:border-foreground/40 hover:bg-secondary"
-                      >
-                        <p className="truncate text-xs font-semibold tracking-[-0.005em]">{p.address}</p>
-                        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {getRelativeTime(p.created_at)}
-                        </div>
-                        {stage.key === "generating" && p.selected_photo_count > 0 && (
-                          <p className="tabular mt-2 text-[10px] text-accent">
-                            {Math.floor(p.selected_photo_count * 0.4)} / {p.selected_photo_count} clips
-                          </p>
-                        )}
-                      </motion.div>
-                    ))
+                    props.map((p) => <PipelineCard key={p.id} property={p} />)
                   )}
                 </div>
               </div>
             );
           })}
         </div>
-      </section>
+        </div>
+        )}
+      </Card>
 
-      {/* Needs review */}
-      <section>
-        <div className="flex items-end justify-between">
-          <div>
-            <span style={EYEBROW}>— Manual review</span>
-            <h3 className="mt-3" style={SECTION_H3}>
-              {reviewScenes.length === 0 ? "All clear" : `${reviewScenes.length} scenes need a decision`}
-            </h3>
-          </div>
+      {/* ── 3. Manual review section ── */}
+      <Card padding={24}>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 18 }}>
+          <SectionTitle
+            eyebrow="Manual review"
+            title={
+              reviewScenes.length === 0
+                ? "All clear"
+                : `${reviewScenes.length} scenes need a decision`
+            }
+          />
         </div>
 
         {reviewScenes.length === 0 ? (
-          <div className="mt-10 border border-dashed border-border bg-secondary/30 py-16 text-center text-sm text-muted-foreground">
+          <div
+            style={{
+              border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12,
+              padding: "48px 0", textAlign: "center",
+              fontSize: 13, color: "var(--muted)",
+            }}
+          >
             Every clip passed automated QC.
           </div>
         ) : (
-          <div className="mt-10 grid gap-px bg-border">
-            {reviewScenes.map((scene, i) => (
-              <motion.div
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {reviewScenes.map((scene) => (
+              <ReviewCard
                 key={scene.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.04, ease: EASE }}
-                className="grid gap-6 bg-background p-6 md:grid-cols-[200px_1fr_auto]"
-              >
-                <div className="flex aspect-video items-center justify-center border border-border bg-secondary text-[10px] text-muted-foreground">
-                  Clip preview
-                </div>
-                <div>
-                  <div className="flex items-baseline gap-3">
-                    <span className="text-xs font-semibold" style={{ fontFamily: "var(--le-font-mono)", color: "#fff" }}>Scene {scene.scene_number}</span>
-                    <span style={{ ...EYEBROW, color: "hsl(var(--destructive))" }}>{scene.status.replace(/_/g, " ")}</span>
-                    <span className="text-[11px]" style={{ fontFamily: "var(--le-font-mono)", color: "rgba(255,255,255,0.55)" }}>
-                      Confidence {(scene.qc_confidence * 100).toFixed(0)}%
-                    </span>
-                  </div>
-                  {scene.propertyAddress && (
-                    <p className="mt-1 text-xs text-muted-foreground">{scene.propertyAddress}</p>
-                  )}
-                  <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{scene.prompt}</p>
-                  {scene.qc_issues?.issues && (
-                    <ul className="mt-3 space-y-1.5">
-                      {scene.qc_issues.issues.slice(0, 3).map((issue: string, idx: number) => (
-                        <li key={idx} className="flex items-start gap-2 text-[11px] text-destructive">
-                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" strokeWidth={1.5} />
-                          {issue}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="flex flex-row gap-2 md:flex-col">
-                  <button
-                    type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
-                    disabled={actionLoading[scene.id]}
-                    onClick={() => wrap(scene.id, async () => { await approveScene(scene.id); })}
-                  >
-                    <Check className="h-3.5 w-3.5" /> Approve
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
-                    disabled={actionLoading[scene.id]}
-                    onClick={() => wrap(scene.id, async () => { await resubmitScene(scene.id); })}
-                    title="Resubmit with current prompt. Auto-fails over to another provider on permanent errors."
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> Resubmit
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...GHOST_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
-                    disabled={actionLoading[scene.id]}
-                    onClick={() =>
-                      wrap(scene.id, async () => {
-                        const target = scene.provider === "kling" ? "runway" : "kling";
-                        await resubmitScene(scene.id, { provider: target });
-                      })
-                    }
-                    title="Retry on the other provider (force failover)."
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    {scene.provider === "kling" ? "Try Runway" : "Try Kling"}
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
-                    disabled={actionLoading[scene.id]}
-                    onClick={async () => {
-                      const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
-                      if (!next || !next.trim() || next.trim() === scene.prompt) return;
-                      await wrap(scene.id, async () => { await retryScene(scene.id, next.trim()); });
-                    }}
-                    title="Edit the prompt and resubmit."
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" /> Edit prompt
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...GHOST_LIGHT_BTN, opacity: actionLoading[scene.id] ? 0.4 : 1 }}
-                    disabled={actionLoading[scene.id]}
-                    onClick={() => wrap(scene.id, async () => { await skipScene(scene.id); })}
-                  >
-                    <SkipForward className="h-3.5 w-3.5" /> Skip
-                  </button>
-                </div>
-              </motion.div>
+                scene={scene}
+                actionLoading={!!actionLoading[scene.id]}
+                onApprove={() => wrapAction(scene.id, () => approveScene(scene.id))}
+                onResubmit={() => wrapAction(scene.id, () => resubmitScene(scene.id))}
+                onTryOther={() =>
+                  wrapAction(scene.id, () => {
+                    const target: "runway" | "kling" = scene.provider === "kling" ? "runway" : "kling";
+                    return resubmitScene(scene.id, { provider: target });
+                  })
+                }
+                onEditPrompt={() => {
+                  const next = window.prompt("Edit prompt then resubmit:", scene.prompt);
+                  if (!next || !next.trim() || next.trim() === scene.prompt) return;
+                  wrapAction(scene.id, () => retryScene(scene.id, next.trim()));
+                }}
+                onSkip={() => wrapAction(scene.id, () => skipScene(scene.id))}
+              />
             ))}
           </div>
         )}
-      </section>
+      </Card>
+
     </div>
   );
 };

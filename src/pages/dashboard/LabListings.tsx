@@ -1,55 +1,27 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, Plus, FlaskConical, ArrowRight, Clock, CheckCircle, AlertTriangle } from "lucide-react";
+import { Loader2, ArrowRight } from "lucide-react";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
+import { PageHeading, StatusChip, PropertyThumb, Card, MoneyValue } from "@/components/dashboard/primitives";
+import { Icon } from "@/components/dashboard/icons";
 import "@/v2/styles/v2.css";
 
-const EYEBROW: CSSProperties = {
-  fontFamily: "var(--le-font-mono)",
-  fontSize: 10,
-  letterSpacing: "0.22em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.45)",
-};
-const PAGE_H1: CSSProperties = {
-  fontFamily: "var(--le-font-sans)",
-  fontSize: "clamp(28px, 4vw, 44px)",
-  fontWeight: 500,
-  letterSpacing: "-0.035em",
-  lineHeight: 0.98,
-  color: "#fff",
-  margin: 0,
-};
-const PRIMARY_BTN: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 6,
-  padding: "8px 14px",
-  fontSize: 12,
-  fontWeight: 500,
-  background: "#fff",
-  color: "#07080c",
-  border: "none",
-  borderRadius: 2,
-  cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-const BADGE: CSSProperties = {
-  borderRadius: 0,
-  fontFamily: "var(--le-font-mono)",
-  fontSize: 9,
-  letterSpacing: "0.18em",
+// Map lab listing statuses → design system status tokens
+const LAB_STATUS_MAP: Record<string, string> = {
+  draft: "queued",
+  analyzing: "analyzing",
+  directing: "scripting",
+  ready_to_render: "complete",
+  rendering: "generating",
+  complete: "complete",
+  failed: "failed",
 };
 
-const STATUS_CHIP: Record<string, { label: string; classes: string; Icon: typeof Clock }> = {
-  draft: { label: "Draft", classes: "bg-muted/50 text-muted-foreground", Icon: Clock },
-  analyzing: { label: "Analyzing", classes: "bg-amber-400/20 text-amber-700", Icon: Clock },
-  directing: { label: "Directing", classes: "bg-sky-400/20 text-sky-700", Icon: Clock },
-  ready_to_render: { label: "Ready to render", classes: "bg-emerald-400/20 text-emerald-700", Icon: CheckCircle },
-  rendering: { label: "Rendering", classes: "bg-amber-400/20 text-amber-700", Icon: Clock },
-  complete: { label: "Complete", classes: "bg-emerald-500/20 text-emerald-700", Icon: CheckCircle },
-  failed: { label: "Failed", classes: "bg-red-400/20 text-red-700", Icon: AlertTriangle },
-};
+function labThumbHue(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) & 0xffff;
+  return 200 + (h % 160);
+}
 
 export default function LabListings() {
   const [listings, setListings] = useState<LabListing[] | null>(null);
@@ -71,73 +43,164 @@ export default function LabListings() {
   useEffect(() => { reload(); }, []);
 
   return (
-    <div className="space-y-10">
-      <div className="flex items-start justify-between">
-        <div>
-          <span style={EYEBROW}>— Prompt Lab</span>
-          <h2 className="mt-3 flex items-center gap-3" style={PAGE_H1}>
-            <FlaskConical className="h-6 w-6" style={{ color: "rgba(255,255,255,0.45)" }} />
-            Listings
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Upload a batch of photos as if you were running a real listing. The director pairs photos into start/end keyframes, plans scenes, and you render clips. Rate each clip to feed the Knowledge Map.
-          </p>
-        </div>
-        <Link to="/dashboard/development/lab/new" style={PRIMARY_BTN}>
-          <Plus className="h-4 w-4" /> Create listing
-        </Link>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <PageHeading
+        eyebrow="Lab · Listings"
+        title="Listings lab"
+        sub="Upload photos, watch the director plan scenes, render clips, and rate each result to feed the Knowledge Map."
+        actions={
+          <Link
+            to="/dashboard/development/lab/new"
+            className="le-btn-dark"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}
+          >
+            <Icon name="plus" size={13} />
+            Create listing
+          </Link>
+        }
+      />
 
       {error && (
-        <div className="border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</div>
+        <div
+          style={{
+            padding: "12px 16px",
+            borderRadius: "var(--radius-sm)",
+            background: "rgba(196,74,74,0.07)",
+            border: "1px solid rgba(196,74,74,0.18)",
+            fontSize: 13,
+            color: "var(--bad)",
+          }}
+        >
+          {error}
+        </div>
       )}
 
-      {loading && <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />}
+      {loading && !listings && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted)", fontSize: 13 }}>
+          <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }} />
+          Loading listings…
+        </div>
+      )}
 
       {listings && listings.length === 0 && !loading && (
-        <div className="border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          No listings yet. Create your first — upload 10-30 photos and watch the director plan the video.
-        </div>
+        <Card padding={40}>
+          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+            No listings yet. Create your first — upload 10–30 photos and watch the director plan the video.
+          </div>
+        </Card>
       )}
 
       {listings && listings.length > 0 && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
           {listings.map((l) => {
-            const chip = STATUS_CHIP[l.status] ?? STATUS_CHIP.draft;
-            const Icon = chip.Icon;
+            const dsStatus = LAB_STATUS_MAP[l.status] ?? "queued";
             return (
               <Link
                 key={l.id}
                 to={`/dashboard/development/lab/${l.id}`}
-                className="group border border-border bg-background p-5 transition hover:border-foreground"
+                className="le-lift"
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 14,
+                  padding: 20,
+                  borderRadius: "var(--radius)",
+                  background: "var(--surface)",
+                  boxShadow: "var(--shadow-sm)",
+                  textDecoration: "none",
+                  cursor: "pointer",
+                }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate font-medium">{l.name}</h3>
-                    <p className="mt-1 text-[11px] text-muted-foreground">{new Date(l.created_at).toLocaleDateString()}</p>
+                {/* Thumb + name row */}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <PropertyThumb hue={labThumbHue(l.id)} size={40} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--ink)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        letterSpacing: "-0.01em",
+                      }}
+                    >
+                      {l.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--muted-2)", marginTop: 2 }}>
+                      {new Date(l.created_at).toLocaleDateString()}
+                    </div>
                   </div>
-                  <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                  <ArrowRight style={{ width: 13, height: 13, color: "var(--muted-2)", flexShrink: 0 }} />
                 </div>
-                <div className="mt-4 flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 border border-border px-2 py-0.5 ${chip.classes}`} style={BADGE}>
-                    <Icon className="h-3 w-3" /> {chip.label}
-                  </span>
-                  <span className="border border-border px-2 py-0.5 text-muted-foreground" style={BADGE}>
+
+                {/* Status pill + model chip */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <StatusChip status={dsStatus} />
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 500,
+                      padding: "2px 8px",
+                      borderRadius: "var(--radius-pill)",
+                      background: "rgba(11,11,16,0.05)",
+                      color: "var(--muted)",
+                    }}
+                  >
                     {l.model_name}
                   </span>
                 </div>
-                {l.total_cost_cents > 0 && (
-                  <div className="mt-3 text-[11px] text-muted-foreground">
-                    Spend: ${(l.total_cost_cents / 100).toFixed(2)}
-                  </div>
-                )}
-                {l.notes && <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{l.notes}</p>}
+
+                {/* Mini stats row */}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    paddingTop: 12,
+                    borderTop: "1px solid var(--line-2)",
+                  }}
+                >
+                  {l.total_cost_cents > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10.5, color: "var(--muted)" }}>Spend</div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: "var(--ink)",
+                          fontVariantNumeric: "tabular-nums",
+                          marginTop: 2,
+                        }}
+                      >
+                        <MoneyValue cents={l.total_cost_cents} />
+                      </div>
+                    </div>
+                  )}
+                  {l.notes && (
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 10.5, color: "var(--muted)" }}>Notes</div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: "var(--ink-2)",
+                          marginTop: 2,
+                          overflow: "hidden",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
+                        {l.notes}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </Link>
             );
           })}
         </div>
       )}
-
     </div>
   );
 }

@@ -16,14 +16,16 @@ import {
 } from "./prompts/director.js";
 import { sanitizeDirectorPrompt } from "./prompts/sanitize-director.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
-import { selectProvider, resolveDecision, resolveDecisionAsync } from "./providers/router.js";
+import { selectProvider, resolveDecision, resolveDecisionAsync, forceSeedancePushInPrompt } from "./providers/router.js";
 import type { ThompsonDecision } from "./providers/thompson-router.js";
-import { pollUntilComplete, type IVideoProvider } from "./providers/provider.interface.js";
+import { pollUntilComplete, type IVideoProvider, type GenerateClipParams } from "./providers/provider.interface.js";
 import { KlingProvider } from "./providers/kling.js";
 import { RunwayProvider } from "./providers/runway.js";
 import { AtlasProvider, type V1AtlasSku } from "./providers/atlas.js";
+import { VeoProvider } from "./providers/veo.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "./embeddings.js";
 import { recordCostEvent } from "./db.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "./providers/bunny-stream.js";
 import type { RoomType, CameraMovement } from "./types.js";
 
 // Lab cost_events use property_id = null. The earlier "zero-UUID sentinel"
@@ -199,7 +201,7 @@ export interface RetrievedRecipe {
 
 export async function retrieveSimilarIterations(
   embedding: number[],
-  opts: { minRating?: number; limit?: number; sessionId?: string } = {}
+  opts: { minRating?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedExemplar[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -213,6 +215,9 @@ export async function retrieveSimilarIterations(
       text_weight: TEXT_WEIGHT,
       image_weight: IMAGE_WEIGHT,
     } : {}),
+    // v1/v1.1 isolation — when provided, RPC scopes the lab+prod+listing
+    // UNION to a single pipeline_version. Undefined/null = legacy unscoped.
+    ...(opts.pipelineVersion ? { p_pipeline_version: opts.pipelineVersion } : {}),
   });
   if (error || !data) return [];
   return (data as Array<{
@@ -263,7 +268,7 @@ export async function retrieveSimilarIterations(
 
 export async function retrieveSimilarLosers(
   embedding: number[],
-  opts: { maxRating?: number; limit?: number; sessionId?: string } = {}
+  opts: { maxRating?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedExemplar[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -277,6 +282,8 @@ export async function retrieveSimilarLosers(
       text_weight: TEXT_WEIGHT,
       image_weight: IMAGE_WEIGHT,
     } : {}),
+    // v1/v1.1 isolation — see retrieveSimilarIterations.
+    ...(opts.pipelineVersion ? { p_pipeline_version: opts.pipelineVersion } : {}),
   });
   if (error || !data) return [];
   return (data as Array<{
@@ -328,7 +335,7 @@ export async function retrieveSimilarLosers(
 export async function retrieveMatchingRecipes(
   embedding: number[],
   roomType: string | null,
-  opts: { distanceThreshold?: number; limit?: number; sessionId?: string } = {}
+  opts: { distanceThreshold?: number; limit?: number; sessionId?: string; pipelineVersion?: string } = {}
 ): Promise<RetrievedRecipe[]> {
   const { getSupabase } = await import("./client.js");
   const supabase = getSupabase();
@@ -345,7 +352,31 @@ export async function retrieveMatchingRecipes(
     } : {}),
   });
   if (error || !data) return [];
-  return data as RetrievedRecipe[];
+  const results = data as RetrievedRecipe[];
+
+  // If a pipeline version filter is requested, fetch pipeline_version for
+  // each returned recipe ID and drop any that don't match. The RPC does not
+  // expose pipeline_version in its result set, so a follow-up SELECT is
+  // required. Uses a single IN query to minimise round-trips.
+  if (opts.pipelineVersion && results.length > 0) {
+    const ids = results.map((r) => r.id);
+    const { data: versionRows } = await supabase
+      .from("prompt_lab_recipes")
+      .select("id, pipeline_version")
+      .in("id", ids);
+    if (versionRows) {
+      const versionMap = new Map<string, string>(
+        (versionRows as Array<{ id: string; pipeline_version: string }>).map(
+          (r) => [r.id, r.pipeline_version]
+        )
+      );
+      return results.filter(
+        (r) => (versionMap.get(r.id) ?? "v1") === opts.pipelineVersion
+      );
+    }
+  }
+
+  return results;
 }
 
 export function renderExemplarBlock(exemplars: RetrievedExemplar[]): string {
@@ -608,17 +639,92 @@ export async function submitLabRender(params: {
   providerOverride?: "kling" | "runway" | null;
   endImageUrl?: string | null;
   sku?: V1AtlasSku | null;
+  /** v1.1 renders use the multi-model picker (Seedance default + Kling 3 etc.).
+   *  The push-in prompt override and Atlas routing only apply when the resolved
+   *  SKU is specifically 'seedance-pro-pushin'. */
+  pipelineVersion?: "v1" | "v1.1" | null;
+  /**
+   * Per-render resolution override from the UI quality dropdown. Threads
+   * through to the provider's generateClip call so Atlas/Veo receives the
+   * explicit resolution value. When absent, each provider uses its descriptor
+   * default (Seedance: '1080p'; Kling: fixed in-model).
+   */
+  resolution?: string | null;
 }): Promise<{
   jobId: string;
   provider: string;
   sku: V1AtlasSku;
   thompson?: ThompsonDecision;
   staticSku: V1AtlasSku;
+  /** Effective resolution that was forwarded to the provider. Null when the
+   *  render used a fixed-res model and no override was supplied. */
+  resolutionUsed: string | null;
 }> {
   let provider: IVideoProvider;
   let resolvedSku: V1AtlasSku;
   let thompson: ThompsonDecision | undefined;
   let staticSku: V1AtlasSku;
+
+  // v1.1 Seedance push-in path — only when the resolved SKU is seedance-pro-pushin.
+  // Thompson sampling does not run for Seedance (single-SKU, no exploration).
+  // For other v1.1 SKUs (Kling 3, Runway, etc.), fall through to the standard
+  // routing paths below.
+  if (params.pipelineVersion === "v1.1" && params.sku === ("seedance-pro-pushin" as V1AtlasSku)) {
+    const SEEDANCE_SKU = "seedance-pro-pushin" as V1AtlasSku;
+    resolvedSku = SEEDANCE_SKU;
+    staticSku = SEEDANCE_SKU;
+    provider = new AtlasProvider(SEEDANCE_SKU);
+    // Prompt override: strip non-push-in verbs, prepend stable preamble.
+    // The stored scene.prompt is NOT mutated — render-time only.
+    const overriddenPrompt = forceSeedancePushInPrompt(params.scene.prompt);
+    const img = await fetch(params.imageUrl);
+    if (!img.ok) throw new Error(`Failed to fetch source image: ${img.status}`);
+    const sourceImage = Buffer.from(await img.arrayBuffer());
+    const job = await provider.generateClip({
+      sourceImage,
+      sourceImageUrl: params.imageUrl,
+      prompt: overriddenPrompt,
+      durationSeconds: params.scene.duration_seconds >= 7 ? 10 : 5,
+      aspectRatio: "16:9",
+      modelOverride: SEEDANCE_SKU,
+      // Thread the UI quality dropdown override (or default to descriptor's value).
+      resolution: (params.resolution as GenerateClipParams["resolution"]) ?? undefined,
+    });
+    return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, staticSku, resolutionUsed: params.resolution ?? "1080p" };
+  }
+
+  // ── Lane B: Veo 3.1 Preview path ─────────────────────────────────────────
+  // Veo is a first-class IVideoProvider (not Atlas). Route direct to the
+  // Gemini API when the SKU is 'veo-3-1-preview'.
+  //
+  // Key differences from Atlas / Seedance:
+  //   - No forceSeedancePushInPrompt — Veo has its own prompt style; let the
+  //     director prompt through unchanged.
+  //   - No Atlas-specific overrides (modelOverride, negative_prompt, etc.).
+  //   - Thompson sampling doesn't run (single-SKU, no router exploration).
+  //   - Duration clamped to 8s inside VeoProvider (Veo max is 8s).
+  //   - Speed-ramp is skipped in poll-lab-renders for Veo clips (4K large;
+  //     ramp applied at concat time only).
+  if (params.sku === ("veo-3-1-preview" as V1AtlasSku)) {
+    const VEO_SKU = "veo-3-1-preview" as V1AtlasSku;
+    resolvedSku = VEO_SKU;
+    staticSku = VEO_SKU;
+    provider = new VeoProvider();
+    const veoImg = await fetch(params.imageUrl);
+    if (!veoImg.ok) throw new Error(`Failed to fetch source image for Veo: ${veoImg.status}`);
+    const veoSourceImage = Buffer.from(await veoImg.arrayBuffer());
+    const veoJob = await provider.generateClip({
+      sourceImage: veoSourceImage,
+      sourceImageUrl: params.imageUrl,
+      prompt: params.scene.prompt,    // no push-in wrap for Veo
+      durationSeconds: params.scene.duration_seconds >= 7 ? 8 : 5,
+      aspectRatio: "16:9",
+      // resolution field not yet on GenerateClipParams (Lane A); VeoProvider
+      // defaults to 4k. TODO: thread through once Lane A lands the field.
+    });
+    const veoResolutionUsed = params.resolution ?? "4k";
+    return { jobId: veoJob.jobId, provider: provider.name, sku: resolvedSku, staticSku, resolutionUsed: veoResolutionUsed };
+  }
 
   if (params.providerOverride === "kling" || params.providerOverride === "runway") {
     // Escape hatch: explicit kling/runway override bypasses Atlas routing.
@@ -643,10 +749,15 @@ export async function submitLabRender(params: {
     // thompson stays undefined for escape-hatch path
     staticSku = resolvedSku;
   } else if (params.endImageUrl) {
-    // Paired scene: always use kling-v2-1-pair via Atlas.
+    // Paired scene: DEFAULT is kling-v3-pro via Atlas (end_image support;
+    // upgraded from kling-v2-1-pair 2026-06-10). An EXPLICIT 'seedance-pair'
+    // SKU choice is honoured (opt-in Seedance 2.0 pair mode, last_image end
+    // frame, scene's own prompt — no push-in preamble). Any other requested
+    // SKU still coerces to kling-v3-pro.
     // Thompson does not run on paired scenes per P5 design.
-    resolvedSku = "kling-v2-1-pair" as unknown as V1AtlasSku;
-    provider = new AtlasProvider("kling-v2-1-pair");
+    const pairedSku = params.sku === ("seedance-pair" as V1AtlasSku) ? "seedance-pair" : "kling-v3-pro";
+    resolvedSku = pairedSku as unknown as V1AtlasSku;
+    provider = new AtlasProvider(pairedSku);
     // thompson stays undefined; staticSku equals the paired SKU itself.
     staticSku = resolvedSku;
   } else {
@@ -674,22 +785,26 @@ export async function submitLabRender(params: {
     durationSeconds: params.scene.duration_seconds >= 7 ? 10 : 5,
     aspectRatio: "16:9",
     endImageUrl: params.endImageUrl ?? undefined,
+    // Thread the UI quality dropdown override through to the provider body.
+    resolution: (params.resolution as GenerateClipParams["resolution"]) ?? undefined,
   });
-  return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, thompson, staticSku };
+  return { jobId: job.jobId, provider: provider.name, sku: resolvedSku, thompson, staticSku, resolutionUsed: params.resolution ?? null };
 }
 
 export async function finalizeLabRender(params: {
   iterationId: string;
   sessionId: string;
-  provider: "kling" | "runway" | "atlas";
+  provider: "kling" | "runway" | "atlas" | "veo";
   providerTaskId: string;
 }): Promise<{ done: boolean; clipUrl?: string; costCents?: number; error?: string }> {
-  // Atlas finalization uses AtlasProvider; legacy kling/runway use the
-  // named-provider helper. AtlasProvider.checkStatus handles all Atlas SKUs.
+  // Atlas finalization uses AtlasProvider; Veo uses VeoProvider; legacy
+  // kling/runway use the named-provider helper.
   const providerImpl: IVideoProvider =
     params.provider === "atlas"
       ? new AtlasProvider()
-      : getProviderByName(params.provider as "kling" | "runway");
+      : params.provider === "veo"
+        ? new VeoProvider()
+        : getProviderByName(params.provider as "kling" | "runway");
 
   const result = await providerImpl.checkStatus(params.providerTaskId);
   if (result.status === "processing") return { done: false };
@@ -697,21 +812,32 @@ export async function finalizeLabRender(params: {
     return { done: true, error: result.error ?? "render failed" };
   }
 
-  // Persist the clip to Supabase Storage (provider CDNs expire).
+  // Persist the clip to Bunny Stream (provider CDNs expire; Bunny is cheaper
+  // than Supabase Storage for video delivery and adds HLS adaptive streaming).
+  // Falls back to the provider URL on any Bunny failure so delivery is never
+  // blocked (zero human-in-the-loop requirement).
   let persistedUrl = result.videoUrl;
+  const rehostPath = `prompt-lab/${params.sessionId}/${params.iterationId}.mp4`;
   try {
     const buffer = await providerImpl.downloadClip(result.videoUrl);
-    const { getSupabase } = await import("./client.js");
-    const supabase = getSupabase();
-    const path = `prompt-lab/${params.sessionId}/${params.iterationId}.mp4`;
-    const { error: upErr } = await supabase.storage
-      .from("property-videos")
-      .upload(path, buffer, { contentType: "video/mp4", upsert: true });
-    if (!upErr) {
-      const { data: pub } = supabase.storage.from("property-videos").getPublicUrl(path);
-      persistedUrl = pub.publicUrl;
+    if (isBunnyConfigured()) {
+      const bunnyResult = await hostVideoOnBunny(rehostPath, buffer);
+      persistedUrl = bunnyResult.mp4Url;
+      // Record Bunny hosting cost (even when cost rounds to 0¢).
+      recordCostEvent({
+        propertyId: null,
+        sceneId: null,
+        stage: "generation",
+        provider: "bunny",
+        unitsConsumed: 1,
+        unitType: "renders",
+        costCents: bunnyStreamCostCents(buffer.byteLength),
+        metadata: { bunny_hosted: true, path: rehostPath, source: "prompt_lab" },
+      }).catch((err) =>
+        console.error("[finalizeLabRender] bunny cost_event insert failed (non-fatal):", err),
+      );
     }
-  } catch { /* fall back to provider URL */ }
+  } catch { /* fall back to provider URL on any failure */ }
 
   const computedCostCents = Math.round(result.costCents ?? 0);
 
@@ -789,6 +915,9 @@ export async function autoPromoteIfWinning(params: {
     director_output_json: DirectorSceneOutput | null;
     embedding: unknown;
     provider: string | null;
+    /** pipeline_version from the iteration row. Defaults to 'v1' when absent
+     *  (pre-migration-063 callers or callers that haven't been updated yet). */
+    pipeline_version?: string | null;
   };
   rating: number;
   promotedBy: string;
@@ -841,6 +970,9 @@ export async function autoPromoteIfWinning(params: {
   const slug = Math.random().toString(36).slice(2, 6);
   const prefix = tier === "backup" ? "backup_" : "";
   const archetype = `${prefix}${analysis.room_type}_${director.camera_movement}_${stamp}_${slug}`;
+  // Inherit pipeline_version from the source iteration. Default to 'v1' for
+  // backward compat with pre-migration-063 callers that don't yet supply this field.
+  const pipelineVersion = iterationRow.pipeline_version ?? "v1";
   try {
     const { data: recipe } = await supabase
       .from("prompt_lab_recipes")
@@ -854,6 +986,7 @@ export async function autoPromoteIfWinning(params: {
         rating_at_promotion: rating,
         promoted_by: promotedBy,
         embedding: vec ? toPgVector(vec) : null,
+        pipeline_version: pipelineVersion,
       })
       .select("id, archetype")
       .single();
@@ -874,4 +1007,44 @@ export async function getNextIterationNumber(sessionId: string): Promise<number>
     .limit(1);
   const last = data?.[0]?.iteration_number ?? 0;
   return last + 1;
+}
+
+// ─── Qualitative model feedback retrieval (migration 070) ─────────────────────
+//
+// Returns recent feedback rows for a given model + pipeline_version combo.
+// Used by the director context (per-photo-retrieval.ts) to surface operator
+// notes alongside structured rating signal.
+//
+// MVP: most-recent N by created_at. Vector search is a v2 nice-to-have —
+// when `embedding` is provided and a future RPC is wired up, swap the body
+// to a cosine similarity query here. For now, the embedding parameter is
+// accepted but not used (kept for API stability).
+//
+// Version isolation is strict: v1 feedback is NEVER shown under v1.1 and
+// vice versa. Enforced by the `.eq("pipeline_version", opts.pipelineVersion)` filter.
+
+export async function retrieveRecentModelFeedback(
+  modelUsed: string,
+  opts: { pipelineVersion: string; limit?: number; embedding?: number[] }
+): Promise<Array<{ comment: string; created_at: string }>> {
+  // Note: `opts.embedding` is accepted for future vector-search use but the
+  // MVP implementation ignores it in favour of date-ordered retrieval.
+  const { getSupabase } = await import("./client.js");
+  const supabase = getSupabase();
+  const limit = opts.limit ?? 5;
+
+  const { data, error } = await supabase
+    .from("prompt_lab_model_feedback")
+    .select("comment, created_at")
+    .eq("model_used", modelUsed)
+    .eq("pipeline_version", opts.pipelineVersion)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error || !data) return [];
+
+  return (data as Array<{ comment: string; created_at: string }>).map((r) => ({
+    comment: r.comment,
+    created_at: r.created_at,
+  }));
 }

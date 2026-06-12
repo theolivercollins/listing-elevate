@@ -1,5 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { moodForPackage } from "./music.js";
+import { moodForPackage, pickRandom } from "./music.js";
+
+describe("pickRandom", () => {
+  it("returns null on an empty pool", () => {
+    expect(pickRandom([])).toBeNull();
+  });
+  it("returns the only element", () => {
+    expect(pickRandom(["a"])).toBe("a");
+  });
+  it("uses the injected rng to index the pool", () => {
+    const pool = ["a", "b", "c", "d"];
+    expect(pickRandom(pool, () => 0)).toBe("a");
+    expect(pickRandom(pool, () => 0.5)).toBe("c");
+    expect(pickRandom(pool, () => 0.999)).toBe("d");
+  });
+});
 
 describe("moodForPackage", () => {
   it("maps just_listed to upbeat", () => {
