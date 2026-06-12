@@ -57,6 +57,7 @@ import StudioClients from "./pages/dashboard/studio/Clients";
 import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
 import StudioShare from "./pages/dashboard/studio/Share";
+import StudioVideos from "./pages/dashboard/studio/Videos";
 import SharePresentation from "./pages/share/Presentation";
 import ShareEmbed from "./pages/share/Embed";
 import PreviewPage from "./pages/preview/PreviewPage";
@@ -145,6 +146,9 @@ const App = () => (
                       <Route path="video/share" element={<StudioShare />} />
                       <Route path="video/clients/:id" element={<StudioClientEdit />} />
                       <Route path="video/properties/:id" element={<StudioPropertyCommandCenter />} />
+
+                      {/* LE Video library + hub (spec §1/§2) */}
+                      <Route path="videos" element={<StudioVideos />} />
 
                       {/* Blog */}
                       <Route path="blog" element={<Navigate to="posts" replace />} />
