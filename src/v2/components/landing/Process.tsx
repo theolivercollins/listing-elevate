@@ -50,6 +50,7 @@ export function Process() {
       eyebrow="— The Process"
       title="Three steps. One day."
       tint
+      ambient="softer"
     >
       <div
         style={{

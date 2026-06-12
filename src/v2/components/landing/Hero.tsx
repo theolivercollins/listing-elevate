@@ -5,6 +5,7 @@ import { LECyclingWord } from "@/v2/components/primitives/LECyclingWord";
 import { SiteNav } from "@/v2/components/SiteNav";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
 import { usePrefersReducedMotion } from "@/v2/hooks/usePrefersReducedMotion";
+import { Ambient } from "@/v2/components/primitives/Ambient";
 
 // Full-bleed luxury-interior reference — matches landing.jsx line 7.
 const HERO_IMAGE =
@@ -55,19 +56,8 @@ export function Hero() {
         overflow: "hidden",
       }}
     >
-      {/* Ambient radial wash — sky tile blue at very low alpha, upper-right */}
-      <div
-        aria-hidden
-        style={{
-          position: "absolute",
-          inset: 0,
-          background:
-            "radial-gradient(ellipse 80% 55% at 70% 8%, rgba(47, 109, 240, 0.07), transparent 60%), " +
-            "radial-gradient(ellipse 60% 45% at 5% 90%, rgba(47, 109, 240, 0.04), transparent 55%)",
-          pointerEvents: "none",
-          zIndex: 0,
-        }}
-      />
+      {/* Ambient layer — brand-blue aura + masked dot texture (animated, reduced-motion safe) */}
+      <Ambient dots />
 
       {/* NAV — shared, fixed at viewport top. */}
       <SiteNav />

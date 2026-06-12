@@ -1,5 +1,6 @@
 import type { ReactNode, CSSProperties } from "react";
 import { Reveal } from "@/v2/components/primitives/Reveal";
+import { Ambient } from "@/v2/components/primitives/Ambient";
 
 interface SectionProps {
   id?: string;
@@ -12,6 +13,13 @@ interface SectionProps {
   /** Rendered to the right of the title on a flex row, baseline-aligned. */
   aside?: ReactNode;
   style?: CSSProperties;
+  /**
+   * When set, renders an ambient aura behind the section content.
+   * - `true`      → normal-intensity blobs, no dots.
+   * - `'softer'`  → halved-alpha blobs, no dots.
+   * Default: undefined (no ambient layer, byte-identical to previous output).
+   */
+  ambient?: boolean | "softer";
 }
 
 /**
@@ -34,6 +42,7 @@ export function Section({
   children,
   aside,
   style,
+  ambient,
 }: SectionProps) {
   return (
     <section
@@ -41,10 +50,14 @@ export function Section({
       style={{
         background: tint ? "var(--le-surface-page, #f4f6fb)" : "var(--le-bg)",
         padding: "clamp(48px, 7vw, 88px) clamp(16px, 5vw, 48px)",
+        ...(ambient ? { position: "relative", overflow: "hidden" } : {}),
         ...style,
       }}
     >
-      <div style={{ maxWidth, margin: "0 auto" }}>
+      {ambient && (
+        <Ambient intensity={ambient === "softer" ? "softer" : "normal"} />
+      )}
+      <div style={{ maxWidth, margin: "0 auto", ...(ambient ? { position: "relative", zIndex: 1 } : {}) }}>
         {(eyebrow || title || lede) && (
           <Reveal>
             <div>

@@ -85,3 +85,96 @@
     gap: clamp(36px, 4.5vw, 72px);
   }
 }
+
+/* ── Ambient motion — soft animated gradient layer + a11y reduced-motion gate ──
+   Classes applied in landing components (Hero, Section backgrounds).
+   All animations are gated inside @media (prefers-reduced-motion: no-preference)
+   so the reduced-motion branch is static by default.
+   GPU-safe: only transform/opacity animated — never filter, never background-position.
+   Colors: blue family only via rgba(var(--le-brand-blue-rgb),…) — no hardcoded values.
+   ─────────────────────────────────────────────────────────────────────────────── */
+
+/* (A) Base structural rules */
+.le-ambient {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events:none;
+  z-index: 0;
+}
+
+.le-ambient-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(64px); /* static blur — intentionally NOT animated (compositor-safe) */
+  will-change: transform;
+}
+
+.le-ambient-dots {
+  position: absolute;
+  inset: -48px;
+  will-change: transform;
+  background-image: radial-gradient(
+    rgba(var(--le-brand-blue-rgb), 0.20) 1px,
+    transparent 1.4px
+  );
+  background-size: 26px 26px;
+}
+
+/* (B) Edge-fade mask — fixed on the container so it stays still while dots drift */
+.le-ambient--dots {
+  mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent 75%);
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 30%, #000, transparent 75%);
+}
+
+/* (C) Softer intensity modifier — halves blob alpha via opacity, not fill re-declaration */
+.le-ambient--softer .le-ambient-blob {
+  opacity: 0.5;
+}
+
+/* (D) Motion — ONLY inside no-preference; static under reduce (default) */
+@media (prefers-reduced-motion: no-preference) {
+  .le-ambient-blob { animation: le-drift 24s ease-in-out infinite alternate; }
+  .le-ambient-blob--b { animation: le-drift-2 30s ease-in-out infinite alternate; }
+  .le-ambient-dots { animation: le-dot-drift 40s linear infinite alternate; }
+}
+
+/* (E) Keyframes — transform/translate3d + scale only (compositor-promoted).
+   Single-digit % offsets so blobs never reveal an edge. */
+@keyframes le-drift {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to   { transform: translate3d(3%, -4%, 0) scale(1.08); }
+}
+
+@keyframes le-drift-2 {
+  from { transform: translate3d(0, 0, 0) scale(1.05); }
+  to   { transform: translate3d(-4%, 3%, 0) scale(1); }
+}
+
+@keyframes le-dot-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(13px, 26px, 0); }
+}
+
+/* (F) GRAFT — close the pre-existing reduced-motion a11y gap.
+   Selectors match the definitions at v2.css lines 16-41 exactly. */
+@media (prefers-reduced-motion: reduce) {
+  .le-card-lift,
+  .le-cta-primary-hover {
+    transition: none;
+  }
+  .le-card-lift:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  .le-cta-primary-hover:hover,
+  .le-cta-primary-hover:active {
+    transform: none;
+  }
+  .le-img-zoom img {
+    transition: none;
+  }
+  .le-img-zoom:hover img {
+    transform: none;
+  }
+}

@@ -66,6 +66,9 @@
   --le-chart-4: #b893ff;
   --le-chart-5: #f08aae;
 
+  /* Brand blue RGB — for rgba color operations in ambient animations + gradients */
+  --le-brand-blue-rgb: 47, 109, 240;
+
   /* Nav background — translucent frosted bar; overridden dark below */
   --le-nav-bg: rgba(255, 255, 255, 0.85);
 
