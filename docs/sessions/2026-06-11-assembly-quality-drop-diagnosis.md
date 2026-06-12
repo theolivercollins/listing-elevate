@@ -218,3 +218,31 @@ selected path and a P3 render would have been a pure cost with no decision value
 Total recorded probe spend: 297¢ ($2.97), of which ~171¢ is an estimate.
 True committed API spend is closer to P1 (Atlas ~48¢) + P2a (Creatomate ~actual)
 + P2b (Creatomate ~actual). The P2b estimate needs dashboard verification.
+
+---
+
+## Addendum (2026-06-11, t5-integration-verify.ts): shipped code path probe
+
+**T5 Gate verdict: PASS -- shipped code path confirmed at >=11 Mbps 2880x1620**  
+Cost_event written: 171c ($1.71)  
+Cost events queryable: `SELECT * FROM cost_events WHERE metadata->>'probe' = '2026-06-11-assembly-quality' AND metadata->>'step' = 't5-integration-verify';`
+
+### T5 probe -- buildCreatomateConcatScript path (2880x1620)
+
+- Clips: scene_1_v1.mp4 + scene_2_B.mp4 (same San Massimo lab clips as P2a/P2b)
+- Canvas from shipped buildCreatomateConcatScript: 2880x1620
+- Render ID: 1f53ea0c-dd80-411e-a252-5ef051854a6c
+- Output URL: https://f002.backblazeb2.com/file/creatomate-c8xg3hsxdu/1f53ea0c-dd80-411e-a252-5ef051854a6c.mp4
+- **Resolution: 2880x1620** (expected 2880x1620: **PASS**)
+- FPS: 24.00, Codec: h264, Duration: 10.08s
+- **Video bitrate: 19.18 Mbps** (threshold >=11 Mbps: **PASS**)
+- Cost: 171c
+
+### Quality progression summary (before -> after)
+
+| Render | Canvas | Bitrate | Status |
+|---|---|---|---|
+| Diagnosed run (before fix) | 1920x1080 | 5.96 Mbps | baseline problem |
+| P2a probe (same-day baseline) | 1920x1080 | 9.91 Mbps | measured |
+| P2b probe (1.5x supersample) | 2880x1620 | 19.18 Mbps | Gate A PASS |
+| **T5 shipped path** | **2880x1620** | **19.18 Mbps** | **PASS** |
