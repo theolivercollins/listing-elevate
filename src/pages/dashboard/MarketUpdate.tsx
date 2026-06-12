@@ -11,6 +11,10 @@ import {
   createTemplate,
   createEmailTemplate,
   fileToBase64,
+  getPost,
+  getEmail,
+  publishPost,
+  sendEmail,
   type MuConfig,
   type MuRegionResult,
   type MuRunListItem,
@@ -266,13 +270,15 @@ function RunDetail({ runId }: { runId: string }) {
             <Card padding={24}>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <SectionLabel n={2} text="Drafts — review & publish" />
-                <p style={{ fontSize: 13, color: "var(--muted)" }}>Open each draft to review, then publish to Sierra / send via Sendy from its detail page.</p>
+                <p style={{ fontSize: 13, color: "var(--muted)" }}>
+                  Each draft shows its live status. Use the action button to publish to Sierra or send via Sendy — each requires an explicit confirmation step.
+                </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {results.filter((r) => r.post_id).map((r) => (
-                    <DraftLink key={r.post_id} to={`/dashboard/studio/blog/posts/${r.post_id}`} icon="book" label={`${r.region_name} — blog draft`} />
+                    <PostDraftPanel key={r.post_id} postId={r.post_id!} label={`${r.region_name} — blog post`} runId={runId} />
                   ))}
                   {results.filter((r) => r.email_id).map((r) => (
-                    <DraftLink key={r.email_id} to={`/dashboard/studio/email/messages/${r.email_id}`} icon="delivered" label={`${r.region_name} — email draft`} />
+                    <EmailDraftPanel key={r.email_id} emailId={r.email_id!} label={`${r.region_name} — email`} runId={runId} />
                   ))}
                 </div>
               </div>
@@ -281,6 +287,259 @@ function RunDetail({ runId }: { runId: string }) {
         </>
       )}
     </div>
+  );
+}
+
+// ─── Post draft panel with live status + Publish action ──────────
+
+// States that mean the post has already been published (no action needed).
+const PUBLISHED_POST_STATES = new Set(["live", "editing", "edit_pending", "quarantined"]);
+
+// Human-readable label for a blog post state.
+function postStateLabel(state: string): string {
+  const MAP: Record<string, string> = {
+    awaiting_approval: "Draft",
+    publish_due: "Publish queued",
+    publishing: "Publishing…",
+    live: "Published",
+    on_hold: "On hold",
+    edit_pending: "Edit pending",
+    editing: "Editing",
+    quarantined: "Quarantined",
+  };
+  return MAP[state] ?? state;
+}
+
+function PostDraftPanel({ postId, label, runId }: { postId: string; label: string; runId: string }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["blog-post", postId],
+    queryFn: () => getPost(postId),
+    staleTime: 30_000,
+  });
+  const post = data?.post;
+  const state = post?.state ?? "";
+  const isPublished = PUBLISHED_POST_STATES.has(state);
+
+  const publishMut = useMutation({
+    mutationFn: () => publishPost(postId),
+    onSuccess: () => {
+      setConfirming(false);
+      qc.invalidateQueries({ queryKey: ["blog-post", postId] });
+      qc.invalidateQueries({ queryKey: ["mu-run", runId] });
+      toast.success("Publish queued — Sierra will go live shortly.");
+    },
+    onError: (e: any) => {
+      setConfirming(false);
+      toast.error(e?.message ?? "Publish failed");
+    },
+  });
+
+  // Defer rendering the testid wrapper until data loads so tests can use
+  // waitFor(getByTestId) and synchronously assert badge state.
+  if (!data) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", opacity: 0.5 }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>{label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid={`draft-panel-post-${postId}`}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)" }}
+    >
+      <Icon name="book" size={15} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {post?.title ?? label}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{label}</div>
+      </div>
+      <DraftStateBadge state={state} kind="post" />
+      <Link
+        to={`/dashboard/studio/blog/posts/${postId}`}
+        style={{ display: "inline-flex", alignItems: "center", color: "var(--muted)", padding: "4px 6px" }}
+        title="Open post detail"
+        aria-label="Open post detail"
+      >
+        <Icon name="external" size={13} />
+      </Link>
+      {!isPublished && !confirming && (
+        <button
+          data-testid={`publish-btn-${postId}`}
+          onClick={() => setConfirming(true)}
+          disabled={publishMut.isPending || !post}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "1px solid var(--ink)", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink)", fontFamily: "var(--le-font-sans)", whiteSpace: "nowrap" }}
+        >
+          <Icon name="play" size={11} strokeWidth={2} />
+          Publish to Sierra
+        </button>
+      )}
+      {!isPublished && confirming && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--bad)", fontWeight: 500 }}>Publish this post?</span>
+          <button
+            data-testid={`publish-confirm-${postId}`}
+            onClick={() => publishMut.mutate()}
+            disabled={publishMut.isPending}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "none", borderRadius: "var(--radius)", background: "var(--ink)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--surface)", fontFamily: "var(--le-font-sans)" }}
+          >
+            {publishMut.isPending ? <SpinnerInline /> : "Yes, publish"}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={publishMut.isPending}
+            style={{ padding: "5px 8px", border: "none", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Email draft panel with live status + Send action ─────────────
+
+const SENT_EMAIL_STATES = new Set(["sending", "sent"]);
+
+function emailStateLabel(state: string): string {
+  const MAP: Record<string, string> = {
+    draft: "Draft",
+    ready: "Ready",
+    sending: "Sending…",
+    sent: "Sent",
+    failed: "Failed",
+  };
+  return MAP[state] ?? state;
+}
+
+function EmailDraftPanel({ emailId, label, runId }: { emailId: string; label: string; runId: string }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["blog-email", emailId],
+    queryFn: () => getEmail(emailId),
+    staleTime: 30_000,
+  });
+  const email = data?.email;
+  const state = email?.state ?? "";
+  const isSent = SENT_EMAIL_STATES.has(state);
+
+  const sendMut = useMutation({
+    mutationFn: () => sendEmail(emailId),
+    onSuccess: () => {
+      setConfirming(false);
+      qc.invalidateQueries({ queryKey: ["blog-email", emailId] });
+      qc.invalidateQueries({ queryKey: ["mu-run", runId] });
+      toast.success("Email sent via Sendy.");
+    },
+    onError: (e: any) => {
+      setConfirming(false);
+      toast.error(e?.message ?? "Send failed");
+    },
+  });
+
+  // Defer rendering the testid wrapper until data loads.
+  if (!data) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)", opacity: 0.5 }}>
+        <span style={{ fontSize: 13, color: "var(--muted)" }}>{label}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      data-testid={`draft-panel-email-${emailId}`}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)" }}
+    >
+      <Icon name="delivered" size={15} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {email?.subject ?? label}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{label}</div>
+      </div>
+      <DraftStateBadge state={state} kind="email" />
+      <Link
+        to={`/dashboard/studio/email/messages/${emailId}`}
+        style={{ display: "inline-flex", alignItems: "center", color: "var(--muted)", padding: "4px 6px" }}
+        title="Open email detail"
+        aria-label="Open email detail"
+      >
+        <Icon name="external" size={13} />
+      </Link>
+      {!isSent && !confirming && (
+        <button
+          data-testid={`send-btn-${emailId}`}
+          onClick={() => setConfirming(true)}
+          disabled={sendMut.isPending || !email}
+          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "1px solid var(--ink)", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink)", fontFamily: "var(--le-font-sans)", whiteSpace: "nowrap" }}
+        >
+          <Icon name="delivered" size={11} strokeWidth={2} />
+          Send via Sendy
+        </button>
+      )}
+      {!isSent && confirming && (
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 12, color: "var(--bad)", fontWeight: 500 }}>Send to list now?</span>
+          <button
+            data-testid={`send-confirm-${emailId}`}
+            onClick={() => sendMut.mutate()}
+            disabled={sendMut.isPending}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "none", borderRadius: "var(--radius)", background: "var(--ink)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--surface)", fontFamily: "var(--le-font-sans)" }}
+          >
+            {sendMut.isPending ? <SpinnerInline /> : "Yes, send"}
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            disabled={sendMut.isPending}
+            style={{ padding: "5px 8px", border: "none", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── DraftStateBadge — status badge for live post/email state ─────
+function DraftStateBadge({ state, kind }: { state: string; kind: "post" | "email" }) {
+  type ToneColor = { bg: string; fg: string; label: string };
+
+  const postMap: Record<string, ToneColor> = {
+    awaiting_approval: { bg: "color-mix(in srgb, var(--muted) 12%, transparent)", fg: "var(--muted)", label: "Draft" },
+    publish_due:       { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Publish queued" },
+    publishing:        { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Publishing…" },
+    live:              { bg: "color-mix(in srgb, var(--good) 14%, transparent)", fg: "var(--good)", label: "Published" },
+    on_hold:           { bg: "color-mix(in srgb, var(--muted) 12%, transparent)", fg: "var(--muted)", label: "On hold" },
+    edit_pending:      { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Edit pending" },
+    editing:           { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Editing" },
+    quarantined:       { bg: "color-mix(in srgb, var(--bad) 14%, transparent)", fg: "var(--bad)", label: "Quarantined" },
+  };
+
+  const emailMap: Record<string, ToneColor> = {
+    draft:   { bg: "color-mix(in srgb, var(--muted) 12%, transparent)", fg: "var(--muted)", label: "Draft" },
+    ready:   { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Ready" },
+    sending: { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Sending…" },
+    sent:    { bg: "color-mix(in srgb, var(--good) 14%, transparent)", fg: "var(--good)", label: "Sent" },
+    failed:  { bg: "color-mix(in srgb, var(--bad) 14%, transparent)", fg: "var(--bad)", label: "Failed" },
+  };
+
+  const fallback: ToneColor = { bg: "color-mix(in srgb, var(--muted) 10%, transparent)", fg: "var(--muted)", label: state || "…" };
+  const s = (kind === "post" ? postMap[state] : emailMap[state]) ?? fallback;
+
+  return (
+    <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: "var(--radius-pill)", background: s.bg, color: s.fg, whiteSpace: "nowrap" }}>
+      {s.label}
+    </span>
   );
 }
 
@@ -413,6 +672,9 @@ function Pill({ tone, children }: { tone: "good" | "bad" | "warn"; children: Rea
   return <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--radius-pill)", background: `color-mix(in srgb, ${c} 14%, transparent)`, color: c }}>{children}</span>;
 }
 
+// DraftLink is kept for potential external use (type-safe icon param).
+// The RunDetail panel no longer uses it — see PostDraftPanel / EmailDraftPanel above.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DraftLink({ to, icon, label }: { to: string; icon: IconName; label: string }) {
   return (
     <Link to={to} style={{ textDecoration: "none" }}>
@@ -440,3 +702,7 @@ function SpinnerInline() {
     </svg>
   );
 }
+
+// Suppress unused variable warning for helper functions kept for reference.
+void postStateLabel;
+void emailStateLabel;
