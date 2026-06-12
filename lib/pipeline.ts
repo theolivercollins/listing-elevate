@@ -1422,6 +1422,7 @@ async function runAssemblyStep(
       const { selectAssemblyProvider, pollAssemblyJob, assemblyProviderCostCents } = await import(
         "./providers/assembly-router.js"
       );
+      const { assembleSuperSampleFactor } = await import("./providers/creatomate.js");
       const provider = selectAssemblyProvider();
       const providerName = provider.name;
 
@@ -1628,7 +1629,10 @@ async function runAssemblyStep(
         const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
               modifications: templateMods,
-              renderScale: 1,
+              // Template canvas is designed for the target AR; renderScale upscales it
+              // by ASSEMBLY_SUPERSAMPLE (default 1.5) for higher bitrate output.
+              // Rollback: ASSEMBLY_SUPERSAMPLE=1 → renderScale=1 (native canvas).
+              renderScale: assembleSuperSampleFactor(),
             })
           : await provider.assemble({
               ...assembleParams,
@@ -1685,7 +1689,10 @@ async function runAssemblyStep(
         const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
               modifications: templateMods,
-              renderScale: 1,
+              // Template canvas is designed for the target AR; renderScale upscales it
+              // by ASSEMBLY_SUPERSAMPLE (default 1.5) for higher bitrate output.
+              // Rollback: ASSEMBLY_SUPERSAMPLE=1 → renderScale=1 (native canvas).
+              renderScale: assembleSuperSampleFactor(),
             })
           : await provider.assemble({
               ...assembleParams,
