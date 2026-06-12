@@ -488,6 +488,10 @@ export async function insertScenes(
     prompt: string;
     duration_seconds: number;
     provider?: VideoProvider;
+    // T4-provider-preference: director intent column (migration 084).
+    // Passed separately from `provider` so the routing preference survives
+    // rerun without being overwritten by the actual-ran provider.
+    provider_preference?: VideoProvider | null;
     end_photo_id?: string | null;
     end_image_url?: string | null;
   }>

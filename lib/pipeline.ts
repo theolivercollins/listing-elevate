@@ -103,6 +103,33 @@ export function coerceToPushInForV11<
   });
 }
 
+// ─── ROUTING PREFERENCE RESOLVER ───────────────────────────────
+//
+// Pure function extracted from runGenerationSubmit and resubmitScene so the
+// "prefers director intent, ignores actual-ran provider" rule has a single
+// authoritative implementation and can be unit-tested without mocking Supabase.
+//
+// Logic:
+// 1. opts.providerOverride always wins (explicit caller intent).
+// 2. scene.provider_preference (the director's original intent, stored at
+//    scene-insert time) wins when set.
+// 3. provider_preference=null or undefined → null (router decides).
+// 4. scene.provider is NEVER consulted here — it is the pure what-actually-ran
+//    audit record that poll-scenes.ts uses to reconstruct a provider instance
+//    for polling; reading it for routing re-introduces the pollution it caused.
+//
+// Guard: if the migration 084 hasn't been applied yet, provider_preference will
+// be absent from the row (TypeScript sees it as possibly undefined). The
+// optional-chain + nullish-coalesce to null makes the call site null-safe.
+
+export function resolveRoutingPreference(
+  scene: { provider: string | null; provider_preference?: string | null },
+  providerOverride?: string | null,
+): string | null {
+  if (providerOverride != null) return providerOverride;
+  return scene.provider_preference ?? null;
+}
+
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
 
 // Snapshot every system prompt to prompt_revisions on each pipeline run so
@@ -822,7 +849,13 @@ async function runScripting(propertyId: string): Promise<void> {
         camera_movement: s.camera_movement,
         prompt: s.prompt,
         duration_seconds: s.duration_seconds,
+        // T4-provider-preference: write director intent to the new column (migration 084)
+        // so reruns can read provider_preference without being polluted by the actual-ran
+        // scenes.provider value. The old provider column initial value is still populated
+        // here so poll-scenes.ts can reconstruct a provider instance even before the run
+        // completes — it uses scenes.provider, not provider_preference, for that.
         provider: s.provider_preference ?? undefined,
+        provider_preference: s.provider_preference ?? null,
         end_photo_id: s.end_photo_id ?? null,
         end_image_url: endImageUrl,
       };
@@ -927,7 +960,14 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
     const photoUrl = photo.file_url;     // Supabase Storage URL — providers fetch directly
     const roomType = (photo.room_type as RoomType) ?? "other";
     const cameraMovement = scene.camera_movement as CameraMovement | null;
-    const preference = scene.provider as VideoProvider | null;
+    // T4-provider-preference: read director intent from provider_preference, not
+    // scenes.provider. scenes.provider is the actual-ran audit record for poll-scenes;
+    // using it for routing re-introduces the Atlas-402 → native-Kling pollution that
+    // causes reruns to route to 720p instead of the director's 1080p-class intent.
+    // resolveRoutingPreference is null-safe: undefined provider_preference → null.
+    const preference = resolveRoutingPreference(
+      scene as { provider: string | null; provider_preference?: string | null },
+    ) as VideoProvider | null;
 
     // C.1: Build the failover sequence using the new ProviderDecision shape.
     // selectProviderForScene handles the paired-scene rule (end_photo_id set
@@ -1096,7 +1136,7 @@ export async function resubmitScene(
 
   const { data: scene, error } = await supabase
     .from("scenes")
-    .select("id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider")
+    .select("id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider, provider_preference")
     .eq("id", sceneId)
     .single();
   if (error || !scene) return { ok: false, error: "scene not found" };
@@ -1146,7 +1186,15 @@ export async function resubmitScene(
   const sourceImage = Buffer.alloc(0);
   const roomType = ((photo as { room_type?: string }).room_type as RoomType) ?? "other";
   const cameraMovement = (scene.camera_movement as CameraMovement | null) ?? null;
-  const preference = (opts.providerOverride ?? (scene.provider as VideoProvider | null)) ?? null;
+  // T4-provider-preference: opts.providerOverride still wins (explicit caller intent).
+  // When not overriding, read director intent from provider_preference rather than
+  // scenes.provider so a prior Atlas-402 → native-Kling failover doesn't permanently
+  // redirect reruns to 720p native Kling. provider_preference is null-safe: if the
+  // column isn't present (migration 084 not yet applied), it returns null → router decides.
+  const preference = resolveRoutingPreference(
+    scene as { provider: string | null; provider_preference?: string | null },
+    opts.providerOverride,
+  ) as VideoProvider | null;
 
   const excluded: VideoProvider[] = [];
   const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
