@@ -321,7 +321,7 @@ const Status = () => {
                     </Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link to="/account/properties">View all videos</Link>
+                    <Link to="/dashboard">View all videos</Link>
                   </Button>
                 </div>
               </motion.section>

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { Property, DailyStat } from "@/lib/types";
-import type { CostBreakdown } from "@/lib/api";
-import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
+import type { CostBreakdown, ModelHealthRow, ModelHealthResponse } from "@/lib/api";
+import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown, fetchModelHealth } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   PageHeading,
@@ -12,19 +12,15 @@ import {
   Bars,
   Ring,
   PropertyThumb,
-  AIBanner,
   MiniStat,
   ActivityItem,
   SectionTitle,
-  fmtCents,
+  fmtMoney,
   fmtRel,
+  MoneyValue,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import {
-  SAMPLE_ACTIVITY,
-  SAMPLE_AGENTS,
-  SAMPLE_PROVIDER_MIX,
-} from "@/components/dashboard/sample-data";
+import { EmptyState } from "@/components/dashboard/primitives";
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -151,6 +147,8 @@ function deriveActivity(props: UIProperty[]): ActivityEntry[] {
 }
 
 // ─── sparkline: weekly buckets from completed properties (case-insensitive) ──
+// Returns real weekly delivery buckets for an agent — zero fill when no
+// history exists; never fabricates a wave pattern.
 function agentSparkline(agentName: string, allProps: Property[]): number[] {
   const now = Date.now();
   const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -164,15 +162,283 @@ function agentSparkline(agentName: string, allProps: Property[]): number[] {
       buckets[11 - weekIndex] += 1;
     }
   }
-  const total = buckets.reduce((s, v) => s + v, 0);
-  if (total === 0) {
-    const videoCount = allProps.filter(
-      (p) => p.status === "complete" && (p.listing_agent ?? "").trim().toLowerCase() === target,
-    ).length;
-    const base = Math.max(1, Math.floor(videoCount / 12));
-    return Array.from({ length: 12 }, (_, i) => base + (i % 3));
-  }
   return buckets;
+}
+
+// ─── Needs-you strip: urgency signals ────────────────────────────────────────
+interface NeedsYouItem {
+  key: string;
+  label: string;
+  count: number;
+  href: string;
+  urgent?: boolean;
+}
+
+function NeedsYouStrip({
+  needsReview,
+  failedToday,
+  lowProviderBalance,
+}: {
+  needsReview: number;
+  failedToday: number;
+  /** When a provider has HTTP 402 / insufficient-credit errors, pass the
+   *  provider name here. The strip will surface a clause linking to Finances.
+   *  Pass null (or omit) when no balance signal is active. */
+  lowProviderBalance?: { provider: string } | null;
+}) {
+  const items: NeedsYouItem[] = [];
+
+  if (needsReview > 0) {
+    items.push({
+      key: "review",
+      label: `${needsReview} ${needsReview === 1 ? "order needs" : "orders need"} review`,
+      count: needsReview,
+      href: "/dashboard/properties?status=needs_review",
+      urgent: needsReview > 3,
+    });
+  }
+
+  if (failedToday > 0) {
+    items.push({
+      key: "failed",
+      label: `${failedToday} render${failedToday === 1 ? "" : "s"} failed today`,
+      count: failedToday,
+      href: "/dashboard/logs",
+      urgent: true,
+    });
+  }
+
+  if (lowProviderBalance) {
+    items.push({
+      key: "balance",
+      label: `${lowProviderBalance.provider} balance low`,
+      count: 1,
+      href: "/dashboard/finances",
+      urgent: true,
+    });
+  }
+
+  const allClear = items.length === 0;
+
+  return (
+    <div
+      data-testid="needs-you-strip"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "12px 16px",
+        borderRadius: 12,
+        background: allClear ? "rgba(47, 138, 85, 0.06)" : "rgba(210, 95, 60, 0.06)",
+        border: `1px solid ${allClear ? "rgba(47, 138, 85, 0.18)" : "rgba(210, 95, 60, 0.18)"}`,
+        marginBottom: 16,
+        flexWrap: "wrap" as const,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase" as const,
+          color: allClear ? "var(--good)" : "var(--warn)",
+          marginRight: 4,
+          flexShrink: 0,
+        }}
+      >
+        {allClear ? "Needs you" : "Needs you"}
+      </span>
+      {allClear ? (
+        <span
+          data-testid="needs-you-all-clear"
+          style={{ fontSize: 13, color: "var(--good)", fontWeight: 500 }}
+        >
+          All clear — nothing requires your attention right now.
+        </span>
+      ) : (
+        <>
+          {items.map((item, i) => (
+            <span key={item.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {i > 0 && (
+                <span style={{ width: 3, height: 3, borderRadius: 999, background: "var(--muted-2)", flexShrink: 0 }} />
+              )}
+              <Link
+                to={item.href}
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: item.urgent ? "var(--bad)" : "var(--warn)",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                <Icon name="chevron-right" size={11} />
+                {item.label}
+              </Link>
+            </span>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Provider health row ──────────────────────────────────────────────────────
+function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
+  if (rows.length === 0) return null;
+
+  // Balance alert: any provider with balance_errors_24h > 0
+  const balanceAlerts = rows.filter((r) => (r.balance_errors_24h ?? 0) > 0);
+
+  return (
+    <div
+      data-testid="provider-health-row"
+      style={{
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 8,
+        padding: "14px 16px",
+        borderRadius: 12,
+        background: "rgba(11,11,16,0.025)",
+        border: "1px solid var(--line-2)",
+        marginBottom: 16,
+      }}
+    >
+      {/* Balance / 402 alert — named, loud */}
+      {balanceAlerts.length > 0 && (
+        <div
+          data-testid="provider-balance-alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "rgba(220, 38, 38, 0.08)",
+            border: "1px solid rgba(220, 38, 38, 0.22)",
+            marginBottom: 8,
+          }}
+        >
+          <Icon name="activity" size={14} style={{ color: "var(--bad)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bad)" }}>
+            Balance error —{" "}
+            {balanceAlerts.map((r) => r.provider).join(", ")}
+            {balanceAlerts.length === 1 ? " has" : " have"} insufficient credit
+            ({balanceAlerts.reduce((s, r) => s + (r.balance_errors_24h ?? 0), 0)} × HTTP 402 in 24h)
+          </span>
+          <Link
+            to="/dashboard/development/system-status"
+            style={{ marginLeft: "auto", fontSize: 12, color: "var(--bad)", textDecoration: "none", fontWeight: 500, flexShrink: 0 }}
+          >
+            View health →
+          </Link>
+        </div>
+      )}
+
+      {/* Per-provider error rate chips */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "var(--muted)", marginRight: 4, flexShrink: 0 }}>
+          Providers · 24h
+        </span>
+        {rows.map((r) => {
+          const errorRate = r.calls_24h > 0 ? r.failures_24h / r.calls_24h : 0;
+          const hasBalanceError = (r.balance_errors_24h ?? 0) > 0;
+          const isHealthy = errorRate < 0.05 && !hasBalanceError;
+          const isWarn = !isHealthy && errorRate < 0.2 && !hasBalanceError;
+          const statusColor = hasBalanceError ? "var(--bad)" : isHealthy ? "var(--good)" : isWarn ? "var(--warn)" : "var(--bad)";
+          return (
+            <span
+              key={r.provider}
+              title={`${r.provider}: ${r.calls_24h} calls, ${r.failures_24h} failures${hasBalanceError ? `, ${r.balance_errors_24h} balance errors` : ""}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 500,
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: isHealthy ? "rgba(47, 138, 85, 0.08)" : "rgba(210, 95, 60, 0.08)",
+                color: statusColor,
+                border: `1px solid ${isHealthy ? "rgba(47, 138, 85, 0.15)" : "rgba(210, 95, 60, 0.15)"}`,
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
+              {r.provider}
+              {r.calls_24h > 0 && (
+                <span style={{ opacity: 0.7 }}>
+                  {errorRate === 0 ? "ok" : `${Math.round(errorRate * 100)}% err`}
+                </span>
+              )}
+            </span>
+          );
+        })}
+        <Link
+          to="/dashboard/development/system-status"
+          style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none", marginLeft: "auto", flexShrink: 0 }}
+        >
+          Details →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─── DegradedBadge ────────────────────────────────────────────────────────────
+// Shown when a data source fetch fails. Amber, visually distinct from EmptyState
+// (which uses a dashed border and an icon). A retry button re-invokes the source.
+// Must NOT be used for "no rows" — that is EmptyState's job.
+
+function DegradedBadge({
+  testId,
+  retryTestId,
+  onRetry,
+}: {
+  testId: string;
+  retryTestId: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        borderRadius: 8,
+        background: "rgba(217, 119, 6, 0.08)",
+        border: "1px solid rgba(217, 119, 6, 0.25)",
+        marginBottom: 12,
+      }}
+    >
+      <Icon name="alert" size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warn)" }}>
+        Cost data unavailable
+      </span>
+      <button
+        type="button"
+        data-testid={retryTestId}
+        onClick={onRetry}
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: "var(--warn)",
+          background: "none",
+          border: "1px solid rgba(217, 119, 6, 0.35)",
+          borderRadius: 6,
+          padding: "2px 8px",
+          cursor: "pointer",
+          marginLeft: 4,
+          fontFamily: "inherit",
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
 }
 
 interface OverviewProps {
@@ -191,6 +457,9 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     avgProcessingMs: number;
   } | null>(null);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [modelHealth, setModelHealth] = useState<ModelHealthResponse | null>(null);
+  const [costFailed, setCostFailed] = useState(false);
+  const [healthFailed, setHealthFailed] = useState(false);
   const [chartRange, setChartRange] = useState<"7d" | "14d" | "30d">("14d");
   const [loading, setLoading] = useState(true);
 
@@ -198,19 +467,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [allRes, dailyRes, overviewRes, cbRes] = await Promise.all([
+        const [allRes, dailyRes, overviewRes, cbRes, mhRes] = await Promise.all([
           fetchProperties({ limit: 100 }),
           fetchDailyStats(30),
           fetchStatsOverview(),
-          fetchCostBreakdown().catch(() => null),
+          fetchCostBreakdown().catch(() => { if (!cancelled) setCostFailed(true); return null; }),
+          fetchModelHealth().catch(() => { if (!cancelled) setHealthFailed(true); return null; }),
         ]);
         if (cancelled) return;
         setAllProps(allRes.properties);
         setDailyStatsData(dailyRes.stats);
         setStats(overviewRes);
         setCostBreakdown(cbRes);
+        setModelHealth(mhRes);
       } catch {
-        // fall through — sample data will be used
+        // fall through — live data not available; $0/0/— degradation applied below
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -218,6 +489,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  // ── retry helpers ─────────────────────────────────────────────────────────
+  function retryCost() {
+    setCostFailed(false);
+    fetchCostBreakdown()
+      .then((res) => setCostBreakdown(res))
+      .catch(() => setCostFailed(true));
+  }
+
+  function retryHealth() {
+    setHealthFailed(false);
+    fetchModelHealth()
+      .then((res) => setModelHealth(res))
+      .catch(() => setHealthFailed(true));
+  }
 
   // ── live-only data — no sample fallback for hard numbers ─────────────────
   const propsForUI: UIProperty[] = allProps.map(adaptLiveProp);
@@ -229,7 +515,6 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         date: d.date,
         cost: d.total_cost_cents ?? 0,
         videos: d.properties_completed ?? 0,
-        sla: 90,
       }))
     : [];
 
@@ -331,18 +616,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   const chartData = dailyForUI.slice(-rangeLen);
 
   // ── SLA ring ─────────────────────────────────────────────────────────────
-  const avgSla = dailyForUI.length > 0
-    ? Math.round(dailyForUI.reduce((s, d) => s + d.sla, 0) / dailyForUI.length)
-    : 0;
-  const slaMof = Math.round((avgSla / 100) * 156);
+  // Compute on-time rate from live delivery data: completed / (completed + failed)
+  // over the last 30 days. Degrades to null when no data yet.
+  const totalCompleted = DAILY ? DAILY.reduce((s, d) => s + (d.properties_completed ?? 0), 0) : 0;
+  const totalFailed = DAILY ? DAILY.reduce((s, d) => s + (d.properties_failed ?? 0), 0) : 0;
+  const slaTotal = totalCompleted + totalFailed;
+  // slaRate: 0-100 representing on-time percentage; null when no data
+  const slaRate: number | null = slaTotal > 0 ? Math.round((totalCompleted / slaTotal) * 100) : null;
 
-  // ── Activity feed ─────────────────────────────────────────────────────────
-  const derivedActivity = allProps.length > 0 ? deriveActivity(propsForUI) : [];
-  const activityForUI = derivedActivity.length >= 3 ? derivedActivity : SAMPLE_ACTIVITY;
+  // ── Activity feed — live only, no sample fallback ────────────────────────
+  const activityForUI = allProps.length > 0 ? deriveActivity(propsForUI) : [];
 
   // ── Provider mix ──────────────────────────────────────────────────────────
   const cbProviders = costBreakdown?.byProvider ?? [];
   const totalMonthCents = cbProviders.reduce((s, r) => s + (r.month?.cents ?? 0), 0);
+  // Live only — no sample fallback; empty array → EmptyState rendered below
   const providerMixForUI = totalMonthCents > 0
     ? cbProviders
         .filter((r) => (r.month?.cents ?? 0) > 0)
@@ -351,7 +639,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           value: Math.round(((r.month?.cents ?? 0) / totalMonthCents) * 100),
         }))
         .sort((a, b) => b.value - a.value)
-    : SAMPLE_PROVIDER_MIX;
+    : [];
 
   const VIDEO_PROVIDERS = new Set(["atlas", "runway", "kling", "runway gen-4", "kling 2.0", "kling 2.6 pro"]);
   const totalScenesGenerated = totalMonthCents > 0
@@ -361,6 +649,26 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     : null;
 
   const userName = deriveName(profile?.first_name, user?.email);
+
+  // ── Derived: failed renders today (from daily stats) ──────────────────────
+  const failedToday = DAILY && DAILY.length > 0
+    ? (DAILY[DAILY.length - 1]?.properties_failed ?? 0)
+    : 0;
+
+  // ── Provider health rows (for health strip) ────────────────────────────────
+  const healthRows = modelHealth?.rows ?? [];
+
+  // ── Low-provider-balance signal for the triage banner ─────────────────────
+  // Surface the first provider with HTTP 402 / balance errors in the last 24h.
+  // This is the Atlas-402 lesson: insufficient credit stalls renders silently;
+  // it must be in the primary triage banner, not buried in the health row.
+  // NOTE: The data source is modelHealth.rows[*].balance_errors_24h — if that
+  // field is absent (undefined/null), no clause appears. Finances page is the
+  // destination because that's where credit/top-up actions live.
+  const lowProviderBalanceRow = healthRows.find((r) => (r.balance_errors_24h ?? 0) > 0) ?? null;
+  const lowProviderBalance: { provider: string } | null = lowProviderBalanceRow
+    ? { provider: lowProviderBalanceRow.provider }
+    : null;
 
   if (loading) {
     return (
@@ -380,10 +688,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         sub={subHeadline(completedToday, inFlightCount, needsReviewCount)}
         actions={
           <>
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/logs" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
               <Icon name="play" size={13} />
               Today's brief
-            </button>
+            </Link>
             <Link to="/upload" className="le-btn-dark">
               <Icon name="plus" size={13} />
               New listing
@@ -391,6 +699,23 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           </>
         }
       />
+
+      {/* ── Needs you strip ──────────────────────────────────────────── */}
+      <NeedsYouStrip
+        needsReview={needsReviewCount}
+        failedToday={failedToday}
+        lowProviderBalance={lowProviderBalance}
+      />
+
+      {/* ── Provider health row ──────────────────────────────────────── */}
+      {healthFailed && (
+        <DegradedBadge
+          testId="health-degraded-badge"
+          retryTestId="health-degraded-retry"
+          onRetry={retryHealth}
+        />
+      )}
+      {!healthFailed && <ProviderHealthRow rows={healthRows} />}
 
       {/* ── KPI row ──────────────────────────────────────────────────── */}
       <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
@@ -408,7 +733,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         />
         <KpiCard
           label="Spend · 7d"
-          value={fmtCents(last7Cost)}
+          value={<MoneyValue cents={last7Cost} />}
           sub="all providers"
           delta={costDelta}
           deltaPositiveIsGood={false}
@@ -430,7 +755,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             <div>
               <span className="le-d-label">Spend insights</span>
               <h3 style={{ margin: "6px 0 0", fontSize: 22, fontWeight: 600, letterSpacing: "-0.022em", color: "var(--ink)" }}>
-                {fmtCents(last7Cost)}{" "}
+                <MoneyValue cents={last7Cost} />{" "}
                 <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 14 }}>· this week</span>
               </h3>
             </div>
@@ -456,7 +781,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               data={chartData.map((d) => ({
                 label: d.date.slice(3),
                 value: d.cost,
-                tooltip: fmtCents(d.cost),
+                tooltip: fmtMoney(d.cost),
               }))}
               accentIndex={chartData.length - 1}
               height={220}
@@ -464,7 +789,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           )}
         </div>
 
-        {/* Delivery SLA */}
+        {/* Delivery SLA — live data only, no fabricated deltas or denominators */}
         <div className="le-card" style={{ padding: 24, display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
             <div>
@@ -473,19 +798,31 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                 Under 72 hours
               </h3>
             </div>
-            <span style={{
-              fontSize: 11, fontWeight: 600, color: "var(--good)",
-              padding: "3px 8px", borderRadius: 999, background: "rgba(47, 138, 85, 0.10)",
-            }}>
-              ↑ 2.1%
-            </span>
           </div>
           <div style={{ flex: 1, display: "flex", justifyContent: "center", alignItems: "center" }}>
-            <Ring value={avgSla} size={170} stroke={12} label="On-time" sub={`${slaMof} of 156`} />
+            {slaRate === null ? (
+              <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center", padding: "24px 0" }}>
+                No delivery data yet.
+              </div>
+            ) : (
+              <Ring
+                value={slaRate}
+                size={170}
+                stroke={12}
+                label="On-time"
+                sub={`${totalCompleted} of ${slaTotal}`}
+              />
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 16 }}>
-            <MiniStat label="Avg turnaround" value="42m" />
-            <MiniStat label="P95" value="1h 12m" />
+            <MiniStat
+              label="Completed · 30d"
+              value={slaTotal > 0 ? String(totalCompleted) : "—"}
+            />
+            <MiniStat
+              label="Failed · 30d"
+              value={slaTotal > 0 ? String(totalFailed) : "—"}
+            />
           </div>
         </div>
       </section>
@@ -497,10 +834,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <SectionTitle eyebrow="In production" title={`${inProgressForUI.length} listings moving`} />
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/pipeline" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               View pipeline
               <Icon name="chevron-right" size={12} />
-            </button>
+            </Link>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {inProgressForUI.length === 0 && (
@@ -560,9 +897,13 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             />
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {activityForUI.map((a, i) => (
-              <ActivityItem key={i} kind={a.kind} title={a.title} sub={a.sub} time={a.time} />
-            ))}
+            {activityForUI.length === 0 ? (
+              <EmptyState message="No activity yet. Events will appear here as listings move through the pipeline." />
+            ) : (
+              activityForUI.map((a, i) => (
+                <ActivityItem key={i} kind={a.kind} title={a.title} sub={a.sub} time={a.time} />
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -579,17 +920,29 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               : "No scenes generated yet"}
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {providerMixForUI.map((p) => (
-              <div key={p.provider}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
-                  <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
-                </div>
-                <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
-                </div>
+            {costFailed ? (
+              <DegradedBadge
+                testId="cost-degraded-badge"
+                retryTestId="cost-degraded-retry"
+                onRetry={retryCost}
+              />
+            ) : providerMixForUI.length === 0 ? (
+              <div data-testid="provider-mix-empty">
+                <EmptyState message="No scenes generated yet this month." />
               </div>
-            ))}
+            ) : (
+              providerMixForUI.map((p) => (
+                <div key={p.provider}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -597,10 +950,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
         <div className="le-card" style={{ padding: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <SectionTitle eyebrow="Leaderboard" title="Top agents this month" />
-            <button type="button" className="le-btn-ghost">
+            <Link to="/dashboard/users" className="le-btn-ghost" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
               All agents
               <Icon name="chevron-right" size={12} />
-            </button>
+            </Link>
           </div>
           <div className="le-table-scroll is-wide">
             {agentsForUI.length === 0 && (
@@ -609,12 +962,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               </div>
             )}
             {agentsForUI.map((a, i) => {
-              const sparkData = allProps.length > 0
-                ? agentSparkline(a.name, allProps)
-                : (() => {
-                    const base = Math.max(1, Math.floor(a.videos / 12));
-                    return Array.from({ length: 12 }, (_, j) => base + (j % 3));
-                  })();
+              // Always derive from live data — no synthetic fallback.
+              const sparkData = agentSparkline(a.name, allProps);
               return (
                 <div
                   key={a.name}
@@ -646,7 +995,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     {a.videos}
                   </span>
                   <span style={{ fontSize: 13, fontWeight: 600, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--ink)" }}>
-                    {fmtCents(a.spend)}
+                    <MoneyValue cents={a.spend} />
                   </span>
                   <div style={{ width: 100, marginLeft: "auto" }}>
                     <Sparkline data={sparkData} color="var(--ink)" height={26} />

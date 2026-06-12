@@ -22,18 +22,41 @@ interface SidebarSection {
   items: SidebarItem[];
 }
 
-const SECTIONS: SidebarSection[] = [
+/**
+ * Agent (non-admin) nav — 5 items total, single section.
+ * Brand sub-label: "Client studio" (no version string).
+ */
+const AGENT_SECTIONS: SidebarSection[] = [
   {
-    label: "Workspace",
+    label: "Studio",
     items: [
-      { to: "/dashboard", label: "Overview", icon: "grid", end: true },
-      { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
+      { to: "/dashboard", label: "Home", icon: "grid", end: true },
+      { to: "/upload", label: "Order a video", icon: "upload" },
+      { to: "/dashboard/account/listings", label: "My listings", icon: "home" },
+      { to: "/dashboard/account/billing", label: "Billing", icon: "dollar" },
+      { to: "/dashboard/account/profile", label: "Profile", icon: "user" },
+    ],
+  },
+];
+
+/**
+ * Operator (admin) nav — 3 sections: Operate / Studio / Business.
+ *
+ * Labels renamed from legacy values (Pipeline→Orders, Users→Agents,
+ * Overview→Today). URLs are unchanged — no redirects needed.
+ */
+const OPERATOR_SECTIONS: SidebarSection[] = [
+  {
+    label: "Operate",
+    items: [
+      { to: "/dashboard", label: "Today", icon: "grid", end: true },
+      { to: "/dashboard/pipeline", label: "Orders", icon: "pipeline" },
       { to: "/dashboard/properties", label: "Listings", icon: "home" },
-      { to: "/dashboard/users", label: "Users", icon: "users" },
+      { to: "/dashboard/users", label: "Agents", icon: "users" },
     ],
   },
   {
-    label: "Ops",
+    label: "Studio",
     items: [
       {
         to: "/dashboard/studio/video",
@@ -57,6 +80,11 @@ const SECTIONS: SidebarSection[] = [
           p.startsWith("/dashboard/blog/emails") ||
           p.startsWith("/dashboard/blog/email-templates"),
       },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
       { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
       { to: "/dashboard/logs", label: "Logs", icon: "logs" },
       { to: "/dashboard/development/system-status", label: "System status", icon: "activity" },
@@ -74,6 +102,14 @@ const SECTIONS: SidebarSection[] = [
     ],
   },
 ];
+
+/**
+ * getSections — returns the nav section set for the given role.
+ * @param role "admin" for operators; anything else for agents.
+ */
+export function getSections(role: string | null | undefined): SidebarSection[] {
+  return role === "admin" ? OPERATOR_SECTIONS : AGENT_SECTIONS;
+}
 
 function useCollapsedState() {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -97,9 +133,18 @@ export interface DashboardSidebarProps {
   onToggleCollapsed: () => void;
 }
 
-function useUnreadCount(): number {
+/**
+ * useUnreadCount — operator-only badge.
+ *
+ * Agents do not have access to /api/logs (admin-gated endpoint) and the
+ * "needs_review" pipeline concept doesn't map to the agent IA. Passing
+ * isAdmin=false skips both API calls entirely so agents never fire the
+ * wasted round-trip to the ungated logs endpoint.
+ */
+function useUnreadCount(isAdmin: boolean): number {
   const [unread, setUnread] = useState(0);
   useEffect(() => {
+    if (!isAdmin) return; // agents: no badge, no calls
     let cancelled = false;
     (async () => {
       try {
@@ -118,7 +163,7 @@ function useUnreadCount(): number {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAdmin]);
   return unread;
 }
 
@@ -127,18 +172,20 @@ function UserMenu({
   initials,
   displayName,
   email,
+  isAdmin,
 }: {
   collapsed: boolean;
   initials: string;
   displayName: string;
   email: string;
+  isAdmin: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
-  const unread = useUnreadCount();
+  const unread = useUnreadCount(isAdmin);
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -317,8 +364,12 @@ const menuItemStyle = {
 };
 
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const location = useLocation();
+  const isAdmin = profile?.role === "admin";
+  const sections = getSections(profile?.role);
+  const brandSub = isAdmin ? "Operator studio" : "Client studio";
+
   const initials = (user?.email ?? "Listing Elevate")
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -337,13 +388,13 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
         {!collapsed && (
           <span className="le-sidebar-brand-text">
             <span className="le-sidebar-brand-name">Listing Elevate</span>
-            <span className="le-sidebar-brand-sub">Studio · v2.4</span>
+            <span className="le-sidebar-brand-sub">{brandSub}</span>
           </span>
         )}
       </Link>
 
       <nav className="le-sidebar-nav" aria-label="Dashboard navigation">
-        {SECTIONS.map((section) => (
+        {sections.map((section) => (
           <div className="le-sidebar-section" key={section.label}>
             {!collapsed && <div className="le-sidebar-section-label">{section.label}</div>}
             {section.items.map((item) => {
@@ -391,6 +442,7 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
           initials={initials}
           displayName={displayName}
           email={email}
+          isAdmin={isAdmin}
         />
         <button
           type="button"

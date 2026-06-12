@@ -40,9 +40,14 @@ import { getPresets, savePreset, type Preset } from "@/lib/presets";
 import { createProperty, generateVoiceoverPreview, lookupMls } from "@/lib/api";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { digitsOnly, formatNumber } from "@/lib/format";
-import { SiteNav } from "@/v2/components/SiteNav";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
+import { Link } from "react-router-dom";
+import { Menu } from "lucide-react";
+import { DashboardSidebar, useDashboardSidebar } from "@/components/DashboardSidebar";
+import { Icon } from "@/components/dashboard/icons";
+import { useMediaQuery } from "@/hooks/use-mobile";
+import "@/v2/styles/v2.css";
 import "@/v3/styles/glass.css";
 
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
@@ -141,6 +146,69 @@ function Field({ label, full, half, children }: FieldProps) {
     <div className={`g-form-field${full ? " full" : ""}${half ? " half" : ""}`}>
       <label className="g-form-label">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dashboard app-shell frame
+//
+// WS6: the /upload wizard renders through the same L2 chrome the rest of the
+// authed app uses (DashboardSidebar + le-dash-shell), instead of the standalone
+// marketing glass-page + SiteNav. This is a chrome-only wrapper — the wizard
+// step content, state, and the createProperty→Stripe revenue path are untouched.
+// The route stays standalone (/upload, outside the <Dashboard> Outlet) so the
+// public Stripe redirect targets /upload/success and /upload/cancelled are
+// unaffected; we replicate the shell here rather than moving the route.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ShellFrame({ children }: { children: React.ReactNode }) {
+  const [collapsed, setCollapsed] = useDashboardSidebar();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 1024px)");
+
+  // Lock body scroll while the mobile drawer is open.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [drawerOpen]);
+
+  return (
+    <div
+      className={`le-root le-dash-shell${collapsed ? " is-collapsed" : ""}${
+        drawerOpen ? " is-drawer-open" : ""
+      }`}
+    >
+      <DashboardSidebar
+        collapsed={isMobile ? false : collapsed}
+        onToggleCollapsed={() => setCollapsed((v) => !v)}
+      />
+      <div
+        className="le-dash-backdrop"
+        onClick={() => setDrawerOpen(false)}
+        aria-hidden="true"
+      />
+      <div className="le-dash-main">
+        <div className="le-dash-mobilebar">
+          <button
+            type="button"
+            className="le-dash-hamburger"
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open navigation menu"
+          >
+            <Menu size={20} strokeWidth={1.8} />
+          </button>
+          <Link to="/dashboard" className="le-dash-mobilebar-brand">
+            <Icon name="logo" size={22} />
+            Listing Elevate
+          </Link>
+        </div>
+        <main className="le-main-scroll">{children}</main>
+      </div>
     </div>
   );
 }
@@ -553,10 +621,7 @@ const Upload = () => {
   // ─── success ───
   if (submitted) {
     return (
-      <div
-        className="glass-page"
-        style={{ display: "flex", minHeight: "100vh", flexDirection: "column" }}
-      >
+      <ShellFrame>
         <div
           style={{
             flex: 1,
@@ -657,7 +722,7 @@ const Upload = () => {
             </button>
           </motion.div>
         </div>
-      </div>
+      </ShellFrame>
     );
   }
 
@@ -669,19 +734,11 @@ const Upload = () => {
 
   // ─── main render ───
   return (
-    <div
-      className="glass-page"
-      style={{ display: "flex", flexDirection: "column", minHeight: "100vh", paddingTop: 92 }}
-    >
-      {/* Fixed background layers */}
-      <div className="glass-bg-base" aria-hidden />
-
-      <SiteNav showSectionLinks={false} solid />
-
-      {/* Content wrapper above background */}
-      <div style={{ position: "relative", zIndex: 2, flex: 1 }}>
+    <ShellFrame>
+      {/* Content wrapper — shell provides the gutter/scroll (DESIGN-GUIDE §9) */}
+      <div style={{ position: "relative", flex: 1 }}>
         {/* Page heading */}
-        <div style={{ padding: "12px clamp(16px, 5vw, 36px) 0" }}>
+        <div style={{ paddingTop: 12 }}>
           <div className="g-page-heading">
             <div>
               <span className="g-page-eyebrow">
@@ -750,7 +807,7 @@ const Upload = () => {
         </div>
 
         {/* Two-pane layout */}
-        <div style={{ padding: "0 36px 48px" }}>
+        <div style={{ padding: "0 0 48px" }}>
           <div className="g-upload-layout">
             {/* Left: step content */}
             <div className="g-upload-main">
@@ -1827,7 +1884,7 @@ const Upload = () => {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </ShellFrame>
   );
 };
 

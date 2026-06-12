@@ -1,0 +1,405 @@
+/**
+ * AgentHome tests — TDD written before implementation.
+ *
+ * Covers:
+ * A1. Renders live orders with StatusChips from mocked API data
+ * A2. Renders the failure/needs_review state as "Needs attention" (first-class visual state)
+ * A3. Renders EmptyState (no SAMPLE_* strings) when API returns empty
+ * A4. Never renders SAMPLE_* strings
+ */
+
+import React from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+
+// ── Mock auth ─────────────────────────────────────────────────────────────────
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({
+    user: { id: "agent-001" },
+    profile: { role: "user", first_name: "Alex" },
+    session: {},
+    loading: false,
+    signOut: vi.fn(),
+    refreshProfile: vi.fn(),
+  }),
+}));
+
+// ── Mock supabase ─────────────────────────────────────────────────────────────
+vi.mock("@/lib/supabase", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null } }),
+      onAuthStateChange: vi
+        .fn()
+        .mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
+    },
+  },
+  AUTH_CALLBACK_URL: "http://localhost/auth/callback",
+}));
+
+// ── Shared mock factories ─────────────────────────────────────────────────────
+const activeOrder = {
+  id: "prop-active-001",
+  address: "45 Maple Street",
+  status: "generating",
+  created_at: new Date(Date.now() - 3600000).toISOString(),
+  horizontal_video_url: null,
+  vertical_video_url: null,
+  thumbnail_url: null,
+  price: 0,
+  bedrooms: 3,
+  bathrooms: 2,
+  listing_agent: "Alex",
+  brokerage: "Test Brokerage",
+  photo_count: 10,
+  selected_photo_count: 8,
+  total_cost_cents: 0,
+  processing_time_ms: 0,
+};
+
+const deliveredOrder = {
+  id: "prop-delivered-001",
+  address: "88 Ocean Drive",
+  status: "complete",
+  created_at: new Date(Date.now() - 86400000).toISOString(),
+  horizontal_video_url: "https://cdn.example.com/vid.mp4",
+  vertical_video_url: null,
+  thumbnail_url: null,
+  price: 0,
+  bedrooms: 4,
+  bathrooms: 3,
+  listing_agent: "Alex",
+  brokerage: "Test Brokerage",
+  photo_count: 20,
+  selected_photo_count: 15,
+  total_cost_cents: 1500,
+  processing_time_ms: 120000,
+};
+
+const failedOrder = {
+  id: "prop-failed-001",
+  address: "12 Broken Lane",
+  status: "needs_review",
+  created_at: new Date(Date.now() - 7200000).toISOString(),
+  horizontal_video_url: null,
+  vertical_video_url: null,
+  thumbnail_url: null,
+  price: 0,
+  bedrooms: 2,
+  bathrooms: 1,
+  listing_agent: "Alex",
+  brokerage: "Test Brokerage",
+  photo_count: 5,
+  selected_photo_count: 4,
+  total_cost_cents: 0,
+  processing_time_ms: 0,
+};
+
+// ── Mock API module ───────────────────────────────────────────────────────────
+const mockFetchProperties = vi.fn();
+
+vi.mock("@/lib/api", () => ({
+  fetchProperties: (...args: unknown[]) => mockFetchProperties(...args),
+}));
+
+// ── Import the component under test ──────────────────────────────────────────
+import AgentHome from "../AgentHome";
+
+function wrap() {
+  return (
+    <MemoryRouter>
+      <AgentHome />
+    </MemoryRouter>
+  );
+}
+
+describe("AgentHome", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ── A1: Active orders with StatusChips ─────────────────────────────────────
+  it("renders the data-testid=agent-home root element", async () => {
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+    const { container } = render(wrap());
+    // data-testid is present immediately (before data loads)
+    expect(container.querySelector("[data-testid='agent-home']")).toBeTruthy();
+  });
+
+  it("renders 'In production' section with active order address and StatusChip", async () => {
+    mockFetchProperties
+      // first call: in-production (non-terminal statuses)
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      // second call: complete status
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // third call: delivered status (separate fetch added to include "delivered" status)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review / failed
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    // StatusChip for "generating" → "Rendering". Note: the In-Production card
+    // now also renders a progress timeline that includes a "Rendering" stage
+    // label, so "Rendering" appears more than once — assert >= 1 rather than a
+    // single match.
+    expect(screen.queryAllByText("Rendering").length).toBeGreaterThan(0);
+  });
+
+  it("renders 'Delivered' section with delivered order address", async () => {
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [deliveredOrder], total: 1 })
+      // third call: delivered status fetch (separate from complete)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("88 Ocean Drive")).toBeTruthy();
+    });
+    // StatusChip for "complete" → "Delivered"
+    expect(screen.queryAllByText("Delivered").length).toBeGreaterThan(0);
+  });
+
+  // ── A2: Failure / needs_review as first-class visual state ─────────────────
+  it("renders needs_review/failed order as 'Needs attention' plainly visible", async () => {
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // third call: delivered status
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review
+      .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("12 Broken Lane")).toBeTruthy();
+    });
+    // StatusChip for "needs_review" → "Needs attention" (may appear multiple times: chip + section title)
+    expect(screen.queryAllByText("Needs attention").length).toBeGreaterThan(0);
+    // The reassurance message must appear
+    const container = screen.getByTestId("agent-home");
+    expect(container.textContent).toContain("Needs attention");
+  });
+
+  it("shows the reassurance copy for needs_review orders (team notified)", async () => {
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // third call: delivered status
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // fourth call: needs_review
+      .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
+
+    const { container } = render(wrap());
+
+    await waitFor(() => {
+      expect(container.textContent.toLowerCase()).toContain("our team");
+    });
+  });
+
+  // ── A3: EmptyState when all sections are empty ─────────────────────────────
+  it("renders EmptyState (with data-empty-icon) when all API calls return empty", async () => {
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+
+    const { container } = render(wrap());
+
+    await waitFor(() => {
+      expect(container.querySelector("[data-empty-icon]")).toBeTruthy();
+    });
+  });
+
+  // ── A4: No SAMPLE_* strings ever ──────────────────────────────────────────
+  it("does NOT render any SAMPLE_* strings when API returns live data", async () => {
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: [deliveredOrder], total: 1 })
+      // third call: delivered status (separate fetch)
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [failedOrder], total: 1 });
+
+    const { container } = render(wrap());
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+    expect(container.textContent).not.toContain("SAMPLE");
+    expect(container.textContent).not.toContain("120 Greenwich");
+    expect(container.textContent).not.toContain("9540 Vista Verde");
+  });
+
+  it("does NOT render any SAMPLE_* strings when API returns empty", async () => {
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+
+    const { container } = render(wrap());
+    await waitFor(() => {
+      expect(container.querySelector("[data-empty-icon]")).toBeTruthy();
+    });
+    expect(container.textContent).not.toContain("SAMPLE");
+    expect(container.textContent).not.toContain("120 Greenwich");
+    expect(container.textContent).not.toContain("9540 Vista Verde");
+  });
+
+  // ── A5: Primary CTA — Order a video ───────────────────────────────────────
+  it("renders the primary 'Order a video' CTA link", () => {
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+    render(wrap());
+    // The CTA links to /upload
+    const link = screen.getByRole("link", { name: /order a video/i });
+    expect(link).toBeTruthy();
+    expect(link.getAttribute("href")).toBe("/upload");
+  });
+
+  // ── WS4a: Per-order progress timeline on In-Production cards ───────────────
+  it("renders a 5-stage timeline with the active stage matching the order status lit", async () => {
+    mockFetchProperties
+      // first call: in-production — "generating" → Rendering stage
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    // Timeline strip present with all 5 stages
+    const timeline = screen.getByTestId(`order-timeline-${activeOrder.id}`);
+    expect(timeline).toBeTruthy();
+    expect(timeline.querySelectorAll("[data-stage]")).toHaveLength(5);
+
+    // The active stage is the one matching the order's status label ("Rendering")
+    const active = timeline.querySelector("[data-stage-active='true']");
+    expect(active).toBeTruthy();
+    expect(active?.getAttribute("data-stage")).toBe("Rendering");
+  });
+
+  // ── WS4a: ETA phrase omission guard ───────────────────────────────────────
+  it("omits the 'Usually ready' ETA phrase when fewer than 3 delivered samples exist", async () => {
+    // Only 2 delivered orders with processing_time_ms → below the median threshold
+    const twoDelivered = [
+      { ...deliveredOrder, id: "d1", processing_time_ms: 1000000 },
+      { ...deliveredOrder, id: "d2", processing_time_ms: 2000000 },
+    ];
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: twoDelivered, total: 2 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    const { container } = render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    expect(container.textContent).not.toContain("Usually ready");
+  });
+
+  it("renders a number-free bucketed ETA phrase when 3+ delivered samples exist", async () => {
+    // 3 delivered orders, all under 6h → "Usually ready within a few hours"
+    const threeDelivered = [
+      { ...deliveredOrder, id: "d1", processing_time_ms: 2 * 3600 * 1000 },
+      { ...deliveredOrder, id: "d2", processing_time_ms: 3 * 3600 * 1000 },
+      { ...deliveredOrder, id: "d3", processing_time_ms: 4 * 3600 * 1000 },
+    ];
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [activeOrder], total: 1 })
+      .mockResolvedValueOnce({ properties: threeDelivered, total: 3 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("45 Maple Street")).toBeTruthy();
+    });
+
+    const eta = screen.getByTestId(`order-eta-${activeOrder.id}`);
+    expect(eta.textContent).toContain("Usually ready");
+    // Hard rule: NO digits — qualitative phrase only, no countdown / invented number
+    expect(eta.textContent ?? "").not.toMatch(/\d/);
+  });
+
+  // ── WS4b: Hero card for newest delivered order ─────────────────────────────
+
+  it("renders newest delivered order with horizontal_video_url as hero card with Watch/Download/Share actions", async () => {
+    // newest = higher created_at
+    const olderDelivered = {
+      ...deliveredOrder,
+      id: "prop-older-001",
+      address: "10 Old Street",
+      created_at: new Date(Date.now() - 2 * 86400000).toISOString(), // 2 days ago
+      horizontal_video_url: "https://cdn.example.com/older.mp4",
+    };
+    const newestDelivered = {
+      ...deliveredOrder,
+      id: "prop-newest-001",
+      address: "99 New Avenue",
+      created_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+      horizontal_video_url: "https://cdn.example.com/newest.mp4",
+    };
+
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // complete fetch returns both orders (older first to test sort)
+      .mockResolvedValueOnce({ properties: [olderDelivered, newestDelivered], total: 2 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("99 New Avenue")).toBeTruthy();
+    });
+
+    // Hero card present for newest
+    expect(screen.getByTestId("delivered-hero-card")).toBeTruthy();
+
+    // All three actions present
+    expect(screen.getByTestId("hero-action-watch")).toBeTruthy();
+    expect(screen.getByTestId("hero-action-download")).toBeTruthy();
+    expect(screen.getByTestId("hero-action-share")).toBeTruthy();
+
+    // Older order renders as a compact row (not a hero)
+    expect(screen.getByText("10 Old Street")).toBeTruthy();
+    // No second hero card
+    expect(screen.getAllByTestId("delivered-hero-card")).toHaveLength(1);
+  });
+
+  it("degrades newest delivered order WITHOUT horizontal_video_url to compact row (no hero)", async () => {
+    const noVideoDelivered = {
+      ...deliveredOrder,
+      id: "prop-novideo-001",
+      address: "5 Silent Road",
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+      horizontal_video_url: null,
+    };
+
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [noVideoDelivered], total: 1 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("5 Silent Road")).toBeTruthy();
+    });
+
+    // No hero card rendered
+    expect(screen.queryByTestId("delivered-hero-card")).toBeNull();
+    // No play button overlay
+    expect(screen.queryByTestId("hero-action-watch")).toBeNull();
+  });
+});

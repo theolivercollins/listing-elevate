@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Loader2, ArrowRight } from "lucide-react";
 import { listListings, type LabListing } from "@/lib/labListingsApi";
-import { PageHeading, StatusPill, PropertyThumb, Card, fmtCents } from "@/components/dashboard/primitives";
+import { PageHeading, StatusPill, PropertyThumb, Card, MoneyValue } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import "@/v2/styles/v2.css";
 
@@ -173,7 +173,7 @@ export default function LabListings() {
                           marginTop: 2,
                         }}
                       >
-                        {fmtCents(l.total_cost_cents)}
+                        <MoneyValue cents={l.total_cost_cents} />
                       </div>
                     </div>
                   )}

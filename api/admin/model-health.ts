@@ -11,14 +11,20 @@ import { getSupabase } from "../../lib/client.js";
 //                 callsites that explicitly record it will produce data)
 //   - failure  → metadata->>'error' IS NOT NULL  (any row that recorded an
 //                 error key is counted as a failure)
+//   - balance  → metadata->>'error' contains "402", "balance", "insufficient",
+//                "quota", or "credit" — surfaced separately as balance_errors_24h
+//                so the operator Today landing can show a named alert state
+//                (catches incidents like the 2026-06-11 Atlas-402 outage).
 //
 // Columns returned per provider:
-//   provider, calls_24h, failures_24h, p50_ms, p95_ms, last_at
+//   provider, calls_24h, failures_24h, balance_errors_24h, p50_ms, p95_ms, last_at
 
 export interface ModelHealthRow {
   provider: string;
   calls_24h: number;
   failures_24h: number;
+  /** Count of HTTP 402 / balance / insufficient-credit errors in the last 24h. */
+  balance_errors_24h: number;
   p50_ms: number | null;
   p95_ms: number | null;
   last_at: string | null;
@@ -52,11 +58,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Group by provider
+  const BALANCE_ERROR_PATTERNS = ["402", "balance", "insufficient", "quota", "credit"];
+
   const map = new Map<
     string,
     {
       calls: number;
       failures: number;
+      balance_errors: number;
       durations: number[];
       last_at: string | null;
     }
@@ -67,6 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const cur = map.get(provider) ?? {
       calls: 0,
       failures: 0,
+      balance_errors: 0,
       durations: [],
       last_at: null,
     };
@@ -77,6 +87,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const meta = ev.metadata as Record<string, unknown> | null;
     if (meta && typeof meta["error"] === "string" && meta["error"]) {
       cur.failures += 1;
+      // Balance / 402 sub-category — surfaced as a named alert on the operator dashboard
+      const errLow = meta["error"].toLowerCase();
+      if (BALANCE_ERROR_PATTERNS.some((p) => errLow.includes(p))) {
+        cur.balance_errors += 1;
+      }
     }
 
     // Latency: metadata.duration_ms (numeric ms)
@@ -108,6 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         provider,
         calls_24h: v.calls,
         failures_24h: v.failures,
+        balance_errors_24h: v.balance_errors,
         p50_ms: percentile(sorted, 0.5),
         p95_ms: percentile(sorted, 0.95),
         last_at: v.last_at,
