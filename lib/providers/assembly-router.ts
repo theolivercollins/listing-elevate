@@ -67,14 +67,16 @@ export function selectAssemblyProvider(): IVideoAssemblyProvider {
 
 /**
  * Compute the cost in cents for a render of the given duration on the
- * specified provider.
+ * specified provider. For Creatomate, landscape (16:9) renders cost 2.25×
+ * more than the 1080p baseline because the canvas is supersampled to 2880×1620.
  */
 export function assemblyProviderCostCents(
   providerName: AssemblyProviderName,
   outputDurationSeconds: number,
+  aspectRatio: "16:9" | "9:16" = "16:9",
 ): number {
   if (providerName === "creatomate") {
-    return creatomateCostCents(outputDurationSeconds);
+    return creatomateCostCents(outputDurationSeconds, aspectRatio);
   }
   return shotstackCostCents(outputDurationSeconds);
 }

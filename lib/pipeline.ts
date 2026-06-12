@@ -72,6 +72,7 @@ import {
   REQUIRED_ROOM_TYPES,
 } from "./pipeline/selection.js";
 import { tryClaimPipelineRun } from "./pipeline-claim.js";
+import { emitBunnyFinalizeCostEvent } from "./assembly/bunny-finalize-cost.js";
 
 // Used by analyzer batching; keep here since it's only a concern of this file.
 const BATCH_SIZE = 8;
@@ -101,6 +102,33 @@ export function coerceToPushInForV11<
     if (s.end_photo_id) return s; // paired — leave untouched
     return { ...s, camera_movement: "push_in" };
   });
+}
+
+// ─── ROUTING PREFERENCE RESOLVER ───────────────────────────────
+//
+// Pure function extracted from runGenerationSubmit and resubmitScene so the
+// "prefers director intent, ignores actual-ran provider" rule has a single
+// authoritative implementation and can be unit-tested without mocking Supabase.
+//
+// Logic:
+// 1. opts.providerOverride always wins (explicit caller intent).
+// 2. scene.provider_preference (the director's original intent, stored at
+//    scene-insert time) wins when set.
+// 3. provider_preference=null or undefined → null (router decides).
+// 4. scene.provider is NEVER consulted here — it is the pure what-actually-ran
+//    audit record that poll-scenes.ts uses to reconstruct a provider instance
+//    for polling; reading it for routing re-introduces the pollution it caused.
+//
+// Guard: if the migration 084 hasn't been applied yet, provider_preference will
+// be absent from the row (TypeScript sees it as possibly undefined). The
+// optional-chain + nullish-coalesce to null makes the call site null-safe.
+
+export function resolveRoutingPreference(
+  scene: { provider: string | null; provider_preference?: string | null },
+  providerOverride?: string | null,
+): string | null {
+  if (providerOverride != null) return providerOverride;
+  return scene.provider_preference ?? null;
 }
 
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
@@ -822,7 +850,13 @@ async function runScripting(propertyId: string): Promise<void> {
         camera_movement: s.camera_movement,
         prompt: s.prompt,
         duration_seconds: s.duration_seconds,
+        // T4-provider-preference: write director intent to the new column (migration 084)
+        // so reruns can read provider_preference without being polluted by the actual-ran
+        // scenes.provider value. The old provider column initial value is still populated
+        // here so poll-scenes.ts can reconstruct a provider instance even before the run
+        // completes — it uses scenes.provider, not provider_preference, for that.
         provider: s.provider_preference ?? undefined,
+        provider_preference: s.provider_preference ?? null,
         end_photo_id: s.end_photo_id ?? null,
         end_image_url: endImageUrl,
       };
@@ -927,7 +961,14 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
     const photoUrl = photo.file_url;     // Supabase Storage URL — providers fetch directly
     const roomType = (photo.room_type as RoomType) ?? "other";
     const cameraMovement = scene.camera_movement as CameraMovement | null;
-    const preference = scene.provider as VideoProvider | null;
+    // T4-provider-preference: read director intent from provider_preference, not
+    // scenes.provider. scenes.provider is the actual-ran audit record for poll-scenes;
+    // using it for routing re-introduces the Atlas-402 → native-Kling pollution that
+    // causes reruns to route to 720p instead of the director's 1080p-class intent.
+    // resolveRoutingPreference is null-safe: undefined provider_preference → null.
+    const preference = resolveRoutingPreference(
+      scene as { provider: string | null; provider_preference?: string | null },
+    ) as VideoProvider | null;
 
     // C.1: Build the failover sequence using the new ProviderDecision shape.
     // selectProviderForScene handles the paired-scene rule (end_photo_id set
@@ -1094,12 +1135,40 @@ export async function resubmitScene(
 ): Promise<{ ok: boolean; provider?: string; jobId?: string; attempt?: number; error?: string; kind?: string; retryable?: boolean; excluded?: VideoProvider[] }> {
   const supabase = getSupabase();
 
-  const { data: scene, error } = await supabase
-    .from("scenes")
-    .select("id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider")
-    .eq("id", sceneId)
-    .single();
-  if (error || !scene) return { ok: false, error: "scene not found" };
+  // Fetch scene — prefer the full column list including provider_preference
+  // (migration 084). If the column doesn't exist yet (42703), fall back to the
+  // pre-084 list; resolveRoutingPreference treats undefined provider_preference
+  // as null and degrades to legacy routing so no runtime error occurs.
+  const selectFull = "id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider, provider_preference";
+  const selectLegacy = "id, property_id, photo_id, scene_number, camera_movement, prompt, duration_seconds, attempt_count, end_photo_id, end_image_url, provider";
+  let rawScene: Record<string, unknown> | null = null;
+  {
+    const { data, error } = await supabase
+      .from("scenes")
+      .select(selectFull)
+      .eq("id", sceneId)
+      .single();
+    if (error && (error as { code?: string }).code === "42703") {
+      // Migration 084 not yet applied — retry without provider_preference.
+      const { data: data2, error: error2 } = await supabase
+        .from("scenes")
+        .select(selectLegacy)
+        .eq("id", sceneId)
+        .single();
+      if (error2 || !data2) return { ok: false, error: "scene not found" };
+      rawScene = data2 as Record<string, unknown>;
+    } else if (error || !data) {
+      return { ok: false, error: "scene not found" };
+    } else {
+      rawScene = data as Record<string, unknown>;
+    }
+  }
+  const scene = rawScene as typeof rawScene & {
+    id: string; property_id: string; photo_id: string; scene_number: number;
+    camera_movement: string; prompt: string; duration_seconds: number;
+    attempt_count: number; end_photo_id: string | null; end_image_url: string | null;
+    provider: string | null; provider_preference?: string | null;
+  };
 
   const { data: photo } = await supabase
     .from("photos")
@@ -1146,7 +1215,15 @@ export async function resubmitScene(
   const sourceImage = Buffer.alloc(0);
   const roomType = ((photo as { room_type?: string }).room_type as RoomType) ?? "other";
   const cameraMovement = (scene.camera_movement as CameraMovement | null) ?? null;
-  const preference = (opts.providerOverride ?? (scene.provider as VideoProvider | null)) ?? null;
+  // T4-provider-preference: opts.providerOverride still wins (explicit caller intent).
+  // When not overriding, read director intent from provider_preference rather than
+  // scenes.provider so a prior Atlas-402 → native-Kling failover doesn't permanently
+  // redirect reruns to 720p native Kling. provider_preference is null-safe: if the
+  // column isn't present (migration 084 not yet applied), it returns null → router decides.
+  const preference = resolveRoutingPreference(
+    scene as { provider: string | null; provider_preference?: string | null },
+    opts.providerOverride,
+  ) as VideoProvider | null;
 
   const excluded: VideoProvider[] = [];
   const maxFailovers = Math.max(getEnabledProviders().length - 1, 1);
@@ -1422,6 +1499,7 @@ async function runAssemblyStep(
       const { selectAssemblyProvider, pollAssemblyJob, assemblyProviderCostCents } = await import(
         "./providers/assembly-router.js"
       );
+      const { assembleSuperSampleFactor } = await import("./providers/creatomate.js");
       const provider = selectAssemblyProvider();
       const providerName = provider.name;
 
@@ -1628,7 +1706,10 @@ async function runAssemblyStep(
         const horizontalJob = horizontalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(horizontalTemplateId, {
               modifications: templateMods,
-              renderScale: 1,
+              // Template canvas is designed for the target AR; renderScale upscales it
+              // by ASSEMBLY_SUPERSAMPLE (default 1.5) for higher bitrate output.
+              // Rollback: ASSEMBLY_SUPERSAMPLE=1 → renderScale=1 (native canvas).
+              renderScale: assembleSuperSampleFactor(),
             })
           : await provider.assemble({
               ...assembleParams,
@@ -1640,12 +1721,41 @@ async function runAssemblyStep(
         if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
           throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
         }
-        horizontalUrl = horizontalResult.videoUrl;
         horizontalRenderMs = horizontalResult.renderTimeMs ?? null;
 
         const horizontalDuration =
           horizontalResult.durationSeconds ?? timelineDurationSeconds;
-        const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration);
+
+        // Finalize: host the render on Bunny Stream for long-term retention
+        // (provider URLs have undocumented TTLs). Also computes
+        // delivered_bitrate_kbps from file size — no ffprobe needed.
+        // Falls back to providerUrl on any error (HITL-free).
+        // Disable with LE_ASSEMBLY_FINALIZE=off.
+        const { finalizeAssemblyRender } = await import("./assembly/finalize.js");
+        const hFinalize = await finalizeAssemblyRender({
+          propertyId,
+          aspectRatio: "16:9",
+          providerUrl: horizontalResult.videoUrl,
+          durationSeconds: horizontalDuration,
+          version: 1,
+        });
+        horizontalUrl = hFinalize.url;
+        await log(propertyId, "assembly", "info",
+          `Horizontal finalize: bitrate=${hFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${hFinalize.outputBytes ?? "n/a"}`,
+          { delivered_bitrate_kbps: hFinalize.bitrateKbps, output_bytes: hFinalize.outputBytes, url: hFinalize.url });
+
+        // Bunny Stream cost row — emitted when finalize actually hosted on Bunny
+        // (url differs from providerUrl). Zero-HITL: errors are swallowed inside
+        // emitBunnyFinalizeCostEvent so a cost-row failure never blocks delivery.
+        await emitBunnyFinalizeCostEvent({
+          propertyId,
+          aspectRatio: "16:9",
+          bunnyWasCalled: hFinalize.bunnyWasCalled,
+          outputBytes: hFinalize.outputBytes,
+          bitrateKbps: hFinalize.bitrateKbps,
+        });
+
+        const horizontalCents = assemblyProviderCostCents(providerName, horizontalDuration, "16:9");
         await recordCostEvent({
           propertyId,
           stage: "assembly",
@@ -1660,6 +1770,8 @@ async function runAssemblyStep(
             render_time_ms: horizontalResult.renderTimeMs ?? null,
             job_id: horizontalJob.jobId,
             reason,
+            delivered_bitrate_kbps: hFinalize.bitrateKbps,
+            output_bytes: hFinalize.outputBytes,
           },
         });
       } else {
@@ -1685,6 +1797,12 @@ async function runAssemblyStep(
         const verticalJob = verticalTemplateId && templateMods && provider.name === "creatomate"
           ? await (provider as InstanceType<typeof import("./providers/creatomate.js").CreatomateProvider>).assembleFromTemplate(verticalTemplateId, {
               modifications: templateMods,
+              // Vertical (9:16) is NOT supersampled — template canvas renders at native
+              // 1080x1920. Supersample only applies to horizontal (16:9) builds.
+              // This aligns cost model (creatomateCostCents factor=1 for 9:16), concat
+              // builder (emits 1080x1920), and test assertions in
+              // creatomate-supersample.test.ts ("vertical is NOT supersampled").
+              // Rollback: this line only; horizontal rollback is ASSEMBLY_SUPERSAMPLE=1.
               renderScale: 1,
             })
           : await provider.assemble({
@@ -1697,11 +1815,34 @@ async function runAssemblyStep(
         if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
           throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
         }
-        verticalUrl = verticalResult.videoUrl;
-
         const verticalDuration =
           verticalResult.durationSeconds ?? timelineDurationSeconds;
-        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration);
+
+        // Finalize: host the 9:16 render on Bunny Stream.
+        // Same fallback and kill-switch semantics as the horizontal render above.
+        const { finalizeAssemblyRender: finalizeV } = await import("./assembly/finalize.js");
+        const vFinalize = await finalizeV({
+          propertyId,
+          aspectRatio: "9:16",
+          providerUrl: verticalResult.videoUrl,
+          durationSeconds: verticalDuration,
+          version: 1,
+        });
+        verticalUrl = vFinalize.url;
+        await log(propertyId, "assembly", "info",
+          `Vertical finalize: bitrate=${vFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${vFinalize.outputBytes ?? "n/a"}`,
+          { delivered_bitrate_kbps: vFinalize.bitrateKbps, output_bytes: vFinalize.outputBytes, url: vFinalize.url });
+
+        // Bunny Stream cost row — same pattern as horizontal above.
+        await emitBunnyFinalizeCostEvent({
+          propertyId,
+          aspectRatio: "9:16",
+          bunnyWasCalled: vFinalize.bunnyWasCalled,
+          outputBytes: vFinalize.outputBytes,
+          bitrateKbps: vFinalize.bitrateKbps,
+        });
+
+        const verticalCents = assemblyProviderCostCents(providerName, verticalDuration, "9:16");
         await recordCostEvent({
           propertyId,
           stage: "assembly",
@@ -1716,6 +1857,8 @@ async function runAssemblyStep(
             render_time_ms: verticalResult.renderTimeMs ?? null,
             job_id: verticalJob.jobId,
             reason,
+            delivered_bitrate_kbps: vFinalize.bitrateKbps,
+            output_bytes: vFinalize.outputBytes,
           },
         });
       }

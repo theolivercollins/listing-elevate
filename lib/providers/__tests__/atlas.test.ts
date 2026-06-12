@@ -115,7 +115,7 @@ describe("buildAtlasRequestBody", () => {
     expect(body.resolution).toBe("1080p");
   });
 
-  it("omits resolution for Kling descriptors (resolution is fixed in-model)", () => {
+  it("omits resolution for Kling descriptors (Kling ignores the field; geometry is governed by the 16:9 source crop)", () => {
     const klingBody = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v2-master"]);
     expect(klingBody.resolution).toBeUndefined();
     const v3Body = buildAtlasRequestBody(baseParams, ATLAS_MODELS["kling-v3-pro"]);
@@ -286,8 +286,12 @@ describe("AtlasProvider.generateClip — source aspect-ratio prep", () => {
     expect(sentBody.end_image).toBeUndefined();
   });
 
-  it("does NOT rewrite the source image URL for Kling (no forced aspect ratio)", async () => {
-    const transform = vi.fn();
+  it("rewrites the source image URL to a 16:9 crop for Atlas Kling SKUs too (Kling copies input aspect — measured 2026-06-11)", async () => {
+    // Previously asserted Kling got NO crop, based on the disproved
+    // "geometry is fixed in-model" assumption. ffprobe audit 2026-06-11:
+    // Kling shapes its fixed pixel budget to the INPUT aspect (3:2 in →
+    // 1760×1176 out on v2.6-pro), so it needs the same crop as Seedance.
+    const transform = vi.fn(async (url: string) => `${url}?cropped=16x9`);
     __setTransformForTests(transform);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -295,11 +299,48 @@ describe("AtlasProvider.generateClip — source aspect-ratio prep", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const provider = new AtlasProvider("kling-v3-pro");
-    await provider.generateClip({ ...baseParams, modelOverride: "kling-v3-pro" });
+    const provider = new AtlasProvider("kling-v2-6-pro");
+    await provider.generateClip({ ...baseParams, modelOverride: "kling-v2-6-pro" });
 
-    expect(transform).not.toHaveBeenCalled();
+    expect(transform).toHaveBeenCalledWith("https://cdn.example.com/start.jpg", 1920, 1080);
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(sentBody.image).toBe("https://cdn.example.com/start.jpg");
+    expect(sentBody.image).toBe("https://cdn.example.com/start.jpg?cropped=16x9");
+  });
+
+  it("crops BOTH the start and end images to 16:9 for paired Kling submissions (kling-v3-pro, RULE DQ.3)", async () => {
+    // A 3:2 end_image against a 16:9 start frame would skew the pair's
+    // interpolation geometry — both frames go through the same crop.
+    __setTransformForTests(async (url) => `${url}?cropped=16x9`);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 200, data: { id: "job-kling-pair" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("kling-v3-pro");
+    await provider.generateClip({
+      ...baseParams,
+      endImageUrl: "https://cdn.example.com/end.jpg",
+      modelOverride: "kling-v3-pro",
+    });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(sentBody.image).toBe("https://cdn.example.com/start.jpg?cropped=16x9");
+    expect(sentBody.end_image).toBe("https://cdn.example.com/end.jpg?cropped=16x9");
+    expect(sentBody.last_image).toBeUndefined();
+  });
+});
+
+describe("ATLAS_MODELS — Kling aspect-copy guard", () => {
+  it("every Kling SKU forces a 16:9 source crop (Kling copies input aspect onto its fixed pixel budget)", () => {
+    const klingKeys = Object.keys(ATLAS_MODELS).filter((k) => k.startsWith("kling-"));
+    expect(klingKeys.length).toBeGreaterThanOrEqual(6);
+    for (const key of klingKeys) {
+      expect(ATLAS_MODELS[key].forceSourceAspectRatio, `${key} must force 16:9 sources`).toBe("16:9");
+    }
+  });
+
+  it("kling-v2-master is declared 720p-class (measured ~0.92 MP fixed budget), not 1080p", () => {
+    expect(ATLAS_MODELS["kling-v2-master"].supportedResolutions).toEqual(["720p"]);
   });
 });

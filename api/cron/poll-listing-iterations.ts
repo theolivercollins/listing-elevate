@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../lib/client.js";
 import { atlasClipCostCents } from "../../lib/providers/atlas.js";
 import { pickProvider, isNativeKling } from "../../lib/providers/dispatch.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "../../lib/providers/bunny-stream.js";
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
@@ -75,22 +76,32 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       const nativeKling = isNativeKling(iter.model_used);
       const costCents = nativeKling ? 0 : atlasClipCostCents(iter.model_used);
 
-      // Rehost the clip into Supabase Storage so URLs never expire.
-      // Kling native returns signed URLs with ksTime expiry; Atlas CDN URLs
-      // also rotate. Without rehosting, old iterations play as "just a
-      // keyframe" once the provider URL dies.
+      // Rehost the clip on Bunny Stream so URLs never expire (provider CDNs rotate).
+      // Falls back to the provider URL on any Bunny failure — delivery must never block
+      // (zero human-in-the-loop requirement).
       let persistedUrl = status.videoUrl!;
+      const rehostPath = `lab-listing/${iter.scene_id}/${iter.id}.mp4`;
       try {
         const buffer = await provider.downloadClip(status.videoUrl!);
-        const path = `lab-listing/${iter.scene_id}/${iter.id}.mp4`;
-        const { error: upErr } = await supabase.storage
-          .from("property-videos")
-          .upload(path, buffer, { contentType: "video/mp4", upsert: true });
-        if (!upErr) {
-          const { data: pub } = supabase.storage.from("property-videos").getPublicUrl(path);
-          persistedUrl = pub.publicUrl;
-        } else {
-          console.error(`[poll-listing-iterations] rehost upload failed for ${iter.id}:`, upErr);
+        if (isBunnyConfigured()) {
+          const bunnyResult = await hostVideoOnBunny(rehostPath, buffer);
+          persistedUrl = bunnyResult.mp4Url;
+          // Record Bunny hosting cost (even when cost rounds to 0¢).
+          // Fire-and-forget: Bunny cost event. Wrapped in void IIFE so the
+          // PromiseLike returned by Supabase doesn't block the outer await.
+          void (async () => {
+            const { error: bErr } = await supabase.from("cost_events").insert({
+              property_id: null,
+              scene_id: iter.scene_id,
+              stage: "generation",
+              provider: "bunny",
+              units_consumed: 1,
+              unit_type: "renders",
+              cost_cents: bunnyStreamCostCents(buffer.byteLength),
+              metadata: { bunny_hosted: true, path: rehostPath, source: "lab_listing", iteration_id: iter.id },
+            });
+            if (bErr) console.error("[poll-listing-iterations] bunny cost_event insert failed:", bErr);
+          })();
         }
       } catch (rehostErr) {
         console.error(`[poll-listing-iterations] rehost failed for ${iter.id}:`, rehostErr);

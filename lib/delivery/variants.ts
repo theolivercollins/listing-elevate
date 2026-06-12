@@ -1,5 +1,6 @@
 import { getSupabase } from '../client.js';
 import { recordCostEvent, log } from '../db.js';
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from '../providers/bunny-stream.js';
 import {
   selectProviderForScene,
   buildProviderFromDecision,
@@ -225,11 +226,35 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         continue;
       }
       const clipBuffer = await provider.downloadClip(status.videoUrl);
+      // Host the new variant clip on Bunny Stream (going-forward video hosting
+      // target; replaced the Supabase Storage property-videos mirror 2026-06-12).
+      // The old clipPath string is reused as the Bunny title — it uniquely
+      // identifies the clip. A Bunny outage or misconfig must NEVER break this
+      // autonomous delivery poll (zero-HITL): on unconfigured/failure we fall back
+      // to the provider videoUrl and continue. Replaces the prior `throw upErr`.
       const clipPath = `${scene.property_id}/variants/scene_${scene.scene_number}_${v.variant}.mp4`;
-      const { error: upErr } = await supabase.storage
-        .from('property-videos').upload(clipPath, clipBuffer, { contentType: 'video/mp4', upsert: true });
-      if (upErr) throw upErr;
-      const { data: urlData } = supabase.storage.from('property-videos').getPublicUrl(clipPath);
+      let clipUrl = status.videoUrl;
+      if (isBunnyConfigured()) {
+        try {
+          const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
+          clipUrl = hosted.mp4Url;
+          // Additional Bunny hosting cost row (the render cost_event below is
+          // unchanged). Wrapped in .catch so a cost-row failure never breaks the run.
+          recordCostEvent({
+            propertyId: scene.property_id, sceneId: v.scene_id, stage: 'generation',
+            provider: 'bunny', unitsConsumed: 1, unitType: 'renders',
+            costCents: bunnyStreamCostCents(clipBuffer.byteLength),
+            metadata: { bunny_hosted: true, clip_path: clipPath, source: 'delivery' },
+          }).catch((e) => console.error('[delivery/variants] bunny cost_event failed:', e));
+        } catch (bunnyErr) {
+          console.warn(
+            `[delivery/variants] bunny host failed for ${clipPath} — keeping provider URL:`,
+            bunnyErr instanceof Error ? bunnyErr.message : String(bunnyErr),
+          );
+        }
+      } else {
+        console.warn(`[delivery/variants] bunny not configured — keeping provider URL for ${clipPath}`);
+      }
 
       // Fallback cost estimate when the provider doesn't return credit
       // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
@@ -265,7 +290,7 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
       const providerUnitType = status.providerUnitType ?? fallbackUnitType ?? null;
 
       await supabase.from('scene_variants')
-        .update({ clip_url: urlData.publicUrl, cost_cents: costCents, updated_at: new Date().toISOString() })
+        .update({ clip_url: clipUrl, cost_cents: costCents, updated_at: new Date().toISOString() })
         .eq('id', v.id);
       await recordCostEvent({
         propertyId: scene.property_id, sceneId: v.scene_id, stage: 'generation',

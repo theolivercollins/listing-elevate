@@ -50,4 +50,11 @@ describe("buildCreatomateTimeline audio tracks", () => {
     const script = buildCreatomateTimeline(baseParams());
     expect(script.elements.some((e) => e.type === "audio" && e.track === 6)).toBe(false);
   });
+
+  it("omits frame_rate so output follows the source clips' fps (no 24->30 resample)", () => {
+    // 2026-06-11 assembly-quality diagnosis: AI source clips are 24fps;
+    // Creatomate's default (no frame_rate) is the highest input fps.
+    const script = buildCreatomateTimeline(baseParams());
+    expect("frame_rate" in script).toBe(false);
+  });
 });

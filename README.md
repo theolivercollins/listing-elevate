@@ -21,7 +21,7 @@ https://github.com/theolivercollins/reelready
 | State | TanStack React Query |
 | Backend | Vercel Serverless Functions (Node.js, TypeScript) |
 | Database | Supabase (Postgres) |
-| File Storage | Supabase Storage (property-photos, property-videos buckets) |
+| File Storage | Supabase Storage (non-video: property-photos, blog-images, audio) + Bunny Stream (video clips, library 679131) |
 | Photo Analysis + QC | Claude Sonnet (Anthropic API) |
 | Video Generation | Runway Gen-4 Turbo, Kling 2.0, Luma Ray2 |
 | Deployment | Vercel (auto-deploy on push to main) |
@@ -175,6 +175,9 @@ Preview deployments are created automatically on pull requests.
 | `KLING_ACCESS_KEY` | For Kling | Kling API access key |
 | `KLING_SECRET_KEY` | For Kling | Kling API secret key (used for JWT signing) |
 | `LUMA_API_KEY` | For Luma | Luma Dream Machine API key |
+| `BUNNY_STREAM_API_KEY` | Yes (video hosting) | Bunny Stream per-library API key for video upload + management |
+| `BUNNY_STREAM_LIBRARY_ID` | Yes (video hosting) | Bunny Stream library ID (679131 for ListingElevate) |
+| `BUNNY_STREAM_CDN_HOSTNAME` | Yes (video hosting) | Bunny Stream CDN hostname for playback URLs |
 | `MAX_RETRIES_PER_CLIP` | No | Max generation retries per clip before HITL (default: 2) |
 | `QC_AUTO_APPROVE_ALL` | No | Set to `"true"` to auto-pass all QC (default: false, but currently auto-passes anyway) |
 
