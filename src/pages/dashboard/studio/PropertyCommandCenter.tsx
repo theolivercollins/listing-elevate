@@ -29,7 +29,7 @@ import type {
   PropertyPreviewRow,
   ListingDetails,
 } from '../../../../lib/types/operator-studio';
-import ShareDialog, { type ShareLinks, type CapabilityField } from './ShareDialog';
+import ShareDialog, { type ShareLinks, type ToggleField } from './ShareDialog';
 
 // ─── Local types ───────────────────────────────────────────────────────────────
 
@@ -390,21 +390,41 @@ const PropertyCommandCenter = () => {
       const body = await res.json().catch(() => ({}));
       throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
     }
+    // Fetch the new link token from the server (create genuinely needs it).
+    // Do NOT call fetchBundle() — that flips the command-center loading state
+    // and remounts the whole page (spec §4b flash fix).
     await fetchShareLinks();
-    await fetchBundle();
   };
 
-  const handleToggle = async (pvId: string, field: CapabilityField, value: boolean) => {
-    const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-links/${pvId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: value }),
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+  const handleToggle = async (pvId: string, field: ToggleField, value: boolean) => {
+    // Optimistic update: find which kind owns this link id, capture prior value,
+    // apply the update immediately in local state, fire PATCH in background,
+    // and roll back on failure — never refetch (spec §4b flash fix).
+    const kind = shareLinks.client?.id === pvId ? 'client' : 'public';
+    const prior = shareLinks[kind];
+    if (prior) {
+      setShareLinks((prev) => ({
+        ...prev,
+        [kind]: { ...prior, [field]: value },
+      }));
     }
-    await fetchShareLinks();
+    try {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/preview-links/${pvId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      // Roll back the optimistic update on failure
+      if (prior) {
+        setShareLinks((prev) => ({ ...prev, [kind]: prior }));
+      }
+      throw err;
+    }
   };
 
   // Generic delivery action helper — all checkpoint sections reuse this.

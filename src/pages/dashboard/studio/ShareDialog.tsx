@@ -1,5 +1,8 @@
 import { X } from 'lucide-react';
-import SharePanel, { type PreviewLinkRow as PanelLinkRow } from '@/components/studio/share/SharePanel';
+import SharePanel, {
+  type PreviewLinkRow as PanelLinkRow,
+  type ToggleField,
+} from '@/components/studio/share/SharePanel';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 // Re-exported for PropertyCommandCenter, which still talks newest-per-kind.
@@ -11,6 +14,8 @@ export type PreviewLinkRow = {
   allow_download: boolean;
   allow_approve: boolean;
   allow_revision: boolean;
+  /** Per-link branding flag (migration 087). Optional pre-migration; defaults true. */
+  show_branding?: boolean;
   approved_at: string | null;
   viewed_count: number;
   last_viewed_at: string | null;
@@ -22,23 +27,34 @@ export type ShareLinks = {
   public: PreviewLinkRow | null;
 };
 
+/** Capability-only fields (agent-facing). */
 export type CapabilityField = 'allow_download' | 'allow_approve' | 'allow_revision';
+
+/** All fields a toggle handler may receive — capability flags + show_branding. */
+export type { ToggleField };
 
 interface ShareDialogProps {
   propertyId: string;
   baseUrl: string;
   links: ShareLinks;
   onCreateLink: (kind: 'client' | 'public') => Promise<void>;
-  onToggle: (id: string, field: CapabilityField, value: boolean) => Promise<void>;
+  onToggle: (id: string, field: ToggleField, value: boolean) => Promise<void>;
   onClose: () => void;
 }
 
 // Adapt the dialog's newest-per-kind row into the SharePanel row shape. The
 // dialog predates labels/revoke/expiry, so those fields default to null and are
 // hidden by `mode="single"` anyway.
+// show_branding defaults true (pre-migration fallback preserves existing behavior).
 function toPanelRows(link: PreviewLinkRow | null): PanelLinkRow[] {
   if (!link) return [];
-  return [{ ...link, label: null, revoked_at: null, expires_at: null }];
+  return [{
+    ...link,
+    show_branding: link.show_branding ?? true,
+    label: null,
+    revoked_at: null,
+    expires_at: null,
+  }];
 }
 
 const noopManage = async () => {};
