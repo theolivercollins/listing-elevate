@@ -1040,6 +1040,295 @@
   color: var(--le-muted);
 }
 
+/* ─── Folder rail (spec §3) ────────────────────────────────────────────
+   Horizontal pill strip above the grid: All videos · folders w/ counts ·
+   New folder · Archived. Native to the studio idiom — same tokens as the
+   filter bar and cards, never a second design language. */
+.studio-scope .le-video-rail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.studio-scope .le-video-rail-spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
+.studio-scope .le-video-rail-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-r-pill);
+  background: var(--le-surface);
+  color: var(--le-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, box-shadow 0.14s;
+}
+.studio-scope .le-video-rail-pill:hover {
+  border-color: var(--le-muted-2);
+  color: var(--le-ink);
+}
+.studio-scope .le-video-rail-pill:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--le-ink);
+}
+.studio-scope .le-video-rail-pill.is-active {
+  background: var(--le-ink);
+  border-color: var(--le-ink);
+  color: #fff;
+}
+.studio-scope .le-video-rail-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-rail-pill.is-active .le-video-rail-count {
+  color: rgba(255,255,255,0.72);
+}
+.studio-scope .le-video-rail-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.studio-scope .le-video-rail-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.studio-scope .le-video-rail-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--le-r-sm);
+  background: transparent;
+  color: var(--le-muted);
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+.studio-scope .le-video-rail-tool:hover:not(:disabled) {
+  background: rgba(11,11,16,0.05);
+  color: var(--le-ink);
+}
+.studio-scope .le-video-rail-tool:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.studio-scope .le-video-rail-tool-danger:hover:not(:disabled) {
+  background: rgba(196,74,74,0.08);
+  color: var(--le-bad);
+}
+.studio-scope .le-video-rail-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px dashed var(--le-line);
+  border-radius: var(--le-r-pill);
+  background: transparent;
+  color: var(--le-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.14s, color 0.14s;
+}
+.studio-scope .le-video-rail-add:hover {
+  border-color: var(--le-muted-2);
+  color: var(--le-ink);
+}
+.studio-scope .le-video-rail-edit {
+  display: inline-flex;
+  align-items: center;
+}
+.studio-scope .le-video-rail-input {
+  height: 32px;
+  width: 160px;
+  border-radius: var(--le-r-pill);
+  padding: 0 14px;
+  font-size: 13px;
+}
+.studio-scope .le-video-rail-archived {
+  gap: 6px;
+}
+
+/* ─── Card menu (spec §3) ──────────────────────────────────────────────
+   The card becomes a positioned wrapper so the ⋯ menu floats over the
+   poster without sitting inside the navigating <Link>. */
+.studio-scope .le-video-card-wrap {
+  position: relative;
+}
+.studio-scope .le-video-menu {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+}
+.studio-scope .le-video-menu-trigger {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: var(--le-r-pill);
+  background: rgba(255,255,255,0.92);
+  color: var(--le-ink-2);
+  box-shadow: var(--le-shadow-sm);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.16s, transform 0.16s, background 0.14s;
+}
+.studio-scope .le-video-card-wrap:hover .le-video-menu-trigger,
+.studio-scope .le-video-menu-trigger:focus-visible,
+.studio-scope .le-video-menu-trigger[aria-expanded='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+.studio-scope .le-video-menu-trigger:hover {
+  background: #fff;
+  color: var(--le-ink);
+}
+.studio-scope .le-video-menu-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--le-shadow-sm), 0 0 0 2px var(--le-ink);
+}
+.studio-scope .le-video-menu-pop {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  min-width: 188px;
+  padding: 5px;
+  background: var(--le-surface);
+  border: 1px solid var(--le-line);
+  border-radius: var(--le-r-md);
+  box-shadow: var(--le-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.studio-scope .le-video-menu-sub {
+  position: relative;
+}
+.studio-scope .le-video-menu-pop-nested {
+  top: -5px;
+  right: calc(100% + 6px);
+  left: auto;
+}
+.studio-scope .le-video-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--le-r-sm);
+  background: transparent;
+  color: var(--le-ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.studio-scope .le-video-menu-item:hover,
+.studio-scope .le-video-menu-item:focus-visible {
+  background: rgba(11,11,16,0.05);
+  color: var(--le-ink);
+  outline: none;
+}
+.studio-scope .le-video-menu-item-danger {
+  color: var(--le-bad);
+}
+.studio-scope .le-video-menu-item-danger:hover,
+.studio-scope .le-video-menu-item-danger:focus-visible {
+  background: rgba(196,74,74,0.08);
+  color: var(--le-bad);
+}
+.studio-scope .le-video-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--le-line-2);
+}
+.studio-scope .le-video-menu-note {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--le-muted);
+}
+
+/* ─── Delete / folder-delete confirm dialog (spec §3) ──────────────────── */
+.studio-scope .le-video-delete-modal {
+  width: 380px;
+  max-width: calc(100vw - 32px);
+}
+.studio-scope .le-video-delete-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 28px 28px 8px;
+}
+.studio-scope .le-video-delete-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--le-r-pill);
+  background: rgba(196,74,74,0.08);
+  color: var(--le-bad);
+  margin-bottom: 4px;
+}
+.studio-scope .le-video-delete-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--le-ink);
+  margin: 0;
+}
+.studio-scope .le-video-delete-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--le-muted);
+  margin: 0;
+}
+.studio-scope .le-video-delete-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 20px 24px 24px;
+}
+.studio-scope .le-video-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--le-bad);
+  border-radius: var(--le-r-sm);
+  background: var(--le-bad);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.14s, opacity 0.14s;
+}
+.studio-scope .le-video-btn-danger:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+.studio-scope .le-video-btn-danger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.studio-scope .le-video-btn-danger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--le-ink);
+}
+
 /* ─── Video hub (spec §2) ──────────────────────────────────────────── */
 .studio-scope .le-hub-grid {
   display: grid;
@@ -1220,6 +1509,34 @@
 .dark .studio-scope .le-skeleton-shimmer {
   background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%);
   background-size: 400% 100%;
+}
+
+/* Library management — dark adjustments for the few hardcoded light tints. */
+.dark .studio-scope .le-video-rail-pill.is-active {
+  background: var(--le-ink);
+  border-color: var(--le-ink);
+  color: #05070f;
+}
+.dark .studio-scope .le-video-rail-pill.is-active .le-video-rail-count {
+  color: rgba(5,7,15,0.6);
+}
+.dark .studio-scope .le-video-rail-tool:hover:not(:disabled) {
+  background: rgba(255,255,255,0.07);
+}
+.dark .studio-scope .le-video-menu-trigger {
+  background: rgba(20,24,38,0.92);
+  color: var(--le-ink-2);
+}
+.dark .studio-scope .le-video-menu-trigger:hover {
+  background: #141826;
+}
+.dark .studio-scope .le-video-menu-item:hover,
+.dark .studio-scope .le-video-menu-item:focus-visible {
+  background: rgba(255,255,255,0.06);
+}
+.dark .studio-scope .le-video-menu-item-danger:hover,
+.dark .studio-scope .le-video-menu-item-danger:focus-visible {
+  background: rgba(196,74,74,0.16);
 }
 
 /* ─── Dark mode ──────────────────────────────────────────────────────
