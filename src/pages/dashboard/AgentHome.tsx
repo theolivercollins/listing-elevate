@@ -23,6 +23,7 @@ import {
   PageHeading,
   PropertyThumb,
   StatusChip,
+  SkeletonRow,
   fmtRel,
   SectionTitle,
 } from "@/components/dashboard/primitives";
@@ -165,7 +166,7 @@ function OrderTimeline({ property }: { property: Property }) {
                 style={{
                   flex: 1,
                   height: 1.5,
-                  borderRadius: 1,
+                  borderRadius: "var(--le-r-sm)",
                   background: isDone ? "var(--good)" : "var(--line-2)",
                   minWidth: 8,
                 }}
@@ -308,7 +309,7 @@ function DeliveredHeroCard({ property }: DeliveredHeroProps) {
     <div
       data-testid="delivered-hero-card"
       style={{
-        borderRadius: 14,
+        borderRadius: "var(--le-r-lg)",
         overflow: "hidden",
         border: "1px solid var(--line-2)",
         marginBottom: 16,
@@ -560,6 +561,15 @@ export default function AgentHome() {
           </Link>
         }
       />
+
+      {/* ── Loading skeleton ─────────────────────────────────────────── */}
+      {loading && (
+        <Section>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Section>
+      )}
 
       {/* ── Fetch error — surface honestly, not as "No orders yet" ────── */}
       {fetchError && !loading && (

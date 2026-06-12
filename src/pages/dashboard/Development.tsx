@@ -39,7 +39,7 @@ const CODE_CHIP: React.CSSProperties = {
   fontFamily: "var(--le-font-mono)",
   background: "rgba(11,11,16,0.05)",
   padding: "1px 5px",
-  borderRadius: 6,
+  borderRadius: "var(--le-r-sm)",
 };
 
 // ─── quick-link card ──────────────────────────────────────────────

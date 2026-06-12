@@ -342,7 +342,7 @@ export default function BlogPostDetailPage() {
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           {aiInput ? (
             <>
               <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
@@ -365,7 +365,7 @@ export default function BlogPostDetailPage() {
 
       {/* Publish progress banner */}
       {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             <span style={{ fontWeight: 600, color: "var(--ink)" }}>
@@ -376,7 +376,7 @@ export default function BlogPostDetailPage() {
         </div>
       )}
       {post && post.state === "live" && post.external_post_url && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid rgba(47,138,85,0.3)", background: "rgba(47,138,85,0.06)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(47,138,85,0.3)", background: "rgba(47,138,85,0.06)", padding: "12px 16px", fontSize: 13.5 }}>
           <span style={{ fontWeight: 600, color: "var(--good)" }}>✓ Live on Sierra</span>
           <a href={post.external_post_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>
             View on Sierra ↗
@@ -384,7 +384,7 @@ export default function BlogPostDetailPage() {
         </div>
       )}
       {post && post.state === "on_hold" && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: 14, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
           <Pause style={{ width: 16, height: 16, color: "var(--muted)", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             <span style={{ fontWeight: 600, color: "var(--ink-2)" }}>On hold</span>
@@ -417,7 +417,7 @@ export default function BlogPostDetailPage() {
                   }
                   e.target.value = "";
                 }}
-                style={{ borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 12px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                style={{ borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 12px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">Start from template…</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -467,7 +467,7 @@ export default function BlogPostDetailPage() {
               value={form.author_label ?? ""}
               onChange={e => setForm({ ...form, author_label: e.target.value })}
               disabled={readOnly}
-              style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select author —</option>
               {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
@@ -481,7 +481,7 @@ export default function BlogPostDetailPage() {
               value={form.category_label ?? ""}
               onChange={e => setForm({ ...form, category_label: e.target.value })}
               disabled={readOnly}
-              style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select category —</option>
               {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
@@ -668,11 +668,11 @@ export default function BlogPostDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">Current</div>
-                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid var(--line)", borderRadius: "var(--le-r-sm)" }} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">AI-generated</div>
-                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid #e5e7eb", borderRadius: 4 }} />
+                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid var(--line)", borderRadius: "var(--le-r-sm)" }} />
                 </div>
               </div>
               <div className="flex justify-end gap-2">

@@ -159,7 +159,7 @@ export function TopNav() {
                 style={{
                   background: "#fff",
                   color: "#07080c",
-                  borderRadius: 4,
+                  borderRadius: "var(--le-r-sm)",
                   padding: "8px 16px",
                   fontSize: 13,
                   fontWeight: 500,

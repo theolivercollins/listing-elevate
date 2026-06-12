@@ -47,7 +47,7 @@ const GHOST_BTN: CSSProperties = {
   background: "transparent",
   color: "var(--ink-2)",
   border: "1px solid var(--line-1)",
-  borderRadius: 6,
+  borderRadius: "var(--le-r-sm)",
   cursor: "pointer",
   fontFamily: "var(--le-font-sans)",
   letterSpacing: "0.01em",

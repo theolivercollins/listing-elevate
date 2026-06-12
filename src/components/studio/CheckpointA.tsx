@@ -81,7 +81,7 @@ function VariantBadge({
           fontSize: 10.5,
           fontWeight: 600,
           padding: '2px 6px',
-          borderRadius: 4,
+          borderRadius: "var(--le-r-sm)",
           background: variant === 'A' ? 'var(--le-ink)' : 'var(--le-primary, #3b6fd4)',
           color: '#fff',
         }}
@@ -92,7 +92,7 @@ function VariantBadge({
         style={{
           fontSize: 10.5,
           padding: '2px 6px',
-          borderRadius: 4,
+          borderRadius: "var(--le-r-sm)",
           background: 'var(--le-surface-2, rgba(0,0,0,.06))',
           color: 'var(--le-muted)',
         }}
@@ -104,7 +104,7 @@ function VariantBadge({
           style={{
             fontSize: 10.5,
             padding: '2px 6px',
-            borderRadius: 4,
+            borderRadius: "var(--le-r-sm)",
             background: 'var(--le-warn-bg, rgba(255,160,0,.12))',
             color: 'var(--le-warn, #b97800)',
             fontWeight: 500,
@@ -165,7 +165,7 @@ function RegenerateMenu({
             marginTop: 2,
             background: 'var(--le-surface)',
             border: '1px solid var(--le-line)',
-            borderRadius: 6,
+            borderRadius: "var(--le-r-sm)",
             boxShadow: '0 4px 12px rgba(0,0,0,.12)',
             zIndex: 20,
             minWidth: paired ? 168 : 80,
@@ -191,7 +191,7 @@ function RegenerateMenu({
                         padding: '4px 6px',
                         fontSize: 10.5,
                         fontWeight: active ? 600 : 400,
-                        borderRadius: 5,
+                        borderRadius: "var(--le-r-sm)",
                         border: active ? '1px solid var(--le-ink)' : '1px solid var(--le-line)',
                         background: active ? 'var(--le-ink)' : 'var(--le-surface)',
                         color: active ? '#fff' : 'var(--le-muted)',
@@ -284,7 +284,7 @@ function DraggableCard({
         width: 200,
         background: 'var(--le-surface)',
         border: '1px solid var(--le-line)',
-        borderRadius: 8,
+        borderRadius: "var(--le-r-sm)",
         overflow: 'hidden',
         cursor: isDragging ? 'grabbing' : 'grab',
         opacity: isDragging ? 0.4 : 1,

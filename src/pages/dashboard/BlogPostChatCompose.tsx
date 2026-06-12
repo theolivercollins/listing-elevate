@@ -562,7 +562,7 @@ export default function BlogPostChatCompose() {
                       key={card.id}
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
                       style={{
-                        maxWidth: "88%", borderRadius: 16, border: "1px solid rgba(42,111,219,0.25)",
+                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(42,111,219,0.25)",
                         background: "rgba(42,111,219,0.05)", padding: 14,
                       }}
                     >
@@ -675,7 +675,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.author_label}
                     onChange={(e) => setForm({ ...form, author_label: e.target.value })}
-                    style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.authors.filter((a) => a.label && !a.label.toLowerCase().startsWith("select")).map((a) => (
@@ -687,7 +687,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.category_label}
                     onChange={(e) => setForm({ ...form, category_label: e.target.value })}
-                    style={{ display: "block", width: "100%", borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.categories.filter((c) => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map((c) => (
@@ -726,7 +726,7 @@ export default function BlogPostChatCompose() {
                     <Globe style={{ width: 12, height: 12 }} /> Research sources
                     <span style={{ fontWeight: 400 }}>· {sources.length}</span>
                   </div>
-                  <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: 10, border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 10px", fontSize: 12 }}>
+                  <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 10px", fontSize: 12 }}>
                     {sources.map((s, i) => (
                       <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
                         <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
@@ -755,7 +755,7 @@ export default function BlogPostChatCompose() {
                       type="button"
                       onClick={() => setPreviewMode("rendered")}
                       style={{
-                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
                         background: previewMode === "rendered" ? "var(--surface)" : "transparent",
                         color: previewMode === "rendered" ? "var(--ink)" : "var(--muted)",
@@ -769,7 +769,7 @@ export default function BlogPostChatCompose() {
                       type="button"
                       onClick={() => setPreviewMode("source")}
                       style={{
-                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
                         background: previewMode === "source" ? "var(--surface)" : "transparent",
                         color: previewMode === "source" ? "var(--ink)" : "var(--muted)",
@@ -787,7 +787,7 @@ export default function BlogPostChatCompose() {
                       onClick={openPreviewInNewTab}
                       disabled={!form.body_html}
                       style={{
-                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 6,
+                        display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
                         background: "transparent", color: "var(--muted)",
                         opacity: !form.body_html ? 0.4 : 1,
@@ -898,7 +898,7 @@ function Composer({
               {a.kind === "pdf" ? <FileText style={{ width: 11, height: 11 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 11, height: 11 }} /> : <FileText style={{ width: 11, height: 11 }} />}
               <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
               <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
-              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: 4, padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }} aria-label="Remove">
+              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }} aria-label="Remove">
                 <X style={{ width: 11, height: 11 }} />
               </button>
             </div>
@@ -906,7 +906,7 @@ function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: 20, border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)] focus-within:!shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
             <button type="button" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
@@ -916,7 +916,7 @@ function Composer({
           <PopoverContent align="start" className="w-72 p-2">
             <button
               type="button" onClick={onFilePick}
-              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: 8, padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)" }}
+              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)" }}
               className="hover:bg-muted"
             >
               <Paperclip style={{ width: 15, height: 15 }} />
@@ -933,7 +933,7 @@ function Composer({
               <select
                 value={templateId}
                 onChange={(e) => onTemplateChange(e.target.value)}
-                style={{ display: "block", width: "100%", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                style={{ display: "block", width: "100%", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">— None —</option>
                 {templates.map((t) => (
@@ -943,7 +943,7 @@ function Composer({
               <div style={{ marginTop: 5, fontSize: 11, color: "var(--muted-2)" }}>AI fills the template's sections.</div>
             </div>
             <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
-            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: "8px 8px" }} className="hover:bg-muted">
+            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
                 checked={includeRecentPosts}
@@ -959,7 +959,7 @@ function Composer({
                 </div>
               </div>
             </label>
-            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: 8, padding: "8px 8px" }} className="hover:bg-muted">
+            <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
                 checked={useResearch}

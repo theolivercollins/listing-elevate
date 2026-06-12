@@ -12,7 +12,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       type="button" role="switch" aria-checked={value}
       onClick={() => onChange(!value)}
       style={{
-        width: 36, height: 22, borderRadius: 999,
+        width: 36, height: 22, borderRadius: "var(--le-r-pill)",
         background: value ? "var(--ink)" : "rgba(11,11,16,0.12)",
         border: "none", padding: 0, cursor: "pointer", position: "relative",
         transition: "background .15s", flexShrink: 0,
@@ -20,7 +20,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     >
       <span style={{
         position: "absolute", top: 2, left: value ? 16 : 2,
-        width: 18, height: 18, borderRadius: 999, background: "#fff",
+        width: 18, height: 18, borderRadius: "var(--le-r-pill)", background: "#fff",
         transition: "left .15s",
         boxShadow: "0 1px 2px rgba(11,11,16,0.15)",
       }} />
@@ -77,7 +77,7 @@ function NumInput({ value, onChange, min, prefix }: {
         min={min}
         onChange={e => onChange(Number(e.target.value))}
         style={{
-          width: 90, fontSize: 13, padding: "8px 10px", borderRadius: 10,
+          width: 90, fontSize: 13, padding: "8px 10px", borderRadius: "var(--le-r-md)",
           border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
           outline: "none", fontFamily: "inherit", fontVariantNumeric: "tabular-nums",
           textAlign: "right",
@@ -90,7 +90,7 @@ function NumInput({ value, onChange, min, prefix }: {
 // ─── ReadOnly pill ────────────────────────────────────────────────
 function ReadPill({ children }: { children: React.ReactNode }) {
   return (
-    <div className="le-card-flat" style={{ padding: "8px 14px", fontSize: 12.5, color: "var(--muted)", borderRadius: 10, whiteSpace: "nowrap" }}>
+    <div className="le-card-flat" style={{ padding: "8px 14px", fontSize: 12.5, color: "var(--muted)", borderRadius: "var(--le-r-md)", whiteSpace: "nowrap" }}>
       {children}
     </div>
   );
@@ -100,7 +100,7 @@ function ReadPill({ children }: { children: React.ReactNode }) {
 function ModelChip({ provider, model }: { provider: string; model: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: "rgba(11,11,16,0.06)", color: "var(--muted)", letterSpacing: "0.02em" }}>
+      <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", color: "var(--muted)", letterSpacing: "0.02em" }}>
         {provider}
       </span>
       <span style={{ fontSize: 12.5, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
@@ -164,7 +164,7 @@ function DangerButton({ label, confirmLabel, onConfirm, destructive = false }: {
     <button
       type="button"
       className="le-btn-ghost"
-      style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13, color: destructive ? "var(--bad)" : undefined, borderColor: destructive ? "rgba(196,74,74,0.25)" : undefined }}
+      style={{ textAlign: "left", padding: "10px 16px", borderRadius: "var(--le-r-md)", fontSize: 13, color: destructive ? "var(--bad)" : undefined, borderColor: destructive ? "rgba(196,74,74,0.25)" : undefined }}
       onClick={() => setConfirming(true)}
     >
       {label}
@@ -224,7 +224,7 @@ const Settings = () => {
               value={defaultSku}
               onChange={e => setDefaultSku(e.target.value as typeof defaultSku)}
               style={{
-                fontSize: 12.5, padding: "8px 10px", borderRadius: 10,
+                fontSize: 12.5, padding: "8px 10px", borderRadius: "var(--le-r-md)",
                 border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)",
                 outline: "none", fontFamily: "inherit", cursor: "pointer",
               }}
@@ -336,7 +336,7 @@ const Settings = () => {
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
             {PROVIDERS.map(p => (
-              <div key={p.name} className="le-card-flat" style={{ padding: "12px 14px", borderRadius: 10 }}>
+              <div key={p.name} className="le-card-flat" style={{ padding: "12px 14px", borderRadius: "var(--le-r-md)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{p.name}</span>
@@ -392,7 +392,7 @@ const Settings = () => {
         <Card padding={24}>
           <SectionHeader eyebrow="Irreversible actions" title="Danger zone" />
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", borderRadius: 10, border: "1px solid var(--line-2)", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "10px 16px", borderRadius: "var(--le-r-md)", border: "1px solid var(--line-2)", gap: 16 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>Pause all pipeline crons</div>
                 <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>Sets system_flags.pipeline_paused. No new renders will start.</div>
@@ -402,7 +402,7 @@ const Settings = () => {
             <button
               type="button"
               className="le-btn-ghost"
-              style={{ textAlign: "left", padding: "10px 16px", borderRadius: 10, fontSize: 13 }}
+              style={{ textAlign: "left", padding: "10px 16px", borderRadius: "var(--le-r-md)", fontSize: 13 }}
               onClick={() => window.alert("pnpm exec tsx scripts/cost-reconcile.ts")}
             >
               Run cost reconcile now

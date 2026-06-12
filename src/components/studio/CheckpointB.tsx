@@ -205,7 +205,7 @@ export function CheckpointB({ runId, propertyId, videoUrl, onDelivered }: Checkp
             controls
             playsInline
             className="studio-video"
-            style={{ width: '100%', maxHeight: 400, borderRadius: 8, background: '#000' }}
+            style={{ width: '100%', maxHeight: 400, borderRadius: "var(--le-r-sm)", background: '#000' }}
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
             {downloadError && (
@@ -239,7 +239,7 @@ export function CheckpointB({ runId, propertyId, videoUrl, onDelivered }: Checkp
             alignItems: 'center',
             justifyContent: 'center',
             background: 'var(--le-surface-2, rgba(0,0,0,.04))',
-            borderRadius: 8,
+            borderRadius: "var(--le-r-sm)",
             fontSize: 12.5,
             color: 'var(--le-muted)',
           }}

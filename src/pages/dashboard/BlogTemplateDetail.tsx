@@ -14,7 +14,7 @@ const INPUT_STYLE: React.CSSProperties = {
   display: "block",
   width: "100%",
   padding: "9px 14px",
-  borderRadius: 12,
+  borderRadius: "var(--le-r-lg)",
   border: "1px solid var(--line)",
   background: "var(--surface)",
   fontSize: 13,

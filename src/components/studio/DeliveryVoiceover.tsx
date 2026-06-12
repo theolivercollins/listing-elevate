@@ -334,7 +334,7 @@ export function DeliveryVoiceover({
                     alignItems: 'flex-start',
                     gap: 6,
                     padding: '12px 14px',
-                    borderRadius: 10,
+                    borderRadius: "var(--le-r-md)",
                     border: `1.5px solid ${isSelected ? 'var(--le-ink)' : 'var(--le-line)'}`,
                     background: isSelected ? 'rgba(11,11,16,0.04)' : 'var(--le-surface)',
                     cursor: settingVoice ? 'wait' : 'pointer',
@@ -355,7 +355,7 @@ export function DeliveryVoiceover({
                           padding: '2px 6px',
                           background: 'rgba(42,111,219,0.08)',
                           color: 'var(--le-accent)',
-                          borderRadius: 4,
+                          borderRadius: "var(--le-r-sm)",
                         }}
                       >
                         Client voice
