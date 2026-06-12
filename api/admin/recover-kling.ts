@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { KlingProvider } = await import('../../lib/providers/kling.js');
     const { getSupabase, recordCostEvent } = await import('../../lib/db.js');
-    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } = await import('../../lib/providers/bunny-stream.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
     const kling = new KlingProvider();
     const supabase = getSupabase();
 
@@ -75,9 +75,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isBunnyConfigured()) {
           try {
             const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
-            clipUrl = hosted.mp4Url;
-            // Additional Bunny hosting cost row. Wrapped in .catch so a cost-row
-            // failure never breaks recovery.
+            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
+            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
+            // clip_url would break the Gemini judge and SPA player (zero-HITL).
+            let mp4Valid = false;
+            try {
+              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
+              mp4Valid = headRes.ok;
+              if (!mp4Valid) {
+                console.warn(`[recover-kling] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
+                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
+                deleteBunnyVideo(hosted.guid).catch(() => {});
+              }
+            } catch (headErr) {
+              console.warn(`[recover-kling] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
+                headErr instanceof Error ? headErr.message : String(headErr));
+              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+              deleteBunnyVideo(hosted.guid).catch(() => {});
+            }
+            if (mp4Valid) {
+              clipUrl = hosted.mp4Url;
+            }
+            // Cost row regardless of HEAD result — Bunny was called either way.
             recordCostEvent({
               propertyId,
               sceneId: null,
@@ -86,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               unitsConsumed: 1,
               unitType: 'renders',
               costCents: bunnyStreamCostCents(clipBuffer.byteLength),
-              metadata: { bunny_hosted: true, clip_path: clipPath, source: 'recover' },
+              metadata: { bunny_hosted: mp4Valid, clip_path: clipPath, source: 'recover' },
             }).catch((e) => console.error('[recover-kling] bunny cost_event failed:', e));
           } catch (bunnyErr) {
             console.warn(

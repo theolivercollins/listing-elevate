@@ -29,13 +29,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("../providers/bunny-stream.js", () => ({
   hostVideoOnBunny: vi.fn(),
   isBunnyConfigured: vi.fn(),
+  deleteBunnyVideo: vi.fn(),
 }));
 
-import { hostVideoOnBunny, isBunnyConfigured } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo } from "../providers/bunny-stream.js";
 import { finalizeAssemblyRender } from "./finalize.js";
 
 const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
 const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
+const deleteBunnyVideoMock = vi.mocked(deleteBunnyVideo);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -119,9 +121,12 @@ describe("finalizeAssemblyRender", () => {
 
     hostVideoOnBunnyMock.mockReset();
     isBunnyConfiguredMock.mockReset();
+    deleteBunnyVideoMock.mockReset();
     // Default: Bunny configured and host succeeds.
     isBunnyConfiguredMock.mockReturnValue(true);
     hostVideoOnBunnyMock.mockResolvedValue(bunnySuccess());
+    // Default: deleteBunnyVideo resolves cleanly.
+    deleteBunnyVideoMock.mockResolvedValue(undefined);
 
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
@@ -141,6 +146,7 @@ describe("finalizeAssemblyRender", () => {
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.bitrateKbps).toBeNull();
     expect(result.outputBytes).toBeNull();
+    expect(result.bunnyWasCalled).toBe(false);
     expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
   });
 
@@ -162,6 +168,7 @@ describe("finalizeAssemblyRender", () => {
     // Bitrate IS computed from downloaded bytes (we still download).
     expect(result.bitrateKbps).not.toBeNull();
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
+    expect(result.bunnyWasCalled).toBe(false);
   });
 
   // ── 3. Download failure ─────────────────────────────────────────────────
@@ -178,6 +185,7 @@ describe("finalizeAssemblyRender", () => {
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.bitrateKbps).toBeNull();
     expect(result.outputBytes).toBeNull();
+    expect(result.bunnyWasCalled).toBe(false);
     expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     // Must emit a warn — never throw.
     expect(warnSpy).toHaveBeenCalledWith(
@@ -219,6 +227,7 @@ describe("finalizeAssemblyRender", () => {
     // Bitrate + bytes preserved even though host failed.
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
     expect(result.bitrateKbps).not.toBeNull();
+    expect(result.bunnyWasCalled).toBe(false);
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize] bunny host failed"),
       expect.anything(),
@@ -240,6 +249,7 @@ describe("finalizeAssemblyRender", () => {
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
     expect(result.bitrateKbps).not.toBeNull();
+    expect(result.bunnyWasCalled).toBe(false);
     expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize]"),
@@ -265,6 +275,7 @@ describe("finalizeAssemblyRender", () => {
       (LARGE_BYTES.byteLength * 8) / BASE_PARAMS.durationSeconds / 1000,
     );
     expect(result.bitrateKbps).toBe(expectedKbps);
+    expect(result.bunnyWasCalled).toBe(true);
     // hostVideoOnBunny called with the downloaded bytes.
     expect(hostVideoOnBunnyMock).toHaveBeenCalledTimes(1);
     const [title, bytesArg] = hostVideoOnBunnyMock.mock.calls[0];
@@ -399,6 +410,10 @@ describe("finalizeAssemblyRender", () => {
     // bitrate and outputBytes are still available (download happened).
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
     expect(result.bitrateKbps).not.toBeNull();
+    // Bunny WAS called even though url fell back — charges incurred.
+    expect(result.bunnyWasCalled).toBe(true);
+    // Orphaned Bunny object must be cleaned up.
+    expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize] mp4Url HEAD check failed"),
       expect.anything(),
@@ -422,9 +437,36 @@ describe("finalizeAssemblyRender", () => {
     expect(hostVideoOnBunnyMock).toHaveBeenCalledTimes(1);
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
+    // Bunny WAS called even though url fell back — charges incurred.
+    expect(result.bunnyWasCalled).toBe(true);
+    // Orphaned Bunny object must be cleaned up.
+    expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize] mp4Url HEAD check threw"),
       expect.anything(),
     );
+  });
+
+  // ── 12. Orphan cleanup: deleteBunnyVideo is called when HEAD fails ──────────
+
+  it("emits cost row context and deletes orphaned video when HEAD check fails after successful upload", async () => {
+    // Arrange: download succeeds, host succeeds, but HEAD returns 404.
+    vi.stubGlobal(
+      "fetch",
+      makeSequentialFetch(makeFetchResponse(LARGE_BYTES), makeHeadNotFound()),
+    );
+    process.env.VERCEL_ENV = "production";
+
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+
+    // The caller must see bunnyWasCalled=true so it can emit a cost row even
+    // though url fell back to the provider URL.
+    expect(result.bunnyWasCalled).toBe(true);
+    expect(result.url).toBe(PROVIDER_URL);
+    expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
+    expect(result.bitrateKbps).not.toBeNull();
+
+    // deleteBunnyVideo must be called with the hosted guid to clean up the orphan.
+    expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
   });
 });

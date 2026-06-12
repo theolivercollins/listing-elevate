@@ -4,10 +4,11 @@
  * pipeline.ts (task T3-pipeline-bunny-cost).
  *
  * Success criteria verified here:
- *   1. A cost_events row with provider:'bunny' is emitted when finalize hosted
- *      on Bunny (finalizeUrl !== providerUrl AND outputBytes != null).
+ *   1. A cost_events row with provider:'bunny' is emitted when bunnyWasCalled=true
+ *      AND outputBytes != null (covers both happy path and HEAD-fallback path).
  *   2. costCents=0 rows ARE emitted (unitsConsumed:1) — Oliver: "even $0 calls".
- *   3. No row is emitted when finalize fell back (url === providerUrl).
+ *   3. No row is emitted when bunnyWasCalled=false (kill switch / env guard /
+ *      download failure / unconfigured / hostVideoOnBunny threw).
  *   4. No row is emitted when outputBytes is null (download failed).
  *   5. recordCostEvent errors are swallowed — cost-row failure never blocks.
  */
@@ -36,8 +37,6 @@ const recordCostEventMock = vi.mocked(recordCostEvent);
 const bunnyStreamCostCentsMock = vi.mocked(bunnyStreamCostCents);
 
 // ---------------------------------------------------------------------------
-const PROVIDER_URL = "https://creatomate.com/renders/abc.mp4";
-const BUNNY_URL = "https://vz-cdn.b-cdn.net/guid-abc/play_720p.mp4";
 const PROPERTY_ID = "prop-xyz";
 const OUTPUT_BYTES = 50_000_000; // 50 MB
 
@@ -49,12 +48,11 @@ describe("emitBunnyFinalizeCostEvent", () => {
     );
   });
 
-  it("emits a bunny cost_events row when finalize hosted on Bunny (url !== providerUrl)", async () => {
+  it("emits a bunny cost_events row when bunnyWasCalled=true and outputBytes is set (happy path)", async () => {
     await emitBunnyFinalizeCostEvent({
       propertyId: PROPERTY_ID,
       aspectRatio: "16:9",
-      providerUrl: PROVIDER_URL,
-      finalizeUrl: BUNNY_URL,
+      bunnyWasCalled: true,
       outputBytes: OUTPUT_BYTES,
       bitrateKbps: 10_000,
     });
@@ -75,14 +73,29 @@ describe("emitBunnyFinalizeCostEvent", () => {
     });
   });
 
+  it("emits a bunny cost_events row when bunnyWasCalled=true even if url fell back to providerUrl (HEAD-check fallback)", async () => {
+    // HEAD failure: Bunny was called (charges incurred) but url is still providerUrl.
+    await emitBunnyFinalizeCostEvent({
+      propertyId: PROPERTY_ID,
+      aspectRatio: "16:9",
+      bunnyWasCalled: true,
+      outputBytes: OUTPUT_BYTES,
+      bitrateKbps: 10_000,
+    });
+
+    expect(recordCostEventMock).toHaveBeenCalledTimes(1);
+    const call = recordCostEventMock.mock.calls[0][0];
+    expect(call.provider).toBe("bunny");
+    expect(call.unitsConsumed).toBe(1);
+  });
+
   it("emits costCents=0 when file is sub-1GB (no silent skip — even $0 calls must appear)", async () => {
     bunnyStreamCostCentsMock.mockReturnValue(0);
 
     await emitBunnyFinalizeCostEvent({
       propertyId: PROPERTY_ID,
       aspectRatio: "9:16",
-      providerUrl: PROVIDER_URL,
-      finalizeUrl: BUNNY_URL,
+      bunnyWasCalled: true,
       outputBytes: 1_000_000,
       bitrateKbps: 500,
     });
@@ -94,12 +107,11 @@ describe("emitBunnyFinalizeCostEvent", () => {
     expect(call.metadata).toMatchObject({ aspect_ratio: "9:16" });
   });
 
-  it("does NOT emit a cost row when finalize fell back (url === providerUrl)", async () => {
+  it("does NOT emit a cost row when bunnyWasCalled=false (kill switch / env guard / unconfigured)", async () => {
     await emitBunnyFinalizeCostEvent({
       propertyId: PROPERTY_ID,
       aspectRatio: "16:9",
-      providerUrl: PROVIDER_URL,
-      finalizeUrl: PROVIDER_URL, // same URL = fallback
+      bunnyWasCalled: false,
       outputBytes: OUTPUT_BYTES,
       bitrateKbps: 10_000,
     });
@@ -111,8 +123,7 @@ describe("emitBunnyFinalizeCostEvent", () => {
     await emitBunnyFinalizeCostEvent({
       propertyId: PROPERTY_ID,
       aspectRatio: "16:9",
-      providerUrl: PROVIDER_URL,
-      finalizeUrl: BUNNY_URL,
+      bunnyWasCalled: true,
       outputBytes: null,
       bitrateKbps: null,
     });
@@ -127,8 +138,7 @@ describe("emitBunnyFinalizeCostEvent", () => {
       emitBunnyFinalizeCostEvent({
         propertyId: PROPERTY_ID,
         aspectRatio: "16:9",
-        providerUrl: PROVIDER_URL,
-        finalizeUrl: BUNNY_URL,
+        bunnyWasCalled: true,
         outputBytes: OUTPUT_BYTES,
         bitrateKbps: 10_000,
       }),

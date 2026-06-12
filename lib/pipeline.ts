@@ -1750,8 +1750,7 @@ async function runAssemblyStep(
         await emitBunnyFinalizeCostEvent({
           propertyId,
           aspectRatio: "16:9",
-          providerUrl: horizontalResult.videoUrl,
-          finalizeUrl: hFinalize.url,
+          bunnyWasCalled: hFinalize.bunnyWasCalled,
           outputBytes: hFinalize.outputBytes,
           bitrateKbps: hFinalize.bitrateKbps,
         });
@@ -1838,8 +1837,7 @@ async function runAssemblyStep(
         await emitBunnyFinalizeCostEvent({
           propertyId,
           aspectRatio: "9:16",
-          providerUrl: verticalResult.videoUrl,
-          finalizeUrl: vFinalize.url,
+          bunnyWasCalled: vFinalize.bunnyWasCalled,
           outputBytes: vFinalize.outputBytes,
           bitrateKbps: vFinalize.bitrateKbps,
         });

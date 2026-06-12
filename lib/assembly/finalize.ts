@@ -30,7 +30,7 @@
  *   revert to the raw provider URL (pre-finalize behavior).
  */
 
-import { hostVideoOnBunny, isBunnyConfigured } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo } from "../providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -76,6 +76,15 @@ export interface FinalizeResult {
    * (b) compute the Bunny Stream cost_events row via bunnyStreamCostCents().
    */
   outputBytes: number | null;
+  /**
+   * True when hostVideoOnBunny was actually called — meaning real Bunny API
+   * charges were incurred (createVideo + upload + encode) even if url fell
+   * back to providerUrl (e.g. HEAD check failed after a successful upload).
+   * The caller MUST emit a cost_events row whenever this is true, regardless
+   * of whether url === providerUrl. Only false on kill-switch, env guard,
+   * download failure, or Bunny unconfigured.
+   */
+  bunnyWasCalled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,7 +147,7 @@ export async function finalizeAssemblyRender(
 
   // ── Kill switch ───────────────────────────────────────────────────────────
   if ((process.env.LE_ASSEMBLY_FINALIZE ?? "").toLowerCase() === "off") {
-    return { url: providerUrl, bitrateKbps: null, outputBytes: null };
+    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false };
   }
 
   const orientation = aspectRatio === "16:9" ? "horizontal" : "vertical";
@@ -155,7 +164,7 @@ export async function finalizeAssemblyRender(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[assembly-finalize] download failed — keeping provider URL", { msg, providerUrl });
-    return { url: providerUrl, bitrateKbps: null, outputBytes: null };
+    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false };
   }
 
   const outputBytes = videoBytes.byteLength;
@@ -190,7 +199,7 @@ export async function finalizeAssemblyRender(
     // Non-prod without the override flag — skip the Bunny host; return provider
     // URL. Bitrate is still computed above so dev environments can observe it
     // in logs without writing to the shared Bunny library.
-    return { url: providerUrl, bitrateKbps, outputBytes };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
   }
 
   // ── Host on Bunny Stream ──────────────────────────────────────────────────
@@ -201,7 +210,7 @@ export async function finalizeAssemblyRender(
       propertyId,
       bunnyTitle,
     });
-    return { url: providerUrl, bitrateKbps, outputBytes };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
   }
 
   try {
@@ -217,7 +226,10 @@ export async function finalizeAssemblyRender(
           "[assembly-finalize] mp4Url HEAD check failed — falling back to provider URL",
           { status: headRes.status, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
         );
-        return { url: providerUrl, bitrateKbps, outputBytes };
+        // Clean up the orphaned Bunny object — upload succeeded but the rendition
+        // URL is inaccessible. Best-effort: a delete failure is non-fatal.
+        deleteBunnyVideo(hosted.guid).catch(() => {});
+        return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true };
       }
     } catch (headErr) {
       const headMsg = headErr instanceof Error ? headErr.message : String(headErr);
@@ -225,9 +237,12 @@ export async function finalizeAssemblyRender(
         "[assembly-finalize] mp4Url HEAD check threw — falling back to provider URL",
         { headMsg, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
       );
-      return { url: providerUrl, bitrateKbps, outputBytes };
+      // Clean up the orphaned Bunny object — upload succeeded but HEAD threw.
+      // Best-effort: a delete failure is non-fatal.
+      deleteBunnyVideo(hosted.guid).catch(() => {});
+      return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true };
     }
-    return { url: hosted.mp4Url, bitrateKbps, outputBytes };
+    return { url: hosted.mp4Url, bitrateKbps, outputBytes, bunnyWasCalled: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[assembly-finalize] bunny host failed — keeping provider URL", {
@@ -235,6 +250,6 @@ export async function finalizeAssemblyRender(
       propertyId,
       bunnyTitle,
     });
-    return { url: providerUrl, bitrateKbps, outputBytes };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
   }
 }

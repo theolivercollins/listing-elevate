@@ -53,6 +53,7 @@ vi.mock("../../../lib/providers/bunny-stream.js", () => ({
     status: 4,
   })),
   bunnyStreamCostCents: vi.fn().mockReturnValue(0),
+  deleteBunnyVideo: vi.fn().mockResolvedValue(undefined),
 }));
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase, recordCostEvent, log } from "../../../lib/db.js";
 import { selectProvider } from "../../../lib/providers/router.js";
 import { resubmitScene } from "../../../lib/pipeline.js";
-import { isBunnyConfigured, hostVideoOnBunny } from "../../../lib/providers/bunny-stream.js";
+import { isBunnyConfigured, hostVideoOnBunny, deleteBunnyVideo } from "../../../lib/providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -14,11 +14,12 @@
  * the assembly surface cohesive.
  *
  * Contract:
- *   - Emits ONE cost_events row with provider:'bunny' when the finalize step
- *     hosted the video on Bunny (finalizeUrl !== providerUrl AND outputBytes
- *     is not null).
- *   - Emits nothing (no row) when finalize fell back to the provider URL
- *     (kill switch, env guard, Bunny error) — those cases are no-ops here.
+ *   - Emits ONE cost_events row with provider:'bunny' whenever bunnyWasCalled
+ *     is true AND outputBytes is not null. This covers both the happy path (url
+ *     is the Bunny mp4Url) AND the HEAD-fallback path (url === providerUrl but
+ *     Bunny was still called and charges were incurred).
+ *   - Emits nothing (no row) when bunnyWasCalled is false (kill switch, env
+ *     guard, download failure, Bunny unconfigured, or hostVideoOnBunny threw).
  *   - Always resolves — never rejects. Any recordCostEvent failure is caught
  *     and swallowed so a DB write failure never blocks delivery (zero-HITL).
  *   - costCents may legitimately be 0 for sub-1GB files. The row is still
@@ -31,10 +32,13 @@ import { bunnyStreamCostCents } from "../providers/bunny-stream.js";
 export interface BunnyFinalizeCostParams {
   propertyId: string;
   aspectRatio: "16:9" | "9:16";
-  /** The original URL returned by the render provider (Creatomate / Shotstack). */
-  providerUrl: string;
-  /** The URL returned by finalizeAssemblyRender (Bunny MP4 URL or fallback). */
-  finalizeUrl: string;
+  /**
+   * True when hostVideoOnBunny was actually called in finalizeAssemblyRender.
+   * Copied directly from FinalizeResult.bunnyWasCalled. When true the caller
+   * MUST emit a cost row regardless of whether url === providerUrl (i.e. HEAD
+   * check failed after a successful upload still incurs real Bunny charges).
+   */
+  bunnyWasCalled: boolean;
   /** Raw byte count from finalizeAssemblyRender.outputBytes. Null on failure. */
   outputBytes: number | null;
   /** Computed bitrate from finalizeAssemblyRender.bitrateKbps. Null on failure. */
@@ -51,13 +55,11 @@ export interface BunnyFinalizeCostParams {
 export async function emitBunnyFinalizeCostEvent(
   params: BunnyFinalizeCostParams,
 ): Promise<void> {
-  const { propertyId, aspectRatio, providerUrl, finalizeUrl, outputBytes, bitrateKbps } = params;
+  const { propertyId, aspectRatio, bunnyWasCalled, outputBytes, bitrateKbps } = params;
 
-  // Bunny was NOT used — kill-switch, env guard, or any failure all return
-  // providerUrl unchanged. Nothing to record.
-  if (finalizeUrl === providerUrl || outputBytes === null) {
-    return;
-  }
+  // No-op if Bunny was never called (kill-switch, env guard, download failure,
+  // unconfigured). Also no-op if outputBytes is null — bytes needed for cost calc.
+  if (!bunnyWasCalled || outputBytes === null) { return; }
 
   const costCents = bunnyStreamCostCents(outputBytes);
 
