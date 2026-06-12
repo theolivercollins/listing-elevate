@@ -70,6 +70,98 @@ CSS added to `tokens.css`:
 ### INFO — all gates re-confirmed green after fixes
 TypeScript clean, 1,673 tests pass, build succeeds.
 
-## Rollback
+## Sync to main (2026-06-12, post T1 merge)
+
+**Orchestrator task:** T1 merged origin/main into feat/authed-app-visual-overhaul (commit cc04a0f, `--no-ff`), bringing the branch up to date with all features that landed on main while phase-2 was isolated.
+
+**Main had advanced:** from 114add2 → 224e0f90 (112 commits ahead), incorporating:
+1. **Ambient marketing animation layer** (worktree-ui-refresh-light-saas, merge 169898f): Ambient.tsx + AccentDot.tsx + --le-brand-blue-rgb global token + 5 CSS keyframes (le-drift, le-drift-2, le-dot-drift, le-pulse-soft, le-float-gentle) + prefers-reduced-motion backfills + Section ambient prop
+2. **LE Video v2 library management** (feat/le-video-library, PR #113): video_folders + video_library_meta tables, folder rail + card menu UI, migration 086 (file-only), 66 tests
+3. **Assembly max-quality + Bunny Stream video hosting** (fix/max-quality-assembly, PR #112): Creatomate supersampling 2880x1620, 16:9 source crop, sticky-provider; ALL video hosting moved off Supabase Storage to Bunny Stream (library 679131); migrations 084_scenes_provider_preference + 085_cost_events_bunny applied to prod
+4. **Market Update workflow** (merged 3a7a473 + 0cf1c3b): per-region Stellar PDF → validated drafts via Sierra/Sendy
+5. **WS7 grammar sweep + run-detail route restore** (f47c84b + eb5aa0c in src/AppRoutes.tsx)
+
+**Reconciliation:**
+
+- **src/v2/styles/tokens.css:** Auto-merged as a clean union. Ambient's global --le-brand-blue-rgb token (line ~70) coexists alongside phase-2's .le-dash-shell{} scoped tokens (cooler ink #0c0e16, refined neutrals, --surface-2, --accent-soft/-2/-ink, --good/warn/bad-soft, --info/-soft, --shimmer-a/b, --radius-md/-xs, skeleton/triage/ledger/mini-progress classes, frosted sidebar/topbar). No hand-editing required; both design languages remain separated.
+- **docs/HANDOFF.md:** Manual union resolution—"Last updated:" lines merged newest-first (phase-2 entry first), "Right now" block reordered phase-2 → WS7 → LE Video entry; subsequent entry bodies auto-merged cleanly.
+- **All other files** (api/*, lib/*, src/*, supabase/migrations/*): Auto-merged without mutation or regression.
+
+**Design-language separation verified:**
+
+- Phase-2 dashboard cooler ink (#0c0e16) + all .le-dash-shell{} scoped tokens remain inside that selector — zero bleed into L1 marketing
+- Ambient marketing layer (--le-brand-blue-rgb, keyframes, Section ambient prop) remains global/marketing-scoped — zero bleed into L2 dashboard
+
+**Test gates (T2 verify, post-merge):**
+
+- **TypeScript:** `tsc --noEmit` → 0 errors
+- **Build:** `vite build` → exit 0
+- **Unit tests:** Full UNION suite passed (phase-2 tests + main's new tests from LE Video, Market Update, Bunny Stream). Targeted gates all green:
+  - tokens.test.ts: PASS
+  - ambient.test.ts: PASS
+  - LE Video (66 tests): PASS
+  - ORDER_STATUS_MAP exhaustive coverage: PASS
+  - agent-nav-zero-operator-routes: PASS
+  - Market Update + Bunny Stream + delivery tests: PASS
+- **Cost integrity:** MoneyValue displays intact; no sample numbers; $0/0/— empty states preserved
+- **Design rules:** No monospace (Inter only); both design languages intact; DESIGN-GUIDE §9 checklist passes
+- **Marketing regression:** No L1 landing motion regression; ambient layer animates correctly
+- **Branch state:** All auto-merged code byte-for-byte identical to source commits; no mutations
+
+**Summary:** Branch now contains all of main 224e0f90 PLUS all 4 phase-2 visual commits. Every recently-landed feature present and functional. Design languages intact and separated. All gates green. Ready for final feat→main merge by the orchestrator.
+
+**Rollback path** (if needed):
+```bash
+git reset --hard 5d3f751  # Pre-merge phase-2 isolation tip (4 commits only)
+```
+No migrations created by the merge; no down-migration needed.
+
+## Rollback (pre-merge isolation fix)
 
 `git revert <fix-commit-sha>` then `git revert 27ae464`. No schema changes, no env vars, no API changes. CSS and TSX only.
+
+## Sync to main (2026-06-12, post T1 merge)
+
+**Orchestrator task:** T1 merged origin/main into feat/authed-app-visual-overhaul (commit cc04a0f, `--no-ff`), bringing the branch up to date with all features that landed on main while phase-2 was isolated.
+
+**Main had advanced:** from 114add2 → 224e0f90 (112 commits ahead), incorporating:
+1. **Ambient marketing animation layer** (worktree-ui-refresh-light-saas, merge 169898f): Ambient.tsx + AccentDot.tsx + --le-brand-blue-rgb global token + 5 CSS keyframes (le-drift, le-drift-2, le-dot-drift, le-pulse-soft, le-float-gentle) + prefers-reduced-motion backfills + Section ambient prop
+2. **LE Video v2 library management** (feat/le-video-library, PR #113): video_folders + video_library_meta tables, folder rail + card menu UI, migration 086 (file-only), 66 tests
+3. **Assembly max-quality + Bunny Stream video hosting** (fix/max-quality-assembly, PR #112): Creatomate supersampling 2880x1620, 16:9 source crop, sticky-provider; ALL video hosting moved off Supabase Storage to Bunny Stream (library 679131); migrations 084_scenes_provider_preference + 085_cost_events_bunny applied to prod
+4. **Market Update workflow** (merged 3a7a473 + 0cf1c3b): per-region Stellar PDF → validated drafts via Sierra/Sendy
+5. **WS7 grammar sweep + run-detail route restore** (f47c84b + eb5aa0c in src/AppRoutes.tsx)
+
+**Reconciliation:**
+
+- **src/v2/styles/tokens.css:** Auto-merged as a clean union. Ambient's global --le-brand-blue-rgb token (line ~70) coexists alongside phase-2's .le-dash-shell{} scoped tokens (cooler ink #0c0e16, refined neutrals, --surface-2, --accent-soft/-2/-ink, --good/warn/bad-soft, --info/-soft, --shimmer-a/b, --radius-md/-xs, skeleton/triage/ledger/mini-progress classes, frosted sidebar/topbar). No hand-editing required; both design languages remain separated.
+- **docs/HANDOFF.md:** Manual union resolution—"Last updated:" lines merged newest-first (phase-2 entry first), "Right now" block reordered phase-2 → WS7 → LE Video entry; subsequent entry bodies auto-merged cleanly.
+- **All other files** (api/*, lib/*, src/*, supabase/migrations/*): Auto-merged without mutation or regression.
+
+**Design-language separation verified:**
+
+- Phase-2 dashboard cooler ink (#0c0e16) + all .le-dash-shell{} scoped tokens remain inside that selector — zero bleed into L1 marketing
+- Ambient marketing layer (--le-brand-blue-rgb, keyframes, Section ambient prop) remains global/marketing-scoped — zero bleed into L2 dashboard
+
+**Test gates (T2 verify, post-merge):**
+
+- **TypeScript:** `tsc --noEmit` → 0 errors
+- **Build:** `vite build` → exit 0
+- **Unit tests:** Full UNION suite passed (phase-2 tests + main's new tests from LE Video, Market Update, Bunny Stream). Targeted gates all green:
+  - tokens.test.ts: PASS
+  - ambient.test.ts: PASS
+  - LE Video (66 tests): PASS
+  - ORDER_STATUS_MAP exhaustive coverage: PASS
+  - agent-nav-zero-operator-routes: PASS
+  - Market Update + Bunny Stream + delivery tests: PASS
+- **Cost integrity:** MoneyValue displays intact; no sample numbers; $0/0/— empty states preserved
+- **Design rules:** No monospace (Inter only); both design languages intact; DESIGN-GUIDE §9 checklist passes
+- **Marketing regression:** No L1 landing motion regression; ambient layer animates correctly
+- **Branch state:** All auto-merged code byte-for-byte identical to source commits; no mutations
+
+**Summary:** Branch now contains all of main 224e0f90 PLUS all 4 phase-2 visual commits. Every recently-landed feature present and functional. Design languages intact and separated. All gates green. Ready for final feat→main merge by the orchestrator.
+
+**Rollback path** (if needed):
+```bash
+git reset --hard 5d3f751  # Pre-merge phase-2 isolation tip (4 commits only)
+```
+No migrations created by the merge; no down-migration needed.
