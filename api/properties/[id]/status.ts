@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
+import { verifyAuth } from '../../../lib/auth.js';
 
 const ALLOWED_PATCH_STATUSES = new Set([
   'delivered',
@@ -11,6 +12,13 @@ const ALLOWED_PATCH_STATUSES = new Set([
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'PATCH') {
+    // Auth gate: caller must have a valid session AND be the property owner or admin.
+    // verifyAuth is used directly (not requireAuth) so we can distinguish 401 from 403.
+    const auth = await verifyAuth(req);
+    if (!auth) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     try {
       const id = req.query.id as string;
       const { status } = req.body as { status?: string };
@@ -21,7 +29,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      await getProperty(id); // 404 if not found
+      const property = await getProperty(id); // 404 if not found
+
+      // Only the property owner (submitted_by) or an admin may mutate status.
+      const isOwner = property.submitted_by === auth.user.id;
+      const isAdmin = auth.profile.role === 'admin';
+      if (!isOwner && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
 
       const { error } = await getSupabase()
         .from('properties')
