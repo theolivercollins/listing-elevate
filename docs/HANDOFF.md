@@ -1,5 +1,7 @@
 # Listing Elevate — Handoff
 
+Last updated: 2026-06-11 (scroll-to-top fix — /upload was loading scrolled to the bottom; new ScrollToTop component resets scroll on every route change; merged to main)
+
 Last updated: 2026-06-11 (preview-links-v2 — client/public link kinds, gallery redesign, approve/download actions, OG unfurl, Share dialog, hero photo bug fix; on branch `feat/preview-links-v2`, migration 083 NOT yet applied to prod)
 
 Last updated: 2026-06-11 (music feedback + 4-genre generation on `feat/music-feedback`; earlier same day: Seedance pair mode + Video Studio UX on main)
@@ -15,7 +17,9 @@ See also:
 
 ## Right now
 
-**2026-06-11 (latest): Preview Links v2 — client/public link kinds, gallery redesign, approve/download, OG unfurl, Share dialog. Branch `feat/preview-links-v2`; 9 commits; migration 083 NOT yet applied to prod (apply before Share dialog goes live).** Full redesign of the client-facing `/preview/:token` experience plus a new Share dialog in PropertyCommandCenter for operators. Three layers of change:
+**2026-06-11 (latest): Scroll-to-top fix — /upload was loading scrolled to the bottom (commits `3ee65c1`, `5776d7f`, merged to main).** Root cause: the browser's default `window.history.scrollRestoration = 'auto'` restores the previous page's scroll position on SPA navigation; navigating from the long landing page to `/upload` dropped users at the bottom. **Fix:** new `src/components/ScrollToTop.tsx` component — renders null, uses `useLocation` to fire `window.scrollTo(0, 0)` on every route change, and sets `window.history.scrollRestoration = 'manual'` once on mount to prevent the browser's async native restoration from fighting the explicit scroll. Mounted inside `<BrowserRouter>` in `src/App.tsx`. 3 tests in `src/components/ScrollToTop.test.tsx` (scroll resets on mount, scroll resets on route change, scrollRestoration set to 'manual'). No migrations, no env changes, no API changes. Rollback: `git revert 5776d7f 3ee65c1`.
+
+**2026-06-11 (previous): Preview Links v2 — client/public link kinds, gallery redesign, approve/download, OG unfurl, Share dialog. Branch `feat/preview-links-v2`; 9 commits; migration 083 NOT yet applied to prod (apply before Share dialog goes live).** Full redesign of the client-facing `/preview/:token` experience plus a new Share dialog in PropertyCommandCenter for operators. Three layers of change:
 
 **(1) Schema — migration 083 (additive only, back-compat).** `property_previews` gains 5 columns: `kind text CHECK('client','public') DEFAULT 'client'`, `allow_download boolean DEFAULT true`, `allow_approve boolean DEFAULT true`, `allow_revision boolean DEFAULT true`, `approved_at timestamptz`. `property_revision_notes.source` CHECK extended from `('operator','client_preview')` → `('operator','client_preview','client_approval')`. DDL defaults keep existing rows valid. Kind-based creation defaults for new links live in `createPreviewLink()` in `lib/operator-studio/preview.ts` (client → all-on; public → all-off). Back-compat posture: GET read path (`fetchByToken`) is safe pre-migration (missing columns → `fetchPreviewMeta` returns null → capabilities default all-on); `POST .../approve` write path returns 503 pre-migration to prevent a 500 during the deploy-before-migrate window. **Rollout order: apply migration 083 BEFORE the Share dialog goes live on prod.**
 
