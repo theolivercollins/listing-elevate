@@ -133,9 +133,18 @@ export interface DashboardSidebarProps {
   onToggleCollapsed: () => void;
 }
 
-function useUnreadCount(): number {
+/**
+ * useUnreadCount — operator-only badge.
+ *
+ * Agents do not have access to /api/logs (admin-gated endpoint) and the
+ * "needs_review" pipeline concept doesn't map to the agent IA. Passing
+ * isAdmin=false skips both API calls entirely so agents never fire the
+ * wasted round-trip to the ungated logs endpoint.
+ */
+function useUnreadCount(isAdmin: boolean): number {
   const [unread, setUnread] = useState(0);
   useEffect(() => {
+    if (!isAdmin) return; // agents: no badge, no calls
     let cancelled = false;
     (async () => {
       try {
@@ -154,7 +163,7 @@ function useUnreadCount(): number {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [isAdmin]);
   return unread;
 }
 
@@ -163,18 +172,20 @@ function UserMenu({
   initials,
   displayName,
   email,
+  isAdmin,
 }: {
   collapsed: boolean;
   initials: string;
   displayName: string;
   email: string;
+  isAdmin: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const { signOut } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
-  const unread = useUnreadCount();
+  const unread = useUnreadCount(isAdmin);
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -431,6 +442,7 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
           initials={initials}
           displayName={displayName}
           email={email}
+          isAdmin={isAdmin}
         />
         <button
           type="button"

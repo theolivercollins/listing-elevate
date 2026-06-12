@@ -89,21 +89,14 @@ export function KpiCard({ label, value, sub, delta, deltaPositiveIsGood = true }
 }
 
 // ─── StatusPill ──────────────────────────────────────────────────
-const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  complete: { label: "Delivered", color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
-  generating: { label: "Generating", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  analyzing: { label: "Analyzing", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  scripting: { label: "Scripting", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  qc: { label: "QC", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  ingesting: { label: "Ingesting", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  assembling: { label: "Assembling", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  queued: { label: "Queued", color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
-  needs_review: { label: "Review", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
-  failed: { label: "Failed", color: "var(--bad)", bg: "rgba(196,74,74,0.10)" },
-};
-
+// Delegates to the canonical orderStatusEntry from @/lib/order-status.
+// The local STATUS_MAP was removed (2026-06-11) to eliminate the divergent
+// internal-jargon vocabulary ("Generating", "QC", "Scripting", "Ingesting",
+// "Assembling", "Review") that contradicted the user-forward labels shown on
+// AgentHome. All StatusPill consumers (Listings, Billing, Properties, Pipeline,
+// Overview, PropertyDetail, Lab) now show identical labels to StatusChip.
 export function StatusPill({ status }: { status: string }) {
-  const s = STATUS_MAP[status] || { label: status, color: "var(--muted)", bg: "rgba(11,11,16,0.05)" };
+  const s = orderStatusEntry(status);
   return (
     <span className="le-status-pill" style={{ background: s.bg, color: s.color }}>
       <span className="le-status-dot" />
