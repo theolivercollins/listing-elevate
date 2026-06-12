@@ -29,7 +29,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
       }
 
-      const property = await getProperty(id); // 404 if not found
+      let property;
+      try {
+        property = await getProperty(id);
+      } catch {
+        // getProperty throws (Supabase single()) when no row matches — return 404.
+        return res.status(404).json({ error: 'Property not found' });
+      }
 
       // Only the property owner (submitted_by) or an admin may mutate status.
       const isOwner = property.submitted_by === auth.user.id;

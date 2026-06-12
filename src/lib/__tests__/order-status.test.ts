@@ -13,22 +13,28 @@ import {
 // ── 1. Exhaustive coverage ────────────────────────────────────────────────────
 
 describe("ORDER_STATUS_MAP — exhaustive coverage", () => {
-  it("covers every known PropertyStatus string", () => {
-    const propertyStatuses: string[] = [
-      "queued",
-      "analyzing",
-      "scripting",
-      "generating",
-      "qc",
-      "assembling",
-      "complete",
-      "failed",
-      "needs_review",
-      "archived",
-      "delivered",
-      "ingesting",
-    ];
-    for (const s of propertyStatuses) {
+  // Canonical list derived from lib/types.ts PropertyStatus union.
+  // Keeping this in sync with the union is the POINT — a new status added to
+  // the union that is absent from ORDER_STATUS_MAP should fail the test, not
+  // silently receive the raw-string fallback in the UI.
+  const PROPERTY_STATUSES: string[] = [
+    "pending_payment",
+    "queued",
+    "analyzing",
+    "scripting",
+    "generating",
+    "qc",
+    "assembling",
+    "complete",
+    "failed",
+    "needs_review",
+    "archived",
+    "delivered",
+    "ingesting",
+  ];
+
+  it("covers every known PropertyStatus string (including pending_payment)", () => {
+    for (const s of PROPERTY_STATUSES) {
       const entry = ORDER_STATUS_MAP[s];
       expect(entry, `Missing entry for PropertyStatus "${s}"`).toBeDefined();
       expect(entry?.label, `Empty label for "${s}"`).toBeTruthy();

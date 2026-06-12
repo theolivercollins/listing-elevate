@@ -152,6 +152,7 @@ export default function AgentHome() {
   const { profile } = useAuth();
   const navigate = useNavigate();
 
+  const [pendingPayment, setPendingPayment] = useState<Property[]>([]);
   const [inProd, setInProd] = useState<Property[]>([]);
   const [delivered, setDelivered] = useState<Property[]>([]);
   const [attention, setAttention] = useState<Property[]>([]);
@@ -174,6 +175,10 @@ export default function AgentHome() {
         const prodProps = (prodRes.properties ?? []).filter((p: Property) =>
           IN_PRODUCTION_STATUSES.includes(p.status)
         );
+        // Pending payment: agent started checkout but didn't complete it
+        const pendingPaymentProps = (prodRes.properties ?? []).filter(
+          (p: Property) => p.status === "pending_payment"
+        );
         // Attention: needs_review + any ATTENTION_STATUS from the prod bucket
         const attentionFromProd = (prodRes.properties ?? []).filter((p: Property) =>
           ATTENTION_STATUSES.includes(p.status)
@@ -185,6 +190,7 @@ export default function AgentHome() {
           (p: Property, idx, arr) => arr.findIndex((x) => x.id === p.id) === idx
         );
 
+        setPendingPayment(pendingPaymentProps);
         setInProd(prodProps);
         setDelivered(deliveredRes.properties ?? []);
         setAttention(attentionAll);
@@ -200,7 +206,7 @@ export default function AgentHome() {
   const firstName = profile?.first_name ?? null;
   const greeting = firstName ? `Good to see you, ${firstName}.` : "Good to see you.";
 
-  const allEmpty = !loading && inProd.length === 0 && delivered.length === 0 && attention.length === 0;
+  const allEmpty = !loading && pendingPayment.length === 0 && inProd.length === 0 && delivered.length === 0 && attention.length === 0;
 
   return (
     <div data-testid="agent-home" className="flex flex-col gap-6 p-6">
@@ -232,6 +238,39 @@ export default function AgentHome() {
               onClick: () => navigate("/upload"),
             }}
           />
+        </Section>
+      )}
+
+      {/* ── Finish checkout ──────────────────────────────────────────── */}
+      {!loading && pendingPayment.length > 0 && (
+        <Section>
+          <SectionTitle eyebrow="Action needed" title="Finish checkout" />
+          <div style={{ marginTop: 16 }}>
+            {pendingPayment.map((p) => (
+              <OrderRow
+                key={p.id}
+                property={p}
+                note="Your order is reserved — complete checkout to start production."
+                actions={
+                  <Link
+                    to={`/upload/cancelled?property_id=${p.id}`}
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 500,
+                      color: "var(--warn)",
+                      textDecoration: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Icon name="external" size={11} />
+                    Finish checkout
+                  </Link>
+                }
+              />
+            ))}
+          </div>
         </Section>
       )}
 

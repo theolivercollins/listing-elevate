@@ -36,6 +36,9 @@ export const ORDER_STATUS_MAP: Record<string, OrderStatusEntry> = {
   delivered: { label: "Delivered",       color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
   qc_pass:   { label: "Delivered",       color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
 
+  // ── Awaiting payment (Stripe checkout started but not completed) ─
+  pending_payment: { label: "Awaiting payment", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
+
   // ── Waiting to start ─────────────────────────────────────────────
   queued:    { label: "Received",        color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
   pending:   { label: "Received",        color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
