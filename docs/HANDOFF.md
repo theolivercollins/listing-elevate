@@ -1,6 +1,6 @@
 # Listing Elevate — Handoff
 
-Last updated: 2026-06-12 (verify-gate fix: show_branding P1 — fetchPreviewMeta now selects + returns show_branding; pre-087 fallback=true preserved; 2 regression tests added; commit 2a3ecb9 on feat/le-video-links-settings)
+Last updated: 2026-06-12 (adversarial-panel fix: fetchPreviewMeta 42703 retry — P1 safety regression where show_branding in the single .select() caused PostgREST 42703 on a pre-087 DB, nuking kind/capabilities for ALL public links. Fixed with 42703 retry-without-show_branding pattern matching videos/[id].ts. 2 new capability-isolation regression tests added (42703 retry preserves kind/allow_* + public link does NOT silently upgrade allow_download). 1896 passed. Commit 01a43ab on feat/le-video-links-settings)
 
 Last updated: 2026-06-12 (PROMOTED to main: fix/max-quality-assembly — assembly max-quality work (Creatomate supersampling 2880×1620, 16:9 source crop, sticky-provider fix) + Bunny Stream video-hosting migration (all video write-paths off Supabase Storage). Migrations 084_scenes_provider_preference and 085_cost_events_bunny APPLIED to shared Supabase 2026-06-12 and verified live.)
 
