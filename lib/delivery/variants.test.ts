@@ -55,7 +55,10 @@ const mockConfig: PendingConfig = {
 
 // Captured update calls so tests can assert on what was written.
 const updateCalls: { table: string; patch: Record<string, unknown> }[] = [];
+// Storage uploads must NOT happen on the Bunny host path — uploadCalls stays empty.
 const uploadCalls: { path: string }[] = [];
+// Captured Bunny host calls (title is the old clipPath string; identifies the clip).
+const bunnyHostCalls: { title: string }[] = [];
 
 vi.mock('../client.js', () => {
   function makeChain(resolvedData: unknown) {
@@ -142,6 +145,24 @@ vi.mock('../providers/atlas.js', () => ({
   V1_DEFAULT_SKU: 'atlas-v1',
 }));
 
+// Bunny Stream mock — video hosting target since 2026-06-12. Default: configured
+// + successful host returning a CDN mp4 URL derived from the title (old clipPath),
+// so tests can assert clip_url is the Bunny URL. Tests override per-case to
+// simulate unconfigured / host failure.
+vi.mock('../providers/bunny-stream.js', () => ({
+  isBunnyConfigured: vi.fn().mockReturnValue(true),
+  hostVideoOnBunny: vi.fn(async (title: string) => {
+    bunnyHostCalls.push({ title });
+    return {
+      guid: 'guid-' + title,
+      mp4Url: `https://bunny.example.com/${encodeURIComponent(title)}/play_720p.mp4`,
+      hlsUrl: `https://bunny.example.com/${encodeURIComponent(title)}/playlist.m3u8`,
+      status: 4,
+    };
+  }),
+  bunnyStreamCostCents: vi.fn().mockReturnValue(0),
+}));
+
 // Helper: build a mock provider that resolves checkStatus to completed with a clip.
 function makeCompletedProvider(providerName: string) {
   return {
@@ -162,6 +183,7 @@ describe('pollPendingVariants — discriminator paths', () => {
     vi.clearAllMocks();
     updateCalls.length = 0;
     uploadCalls.length = 0;
+    bunnyHostCalls.length = 0;
     mockConfig.pendingRows = [];
     mockConfig.sceneRow = {
       property_id: 'prop-1', scene_number: 1,
@@ -192,17 +214,20 @@ describe('pollPendingVariants — discriminator paths', () => {
     expect(vi.mocked(selectProvider)).not.toHaveBeenCalled();
     // The scene_variants row was never updated.
     expect(updateCalls).toHaveLength(0);
-    // Storage was never touched.
+    // Neither storage nor Bunny was touched.
     expect(uploadCalls).toHaveLength(0);
+    expect(bunnyHostCalls).toHaveLength(0);
   });
 
   // (b) regenerated-A row: task id DIFFERS from scene's → should be collected.
   //     Regression proof: if `.eq('variant','B')` were added to the SELECT, this
   //     A row would not appear in pending[], pollPendingVariants would return
   //     { polled:0, completed:0, failed:0 }, and the completed===1 assertion fails.
-  it('(b) collects a regenerated-A row — checkStatus called, clip_url set, storage path ends _A.mp4', async () => {
+  it('(b) collects a regenerated-A row — hosts on Bunny (title ends _A.mp4), clip_url is the Bunny URL, no Supabase upload', async () => {
     const { pollPendingVariants } = await import('./variants');
     const { selectProvider } = await import('../providers/router.js');
+    const { hostVideoOnBunny, bunnyStreamCostCents } = await import('../providers/bunny-stream.js');
+    const { recordCostEvent } = await import('../db.js');
 
     const mockProvider = makeCompletedProvider('atlas');
     vi.mocked(selectProvider).mockReturnValue(mockProvider as ReturnType<typeof selectProvider>);
@@ -214,16 +239,23 @@ describe('pollPendingVariants — discriminator paths', () => {
     const result = await pollPendingVariants(10);
 
     expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
-    // Provider was used to check status.
+    // Provider was used to check status, and the clip downloaded.
     expect(mockProvider.checkStatus).toHaveBeenCalledWith('regen-task-new');
-    // Clip was downloaded and uploaded to storage.
     expect(mockProvider.downloadClip).toHaveBeenCalled();
-    expect(uploadCalls).toHaveLength(1);
-    // Storage path must end with _A.mp4 (variant A suffix).
-    expect(uploadCalls[0].path).toMatch(/_A\.mp4$/);
-    // Row was updated with a clip_url.
+    // The clip was hosted on Bunny (NOT uploaded to Supabase Storage). The Bunny
+    // title is the old clipPath, which ends with _A.mp4.
+    expect(uploadCalls).toHaveLength(0);
+    expect(bunnyHostCalls).toHaveLength(1);
+    expect(bunnyHostCalls[0].title).toMatch(/_A\.mp4$/);
+    expect(vi.mocked(hostVideoOnBunny)).toHaveBeenCalledTimes(1);
+    // Row was updated with clip_url === the Bunny CDN URL.
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].patch).toMatchObject({ clip_url: expect.stringContaining('_A.mp4') });
+    expect(updateCalls[0].patch.clip_url).toMatch(/^https:\/\/bunny\.example\.com\//);
+    // A bunny cost_event was emitted in addition to the render cost_event.
+    expect(vi.mocked(bunnyStreamCostCents)).toHaveBeenCalled();
+    expect(vi.mocked(recordCostEvent)).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'bunny', unitType: 'renders', metadata: expect.objectContaining({ bunny_hosted: true, source: 'delivery' }) }),
+    );
   });
 
   // (c) B row: variant='B' short-circuits the discriminator → always collected.
@@ -231,7 +263,7 @@ describe('pollPendingVariants — discriminator paths', () => {
   //     still appear in pending[], so this test alone doesn't catch the regression.
   //     Test (b) above is the primary regression detector; (c) confirms the B
   //     path produces the correct storage suffix and cost recording.
-  it('(c) collects a B row — checkStatus called, storage path ends _B.mp4', async () => {
+  it('(c) collects a B row — hosts on Bunny (title ends _B.mp4), clip_url is the Bunny URL', async () => {
     const { pollPendingVariants } = await import('./variants');
     const { selectProvider } = await import('../providers/router.js');
 
@@ -245,10 +277,60 @@ describe('pollPendingVariants — discriminator paths', () => {
 
     expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
     expect(mockProvider.checkStatus).toHaveBeenCalledWith('b-task-1');
-    expect(uploadCalls).toHaveLength(1);
-    // Storage path must end with _B.mp4 (variant B suffix).
-    expect(uploadCalls[0].path).toMatch(/_B\.mp4$/);
+    expect(uploadCalls).toHaveLength(0);
+    expect(bunnyHostCalls).toHaveLength(1);
+    // Bunny title (old clipPath) must end with _B.mp4 (variant B suffix).
+    expect(bunnyHostCalls[0].title).toMatch(/_B\.mp4$/);
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].patch).toMatchObject({ clip_url: expect.stringContaining('_B.mp4') });
+    expect(updateCalls[0].patch.clip_url).toMatch(/^https:\/\/bunny\.example\.com\//);
+  });
+
+  // (d) Bunny unconfigured → graceful fallback to the provider videoUrl, no throw,
+  //     no bunny host, no bunny cost_event. The clip is still collected (completed).
+  it('(d) Bunny unconfigured → falls back to provider videoUrl, no host, no throw', async () => {
+    const { pollPendingVariants } = await import('./variants');
+    const { selectProvider } = await import('../providers/router.js');
+    const { isBunnyConfigured, hostVideoOnBunny } = await import('../providers/bunny-stream.js');
+    const { recordCostEvent } = await import('../db.js');
+
+    vi.mocked(isBunnyConfigured).mockReturnValueOnce(false);
+    const mockProvider = makeCompletedProvider('atlas');
+    vi.mocked(selectProvider).mockReturnValue(mockProvider as unknown as ReturnType<typeof selectProvider>);
+
+    mockConfig.pendingRows = [v({ id: 'var-b', variant: 'B', provider_task_id: 'b-task-1', provider: 'atlas', scene_id: 'scene-1' })];
+    mockConfig.sceneRow = { property_id: 'prop-1', scene_number: 2, duration_seconds: 5, provider_task_id: 'scene-task-original' };
+
+    const result = await pollPendingVariants(10);
+
+    expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
+    expect(vi.mocked(hostVideoOnBunny)).not.toHaveBeenCalled();
+    expect(bunnyHostCalls).toHaveLength(0);
+    // clip_url falls back to the provider videoUrl.
+    expect(updateCalls[0].patch.clip_url).toBe('https://provider.example.com/clip.mp4');
+    // No bunny cost_event (render cost_event still emitted, but not provider:'bunny').
+    expect(vi.mocked(recordCostEvent)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'bunny' }),
+    );
+  });
+
+  // (e) Bunny host THROWS → graceful fallback to the provider videoUrl, run continues
+  //     (zero-HITL: a Bunny outage must never break the autonomous poll).
+  it('(e) Bunny host throws → falls back to provider videoUrl, completes without throwing', async () => {
+    const { pollPendingVariants } = await import('./variants');
+    const { selectProvider } = await import('../providers/router.js');
+    const { hostVideoOnBunny } = await import('../providers/bunny-stream.js');
+
+    vi.mocked(hostVideoOnBunny).mockRejectedValueOnce(new Error('Bunny 500'));
+    const mockProvider = makeCompletedProvider('atlas');
+    vi.mocked(selectProvider).mockReturnValue(mockProvider as unknown as ReturnType<typeof selectProvider>);
+
+    mockConfig.pendingRows = [v({ id: 'var-b', variant: 'B', provider_task_id: 'b-task-1', provider: 'atlas', scene_id: 'scene-1' })];
+    mockConfig.sceneRow = { property_id: 'prop-1', scene_number: 2, duration_seconds: 5, provider_task_id: 'scene-task-original' };
+
+    const result = await pollPendingVariants(10);
+
+    // The poll did NOT throw — the row is still collected and clip_url falls back.
+    expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
+    expect(updateCalls[0].patch.clip_url).toBe('https://provider.example.com/clip.mp4');
   });
 });

@@ -40,6 +40,21 @@ vi.mock("../../../lib/pipeline.js", () => ({
   resubmitScene: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+// Mock Bunny Stream — video hosting target since 2026-06-12. Default: NOT
+// configured, so the existing judge-wiring tests exercise the graceful
+// provider-URL fallback (clip_url := status.videoUrl). The dedicated Bunny test
+// overrides isBunnyConfigured → true to exercise the host path.
+vi.mock("../../../lib/providers/bunny-stream.js", () => ({
+  isBunnyConfigured: vi.fn().mockReturnValue(false),
+  hostVideoOnBunny: vi.fn(async (title: string) => ({
+    guid: "guid",
+    mp4Url: `https://bunny.example.com/${encodeURIComponent(title)}/play_720p.mp4`,
+    hlsUrl: `https://bunny.example.com/${encodeURIComponent(title)}/playlist.m3u8`,
+    status: 4,
+  })),
+  bunnyStreamCostCents: vi.fn().mockReturnValue(0),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after vi.mock declarations)
 // ---------------------------------------------------------------------------
@@ -48,6 +63,7 @@ import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase, recordCostEvent, log } from "../../../lib/db.js";
 import { selectProvider } from "../../../lib/providers/router.js";
 import { resubmitScene } from "../../../lib/pipeline.js";
+import { isBunnyConfigured, hostVideoOnBunny } from "../../../lib/providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -253,6 +269,9 @@ describe("poll-scenes — Gemini judge wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.MAX_QC_RERENDERS;
+    // Reset Bunny config to the default-unconfigured state so the judge-wiring
+    // tests exercise the provider-URL fallback; the Bunny-host tests opt in.
+    vi.mocked(isBunnyConfigured).mockReturnValue(false);
   });
 
   it("qc_hard_reject at re-render cap: scene gets status:'needs_review', qc_verdict:'qc_hard_reject', qc_issues with flags", async () => {
@@ -376,5 +395,61 @@ describe("poll-scenes — Gemini judge wiring", () => {
     expect(update.qc_verdict).toBe("qc_soft_reject");
     expect(update.qc_confidence).toBeCloseTo(2 / 5, 5);
     expect(update.qc_issues).toBeNull(); // no hallucination flags
+  });
+
+  it("hosts the completed clip on Bunny Stream and stores the Bunny mp4 URL as clip_url (provider:'bunny' cost_event emitted)", async () => {
+    // Bunny configured → the collected clip is hosted on Bunny and clip_url is the
+    // returned CDN mp4 URL, NOT a Supabase Storage URL.
+    vi.mocked(isBunnyConfigured).mockReturnValue(true);
+    const scene = makeScene();
+    const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
+    const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
+
+    vi.mocked(getSupabase).mockReturnValue(fakeSupabase as never);
+    vi.mocked(selectProvider).mockReturnValue(makeProvider() as never);
+    vi.mocked(judgeProductionScene).mockResolvedValue({
+      verdict: "qc_pass", shouldRerender: false, reason: "judge_disabled",
+      judgeRan: false, rubric: null,
+    });
+
+    const { default: handler } = await import("../poll-scenes.js");
+    const { req, res, getStatus } = makeReqRes();
+    await handler(req, res);
+
+    expect(getStatus()).toBe(200);
+    // Bunny host was invoked with the old clipPath as the title.
+    expect(vi.mocked(hostVideoOnBunny)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(hostVideoOnBunny).mock.calls[0][0]).toMatch(/scene_1_v1\.mp4$/);
+    // clip_url is the Bunny CDN mp4 URL.
+    const update = capturedSceneUpdate.payload!;
+    expect(update.clip_url).toMatch(/^https:\/\/bunny\.example\.com\//);
+    // A provider:'bunny' cost_event was emitted in addition to the render row.
+    expect(vi.mocked(recordCostEvent)).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "bunny", unitType: "renders", metadata: expect.objectContaining({ bunny_hosted: true, source: "cron" }) }),
+    );
+  });
+
+  it("falls back to the provider videoUrl when Bunny host throws — no throw out of the cron", async () => {
+    vi.mocked(isBunnyConfigured).mockReturnValue(true);
+    vi.mocked(hostVideoOnBunny).mockRejectedValueOnce(new Error("Bunny 500"));
+    const scene = makeScene();
+    const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
+    const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
+
+    vi.mocked(getSupabase).mockReturnValue(fakeSupabase as never);
+    vi.mocked(selectProvider).mockReturnValue(makeProvider() as never);
+    vi.mocked(judgeProductionScene).mockResolvedValue({
+      verdict: "qc_pass", shouldRerender: false, reason: "judge_disabled",
+      judgeRan: false, rubric: null,
+    });
+
+    const { default: handler } = await import("../poll-scenes.js");
+    const { req, res, getStatus } = makeReqRes();
+    await handler(req, res);
+
+    // Handler returned 200 (did not throw); clip_url fell back to the provider URL.
+    expect(getStatus()).toBe(200);
+    const update = capturedSceneUpdate.payload!;
+    expect(update.clip_url).toBe("https://provider.example.com/raw-clip.mp4");
   });
 });
