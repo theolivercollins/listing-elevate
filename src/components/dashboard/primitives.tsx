@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Icon, type IconName } from "./icons";
 import { orderStatusEntry } from "@/lib/order-status";
 
@@ -98,22 +99,8 @@ export function KpiCard({ label, value, sub, delta, deltaPositiveIsGood = true }
   );
 }
 
-// ─── StatusPill ──────────────────────────────────────────────────
-// Delegates to the canonical orderStatusEntry from @/lib/order-status.
-// The local STATUS_MAP was removed (2026-06-11) to eliminate the divergent
-// internal-jargon vocabulary ("Generating", "QC", "Scripting", "Ingesting",
-// "Assembling", "Review") that contradicted the user-forward labels shown on
-// AgentHome. All StatusPill consumers (Listings, Billing, Properties, Pipeline,
-// Overview, PropertyDetail, Lab) now show identical labels to StatusChip.
-export function StatusPill({ status }: { status: string }) {
-  const s = orderStatusEntry(status);
-  return (
-    <span className="le-status-pill" style={{ background: s.bg, color: s.color }}>
-      <span className="le-status-dot" />
-      {s.label}
-    </span>
-  );
-}
+// StatusPill was removed 2026-06-12 — use StatusChip (defined below) for all callers.
+// StatusChip is the canonical status display component across both agent and operator surfaces.
 
 // ─── Sparkline ───────────────────────────────────────────────────
 export interface SparklineProps {
@@ -614,7 +601,9 @@ export function StatusChip({ status, labelOverride }: StatusChipProps) {
 
 export interface EmptyStateCTA {
   label: string;
-  onClick: () => void;
+  /** Use `to` for SPA navigation (renders a <Link>). Use `onClick` for imperative actions. */
+  to?: string;
+  onClick?: () => void;
 }
 
 export interface EmptyStateProps {
@@ -654,14 +643,20 @@ export function EmptyState({ message, icon = "archive", cta }: EmptyStateProps) 
       </span>
       <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{message}</p>
       {cta && (
-        <button
-          type="button"
-          className="le-btn-ghost"
-          style={{ marginTop: 4 }}
-          onClick={cta.onClick}
-        >
-          {cta.label}
-        </button>
+        cta.to ? (
+          <Link to={cta.to} className="le-btn-ghost" style={{ marginTop: 4 }}>
+            {cta.label}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="le-btn-ghost"
+            style={{ marginTop: 4 }}
+            onClick={cta.onClick}
+          >
+            {cta.label}
+          </button>
+        )
       )}
     </div>
   );

@@ -9,56 +9,45 @@ import {
   orderStatusEntry,
   ALL_KNOWN_STATUSES,
 } from "../order-status";
+import { ALL_PROPERTY_STATUSES, ALL_SCENE_STATUSES } from "../types";
 
 // ── 1. Exhaustive coverage ────────────────────────────────────────────────────
 
 describe("ORDER_STATUS_MAP — exhaustive coverage", () => {
-  // Canonical list derived from lib/types.ts PropertyStatus union.
-  // Keeping this in sync with the union is the POINT — a new status added to
-  // the union that is absent from ORDER_STATUS_MAP should fail the test, not
-  // silently receive the raw-string fallback in the UI.
-  const PROPERTY_STATUSES: string[] = [
-    "pending_payment",
-    "queued",
-    "analyzing",
-    "scripting",
-    "generating",
-    "qc",
-    "assembling",
-    "complete",
-    "failed",
-    "needs_review",
-    "archived",
-    "delivered",
-    "ingesting",
-  ];
-
-  it("covers every known PropertyStatus string (including pending_payment)", () => {
-    for (const s of PROPERTY_STATUSES) {
-      const entry = ORDER_STATUS_MAP[s];
-      expect(entry, `Missing entry for PropertyStatus "${s}"`).toBeDefined();
-      expect(entry?.label, `Empty label for "${s}"`).toBeTruthy();
-      expect(entry?.color, `Empty color for "${s}"`).toBeTruthy();
+  it("covers every PropertyStatus from the union", () => {
+    for (const status of ALL_PROPERTY_STATUSES) {
+      const entry = ORDER_STATUS_MAP[status];
+      expect(entry, `Missing entry for PropertyStatus "${status}"`).toBeDefined();
+      expect(entry?.label, `Empty label for "${status}"`).toBeTruthy();
+      expect(entry?.color, `Empty color for "${status}"`).toBeTruthy();
+      expect(entry?.bg, `Empty bg for "${status}"`).toBeTruthy();
     }
   });
 
-  it("covers every known SceneStatus string", () => {
-    const sceneStatuses: string[] = [
-      "pending",
-      "generating",
-      "qc_pass",
-      "qc_soft_reject",
-      "qc_hard_reject",
-      "retry_1",
-      "retry_2",
-      "failed",
-      "needs_review",
-    ];
-    for (const s of sceneStatuses) {
-      const entry = ORDER_STATUS_MAP[s];
-      expect(entry, `Missing entry for SceneStatus "${s}"`).toBeDefined();
-      expect(entry?.label).toBeTruthy();
-      expect(entry?.color).toBeTruthy();
+  it("covers every SceneStatus from the union", () => {
+    for (const status of ALL_SCENE_STATUSES) {
+      const entry = ORDER_STATUS_MAP[status];
+      expect(entry, `Missing entry for SceneStatus "${status}"`).toBeDefined();
+      expect(entry?.label, `Empty label for "${status}"`).toBeTruthy();
+      expect(entry?.color, `Empty color for "${status}"`).toBeTruthy();
+      expect(entry?.bg, `Empty bg for "${status}"`).toBeTruthy();
+    }
+  });
+
+  it("FAILS if a PropertyStatus is added to the union without an ORDER_STATUS_MAP entry", () => {
+    // This test verifies the CI gate: if you add a new status to the PropertyStatus union
+    // without also adding it to ORDER_STATUS_MAP, this test will fail at build time.
+    // To pass this test, ensure ALL_PROPERTY_STATUSES matches the union and every entry
+    // has a mapping in ORDER_STATUS_MAP.
+    for (const status of ALL_PROPERTY_STATUSES) {
+      expect(ORDER_STATUS_MAP).toHaveProperty(status);
+    }
+  });
+
+  it("FAILS if a SceneStatus is added to the union without an ORDER_STATUS_MAP entry", () => {
+    // Same CI gate for SceneStatus.
+    for (const status of ALL_SCENE_STATUSES) {
+      expect(ORDER_STATUS_MAP).toHaveProperty(status);
     }
   });
 

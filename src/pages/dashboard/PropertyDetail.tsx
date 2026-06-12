@@ -5,7 +5,7 @@ import { Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, Star, ArrowLe
 import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
 import { fetchProperty, fetchLogs, rerunProperty, fetchSystemPrompts, rateScene, resubmitScene } from "@/lib/api";
-import { PageHeading, StatusPill, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { PageHeading, StatusChip, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 const FAILURE_TAGS = [
@@ -521,7 +521,7 @@ const PropertyDetail = () => {
         title={property.address}
         sub={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <StatusPill status={property.status} />
+            <StatusChip status={property.status} />
             {isPolling && (
               <span
                 style={{
@@ -1039,7 +1039,7 @@ const PropertyDetail = () => {
                             <span style={{ fontSize: 12.5, fontWeight: 500, textTransform: "capitalize", color: "var(--ink-2)" }}>
                               {scene.camera_movement?.replace(/_/g, " ")}
                             </span>
-                            <StatusPill status={scene.status ?? "queued"} />
+                            <StatusChip status={scene.status ?? "queued"} />
                             {scene.provider && (
                               <span
                                 style={{

@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getProperty, getSupabase } from '../../../lib/db.js';
+import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
 import { verifyAuth } from '../../../lib/auth.js';
 
 /**
@@ -115,9 +115,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Unauthenticated GET — intentionally minimal to avoid leaking address,
-  // video URLs, timing data, and clip counts to anyone with the property id.
-  // This path is used by delivery-email progress links and must stay open.
+  // GET — open to unauthenticated callers (delivery-email links) but returns
+  // additional rich fields to authenticated owners/admins.
+  //
+  // Unauthenticated → exactly { status, label, currentStage, totalStages }
+  // Authenticated (owner or admin) → adds address, horizontalVideoUrl,
+  //   verticalVideoUrl, processingTimeMs, clipsCompleted, clipsTotal, createdAt
+  //
+  // The test suite asserts the unauthenticated shape has EXACTLY 4 keys; do not
+  // add fields to the unauthenticated branch without updating that test.
   try {
     const id = req.query.id as string;
     const property = await getProperty(id);
@@ -125,12 +131,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const stages = ['queued', 'analyzing', 'scripting', 'generating', 'qc', 'assembling', 'complete'];
     const currentStageIndex = stages.indexOf(property.status);
 
-    return res.status(200).json({
+    const base = {
       status: property.status,
       label: statusLabel(property.status),
       currentStage: currentStageIndex,
       totalStages: stages.length,
-    });
+    };
+
+    // Only attempt auth verification if a Bearer token is present. This keeps
+    // the unauthenticated (email-link) path free of any auth DB call and
+    // satisfies the test assertion that verifyAuth is never called without a token.
+    const hasToken = req.headers.authorization?.startsWith('Bearer ');
+    if (hasToken) {
+      const auth = await verifyAuth(req);
+      if (auth) {
+        const isOwner = property.submitted_by === auth.user.id;
+        const isAdmin = auth.profile.role === 'admin';
+        if (isOwner || isAdmin) {
+          // Fetch scenes to compute real clip progress for the Status-page widget.
+          // Pre-narrowing logic (35180a9^): completedClips = scenes.filter(qc_pass).length
+          const scenes = await getScenesForProperty(id);
+          const clipsCompleted = scenes.filter(s => s.status === 'qc_pass').length;
+          const clipsTotal = scenes.length;
+
+          return res.status(200).json({
+            ...base,
+            address: property.address,
+            horizontalVideoUrl: property.horizontal_video_url ?? null,
+            verticalVideoUrl: property.vertical_video_url ?? null,
+            processingTimeMs: property.processing_time_ms ?? null,
+            clipsCompleted,
+            clipsTotal,
+            createdAt: property.created_at,
+          });
+        }
+      }
+    }
+
+    return res.status(200).json(base);
   } catch {
     return res.status(404).json({ error: 'Property not found' });
   }

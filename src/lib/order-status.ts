@@ -7,6 +7,14 @@
  * This is the ONE place where status vocabulary is defined. Components must
  * consume this map rather than maintaining their own STATUS_MAP objects.
  *
+ * INVARIANT: Every status in PropertyStatus and SceneStatus unions (src/lib/types.ts)
+ * MUST have an explicit entry in ORDER_STATUS_MAP. Tests enforce this at build time
+ * via ALL_PROPERTY_STATUSES and ALL_SCENE_STATUSES const tuples.
+ *
+ * NOTE: This map also contains legacy/special statuses (ingesting, pending_payment)
+ * that are not in the current union but may appear in legacy data. These have fallback
+ * mappings but new code should not emit them.
+ *
  * User-facing vocabulary (per the role-split UX spec):
  *   Received        ← queued, pending
  *   Crafting scenes ← ingesting, analyzing, scripting

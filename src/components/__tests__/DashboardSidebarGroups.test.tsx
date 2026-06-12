@@ -162,6 +162,120 @@ describe("getSections — agent (non-admin) nav unchanged", () => {
   });
 });
 
+// ── REGRESSION: agent nav must NOT contain operator-only routes ────────────────
+describe("getSections — agent nav role-split boundary (no operator leak)", () => {
+  /**
+   * Operator-only route prefixes that must NEVER appear in agent nav.
+   */
+  const OPERATOR_ONLY_PREFIXES = [
+    "/dashboard/users",
+    "/dashboard/logs",
+    "/dashboard/finances",
+    "/dashboard/pipeline",
+    "/dashboard/properties",
+    "/dashboard/system",
+    "/dashboard/lab",
+    "/dashboard/learning",
+    "/dashboard/blog",
+    "/dashboard/email",
+    "/dashboard/market-update",
+    "/dashboard/development", // labs & system status live here
+    "/dashboard/studio", // operator-only video & blog editing
+  ];
+
+  /**
+   * Agent-allowed routes — the 5 items in AGENT_SECTIONS.
+   */
+  const AGENT_ALLOWED_ROUTES = [
+    "/dashboard", // Home
+    "/upload", // Order a video
+    "/dashboard/account/listings", // My listings
+    "/dashboard/account/billing", // Billing
+    "/dashboard/account/profile", // Profile
+  ];
+
+  it("agent nav contains ZERO operator-only routes", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+
+    // Assert: none of the agent routes start with an operator-only prefix
+    const operatorLeaks = agentRoutes.filter((route) =>
+      OPERATOR_ONLY_PREFIXES.some((prefix) => route.startsWith(prefix))
+    );
+
+    expect(operatorLeaks, `Agent nav leaked operator routes: ${operatorLeaks.join(", ")}`).toEqual([]);
+  });
+
+  it("agent nav routes are exactly the allowed set", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to)).sort();
+    const allowedRoutes = AGENT_ALLOWED_ROUTES.sort();
+
+    expect(agentRoutes, "Agent nav routes must match the exact allowed set").toEqual(allowedRoutes);
+  });
+
+  it("operator nav DOES contain operator routes (sanity check)", () => {
+    const operatorSections = getSections("admin");
+    const operatorRoutes = operatorSections.flatMap((s) => s.items.map((i) => i.to));
+
+    // Spot-check: /dashboard/users (Agents) must be present
+    expect(operatorRoutes, "Operator nav must include /dashboard/users").toContain("/dashboard/users");
+
+    // Spot-check: /dashboard/pipeline (Orders) must be present
+    expect(operatorRoutes, "Operator nav must include /dashboard/pipeline").toContain("/dashboard/pipeline");
+
+    // Spot-check: /dashboard/finances must be present
+    expect(operatorRoutes, "Operator nav must include /dashboard/finances").toContain("/dashboard/finances");
+
+    // Spot-check: /dashboard/logs must be present
+    expect(operatorRoutes, "Operator nav must include /dashboard/logs").toContain("/dashboard/logs");
+  });
+
+  it("agent nav does NOT contain /dashboard/users (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    expect(agentRoutes).not.toContain("/dashboard/users");
+  });
+
+  it("agent nav does NOT contain /dashboard/logs (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    expect(agentRoutes).not.toContain("/dashboard/logs");
+  });
+
+  it("agent nav does NOT contain /dashboard/finances (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    expect(agentRoutes).not.toContain("/dashboard/finances");
+  });
+
+  it("agent nav does NOT contain /dashboard/pipeline (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    expect(agentRoutes).not.toContain("/dashboard/pipeline");
+  });
+
+  it("agent nav does NOT contain /dashboard/properties (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    expect(agentRoutes).not.toContain("/dashboard/properties");
+  });
+
+  it("agent nav does NOT contain /dashboard/studio routes (operator-only)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    const studioRoutes = agentRoutes.filter((r) => r.startsWith("/dashboard/studio"));
+    expect(studioRoutes, "Agent nav must not contain /dashboard/studio routes").toEqual([]);
+  });
+
+  it("agent nav does NOT contain /dashboard/development routes (operator-only lab/system)", () => {
+    const agentSections = getSections("user");
+    const agentRoutes = agentSections.flatMap((s) => s.items.map((i) => i.to));
+    const devRoutes = agentRoutes.filter((r) => r.startsWith("/dashboard/development"));
+    expect(devRoutes, "Agent nav must not contain /dashboard/development routes").toEqual([]);
+  });
+});
+
 // ── Rendered sidebar — 3 group labels visible ─────────────────────────────────
 describe("DashboardSidebar rendered — operator groups", () => {
   beforeEach(() => {

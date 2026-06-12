@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { KpiCard, StatusPill, PropertyThumb, Card, MoneyValue, fmtDuration } from "@/components/dashboard/primitives";
+import { KpiCard, StatusChip, PropertyThumb, Card, MoneyValue, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { fetchProperties, archiveProperty, rerunProperty, updatePropertyStatus } from "@/lib/api";
 import type { Property } from "@/lib/types";
@@ -809,7 +809,7 @@ function PropertyRow({
       </span>
 
       {/* Status */}
-      <StatusPill status={p.status} />
+      <StatusChip status={p.status} />
 
       {/* Photos */}
       <span

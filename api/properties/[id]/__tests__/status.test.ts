@@ -263,3 +263,39 @@ describe('GET /api/properties/:id/status — no auth required', () => {
     expect((res._body as { label: string }).label).toBe('Delivered');
   });
 });
+
+describe('GET /api/properties/:id/status — authenticated rich shape', () => {
+  it('returns real clipsCompleted / clipsTotal from getScenesForProperty (not hardcoded 0)', async () => {
+    // baseScenes: s1 = qc_pass, s2 = rendering → clipsCompleted=1, clipsTotal=2
+    // This regression test guards against the P2 finding where lines 157-158
+    // hardcoded clipsCompleted:0 / clipsTotal:0, silently disabling the
+    // Status-page Clips widget for authenticated owners.
+    const res = makeRes();
+    await handler(
+      makeReq({
+        method: 'GET',
+        headers: { authorization: 'Bearer token-owner' },
+      }),
+      res as unknown as VercelResponse,
+    );
+    mockVerifyAuth.mockResolvedValueOnce(ownerAuth);
+
+    // Re-run with auth resolved correctly (beforeEach sets mockGetScenesForProperty)
+    const res2 = makeRes();
+    mockVerifyAuth.mockResolvedValue(ownerAuth);
+    await handler(
+      makeReq({
+        method: 'GET',
+        headers: { authorization: 'Bearer token-owner' },
+      }),
+      res2 as unknown as VercelResponse,
+    );
+    expect(res2._status).toBe(200);
+    const body = res2._body as Record<string, unknown>;
+    // Must have real counts, not the hardcoded zero fallback
+    expect(body.clipsTotal).toBe(2);
+    expect(body.clipsCompleted).toBe(1);
+    // getScenesForProperty must have been called
+    expect(mockGetScenesForProperty).toHaveBeenCalledWith('prop-uuid-1');
+  });
+});
