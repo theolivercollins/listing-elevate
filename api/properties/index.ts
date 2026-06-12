@@ -26,6 +26,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handleGet(req: VercelRequest, res: VercelResponse) {
+  // Auth gate — caller must be authenticated. Admins see all properties;
+  // non-admins (agents/users) are scoped to their own submitted_by rows.
+  const auth = await requireAuth(req, res);
+  if (!auth) return; // requireAuth already wrote the 401.
+
   try {
     const page = parseInt((req.query.page as string) ?? '1', 10);
     const limit = parseInt((req.query.limit as string) ?? '25', 10);
@@ -38,6 +43,11 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
+
+    // Non-admins may only see their own submitted properties.
+    if (auth.profile.role !== 'admin') {
+      query = query.eq('submitted_by', auth.user.id);
+    }
 
     if (status) query = query.eq('status', status);
     if (search) query = query.ilike('address', `%${search}%`);
