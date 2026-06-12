@@ -11,7 +11,9 @@ interface PropertyRow {
   address: string | null;
   horizontal_video_url: string | null;
   vertical_video_url: string | null;
-  approved_at: string | null;
+  // NOTE: approved_at does NOT exist on the properties table (it lives on
+  // property_previews, added in migration 083). It is NOT selected here —
+  // it is derived from the previews query below. Do not add it back here.
   created_at: string;
   // Embedded clients(id, name) via client_id FK. Supabase returns an object for a
   // to-one relationship, but can surface an array in some shapes — normalise both.
@@ -41,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let qb = db
     .from('properties')
     .select(
-      'id, address, horizontal_video_url, vertical_video_url, approved_at, created_at, client:client_id(id, name)',
+      'id, address, horizontal_video_url, vertical_video_url, created_at, client:client_id(id, name)',
       { count: 'exact' },
     )
     // At least one video render delivered.
@@ -58,21 +60,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const rows = (data ?? []) as PropertyRow[];
 
-  // Per-property link count + total page-views, fetched in one query and bucketed.
+  // Per-property link count, total page-views, and approved state — fetched in one
+  // query and bucketed. approved_at lives on property_previews (migration 083), NOT
+  // on properties. A property is considered approved when ANY of its preview links
+  // has a non-null approved_at; we surface the most recent such timestamp.
   // viewed_count exists pre-084 (migration 062); on any error we fall back to zeros
   // so the library still renders against a partially-migrated DB.
-  const byProperty = new Map<string, { link_count: number; total_views: number }>();
+  const byProperty = new Map<string, { link_count: number; total_views: number; approved_at: string | null }>();
   if (rows.length > 0) {
     const ids = rows.map((r) => r.id);
     const { data: pvData, error: pvError } = await db
       .from('property_previews')
-      .select('property_id, viewed_count')
+      .select('property_id, viewed_count, approved_at')
       .in('property_id', ids);
     if (!pvError) {
-      for (const pv of (pvData ?? []) as Array<{ property_id: string; viewed_count: number | null }>) {
-        const agg = byProperty.get(pv.property_id) ?? { link_count: 0, total_views: 0 };
+      for (const pv of (pvData ?? []) as Array<{ property_id: string; viewed_count: number | null; approved_at: string | null }>) {
+        const agg = byProperty.get(pv.property_id) ?? { link_count: 0, total_views: 0, approved_at: null };
         agg.link_count += 1;
         agg.total_views += pv.viewed_count ?? 0;
+        // Keep the most recent non-null approved_at among all links for this property.
+        if (pv.approved_at != null) {
+          agg.approved_at =
+            agg.approved_at == null || pv.approved_at > agg.approved_at
+              ? pv.approved_at
+              : agg.approved_at;
+        }
         byProperty.set(pv.property_id, agg);
       }
     }
@@ -81,12 +93,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const items = await Promise.all(
     rows.map(async (r) => {
       const client = Array.isArray(r.client) ? r.client[0] ?? null : r.client;
-      const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0 };
+      const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0, approved_at: null };
       return {
         id: r.id,
         address: r.address,
         videos: { horizontal: r.horizontal_video_url, vertical: r.vertical_video_url },
-        approved_at: r.approved_at,
+        // Derived from property_previews, NOT the properties table (see PropertyRow note).
+        approved_at: agg.approved_at,
         created_at: r.created_at,
         client: client ? { id: client.id, name: client.name } : null,
         hero_photo_url: await resolveHeroPhotoUrl(db, r.id),
