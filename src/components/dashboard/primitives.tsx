@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Icon, type IconName } from "./icons";
+import { orderStatusEntry } from "@/lib/order-status";
 
 // ─── format helpers ───────────────────────────────────────────────
 export const fmtCents = (c: number | null | undefined) =>
   c == null
     ? "—"
     : "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+/**
+ * String-safe money formatter. Returns "—" for absent/NaN values; "$n" otherwise.
+ * Use ONLY in string contexts (recharts tooltip formatters, LedgerTable col values, etc.)
+ * where JSX components are not accepted. For JSX render sites use <MoneyValue> instead.
+ */
+export const fmtMoney = (c: number | null | undefined): string => {
+  if (c == null || Number.isNaN(c)) return "—";
+  return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+};
 
 export const fmtCentsK = (c: number | null | undefined) => {
   if (c == null) return "—";
@@ -87,29 +99,8 @@ export function KpiCard({ label, value, sub, delta, deltaPositiveIsGood = true }
   );
 }
 
-// ─── StatusPill ──────────────────────────────────────────────────
-const STATUS_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  complete: { label: "Delivered", color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
-  generating: { label: "Generating", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  analyzing: { label: "Analyzing", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  scripting: { label: "Scripting", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  qc: { label: "QC", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  ingesting: { label: "Ingesting", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  assembling: { label: "Assembling", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  queued: { label: "Queued", color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
-  needs_review: { label: "Review", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
-  failed: { label: "Failed", color: "var(--bad)", bg: "rgba(196,74,74,0.10)" },
-};
-
-export function StatusPill({ status }: { status: string }) {
-  const s = STATUS_MAP[status] || { label: status, color: "var(--muted)", bg: "rgba(11,11,16,0.05)" };
-  return (
-    <span className="le-status-pill" style={{ background: s.bg, color: s.color }}>
-      <span className="le-status-dot" />
-      {s.label}
-    </span>
-  );
-}
+// StatusPill was removed 2026-06-12 — use StatusChip (defined below) for all callers.
+// StatusChip is the canonical status display component across both agent and operator surfaces.
 
 // ─── Sparkline ───────────────────────────────────────────────────
 export interface SparklineProps {
@@ -576,5 +567,138 @@ export function SectionTitle({
       </div>
       {meta}
     </div>
+  );
+}
+
+// ─── StatusChip ──────────────────────────────────────────────────────────────
+// Replaces StatusPill. Consumes the canonical ORDER_STATUS_MAP via
+// orderStatusEntry — the single source of truth for status vocabulary.
+
+export interface StatusChipProps {
+  status: string;
+  /** Override the computed label (for display customisation) */
+  labelOverride?: string;
+}
+
+export function StatusChip({ status, labelOverride }: StatusChipProps) {
+  const entry = orderStatusEntry(status);
+  const label = labelOverride ?? entry.label;
+  return (
+    <span
+      data-status={status}
+      className="le-status-pill"
+      style={{ background: entry.bg, color: entry.color }}
+    >
+      <span className="le-status-dot" />
+      {label}
+    </span>
+  );
+}
+
+// ─── EmptyState ──────────────────────────────────────────────────────────────
+// Used wherever a data section has no rows. Replaces ad-hoc inline empty
+// messages. Renders icon + message + optional CTA.
+
+export interface EmptyStateCTA {
+  label: string;
+  /** Use `to` for SPA navigation (renders a <Link>). Use `onClick` for imperative actions. */
+  to?: string;
+  onClick?: () => void;
+}
+
+export interface EmptyStateProps {
+  message: string;
+  /** Optional icon name from the icon set. Defaults to "archive". */
+  icon?: IconName;
+  cta?: EmptyStateCTA;
+}
+
+export function EmptyState({ message, icon = "archive", cta }: EmptyStateProps) {
+  return (
+    <div
+      style={{
+        border: "1px dashed rgba(15,24,60,0.12)",
+        borderRadius: 12,
+        padding: "40px 0",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span
+        data-empty-icon
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          background: "rgba(11,11,16,0.04)",
+          display: "grid",
+          placeItems: "center",
+          color: "var(--muted)",
+        }}
+      >
+        <Icon name={icon} size={16} strokeWidth={1.5} />
+      </span>
+      <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{message}</p>
+      {cta && (
+        cta.to ? (
+          <Link to={cta.to} className="le-btn-ghost" style={{ marginTop: 4 }}>
+            {cta.label}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            className="le-btn-ghost"
+            style={{ marginTop: 4 }}
+            onClick={cta.onClick}
+          >
+            {cta.label}
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── MoneyValue ──────────────────────────────────────────────────────────────
+// The ONLY way cost or spend renders in the authed app. Rules:
+//   - null / undefined → renders "—" with an optional tooltip
+//   - 0 cents → "$0" (explicit zero IS a real value)
+//   - n cents → "$n/100" formatted with no decimal places
+//
+// NEVER fabricates $0 — if data is absent, the caller must pass null/undefined
+// and this component surfaces the unknown state honestly.
+
+export interface MoneyValueProps {
+  cents: number | null | undefined;
+  /** Tooltip to show on the "—" placeholder when the value is absent */
+  tooltipWhenAbsent?: string;
+  /** Extra inline styles on the root span */
+  style?: CSSProperties;
+}
+
+export function MoneyValue({ cents, tooltipWhenAbsent, style }: MoneyValueProps) {
+  if (cents == null || Number.isNaN(cents)) {
+    return (
+      <span
+        title={tooltipWhenAbsent}
+        style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums", ...style }}
+      >
+        —
+      </span>
+    );
+  }
+  const formatted =
+    "$" +
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  return (
+    <span style={{ fontVariantNumeric: "tabular-nums", ...style }}>
+      {formatted}
+    </span>
   );
 }

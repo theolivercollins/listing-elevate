@@ -14,7 +14,7 @@ import {
   type MuAnalyzeResult,
 } from "@/lib/blog/api-client";
 import { PageHeading, Card } from "@/components/dashboard/primitives";
-import { Icon } from "@/components/dashboard/icons";
+import { Icon, type IconName } from "@/components/dashboard/icons";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
@@ -421,7 +421,7 @@ function Pill({ tone, children }: { tone: "good" | "bad" | "warn"; children: Rea
   return <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--radius-pill)", background: `color-mix(in srgb, ${c} 14%, transparent)`, color: c }}>{children}</span>;
 }
 
-function DraftLink({ to, icon, label }: { to: string; icon: string; label: string }) {
+function DraftLink({ to, icon, label }: { to: string; icon: IconName; label: string }) {
   return (
     <Link to={to} style={{ textDecoration: "none" }}>
       <div className="le-lift" style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)" }}>

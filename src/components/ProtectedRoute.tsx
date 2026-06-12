@@ -29,7 +29,7 @@ export function RequireAdmin() {
   }
 
   if (!user) return <Navigate to="/login" replace />;
-  if (profile?.role !== "admin") return <Navigate to="/account" replace />;
+  if (profile?.role !== "admin") return <Navigate to="/dashboard" replace />;
 
   return <Outlet />;
 }

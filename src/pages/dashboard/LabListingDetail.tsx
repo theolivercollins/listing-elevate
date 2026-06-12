@@ -19,7 +19,7 @@ import {
 } from "@/lib/labListingsApi";
 import { rateIteration as rateIterationApi } from "@/lib/labListingsApi";
 import { getLabModel } from "@/lib/labModels";
-import { PageHeading, StatusPill, Card, fmtCents } from "@/components/dashboard/primitives";
+import { PageHeading, StatusChip, Card, fmtMoney } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 // Map lab listing statuses → design system status tokens
@@ -232,7 +232,7 @@ export default function LabListingDetail() {
 
   const dsStatus = LAB_STATUS_MAP[listing.status] ?? "queued";
   const byModelStr = Object.entries(stats.byModel)
-    .map(([m, c]) => `${m}: ${fmtCents(c)}`)
+    .map(([m, c]) => `${m}: ${fmtMoney(c)}`)
     .join(" · ");
 
   return (
@@ -242,7 +242,7 @@ export default function LabListingDetail() {
         title={listing.name}
         sub={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <StatusPill status={dsStatus} />
+            <StatusChip status={dsStatus} />
             <span style={{ color: "var(--muted-2)" }}>{listing.model_name}</span>
             {listing.notes && (
               <span style={{ color: "var(--muted)", fontStyle: "italic" }}>{listing.notes}</span>
@@ -367,7 +367,7 @@ export default function LabListingDetail() {
           />
           <StatCell
             label="Cost"
-            value={fmtCents(stats.totalCents)}
+            value={fmtMoney(stats.totalCents)}
             sub={byModelStr || undefined}
           />
           <StatCell

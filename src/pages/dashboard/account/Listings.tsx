@@ -2,14 +2,17 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { Link } from "react-router-dom";
-import { PageHeading, Card, StatusPill, fmtCents } from "@/components/dashboard/primitives";
+import { PageHeading, Card, StatusChip, EmptyState } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
 
+// Cost column removed: agents must never see internal total_cost_cents.
+// Rows link to /status/:id (agent-safe public status page), not to
+// /dashboard/properties/:id (admin-only, inside RequireAdmin).
 const ROW_STYLE = {
   display: "grid",
-  gridTemplateColumns: "3fr 1fr 1fr 1fr 32px",
+  gridTemplateColumns: "3fr 1fr 1fr 32px",
   gap: 16,
   alignItems: "center",
   padding: "12px 14px",
@@ -55,7 +58,6 @@ export default function AccountListings() {
             <span className="le-d-label">Property</span>
             <span className="le-d-label">Submitted</span>
             <span className="le-d-label">Status</span>
-            <span className="le-d-label" style={{ textAlign: "right" }}>Cost</span>
             <span />
           </div>
 
@@ -64,19 +66,18 @@ export default function AccountListings() {
               Loading...
             </div>
           ) : !properties?.length ? (
-            <div style={{ padding: "48px 14px", textAlign: "center" }}>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-                You haven't submitted any listings yet.
-              </div>
-              <Link to="/upload" className="le-btn-dark" style={{ fontSize: 12, padding: "8px 20px", textDecoration: "none" }}>
-                Upload your first listing
-              </Link>
+            <div style={{ padding: "24px 14px" }}>
+              <EmptyState
+                message="You haven't submitted any listings yet."
+                icon="home"
+                cta={{ label: "Upload your first listing", to: "/upload" }}
+              />
             </div>
           ) : (
             properties.map((p) => (
               <Link
                 key={p.id}
-                to={`/dashboard/properties/${p.id}`}
+                to={`/status/${p.id}`}
                 style={ROW_STYLE}
                 onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--line-2)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
@@ -115,18 +116,7 @@ export default function AccountListings() {
                 >
                   {new Date(p.created_at).toLocaleDateString()}
                 </span>
-                <StatusPill status={p.status} />
-                <span
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "var(--ink)",
-                    fontVariantNumeric: "tabular-nums",
-                    textAlign: "right",
-                  }}
-                >
-                  {p.total_cost_cents > 0 ? fmtCents(p.total_cost_cents) : "—"}
-                </span>
+                <StatusChip status={p.status} />
                 <span style={{ display: "flex", justifyContent: "center", color: "var(--muted-2)" }}>
                   <Icon name="chevron-right" size={14} />
                 </span>

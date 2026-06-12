@@ -1,11 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabase } from '../lib/db.js';
+import { requireAdmin } from '../lib/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  // Guard: pipeline_logs contains cross-tenant addresses and internal pipeline
+  // detail. Only admins (operators) may read this endpoint.
+  const auth = await requireAdmin(req, res);
+  if (!auth) return; // requireAdmin already sent 401/403
 
   try {
     const page = parseInt((req.query.page as string) ?? '1', 10);

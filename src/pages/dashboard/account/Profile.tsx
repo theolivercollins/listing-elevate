@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
@@ -6,41 +6,20 @@ import { toast } from "sonner";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import { Icon } from "@/components/dashboard/icons";
-import "@/v2/styles/v2.css";
 
-const INPUT_STYLE: CSSProperties = {
-  width: "100%",
-  padding: "9px 14px",
-  fontSize: 13,
-  borderRadius: 12,
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
-  color: "var(--ink)",
-  outline: "none",
-  fontFamily: "inherit",
-  boxSizing: "border-box",
-};
+// ─── Shared field primitives ──────────────────────────────────────────────────
+// Tailwind classes for form elements using the L2 dashboard CSS vars.
+// Avoids all inline style objects while staying on the canonical token scale.
 
-const INPUT_READONLY_STYLE: CSSProperties = {
-  ...INPUT_STYLE,
-  color: "var(--muted)",
-  cursor: "default",
-};
+const inputCls =
+  "w-full py-[9px] px-[14px] text-[13px] rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] outline-none font-[inherit] box-border";
 
-const LABEL_STYLE: CSSProperties = {
-  display: "block",
-  fontSize: 12,
-  fontWeight: 500,
-  color: "var(--muted)",
-  marginBottom: 6,
-};
+const inputReadonlyCls =
+  "w-full py-[9px] px-[14px] text-[13px] rounded-[12px] border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] outline-none font-[inherit] box-border cursor-default";
 
-const HINT_STYLE: CSSProperties = {
-  fontSize: 12,
-  color: "var(--muted)",
-  marginTop: 6,
-  lineHeight: 1.5,
-};
+const labelCls = "block text-[12px] font-medium text-[var(--muted)] mb-1.5";
+
+const hintCls = "text-[12px] text-[var(--muted)] mt-1.5 leading-[1.5]";
 
 export default function AccountProfile() {
   const { profile, refreshProfile, signOut } = useAuth();
@@ -212,62 +191,62 @@ export default function AccountProfile() {
         }
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 28 }}>
+      <div className="flex flex-col gap-5 mt-7">
 
         {/* Identity card — every role */}
         <Card padding={24}>
           <form onSubmit={handleSaveIdentity}>
             <SectionTitle title="Personal details" />
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 20 }}>
+            <div className="grid grid-cols-2 gap-4 mt-5">
               <div>
-                <label style={LABEL_STYLE} htmlFor="first_name">First name</label>
+                <label className={labelCls} htmlFor="first_name">First name</label>
                 <input
                   id="first_name"
-                  style={INPUT_STYLE}
+                  className={inputCls}
                   value={form.first_name}
                   onChange={(e) => setForm({ ...form, first_name: e.target.value })}
                 />
               </div>
               <div>
-                <label style={LABEL_STYLE} htmlFor="last_name">Last name</label>
+                <label className={labelCls} htmlFor="last_name">Last name</label>
                 <input
                   id="last_name"
-                  style={INPUT_STYLE}
+                  className={inputCls}
                   value={form.last_name}
                   onChange={(e) => setForm({ ...form, last_name: e.target.value })}
                 />
               </div>
               <div>
-                <label style={LABEL_STYLE} htmlFor="email">Email</label>
+                <label className={labelCls} htmlFor="email">Email</label>
                 <input
                   id="email"
                   type="email"
                   readOnly
-                  style={INPUT_READONLY_STYLE}
+                  className={inputReadonlyCls}
                   value={form.email}
                 />
-                <p style={HINT_STYLE}>
+                <p className={hintCls}>
                   Email is your sign-in identity. {isAdmin ? "Owner email cannot be changed from this UI." : "Contact support to change."}
                 </p>
               </div>
               <div>
-                <label style={LABEL_STYLE} htmlFor="phone">Phone</label>
+                <label className={labelCls} htmlFor="phone">Phone</label>
                 <input
                   id="phone"
                   type="tel"
-                  style={INPUT_STYLE}
+                  className={inputCls}
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="+1 (555) 000-0000"
                 />
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+            <div className="flex justify-end mt-5">
               <button
                 type="submit"
-                className="le-btn-dark"
+                className="le-btn-dark text-[12px] py-2 px-5"
                 disabled={saving}
-                style={{ opacity: saving ? 0.6 : 1, fontSize: 12, padding: "8px 20px" }}
+                style={saving ? { opacity: 0.6 } : undefined}
               >
                 {saving ? "Saving..." : "Save changes"}
               </button>
@@ -279,46 +258,42 @@ export default function AccountProfile() {
         <Card padding={24}>
           <form onSubmit={handlePasswordChange}>
             <SectionTitle title="Password" />
-            <p style={HINT_STYLE}>
+            <p className={hintCls}>
               Set a new password. At least 8 characters. You'll stay signed in here, but other devices keep their existing session unless you sign out everywhere below.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 20 }}>
+            <div className="grid grid-cols-2 gap-4 mt-5">
               <div>
-                <label style={LABEL_STYLE} htmlFor="new_password">New password</label>
+                <label className={labelCls} htmlFor="new_password">New password</label>
                 <input
                   id="new_password"
                   ref={passwordRef}
                   type="password"
                   autoComplete="new-password"
-                  style={INPUT_STYLE}
+                  className={inputCls}
                   value={password.next}
                   onChange={(e) => setPassword({ ...password, next: e.target.value })}
                   placeholder="••••••••"
                 />
               </div>
               <div>
-                <label style={LABEL_STYLE} htmlFor="confirm_password">Confirm</label>
+                <label className={labelCls} htmlFor="confirm_password">Confirm</label>
                 <input
                   id="confirm_password"
                   type="password"
                   autoComplete="new-password"
-                  style={INPUT_STYLE}
+                  className={inputCls}
                   value={password.confirm}
                   onChange={(e) => setPassword({ ...password, confirm: e.target.value })}
                   placeholder="••••••••"
                 />
               </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+            <div className="flex justify-end mt-5">
               <button
                 type="submit"
-                className="le-btn-dark"
+                className="le-btn-dark text-[12px] py-2 px-5"
                 disabled={savingPassword || !password.next || !password.confirm}
-                style={{
-                  opacity: savingPassword || !password.next || !password.confirm ? 0.6 : 1,
-                  fontSize: 12,
-                  padding: "8px 20px",
-                }}
+                style={savingPassword || !password.next || !password.confirm ? { opacity: 0.6 } : undefined}
               >
                 {savingPassword ? "Updating..." : "Update password"}
               </button>
@@ -330,68 +305,40 @@ export default function AccountProfile() {
           // Owner / admin: security + danger zone instead of brokerage form.
           <Card padding={24}>
             <SectionTitle eyebrow="Owner" title="Security & sessions" />
-            <p style={HINT_STYLE}>
-              Brokerage and brand settings are tenant-side and live with each agent's profile, not the owner account. Workspace-level controls live in <a href="/dashboard/settings" style={{ color: "var(--accent)", textDecoration: "none" }}>Settings</a>.
+            <p className={hintCls}>
+              Brokerage and brand settings are tenant-side and live with each agent's profile, not the owner account. Workspace-level controls live in{" "}
+              <a href="/dashboard/settings" className="text-[var(--accent)] no-underline">Settings</a>.
             </p>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 16,
-                alignItems: "center",
-                paddingTop: 20,
-                marginTop: 4,
-                borderTop: "1px solid var(--line-2)",
-              }}
-            >
+            <div className="grid grid-cols-[1fr_auto] gap-4 items-center pt-5 mt-1 border-t border-[var(--line-2)]">
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>Sign out of all sessions</div>
-                <div style={HINT_STYLE}>
+                <div className="text-[13.5px] font-medium text-[var(--ink)]">Sign out of all sessions</div>
+                <div className={hintCls}>
                   Revoke every active session for this account — phones, other browsers, anywhere this Supabase user is signed in. Use after a password reset or a lost device.
                 </div>
               </div>
               <button
                 type="button"
-                className="le-btn-ghost"
+                className="le-btn-ghost text-[12px] py-2 px-3.5"
                 onClick={handleSignOutAll}
                 disabled={signingOutAll}
-                style={{ opacity: signingOutAll ? 0.6 : 1, fontSize: 12, padding: "8px 14px", color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }}
+                style={signingOutAll
+                  ? { opacity: 0.6, color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }
+                  : { color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }}
               >
                 <Icon name="external" size={13} />
                 {signingOutAll ? "Signing out..." : "Sign out everywhere"}
               </button>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr auto",
-                gap: 16,
-                alignItems: "center",
-                paddingTop: 16,
-                marginTop: 16,
-                borderTop: "1px solid var(--line-2)",
-              }}
-            >
+            <div className="grid grid-cols-[1fr_auto] gap-4 items-center pt-4 mt-4 border-t border-[var(--line-2)]">
               <div>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: "var(--ink)" }}>Owner role</div>
-                <div style={HINT_STYLE}>
+                <div className="text-[13.5px] font-medium text-[var(--ink)]">Owner role</div>
+                <div className={hintCls}>
                   You have admin access to every workspace surface, including the danger-zone settings.
                 </div>
               </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.02em",
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  background: "rgba(47,138,85,0.10)",
-                  color: "var(--good)",
-                  textTransform: "uppercase",
-                }}
-              >
+              <span className="text-[11px] font-semibold tracking-[0.02em] py-1 px-2.5 rounded-full bg-[rgba(47,138,85,0.10)] text-[var(--good)] uppercase">
                 Admin
               </span>
             </div>
@@ -401,13 +348,13 @@ export default function AccountProfile() {
           <Card padding={24}>
             <form onSubmit={handleSaveBrand}>
               <SectionTitle title="Brokerage & brand" />
-              <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
+              <div className="flex flex-col gap-4 mt-5">
 
                 <div>
-                  <label style={LABEL_STYLE} htmlFor="brokerage">Brokerage name</label>
+                  <label className={labelCls} htmlFor="brokerage">Brokerage name</label>
                   <input
                     id="brokerage"
-                    style={INPUT_STYLE}
+                    className={inputCls}
                     value={brand.brokerage}
                     onChange={(e) => setBrand({ ...brand, brokerage: e.target.value })}
                     placeholder="Compass, Keller Williams..."
@@ -415,48 +362,36 @@ export default function AccountProfile() {
                 </div>
 
                 <div>
-                  <label style={LABEL_STYLE}>Logo</label>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 16,
-                      padding: "14px 16px",
-                      height: 64,
-                      border: "1px dashed var(--line)",
-                      borderRadius: 12,
-                      background: "var(--surface)",
-                    }}
-                  >
+                  <label className={labelCls}>Logo</label>
+                  <div className="flex items-center gap-4 px-4 py-[14px] h-16 border border-dashed border-[var(--line)] rounded-[12px] bg-[var(--surface)]">
                     {profile?.logo_url ? (
                       <>
                         <img
                           src={profile.logo_url}
                           alt="Logo"
-                          style={{ height: 36, maxWidth: 120, objectFit: "contain" }}
+                          className="h-9 max-w-[120px] object-contain"
                         />
                         <button
                           type="button"
-                          className="le-btn-ghost"
+                          className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:rgba(196,74,74,0.25)]"
                           onClick={handleLogoRemove}
-                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }}
                         >
                           Remove
                         </button>
                       </>
                     ) : (
                       <>
-                        <span style={{ fontSize: 12, color: "var(--muted)", flex: 1 }}>
+                        <span className="text-[12px] text-[var(--muted)] flex-1">
                           {uploading ? "Uploading..." : "PNG with transparency works best"}
                         </span>
-                        <label style={{ cursor: "pointer" }}>
-                          <span className="le-btn-ghost" style={{ fontSize: 12, padding: "6px 12px", pointerEvents: "none" }}>
+                        <label className="cursor-pointer">
+                          <span className="le-btn-ghost text-[12px] py-1.5 px-3 pointer-events-none">
                             Upload
                           </span>
                           <input
                             type="file"
                             accept="image/*"
-                            style={{ display: "none" }}
+                            className="hidden"
                             onChange={handleLogoUpload}
                             disabled={uploading}
                           />
@@ -466,37 +401,26 @@ export default function AccountProfile() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div className="grid grid-cols-2 gap-4">
                   {(["primary", "secondary"] as const).map((key) => (
                     <div key={key}>
-                      <label style={LABEL_STYLE}>
+                      <label className={labelCls}>
                         {key === "primary" ? "Primary color" : "Secondary color"}
                       </label>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <label
-                          style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 10,
-                            flexShrink: 0,
-                            border: "1px solid var(--line)",
-                            background: brand.colors[key],
-                            cursor: "pointer",
-                            position: "relative",
-                            overflow: "hidden",
-                          }}
-                        >
+                      <div className="flex gap-2 items-center">
+                        <label className="w-[38px] h-[38px] rounded-[10px] shrink-0 border border-[var(--line)] cursor-pointer relative overflow-hidden"
+                          style={{ background: brand.colors[key] }}>
                           <input
                             type="color"
                             value={brand.colors[key]}
                             onChange={(e) =>
                               setBrand({ ...brand, colors: { ...brand.colors, [key]: e.target.value } })
                             }
-                            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                           />
                         </label>
                         <input
-                          style={{ ...INPUT_STYLE, fontVariantNumeric: "tabular-nums" }}
+                          className={`${inputCls} tabular-nums`}
                           value={brand.colors[key]}
                           onChange={(e) =>
                             setBrand({ ...brand, colors: { ...brand.colors, [key]: e.target.value } })
@@ -509,12 +433,12 @@ export default function AccountProfile() {
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 20 }}>
+              <div className="flex justify-end mt-5">
                 <button
                   type="submit"
-                  className="le-btn-dark"
+                  className="le-btn-dark text-[12px] py-2 px-5"
                   disabled={savingBrand}
-                  style={{ opacity: savingBrand ? 0.6 : 1, fontSize: 12, padding: "8px 20px" }}
+                  style={savingBrand ? { opacity: 0.6 } : undefined}
                 >
                   {savingBrand ? "Saving..." : "Save changes"}
                 </button>

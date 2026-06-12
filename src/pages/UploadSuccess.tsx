@@ -5,7 +5,7 @@
  * been triggered asynchronously by the webhook — we just show a confirmation.
  * The session_id query param is available if needed for future lookup.
  */
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SiteNav } from "@/v2/components/SiteNav";
@@ -70,13 +70,19 @@ export default function UploadSuccess() {
               </a>
             </p>
           </div>
-          <Button
-            size="lg"
-            className="mt-8 w-full"
-            onClick={() => (window.location.href = "/upload")}
-          >
-            Submit another listing
-          </Button>
+          <div className="mt-8 flex flex-col gap-3">
+            <Button asChild size="lg" className="w-full">
+              <Link to="/dashboard">View my orders</Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="w-full"
+              onClick={() => (window.location.href = "/upload")}
+            >
+              Submit another listing
+            </Button>
+          </div>
         </div>
       </div>
     </div>
