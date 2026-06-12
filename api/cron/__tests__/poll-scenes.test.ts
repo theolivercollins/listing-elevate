@@ -269,6 +269,7 @@ function makeProvider(providerName = "kling") {
 describe("poll-scenes — Gemini judge wiring", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
     delete process.env.MAX_QC_RERENDERS;
     // Reset Bunny config to the default-unconfigured state so the judge-wiring
     // tests exercise the provider-URL fallback; the Bunny-host tests opt in.
@@ -402,6 +403,8 @@ describe("poll-scenes — Gemini judge wiring", () => {
     // Bunny configured → the collected clip is hosted on Bunny and clip_url is the
     // returned CDN mp4 URL, NOT a Supabase Storage URL.
     vi.mocked(isBunnyConfigured).mockReturnValue(true);
+    // HEAD 200 → mp4Url is valid; clip_url must be the Bunny CDN URL.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response));
     const scene = makeScene();
     const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
     const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
@@ -421,13 +424,55 @@ describe("poll-scenes — Gemini judge wiring", () => {
     // Bunny host was invoked with the old clipPath as the title.
     expect(vi.mocked(hostVideoOnBunny)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(hostVideoOnBunny).mock.calls[0][0]).toMatch(/scene_1_v1\.mp4$/);
-    // clip_url is the Bunny CDN mp4 URL.
+    // clip_url is the Bunny CDN mp4 URL (HEAD 200 → mp4Valid=true).
     const update = capturedSceneUpdate.payload!;
     expect(update.clip_url).toMatch(/^https:\/\/bunny\.example\.com\//);
-    // A provider:'bunny' cost_event was emitted in addition to the render row.
+    // A provider:'bunny' cost_event was emitted: bunny_hosted:true (HEAD passed).
     expect(vi.mocked(recordCostEvent)).toHaveBeenCalledWith(
       expect.objectContaining({ provider: "bunny", unitType: "renders", metadata: expect.objectContaining({ bunny_hosted: true, source: "cron" }) }),
     );
+  });
+
+  it("HEAD-404: falls back to provider URL, emits bunny_hosted:false cost row, calls deleteBunnyVideo with hosted guid", async () => {
+    // Bunny upload succeeds but HEAD check returns 404 (MP4 Fallback disabled on
+    // the library). poll-scenes must: (1) keep clip_url = provider URL, (2) emit
+    // exactly one bunny cost row with bunny_hosted:false, (3) call deleteBunnyVideo
+    // to clean up the orphaned video object. Zero-HITL: handler must return 200.
+    vi.mocked(isBunnyConfigured).mockReturnValue(true);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response));
+    const scene = makeScene();
+    const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
+    const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
+
+    vi.mocked(getSupabase).mockReturnValue(fakeSupabase as never);
+    vi.mocked(selectProvider).mockReturnValue(makeProvider() as never);
+    vi.mocked(judgeProductionScene).mockResolvedValue({
+      verdict: "qc_pass", shouldRerender: false, reason: "judge_disabled",
+      judgeRan: false, rubric: null,
+    });
+
+    const { default: handler } = await import("../poll-scenes.js");
+    const { req, res, getStatus } = makeReqRes();
+    await handler(req, res);
+
+    // Handler must not throw — zero-HITL.
+    expect(getStatus()).toBe(200);
+
+    // clip_url falls back to the provider URL (Bunny URL was 404).
+    const update = capturedSceneUpdate.payload!;
+    expect(update.clip_url).toBe("https://provider.example.com/raw-clip.mp4");
+
+    // Exactly one Bunny cost row, with bunny_hosted:false (HEAD failed).
+    const bunnyCalls = vi.mocked(recordCostEvent).mock.calls.filter(
+      ([args]) => args.provider === "bunny",
+    );
+    expect(bunnyCalls).toHaveLength(1);
+    expect(bunnyCalls[0][0].metadata).toEqual(
+      expect.objectContaining({ bunny_hosted: false, source: "cron" }),
+    );
+
+    // Orphan cleanup: deleteBunnyVideo called with the hosted guid.
+    expect(vi.mocked(deleteBunnyVideo)).toHaveBeenCalledWith("guid");
   });
 
   it("falls back to the provider videoUrl when Bunny host throws — no throw out of the cron", async () => {
