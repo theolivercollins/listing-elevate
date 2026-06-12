@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, type IconName } from "./icons";
+import { orderStatusEntry } from "@/lib/order-status";
 
 // ─── format helpers ───────────────────────────────────────────────
 export const fmtCents = (c: number | null | undefined) =>
@@ -576,5 +577,130 @@ export function SectionTitle({
       </div>
       {meta}
     </div>
+  );
+}
+
+// ─── StatusChip ──────────────────────────────────────────────────────────────
+// Replaces StatusPill. Consumes the canonical ORDER_STATUS_MAP via
+// orderStatusEntry — the single source of truth for status vocabulary.
+
+export interface StatusChipProps {
+  status: string;
+  /** Override the computed label (for display customisation) */
+  labelOverride?: string;
+}
+
+export function StatusChip({ status, labelOverride }: StatusChipProps) {
+  const entry = orderStatusEntry(status);
+  const label = labelOverride ?? entry.label;
+  return (
+    <span
+      data-status={status}
+      className="le-status-pill"
+      style={{ background: entry.bg, color: entry.color }}
+    >
+      <span className="le-status-dot" />
+      {label}
+    </span>
+  );
+}
+
+// ─── EmptyState ──────────────────────────────────────────────────────────────
+// Used wherever a data section has no rows. Replaces ad-hoc inline empty
+// messages. Renders icon + message + optional CTA.
+
+export interface EmptyStateCTA {
+  label: string;
+  onClick: () => void;
+}
+
+export interface EmptyStateProps {
+  message: string;
+  /** Optional icon name from the icon set. Defaults to "inbox". */
+  icon?: IconName;
+  cta?: EmptyStateCTA;
+}
+
+export function EmptyState({ message, icon = "inbox", cta }: EmptyStateProps) {
+  return (
+    <div
+      style={{
+        border: "1px dashed rgba(15,24,60,0.12)",
+        borderRadius: 12,
+        padding: "40px 0",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span
+        data-empty-icon
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          background: "rgba(11,11,16,0.04)",
+          display: "grid",
+          placeItems: "center",
+          color: "var(--muted)",
+        }}
+      >
+        <Icon name={icon} size={16} strokeWidth={1.5} />
+      </span>
+      <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{message}</p>
+      {cta && (
+        <button
+          type="button"
+          className="le-btn-ghost"
+          style={{ marginTop: 4 }}
+          onClick={cta.onClick}
+        >
+          {cta.label}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── MoneyValue ──────────────────────────────────────────────────────────────
+// The ONLY way cost or spend renders in the authed app. Rules:
+//   - null / undefined → renders "—" with an optional tooltip
+//   - 0 cents → "$0" (explicit zero IS a real value)
+//   - n cents → "$n/100" formatted with no decimal places
+//
+// NEVER fabricates $0 — if data is absent, the caller must pass null/undefined
+// and this component surfaces the unknown state honestly.
+
+export interface MoneyValueProps {
+  cents: number | null | undefined;
+  /** Tooltip to show on the "—" placeholder when the value is absent */
+  tooltipWhenAbsent?: string;
+  /** Extra inline styles on the root span */
+  style?: CSSProperties;
+}
+
+export function MoneyValue({ cents, tooltipWhenAbsent, style }: MoneyValueProps) {
+  if (cents == null) {
+    return (
+      <span
+        title={tooltipWhenAbsent}
+        style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums", ...style }}
+      >
+        —
+      </span>
+    );
+  }
+  const formatted =
+    "$" +
+    (cents / 100).toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  return (
+    <span style={{ fontVariantNumeric: "tabular-nums", ...style }}>
+      {formatted}
+    </span>
   );
 }

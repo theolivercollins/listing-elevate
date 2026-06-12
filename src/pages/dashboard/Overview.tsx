@@ -20,11 +20,7 @@ import {
   fmtRel,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import {
-  SAMPLE_ACTIVITY,
-  SAMPLE_AGENTS,
-  SAMPLE_PROVIDER_MIX,
-} from "@/components/dashboard/sample-data";
+import { EmptyState } from "@/components/dashboard/primitives";
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -336,13 +332,13 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     : 0;
   const slaMof = Math.round((avgSla / 100) * 156);
 
-  // ── Activity feed ─────────────────────────────────────────────────────────
-  const derivedActivity = allProps.length > 0 ? deriveActivity(propsForUI) : [];
-  const activityForUI = derivedActivity.length >= 3 ? derivedActivity : SAMPLE_ACTIVITY;
+  // ── Activity feed — live only, no sample fallback ────────────────────────
+  const activityForUI = allProps.length > 0 ? deriveActivity(propsForUI) : [];
 
   // ── Provider mix ──────────────────────────────────────────────────────────
   const cbProviders = costBreakdown?.byProvider ?? [];
   const totalMonthCents = cbProviders.reduce((s, r) => s + (r.month?.cents ?? 0), 0);
+  // Live only — no sample fallback; empty array → EmptyState rendered below
   const providerMixForUI = totalMonthCents > 0
     ? cbProviders
         .filter((r) => (r.month?.cents ?? 0) > 0)
@@ -351,7 +347,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           value: Math.round(((r.month?.cents ?? 0) / totalMonthCents) * 100),
         }))
         .sort((a, b) => b.value - a.value)
-    : SAMPLE_PROVIDER_MIX;
+    : [];
 
   const VIDEO_PROVIDERS = new Set(["atlas", "runway", "kling", "runway gen-4", "kling 2.0", "kling 2.6 pro"]);
   const totalScenesGenerated = totalMonthCents > 0
@@ -560,9 +556,13 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             />
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
-            {activityForUI.map((a, i) => (
-              <ActivityItem key={i} kind={a.kind} title={a.title} sub={a.sub} time={a.time} />
-            ))}
+            {activityForUI.length === 0 ? (
+              <EmptyState message="No activity yet. Events will appear here as listings move through the pipeline." />
+            ) : (
+              activityForUI.map((a, i) => (
+                <ActivityItem key={i} kind={a.kind} title={a.title} sub={a.sub} time={a.time} />
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -579,17 +579,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               : "No scenes generated yet"}
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {providerMixForUI.map((p) => (
-              <div key={p.provider}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
-                  <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
+            {providerMixForUI.length === 0 ? (
+              <EmptyState message="No scenes generated yet this month." />
+            ) : (
+              providerMixForUI.map((p) => (
+                <div key={p.provider}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
+                  </div>
+                  <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
+                  </div>
                 </div>
-                <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
 
