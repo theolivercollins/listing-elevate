@@ -177,16 +177,21 @@ interface NeedsYouItem {
 function NeedsYouStrip({
   needsReview,
   failedToday,
+  lowProviderBalance,
 }: {
   needsReview: number;
   failedToday: number;
+  /** When a provider has HTTP 402 / insufficient-credit errors, pass the
+   *  provider name here. The strip will surface a clause linking to Finances.
+   *  Pass null (or omit) when no balance signal is active. */
+  lowProviderBalance?: { provider: string } | null;
 }) {
   const items: NeedsYouItem[] = [];
 
   if (needsReview > 0) {
     items.push({
       key: "review",
-      label: `${needsReview} ${needsReview === 1 ? "needs" : "need"} review`,
+      label: `${needsReview} ${needsReview === 1 ? "order needs" : "orders need"} review`,
       count: needsReview,
       href: "/dashboard/properties?status=needs_review",
       urgent: needsReview > 3,
@@ -199,6 +204,16 @@ function NeedsYouStrip({
       label: `${failedToday} render${failedToday === 1 ? "" : "s"} failed today`,
       count: failedToday,
       href: "/dashboard/logs",
+      urgent: true,
+    });
+  }
+
+  if (lowProviderBalance) {
+    items.push({
+      key: "balance",
+      label: `${lowProviderBalance.provider} balance low`,
+      count: 1,
+      href: "/dashboard/finances",
       urgent: true,
     });
   }
@@ -643,6 +658,18 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   // ── Provider health rows (for health strip) ────────────────────────────────
   const healthRows = modelHealth?.rows ?? [];
 
+  // ── Low-provider-balance signal for the triage banner ─────────────────────
+  // Surface the first provider with HTTP 402 / balance errors in the last 24h.
+  // This is the Atlas-402 lesson: insufficient credit stalls renders silently;
+  // it must be in the primary triage banner, not buried in the health row.
+  // NOTE: The data source is modelHealth.rows[*].balance_errors_24h — if that
+  // field is absent (undefined/null), no clause appears. Finances page is the
+  // destination because that's where credit/top-up actions live.
+  const lowProviderBalanceRow = healthRows.find((r) => (r.balance_errors_24h ?? 0) > 0) ?? null;
+  const lowProviderBalance: { provider: string } | null = lowProviderBalanceRow
+    ? { provider: lowProviderBalanceRow.provider }
+    : null;
+
   if (loading) {
     return (
       <div className="le-fade-up" style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
@@ -674,7 +701,11 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       />
 
       {/* ── Needs you strip ──────────────────────────────────────────── */}
-      <NeedsYouStrip needsReview={needsReviewCount} failedToday={failedToday} />
+      <NeedsYouStrip
+        needsReview={needsReviewCount}
+        failedToday={failedToday}
+        lowProviderBalance={lowProviderBalance}
+      />
 
       {/* ── Provider health row ──────────────────────────────────────── */}
       {healthFailed && (

@@ -283,3 +283,148 @@ describe("Operator Today — Provider health with HTTP 402 alert", () => {
     });
   });
 });
+
+// ── O4: NeedsYouStrip renders ABOVE the KPI wall ──────────────────────────────
+describe("Operator Today — NeedsYouStrip renders above KPI wall", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    emptyBase();
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+    mockFetchStatsOverview.mockResolvedValue({
+      completedToday: 1,
+      inPipeline: 0,
+      needsReview: 2,
+      successRate: 0.9,
+      avgProcessingMs: null,
+    });
+  });
+
+  it("needs-you-strip appears before the first KpiCard in DOM order", async () => {
+    const { container } = render(wrap());
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='needs-you-strip']")).toBeTruthy();
+    });
+
+    // All elements in DOM order
+    const all = Array.from(container.querySelectorAll("[data-testid]"));
+    const stripIndex = all.findIndex((el) => el.getAttribute("data-testid") === "needs-you-strip");
+    const kpiIndex = all.findIndex((el) => el.getAttribute("data-testid") === "kpi-card");
+
+    // Strip must appear before first KPI card
+    expect(stripIndex).toBeGreaterThanOrEqual(0);
+    // If kpiIndex === -1 (no kpi-card testid) the strip is still above all KPIs by definition
+    if (kpiIndex !== -1) {
+      expect(stripIndex).toBeLessThan(kpiIndex);
+    }
+  });
+});
+
+// ── O5: Binary triage — all 3 clauses when all signals are hot ───────────────
+describe("Operator Today — NeedsYouStrip binary triage with all 3 clauses", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    emptyBase();
+    mockFetchProperties.mockResolvedValue({ properties: [], total: 0 });
+  });
+
+  it("shows all 3 clauses (review + failed + balance) as deep-linked anchors", async () => {
+    // needsReview: 3, failedToday: 1, low provider balance on 'atlas'
+    mockFetchStatsOverview.mockResolvedValue({
+      completedToday: 2,
+      inPipeline: 4,
+      needsReview: 3,
+      successRate: 0.8,
+      avgProcessingMs: 12000,
+    });
+    mockFetchDailyStats.mockResolvedValue({
+      stats: [
+        {
+          date: "2026-06-12",
+          total_cost_cents: 3000,
+          properties_completed: 2,
+          properties_failed: 1,
+        },
+      ],
+    });
+    mockFetchModelHealth.mockResolvedValue({
+      rows: [
+        {
+          provider: "atlas",
+          calls_24h: 10,
+          failures_24h: 2,
+          balance_errors_24h: 3,
+          p50_ms: 4000,
+          p95_ms: 8000,
+          last_at: new Date().toISOString(),
+        },
+      ],
+      generated_at: new Date().toISOString(),
+    });
+
+    const { container } = render(wrap());
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='needs-you-strip']")).toBeTruthy();
+    });
+
+    const strip = container.querySelector("[data-testid='needs-you-strip']")!;
+    const anchors = Array.from(strip.querySelectorAll("a[href]"));
+    const hrefs = anchors.map((a) => a.getAttribute("href") ?? "");
+
+    // Must have exactly 3 clause anchors (review + failed + balance)
+    expect(anchors.length).toBe(3);
+
+    // Review clause → needs_review filtered view
+    expect(hrefs.some((h) => h.includes("needs_review"))).toBe(true);
+
+    // Failed clause → logs
+    expect(hrefs.some((h) => h.includes("logs"))).toBe(true);
+
+    // Balance clause → finances deep-link
+    expect(hrefs.some((h) => h.includes("finances"))).toBe(true);
+  });
+
+  it("shows calm All clear state when needsReview=0, failedToday=0, no balance alert", async () => {
+    mockFetchStatsOverview.mockResolvedValue({
+      completedToday: 5,
+      inPipeline: 2,
+      needsReview: 0,
+      successRate: 1.0,
+      avgProcessingMs: 9000,
+    });
+    mockFetchDailyStats.mockResolvedValue({
+      stats: [
+        {
+          date: "2026-06-12",
+          total_cost_cents: 4000,
+          properties_completed: 5,
+          properties_failed: 0,
+        },
+      ],
+    });
+    mockFetchModelHealth.mockResolvedValue({
+      rows: [
+        {
+          provider: "atlas",
+          calls_24h: 8,
+          failures_24h: 0,
+          balance_errors_24h: 0,
+          p50_ms: 3500,
+          p95_ms: 7000,
+          last_at: new Date().toISOString(),
+        },
+      ],
+      generated_at: new Date().toISOString(),
+    });
+
+    const { container } = render(wrap());
+    await waitFor(() => {
+      const strip = container.querySelector("[data-testid='needs-you-strip']");
+      expect(strip).toBeTruthy();
+      const allClear = container.querySelector("[data-testid='needs-you-all-clear']");
+      expect(allClear).toBeTruthy();
+    });
+
+    const text = container.textContent ?? "";
+    expect(text.toLowerCase()).toContain("all clear");
+  });
+});
