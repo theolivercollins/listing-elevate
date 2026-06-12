@@ -61,7 +61,7 @@ function NewEmailDropdown({
           alignItems: "center",
           gap: 6,
           padding: "10px 16px",
-          borderRadius: 12,
+          borderRadius: "var(--le-r-lg)",
           border: "none",
           background: "var(--ink)",
           color: "var(--surface)",
@@ -90,7 +90,7 @@ function NewEmailDropdown({
               zIndex: 50,
               minWidth: 280,
               background: "var(--surface)",
-              borderRadius: 14,
+              borderRadius: "var(--le-r-lg)",
               boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
               border: "1px solid rgba(15,24,60,0.06)",
               overflow: "hidden",
@@ -169,7 +169,7 @@ function DropItem({
           marginTop: 1,
           width: 28,
           height: 28,
-          borderRadius: 8,
+          borderRadius: "var(--le-r-sm)",
           background: "rgba(15,24,60,0.04)",
           display: "grid",
           placeItems: "center",
@@ -375,7 +375,7 @@ export default function EmailsList() {
               style={{
                 width: 44,
                 height: 44,
-                borderRadius: 12,
+                borderRadius: "var(--le-r-lg)",
                 background: "rgba(15,24,60,0.04)",
                 display: "grid",
                 placeItems: "center",
@@ -541,7 +541,7 @@ function EmailRow({
             display: "grid",
             placeItems: "center",
             padding: 4,
-            borderRadius: 6,
+            borderRadius: "var(--le-r-sm)",
           }}
           onMouseEnter={(ev) => (ev.currentTarget.style.color = "var(--bad)")}
           onMouseLeave={(ev) => (ev.currentTarget.style.color = "var(--muted)")}
@@ -628,7 +628,7 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
               disabled={convert.isPending}
               style={{
                 padding: "8px 14px",
-                borderRadius: 10,
+                borderRadius: "var(--le-r-md)",
                 border: "1px solid rgba(15,24,60,0.08)",
                 background: "rgba(255,255,255,0.6)",
                 color: "var(--ink-2)",
@@ -649,7 +649,7 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
                 alignItems: "center",
                 gap: 6,
                 padding: "8px 14px",
-                borderRadius: 12,
+                borderRadius: "var(--le-r-lg)",
                 border: "none",
                 background: "var(--ink)",
                 color: "var(--surface)",

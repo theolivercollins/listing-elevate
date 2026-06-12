@@ -14,7 +14,7 @@ const VOCAB = ["aerial","exterior","interior","team","area","lifestyle","event",
 // ─── input style ─────────────────────────────────────────────────
 const INPUT_STYLE: React.CSSProperties = {
   padding: "9px 14px",
-  borderRadius: 12,
+  borderRadius: "var(--le-r-lg)",
   border: "1px solid var(--line)",
   background: "var(--surface)",
   fontSize: 13,
@@ -249,14 +249,14 @@ function ImageTile({
         <div style={{ display: "flex", gap: 6, paddingTop: 2 }}>
           <button
             onClick={onEdit}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: 8, border: "1px solid var(--line)", background: "transparent", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "transparent", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)" }}
           >
             <Icon name="sliders" size={11} />
             Tags
           </button>
           <button
             onClick={onDelete}
-            style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 8, border: "1px solid var(--line)", background: "transparent", cursor: "pointer", color: "var(--bad)", fontFamily: "var(--le-font-sans)" }}
+            style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "transparent", cursor: "pointer", color: "var(--bad)", fontFamily: "var(--le-font-sans)" }}
           >
             <Icon name="x" size={12} />
           </button>

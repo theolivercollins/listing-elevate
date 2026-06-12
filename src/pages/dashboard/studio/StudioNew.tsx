@@ -684,7 +684,7 @@ const StudioNew = () => {
                       style={{
                         position: 'relative',
                         aspectRatio: '1',
-                        borderRadius: 10,
+                        borderRadius: "var(--le-r-md)",
                         overflow: 'hidden',
                         background: 'rgba(11,11,16,0.06)',
                       }}

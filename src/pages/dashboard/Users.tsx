@@ -35,28 +35,10 @@ function UserStatusPill({ status }: { status: UserStatusValue }) {
   const s = USER_STATUS_MAP[status] ?? USER_STATUS_MAP.invited;
   return (
     <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "3px 10px 3px 8px",
-        borderRadius: 999,
-        background: s.bg,
-        color: s.color,
-        fontSize: 11.5,
-        fontWeight: 500,
-        width: "fit-content",
-      }}
+      className="le-status-pill"
+      style={{ background: s.bg, color: s.color, width: "fit-content" }}
     >
-      <span
-        style={{
-          width: 5,
-          height: 5,
-          borderRadius: 999,
-          background: "currentColor",
-          flexShrink: 0,
-        }}
-      />
+      <span className="le-status-dot" />
       {s.label}
     </span>
   );
@@ -264,39 +246,21 @@ export default function Users() {
           }}
         >
           {/* Segmented tabs */}
-          <div
-            style={{
-              display: "inline-flex",
-              padding: 4,
-              background: "rgba(11,11,16,0.04)",
-              borderRadius: 999,
-            }}
-          >
+          <div className="le-seg">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                style={{
-                  padding: "7px 14px",
-                  borderRadius: 999,
-                  border: "none",
-                  background: tab === t.id ? "var(--ink)" : "transparent",
-                  color: tab === t.id ? "#fff" : "var(--muted)",
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                }}
+                className={`le-seg-item${tab === t.id ? " is-active" : ""}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
               >
                 {t.label}
                 <span
                   style={{
                     fontSize: 10.5,
                     padding: "1px 6px",
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     background: tab === t.id ? "rgba(255,255,255,0.18)" : "rgba(11,11,16,0.06)",
                     fontVariantNumeric: "tabular-nums",
                   }}
@@ -318,7 +282,7 @@ export default function Users() {
               alignItems: "center",
               gap: 8,
               padding: "8px 12px",
-              borderRadius: 10,
+              borderRadius: "var(--le-r-md)",
               minWidth: 220,
             }}
           >
@@ -626,11 +590,11 @@ function InviteUserDialog({
         onSubmit={handleSubmit}
         style={{
           background: "var(--surface)",
-          borderRadius: 16,
+          borderRadius: "var(--le-r-xl)",
           padding: 24,
           width: "100%",
           maxWidth: 440,
-          boxShadow: "0 24px 60px -12px rgba(11,11,16,0.35)",
+          boxShadow: "var(--le-shadow-lg)",
           display: "flex",
           flexDirection: "column",
           gap: 16,
@@ -653,7 +617,7 @@ function InviteUserDialog({
             style={{
               padding: "10px 12px",
               border: "1px solid var(--line)",
-              borderRadius: 10,
+              borderRadius: "var(--le-r-md)",
               fontSize: 14,
               fontFamily: "inherit",
               outline: "none",

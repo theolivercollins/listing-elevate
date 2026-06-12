@@ -76,32 +76,13 @@ export default function SystemStatus() {
       />
 
       {/* In-page tab control */}
-      <nav
-        style={{
-          display: "inline-flex",
-          padding: 4,
-          background: "rgba(11,11,16,0.04)",
-          borderRadius: 999,
-          alignSelf: "flex-start",
-        }}
-        aria-label="System status sub-navigation"
-      >
+      <nav className="le-seg" aria-label="System status sub-navigation" style={{ alignSelf: "flex-start" }}>
         {(["health", "models"] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
-            style={{
-              padding: "7px 14px",
-              borderRadius: 999,
-              fontSize: 12.5,
-              fontWeight: 500,
-              cursor: "pointer",
-              border: "none",
-              background: tab === t ? "var(--ink)" : "transparent",
-              color: tab === t ? "var(--surface)" : "var(--muted)",
-              transition: "background .15s, color .15s",
-            }}
+            className={`le-seg-item${tab === t ? " is-active" : ""}`}
           >
             {t === "health" ? "Health" : "Models"}
           </button>

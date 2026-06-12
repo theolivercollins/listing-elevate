@@ -314,7 +314,7 @@ export function PropertyThumb({ hue = 220, size = 44 }: PropertyThumbProps) {
       style={{
         width: size,
         height: size,
-        borderRadius: 10,
+        borderRadius: "var(--le-r-md)",
         flexShrink: 0,
         background: `linear-gradient(135deg, hsl(${hue}, 10%, 78%), hsl(${hue + 30}, 10%, 62%))`,
         display: "grid",
@@ -368,7 +368,7 @@ export function AIBanner({ headline, body, cta }: AIBannerProps) {
 // ─── MiniStat ────────────────────────────────────────────────────
 export function MiniStat({ label, value }: { label: ReactNode; value: ReactNode }) {
   return (
-    <div style={{ padding: "10px 14px", background: "rgba(11,11,16,0.03)", borderRadius: 10 }}>
+    <div style={{ padding: "10px 14px", background: "rgba(11,11,16,0.03)", borderRadius: "var(--le-r-md)" }}>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>{label}</div>
       <div
         style={{
@@ -422,7 +422,7 @@ export function ActivityItem({
         style={{
           width: 28,
           height: 28,
-          borderRadius: 8,
+          borderRadius: "var(--le-r-sm)",
           background: "rgba(11,11,16,0.04)",
           display: "grid",
           placeItems: "center",
@@ -479,7 +479,7 @@ export function HealthCard({
         style={{
           width: 44,
           height: 44,
-          borderRadius: 12,
+          borderRadius: "var(--le-r-lg)",
           background: "rgba(15,24,60,0.04)",
           display: "grid",
           placeItems: "center",
@@ -629,7 +629,7 @@ export function EmptyState({ message, icon = "archive", cta }: EmptyStateProps) 
         style={{
           width: 54,
           height: 54,
-          borderRadius: 16,
+          borderRadius: "var(--le-r-xl)",
           background: "var(--accent-soft)",
           color: "var(--accent)",
           display: "grid",

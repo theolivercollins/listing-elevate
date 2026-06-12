@@ -205,7 +205,7 @@ function todayIso(): string {
 const INPUT_STYLE: React.CSSProperties = {
   width: "100%",
   padding: "9px 12px",
-  borderRadius: 8,
+  borderRadius: "var(--le-r-sm)",
   border: "1px solid var(--line)",
   background: "var(--surface)",
   color: "var(--ink)",
@@ -316,7 +316,7 @@ type BreakdownTab = (typeof BREAKDOWN_TABS)[number];
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--surface)",
   border: "1px solid var(--line)",
-  borderRadius: 16,
+  borderRadius: "var(--le-r-xl)",
   boxShadow: "var(--shadow-sm, 0 1px 4px rgba(11,11,16,0.06))",
 };
 
@@ -330,7 +330,7 @@ function SubmitBtn({ loading, disabled, children }: { loading: boolean; disabled
       style={{
         width: "100%",
         padding: "10px 16px",
-        borderRadius: 8,
+        borderRadius: "var(--le-r-sm)",
         border: "none",
         background: disabled || loading ? "rgba(15,24,60,0.08)" : "var(--ink)",
         color: disabled || loading ? "var(--muted)" : "#fff",
@@ -371,7 +371,7 @@ function DegradedBadge({
         alignItems: "center",
         gap: 8,
         padding: "6px 12px",
-        borderRadius: 8,
+        borderRadius: "var(--le-r-sm)",
         background: "rgba(217, 119, 6, 0.08)",
         border: "1px solid rgba(217, 119, 6, 0.25)",
         marginBottom: 12,
@@ -391,7 +391,7 @@ function DegradedBadge({
           color: "var(--warn)",
           background: "none",
           border: "1px solid rgba(217, 119, 6, 0.35)",
-          borderRadius: 6,
+          borderRadius: "var(--le-r-sm)",
           padding: "2px 8px",
           cursor: "pointer",
           marginLeft: 4,
@@ -1000,7 +1000,7 @@ export default function Finances() {
                 contentStyle={{
                   background: "var(--surface)",
                   border: "1px solid var(--line)",
-                  borderRadius: 8,
+                  borderRadius: "var(--le-r-sm)",
                   fontSize: 11,
                   padding: 10,
                 }}
@@ -1072,7 +1072,7 @@ export default function Finances() {
             onRetry={retryCostBreakdown}
           />
         ) : breakdownRows.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12 }}>
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
             No cost events in the last 30 days.
           </div>
         ) : (
@@ -1129,7 +1129,7 @@ export default function Finances() {
                 <div
                   key={row.provider}
                   style={{
-                    borderRadius: 12,
+                    borderRadius: "var(--le-r-lg)",
                     padding: 18,
                     background: "rgba(15,24,60,0.03)",
                     border: "1px solid var(--line)",
@@ -1333,7 +1333,7 @@ export default function Finances() {
             onClick={() => setShowAddSub(true)}
             style={{
               display: "inline-flex", alignItems: "center", gap: 7,
-              padding: "9px 16px", borderRadius: 8,
+              padding: "9px 16px", borderRadius: "var(--le-r-sm)",
               border: "none", background: "var(--ink)",
               fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer",
               flexShrink: 0,
@@ -1346,7 +1346,7 @@ export default function Finances() {
 
         {/* Subscriptions table */}
         {subscriptions.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12 }}>
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
             No subscriptions yet. Add your first recurring charge above.
           </div>
         ) : (
@@ -1546,7 +1546,7 @@ export default function Finances() {
               <button
                 type="button"
                 onClick={() => setShowAddSub(false)}
-                style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+                style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
               >
                 Cancel
               </button>
@@ -1732,7 +1732,7 @@ function EditPurchaseDialog({ purchase, onClose, onSave }: { purchase: TokenPurc
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1781,7 +1781,7 @@ function EditExpenseDialog({ expense, onClose, onSave }: { expense: Expense | nu
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1830,7 +1830,7 @@ function EditRevenueDialog({ revenue, onClose, onSave }: { revenue: RevenueEntry
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1923,7 +1923,7 @@ function EditSubscriptionDialog({ subscription, onClose, onSave }: { subscriptio
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>

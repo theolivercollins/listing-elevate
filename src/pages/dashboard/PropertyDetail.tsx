@@ -164,7 +164,7 @@ function RatingWidget({
               color: "var(--ink)",
               background: "var(--surface)",
               border: "1px solid var(--line)",
-              borderRadius: 8,
+              borderRadius: "var(--le-r-sm)",
               resize: "vertical",
               outline: "none",
               lineHeight: 1.5,
@@ -251,7 +251,7 @@ function ResubmitControls({ scene }: { scene: RatedScene }) {
     background: "transparent",
     color: "var(--ink-2)",
     border: "1px solid var(--line)",
-    borderRadius: 8,
+    borderRadius: "var(--le-r-sm)",
     cursor: "pointer",
     fontFamily: "var(--le-font-sans)",
   };
@@ -475,7 +475,7 @@ const PropertyDetail = () => {
             style={{
               width: 44,
               height: 44,
-              borderRadius: 12,
+              borderRadius: "var(--le-r-lg)",
               background: "rgba(196,74,74,0.10)",
               display: "grid",
               placeItems: "center",
@@ -581,7 +581,7 @@ const PropertyDetail = () => {
 
       {/* Hero photo (when available) */}
       {primaryPhoto && (
-        <div style={{ borderRadius: 14, overflow: "hidden", background: "#000" }}>
+        <div style={{ borderRadius: "var(--le-r-lg)", overflow: "hidden", background: "#000" }}>
           <img
             src={primaryPhoto.file_url}
             alt={primaryPhoto.file_name || property.address}
@@ -697,7 +697,7 @@ const PropertyDetail = () => {
                       height: 32,
                       background: "transparent",
                       border: "1px solid var(--line)",
-                      borderRadius: 8,
+                      borderRadius: "var(--le-r-sm)",
                       color: "var(--ink-2)",
                       flexShrink: 0,
                     }}
@@ -982,7 +982,7 @@ const PropertyDetail = () => {
                           style={{
                             width: 80,
                             height: 60,
-                            borderRadius: 8,
+                            borderRadius: "var(--le-r-sm)",
                             overflow: "hidden",
                             flexShrink: 0,
                             background: sourcePhoto ? undefined : "var(--bg)",
@@ -1096,7 +1096,7 @@ const PropertyDetail = () => {
                             color: "var(--ink-2)",
                             background: "rgba(11,11,16,0.025)",
                             border: "1px solid var(--line-2)",
-                            borderRadius: 8,
+                            borderRadius: "var(--le-r-sm)",
                           }}
                         >
                           {scene.prompt}
@@ -1134,7 +1134,7 @@ const PropertyDetail = () => {
                       {scene.clip_url && (
                         <div style={{ marginTop: 16 }}>
                           <span className="le-d-label">Output clip</span>
-                          <div style={{ marginTop: 8, borderRadius: 10, overflow: "hidden", background: "#000", maxWidth: 420 }}>
+                          <div style={{ marginTop: 8, borderRadius: "var(--le-r-md)", overflow: "hidden", background: "#000", maxWidth: 420 }}>
                             <video
                               src={scene.clip_url}
                               controls
@@ -1254,7 +1254,7 @@ const PropertyDetail = () => {
                       color: "var(--ink-2)",
                       background: "rgba(11,11,16,0.025)",
                       border: "1px solid var(--line-2)",
-                      borderRadius: 8,
+                      borderRadius: "var(--le-r-sm)",
                     }}
                   >
                     {p.body}

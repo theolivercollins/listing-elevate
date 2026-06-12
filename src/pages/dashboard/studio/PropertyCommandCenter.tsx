@@ -883,7 +883,7 @@ const PropertyCommandCenter = () => {
                         style={{
                           width: 40,
                           height: 28,
-                          borderRadius: 8,
+                          borderRadius: "var(--le-r-sm)",
                           background: client.brand_primary_hex,
                           border: '1px solid var(--le-line)',
                           display: 'block',
@@ -901,7 +901,7 @@ const PropertyCommandCenter = () => {
                         style={{
                           width: 40,
                           height: 28,
-                          borderRadius: 8,
+                          borderRadius: "var(--le-r-sm)",
                           background: client.brand_secondary_hex,
                           border: '1px solid var(--le-line)',
                           display: 'block',
