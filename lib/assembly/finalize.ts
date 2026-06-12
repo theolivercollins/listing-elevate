@@ -3,63 +3,66 @@
  *
  * Called after each successful provider render. Responsibilities:
  *   1. Download the provider MP4 byte-for-byte via fetch.
- *   2. Upload to Supabase Storage property-videos/{propertyId}/final_{h|v}_v{n}.mp4
- *      and return OUR public URL — eliminating the latent data-loss risk of
- *      provider-hosted URLs with undocumented retention periods.
+ *   2. Host the final video on Bunny Stream and return Bunny's direct MP4 CDN
+ *      URL — eliminating the latent data-loss risk of provider-hosted URLs with
+ *      undocumented retention periods, and moving delivery onto Bunny's cheap
+ *      CDN (≈$0.005/GB) instead of Supabase Storage (≈$0.09/GB).
  *   3. Compute delivered_bitrate_kbps from downloaded file size (no ffprobe
  *      in production — pure arithmetic). Emit a warn-level console.warn when
  *      the bitrate is below the pixel-scaled floor (ASSEMBLY_MIN_KBPS env,
  *      default 9 000 kbps at 1920×1080). Never blocks delivery.
- *   4. On any failure (download OR upload) falls back gracefully to the
- *      provider URL exactly as today — zero-HITL is maintained.
+ *   4. On any failure (download, Bunny unconfigured, OR Bunny host error) falls
+ *      back gracefully to the provider URL — zero-HITL is maintained: a Bunny
+ *      outage must NEVER block delivery.
  *
  * Kill switch: set LE_ASSEMBLY_FINALIZE=off to bypass the step entirely.
- * Write guard: storage writes only happen when VERCEL_ENV==='production'
- *   OR LE_ALLOW_NONPROD_WRITES==='true' (shared-DB safety per project convention).
+ * Write guard: Bunny hosting only happens when VERCEL_ENV==='production'
+ *   OR LE_ALLOW_NONPROD_WRITES==='true' (shared-resource safety per project
+ *   convention — non-prod still downloads + computes bitrate, just no host).
+ *
+ * Cost tracking: finalize itself emits no cost_events row. The caller
+ * (pipeline.ts) records the Bunny Stream cost via bunnyStreamCostCents(outputBytes)
+ * using the returned outputBytes — same shape as the assembly provider cost it
+ * already emits after this step.
  *
  * Rollback: LE_ASSEMBLY_FINALIZE=off or revert this file + the pipeline.ts
  *   call sites. The caller's horizontal_video_url / vertical_video_url will
  *   revert to the raw provider URL (pre-finalize behavior).
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { hostVideoOnBunny, isBunnyConfigured } from "../providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export interface FinalizeParams {
-  /** Owning property. Used in the storage path and log messages. */
+  /** Owning property. Used in the Bunny title and log messages. */
   propertyId: string;
-  /** Output orientation — determines the storage filename segment. */
+  /** Output orientation — determines the orientation segment of the Bunny title. */
   aspectRatio: "16:9" | "9:16";
   /** The URL returned by Creatomate / Shotstack after a successful render. */
   providerUrl: string;
   /** Render duration in seconds — required for bitrate computation. */
   durationSeconds: number;
   /**
-   * Version suffix appended to the storage filename (e.g. "v1" → final_horizontal_v1.mp4).
-   * Both call sites in pipeline.ts pass the literal 1, and the upload uses upsert:true,
-   * so reruns currently overwrite the same object in place — stable URL, not distinct
-   * per-rerun objects. That behaviour is intentional for now: a fixed public URL
-   * simplifies delivery. Wire a real run/attempt counter here when per-rerun history
-   * is needed.
+   * Version suffix encoded in the Bunny title (e.g. 1 → final_horizontal_v1_<id>).
+   * Both call sites in pipeline.ts pass the literal 1. Bunny creates a fresh
+   * video object per upload (distinct GUID), so reruns produce distinct hosted
+   * objects rather than overwriting in place — the caller persists the newest
+   * URL. Wire a real run/attempt counter here when per-rerun history is needed.
    */
   version: number;
-  /**
-   * Supabase client instance. Accepted as a parameter so callers can inject
-   * the already-constructed client without this module needing to call
-   * getSupabase() (which reads env vars and causes issues in tests).
-   */
-  supabase: SupabaseClient;
 }
 
 export interface FinalizeResult {
   /**
    * The URL to store in horizontal_video_url / vertical_video_url.
-   * On success this is the Supabase Storage public URL.
-   * On any failure (download, upload, or kill-switch/guard) this is the
-   * original providerUrl — graceful degradation, never null.
+   * On success this is Bunny's direct MP4 CDN URL (directly fetchable — the
+   * download endpoint and inline SPA player need a real MP4, not HLS/iframe).
+   * On any failure (download, Bunny unconfigured, host error, or
+   * kill-switch/guard) this is the original providerUrl — graceful
+   * degradation, never null.
    */
   url: string;
   /**
@@ -69,7 +72,8 @@ export interface FinalizeResult {
   bitrateKbps: number | null;
   /**
    * Raw byte count of the downloaded MP4. Null when download was skipped or
-   * failed. Logged into the assembly cost_event metadata by the caller.
+   * failed. Used by the caller to (a) log assembly cost_event metadata and
+   * (b) compute the Bunny Stream cost_events row via bunnyStreamCostCents().
    */
   outputBytes: number | null;
 }
@@ -123,13 +127,14 @@ function bitrateFloorKbps(aspectRatio: '16:9' | '9:16'): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Finalize an assembly render by mirroring the provider MP4 to Supabase
- * Storage and computing delivery telemetry. Always resolves — never rejects.
+ * Finalize an assembly render by hosting the provider MP4 on Bunny Stream and
+ * computing delivery telemetry. Always resolves — never rejects (a Bunny
+ * outage must never block delivery; zero-HITL is a hard product requirement).
  */
 export async function finalizeAssemblyRender(
   params: FinalizeParams,
 ): Promise<FinalizeResult> {
-  const { propertyId, aspectRatio, providerUrl, durationSeconds, version, supabase } = params;
+  const { propertyId, aspectRatio, providerUrl, durationSeconds, version } = params;
 
   // ── Kill switch ───────────────────────────────────────────────────────────
   if ((process.env.LE_ASSEMBLY_FINALIZE ?? "").toLowerCase() === "off") {
@@ -137,7 +142,7 @@ export async function finalizeAssemblyRender(
   }
 
   const orientation = aspectRatio === "16:9" ? "horizontal" : "vertical";
-  const storagePath = `${propertyId}/final_${orientation}_v${version}.mp4`;
+  const bunnyTitle = `final_${orientation}_v${version}_${propertyId}`;
 
   // ── Download ──────────────────────────────────────────────────────────────
   let videoBytes: Uint8Array;
@@ -182,38 +187,32 @@ export async function finalizeAssemblyRender(
     process.env.LE_ALLOW_NONPROD_WRITES === "true";
 
   if (!canWrite) {
-    // Non-prod without the override flag — skip storage write; return provider
+    // Non-prod without the override flag — skip the Bunny host; return provider
     // URL. Bitrate is still computed above so dev environments can observe it
-    // in logs without touching the shared DB.
+    // in logs without writing to the shared Bunny library.
     return { url: providerUrl, bitrateKbps, outputBytes };
   }
 
-  // ── Upload to Supabase Storage ────────────────────────────────────────────
+  // ── Host on Bunny Stream ──────────────────────────────────────────────────
+  // A Bunny outage or misconfig must NEVER block delivery (zero-HITL hard
+  // requirement): fall back to the provider URL on any failure.
+  if (!isBunnyConfigured()) {
+    console.warn("[assembly-finalize] Bunny Stream not configured — keeping provider URL", {
+      propertyId,
+      bunnyTitle,
+    });
+    return { url: providerUrl, bitrateKbps, outputBytes };
+  }
+
   try {
-    const { error: uploadErr } = await supabase.storage
-      .from("property-videos")
-      .upload(storagePath, videoBytes, { contentType: "video/mp4", upsert: true });
-
-    if (uploadErr) {
-      throw new Error(uploadErr.message);
-    }
-
-    const { data: urlData } = supabase.storage
-      .from("property-videos")
-      .getPublicUrl(storagePath);
-
-    const publicUrl = urlData?.publicUrl;
-    if (!publicUrl) {
-      throw new Error("getPublicUrl returned empty URL");
-    }
-
-    return { url: publicUrl, bitrateKbps, outputBytes };
+    const hosted = await hostVideoOnBunny(bunnyTitle, videoBytes);
+    return { url: hosted.mp4Url, bitrateKbps, outputBytes };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.warn("[assembly-finalize] storage upload failed — keeping provider URL", {
+    console.warn("[assembly-finalize] bunny host failed — keeping provider URL", {
       msg,
       propertyId,
-      storagePath,
+      bunnyTitle,
     });
     return { url: providerUrl, bitrateKbps, outputBytes };
   }

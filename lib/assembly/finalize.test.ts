@@ -4,62 +4,59 @@
  * TDD — written before the implementation. Tests cover:
  *   1. Kill switch: LE_ASSEMBLY_FINALIZE=off bypasses all work and returns
  *      the provider URL unchanged.
- *   2. Env guard: storage write is skipped when VERCEL_ENV and
- *      LE_ALLOW_NONPROD_WRITES are both absent — returns provider URL.
+ *   2. Env guard: Bunny host is skipped when VERCEL_ENV and
+ *      LE_ALLOW_NONPROD_WRITES are both absent — returns provider URL but still
+ *      downloads + computes bitrate.
  *   3. Download failure: falls back to provider URL without throwing; emits
  *      a warn log.
- *   4. Storage upload failure: falls back to provider URL without throwing;
- *      emits a warn log.
- *   5. Happy path: returns the Supabase public URL, computed bitrateKbps, and
- *      outputBytes when everything succeeds.
- *   6. Bitrate warn fires when computed bitrate is below the pixel-scaled floor.
- *   7. Bitrate warn does NOT fire when computed bitrate is above the floor.
- *   8. ASSEMBLY_MIN_KBPS env var overrides the default floor.
+ *   4. Bunny host failure: falls back to provider URL without throwing; emits
+ *      a warn log.
+ *   5. Bunny unconfigured: falls back to provider URL without throwing.
+ *   6. Happy path: returns the Bunny mp4 URL, computed bitrateKbps, and
+ *      outputBytes when everything succeeds; hostVideoOnBunny called with bytes.
+ *   7. Bitrate warn fires when computed bitrate is below the pixel-scaled floor.
+ *   8. Bitrate warn does NOT fire when computed bitrate is above the floor.
+ *   9. ASSEMBLY_MIN_KBPS env var overrides the default floor (and =0 disables).
+ *  10. LE_ALLOW_NONPROD_WRITES=true allows the Bunny host without VERCEL_ENV.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { SupabaseClient } from "@supabase/supabase-js";
 
 // ---------------------------------------------------------------------------
-// Import the unit under test AFTER any vi.mock() calls.
+// Mock the Bunny Stream provider. Declared before the unit-under-test import so
+// vitest hoists the mock ahead of the module graph.
 // ---------------------------------------------------------------------------
+vi.mock("../providers/bunny-stream.js", () => ({
+  hostVideoOnBunny: vi.fn(),
+  isBunnyConfigured: vi.fn(),
+}));
+
+import { hostVideoOnBunny, isBunnyConfigured } from "../providers/bunny-stream.js";
 import { finalizeAssemblyRender } from "./finalize.js";
+
+const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
+const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal Supabase storage mock that records calls. */
-function makeStorageMock(opts: {
-  uploadError?: { message: string } | null;
-  publicUrl?: string;
-}) {
-  const uploadFn = vi.fn().mockResolvedValue({
-    data: opts.uploadError ? null : { path: "some/path" },
-    error: opts.uploadError ?? null,
-  });
-  const getPublicUrlFn = vi.fn().mockReturnValue({
-    data: { publicUrl: opts.publicUrl ?? "https://storage.example.com/public.mp4" },
-  });
-  const storageMock = {
-    from: vi.fn().mockReturnValue({
-      upload: uploadFn,
-      getPublicUrl: getPublicUrlFn,
-    }),
-  };
-  return { storageMock, uploadFn, getPublicUrlFn };
-}
-
-function makeSupabase(storageMock: { from: ReturnType<typeof vi.fn> }) {
-  return { storage: storageMock } as unknown as SupabaseClient;
-}
-
 const PROVIDER_URL = "https://creatomate.com/renders/abc123.mp4";
-const SUPABASE_URL = "https://storage.example.com/public.mp4";
+const BUNNY_MP4_URL = "https://vz-test.b-cdn.net/guid-123/play_720p.mp4";
+const BUNNY_HLS_URL = "https://vz-test.b-cdn.net/guid-123/playlist.m3u8";
+
+function bunnySuccess() {
+  return {
+    guid: "guid-123",
+    mp4Url: BUNNY_MP4_URL,
+    hlsUrl: BUNNY_HLS_URL,
+    status: 4,
+  };
+}
 
 // 1 MB of fake video bytes — 30s video → 8000/30 ≈ 267 kbps (well below 9 Mbps floor)
 const SMALL_BYTES = new Uint8Array(1_000_000);
-// 40 MB of fake video bytes — 30s video → 320000/30 / 1000 * 8 ≈ ~10 667 kbps (above floor)
+// 40 MB of fake video bytes — 30s video → ~10 667 kbps (above floor)
 const LARGE_BYTES = new Uint8Array(40_000_000);
 
 function makeFetchResponse(bytes: Uint8Array) {
@@ -94,6 +91,12 @@ describe("finalizeAssemblyRender", () => {
     delete process.env.LE_ALLOW_NONPROD_WRITES;
     delete process.env.ASSEMBLY_MIN_KBPS;
 
+    hostVideoOnBunnyMock.mockReset();
+    isBunnyConfiguredMock.mockReset();
+    // Default: Bunny configured and host succeeds.
+    isBunnyConfiguredMock.mockReturnValue(true);
+    hostVideoOnBunnyMock.mockResolvedValue(bunnySuccess());
+
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   });
 
@@ -106,35 +109,33 @@ describe("finalizeAssemblyRender", () => {
 
   it("returns provider URL unchanged when LE_ASSEMBLY_FINALIZE=off", async () => {
     process.env.LE_ASSEMBLY_FINALIZE = "off";
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.bitrateKbps).toBeNull();
-    expect(storageMock.from).not.toHaveBeenCalled();
+    expect(result.outputBytes).toBeNull();
+    expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
   });
 
   // ── 2. Env guard ────────────────────────────────────────────────────────
 
-  it("skips storage write and returns provider URL when env guard is absent", async () => {
+  it("skips Bunny host and returns provider URL when env guard is absent", async () => {
     // Neither VERCEL_ENV=production nor LE_ALLOW_NONPROD_WRITES=true
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
-    // Storage must not be touched.
-    expect(storageMock.from).not.toHaveBeenCalled();
+    // Bunny must not be touched.
+    expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     // URL falls back to provider.
     expect(result.url).toBe(PROVIDER_URL);
     // Bitrate IS computed from downloaded bytes (we still download).
     expect(result.bitrateKbps).not.toBeNull();
+    expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
   });
 
   // ── 3. Download failure ─────────────────────────────────────────────────
@@ -144,15 +145,14 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockRejectedValue(new Error("network timeout")),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
     expect(result.url).toBe(PROVIDER_URL);
     expect(result.bitrateKbps).toBeNull();
-    expect(storageMock.from).not.toHaveBeenCalled();
+    expect(result.outputBytes).toBeNull();
+    expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     // Must emit a warn — never throw.
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize]"),
@@ -165,109 +165,109 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
     expect(result.url).toBe(PROVIDER_URL);
-    expect(storageMock.from).not.toHaveBeenCalled();
+    expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize]"),
       expect.anything(),
     );
   });
 
-  // ── 4. Storage upload failure ────────────────────────────────────────────
+  // ── 4. Bunny host failure ────────────────────────────────────────────────
 
-  it("falls back to provider URL on storage upload failure without throwing", async () => {
+  it("falls back to provider URL on Bunny host failure without throwing", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock } = makeStorageMock({
-      uploadError: { message: "bucket full" },
-      publicUrl: SUPABASE_URL,
-    });
-    const supabase = makeSupabase(storageMock);
+    hostVideoOnBunnyMock.mockRejectedValue(new Error("bunny encode timeout"));
     process.env.VERCEL_ENV = "production";
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
     expect(result.url).toBe(PROVIDER_URL);
+    // Bitrate + bytes preserved even though host failed.
+    expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
+    expect(result.bitrateKbps).not.toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[assembly-finalize] bunny host failed"),
+      expect.anything(),
+    );
+  });
+
+  // ── 5. Bunny unconfigured ────────────────────────────────────────────────
+
+  it("falls back to provider URL when Bunny is not configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
+    );
+    isBunnyConfiguredMock.mockReturnValue(false);
+    process.env.VERCEL_ENV = "production";
+
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+
+    expect(result.url).toBe(PROVIDER_URL);
+    expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
+    expect(result.bitrateKbps).not.toBeNull();
+    expect(hostVideoOnBunnyMock).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize]"),
       expect.anything(),
     );
   });
 
-  // ── 5. Happy path ────────────────────────────────────────────────────────
+  // ── 6. Happy path ────────────────────────────────────────────────────────
 
-  it("returns Supabase public URL and correct metadata on success", async () => {
+  it("returns Bunny mp4 URL and correct metadata on success", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
-    expect(result.url).toBe(SUPABASE_URL);
+    expect(result.url).toBe(BUNNY_MP4_URL);
     expect(result.outputBytes).toBe(LARGE_BYTES.byteLength);
     // bitrateKbps = bytes * 8 / durationSeconds / 1000
     const expectedKbps = Math.round(
       (LARGE_BYTES.byteLength * 8) / BASE_PARAMS.durationSeconds / 1000,
     );
     expect(result.bitrateKbps).toBe(expectedKbps);
+    // hostVideoOnBunny called with the downloaded bytes.
+    expect(hostVideoOnBunnyMock).toHaveBeenCalledTimes(1);
+    const [title, bytesArg] = hostVideoOnBunnyMock.mock.calls[0];
+    expect(bytesArg).toBeInstanceOf(Uint8Array);
+    expect((bytesArg as Uint8Array).byteLength).toBe(LARGE_BYTES.byteLength);
+    // Title encodes property + orientation + version.
+    expect(title).toContain("prop-abc");
+    expect(title).toContain("horizontal");
+    expect(title).toContain("v1");
     // No warn because large bytes → high bitrate.
     expect(warnSpy).not.toHaveBeenCalled();
   });
 
-  it("stores at correct path: property-videos/{propertyId}/final_horizontal_v{n}.mp4", async () => {
+  it("encodes vertical orientation in the Bunny title for 9:16 aspect ratio", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock, uploadFn } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    await finalizeAssemblyRender({ ...BASE_PARAMS, aspectRatio: "9:16" });
 
-    expect(storageMock.from).toHaveBeenCalledWith("property-videos");
-    expect(uploadFn).toHaveBeenCalledWith(
-      "prop-abc/final_horizontal_v1.mp4",
-      expect.any(Uint8Array),
-      { contentType: "video/mp4", upsert: true },
-    );
+    const [title] = hostVideoOnBunnyMock.mock.calls[0];
+    expect(title).toContain("vertical");
+    expect(title).toContain("prop-abc");
+    expect(title).toContain("v1");
   });
 
-  it("uses final_vertical path for 9:16 aspect ratio", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
-    );
-    const { storageMock, uploadFn } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
-    process.env.VERCEL_ENV = "production";
-
-    await finalizeAssemblyRender({
-      ...BASE_PARAMS,
-      aspectRatio: "9:16",
-      supabase,
-    });
-
-    expect(uploadFn).toHaveBeenCalledWith(
-      "prop-abc/final_vertical_v1.mp4",
-      expect.any(Uint8Array),
-      { contentType: "video/mp4", upsert: true },
-    );
-  });
-
-  // ── 6. Bitrate warn below floor ──────────────────────────────────────────
+  // ── 7. Bitrate warn below floor ──────────────────────────────────────────
 
   it("emits warn when bitrate is below the pixel-scaled floor", async () => {
     // 1 MB over 30 s → ~267 kbps — far below 9000 kbps floor
@@ -275,14 +275,12 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(SMALL_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
-    // Should still succeed (URL is Supabase — upload happened).
-    expect(result.url).toBe(SUPABASE_URL);
+    // Should still succeed (URL is the Bunny mp4 URL — host happened).
+    expect(result.url).toBe(BUNNY_MP4_URL);
     // Must warn about low bitrate.
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize] low bitrate"),
@@ -290,7 +288,7 @@ describe("finalizeAssemblyRender", () => {
     );
   });
 
-  // ── 7. No bitrate warn above floor ──────────────────────────────────────
+  // ── 8. No bitrate warn above floor ──────────────────────────────────────
 
   it("does NOT emit a bitrate warn when bitrate is above the floor", async () => {
     // 40 MB over 30 s → ~10 667 kbps — above 9000 kbps floor
@@ -298,11 +296,9 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    await finalizeAssemblyRender(BASE_PARAMS);
 
     const bitrateWarns = warnSpy.mock.calls.filter(([msg]) =>
       typeof msg === "string" && msg.includes("low bitrate"),
@@ -310,7 +306,7 @@ describe("finalizeAssemblyRender", () => {
     expect(bitrateWarns).toHaveLength(0);
   });
 
-  // ── 8. ASSEMBLY_MIN_KBPS env override ───────────────────────────────────
+  // ── 9. ASSEMBLY_MIN_KBPS env override ───────────────────────────────────
 
   it("uses ASSEMBLY_MIN_KBPS env var as the bitrate floor", async () => {
     // 40 MB / 30 s → ~10 667 kbps; set floor to 20 000 kbps so it triggers
@@ -319,11 +315,9 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    await finalizeAssemblyRender(BASE_PARAMS);
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("[assembly-finalize] low bitrate"),
@@ -337,11 +331,9 @@ describe("finalizeAssemblyRender", () => {
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(SMALL_BYTES)),
     );
-    const { storageMock } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
     process.env.VERCEL_ENV = "production";
 
-    await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    await finalizeAssemblyRender(BASE_PARAMS);
 
     const bitrateWarns = warnSpy.mock.calls.filter(([msg]) =>
       typeof msg === "string" && msg.includes("low bitrate"),
@@ -349,21 +341,18 @@ describe("finalizeAssemblyRender", () => {
     expect(bitrateWarns).toHaveLength(0);
   });
 
-  // ── LE_ALLOW_NONPROD_WRITES guard ────────────────────────────────────────
+  // ── 10. LE_ALLOW_NONPROD_WRITES guard ────────────────────────────────────
 
-  it("allows storage write when LE_ALLOW_NONPROD_WRITES=true even without VERCEL_ENV", async () => {
+  it("allows the Bunny host when LE_ALLOW_NONPROD_WRITES=true even without VERCEL_ENV", async () => {
     process.env.LE_ALLOW_NONPROD_WRITES = "true";
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)),
     );
-    const { storageMock, uploadFn } = makeStorageMock({ publicUrl: SUPABASE_URL });
-    const supabase = makeSupabase(storageMock);
 
-    const result = await finalizeAssemblyRender({ ...BASE_PARAMS, supabase });
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
 
-    expect(storageMock.from).toHaveBeenCalledWith("property-videos");
-    expect(uploadFn).toHaveBeenCalled();
-    expect(result.url).toBe(SUPABASE_URL);
+    expect(hostVideoOnBunnyMock).toHaveBeenCalledTimes(1);
+    expect(result.url).toBe(BUNNY_MP4_URL);
   });
 });
