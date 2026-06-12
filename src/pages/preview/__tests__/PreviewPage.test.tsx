@@ -15,6 +15,37 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import PreviewPage from '../PreviewPage';
 
 // ---------------------------------------------------------------------------
+// LEPlayer mock — exposes one button per playback callback so the watch-page
+// beacon wiring can be driven deterministically without a real <video>.
+// onView is invoked on mount (mirrors the real player's fire-once-on-mount).
+// ---------------------------------------------------------------------------
+const leViewSpy = vi.fn();
+vi.mock('../../../components/preview/LEPlayer', () => ({
+  __esModule: true,
+  default: (props: {
+    src: string;
+    poster?: string;
+    orientation?: 'horizontal' | 'vertical';
+    onView?: () => void;
+    onPlayFirst?: () => void;
+    onProgress?: (m: 25 | 50 | 75) => void;
+    onComplete?: () => void;
+  }) => {
+    leViewSpy(props.src, props.orientation);
+    props.onView?.();
+    return (
+      <div data-testid="le-player" data-src={props.src} data-orientation={props.orientation}>
+        <button data-testid="mock-play" onClick={() => props.onPlayFirst?.()}>play</button>
+        <button data-testid="mock-p25" onClick={() => props.onProgress?.(25)}>p25</button>
+        <button data-testid="mock-p50" onClick={() => props.onProgress?.(50)}>p50</button>
+        <button data-testid="mock-p75" onClick={() => props.onProgress?.(75)}>p75</button>
+        <button data-testid="mock-complete" onClick={() => props.onComplete?.()}>complete</button>
+      </div>
+    );
+  },
+}));
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -73,6 +104,17 @@ function renderPreview(token = 'sometoken123') {
 
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  leViewSpy.mockClear();
+  // Default: a no-op sendBeacon so beacons never hit the real network in
+  // tests that don't explicitly assert on them. Tests that DO assert override
+  // this stub with their own spy.
+  vi.stubGlobal('navigator', { ...navigator, sendBeacon: vi.fn().mockReturnValue(true) });
+  // Each test starts with a clean session so per-session dedupe is deterministic.
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    /* sessionStorage may be unavailable in some envs — ignore */
+  }
 });
 
 afterEach(() => {
@@ -303,19 +345,19 @@ describe('PreviewPage — orientation toggle', () => {
     renderPreview();
     await waitFor(() => screen.getByTestId('orientation-toggle'));
 
-    // Initially shows horizontal — re-query each time because key swap remounts
-    expect((screen.getByTestId('video-player') as HTMLVideoElement).src).toContain('h.mp4');
+    // Initially shows horizontal — the LEPlayer mock exposes src via data-src
+    expect(screen.getByTestId('le-player').getAttribute('data-src')).toContain('h.mp4');
 
     // Click the Vertical pill
     fireEvent.click(screen.getByTestId('toggle-vertical'));
     await waitFor(() => {
-      expect((screen.getByTestId('video-player') as HTMLVideoElement).src).toContain('v.mp4');
+      expect(screen.getByTestId('le-player').getAttribute('data-src')).toContain('v.mp4');
     });
 
     // Click Wide again
     fireEvent.click(screen.getByTestId('toggle-wide'));
     await waitFor(() => {
-      expect((screen.getByTestId('video-player') as HTMLVideoElement).src).toContain('h.mp4');
+      expect(screen.getByTestId('le-player').getAttribute('data-src')).toContain('h.mp4');
     });
   });
 });
@@ -424,5 +466,207 @@ describe('PreviewPage — presented-by row', () => {
     renderPreview();
     await waitFor(() => screen.getByTestId('preview-address'));
     expect(screen.queryByTestId('presented-by-row')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 9. Proprietary player + watch-page beacons (T10)
+// ---------------------------------------------------------------------------
+
+/** Parse the JSON body passed to sendBeacon (string | Blob | object). */
+async function readBeacon(arg: unknown): Promise<Record<string, unknown>> {
+  if (typeof arg === 'string') return JSON.parse(arg);
+  if (arg instanceof Blob) return JSON.parse(await arg.text());
+  return arg as Record<string, unknown>;
+}
+
+/** Collect the (url, parsedBody) pairs from every sendBeacon call. */
+async function beaconCalls(spy: ReturnType<typeof vi.fn>) {
+  return Promise.all(
+    spy.mock.calls.map(async ([url, body]) => ({ url: String(url), body: await readBeacon(body) })),
+  );
+}
+
+describe('PreviewPage — proprietary player', () => {
+  it('renders LEPlayer and leaves NO native <video controls> in the DOM', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+    const { container } = renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    // No raw native-controls <video> remains on the page.
+    expect(container.querySelector('video[controls]')).toBeNull();
+    expect(screen.queryByTestId('video-player')).toBeNull();
+  });
+});
+
+describe('PreviewPage — watch-page beacons', () => {
+  it('fires a "view" beacon on mount carrying a stable session_id', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    renderPreview('viewtok');
+    await waitFor(() => screen.getByTestId('le-player'));
+
+    const calls = await beaconCalls(beacon);
+    const view = calls.find((c) => c.body.event === 'view');
+    expect(view).toBeTruthy();
+    expect(view!.url).toContain('/api/preview/viewtok/events');
+    expect(typeof view!.body.session_id).toBe('string');
+    expect((view!.body.session_id as string).length).toBeGreaterThan(0);
+  });
+
+  it('the same session_id is reused across view + play + progress + complete', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+
+    fireEvent.click(screen.getByTestId('mock-play'));
+    fireEvent.click(screen.getByTestId('mock-p25'));
+    fireEvent.click(screen.getByTestId('mock-complete'));
+
+    const calls = await beaconCalls(beacon);
+    const ids = new Set(calls.map((c) => c.body.session_id));
+    expect(ids.size).toBe(1);
+  });
+
+  it('fires play / progress_25 / progress_50 / progress_75 / complete beacons via callbacks', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+
+    fireEvent.click(screen.getByTestId('mock-play'));
+    fireEvent.click(screen.getByTestId('mock-p25'));
+    fireEvent.click(screen.getByTestId('mock-p50'));
+    fireEvent.click(screen.getByTestId('mock-p75'));
+    fireEvent.click(screen.getByTestId('mock-complete'));
+
+    const events = (await beaconCalls(beacon)).map((c) => c.body.event);
+    expect(events).toContain('play');
+    expect(events).toContain('progress_25');
+    expect(events).toContain('progress_50');
+    expect(events).toContain('progress_75');
+    expect(events).toContain('complete');
+  });
+
+  it('fires each milestone AT MOST ONCE per session (refires are suppressed)', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+
+    // Click play + progress_25 twice each — only one beacon each must go out.
+    fireEvent.click(screen.getByTestId('mock-play'));
+    fireEvent.click(screen.getByTestId('mock-play'));
+    fireEvent.click(screen.getByTestId('mock-p25'));
+    fireEvent.click(screen.getByTestId('mock-p25'));
+
+    const events = (await beaconCalls(beacon)).map((c) => c.body.event);
+    expect(events.filter((e) => e === 'play')).toHaveLength(1);
+    expect(events.filter((e) => e === 'progress_25')).toHaveLength(1);
+  });
+
+  it('does NOT refire view/play after a remount in the same session', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    const first = renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    fireEvent.click(screen.getByTestId('mock-play'));
+    first.unmount();
+
+    // Remount within the SAME session (sessionStorage not cleared between).
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    fireEvent.click(screen.getByTestId('mock-play'));
+
+    const events = (await beaconCalls(beacon)).map((c) => c.body.event);
+    expect(events.filter((e) => e === 'view')).toHaveLength(1);
+    expect(events.filter((e) => e === 'play')).toHaveLength(1);
+  });
+
+  it('a thrown sendBeacon is swallowed and never breaks render', async () => {
+    const beacon = vi.fn(() => {
+      throw new Error('beacon boom');
+    });
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+
+    renderPreview();
+    // Render survives despite the throwing beacon on mount.
+    await waitFor(() => screen.getByTestId('le-player'));
+    expect(screen.getByTestId('preview-address')).toBeTruthy();
+
+    // Callback-driven beacons also swallow throws and never break the UI.
+    expect(() => fireEvent.click(screen.getByTestId('mock-play'))).not.toThrow();
+    expect(screen.getByTestId('le-player')).toBeTruthy();
+  });
+
+  it('falls back to fetch(keepalive) when sendBeacon is unavailable', async () => {
+    // Page-load GET returns the payload; the events POST returns 204.
+    const fetchSpy = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return Promise.resolve({ status: 204, ok: true, json: async () => ({}) });
+      }
+      return Promise.resolve({ status: 200, ok: true, json: async () => makePayload() });
+    });
+    vi.stubGlobal('fetch', fetchSpy);
+    // navigator without sendBeacon
+    const { sendBeacon: _omit, ...navNoBeacon } = navigator as Navigator & { sendBeacon?: unknown };
+    vi.stubGlobal('navigator', navNoBeacon);
+
+    renderPreview('fbtok');
+    await waitFor(() => screen.getByTestId('le-player'));
+
+    await waitFor(() => {
+      const eventPost = fetchSpy.mock.calls.find(
+        ([url, init]) =>
+          String(url).includes('/api/preview/fbtok/events') &&
+          (init as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(eventPost).toBeTruthy();
+      expect((eventPost![1] as RequestInit).keepalive).toBe(true);
+    });
+  });
+
+  it('beacon body maps the wide orientation to "horizontal"', async () => {
+    const beacon = vi.fn().mockReturnValue(true);
+    vi.stubGlobal('navigator', { ...navigator, sendBeacon: beacon });
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(200, makePayload({ videos: { horizontal: 'https://cdn/h.mp4', vertical: null } })),
+    );
+
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    fireEvent.click(screen.getByTestId('mock-play'));
+
+    const play = (await beaconCalls(beacon)).find((c) => c.body.event === 'play');
+    expect(play!.body.orientation).toBe('horizontal');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Revoked link renders the expired state (T2 behavior on the watch page)
+// ---------------------------------------------------------------------------
+
+describe('PreviewPage — revoked link', () => {
+  it('shows the expired/not-found state for a revoked link (API returns 404)', async () => {
+    // T2: fetchByToken treats revoked_at as expired -> the API returns 404.
+    vi.stubGlobal('fetch', mockFetch(404, {}));
+    renderPreview('revokedtok');
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-not-found')).toBeTruthy();
+    });
+    // No player, no beacons fire for a revoked link.
+    expect(screen.queryByTestId('le-player')).toBeNull();
   });
 });

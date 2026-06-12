@@ -49,6 +49,10 @@ export function TopNav() {
   // stacking two nav bars.
   if (location.pathname === "/upload") return null;
 
+  // /preview/:token/embed is a chrome-less iframe surface embedded in agents'
+  // Sierra customer sites. LE marketing nav (logo, sign-in, CTA) must not appear.
+  if (/^\/preview\/[^/]+\/embed$/.test(location.pathname)) return null;
+
   const isAdmin = profile?.role === "admin";
   const inDashboard = false; // always false here — /dashboard suppressed above
 

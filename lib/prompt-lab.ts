@@ -25,6 +25,7 @@ import { AtlasProvider, type V1AtlasSku } from "./providers/atlas.js";
 import { VeoProvider } from "./providers/veo.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "./embeddings.js";
 import { recordCostEvent } from "./db.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "./providers/bunny-stream.js";
 import type { RoomType, CameraMovement } from "./types.js";
 
 // Lab cost_events use property_id = null. The earlier "zero-UUID sentinel"
@@ -811,21 +812,32 @@ export async function finalizeLabRender(params: {
     return { done: true, error: result.error ?? "render failed" };
   }
 
-  // Persist the clip to Supabase Storage (provider CDNs expire).
+  // Persist the clip to Bunny Stream (provider CDNs expire; Bunny is cheaper
+  // than Supabase Storage for video delivery and adds HLS adaptive streaming).
+  // Falls back to the provider URL on any Bunny failure so delivery is never
+  // blocked (zero human-in-the-loop requirement).
   let persistedUrl = result.videoUrl;
+  const rehostPath = `prompt-lab/${params.sessionId}/${params.iterationId}.mp4`;
   try {
     const buffer = await providerImpl.downloadClip(result.videoUrl);
-    const { getSupabase } = await import("./client.js");
-    const supabase = getSupabase();
-    const path = `prompt-lab/${params.sessionId}/${params.iterationId}.mp4`;
-    const { error: upErr } = await supabase.storage
-      .from("property-videos")
-      .upload(path, buffer, { contentType: "video/mp4", upsert: true });
-    if (!upErr) {
-      const { data: pub } = supabase.storage.from("property-videos").getPublicUrl(path);
-      persistedUrl = pub.publicUrl;
+    if (isBunnyConfigured()) {
+      const bunnyResult = await hostVideoOnBunny(rehostPath, buffer);
+      persistedUrl = bunnyResult.mp4Url;
+      // Record Bunny hosting cost (even when cost rounds to 0¢).
+      recordCostEvent({
+        propertyId: null,
+        sceneId: null,
+        stage: "generation",
+        provider: "bunny",
+        unitsConsumed: 1,
+        unitType: "renders",
+        costCents: bunnyStreamCostCents(buffer.byteLength),
+        metadata: { bunny_hosted: true, path: rehostPath, source: "prompt_lab" },
+      }).catch((err) =>
+        console.error("[finalizeLabRender] bunny cost_event insert failed (non-fatal):", err),
+      );
     }
-  } catch { /* fall back to provider URL */ }
+  } catch { /* fall back to provider URL on any failure */ }
 
   const computedCostCents = Math.round(result.costCents ?? 0);
 

@@ -171,3 +171,14 @@ Each generated draft also exposes a **Download HTML** giving the spec's named fi
 ## Production safety
 
 Build + verify on `feat/market-update-workflow` + a Supabase branch + Vercel preview only. Per Oliver's rules: no prod migration, no prod deploy, no push to main, and no real Sierra publish / real Sendy send without explicit per-change approval.
+
+---
+
+**Addendum 2026-06-12 — shipped to main (merge commit 3a7a473).**
+`feat/market-update-workflow` merged to `main` via `--no-ff`. The constraint above applied during development; it is superseded by the merge. What shipped beyond the original spec:
+
+- **RunDetail draft panels** (`MarketUpdate.tsx`) — live status badges per draft (draft/published/sent) + two-step confirmation for Sierra publish and Sendy send actions. `draft_ready` blog-post state mapped to "Draft" badge. Test coverage in `src/pages/dashboard/__tests__/MarketUpdateRunDrafts.test.tsx`.
+- **Template token-coverage validation on upload** — template editor flags any `{{TOKEN}}` not in the canonical vocabulary at upload time, preventing a silent mismatch between template HTML and the `RegionMetrics` schema. New `mu-check-templates.ts` helper script for offline QA.
+- **E2E verification hardened** — `scripts/blog/mu-smoke.ts` + `scripts/blog/mu-db-verify.ts` extended and hardened; new `scripts/blog/mu-check-templates.ts` validates token coverage against live DB templates. Full E2E verified against real Supabase + real Claude (three blog drafts + one CC email draft created, verified, cleaned up).
+- **P0 security fix** — `GET /api/properties` gated with `requireAuth`; unauthenticated requests return 401; non-admin users scoped to `submitted_by=user.id` (commit `b75676e`). This was a merge-conflict resolution: both `main` and the branch independently added auth gates; the merged result preserves the stricter combined form.
+- **No new migrations** — the workflow runs on existing migration 074 (`mu_regions`, `market_update_runs`, templates). Migration 059 referenced in the original spec was renumbered to 074 at ship time.

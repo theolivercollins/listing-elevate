@@ -1,0 +1,11 @@
+Auto-merging api/properties/index.ts
+CONFLICT (content): Merge conflict in api/properties/index.ts
+Auto-merging docs/HANDOFF.md
+CONFLICT (content): Merge conflict in docs/HANDOFF.md
+Auto-merging docs/team-lessons.md
+CONFLICT (add/add): Merge conflict in docs/team-lessons.md
+Auto-merging src/App.tsx
+CONFLICT (content): Merge conflict in src/App.tsx
+Auto-merging src/pages/dashboard/MarketUpdate.tsx
+CONFLICT (content): Merge conflict in src/pages/dashboard/MarketUpdate.tsx
+Automatic merge failed; fix conflicts and then commit the result.

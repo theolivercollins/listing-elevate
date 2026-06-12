@@ -128,7 +128,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 0,
     priceLabel: "free (credits)",
     supportsEndFrame: false,  // native v2.0 image-to-video doesn't pair
-    supportedResolutions: ["1080p"],  // fixed in-model
+    supportedResolutions: ["720p"],  // ~0.92 MP fixed budget shaped to input aspect (measured 1172×784, 2026-06-11) — 720p-class, NOT 1080p
     note: "Uses your pre-paid Kling credits directly. Burn before Atlas bills. No end-frame support.",
   },
   {
@@ -139,7 +139,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 48,
     priceLabel: "$0.48",
     supportsEndFrame: true,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget shaped to input aspect; 16:9 source (forced in atlas.ts) → 1920×1080
     note: "Newest. End-frame support. Known shake issue on single-image shots — stability prefix mitigation applied.",
   },
   {
@@ -151,7 +151,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceLabel: "$0.36",
     supportsEndFrame: true,
     hidden: true,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
+    supportedResolutions: ["1080p"],  // v3 family ~2.07 MP budget shaped to input aspect; 16:9 source (forced in atlas.ts) → 1920×1080
     note: "Like 3.0 Pro but lower quality. Hidden from picker — re-enable if ever needed.",
   },
   {
@@ -162,7 +162,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 60,              // Corrected 2026-04-20: observed $0.60/clip, was $0.30
     priceLabel: "$0.60",
     supportsEndFrame: true,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget shaped to input aspect (measured 1760×1176 from 3:2, 2026-06-11); 16:9 source (forced in atlas.ts) → 1920×1080
     note: "Smoothest motion for single-image shots. Current strong default for interiors.",
   },
   {
@@ -173,7 +173,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 38,
     priceLabel: "$0.38",
     supportsEndFrame: true,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
+    supportedResolutions: ["1080p"],  // ~2.07 MP budget shaped to input aspect (measured 1660×1244 paired, 2026-06-04); both frames force-cropped 16:9 in atlas.ts → 1920×1080
     note: "Purpose-built for paired scenes (start + end photo). Can use long, detailed prompts effectively.",
   },
   {
@@ -184,8 +184,8 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 111,
     priceLabel: "$1.11",
     supportsEndFrame: false,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
-    note: "Premium quality; single-frame only (no end-frame support). Expensive — use for hero shots.",
+    supportedResolutions: ["720p"],  // ~0.92 MP fixed budget (measured 1172×784, 2026-06-11) — 720p-class, NOT 1080p, despite the premium price
+    note: "Premium quality; single-frame only (no end-frame support). Expensive — use for hero shots. 720p-class output.",
   },
   {
     key: "kling-o3-pro",
@@ -195,7 +195,7 @@ export const LAB_MODELS: LabModelInfo[] = [
     priceCents: 48,
     priceLabel: "$0.48",
     supportsEndFrame: true,
-    supportedResolutions: ["1080p"],  // Kling output res is fixed in-model
+    supportedResolutions: ["1080p"],  // budget not yet measured for this SKU; modern Kling pro SKUs measure ~2.07 MP
     note: "Minimal movement — tends to look static. Good for feature closeups, weak for dynamic shots.",
   },
 ];

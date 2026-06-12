@@ -13,6 +13,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const propertyId = String(req.query.id);
   const expiresAt = req.body?.expires_at ?? null;
   const rawKind = req.body?.kind ?? 'client';
+  // label is optional; null when absent. createPreviewLink already handles pre-migration
+  // by only inserting the column when label is non-null.
+  const label: string | null = req.body?.label ?? null;
 
   if (!VALID_KINDS.includes(rawKind as PreviewKind)) {
     return res.status(400).json({ error: 'invalid_kind', message: `kind must be one of: ${VALID_KINDS.join(', ')}` });
@@ -21,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const kind = rawKind as PreviewKind;
 
   try {
-    const row = await createPreviewLink(propertyId, expiresAt, kind);
+    const row = await createPreviewLink(propertyId, expiresAt, kind, label);
     const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
     return res.status(201).json({ token: row.token, url: `${base}/preview/${row.token}` });
   } catch (err) {

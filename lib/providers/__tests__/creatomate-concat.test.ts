@@ -47,8 +47,10 @@ describe("buildCreatomateConcatScript", () => {
     expect(hasOverlayOrAudio).toBe(false);
   });
 
-  it("defaults to 1920x1080 and supports 9:16", () => {
-    expect(buildCreatomateConcatScript(CLIPS)).toMatchObject({ width: 1920, height: 1080 });
+  it("defaults to 2880x1620 for 16:9 (ASSEMBLY_SUPERSAMPLE=1.5) and 1080x1920 for 9:16", () => {
+    // Default factor 1.5: 1920×1.5=2880, 1080×1.5=1620. Vertical is native (not supersampled).
+    // Rollback: ASSEMBLY_SUPERSAMPLE=1 reverts to 1920×1080.
+    expect(buildCreatomateConcatScript(CLIPS)).toMatchObject({ width: 2880, height: 1620 });
     expect(buildCreatomateConcatScript(CLIPS, "9:16")).toMatchObject({ width: 1080, height: 1920 });
   });
 
@@ -59,6 +61,13 @@ describe("buildCreatomateConcatScript", () => {
   it("emits no audio by default (backward compatible)", () => {
     const s = buildCreatomateConcatScript(CLIPS);
     expect(s.elements.some((e) => e.type === "audio")).toBe(false);
+  });
+
+  it("omits frame_rate so output follows the source clips' fps (no 24->30 resample)", () => {
+    // 2026-06-11 assembly-quality diagnosis: AI source clips are 24fps;
+    // Creatomate's default (no frame_rate) is the highest input fps.
+    const s = buildCreatomateConcatScript(CLIPS);
+    expect("frame_rate" in s).toBe(false);
   });
 });
 

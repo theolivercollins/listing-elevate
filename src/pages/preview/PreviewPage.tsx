@@ -1,7 +1,98 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Check, Download, Loader2, Monitor, Smartphone } from 'lucide-react';
+import LEPlayer from '../../components/preview/LEPlayer';
 import '../../styles/preview-design.css';
+
+// ---------------------------------------------------------------------------
+// Watch-page beacons (spec §3)
+//
+// LEPlayer emits playback callbacks; the watch page turns them into
+// fire-and-forget analytics beacons. A single session_id (crypto.randomUUID,
+// persisted in sessionStorage) ties every event from one tab together.
+// Each event type fires AT MOST ONCE PER SESSION — the fired set is persisted
+// in sessionStorage so a remount in the same session never refires. Beacons
+// NEVER throw and NEVER affect playback.
+// ---------------------------------------------------------------------------
+
+type BeaconEvent =
+  | 'view'
+  | 'play'
+  | 'progress_25'
+  | 'progress_50'
+  | 'progress_75'
+  | 'complete';
+
+const SESSION_KEY = 'le-preview-session-id';
+
+/** Stable per-tab session id. Persisted in sessionStorage; tolerant of its absence. */
+function getSessionId(): string {
+  try {
+    const existing = window.sessionStorage.getItem(SESSION_KEY);
+    if (existing) return existing;
+    const id =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `s_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    window.sessionStorage.setItem(SESSION_KEY, id);
+    return id;
+  } catch {
+    // sessionStorage unavailable (private mode, SSR): fall back to a volatile id.
+    return `s_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  }
+}
+
+/** sessionStorage key tracking which events already fired for this token+session. */
+function firedKey(token: string, sessionId: string): string {
+  return `le-preview-fired:${token}:${sessionId}`;
+}
+
+/** Has this event already fired this session? Marks it fired and returns false the first time. */
+function markFiredOnce(token: string, sessionId: string, event: BeaconEvent): boolean {
+  try {
+    const key = firedKey(token, sessionId);
+    const raw = window.sessionStorage.getItem(key);
+    const set: string[] = raw ? JSON.parse(raw) : [];
+    if (set.includes(event)) return true;
+    set.push(event);
+    window.sessionStorage.setItem(key, JSON.stringify(set));
+    return false;
+  } catch {
+    // Without storage we cannot dedupe across remounts; allow the fire.
+    return false;
+  }
+}
+
+/**
+ * Fire one analytics beacon. Fire-and-forget: prefers navigator.sendBeacon,
+ * falls back to fetch(keepalive), and swallows every error so playback and
+ * render are never affected.
+ */
+function sendBeaconEvent(
+  token: string,
+  body: Record<string, unknown>,
+): void {
+  try {
+    const url = `/api/preview/${token}/events`;
+    const payload = JSON.stringify(body);
+    const nav = typeof navigator !== 'undefined' ? navigator : undefined;
+    if (nav && typeof nav.sendBeacon === 'function') {
+      nav.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      return;
+    }
+    // Fallback when sendBeacon is unavailable.
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {
+      /* fire-and-forget */
+    });
+  } catch {
+    /* beacons never throw */
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -100,6 +191,10 @@ export default function PreviewPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  // Stable per-tab analytics session id (lazy, persisted in sessionStorage).
+  const sessionIdRef = useRef<string | null>(null);
+  if (sessionIdRef.current === null) sessionIdRef.current = getSessionId();
+
   // ---------------------------------------------------------------------------
 
   useEffect(() => {
@@ -192,6 +287,22 @@ export default function PreviewPage() {
   const isVideoRendering = !hasHorizontal && !hasVertical;
   const isApproved = Boolean(approved);
 
+  // Beacon orientation is in player terms ('horizontal' | 'vertical').
+  const beaconOrientation: 'horizontal' | 'vertical' =
+    activeOrientation === 'vertical' ? 'vertical' : 'horizontal';
+
+  // Emit one analytics event, deduped once-per-session across remounts.
+  const emit = (event: BeaconEvent) => {
+    if (!token) return;
+    const sessionId = sessionIdRef.current!;
+    if (markFiredOnce(token, sessionId, event)) return;
+    sendBeaconEvent(token, {
+      session_id: sessionId,
+      event,
+      orientation: beaconOrientation,
+    });
+  };
+
   return (
     <div className="preview-scope pd-page">
       <main className="pd-container pd-fade-up">
@@ -268,17 +379,21 @@ export default function PreviewPage() {
                 </div>
               )}
 
-              {/* Single player — src swaps on toggle */}
+              {/* Proprietary LE player — src swaps on toggle. Native controls
+                  are gone; LEPlayer renders its own chrome. */}
               <div className="pd-video-wrap">
-                <video
-                  key={activeVideoUrl ?? 'no-video'}
-                  src={activeVideoUrl ?? undefined}
-                  poster={thumbnail_url ?? undefined}
-                  controls
-                  playsInline
-                  data-testid="video-player"
-                  className={`pd-video-player${activeOrientation === 'vertical' ? ' pd-video-player--vertical' : ''}`}
-                />
+                {activeVideoUrl && (
+                  <LEPlayer
+                    key={activeVideoUrl}
+                    src={activeVideoUrl}
+                    poster={thumbnail_url ?? undefined}
+                    orientation={beaconOrientation}
+                    onView={() => emit('view')}
+                    onPlayFirst={() => emit('play')}
+                    onProgress={(m) => emit(`progress_${m}` as BeaconEvent)}
+                    onComplete={() => emit('complete')}
+                  />
+                )}
               </div>
             </>
           )}

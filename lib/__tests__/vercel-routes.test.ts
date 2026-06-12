@@ -84,6 +84,16 @@ const GUARDED_PATHS = [
   'api/admin/studio/properties/[id]/preview-links.ts',
   'api/admin/studio/properties/[id]/preview-links/[previewId].ts',
 
+  // le-video branch — new endpoints
+  'api/preview/[token]/events.ts',
+  'api/admin/studio/videos/index.ts',
+  'api/admin/studio/videos/[id].ts',
+
+  // le-video-library branch — new endpoints
+  'api/admin/studio/video-folders/index.ts',
+  'api/admin/studio/video-folders/[id].ts',
+  'api/admin/studio/videos/[id]/library.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -142,5 +152,71 @@ describe('vercel.json route coverage', () => {
 
     expect(approveIdx).toBeLessThan(bareIdx);
     expect(downloadIdx).toBeLessThan(bareIdx);
+  });
+
+  it('preview/[token]/events entry precedes the bare preview/[token] entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const eventsIdx = routes.findIndex((r) => /\/preview\/.*\/events$/.test(r.src));
+    const bareIdx   = routes.findIndex((r) => /^\/api\/preview\/\(\[\^\/\]\+\)$/.test(r.src));
+
+    expect(eventsIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(eventsIdx).toBeLessThan(bareIdx);
+  });
+
+  it('videos/[id] entry precedes the bare videos entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // Two-segment: .../videos/([^/]+)
+    const videosWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)/.test(r.src),
+    );
+    // One-segment: ends with .../videos (no further path component)
+    const videosBase = routes.findIndex((r) =>
+      /\/admin\/studio\/videos$/.test(r.src),
+    );
+
+    expect(videosWithId).toBeGreaterThanOrEqual(0);
+    expect(videosBase).toBeGreaterThanOrEqual(0);
+    expect(videosWithId).toBeLessThan(videosBase);
+  });
+
+  it('videos/[id]/library entry precedes the bare videos/[id] entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // Three-segment: .../videos/([^/]+)/library
+    const videosLibrary = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)\/library/.test(r.src),
+    );
+    // Two-segment: .../videos/([^/]+) (bare, no /library)
+    const videosWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/videos\/\(\[\^\/\]\+\)$/.test(r.src),
+    );
+
+    expect(videosLibrary).toBeGreaterThanOrEqual(0);
+    expect(videosWithId).toBeGreaterThanOrEqual(0);
+    expect(videosLibrary).toBeLessThan(videosWithId);
+  });
+
+  it('/preview/:token/embed SPA route precedes the bare /preview/([^/]+) OG-shim route', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    // More specific: /preview/([^/]+)/embed pointing to /index.html (SPA route)
+    const embedIdx = routes.findIndex((r) =>
+      r.src === '/preview/([^/]+)/embed' && r.dest === '/index.html',
+    );
+    // Less specific: /preview/([^/]+) pointing to OG-shim endpoint
+    const bareIdx = routes.findIndex((r) =>
+      r.src === '/preview/([^/]+)' && r.dest?.includes('/api/preview-page'),
+    );
+
+    expect(embedIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(embedIdx).toBeLessThan(bareIdx);
   });
 });
