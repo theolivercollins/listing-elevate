@@ -1,5 +1,41 @@
 export type PropertyStatus = "queued" | "analyzing" | "scripting" | "generating" | "qc" | "assembling" | "complete" | "failed" | "needs_review" | "archived" | "delivered";
 export type SceneStatus = "pending" | "generating" | "qc_pass" | "qc_soft_reject" | "qc_hard_reject" | "retry_1" | "retry_2" | "failed" | "needs_review";
+
+/**
+ * Runtime const tuple of all PropertyStatus values.
+ * Typed as `satisfies readonly PropertyStatus[]` so TypeScript errors if this drifts from the union.
+ * Used by tests to assert ORDER_STATUS_MAP has exhaustive coverage.
+ */
+export const ALL_PROPERTY_STATUSES = [
+  "queued",
+  "analyzing",
+  "scripting",
+  "generating",
+  "qc",
+  "assembling",
+  "complete",
+  "failed",
+  "needs_review",
+  "archived",
+  "delivered",
+] as const satisfies readonly PropertyStatus[];
+
+/**
+ * Runtime const tuple of all SceneStatus values.
+ * Typed as `satisfies readonly SceneStatus[]` so TypeScript errors if this drifts from the union.
+ * Used by tests to assert ORDER_STATUS_MAP has exhaustive coverage.
+ */
+export const ALL_SCENE_STATUSES = [
+  "pending",
+  "generating",
+  "qc_pass",
+  "qc_soft_reject",
+  "qc_hard_reject",
+  "retry_1",
+  "retry_2",
+  "failed",
+  "needs_review",
+] as const satisfies readonly SceneStatus[];
 export type LogLevel = "info" | "warn" | "error" | "debug";
 export type PipelineStage = "intake" | "analysis" | "scripting" | "generation" | "qc" | "assembly" | "delivery";
 export type RoomType = "kitchen" | "living_room" | "master_bedroom" | "bedroom" | "bathroom" | "exterior_front" | "exterior_back" | "pool" | "aerial" | "dining" | "hallway" | "garage" | "other";

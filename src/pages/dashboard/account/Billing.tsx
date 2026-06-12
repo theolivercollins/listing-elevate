@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { PageHeading, Card, KpiCard, StatusPill, MoneyValue } from "@/components/dashboard/primitives";
+import { PageHeading, Card, KpiCard, StatusChip, MoneyValue, EmptyState } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
 
@@ -82,8 +82,11 @@ export default function AccountBilling() {
               Loading...
             </div>
           ) : !properties?.length ? (
-            <div style={{ padding: "40px 14px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              No spend yet — once your first listing is delivered, the breakdown appears here.
+            <div style={{ padding: "24px 14px" }}>
+              <EmptyState
+                message="No spend yet — once your first listing is delivered, the breakdown appears here."
+                icon="dollar"
+              />
             </div>
           ) : (
             <>
@@ -111,7 +114,7 @@ export default function AccountBilling() {
                   >
                     {new Date(p.created_at).toLocaleDateString()}
                   </span>
-                  <StatusPill status={p.status} />
+                  <StatusChip status={p.status} />
                   <span
                     style={{
                       fontSize: 13,

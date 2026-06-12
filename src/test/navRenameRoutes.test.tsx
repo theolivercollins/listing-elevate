@@ -204,6 +204,7 @@ vi.mock("@/pages/AgentHome", () => ({
 
 vi.mock("@/pages/Dashboard", () => ({
   default: ({ children }: { children?: React.ReactNode }) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Outlet } = require("react-router-dom");
     return (
       <div data-testid="dashboard-shell">

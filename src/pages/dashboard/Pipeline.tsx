@@ -1,7 +1,7 @@
 import { useState, useEffect, type CSSProperties } from "react";
 import type { Property, Scene, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
-import { HealthCard, StatusPill, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
+import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { SAMPLE_STAGES } from "@/components/dashboard/sample-data";
 import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
@@ -174,7 +174,7 @@ function ReviewCard({
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>
             Scene 0{scene.scene_number}
           </span>
-          <StatusPill status="needs_review" />
+          <StatusChip status="needs_review" />
           <span
             style={{
               fontSize: 11, color: "var(--muted)", padding: "2px 8px", borderRadius: 999,

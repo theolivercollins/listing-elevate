@@ -73,10 +73,24 @@ export async function fetchPromptRevisions(): Promise<{ prompts: Array<{ prompt_
   return apiFetch(`/api/admin/prompt-revisions`);
 }
 
+/**
+ * Minimal fields always returned (unauthenticated callers — delivery email links).
+ * Authenticated owners/admins also receive the rich delivery fields.
+ * All rich fields are optional here so consumers must null-check them.
+ */
 export async function fetchPropertyStatus(id: string): Promise<{
-  id: string; address: string; status: string; currentStage: number; totalStages: number;
-  clipsCompleted: number; clipsTotal: number; horizontalVideoUrl: string | null;
-  verticalVideoUrl: string | null; createdAt: string; processingTimeMs: number | null;
+  status: string;
+  label: string;
+  currentStage: number;
+  totalStages: number;
+  // Rich fields — present only for authenticated owners/admins
+  address?: string;
+  horizontalVideoUrl?: string | null;
+  verticalVideoUrl?: string | null;
+  processingTimeMs?: number | null;
+  clipsCompleted?: number;
+  clipsTotal?: number;
+  createdAt?: string;
 }> {
   return apiFetch(`/api/properties/${id}/status`);
 }
