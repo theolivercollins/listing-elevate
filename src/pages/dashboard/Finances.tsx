@@ -350,6 +350,60 @@ function SubmitBtn({ loading, disabled, children }: { loading: boolean; disabled
   );
 }
 
+// ─── DegradedBadge ────────────────────────────────────────────────────────────
+// Shown when a data source fetch fails (amber, distinct from EmptyState).
+// EmptyState = "no rows"; DegradedBadge = "source errored, try again".
+
+function DegradedBadge({
+  testId,
+  retryTestId,
+  onRetry,
+}: {
+  testId: string;
+  retryTestId: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        borderRadius: 8,
+        background: "rgba(217, 119, 6, 0.08)",
+        border: "1px solid rgba(217, 119, 6, 0.25)",
+        marginBottom: 12,
+      }}
+    >
+      <Icon name="alert" size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warn)" }}>
+        Cost data unavailable
+      </span>
+      <button
+        type="button"
+        data-testid={retryTestId}
+        onClick={onRetry}
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: "var(--warn)",
+          background: "none",
+          border: "1px solid rgba(217, 119, 6, 0.35)",
+          borderRadius: 6,
+          padding: "2px 8px",
+          cursor: "pointer",
+          marginLeft: 4,
+          fontFamily: "inherit",
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function Finances() {
@@ -364,6 +418,7 @@ export default function Finances() {
   // ── Cost-breakdown API state ─────────────────────────────────────────────
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [costBreakdownFailed, setCostBreakdownFailed] = useState(false);
   const [overviewAvgCents, setOverviewAvgCents] = useState<number | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -417,7 +472,7 @@ export default function Finances() {
           listCostEvents(500),
           countDeliveredVideos(),
           fetchDailyStats(30).catch(() => null),
-          fetchCostBreakdown().catch(() => null),
+          fetchCostBreakdown().catch(() => { if (!cancelled) setCostBreakdownFailed(true); return null; }),
           fetchStatsOverview().catch(() => null),
           listSubscriptions().catch(() => [] as Subscription[]),
         ]);
@@ -441,6 +496,14 @@ export default function Finances() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ── Cost breakdown retry ──────────────────────────────────────────────────
+  function retryCostBreakdown() {
+    setCostBreakdownFailed(false);
+    fetchCostBreakdown()
+      .then((res) => setCostBreakdown(res))
+      .catch(() => setCostBreakdownFailed(true));
+  }
 
   // ── Derived: ledger totals ────────────────────────────────────────────────
   const totalRevenueCents = useMemo(
@@ -1002,7 +1065,13 @@ export default function Finances() {
           </div>
         </div>
 
-        {breakdownRows.length === 0 ? (
+        {costBreakdownFailed ? (
+          <DegradedBadge
+            testId="breakdown-degraded-badge"
+            retryTestId="breakdown-degraded-retry"
+            onRetry={retryCostBreakdown}
+          />
+        ) : breakdownRows.length === 0 ? (
           <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: 12 }}>
             No cost events in the last 30 days.
           </div>

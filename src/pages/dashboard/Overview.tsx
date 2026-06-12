@@ -371,6 +371,61 @@ function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
   );
 }
 
+// ─── DegradedBadge ────────────────────────────────────────────────────────────
+// Shown when a data source fetch fails. Amber, visually distinct from EmptyState
+// (which uses a dashed border and an icon). A retry button re-invokes the source.
+// Must NOT be used for "no rows" — that is EmptyState's job.
+
+function DegradedBadge({
+  testId,
+  retryTestId,
+  onRetry,
+}: {
+  testId: string;
+  retryTestId: string;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      data-testid={testId}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 12px",
+        borderRadius: 8,
+        background: "rgba(217, 119, 6, 0.08)",
+        border: "1px solid rgba(217, 119, 6, 0.25)",
+        marginBottom: 12,
+      }}
+    >
+      <Icon name="alert" size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warn)" }}>
+        Cost data unavailable
+      </span>
+      <button
+        type="button"
+        data-testid={retryTestId}
+        onClick={onRetry}
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          color: "var(--warn)",
+          background: "none",
+          border: "1px solid rgba(217, 119, 6, 0.35)",
+          borderRadius: 6,
+          padding: "2px 8px",
+          cursor: "pointer",
+          marginLeft: 4,
+          fontFamily: "inherit",
+        }}
+      >
+        Retry
+      </button>
+    </div>
+  );
+}
+
 interface OverviewProps {
   showAIBanner?: boolean;
 }
@@ -388,6 +443,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
   } | null>(null);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
   const [modelHealth, setModelHealth] = useState<ModelHealthResponse | null>(null);
+  const [costFailed, setCostFailed] = useState(false);
+  const [healthFailed, setHealthFailed] = useState(false);
   const [chartRange, setChartRange] = useState<"7d" | "14d" | "30d">("14d");
   const [loading, setLoading] = useState(true);
 
@@ -399,8 +456,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           fetchProperties({ limit: 100 }),
           fetchDailyStats(30),
           fetchStatsOverview(),
-          fetchCostBreakdown().catch(() => null),
-          fetchModelHealth().catch(() => null),
+          fetchCostBreakdown().catch(() => { if (!cancelled) setCostFailed(true); return null; }),
+          fetchModelHealth().catch(() => { if (!cancelled) setHealthFailed(true); return null; }),
         ]);
         if (cancelled) return;
         setAllProps(allRes.properties);
@@ -417,6 +474,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     load();
     return () => { cancelled = true; };
   }, []);
+
+  // ── retry helpers ─────────────────────────────────────────────────────────
+  function retryCost() {
+    setCostFailed(false);
+    fetchCostBreakdown()
+      .then((res) => setCostBreakdown(res))
+      .catch(() => setCostFailed(true));
+  }
+
+  function retryHealth() {
+    setHealthFailed(false);
+    fetchModelHealth()
+      .then((res) => setModelHealth(res))
+      .catch(() => setHealthFailed(true));
+  }
 
   // ── live-only data — no sample fallback for hard numbers ─────────────────
   const propsForUI: UIProperty[] = allProps.map(adaptLiveProp);
@@ -605,7 +677,14 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
       <NeedsYouStrip needsReview={needsReviewCount} failedToday={failedToday} />
 
       {/* ── Provider health row ──────────────────────────────────────── */}
-      <ProviderHealthRow rows={healthRows} />
+      {healthFailed && (
+        <DegradedBadge
+          testId="health-degraded-badge"
+          retryTestId="health-degraded-retry"
+          onRetry={retryHealth}
+        />
+      )}
+      {!healthFailed && <ProviderHealthRow rows={healthRows} />}
 
       {/* ── KPI row ──────────────────────────────────────────────────── */}
       <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>
@@ -810,8 +889,16 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
               : "No scenes generated yet"}
           </h3>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {providerMixForUI.length === 0 ? (
-              <EmptyState message="No scenes generated yet this month." />
+            {costFailed ? (
+              <DegradedBadge
+                testId="cost-degraded-badge"
+                retryTestId="cost-degraded-retry"
+                onRetry={retryCost}
+              />
+            ) : providerMixForUI.length === 0 ? (
+              <div data-testid="provider-mix-empty">
+                <EmptyState message="No scenes generated yet this month." />
+              </div>
             ) : (
               providerMixForUI.map((p) => (
                 <div key={p.provider}>
