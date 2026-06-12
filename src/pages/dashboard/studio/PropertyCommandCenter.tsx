@@ -508,6 +508,15 @@ const PropertyCommandCenter = () => {
               Open video
             </a>
           )}
+          {id && (
+            <Link
+              to={`/dashboard/studio/videos/${id}`}
+              className="studio-btn-ghost studio-btn-sm"
+              data-testid="open-video-hub"
+            >
+              Open video hub →
+            </Link>
+          )}
           <button
             type="button"
             className="studio-cta-primary"

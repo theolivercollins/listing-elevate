@@ -1,13 +1,15 @@
-# Team Lessons — Listing Elevate
+# Team lessons — debugging & shipping
 
-Mistakes caught by the gates, recorded per run for future reference. Sorted newest first; keep only the 30 most recent.
+Lessons learned and gates that caught them in this repo. Keep recent ones; prune oldest beyond 30 lines.
 
-## Lessons
+## Gate-caught mistakes (most recent first)
 
-**2026-06-11T23:32 (feat/auth-animation-fix):** Branch hygiene on shared checkout — Always cut feature branches from `origin/main` (fetch first, check merge-base), never from the current HEAD if it's on an unrelated feature branch. This run's worktree was set up cleanly from origin/main HEAD, avoiding the re-entrancy issue that would have caused a Prompt Lab merge into an operator-studio branch.
-
-**2026-06-11T23:32 (feat/auth-animation-fix):** Animation synchronization — `autoFocus` on inputs fires *before* `setTimeout` and lifecycle effects, mid-animation. When a child element is focused synchronously during a parent's `framer-motion` y-translate, the browser's "scroll-to-focus" behavior competes with the transform, causing visible jank. Solution: remove autoFocus, defer `.focus()` via `useEffect(..., [ENTRY_MS])` timed to after the animation completes. Apply same pattern for any animation + autofocus interaction.
-
-**2026-06-11T23:32 (feat/auth-animation-fix):** Conditional field mounting without transition — Wrapping a conditional form field (e.g., `{mode === "password" && <div>`) in nothing causes the mount/unmount to snap the card height instantly, destroying fluidity. Solution: wrap the conditional in `<AnimatePresence initial={false}>` + `<motion.div initial={opacity:0,height:0} animate={opacity:1,height:auto} exit={opacity:0,height:0}>` with a 220ms transition. Learned this run fixing the password field toggle.
-
-**2026-06-11T23:32 (feat/auth-animation-fix):** State swap without transition — Ternary content swaps (e.g., `{sent ? <A /> : <B />}`) with no motion wrapper cause instant flips. Solution: wrap both branches in `<AnimatePresence mode="wait" initial={false}>` + `<motion.div key>` per branch (sent-state / form-state) with matching opacity/y transitions on enter/exit. The `mode="wait"` ensures exit completes before enter starts, preventing overlap.
+2026-06-12: safety gate caught P0 missing RLS on preview_view_events — never ship tables without ALTER TABLE ... ENABLE ROW LEVEL SECURITY before applying migrations; the Supabase default (no explicit REVOKE) opens anon PostgREST access to all columns of any table without RLS
+2026-06-12: verify gate caught P1 embed TopNav chrome rendering — App.tsx renders TopNav globally above Routes; embed route needs explicit suppression regex guard; add it immediately after the /upload check for consistency
+2026-06-12: verify gate caught P1 GET /api/admin/studio/videos/[id] 500 pre-migration-084 — always guard new SELECT columns with 42703 error fallback before applying any migration that adds columns; use the fetchPreviewMeta pattern (try, catch 42703, retry without new cols)
+2026-06-12: verify gate caught P1 PATCH preview-links/[previewId] 500 pre-migration-084 on capability-only toggles — never unconditionally include new columns in SELECT/RETURNING clauses when only some endpoint callers need them; build RETURNING dynamically based on request body
+2026-06-11: migration-safe back-compat window — pre-migration code path (code deployed, migration NOT applied) must be rock-solid: 204 on beacon insert errors, null defaults on reads, no column requests PostgREST can't satisfy; test both together (capability-only PATCH + 42703 failure cases)
+2026-06-11 (feat/auth-animation-fix): Branch hygiene on shared checkout — always cut feature branches from origin/main (fetch first, check merge-base), never from the current HEAD if it's on an unrelated feature branch; a worktree set up cleanly from origin/main HEAD avoids the re-entrancy issue that would otherwise merge an unrelated feature into the new branch
+2026-06-11 (feat/auth-animation-fix): Animation synchronization — autoFocus on inputs fires before setTimeout and lifecycle effects, mid-animation; focusing a child synchronously during a parent framer-motion y-translate makes the browser's scroll-to-focus compete with the transform (visible jank); remove autoFocus, defer .focus() via useEffect timed to after the animation (ENTRY_MS)
+2026-06-11 (feat/auth-animation-fix): Conditional field mounting without transition — wrapping a conditional form field in nothing snaps the card height on mount/unmount; wrap in AnimatePresence initial={false} + motion.div (opacity/height 0→auto) with a ~220ms transition
+2026-06-11 (feat/auth-animation-fix): State swap without transition — ternary content swaps with no motion wrapper flip instantly; wrap both branches in AnimatePresence mode="wait" initial={false} + motion.div key per branch with matching opacity/y enter/exit; mode="wait" ensures exit completes before enter starts

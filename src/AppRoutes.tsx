@@ -72,9 +72,12 @@ import StudioClients from "./pages/dashboard/studio/Clients";
 import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
 import StudioShare from "./pages/dashboard/studio/Share";
+import StudioVideos from "./pages/dashboard/studio/Videos";
+import StudioVideoHub from "./pages/dashboard/studio/VideoHub";
 import SharePresentation from "./pages/share/Presentation";
 import ShareEmbed from "./pages/share/Embed";
 import PreviewPage from "./pages/preview/PreviewPage";
+import EmbedPage from "./pages/preview/EmbedPage";
 import NotFound from "./pages/NotFound";
 
 function StudioRedirect({ to }: { to: string }) {
@@ -109,6 +112,8 @@ export default function AppRoutes() {
         <Route path="/login" element={<Navigate to="/?login=1" replace />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/status/:id" element={<Status />} />
+        {/* LE Video embed — more-specific path MUST be above the bare token route */}
+        <Route path="/preview/:token/embed" element={<EmbedPage />} />
         <Route path="/preview/:token" element={<PreviewPage />} />
         {/* Public Vimeo-style share viewer (presentation + embed) */}
         <Route path="/v/:token" element={<SharePresentation />} />
@@ -176,6 +181,10 @@ export default function AppRoutes() {
                 <Route path="video/share" element={<StudioShare />} />
                 <Route path="video/clients/:id" element={<StudioClientEdit />} />
                 <Route path="video/properties/:id" element={<StudioPropertyCommandCenter />} />
+
+                {/* LE Video library + hub (spec §1/§2) */}
+                <Route path="videos" element={<StudioVideos />} />
+                <Route path="videos/:propertyId" element={<StudioVideoHub />} />
 
                 {/* Blog */}
                 <Route path="blog" element={<Navigate to="posts" replace />} />

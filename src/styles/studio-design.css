@@ -744,6 +744,484 @@
   .studio-scope.studio-preview .studio-preview-h1 { font-size: 24px; }
 }
 
+/* ─── LE Video library (spec §1) ─────────────────────────────────────
+   Cinematic poster grid. The card is the showcase moment: real hover with
+   a poster zoom + scrim play affordance, tabular-nums stats, styled empty
+   and skeleton states. All radii/shadows/colors are canonical tokens. */
+
+.studio-scope .le-video-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin: 0 0 24px;
+  flex-wrap: wrap;
+}
+.studio-scope .le-video-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.studio-scope .le-video-filter-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.studio-scope .le-video-select {
+  height: 38px;
+  padding: 0 32px 0 12px;
+  min-width: 180px;
+  appearance: none;
+  cursor: pointer;
+}
+.studio-scope .le-video-select-chevron {
+  position: absolute;
+  right: 11px;
+  color: var(--le-muted);
+  pointer-events: none;
+}
+.studio-scope .le-video-date {
+  height: 38px;
+  padding: 0 12px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Grid */
+.studio-scope .le-video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 20px;
+}
+
+/* Card */
+.studio-scope .le-video-card {
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--le-radius);
+  background: var(--le-surface);
+  box-shadow: var(--le-shadow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.22s cubic-bezier(.2,.8,.2,1), transform 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover,
+.studio-scope .le-video-card:focus-visible {
+  box-shadow: var(--le-shadow-lg);
+  transform: translateY(-3px);
+  outline: none;
+}
+.studio-scope .le-video-card:focus-visible {
+  box-shadow: var(--le-shadow-lg), 0 0 0 2px var(--le-ink);
+}
+
+.studio-scope .le-video-card-poster {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: rgba(11,11,16,0.04);
+  overflow: hidden;
+}
+.studio-scope .le-video-card-poster img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.4s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-poster img,
+.studio-scope .le-video-card:focus-visible .le-video-card-poster img {
+  transform: scale(1.04);
+}
+.studio-scope .le-video-card-poster-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--le-muted-2);
+}
+
+/* Hover scrim + center play */
+.studio-scope .le-video-card-scrim {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(180deg, rgba(11,11,16,0) 40%, rgba(11,11,16,0.28) 100%);
+  opacity: 0;
+  transition: opacity 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-scrim,
+.studio-scope .le-video-card:focus-visible .le-video-card-scrim {
+  opacity: 1;
+}
+.studio-scope .le-video-card-play {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--le-r-pill);
+  display: grid;
+  place-items: center;
+  background: rgba(255,255,255,0.92);
+  color: var(--le-ink);
+  box-shadow: var(--le-shadow-md);
+  transform: scale(0.86);
+  transition: transform 0.22s cubic-bezier(.2,.8,.2,1);
+}
+.studio-scope .le-video-card:hover .le-video-card-play,
+.studio-scope .le-video-card:focus-visible .le-video-card-play {
+  transform: scale(1);
+}
+
+/* Badges */
+.studio-scope .le-video-card-badges {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  gap: 6px;
+}
+.studio-scope .le-video-orient-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #fff;
+  background: rgba(11,11,16,0.62);
+  backdrop-filter: blur(6px);
+  border-radius: var(--le-r-sm);
+  padding: 3px 8px;
+  font-variant-numeric: tabular-nums;
+}
+.studio-scope .le-video-approved-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--le-good);
+  border-radius: var(--le-r-pill);
+  padding: 3px 8px;
+}
+
+/* Meta */
+.studio-scope .le-video-card-meta {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.studio-scope .le-video-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--le-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-locality {
+  font-size: 12.5px;
+  color: var(--le-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--le-line-2);
+}
+.studio-scope .le-video-card-client {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--le-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-video-card-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-card-views {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--le-ink-2);
+}
+.studio-scope .le-video-card-views-label {
+  font-weight: 500;
+  color: var(--le-muted);
+}
+.studio-scope .le-video-card-date {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Skeleton */
+.studio-scope .le-skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(11,11,16,0.05) 25%, rgba(11,11,16,0.09) 37%, rgba(11,11,16,0.05) 63%);
+  background-size: 400% 100%;
+  animation: le-video-shimmer 1.4s ease infinite;
+}
+.studio-scope .le-video-card-skeleton {
+  box-shadow: var(--le-shadow-sm);
+}
+.studio-scope .le-skeleton-line {
+  height: 12px;
+  border-radius: var(--le-r-sm);
+}
+@keyframes le-video-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0 0; }
+}
+
+/* Empty state */
+.studio-scope .le-video-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 72px 24px;
+  background: rgba(11,11,16,0.02);
+  border: 1px dashed var(--le-line);
+  border-radius: var(--le-radius);
+}
+.studio-scope .le-video-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--le-r-pill);
+  display: grid;
+  place-items: center;
+  background: var(--le-surface);
+  box-shadow: var(--le-shadow-sm);
+  color: var(--le-muted);
+  margin-bottom: 8px;
+}
+.studio-scope .le-video-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--le-ink);
+  margin: 0;
+}
+.studio-scope .le-video-empty-sub {
+  font-size: 13px;
+  color: var(--le-muted);
+  margin: 0;
+  max-width: 360px;
+}
+
+/* Pagination */
+.studio-scope .le-video-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 28px;
+}
+.studio-scope .le-video-page-indicator {
+  font-size: 12.5px;
+  color: var(--le-muted);
+}
+
+/* ─── Video hub (spec §2) ──────────────────────────────────────────── */
+.studio-scope .le-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+.studio-scope .le-hub-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.studio-scope .le-hub-side {
+  position: sticky;
+  top: 24px;
+}
+@media (max-width: 1024px) {
+  .studio-scope .le-hub-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-scope .le-hub-side { position: static; }
+}
+
+.studio-scope .le-hub-skeleton { padding: 8px 0; }
+
+/* Orientation switcher — segmented control over the player */
+.studio-scope .le-hub-orient-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--le-line-2);
+  border-radius: var(--le-radius-pill);
+  align-self: flex-start;
+}
+.studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: var(--le-surface);
+  color: var(--le-ink);
+  box-shadow: var(--le-shadow-sm);
+}
+
+.studio-scope .le-hub-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--le-line);
+}
+
+/* Analytics stat cards */
+.studio-scope .le-hub-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .studio-scope .le-hub-stats { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Per-link analytics table */
+.studio-scope .le-hub-table { width: 100%; }
+.studio-scope .le-hub-table-head,
+.studio-scope .le-hub-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 0.7fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 20px;
+}
+.studio-scope .le-hub-table-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--le-muted);
+  border-bottom: 1px solid var(--le-line);
+}
+.studio-scope .le-hub-table-row {
+  border-bottom: 1px solid var(--le-line-2);
+  font-size: 13px;
+  color: var(--le-ink-2);
+}
+.studio-scope .le-hub-table-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-table-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-scope .le-hub-table-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-hub-table-empty {
+  padding: 20px;
+  font-size: 13px;
+  color: var(--le-muted-2);
+  font-style: italic;
+}
+.studio-scope .le-hub-kind-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--le-r-pill);
+}
+.studio-scope .le-hub-kind-client {
+  background: rgba(42, 111, 219, 0.10);
+  color: var(--le-accent);
+}
+.studio-scope .le-hub-kind-public {
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+
+/* Activity feed */
+.studio-scope .le-hub-activity-row {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--le-line-2);
+}
+.studio-scope .le-hub-activity-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-activity-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--le-r-pill);
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+.studio-scope .le-hub-activity-client_approval {
+  background: rgba(47, 138, 85, 0.12);
+  color: var(--le-good);
+}
+.studio-scope .le-hub-activity-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.studio-scope .le-hub-activity-source {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-activity-time {
+  font-size: 11.5px;
+  color: var(--le-muted-2);
+}
+.studio-scope .le-hub-activity-body {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--le-ink-2);
+  line-height: 1.45;
+}
+
+.dark .studio-scope .le-hub-orient-switch { background: rgba(255,255,255,0.04); }
+.dark .studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: rgba(255,255,255,0.08);
+}
+.dark .studio-scope .le-hub-kind-public { background: rgba(255,255,255,0.06); }
+.dark .studio-scope .le-hub-activity-icon { background: rgba(255,255,255,0.06); }
+
+.dark .studio-scope .le-video-orient-badge {
+  background: rgba(0,0,0,0.55);
+}
+.dark .studio-scope .le-video-empty {
+  background: rgba(255,255,255,0.02);
+  border-color: rgba(255,255,255,0.1);
+}
+.dark .studio-scope .le-skeleton-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 37%, rgba(255,255,255,0.04) 63%);
+  background-size: 400% 100%;
+}
+
 /* ─── Dark mode ──────────────────────────────────────────────────────
    The studio scope shares the dashboard shell's design language, so the
    dark palette MIRRORS `.dark .le-dash-shell` in src/v2/styles/tokens.css.

@@ -72,7 +72,7 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
     mockCreatePreviewLink.mockResolvedValue({ id: 'pv2', token: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', property_id: 'prop-abc' });
     const res = makeRes();
     await handler(makeReq({ body: { expires_at: '2099-12-31T23:59:59Z' } }), res as unknown as VercelResponse);
-    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', '2099-12-31T23:59:59Z', 'client');
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', '2099-12-31T23:59:59Z', 'client', null);
   });
 
   it('returns 500 when createPreviewLink throws', async () => {
@@ -91,7 +91,7 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
     mockCreatePreviewLink.mockResolvedValue({ id: 'pv3', token: 'cccccccccccccccccccccccccccccccc', property_id: 'prop-abc' });
     const res = makeRes();
     await handler(makeReq({ body: {} }), res as unknown as VercelResponse);
-    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client');
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client', null);
   });
 
   it('passes kind=client when body explicitly sets kind=client', async () => {
@@ -99,7 +99,7 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
     mockCreatePreviewLink.mockResolvedValue({ id: 'pv4', token: 'dddddddddddddddddddddddddddddddd', property_id: 'prop-abc' });
     const res = makeRes();
     await handler(makeReq({ body: { kind: 'client' } }), res as unknown as VercelResponse);
-    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client');
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client', null);
   });
 
   it('passes kind=public when body sets kind=public', async () => {
@@ -107,7 +107,7 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
     mockCreatePreviewLink.mockResolvedValue({ id: 'pv5', token: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', property_id: 'prop-abc' });
     const res = makeRes();
     await handler(makeReq({ body: { kind: 'public' } }), res as unknown as VercelResponse);
-    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'public');
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'public', null);
   });
 
   it('returns 400 for invalid kind value', async () => {
@@ -115,5 +115,25 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
     const res = makeRes();
     await handler(makeReq({ body: { kind: 'invalid' } }), res as unknown as VercelResponse);
     expect(res._status).toBe(400);
+  });
+
+  // ── label support (spec §6) ───────────────────────────────────────────────────
+
+  it('POST with label passes label to createPreviewLink', async () => {
+    mockRequireAdmin.mockResolvedValue({ user: { id: 'u1' }, profile: { role: 'admin' } });
+    mockCreatePreviewLink.mockResolvedValue({ id: 'pv6', token: 'ffffffffffffffffffffffffffffffff', property_id: 'prop-abc' });
+    const res = makeRes();
+    await handler(makeReq({ body: { label: 'IG bio' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(201);
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client', 'IG bio');
+  });
+
+  it('POST without label passes null label to createPreviewLink', async () => {
+    mockRequireAdmin.mockResolvedValue({ user: { id: 'u1' }, profile: { role: 'admin' } });
+    mockCreatePreviewLink.mockResolvedValue({ id: 'pv7', token: 'gggggggggggggggggggggggggggggggg', property_id: 'prop-abc' });
+    const res = makeRes();
+    await handler(makeReq({ body: {} }), res as unknown as VercelResponse);
+    expect(res._status).toBe(201);
+    expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'client', null);
   });
 });

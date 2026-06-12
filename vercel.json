@@ -67,12 +67,16 @@
     { "src": "/api/admin/studio/creatives/upload-url", "dest": "/api/admin/studio/creatives/upload-url" },
     { "src": "/api/admin/studio/creatives/bunny-upload", "dest": "/api/admin/studio/creatives/bunny-upload" },
     { "src": "/api/admin/studio/creatives/([^/]+)", "dest": "/api/admin/studio/creatives/[id]?id=$1" },
+    { "src": "/api/admin/studio/videos/([^/]+)", "dest": "/api/admin/studio/videos/[id]?id=$1" },
+    { "src": "/api/admin/studio/videos", "dest": "/api/admin/studio/videos/index" },
     { "src": "/api/preview/([^/]+)/approve", "dest": "/api/preview/[token]/approve?token=$1" },
     { "src": "/api/preview/([^/]+)/download", "dest": "/api/preview/[token]/download?token=$1" },
+    { "src": "/api/preview/([^/]+)/events", "dest": "/api/preview/[token]/events?token=$1" },
     { "src": "/api/preview/([^/]+)", "dest": "/api/preview/[token]?token=$1" },
     { "src": "/api/share/([^/]+)", "dest": "/api/share/[token]?token=$1" },
     { "src": "/api/account/(.*)", "dest": "/api/account/$1" },
     { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/preview/([^/]+)/embed", "dest": "/index.html" },
     { "src": "/preview/([^/]+)", "dest": "/api/preview-page/[token]?token=$1" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]

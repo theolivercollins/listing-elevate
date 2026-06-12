@@ -26,10 +26,12 @@ try {
   content = '';
 }
 
-// Helper: extract the text of the LAST fenced block (our appended block)
-// We use the comment sentinel "/* ── Ambient motion" to locate it.
+// Helper: extract the text of the LAST fenced block (our appended block).
+// Keyed on the section-header text, which sits on its own line inside the
+// box-drawing comment (the "Ambient motion — ..." header), so the marker
+// matches the real comment format in v2.css.
 function getAmbientBlock(): string {
-  const marker = '/* ── Ambient motion';
+  const marker = 'Ambient motion — animated accents';
   const idx = content.lastIndexOf(marker);
   if (idx === -1) return '';
   return content.slice(idx);
@@ -116,7 +118,8 @@ describe('v2.css ambient-motion block', () => {
   it('should define .le-ambient base class with position:absolute and pointer-events:none', () => {
     const ambientBlock = getAmbientBlock();
     expect(ambientBlock).toContain('.le-ambient');
-    expect(ambientBlock).toContain('pointer-events:none');
+    // Tolerate the optional space after the colon (the real CSS is `pointer-events: none`).
+    expect(ambientBlock).toMatch(/pointer-events:\s*none/);
   });
 
   it('should define .le-ambient-dots with radial-gradient using var(--le-brand-blue-rgb)', () => {

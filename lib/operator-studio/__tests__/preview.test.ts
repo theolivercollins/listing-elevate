@@ -14,7 +14,7 @@ vi.mock('../ingest', () => ({
   toPublicPhotoUrl: (path: string) => mockToPublicPhotoUrl(path),
 }));
 
-import { createPreviewLink, fetchByToken, recordPreviewView, insertClientNote, resolveHeroPhotoUrl, isVideoUrl } from '../preview';
+import { createPreviewLink, fetchByToken, recordPreviewView, insertClientNote, resolveHeroPhotoUrl, isVideoUrl, insertViewEvent, aggregateViewEvents } from '../preview';
 
 beforeEach(() => {
   mockFrom.mockReset();
@@ -50,6 +50,26 @@ describe('createPreviewLink', () => {
     expect(insert).toHaveBeenCalledWith(expect.objectContaining({ expires_at: '2099-01-01T00:00:00Z' }));
     expect(row.id).toBe('pv2');
   });
+
+  it('persists label when provided (round-trip)', async () => {
+    const insert = vi.fn().mockReturnThis();
+    const select = vi.fn().mockReturnThis();
+    const single = vi.fn().mockResolvedValue({ data: { id: 'pv3', token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', property_id: 'p1', label: 'Sent to Brian' }, error: null });
+    mockFrom.mockReturnValue({ insert, select, single });
+    const row = await createPreviewLink('p1', null, 'client', 'Sent to Brian');
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ label: 'Sent to Brian' }));
+    expect(row.label).toBe('Sent to Brian');
+  });
+
+  it('omits label from the insert when not provided', async () => {
+    const insert = vi.fn().mockReturnThis();
+    const select = vi.fn().mockReturnThis();
+    const single = vi.fn().mockResolvedValue({ data: { id: 'pv4', token: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', property_id: 'p1' }, error: null });
+    mockFrom.mockReturnValue({ insert, select, single });
+    await createPreviewLink('p1');
+    const payload = insert.mock.calls[0][0] as Record<string, unknown>;
+    expect('label' in payload).toBe(false);
+  });
 });
 
 describe('fetchByToken', () => {
@@ -64,6 +84,22 @@ describe('fetchByToken', () => {
       .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'p1', address: '1 Oak', client_id: null } }) }) }) });
     const r = await fetchByToken('t');
     expect(r?.expired).toBe(true);
+  });
+
+  it('marks expired when revoked_at is set (even with no expiry)', async () => {
+    mockFrom
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { property_id: 'p1', expires_at: null, revoked_at: '2026-06-11T00:00:00Z' } }) }) }) })
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'p1', address: '1 Oak', client_id: null } }) }) }) });
+    const r = await fetchByToken('t');
+    expect(r?.expired).toBe(true);
+  });
+
+  it('does not mark expired when revoked_at is null and not past expiry', async () => {
+    mockFrom
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { property_id: 'p1', expires_at: null, revoked_at: null } }) }) }) })
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { id: 'p1', address: '1 Oak', client_id: null } }) }) }) });
+    const r = await fetchByToken('t');
+    expect(r?.expired).toBe(false);
   });
 
   it('marks not-expired when expires_at is null', async () => {
@@ -257,5 +293,88 @@ describe('resolveHeroPhotoUrl', () => {
     const url = await resolveHeroPhotoUrl(fakeDb() as ReturnType<typeof import('../../client').getSupabase>, 'p1');
     // toPublicPhotoUrl is a pass-through for already-absolute URLs
     expect(url).toBe('https://example.supabase.co/storage/v1/object/public/property-photos/uuid/photo.jpg');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// insertViewEvent — append-only beacon insert, pre-migration safe
+// ---------------------------------------------------------------------------
+
+describe('insertViewEvent', () => {
+  it('inserts a preview_view_events row with clamped strings', async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({ insert });
+    await insertViewEvent({ preview_id: 'pv1', session_id: 's1', event: 'play', position_seconds: 12, orientation: 'horizontal' });
+    expect(mockFrom).toHaveBeenCalledWith('preview_view_events');
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ preview_id: 'pv1', session_id: 's1', event: 'play', position_seconds: 12, orientation: 'horizontal' }));
+  });
+
+  it('does not throw when the DB insert returns an error (pre-migration safe)', async () => {
+    const insert = vi.fn().mockResolvedValue({ error: { message: 'relation "preview_view_events" does not exist' } });
+    mockFrom.mockReturnValue({ insert });
+    await expect(insertViewEvent({ preview_id: 'pv1', session_id: 's1', event: 'view' })).resolves.toBeUndefined();
+  });
+
+  it('does not throw when the insert call itself rejects', async () => {
+    const insert = vi.fn().mockRejectedValue(new Error('network down'));
+    mockFrom.mockReturnValue({ insert });
+    await expect(insertViewEvent({ preview_id: 'pv1', session_id: 's1', event: 'view' })).resolves.toBeUndefined();
+  });
+
+  it('clamps user_agent and referrer to 512 chars', async () => {
+    const insert = vi.fn().mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({ insert });
+    const long = 'x'.repeat(900);
+    await insertViewEvent({ preview_id: 'pv1', session_id: 's1', event: 'view', user_agent: long, referrer: long });
+    const payload = insert.mock.calls[0][0] as { user_agent: string; referrer: string };
+    expect(payload.user_agent.length).toBe(512);
+    expect(payload.referrer.length).toBe(512);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// aggregateViewEvents — pure distinct-session math (DB-free, unit-testable)
+// ---------------------------------------------------------------------------
+
+describe('aggregateViewEvents', () => {
+  it('returns zeroes for an empty event list', () => {
+    const r = aggregateViewEvents([]);
+    expect(r).toEqual({ total_plays: 0, unique_viewers: 0, avg_completion_pct: 0 });
+  });
+
+  it('dedupes plays by session and counts distinct viewers across all events', () => {
+    // s1 plays twice (counts once), s2 plays once, s3 only viewed (no play)
+    const r = aggregateViewEvents([
+      { session_id: 's1', event: 'view' },
+      { session_id: 's1', event: 'play' },
+      { session_id: 's1', event: 'play' },
+      { session_id: 's2', event: 'play' },
+      { session_id: 's3', event: 'view' },
+    ]);
+    expect(r.total_plays).toBe(2); // distinct sessions with a play: s1, s2
+    expect(r.unique_viewers).toBe(3); // distinct session_id across all events: s1, s2, s3
+  });
+
+  it('computes avg completion from the max milestone per session', () => {
+    // s1 reached progress_75 (75%), s2 reached complete (100%), s3 only played (0%)
+    const r = aggregateViewEvents([
+      { session_id: 's1', event: 'play' },
+      { session_id: 's1', event: 'progress_25' },
+      { session_id: 's1', event: 'progress_75' },
+      { session_id: 's2', event: 'play' },
+      { session_id: 's2', event: 'complete' },
+      { session_id: 's3', event: 'play' },
+    ]);
+    // avg over sessions that have a play: (75 + 100 + 0) / 3 = 58.33 → rounded 58
+    expect(r.avg_completion_pct).toBe(58);
+  });
+
+  it('maps each milestone event to its completion percentage', () => {
+    const r = aggregateViewEvents([
+      { session_id: 'a', event: 'progress_25' },
+      { session_id: 'b', event: 'progress_50' },
+    ]);
+    // a=25, b=50 → avg 37.5 → 38
+    expect(r.avg_completion_pct).toBe(38);
   });
 });
