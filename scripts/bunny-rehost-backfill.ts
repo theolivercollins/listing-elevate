@@ -41,8 +41,8 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-// Migration deploy timestamp — filter rows updated on or after this (UTC).
-// Use the full day for safety (catches rows updated anywhere on 2026-06-12).
+// Migration deploy timestamp — filter rows created/updated on or after this (UTC).
+// Use the full day for safety (catches rows anywhere on 2026-06-12).
 const BACKFILL_CUTOFF = "2026-06-12T00:00:00Z";
 
 // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ function getSupabaseAdmin() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function isProviderUrl(url: string): boolean {
+export function isProviderUrl(url: string): boolean {
   // Provider URLs: raw Kling (klingai.com), Atlas/Aliyun (aliyuncs.com),
   // Runway (runware), Veo (generativelanguage.googleapis.com).
   // NOT a provider URL: Bunny CDN (b-cdn.net), Supabase Storage (supabase.co/storage).
@@ -86,7 +86,7 @@ interface SceneRow {
   property_id: string;
   scene_number: number;
   clip_url: string;
-  updated_at: string;
+  submitted_at: string; // scenes has no updated_at/created_at; submitted_at is the right timestamp
 }
 
 interface VariantRow {
@@ -141,11 +141,14 @@ async function main() {
   const results: BackfillResult[] = [];
 
   // ── 1. scenes table ───────────────────────────────────────────────────────
+  // NOTE: scenes table has NO updated_at or created_at column. Its timestamp
+  // columns are submitted_at and replaced_at. We filter on submitted_at to
+  // target rows submitted since the Bunny migration deploy on 2026-06-12.
   const { data: scenes, error: scenesErr } = await supabase
     .from("scenes")
-    .select("id, property_id, scene_number, clip_url, updated_at")
+    .select("id, property_id, scene_number, clip_url, submitted_at")
     .not("clip_url", "is", null)
-    .gte("updated_at", BACKFILL_CUTOFF);
+    .gte("submitted_at", BACKFILL_CUTOFF);
 
   if (scenesErr) {
     console.error("Failed to query scenes:", scenesErr.message);
@@ -348,7 +351,12 @@ function logResult(r: BackfillResult) {
   console.log(`  [${r.table}/${r.rowId.slice(0, 8)}] ${status}`);
 }
 
-main().catch((e) => {
-  console.error("BACKFILL FAILED:", e);
-  process.exit(1);
-});
+// Guard: only run main() when this file is the direct entry point (not imported
+// by tests). ESM entry-point check using import.meta.url vs process.argv[1].
+import { fileURLToPath } from "node:url";
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((e) => {
+    console.error("BACKFILL FAILED:", e);
+    process.exit(1);
+  });
+}
