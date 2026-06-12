@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import type { Property, DailyStat } from "@/lib/types";
-import type { CostBreakdown } from "@/lib/api";
-import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown } from "@/lib/api";
+import type { CostBreakdown, ModelHealthRow, ModelHealthResponse } from "@/lib/api";
+import { fetchProperties, fetchDailyStats, fetchStatsOverview, fetchCostBreakdown, fetchModelHealth } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   PageHeading,
@@ -12,7 +12,6 @@ import {
   Bars,
   Ring,
   PropertyThumb,
-  AIBanner,
   MiniStat,
   ActivityItem,
   SectionTitle,
@@ -171,6 +170,212 @@ function agentSparkline(agentName: string, allProps: Property[]): number[] {
   return buckets;
 }
 
+// ─── Needs-you strip: urgency signals ────────────────────────────────────────
+interface NeedsYouItem {
+  key: string;
+  label: string;
+  count: number;
+  href: string;
+  urgent?: boolean;
+}
+
+function NeedsYouStrip({
+  needsReview,
+  failedToday,
+}: {
+  needsReview: number;
+  failedToday: number;
+}) {
+  const items: NeedsYouItem[] = [];
+
+  if (needsReview > 0) {
+    items.push({
+      key: "review",
+      label: `${needsReview} ${needsReview === 1 ? "needs" : "need"} review`,
+      count: needsReview,
+      href: "/dashboard/properties?status=needs_review",
+      urgent: needsReview > 3,
+    });
+  }
+
+  if (failedToday > 0) {
+    items.push({
+      key: "failed",
+      label: `${failedToday} render${failedToday === 1 ? "" : "s"} failed today`,
+      count: failedToday,
+      href: "/dashboard/logs",
+      urgent: true,
+    });
+  }
+
+  const allClear = items.length === 0;
+
+  return (
+    <div
+      data-testid="needs-you-strip"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "12px 16px",
+        borderRadius: 12,
+        background: allClear ? "rgba(47, 138, 85, 0.06)" : "rgba(210, 95, 60, 0.06)",
+        border: `1px solid ${allClear ? "rgba(47, 138, 85, 0.18)" : "rgba(210, 95, 60, 0.18)"}`,
+        marginBottom: 16,
+        flexWrap: "wrap" as const,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11.5,
+          fontWeight: 600,
+          letterSpacing: "0.06em",
+          textTransform: "uppercase" as const,
+          color: allClear ? "var(--good)" : "var(--warn)",
+          marginRight: 4,
+          flexShrink: 0,
+        }}
+      >
+        {allClear ? "Needs you" : "Needs you"}
+      </span>
+      {allClear ? (
+        <span
+          data-testid="needs-you-all-clear"
+          style={{ fontSize: 13, color: "var(--good)", fontWeight: 500 }}
+        >
+          All clear — nothing requires your attention right now.
+        </span>
+      ) : (
+        <>
+          {items.map((item, i) => (
+            <span key={item.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {i > 0 && (
+                <span style={{ width: 3, height: 3, borderRadius: 999, background: "var(--muted-2)", flexShrink: 0 }} />
+              )}
+              <Link
+                to={item.href}
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: item.urgent ? "var(--bad)" : "var(--warn)",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                <Icon name="chevron-right" size={11} />
+                {item.label}
+              </Link>
+            </span>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Provider health row ──────────────────────────────────────────────────────
+function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
+  if (rows.length === 0) return null;
+
+  // Balance alert: any provider with balance_errors_24h > 0
+  const balanceAlerts = rows.filter((r) => (r.balance_errors_24h ?? 0) > 0);
+
+  return (
+    <div
+      data-testid="provider-health-row"
+      style={{
+        display: "flex",
+        flexDirection: "column" as const,
+        gap: 8,
+        padding: "14px 16px",
+        borderRadius: 12,
+        background: "rgba(11,11,16,0.025)",
+        border: "1px solid var(--line-2)",
+        marginBottom: 16,
+      }}
+    >
+      {/* Balance / 402 alert — named, loud */}
+      {balanceAlerts.length > 0 && (
+        <div
+          data-testid="provider-balance-alert"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "rgba(220, 38, 38, 0.08)",
+            border: "1px solid rgba(220, 38, 38, 0.22)",
+            marginBottom: 8,
+          }}
+        >
+          <Icon name="activity" size={14} style={{ color: "var(--bad)", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--bad)" }}>
+            Balance error —{" "}
+            {balanceAlerts.map((r) => r.provider).join(", ")}
+            {balanceAlerts.length === 1 ? " has" : " have"} insufficient credit
+            ({balanceAlerts.reduce((s, r) => s + (r.balance_errors_24h ?? 0), 0)} × HTTP 402 in 24h)
+          </span>
+          <Link
+            to="/dashboard/development/system-status"
+            style={{ marginLeft: "auto", fontSize: 12, color: "var(--bad)", textDecoration: "none", fontWeight: 500, flexShrink: 0 }}
+          >
+            View health →
+          </Link>
+        </div>
+      )}
+
+      {/* Per-provider error rate chips */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" as const, color: "var(--muted)", marginRight: 4, flexShrink: 0 }}>
+          Providers · 24h
+        </span>
+        {rows.map((r) => {
+          const errorRate = r.calls_24h > 0 ? r.failures_24h / r.calls_24h : 0;
+          const hasBalanceError = (r.balance_errors_24h ?? 0) > 0;
+          const isHealthy = errorRate < 0.05 && !hasBalanceError;
+          const isWarn = !isHealthy && errorRate < 0.2 && !hasBalanceError;
+          const statusColor = hasBalanceError ? "var(--bad)" : isHealthy ? "var(--good)" : isWarn ? "var(--warn)" : "var(--bad)";
+          return (
+            <span
+              key={r.provider}
+              title={`${r.provider}: ${r.calls_24h} calls, ${r.failures_24h} failures${hasBalanceError ? `, ${r.balance_errors_24h} balance errors` : ""}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                fontSize: 12,
+                fontWeight: 500,
+                padding: "4px 10px",
+                borderRadius: 999,
+                background: isHealthy ? "rgba(47, 138, 85, 0.08)" : "rgba(210, 95, 60, 0.08)",
+                color: statusColor,
+                border: `1px solid ${isHealthy ? "rgba(47, 138, 85, 0.15)" : "rgba(210, 95, 60, 0.15)"}`,
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
+              {r.provider}
+              {r.calls_24h > 0 && (
+                <span style={{ opacity: 0.7 }}>
+                  {errorRate === 0 ? "ok" : `${Math.round(errorRate * 100)}% err`}
+                </span>
+              )}
+            </span>
+          );
+        })}
+        <Link
+          to="/dashboard/development/system-status"
+          style={{ fontSize: 12, color: "var(--muted)", textDecoration: "none", marginLeft: "auto", flexShrink: 0 }}
+        >
+          Details →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 interface OverviewProps {
   showAIBanner?: boolean;
 }
@@ -187,6 +392,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     avgProcessingMs: number;
   } | null>(null);
   const [costBreakdown, setCostBreakdown] = useState<CostBreakdown | null>(null);
+  const [modelHealth, setModelHealth] = useState<ModelHealthResponse | null>(null);
   const [chartRange, setChartRange] = useState<"7d" | "14d" | "30d">("14d");
   const [loading, setLoading] = useState(true);
 
@@ -194,19 +400,21 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [allRes, dailyRes, overviewRes, cbRes] = await Promise.all([
+        const [allRes, dailyRes, overviewRes, cbRes, mhRes] = await Promise.all([
           fetchProperties({ limit: 100 }),
           fetchDailyStats(30),
           fetchStatsOverview(),
           fetchCostBreakdown().catch(() => null),
+          fetchModelHealth().catch(() => null),
         ]);
         if (cancelled) return;
         setAllProps(allRes.properties);
         setDailyStatsData(dailyRes.stats);
         setStats(overviewRes);
         setCostBreakdown(cbRes);
+        setModelHealth(mhRes);
       } catch {
-        // fall through — sample data will be used
+        // fall through — live data not available; $0/0/— degradation applied below
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -358,6 +566,14 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
 
   const userName = deriveName(profile?.first_name, user?.email);
 
+  // ── Derived: failed renders today (from daily stats) ──────────────────────
+  const failedToday = DAILY && DAILY.length > 0
+    ? (DAILY[DAILY.length - 1]?.properties_failed ?? 0)
+    : 0;
+
+  // ── Provider health rows (for health strip) ────────────────────────────────
+  const healthRows = modelHealth?.rows ?? [];
+
   if (loading) {
     return (
       <div className="le-fade-up" style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
@@ -387,6 +603,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           </>
         }
       />
+
+      {/* ── Needs you strip ──────────────────────────────────────────── */}
+      <NeedsYouStrip needsReview={needsReviewCount} failedToday={failedToday} />
+
+      {/* ── Provider health row ──────────────────────────────────────── */}
+      <ProviderHealthRow rows={healthRows} />
 
       {/* ── KPI row ──────────────────────────────────────────────────── */}
       <section className="le-cols-2-lg le-stack-sm" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 16 }}>

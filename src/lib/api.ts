@@ -384,6 +384,8 @@ export interface ModelHealthRow {
   provider: string;
   calls_24h: number;
   failures_24h: number;
+  /** Count of HTTP 402 / balance / insufficient-credit errors in the last 24h. */
+  balance_errors_24h: number;
   p50_ms: number | null;
   p95_ms: number | null;
   last_at: string | null;

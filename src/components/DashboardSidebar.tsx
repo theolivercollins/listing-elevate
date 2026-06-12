@@ -40,20 +40,23 @@ const AGENT_SECTIONS: SidebarSection[] = [
 ];
 
 /**
- * Operator (admin) nav — full set, multiple sections.
+ * Operator (admin) nav — 3 sections: Operate / Studio / Business.
+ *
+ * Labels renamed from legacy values (Pipeline→Orders, Users→Agents,
+ * Overview→Today). URLs are unchanged — no redirects needed.
  */
 const OPERATOR_SECTIONS: SidebarSection[] = [
   {
-    label: "Workspace",
+    label: "Operate",
     items: [
-      { to: "/dashboard", label: "Overview", icon: "grid", end: true },
-      { to: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline" },
+      { to: "/dashboard", label: "Today", icon: "grid", end: true },
+      { to: "/dashboard/pipeline", label: "Orders", icon: "pipeline" },
       { to: "/dashboard/properties", label: "Listings", icon: "home" },
-      { to: "/dashboard/users", label: "Users", icon: "users" },
+      { to: "/dashboard/users", label: "Agents", icon: "users" },
     ],
   },
   {
-    label: "Ops",
+    label: "Studio",
     items: [
       {
         to: "/dashboard/studio/video",
@@ -77,6 +80,11 @@ const OPERATOR_SECTIONS: SidebarSection[] = [
           p.startsWith("/dashboard/blog/emails") ||
           p.startsWith("/dashboard/blog/email-templates"),
       },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
       { to: "/dashboard/finances", label: "Finances", icon: "dollar" },
       { to: "/dashboard/logs", label: "Logs", icon: "logs" },
       { to: "/dashboard/development/system-status", label: "System status", icon: "activity" },

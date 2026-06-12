@@ -113,11 +113,11 @@ describe("DashboardSidebar — role-based navigation", () => {
       expect(navItems.length).toBeGreaterThan(5);
     });
 
-    it("contains 'Overview' nav item for operator", () => {
+    it("contains 'Today' nav item for operator (renamed from 'Overview')", () => {
       const { container } = render(wrap());
       const navItems = Array.from(container.querySelectorAll(".le-nav-item"));
       const labels = navItems.map((el) => el.textContent?.trim() ?? "");
-      expect(labels.some((l) => l.includes("Overview"))).toBe(true);
+      expect(labels.some((l) => l.includes("Today"))).toBe(true);
     });
 
     it("does NOT show 'Client studio' in the sidebar for operators", () => {
