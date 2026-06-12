@@ -437,7 +437,7 @@ Banners are based on the LATEST iteration per session (not the union of all iter
 
 **Detail view (`/dashboard/development/prompt-lab/:sessionId`):** click-to-edit label in header; iteration stack with newest on top. Latest iteration has 2px foreground border + "Latest · active" pill. Older iterations muted. Each iteration card shows analysis summary, director prompt, retrieval chips ("Based on N similar wins" / "Recipe · archetype"), render controls on latest, rating widget + chat.
 
-**Render (async — shipped 2026-04-14 PM, concurrency guard 2026-04-15):** fire-and-forget. Render endpoint submits to Kling/Runway and stores `provider_task_id`. `/api/cron/poll-lab-renders` runs every minute in two phases: Phase 1 submits queued renders when a slot opens, Phase 2 finalizes in-flight renders (downloads clips, uploads to Supabase Storage `property-videos/prompt-lab/<session>/<iteration>.mp4`, sets `clip_url`). Safe to navigate away mid-render. Provider picker (Auto / Kling / Runway) on each render control.
+**Render (async — shipped 2026-04-14 PM, concurrency guard 2026-04-15):** fire-and-forget. Render endpoint submits to Kling/Runway and stores `provider_task_id`. `/api/cron/poll-lab-renders` runs every minute in two phases: Phase 1 submits queued renders when a slot opens, Phase 2 finalizes in-flight renders (downloads clips, uploads to Bunny Stream (library 679131); `clip_url` is set to the Bunny CDN URL). Safe to navigate away mid-render. Provider picker (Auto / Kling / Runway) on each render control.
 
 **Kling concurrency guard (shipped 2026-04-15):** `countKlingInFlight()` checks Lab + prod in-flight Kling jobs against 4-concurrent cap. Auto mode falls back to Runway when Kling is full. Explicit Kling selection queues the render (`render_queued_at` column, migration 012). Queued renders auto-submit when a slot opens; 30-min expiry. Violet "Queued — waiting for slot" UI indicator.
 
@@ -545,6 +545,7 @@ Development landing (`/dashboard/development`) shows:
 | Shotstack | Active if key set. Stage + prod keys exist in `.env`. Per-minute pricing: `SHOTSTACK_CENTS_PER_MINUTE=20` (Ingest plan). | |
 | OpenAI | Embeddings for Lab + prod scene retrieval (unified pool). `OPENAI_API_KEY` live in Vercel prod + preview. Costs tracked in `cost_events` since CI.2. |
 | Anthropic | Sonnet 4.6 (director, refine-prompt), Haiku 4.5 (scene chat, streaming SSE). Model-aware pricing since CI.1. |
+| **Bunny Stream** | Active (video hosting) | All finalized video clips (scenes, delivery variants, prompt-lab, listing-iteration clips) hosted on Bunny Stream library 679131 "ListingElevate". Env: `BUNNY_STREAM_API_KEY`, `BUNNY_STREAM_LIBRARY_ID`, `BUNNY_STREAM_CDN_HOSTNAME`. Non-video assets stay on Supabase Storage. `hostVideoOnBunny()` in `lib/providers/bunny-stream.ts`. Active from 2026-06-12. |
 
 ---
 
@@ -789,7 +790,7 @@ Lab iterations include analysis + director + render cost in `prompt_lab_iteratio
 - **Auto-promote 5★ to recipe** with cosine-distance dedup (0.2 threshold).
 - **Rating-weighted retrieval** — 5★ rank 15% closer than 4★ at same cosine distance.
 - **Save rating** button (no forced refine).
-- **Render persistence** — downloads provider CDN URL + re-uploads to Supabase Storage so clips survive CDN expiry + CORS.
+- **Render persistence** — downloads provider CDN URL + re-uploads to Bunny Stream (library 679131) so clips survive provider CDN expiry + CORS. Non-video assets (photos, audio, blog images) remain on Supabase Storage.
 - **Fire-and-forget render + cron finalizer** — render endpoint submits + returns; `/api/cron/poll-lab-renders` every minute downloads completed + sets clip_url. 30-min hard timeout.
 - **Render UI**: provider picker (Auto/Kling/Runway), pending badge, render_error display, "open in new tab" link.
 - **Rule-mining system** (M-L-4): DIRECTOR_PATCH_SYSTEM meta-prompt, mine endpoint, proposals page with diff + evidence buckets, apply → `lab_prompt_overrides` that Lab's director resolves at call time (prod untouched).
@@ -849,6 +850,8 @@ SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the liv
 | 080 | `delivery_pipeline` | `delivery_runs`, `scene_variants`, `ml_events` tables; run-scoped variant uniqueness; lifecycle-safe partial run index; `winner_source` enum (gemini\|operator\|default). Applied to shared Supabase 2026-06-10. |
 | 081 | `realtor_suffix` | `clients.realtor_suffix` boolean. Applied to shared Supabase 2026-06-10. |
 | 083 | `preview_links_v2` | `property_previews` +5 columns: `kind text CHECK('client','public') DEFAULT 'client'`, `allow_download boolean DEFAULT true`, `allow_approve boolean DEFAULT true`, `allow_revision boolean DEFAULT true`, `approved_at timestamptz`. `property_revision_notes.source` CHECK extended: `('operator','client_preview')` → `('operator','client_preview','client_approval')`. DDL defaults keep existing rows valid; kind-based creation defaults live in `createPreviewLink()`. Back-compat: GET read path safe pre-migration (fetchPreviewMeta returns null → capabilities default all-on); POST approve returns 503 pre-migration. **NOT yet applied to prod** — apply before Share dialog goes live. Branch `feat/preview-links-v2`. |
+| 084 | `scenes_provider_preference` | `scenes.provider_preference text` — sticky-provider fix: written at scene-creation time by `insertScenes`; read by `resubmitScene` to bias routing on reruns. **NOT yet applied to prod** — apply before `fix/max-quality-assembly` deploys. Branch `fix/max-quality-assembly`. |
+| 085 | `cost_events_bunny` | Widens `cost_events` provider CHECK constraint to add `'bunny'` and `'veo'`. Required by Bunny Stream video-hosting writes and forward-compatible with Veo. **NOT yet applied to prod** — apply before `fix/max-quality-assembly` deploys. Branch `fix/max-quality-assembly`. |
 
 ---
 

@@ -334,3 +334,23 @@ That probe was run (P1, 50¢, confirmed 1920×1080 @ 59.41 Mbps). The pending-ve
 gate is CLOSED. The next session is not blocked — this branch is ready for Oliver to
 review and promote (modulo the prod gates: apply migration 084, merge via PR --no-ff,
 run the vertical follow-up separately if desired).
+---
+
+## Addendum (2026-06-12, Bunny Stream hosting migration)
+
+The commits immediately following the session closure (ae012ba…64096de on branch `fix/max-quality-assembly`) extended the branch to migrate ALL video clip hosting from Supabase Storage to Bunny Stream. This supersedes the finalize-to-Supabase description in the session body.
+
+**What changed:**
+- `lib/assembly/finalize.ts` — finalized assembly output now uploaded via `hostVideoOnBunny()` (`lib/providers/bunny-stream.ts`) instead of Supabase Storage `property-videos/` bucket.
+- `api/cron/poll-scenes.ts` — scene clips uploaded to Bunny Stream on render completion; `clip_url` is a Bunny CDN URL.
+- `lib/delivery/variants.ts` — delivery variant clips (horizontal + vertical) hosted on Bunny Stream.
+- Prompt-lab (`poll-lab-renders`) and listing-iteration clip paths also migrated.
+- `bestMp4Res()` added: selects the highest available MP4 rendition (original > 1080p > 720p > …) rather than always requesting `play_720p.mp4`; HEAD-validates the URL before persisting with orphaned-Bunny-object cleanup on HEAD failure.
+- `bunnyWasCalled` flag added to cost rows for audit accuracy.
+- `LE_ASSEMBLY_FINALIZE=off` kill-switch preserved; graceful provider-URL fallback if Bunny hosting fails.
+- Non-video assets (photos, voiceover audio, blog images) stay on Supabase Storage — deferred until a Bunny Storage zone exists.
+- Migration 085 (`085_cost_events_bunny.sql`) widens the `cost_events` provider CHECK constraint to add `'bunny'` and `'veo'`.
+
+**Prod gates (in addition to migration 084):** apply migration 085 to shared Supabase; confirm Bunny library MP4 Fallback setting is enabled.
+
+Env vars `BUNNY_STREAM_API_KEY`, `BUNNY_STREAM_LIBRARY_ID`, `BUNNY_STREAM_CDN_HOSTNAME` were already set on Vercel (all envs) from the 2026-06-09 operator-studio creatives work; the pipeline now also relies on them.
