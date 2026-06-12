@@ -543,7 +543,7 @@ export default function AgentHome() {
   const eta = etaPhrase(delivered);
 
   return (
-    <div data-testid="agent-home" className="flex flex-col gap-6 p-6">
+    <div data-testid="agent-home" className="flex flex-col gap-6">
       {/* ── Page heading ────────────────────────────────────────────────── */}
       <PageHeading
         eyebrow="Your studio"
@@ -597,15 +597,8 @@ export default function AgentHome() {
                 actions={
                   <Link
                     to={`/upload/cancelled?property_id=${p.id}`}
-                    style={{
-                      fontSize: 12,
-                      fontWeight: 500,
-                      color: "var(--warn)",
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
+                    className="le-btn-ghost"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, textDecoration: "none" }}
                   >
                     <Icon name="external" size={11} />
                     Finish checkout
@@ -662,14 +655,8 @@ export default function AgentHome() {
                 actions={
                   <Link
                     to={`/status/${p.id}`}
-                    style={{
-                      fontSize: 12,
-                      color: "var(--accent)",
-                      textDecoration: "none",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
+                    className="le-btn-ghost"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, textDecoration: "none" }}
                   >
                     Track
                     <Icon name="external" size={11} />
@@ -713,14 +700,8 @@ export default function AgentHome() {
                           href={p.horizontal_video_url}
                           target="_blank"
                           rel="noreferrer"
-                          style={{
-                            fontSize: 12,
-                            color: "var(--ink)",
-                            textDecoration: "none",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
+                          className="le-btn-ghost"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, textDecoration: "none" }}
                         >
                           <Icon name="play" size={12} />
                           Watch

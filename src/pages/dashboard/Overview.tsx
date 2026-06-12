@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/auth";
 import {
   PageHeading,
   KpiCard,
-  StatusPill,
+  StatusChip,
   Sparkline,
   Bars,
   Ring,
@@ -18,9 +18,9 @@ import {
   fmtMoney,
   fmtRel,
   MoneyValue,
+  EmptyState,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
-import { EmptyState } from "@/components/dashboard/primitives";
 
 // ─── date helpers ────────────────────────────────────────────────────────────
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -841,9 +841,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {inProgressForUI.length === 0 && (
-              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
-                No properties in pipeline yet.
-              </div>
+              <EmptyState message="No properties in pipeline yet." icon="home" />
             )}
             {inProgressForUI.map((p) => (
               <div
@@ -864,7 +862,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     {p.address}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, fontSize: 12, color: "var(--muted)" }}>
-                    <StatusPill status={p.status} />
+                    <StatusChip status={p.status} />
                     <span>{p.photos} photos</span>
                     <span>· {p.agent}</span>
                   </div>
@@ -957,9 +955,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
           </div>
           <div className="le-table-scroll is-wide">
             {agentsForUI.length === 0 && (
-              <div style={{ padding: "28px 4px", fontSize: 13, color: "var(--muted)" }}>
-                Not enough delivered listings yet to rank agents.
-              </div>
+              <EmptyState message="Not enough delivered listings yet to rank agents." />
             )}
             {agentsForUI.map((a, i) => {
               // Always derive from live data — no synthetic fallback.

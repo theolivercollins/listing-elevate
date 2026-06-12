@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { Link } from "react-router-dom";
-import { PageHeading, Card, StatusPill } from "@/components/dashboard/primitives";
+import { PageHeading, Card, StatusChip, EmptyState } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
@@ -66,13 +66,15 @@ export default function AccountListings() {
               Loading...
             </div>
           ) : !properties?.length ? (
-            <div style={{ padding: "48px 14px", textAlign: "center" }}>
-              <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 16 }}>
-                You haven't submitted any listings yet.
-              </div>
-              <Link to="/upload" className="le-btn-dark" style={{ fontSize: 12, padding: "8px 20px", textDecoration: "none" }}>
-                Upload your first listing
-              </Link>
+            <div style={{ padding: "24px 14px" }}>
+              <EmptyState
+                message="You haven't submitted any listings yet."
+                icon="home"
+                cta={{
+                  label: "Upload your first listing",
+                  onClick: () => { window.location.href = "/upload"; },
+                }}
+              />
             </div>
           ) : (
             properties.map((p) => (
@@ -117,7 +119,7 @@ export default function AccountListings() {
                 >
                   {new Date(p.created_at).toLocaleDateString()}
                 </span>
-                <StatusPill status={p.status} />
+                <StatusChip status={p.status} />
                 <span style={{ display: "flex", justifyContent: "center", color: "var(--muted-2)" }}>
                   <Icon name="chevron-right" size={14} />
                 </span>
