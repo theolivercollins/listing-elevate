@@ -298,17 +298,76 @@ describe("RunDetail — draft panels", () => {
     expect(screen.getByTestId(`send-confirm-${EMAIL_ID_1}`)).toBeTruthy();
   });
 
-  it("(b4) confirming Send calls the rail URL exactly once with POST", async () => {
+  it("(b4) entering list IDs and confirming Send calls the rail exactly once with list_ids in the body", async () => {
     let sendCalled = 0;
+    let sentBody: Record<string, unknown> = {};
+
+    // Custom fetch mock that captures the request body to verify list_ids are passed.
+    const fetchMock = vi.fn(async (url: string, opts?: RequestInit) => {
+      const method = ((opts?.method ?? "GET") as string).toUpperCase();
+      if (url === `GET /api/blog/market-update/runs/run-001` || (method === "GET" && url === "/api/blog/market-update/runs/run-001")) {
+        return { ok: true, status: 200, json: async () => ({ run: RUN_GENERATED }) } as unknown as Response;
+      }
+      if (method === "GET" && url === `/api/blog/posts/${POST_ID_1}`) {
+        return { ok: true, status: 200, json: async () => POST_1_DRAFT } as unknown as Response;
+      }
+      if (method === "GET" && url === `/api/blog/posts/${POST_ID_2}`) {
+        return { ok: true, status: 200, json: async () => POST_2_LIVE } as unknown as Response;
+      }
+      if (method === "GET" && url === `/api/blog/emails/${EMAIL_ID_1}`) {
+        return { ok: true, status: 200, json: async () => EMAIL_1_DRAFT } as unknown as Response;
+      }
+      if (method === "POST" && url === `/api/blog/emails/${EMAIL_ID_1}/send`) {
+        sendCalled++;
+        sentBody = opts?.body ? JSON.parse(opts.body as string) : {};
+        return {
+          ok: true, status: 200,
+          json: async () => ({ ok: true, message_id: "msg-1", sent_to_list_ids: ["test123"], sendy_response: "ok" }),
+        } as unknown as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({ error: "Not Found" }) } as unknown as Response;
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const { default: MU } = await import("../MarketUpdate");
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={["/dashboard/studio/blog/market-update/run-001"]}>
+          <Routes>
+            <Route path="/dashboard/studio/blog/market-update/:id" element={<MU />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId(`draft-panel-email-${EMAIL_ID_1}`)).toBeTruthy();
+    });
+
+    // Click Send — shows the list input form, does NOT fire immediately
+    fireEvent.click(screen.getByTestId(`send-btn-${EMAIL_ID_1}`));
+
+    // Enter a list ID
+    const listInput = screen.getByTestId(`send-list-input-${EMAIL_ID_1}`);
+    fireEvent.change(listInput, { target: { value: "test123" } });
+
+    // Confirm send
+    fireEvent.click(screen.getByTestId(`send-confirm-${EMAIL_ID_1}`));
+
+    await waitFor(() => expect(sendCalled).toBe(1));
+    expect((sentBody as { list_ids?: string[] }).list_ids).toEqual(["test123"]);
+  });
+
+  it("(d) Send confirm button is disabled when list input is empty", async () => {
     const fetchMock = makeJsonFetch({
       "GET /api/blog/market-update/runs/run-001": () => ({ run: RUN_GENERATED }),
       [`GET /api/blog/posts/${POST_ID_1}`]: () => POST_1_DRAFT,
       [`GET /api/blog/posts/${POST_ID_2}`]: () => POST_2_LIVE,
       [`GET /api/blog/emails/${EMAIL_ID_1}`]: () => EMAIL_1_DRAFT,
-      [`POST /api/blog/emails/${EMAIL_ID_1}/send`]: () => {
-        sendCalled++;
-        return { ok: true, message_id: "msg-1", sent_to_list_ids: [], sendy_response: "ok" };
-      },
     });
 
     renderRunDetail(fetchMock);
@@ -318,9 +377,16 @@ describe("RunDetail — draft panels", () => {
     });
 
     fireEvent.click(screen.getByTestId(`send-btn-${EMAIL_ID_1}`));
-    fireEvent.click(screen.getByTestId(`send-confirm-${EMAIL_ID_1}`));
 
-    await waitFor(() => expect(sendCalled).toBe(1));
+    // List input appears, confirm button is disabled while input is empty
+    const confirmBtn = screen.getByTestId(`send-confirm-${EMAIL_ID_1}`);
+    expect((confirmBtn as HTMLButtonElement).disabled).toBe(true);
+
+    // Typing a value enables the button
+    fireEvent.change(screen.getByTestId(`send-list-input-${EMAIL_ID_1}`), {
+      target: { value: "abc123" },
+    });
+    expect((confirmBtn as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("(c) published/sent drafts show no action button", async () => {

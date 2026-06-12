@@ -321,7 +321,6 @@ function postStateLabel(state: string): string {
   };
   return MAP[state] ?? state;
 }
-
 function PostDraftPanel({ postId, label, runId }: { postId: string; label: string; runId: string }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
@@ -430,9 +429,25 @@ function emailStateLabel(state: string): string {
   return MAP[state] ?? state;
 }
 
+/**
+ * EmailDraftPanel — shows live state of the MU email draft and provides a two-step
+ * send action.
+ *
+ * Send resolution: api/blog/emails/[id]/send.ts resolves list IDs from:
+ *   1. POST body { list_ids }   — override (what we pass here)
+ *   2. row.recipients_json      — row-level default
+ *
+ * MU email rows are inserted without recipients_json (defaults to []).
+ * So we always pass list_ids from local state in the confirm step.
+ * Oliver enters the Sendy list ID(s) once per send action; previous values are
+ * not persisted (each run creates a new email row). This keeps the panel
+ * self-contained without a DB migration for a default list column.
+ */
 function EmailDraftPanel({ emailId, label, runId }: { emailId: string; label: string; runId: string }) {
   const qc = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  // Oliver types Sendy list IDs (comma-separated) before confirming the send.
+  const [listInput, setListInput] = useState("");
 
   const { data } = useQuery({
     queryKey: ["blog-email", emailId],
@@ -444,9 +459,17 @@ function EmailDraftPanel({ emailId, label, runId }: { emailId: string; label: st
   const isSent = SENT_EMAIL_STATES.has(state);
 
   const sendMut = useMutation({
-    mutationFn: () => sendEmail(emailId),
+    mutationFn: () => {
+      // Parse list IDs from the input field (comma-separated, trim whitespace).
+      const listIds = listInput
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      return sendEmail(emailId, listIds.length > 0 ? { list_ids: listIds } : undefined);
+    },
     onSuccess: () => {
       setConfirming(false);
+      setListInput("");
       qc.invalidateQueries({ queryKey: ["blog-email", emailId] });
       qc.invalidateQueries({ queryKey: ["mu-run", runId] });
       toast.success("Email sent via Sendy.");
@@ -469,53 +492,73 @@ function EmailDraftPanel({ emailId, label, runId }: { emailId: string; label: st
   return (
     <div
       data-testid={`draft-panel-email-${emailId}`}
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)" }}
+      style={{ display: "flex", flexDirection: confirming ? "column" : "row", alignItems: confirming ? "flex-start" : "center", gap: 10, padding: "12px 14px", border: "1px solid var(--line)", borderRadius: "var(--radius)", background: "var(--surface)" }}
     >
-      <Icon name="delivered" size={15} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {email?.subject ?? label}
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, width: "100%" }}>
+        <Icon name="delivered" size={15} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {email?.subject ?? label}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{label}</div>
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{label}</div>
-      </div>
-      <DraftStateBadge state={state} kind="email" />
-      <Link
-        to={`/dashboard/studio/email/messages/${emailId}`}
-        style={{ display: "inline-flex", alignItems: "center", color: "var(--muted)", padding: "4px 6px" }}
-        title="Open email detail"
-        aria-label="Open email detail"
-      >
-        <Icon name="external" size={13} />
-      </Link>
-      {!isSent && !confirming && (
-        <button
-          data-testid={`send-btn-${emailId}`}
-          onClick={() => setConfirming(true)}
-          disabled={sendMut.isPending || !email}
-          style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "1px solid var(--ink)", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink)", fontFamily: "var(--le-font-sans)", whiteSpace: "nowrap" }}
+        <DraftStateBadge state={state} kind="email" />
+        <Link
+          to={`/dashboard/studio/email/messages/${emailId}`}
+          style={{ display: "inline-flex", alignItems: "center", color: "var(--muted)", padding: "4px 6px" }}
+          title="Open email detail"
+          aria-label="Open email detail"
         >
-          <Icon name="delivered" size={11} strokeWidth={2} />
-          Send via Sendy
-        </button>
-      )}
+          <Icon name="external" size={13} />
+        </Link>
+        {!isSent && !confirming && (
+          <button
+            data-testid={`send-btn-${emailId}`}
+            onClick={() => setConfirming(true)}
+            disabled={sendMut.isPending || !email}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "1px solid var(--ink)", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--ink)", fontFamily: "var(--le-font-sans)", whiteSpace: "nowrap" }}
+          >
+            <Icon name="delivered" size={11} strokeWidth={2} />
+            Send via Sendy
+          </button>
+        )}
+      </div>
+
+      {/* Confirm row — list ID entry + send button */}
       {!isSent && confirming && (
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 12, color: "var(--bad)", fontWeight: 500 }}>Send to list now?</span>
-          <button
-            data-testid={`send-confirm-${emailId}`}
-            onClick={() => sendMut.mutate()}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", paddingTop: 4 }}>
+          <label style={{ fontSize: 12, color: "var(--muted)" }}>
+            Sendy list ID(s) to send to{" "}
+            <span style={{ color: "var(--bad)", fontWeight: 600 }}>*</span>
+            <span style={{ fontSize: 11, marginLeft: 6 }}>(comma-separate multiple)</span>
+          </label>
+          <input
+            data-testid={`send-list-input-${emailId}`}
+            className="le-input"
+            style={{ fontSize: 12, maxWidth: 380 }}
+            placeholder="e.g. abc123 or abc123, def456"
+            value={listInput}
+            onChange={(e) => setListInput(e.target.value)}
             disabled={sendMut.isPending}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "none", borderRadius: "var(--radius)", background: "var(--ink)", cursor: "pointer", fontSize: 12, fontWeight: 600, color: "var(--surface)", fontFamily: "var(--le-font-sans)" }}
-          >
-            {sendMut.isPending ? <SpinnerInline /> : "Yes, send"}
-          </button>
-          <button
-            onClick={() => setConfirming(false)}
-            disabled={sendMut.isPending}
-            style={{ padding: "5px 8px", border: "none", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
-          >
-            Cancel
-          </button>
+          />
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <button
+              data-testid={`send-confirm-${emailId}`}
+              onClick={() => sendMut.mutate()}
+              disabled={sendMut.isPending || !listInput.trim()}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 11px", border: "none", borderRadius: "var(--radius)", background: "var(--ink)", cursor: sendMut.isPending || !listInput.trim() ? "default" : "pointer", fontSize: 12, fontWeight: 600, color: "var(--surface)", fontFamily: "var(--le-font-sans)", opacity: !listInput.trim() ? 0.5 : 1 }}
+            >
+              {sendMut.isPending ? <SpinnerInline /> : "Yes, send"}
+            </button>
+            <button
+              onClick={() => { setConfirming(false); setListInput(""); }}
+              disabled={sendMut.isPending}
+              style={{ padding: "5px 8px", border: "none", borderRadius: "var(--radius)", background: "transparent", cursor: "pointer", fontSize: 12, color: "var(--muted)", fontFamily: "var(--le-font-sans)" }}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -527,6 +570,8 @@ function DraftStateBadge({ state, kind }: { state: string; kind: "post" | "email
   type ToneColor = { bg: string; fg: string; label: string };
 
   const postMap: Record<string, ToneColor> = {
+    // draft_ready is the state MU inserts — treat like a Draft before publish.
+    draft_ready:       { bg: "color-mix(in srgb, var(--muted) 12%, transparent)", fg: "var(--muted)", label: "Draft" },
     awaiting_approval: { bg: "color-mix(in srgb, var(--muted) 12%, transparent)", fg: "var(--muted)", label: "Draft" },
     publish_due:       { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Publish queued" },
     publishing:        { bg: "color-mix(in srgb, var(--accent) 12%, transparent)", fg: "var(--accent)", label: "Publishing…" },
