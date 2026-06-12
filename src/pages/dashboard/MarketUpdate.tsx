@@ -654,6 +654,7 @@ function StatusBadge({ status }: { status: string }) {
     ready: { bg: "color-mix(in srgb, var(--good) 14%, transparent)", fg: "var(--good)", label: "Ready" },
     needs_review: { bg: "color-mix(in srgb, var(--bad) 14%, transparent)", fg: "var(--bad)", label: "Needs review" },
     generated: { bg: "color-mix(in srgb, var(--accent) 14%, transparent)", fg: "var(--accent)", label: "Generated" },
+    failed: { bg: "color-mix(in srgb, var(--bad) 14%, transparent)", fg: "var(--bad)", label: "Failed" },
   };
   const s = map[status] ?? { bg: "var(--line-2)", fg: "var(--muted)", label: status };
   return <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: "var(--radius-pill)", background: s.bg, color: s.fg }}>{s.label}</span>;

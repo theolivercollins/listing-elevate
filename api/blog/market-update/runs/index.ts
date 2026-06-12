@@ -5,6 +5,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../../lib/auth.js";
 import { getSupabase } from "../../../../lib/client.js";
 import { analyzeRun, type RegionInput } from "../../../../lib/blog-engine/market-update/run.js";
+import { reapStuckRuns } from "../../../../lib/blog-engine/market-update/reaper.js";
 
 export const maxDuration = 120;
 
@@ -21,6 +22,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === "GET") {
     const limit = Math.min(Number(req.query.limit ?? 30), 100);
+    // Lazily reap any runs stuck in a transient status (e.g. "extracting")
+    // before returning data so the list never shows permanently-stuck rows.
+    await reapStuckRuns(supabase, site.id);
+
     const { data, error } = await supabase
       .from("market_update_runs")
       .select("id, period_month, period_year, status, created_post_ids, created_email_ids, cost_usd_cents, created_at, updated_at")
