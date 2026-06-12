@@ -2,6 +2,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
 import { verifyAuth } from '../../../lib/auth.js';
 
+// Statuses that any authenticated caller (owner or admin) may set.
+// The full set is available to admins only; owners are further restricted
+// to OWNER_PATCH_STATUSES so they cannot corrupt pipeline/ops state by
+// flipping their own orders to 'complete', 'delivered', or 'failed'.
 const ALLOWED_PATCH_STATUSES = new Set([
   'delivered',
   'archived',
@@ -9,6 +13,10 @@ const ALLOWED_PATCH_STATUSES = new Set([
   'needs_review',
   'failed',
 ]);
+
+// Non-admin owners may only archive their own properties — no other status
+// transition has a legitimate owner-facing use case today.
+const OWNER_PATCH_STATUSES = new Set(['archived']);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'PATCH') {
@@ -42,6 +50,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const isAdmin = auth.profile.role === 'admin';
       if (!isOwner && !isAdmin) {
         return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      // Non-admin owners are restricted to a safe subset of statuses so they
+      // cannot flip pending_payment → complete/delivered and corrupt ops state.
+      if (!isAdmin && !OWNER_PATCH_STATUSES.has(status)) {
+        return res.status(403).json({
+          error: `Forbidden: owners may only set status to: ${[...OWNER_PATCH_STATUSES].join(', ')}`,
+        });
       }
 
       const { error } = await getSupabase()

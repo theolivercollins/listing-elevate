@@ -133,9 +133,12 @@ describe('PATCH /api/properties/:id/status — auth guards', () => {
   });
 
   it('returns 200 when caller is the property owner', async () => {
+    // Owners are restricted to OWNER_PATCH_STATUSES (currently only 'archived').
+    // The default makeReq() body uses 'delivered' which is intentionally blocked
+    // for owners since the P2 auth-split fix; use 'archived' here.
     mockVerifyAuth.mockResolvedValue(ownerAuth);
     const res = makeRes();
-    await handler(makeReq(), res as unknown as VercelResponse);
+    await handler(makeReq({ body: { status: 'archived' } }), res as unknown as VercelResponse);
     expect(res._status).toBe(200);
     expect((res._body as { id: string }).id).toBe('prop-uuid-1');
   });
@@ -155,6 +158,49 @@ describe('PATCH /api/properties/:id/status — auth guards', () => {
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(400);
+  });
+
+  it('returns 403 when owner tries to set a status outside the owner-safe subset (e.g. complete)', async () => {
+    // P2 fix: owners may only set status=archived; other values that admins
+    // can set (complete, delivered, failed, needs_review) must be blocked for
+    // non-admin owners to prevent order-state corruption.
+    mockVerifyAuth.mockResolvedValue(ownerAuth);
+    const res = makeRes();
+    await handler(
+      makeReq({ body: { status: 'complete' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+  });
+
+  it('returns 403 when owner tries to set status=delivered', async () => {
+    mockVerifyAuth.mockResolvedValue(ownerAuth);
+    const res = makeRes();
+    await handler(
+      makeReq({ body: { status: 'delivered' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+  });
+
+  it('returns 200 when owner sets status=archived (the one allowed owner transition)', async () => {
+    mockVerifyAuth.mockResolvedValue(ownerAuth);
+    const res = makeRes();
+    await handler(
+      makeReq({ body: { status: 'archived' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+  });
+
+  it('returns 200 when admin sets status=delivered (admins bypass owner restriction)', async () => {
+    mockVerifyAuth.mockResolvedValue(adminAuth);
+    const res = makeRes();
+    await handler(
+      makeReq({ body: { status: 'delivered' } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
   });
 });
 
