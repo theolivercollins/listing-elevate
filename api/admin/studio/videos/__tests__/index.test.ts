@@ -222,4 +222,75 @@ describe('GET /api/admin/studio/videos — listing', () => {
     await handler(makeReq(), res as unknown as VercelResponse);
     expect(res._status).toBe(500);
   });
+
+  // REGRESSION: approved_at lives on property_previews, NOT on properties.
+  // Selecting it from properties causes Postgres 42703 undefined_column → 500.
+  it('does NOT select approved_at from the properties table', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: [], count: 0, error: null },
+      captured,
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    const propsQuery = captured.find((c) => c.table === 'properties')!;
+    const selectFilter = propsQuery.filters.find((f) => f.op === 'select');
+    expect(selectFilter).toBeDefined();
+    // The first arg to .select() is the column string — must NOT contain approved_at.
+    expect(String(selectFilter!.args[0])).not.toContain('approved_at');
+  });
+
+  // REGRESSION: approved_at must still surface on items — derived from property_previews.
+  it('derives approved_at from property_previews (most recent non-null wins)', async () => {
+    const captured: Captured[] = [];
+    const props = [
+      {
+        id: 'p1',
+        address: '1 Approved Ave',
+        horizontal_video_url: 'https://cdn/h1.mp4',
+        vertical_video_url: null,
+        created_at: '2026-06-01T00:00:00Z',
+        client: null,
+      },
+      {
+        id: 'p2',
+        address: '2 Pending Blvd',
+        horizontal_video_url: 'https://cdn/h2.mp4',
+        vertical_video_url: null,
+        created_at: '2026-06-01T00:00:00Z',
+        client: null,
+      },
+    ];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: props, count: 2, error: null },
+      previews: {
+        data: [
+          // p1 has two links: one approved, one not
+          { property_id: 'p1', viewed_count: 2, approved_at: '2026-06-10T12:00:00Z' },
+          { property_id: 'p1', viewed_count: 1, approved_at: null },
+          // p2 has no approved links
+          { property_id: 'p2', viewed_count: 5, approved_at: null },
+        ],
+        error: null,
+      },
+      captured,
+    }));
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { items: Array<{ id: string; approved_at: string | null }> };
+    const p1 = body.items.find((i) => i.id === 'p1')!;
+    const p2 = body.items.find((i) => i.id === 'p2')!;
+    // p1 has a non-null approved_at from a link
+    expect(p1.approved_at).toBe('2026-06-10T12:00:00Z');
+    // p2 has no approved links → null
+    expect(p2.approved_at).toBeNull();
+
+    // The property_previews query must select approved_at
+    const pvQuery = captured.find((c) => c.table === 'property_previews')!;
+    const pvSelect = pvQuery.filters.find((f) => f.op === 'select');
+    expect(pvSelect).toBeDefined();
+    expect(String(pvSelect!.args[0])).toContain('approved_at');
+  });
 });
