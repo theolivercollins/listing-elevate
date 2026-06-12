@@ -329,4 +329,77 @@ describe("AgentHome", () => {
     // Hard rule: NO digits — qualitative phrase only, no countdown / invented number
     expect(eta.textContent ?? "").not.toMatch(/\d/);
   });
+
+  // ── WS4b: Hero card for newest delivered order ─────────────────────────────
+
+  it("renders newest delivered order with horizontal_video_url as hero card with Watch/Download/Share actions", async () => {
+    // newest = higher created_at
+    const olderDelivered = {
+      ...deliveredOrder,
+      id: "prop-older-001",
+      address: "10 Old Street",
+      created_at: new Date(Date.now() - 2 * 86400000).toISOString(), // 2 days ago
+      horizontal_video_url: "https://cdn.example.com/older.mp4",
+    };
+    const newestDelivered = {
+      ...deliveredOrder,
+      id: "prop-newest-001",
+      address: "99 New Avenue",
+      created_at: new Date(Date.now() - 3600000).toISOString(), // 1 hour ago
+      horizontal_video_url: "https://cdn.example.com/newest.mp4",
+    };
+
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      // complete fetch returns both orders (older first to test sort)
+      .mockResolvedValueOnce({ properties: [olderDelivered, newestDelivered], total: 2 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("99 New Avenue")).toBeTruthy();
+    });
+
+    // Hero card present for newest
+    expect(screen.getByTestId("delivered-hero-card")).toBeTruthy();
+
+    // All three actions present
+    expect(screen.getByTestId("hero-action-watch")).toBeTruthy();
+    expect(screen.getByTestId("hero-action-download")).toBeTruthy();
+    expect(screen.getByTestId("hero-action-share")).toBeTruthy();
+
+    // Older order renders as a compact row (not a hero)
+    expect(screen.getByText("10 Old Street")).toBeTruthy();
+    // No second hero card
+    expect(screen.getAllByTestId("delivered-hero-card")).toHaveLength(1);
+  });
+
+  it("degrades newest delivered order WITHOUT horizontal_video_url to compact row (no hero)", async () => {
+    const noVideoDelivered = {
+      ...deliveredOrder,
+      id: "prop-novideo-001",
+      address: "5 Silent Road",
+      created_at: new Date(Date.now() - 3600000).toISOString(),
+      horizontal_video_url: null,
+    };
+
+    mockFetchProperties
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [noVideoDelivered], total: 1 })
+      .mockResolvedValueOnce({ properties: [], total: 0 })
+      .mockResolvedValueOnce({ properties: [], total: 0 });
+
+    render(wrap());
+
+    await waitFor(() => {
+      expect(screen.queryByText("5 Silent Road")).toBeTruthy();
+    });
+
+    // No hero card rendered
+    expect(screen.queryByTestId("delivered-hero-card")).toBeNull();
+    // No play button overlay
+    expect(screen.queryByTestId("hero-action-watch")).toBeNull();
+  });
 });

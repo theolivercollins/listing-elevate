@@ -273,6 +273,180 @@ function OrderRow({ property, actions, note }: OrderRowProps) {
   );
 }
 
+// ─── Download icon (not in icons.tsx — inline SVG matching the shared style) ──
+function DownloadIcon({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 5v10M7 15l5 5 5-5" />
+      <path d="M3 20h18" />
+    </svg>
+  );
+}
+
+// ─── Hero card for the newest delivered order ─────────────────────────────────
+// Only rendered when the newest delivered order has horizontal_video_url.
+// Falls back to a compact OrderRow when there is no URL.
+interface DeliveredHeroProps {
+  property: Property;
+}
+
+function DeliveredHeroCard({ property }: DeliveredHeroProps) {
+  const url = property.horizontal_video_url!;
+  const hue = hueFromId(property.id);
+
+  return (
+    <div
+      data-testid="delivered-hero-card"
+      style={{
+        borderRadius: 14,
+        overflow: "hidden",
+        border: "1px solid var(--line-2)",
+        marginBottom: 16,
+      }}
+    >
+      {/* Poster + play overlay */}
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Watch video for ${property.address}`}
+        style={{
+          display: "block",
+          position: "relative",
+          aspectRatio: "16/9",
+          background: `hsl(${hue} 40% 14%)`,
+          textDecoration: "none",
+          overflow: "hidden",
+        }}
+      >
+        {/* PropertyThumb fills the poster surface */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <PropertyThumb hue={hue} size={80} />
+        </div>
+        {/* Play button overlay */}
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.28)",
+          }}
+        >
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: "50%",
+              background: "rgba(255,255,255,0.92)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.28)",
+            }}
+          >
+            <Icon name="play" size={20} style={{ color: "var(--ink)", marginLeft: 2 }} />
+          </div>
+        </div>
+      </a>
+
+      {/* Address + actions */}
+      <div
+        style={{
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          background: "var(--surface-2, var(--surface))",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--ink)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {property.address}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted-2)", marginTop: 2 }}>
+            {fmtRel(property.created_at)}
+          </div>
+        </div>
+
+        {/* Three flat actions: Watch · Download · Share */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+          {/* Watch */}
+          <a
+            data-testid="hero-action-watch"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="le-btn-ghost"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              textDecoration: "none",
+            }}
+          >
+            <Icon name="play" size={12} />
+            Watch
+          </a>
+
+          {/* Download */}
+          <a
+            data-testid="hero-action-download"
+            href={url}
+            download
+            className="le-btn-ghost"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              textDecoration: "none",
+            }}
+          >
+            <DownloadIcon size={12} />
+            Download
+          </a>
+
+          {/* Share — same CopyButton mechanic, relabeled */}
+          <span data-testid="hero-action-share">
+            <CopyButton value={url} label="Share" />
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Section wrapper ──────────────────────────────────────────────────────────
 function Section({ children }: { children: React.ReactNode }) {
   return (
@@ -508,47 +682,64 @@ export default function AgentHome() {
       )}
 
       {/* ── Delivered ─────────────────────────────────────────────────── */}
-      {!loading && delivered.length > 0 && (
-        <Section>
-          <SectionTitle eyebrow="Ready to share" title="Delivered" />
-          <div style={{ marginTop: 16 }}>
-            {delivered.map((p) => (
-              <OrderRow
-                key={p.id}
-                property={p}
-                actions={
-                  <>
-                    {p.horizontal_video_url && (
-                      <a
-                        href={p.horizontal_video_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          fontSize: 12,
-                          color: "var(--ink)",
-                          textDecoration: "none",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <Icon name="play" size={12} />
-                        Watch
-                      </a>
-                    )}
-                    {p.horizontal_video_url && (
-                      <CopyButton
-                        value={p.horizontal_video_url}
-                        label="Copy link"
-                      />
-                    )}
-                  </>
-                }
-              />
-            ))}
-          </div>
-        </Section>
-      )}
+      {!loading && delivered.length > 0 && (() => {
+        // Sort by created_at descending to identify the newest order
+        const sortedDelivered = [...delivered].sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        const [newestDelivered, ...olderDelivered] = sortedDelivered;
+        // Only use the hero card when the newest order has a video URL
+        const showHero = !!newestDelivered?.horizontal_video_url;
+        const heroOrder = showHero ? newestDelivered : null;
+        // Compact rows: older delivered + newest if it has no video URL
+        const compactOrders = showHero ? olderDelivered : sortedDelivered;
+
+        return (
+          <Section>
+            <SectionTitle eyebrow="Ready to share" title="Delivered" />
+            <div style={{ marginTop: 16 }}>
+              {/* Hero card for newest delivered order (when it has a video) */}
+              {heroOrder && <DeliveredHeroCard property={heroOrder} />}
+
+              {/* Compact rows for all older delivered orders */}
+              {compactOrders.map((p) => (
+                <OrderRow
+                  key={p.id}
+                  property={p}
+                  actions={
+                    <>
+                      {p.horizontal_video_url && (
+                        <a
+                          href={p.horizontal_video_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            fontSize: 12,
+                            color: "var(--ink)",
+                            textDecoration: "none",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <Icon name="play" size={12} />
+                          Watch
+                        </a>
+                      )}
+                      {p.horizontal_video_url && (
+                        <CopyButton
+                          value={p.horizontal_video_url}
+                          label="Copy link"
+                        />
+                      )}
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          </Section>
+        );
+      })()}
     </div>
   );
 }
