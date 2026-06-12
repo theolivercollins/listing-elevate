@@ -93,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const items = await Promise.all(
     rows.map(async (r) => {
       const client = Array.isArray(r.client) ? r.client[0] ?? null : r.client;
-      const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0 };
+      const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0, approved_at: null };
       return {
         id: r.id,
         address: r.address,
