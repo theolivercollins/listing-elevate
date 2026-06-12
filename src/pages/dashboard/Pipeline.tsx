@@ -1,7 +1,7 @@
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useEffect } from "react";
 import type { Property, Scene, DailyStat } from "@/lib/types";
 import { fetchProperties, fetchProperty, fetchStatsOverview, fetchDailyStats, approveScene, retryScene, resubmitScene, skipScene } from "@/lib/api";
-import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
+import { HealthCard, StatusChip, PropertyThumb, Card, SectionTitle, SkeletonRow, fmtRel, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { SAMPLE_STAGES } from "@/components/dashboard/sample-data";
 import type { SampleProperty, SampleReviewScene } from "@/components/dashboard/sample-data";
@@ -37,36 +37,8 @@ function hueForId(id: string): number {
   return 200 + (h % 160);
 }
 
-// ─── Style constants ──────────────────────────────────────────────
-const ghostBtn: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 6,
-  padding: "8px 12px", borderRadius: 10,
-  border: "1px solid rgba(15,24,60,0.08)", background: "rgba(255,255,255,0.5)",
-  color: "var(--ink-2)", fontSize: 12, fontWeight: 500, cursor: "pointer",
-  fontFamily: "var(--le-font-sans)",
-};
-
-const primaryAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "9px 14px", borderRadius: 10,
-  background: "var(--ink)", color: "#fff", border: "none",
-  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-  boxShadow: "0 6px 18px -8px rgba(11,18,32,0.55), 0 1px 0 rgba(255,255,255,0.18) inset",
-};
-
-const secondaryAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "9px 14px", borderRadius: 10,
-  background: "rgba(255,255,255,0.7)", color: "var(--ink)", border: "1px solid rgba(15,24,60,0.1)",
-  fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-};
-
-const ghostAction: CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "center",
-  padding: "8px 14px", borderRadius: 10,
-  background: "transparent", color: "var(--muted)", border: "none",
-  fontSize: 11.5, fontWeight: 500, cursor: "pointer",
-};
+// Style constants removed — buttons now use .le-btn-ghost / .le-btn-dark CSS classes
+// to keep all border-radius and color values in the token layer.
 
 // ─── PipelineCard ─────────────────────────────────────────────────
 function PipelineCard({ property }: { property: SampleProperty }) {
@@ -200,21 +172,21 @@ function ReviewCard({
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Actions — token-based classes, no hardcoded radii or rgba colors */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", minWidth: 150 }}>
-        <button type="button" style={{ ...primaryAction, opacity }} disabled={actionLoading} onClick={onApprove}>
+        <button type="button" className="le-btn-dark" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onApprove}>
           <Icon name="check" size={14} />Approve
         </button>
-        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onResubmit}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onResubmit}>
           <Icon name="retry" size={14} />Resubmit
         </button>
-        <button type="button" style={{ ...secondaryAction, opacity }} disabled={actionLoading} onClick={onTryOther}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onTryOther}>
           <Icon name="retry" size={14} />Try {otherProvider}
         </button>
-        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onEditPrompt}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onEditPrompt}>
           <Icon name="sparkles" size={13} />Edit prompt
         </button>
-        <button type="button" style={{ ...ghostAction, opacity }} disabled={actionLoading} onClick={onSkip}>
+        <button type="button" className="le-btn-ghost" style={{ opacity, justifyContent: "center" }} disabled={actionLoading} onClick={onSkip}>
           <Icon name="skip" size={13} />Skip
         </button>
       </div>
@@ -375,11 +347,21 @@ const Pipeline = () => {
 
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ display: "flex", justifyContent: "center", padding: "96px 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, color: "var(--muted)", fontSize: 13 }}>
-          <Icon name="clock" size={16} />
-          Loading pipeline...
-        </div>
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <SkeletonRow />
+            </div>
+          ))}
+        </section>
+        <Card padding={20}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
@@ -432,7 +414,7 @@ const Pipeline = () => {
                 </button>
               ))}
             </div>
-            <button type="button" style={ghostBtn}>
+            <button type="button" className="le-btn-ghost">
               <Icon name="filter" size={14} />Filter
             </button>
           </div>

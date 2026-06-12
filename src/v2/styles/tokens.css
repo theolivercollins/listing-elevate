@@ -340,29 +340,50 @@
    ───────────────────────────────────────────────────────────────── */
 
 .le-dash-shell {
-  /* Color */
-  --bg:       #f3f3f5;
-  --surface:  #ffffff;
-  --ink:      #0b0b10;
-  --ink-2:    #2a2c34;
-  --muted:    #6b6f7a;
-  --muted-2:  #9aa0aa;
-  --line:     rgba(11, 11, 16, 0.07);
-  --line-2:   rgba(11, 11, 16, 0.04);
-  --accent:   #2a6fdb;
-  --good:     #2f8a55;
-  --warn:     #b6802c;
-  --bad:      #c44a4a;
+  /* ── Phase 2 color tokens — cooler ink, calmer neutrals ── */
+  /* ink: #0c0e16 replaces warmer #0b0b10; bg: #f4f5f8 replaces #f3f3f5  */
+  --bg:         #f4f5f8;
+  --bg-tint:    #eef1f7;
+  --surface:    #ffffff;
+  --surface-2:  #fbfcfe;
+  --ink:        #0c0e16;
+  --ink-2:      #2b2f3a;
+  --muted:      #656b7a;
+  --muted-2:    #9aa0ad;
+  --line:       rgba(12, 14, 22, 0.08);
+  --line-2:     rgba(12, 14, 22, 0.045);
+
+  /* Accent — kept at #2a6fdb exactly (from approved design) */
+  --accent:     #2a6fdb;
+  --accent-2:   #1f5ec2;
+  --accent-soft:#eaf1fd;
+  --accent-ink: #1b4ea0;
+
+  /* Semantic status colors */
+  --good:       #2f8a55;
+  --good-soft:  #e7f3ec;
+  --warn:       #b6802c;
+  --warn-soft:  #f6efe1;
+  --bad:        #c44a4a;
+  --bad-soft:   #f8eaea;
+  --info:       #2a6fdb;
+  --info-soft:  #eaf1fd;
 
   /* Radius */
   --radius:      18px;
-  --radius-sm:   12px;
+  --radius-md:   14px;
+  --radius-sm:   10px;
+  --radius-xs:   8px;
   --radius-pill: 999px;
 
-  /* Shadow */
-  --shadow-sm: 0 1px 2px rgba(11,11,16,0.04), 0 0 0 1px rgba(11,11,16,0.04);
-  --shadow-md: 0 2px 4px rgba(11,11,16,0.04), 0 12px 32px -16px rgba(11,11,16,0.08);
-  --shadow-lg: 0 4px 12px rgba(11,11,16,0.05), 0 24px 60px -24px rgba(11,11,16,0.14);
+  /* Shadow — cooler base color matching ink */
+  --shadow-sm: 0 1px 2px rgba(12,14,22,0.04), 0 0 0 1px rgba(12,14,22,0.04);
+  --shadow-md: 0 2px 4px rgba(12,14,22,0.04), 0 12px 32px -16px rgba(12,14,22,0.10);
+  --shadow-lg: 0 4px 12px rgba(12,14,22,0.05), 0 28px 64px -28px rgba(12,14,22,0.18);
+
+  /* Skeleton shimmer colors */
+  --shimmer-a: rgba(12,14,22,0.05);
+  --shimmer-b: rgba(12,14,22,0.09);
 
   /* Sidebar width animates between expanded + collapsed */
   --sidebar-w: 256px;
@@ -379,21 +400,34 @@
 .le-dash-shell.is-collapsed { --sidebar-w: 72px; }
 
 .dark .le-dash-shell {
-  --bg:       #050710;
-  --surface:  #0b0f1c;
-  --ink:      #f4f5fb;
-  --ink-2:    #d3d6dd;
-  --muted:    #9aa0aa;
-  --muted-2:  #6b6f7a;
-  --line:     rgba(255,255,255,0.08);
-  --line-2:   rgba(255,255,255,0.05);
-  --accent:   #6f8df5;
-  --good:     #4cb37b;
-  --warn:     #d8a458;
-  --bad:      #e07474;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04);
+  /* ── Phase 2 dark mode tokens ── */
+  --bg:         #070912;
+  --bg-tint:    #0c0f1c;
+  --surface:    #0c111e;
+  --surface-2:  #0e1322;
+  --ink:        #f3f5fb;
+  --ink-2:      #d3d6dd;
+  --muted:      #9aa0ad;
+  --muted-2:    #646b7a;
+  --line:       rgba(255, 255, 255, 0.09);
+  --line-2:     rgba(255, 255, 255, 0.05);
+  --accent:     #6f93f2;
+  --accent-2:   #8aa6f5;
+  --accent-soft: rgba(111, 147, 242, 0.16);
+  --accent-ink: #b6c8fb;
+  --good:       #4cb37b;
+  --good-soft:  rgba(76, 179, 123, 0.16);
+  --warn:       #d8a458;
+  --warn-soft:  rgba(216, 164, 88, 0.16);
+  --bad:        #e07474;
+  --bad-soft:   rgba(224, 116, 116, 0.16);
+  --info:       #6f93f2;
+  --info-soft:  rgba(111, 147, 242, 0.16);
+  --shimmer-a:  rgba(255, 255, 255, 0.04);
+  --shimmer-b:  rgba(255, 255, 255, 0.08);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04);
   --shadow-md: 0 2px 4px rgba(0,0,0,0.4), 0 12px 32px -16px rgba(0,0,0,0.55);
-  --shadow-lg: 0 4px 12px rgba(0,0,0,0.45), 0 24px 60px -24px rgba(0,0,0,0.7);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.45), 0 28px 64px -28px rgba(0,0,0,0.7);
 }
 
 /* Sidebar
@@ -407,9 +441,9 @@
   flex-direction: column;
   padding: 16px 12px;
   box-sizing: border-box;
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.86), rgba(248,250,253,0.86));
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
   border-right: 1px solid var(--line);
   overflow: visible; /* allow tooltips when collapsed */
   z-index: 30;
@@ -504,9 +538,20 @@
 .le-nav-item.is-active {
   background: var(--ink);
   color: var(--surface);
-  box-shadow: 0 1px 0 rgba(255,255,255,0.1) inset, 0 4px 10px -4px rgba(11,11,16,0.25);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.10) inset, 0 4px 10px -4px rgba(12,14,22,0.3);
 }
 .le-nav-item.is-active:hover { background: var(--ink); }
+/* Signature accent spine — thin blue left-edge on the active nav item */
+.le-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
 .le-nav-item.is-collapsed {
   justify-content: center;
   padding: 10px 8px;
@@ -624,12 +669,17 @@
 
 .le-top-bar {
   flex-shrink: 0;
-  padding: 18px 36px;
+  padding: 16px 36px;
   display: flex; align-items: center; gap: 16px;
   position: sticky; top: 0;
-  background: var(--bg);
+  background: rgba(244,245,248,0.82);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
   border-bottom: 1px solid var(--line-2);
   z-index: 20;
+}
+.dark .le-top-bar {
+  background: rgba(7,9,18,0.82);
 }
 .le-top-bar-title { display: flex; flex-direction: column; min-width: 0; }
 .le-top-eyebrow { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
@@ -708,24 +758,26 @@
 .le-page-heading {
   display: flex; align-items: flex-end; justify-content: space-between;
   gap: 24px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 .le-page-eyebrow {
   display: inline-block;
   font-size: 13px; color: var(--muted);
-  margin-bottom: 12px;
+  margin-bottom: 11px;
   letter-spacing: -0.003em;
 }
+/* Phase 2: inner-app page title 42px (approved sample). Marketing h1 keeps 56px
+   via its own class stack outside .le-dash-shell. */
 .le-page-h1 {
   margin: 0;
-  font-size: 56px;
+  font-size: 42px;
   font-weight: 600;
-  letter-spacing: -0.04em;
-  line-height: 1.02;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
   color: var(--ink);
 }
 .le-page-sub {
-  margin: 14px 0 0;
+  margin: 13px 0 0;
   font-size: 16px;
   color: var(--muted);
   max-width: 540px;
@@ -735,6 +787,7 @@
 
 .le-card {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
 }
@@ -753,30 +806,40 @@
 
 .le-kpi-card {
   background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 22px 22px 20px;
+  padding: 20px;
   box-shadow: var(--shadow-sm);
   transition: box-shadow .2s, transform .2s;
 }
 .le-kpi-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+/* Icon slot for phase 2 tile design */
+.le-kpi-ico {
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  display: grid; place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 14px;
+}
 .le-kpi-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .le-kpi-label { font-size: 13px; color: var(--muted); font-weight: 500; }
 .le-kpi-delta {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 8px 3px 6px;
-  border-radius: var(--radius-pill);
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px;
+  border-radius: 99px;
   font-size: 11px; font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .le-kpi-value {
-  margin-top: 16px;
-  font-size: 32px; font-weight: 600;
+  margin-top: 13px;
+  font-size: 30px; font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
-.le-kpi-sub { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+.le-kpi-sub { margin-top: 9px; font-size: 12.5px; color: var(--muted); }
 
 .le-status-pill {
   display: inline-flex; align-items: center; gap: 6px;
@@ -871,6 +934,118 @@
 .le-fade-up { opacity: 1; animation: le-fade-up .5s cubic-bezier(.2,.8,.2,1) both; }
 @media (prefers-reduced-motion: reduce) { .le-fade-up { animation: none; } }
 
+/* ── Skeleton shimmer — phase 2 loading states ──────────────────── */
+@keyframes le-dash-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.le-skeleton {
+  border-radius: var(--radius-xs, 8px);
+  background: linear-gradient(
+    90deg,
+    var(--shimmer-a, rgba(12,14,22,0.05)) 0%,
+    var(--shimmer-b, rgba(12,14,22,0.09)) 50%,
+    var(--shimmer-a, rgba(12,14,22,0.05)) 100%
+  );
+  background-size: 200% 100%;
+  animation: le-dash-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .le-skeleton { animation: none; } }
+
+/* Skeleton row — for table/list loading states */
+.le-skeleton-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.le-skeleton-row:last-child { border-bottom: none; }
+
+/* ── "Needs you" triage strip — operator surface ────────────────── */
+.le-triage-strip {
+  background: var(--warn-soft);
+  border: 1px solid rgba(182,128,44,0.22);
+  border-radius: var(--radius-md, 14px);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.dark .le-triage-strip {
+  background: var(--warn-soft);
+  border-color: rgba(216,164,88,0.2);
+}
+.le-triage-eyebrow {
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.10em; text-transform: uppercase;
+  color: var(--warn); flex-shrink: 0;
+}
+.le-triage-items {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1; flex-wrap: wrap;
+}
+.le-triage-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 12.5px; font-weight: 500;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-decoration: none;
+  transition: box-shadow .15s, border-color .15s;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+}
+.le-triage-item:hover { border-color: var(--muted-2); box-shadow: var(--shadow-md); }
+.le-triage-count {
+  font-size: 10.5px; font-weight: 700;
+  min-width: 18px; padding: 0 5px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-radius: 99px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Ledger table — phase 2 operator pipeline ───────────────────── */
+.le-ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.le-ledger th {
+  text-align: left;
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted-2);
+  padding: 0 12px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.le-ledger td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+.le-ledger tbody tr:last-child td { border-bottom: none; }
+.le-ledger tbody tr:hover { background: var(--accent-soft); }
+
+/* Mini progress bar for ledger rows */
+.le-mini-progress {
+  width: 72px; height: 4px;
+  border-radius: 99px;
+  background: var(--line);
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+.le-mini-progress-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: var(--accent);
+  transition: width .4s ease;
+}
+
 /* ── Mobile / tablet dashboard chrome ──────────────────────────────
    The sidebar is the ONLY navigation on the dashboard (TopNav returns
    null on /dashboard). It used to be display:none ≤1024px, leaving zero
@@ -928,13 +1103,13 @@
 
   .le-top-bar { padding: 14px 20px; }
   .le-main-scroll { padding: 16px 16px 40px; }
-  .le-page-h1 { font-size: 32px; }
-  .le-page-heading { flex-wrap: wrap; gap: 16px; margin-bottom: 24px; }
+  .le-page-h1 { font-size: 28px; }
+  .le-page-heading { flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
 }
 
 @media (max-width: 640px) {
   .le-main-scroll { padding: 14px 12px 36px; }
-  .le-page-h1 { font-size: 26px; }
+  .le-page-h1 { font-size: 22px; }
 }
 
 /* Hamburger + brand inside the mobile bar */

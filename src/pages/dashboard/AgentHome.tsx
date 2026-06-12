@@ -23,6 +23,7 @@ import {
   PageHeading,
   PropertyThumb,
   StatusChip,
+  SkeletonRow,
   fmtRel,
   SectionTitle,
 } from "@/components/dashboard/primitives";
@@ -560,6 +561,15 @@ export default function AgentHome() {
           </Link>
         }
       />
+
+      {/* ── Loading skeleton ─────────────────────────────────────────── */}
+      {loading && (
+        <Section>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Section>
+      )}
 
       {/* ── Fetch error — surface honestly, not as "No orders yet" ────── */}
       {fetchError && !loading && (

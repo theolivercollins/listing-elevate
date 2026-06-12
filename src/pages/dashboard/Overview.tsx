@@ -15,6 +15,8 @@ import {
   MiniStat,
   ActivityItem,
   SectionTitle,
+  Skeleton,
+  SkeletonRow,
   fmtMoney,
   fmtRel,
   MoneyValue,
@@ -672,8 +674,29 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
 
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-        <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* KPI tile skeletons */}
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+              <Skeleton width="70%" height={30} style={{ marginBottom: 10 }} />
+              <Skeleton width="45%" height={12} />
+            </div>
+          ))}
+        </section>
+        {/* Chart + ring skeletons */}
+        <section style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 16 }}>
+          <div className="le-card" style={{ padding: 24 }}>
+            <SkeletonRow />
+            <SkeletonRow />
+            <SkeletonRow />
+          </div>
+          <div className="le-card" style={{ padding: 24 }}>
+            <SkeletonRow />
+            <SkeletonRow />
+          </div>
+        </section>
       </div>
     );
   }

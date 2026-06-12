@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { KpiCard, StatusChip, PropertyThumb, Card, MoneyValue, fmtDuration } from "@/components/dashboard/primitives";
+import { KpiCard, StatusChip, PropertyThumb, Card, MoneyValue, Skeleton, SkeletonRow, fmtDuration } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { fetchProperties, archiveProperty, rerunProperty, updatePropertyStatus } from "@/lib/api";
 import type { Property } from "@/lib/types";
@@ -380,8 +380,24 @@ const Properties = () => {
 
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Loading…</div>
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+              <Skeleton width="70%" height={30} style={{ marginBottom: 10 }} />
+              <Skeleton width="45%" height={12} />
+            </div>
+          ))}
+        </section>
+        <Card padding={20}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
