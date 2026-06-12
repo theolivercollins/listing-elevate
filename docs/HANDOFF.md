@@ -1,5 +1,7 @@
 # Listing Elevate — Handoff
 
+Last updated: 2026-06-12 (verify-gate fix: show_branding P1 — fetchPreviewMeta now selects + returns show_branding; pre-087 fallback=true preserved; 2 regression tests added; commit 2a3ecb9 on feat/le-video-links-settings)
+
 Last updated: 2026-06-12 (PROMOTED to main: fix/max-quality-assembly — assembly max-quality work (Creatomate supersampling 2880×1620, 16:9 source crop, sticky-provider fix) + Bunny Stream video-hosting migration (all video write-paths off Supabase Storage). Migrations 084_scenes_provider_preference and 085_cost_events_bunny APPLIED to shared Supabase 2026-06-12 and verified live.)
 
 Last updated: 2026-06-12 (fix/max-quality-assembly Bunny Stream video-hosting migration + doc sync — ALL video hosting (finalize output, scene clips, delivery/variant clips, prompt-lab + listing-iteration clips) moved from Supabase Storage property-videos bucket to Bunny Stream (library 679131). Non-video assets (photos, audio, blog images) stay on Supabase Storage. Prod gates before deploy: apply migrations 084 AND 085 to shared Supabase (085 widens cost_events provider CHECK to add bunny + veo). play_720p.mp4 follow-up: code now HEAD-validates and selects the best available MP4 rendition (original > 1080p > …) with orphan cleanup on HEAD failure; Bunny library MP4 Fallback setting should still be confirmed enabled. Standing rule: use Bunny for video hosting, Supabase for non-video.)
