@@ -14,9 +14,9 @@ Give the operator real control over the video library: organize videos into **fo
 - **Archive:** hides a video from the default library; lives in an "Archived" view with a Restore action. Reversible.
 - **Delete:** permanent, behind an "Are you sure?" confirm. Scope: removes the video from the library **and deletes its preview/share links** (they 404 thereafter). The underlying `properties` row + all `cost_events` are **retained** (cost-tracking-first-class — never destroy accounting). Video files in storage are **not** wiped. A `library_deleted_at` tombstone keeps the property out of the library permanently; the UI treats it as gone (no restore).
 
-## 1. Data — migration 085 (additive only; write file, do NOT apply — Oliver gates)
+## 1. Data — migration 086 (additive only; write file, do NOT apply — Oliver gates)
 
-> Verify 085 is still the free next number against a fresh `origin/main` fetch **and** Supabase `list_migrations` before naming (082/084-collision precedent). If taken, take the next free number and update all references.
+> Verify 086 is still the free next number against a fresh `origin/main` fetch **and** Supabase `list_migrations` before naming (082/084-collision precedent). If taken, take the next free number and update all references.
 
 ```sql
 -- video_folders: operator-global, one level
@@ -80,8 +80,8 @@ alter table video_library_meta enable row level security;
 
 ## 4. Back-compat & rollout
 
-- Code tolerates migration 085 not applied: list endpoint falls back to "no meta" (all videos unfiled/active) on 42703; folder/library-action endpoints return a clear 503 pre-migration (mirrors the approve-route pre-084 pattern) rather than 500.
-- Rollout: merge code → Oliver green-lights migration 085 → folders/archive/delete become functional. Library keeps working throughout.
+- Code tolerates migration 086 not applied: list endpoint falls back to "no meta" (all videos unfiled/active) on 42703; folder/library-action endpoints return a clear 503 pre-migration (mirrors the approve-route pre-084 pattern) rather than 500.
+- Rollout: merge code → Oliver green-lights migration 086 → folders/archive/delete become functional. Library keeps working throughout.
 
 ## 5. Testing (TDD, vitest/happy-dom)
 
