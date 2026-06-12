@@ -58,6 +58,7 @@ import StudioClientEdit from "./pages/dashboard/studio/ClientEdit";
 import StudioPropertyCommandCenter from "./pages/dashboard/studio/PropertyCommandCenter";
 import StudioShare from "./pages/dashboard/studio/Share";
 import StudioVideos from "./pages/dashboard/studio/Videos";
+import StudioVideoHub from "./pages/dashboard/studio/VideoHub";
 import SharePresentation from "./pages/share/Presentation";
 import ShareEmbed from "./pages/share/Embed";
 import PreviewPage from "./pages/preview/PreviewPage";
@@ -149,6 +150,7 @@ const App = () => (
 
                       {/* LE Video library + hub (spec §1/§2) */}
                       <Route path="videos" element={<StudioVideos />} />
+                      <Route path="videos/:propertyId" element={<StudioVideoHub />} />
 
                       {/* Blog */}
                       <Route path="blog" element={<Navigate to="posts" replace />} />

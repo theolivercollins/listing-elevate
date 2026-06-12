@@ -1040,6 +1040,176 @@
   color: var(--le-muted);
 }
 
+/* ─── Video hub (spec §2) ──────────────────────────────────────────── */
+.studio-scope .le-hub-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+.studio-scope .le-hub-main {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.studio-scope .le-hub-side {
+  position: sticky;
+  top: 24px;
+}
+@media (max-width: 1024px) {
+  .studio-scope .le-hub-grid { grid-template-columns: minmax(0, 1fr); }
+  .studio-scope .le-hub-side { position: static; }
+}
+
+.studio-scope .le-hub-skeleton { padding: 8px 0; }
+
+/* Orientation switcher — segmented control over the player */
+.studio-scope .le-hub-orient-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--le-line-2);
+  border-radius: var(--le-radius-pill);
+  align-self: flex-start;
+}
+.studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: var(--le-surface);
+  color: var(--le-ink);
+  box-shadow: var(--le-shadow-sm);
+}
+
+.studio-scope .le-hub-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--le-line);
+}
+
+/* Analytics stat cards */
+.studio-scope .le-hub-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .studio-scope .le-hub-stats { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Per-link analytics table */
+.studio-scope .le-hub-table { width: 100%; }
+.studio-scope .le-hub-table-head,
+.studio-scope .le-hub-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 0.7fr));
+  gap: 12px;
+  align-items: center;
+  padding: 12px 20px;
+}
+.studio-scope .le-hub-table-head {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--le-muted);
+  border-bottom: 1px solid var(--le-line);
+}
+.studio-scope .le-hub-table-row {
+  border-bottom: 1px solid var(--le-line-2);
+  font-size: 13px;
+  color: var(--le-ink-2);
+}
+.studio-scope .le-hub-table-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-table-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studio-scope .le-hub-table-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.studio-scope .le-hub-table-empty {
+  padding: 20px;
+  font-size: 13px;
+  color: var(--le-muted-2);
+  font-style: italic;
+}
+.studio-scope .le-hub-kind-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--le-r-pill);
+}
+.studio-scope .le-hub-kind-client {
+  background: rgba(42, 111, 219, 0.10);
+  color: var(--le-accent);
+}
+.studio-scope .le-hub-kind-public {
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+
+/* Activity feed */
+.studio-scope .le-hub-activity-row {
+  display: flex;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--le-line-2);
+}
+.studio-scope .le-hub-activity-row:last-child { border-bottom: none; }
+.studio-scope .le-hub-activity-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--le-r-pill);
+  background: rgba(11, 11, 16, 0.05);
+  color: var(--le-muted);
+}
+.studio-scope .le-hub-activity-client_approval {
+  background: rgba(47, 138, 85, 0.12);
+  color: var(--le-good);
+}
+.studio-scope .le-hub-activity-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.studio-scope .le-hub-activity-source {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--le-ink);
+}
+.studio-scope .le-hub-activity-time {
+  font-size: 11.5px;
+  color: var(--le-muted-2);
+}
+.studio-scope .le-hub-activity-body {
+  margin: 3px 0 0;
+  font-size: 13px;
+  color: var(--le-ink-2);
+  line-height: 1.45;
+}
+
+.dark .studio-scope .le-hub-orient-switch { background: rgba(255,255,255,0.04); }
+.dark .studio-scope .le-hub-orient-switch .studio-btn-ghost.is-active {
+  background: rgba(255,255,255,0.08);
+}
+.dark .studio-scope .le-hub-kind-public { background: rgba(255,255,255,0.06); }
+.dark .studio-scope .le-hub-activity-icon { background: rgba(255,255,255,0.06); }
+
 .dark .studio-scope .le-video-orient-badge {
   background: rgba(0,0,0,0.55);
 }
