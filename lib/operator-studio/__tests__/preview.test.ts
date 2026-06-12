@@ -186,6 +186,96 @@ describe('fetchByToken — show_branding via fetchPreviewMeta (P1 regression)', 
     // Pre-087: column absent → default true (preserves branded behavior)
     expect(r?.preview?.show_branding).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // P1 safety regression: 42703 retry path — migration 087 NOT applied
+  // (083/084 present, 087 absent — the ACTUAL production state until 087 is applied).
+  //
+  // The critical invariant: a missing show_branding column MUST NOT cause kind,
+  // allow_download, allow_approve, allow_revision, or approved_at to be lost.
+  // Before this fix, fetchPreviewMeta had ONE combined select that included
+  // show_branding; PostgREST returns 42703 for the whole query, fetchPreviewMeta
+  // returned null, and api/preview/[token].ts defaulted kind='client' + all caps TRUE
+  // — silently inverting capability isolation on every public/customer link.
+  // -------------------------------------------------------------------------
+  it('42703 on first select (show_branding absent) retries WITHOUT show_branding and preserves kind/capabilities', async () => {
+    // fetchPreviewMeta fires TWO from('property_previews') calls when it hits 42703:
+    //   call A: select with show_branding   → 42703 error
+    //   call B: select WITHOUT show_branding → success with kind='public' + caps all false
+    let fromCallCount = 0;
+
+    // Build a chain that returns 42703 on first call, success on second
+    const makeMetaChain42703 = () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({
+            data: null,
+            error: { code: '42703', message: 'column "show_branding" does not exist' },
+          }),
+        }),
+      }),
+    });
+    const makeMetaChainFallback = () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({
+            data: { kind: 'public', allow_download: false, allow_approve: false, allow_revision: false, approved_at: null, label: 'Customer Link', revoked_at: null },
+            error: null,
+          }),
+        }),
+      }),
+    });
+
+    mockFrom
+      .mockReturnValueOnce(makeSimpleChain({ property_id: 'p1', expires_at: null }))   // 1: pv row (fetchByToken outer)
+      .mockReturnValueOnce(makeSimpleChain({ id: 'p1', address: '1 Main', client_id: null, horizontal_video_url: null, vertical_video_url: null, brokerage: null })) // 2: property
+      .mockImplementationOnce(() => { fromCallCount++; return makeMetaChain42703(); }) // 3: fetchPreviewMeta first attempt → 42703
+      .mockImplementationOnce(() => { fromCallCount++; return makeMetaChainFallback(); }) // 4: fetchPreviewMeta retry → success
+      .mockReturnValueOnce(makePhotosChain())  // 5: resolveHeroPhotoUrl selected-photos
+      .mockReturnValueOnce(makePhotosChain()); // 6: resolveHeroPhotoUrl any-photos fallback
+
+    const r = await fetchByToken('tok');
+
+    // Both meta from() calls were made (42703 triggered the retry)
+    expect(fromCallCount).toBe(2);
+    // CRITICAL: kind and capabilities are NOT lost — they reflect the real DB row
+    expect(r?.preview?.kind).toBe('public');
+    expect(r?.preview?.allow_download).toBe(false);
+    expect(r?.preview?.allow_approve).toBe(false);
+    expect(r?.preview?.allow_revision).toBe(false);
+    expect(r?.preview?.label).toBe('Customer Link');
+    // show_branding defaults to true on the fallback path (no column = branded)
+    expect(r?.preview?.show_branding).toBe(true);
+    // fetchByToken itself is not null — the link is still resolvable
+    expect(r).not.toBeNull();
+  });
+
+  it('42703 on first select: a public link with allow_download=false does NOT silently upgrade to allow_download=true', async () => {
+    // This is the concrete capability-isolation regression: pre-fix, a public link
+    // (allow_download=false) would fall through fetchPreviewMeta→null, then
+    // api/preview/[token].ts would default allow_download = preview?.allow_download ?? true → true.
+    // Post-fix, the retry returns the real row and allow_download stays false.
+    mockFrom
+      .mockReturnValueOnce(makeSimpleChain({ property_id: 'p1', expires_at: null }))
+      .mockReturnValueOnce(makeSimpleChain({ id: 'p1', address: '1 Main', client_id: null, horizontal_video_url: null, vertical_video_url: null, brokerage: null }))
+      .mockReturnValueOnce({
+        // first meta call → 42703
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: { code: '42703', message: 'column "show_branding" does not exist' } }) }) }),
+      })
+      .mockReturnValueOnce({
+        // retry → real public row (download disabled)
+        select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { kind: 'public', allow_download: false, allow_approve: false, allow_revision: false, approved_at: null, label: null, revoked_at: null }, error: null }) }) }),
+      })
+      .mockReturnValueOnce(makePhotosChain())
+      .mockReturnValueOnce(makePhotosChain());
+
+    const r = await fetchByToken('tok');
+    expect(r?.preview?.kind).toBe('public');
+    // The real false value must survive — NOT defaulted to true
+    expect(r?.preview?.allow_download).toBe(false);
+    expect(r?.preview?.allow_approve).toBe(false);
+    expect(r?.preview?.allow_revision).toBe(false);
+  });
 });
 
 describe('recordPreviewView', () => {
