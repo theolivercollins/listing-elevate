@@ -1,5 +1,5 @@
 import { Loader2 } from 'lucide-react';
-import { DELIVERY_STAGES, type DeliveryStage, stageIndex, nextStage } from '../../../lib/delivery/state';
+import { DELIVERY_STAGES, type DeliveryStage, stageIndex, nextStage, prevStage } from '../../../lib/delivery/state';
 
 const STAGE_LABELS: Record<DeliveryStage, string> = {
   intake: 'Intake', scraping: 'Scrape', generating: 'Generate', judging: 'Judge',
@@ -15,6 +15,20 @@ const GATE_STAGES = [
 function isGateStage(s: DeliveryStage): s is (typeof GATE_STAGES)[number] {
   return (GATE_STAGES as readonly string[]).includes(s);
 }
+
+/**
+ * Stages where "Rerun this step" has a defined machine side-effect.
+ * Matches the rerun switch in the API handler — kept in sync here
+ * so the button is only shown when rerun would succeed (not 400).
+ */
+const RERUNNABLE_STAGES = new Set<DeliveryStage>([
+  'scraping', 'judging', 'checkpoint_a', 'voiceover', 'music', 'assembling', 'checkpoint_b',
+]);
+
+/** Paid stages where rerun incurs a real cost — operator gets an extra warning. */
+const PAID_RERUN_STAGES = new Set<DeliveryStage>([
+  'voiceover', 'music', 'assembling', 'checkpoint_b',
+]);
 
 // ─── DeliveryStepper ──────────────────────────────────────────────────────────
 
@@ -98,6 +112,79 @@ export function DeliveryNextButton({ stage, pending, error, onAdvance }: Deliver
         {pending && <Loader2 size={12} className="studio-spinner" />}
         Advance to {next.replace(/_/g, ' ')}
       </button>
+      {error && (
+        <span className="studio-error-strip" style={{ padding: '4px 10px', fontSize: 12 }}>
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ─── DeliveryStageControls ────────────────────────────────────────────────────
+
+/**
+ * Back + Rerun buttons rendered below the stepper for the current stage.
+ * Back is hidden at intake (first stage); Rerun is hidden at stages where
+ * the API returns 400 (intake, details, delivered, generating).
+ */
+export interface DeliveryStageControlsProps {
+  stage: DeliveryStage;
+  pending: boolean;
+  error: string | null;
+  onBack: () => void;
+  onRerun: () => void;
+}
+
+export function DeliveryStageControls({
+  stage, pending, error, onBack, onRerun,
+}: DeliveryStageControlsProps) {
+  const prev = prevStage(stage);
+  const canBack = prev !== null;
+  const canRerun = RERUNNABLE_STAGES.has(stage);
+
+  if (!canBack && !canRerun) return null;
+
+  const prevLabel = prev ? STAGE_LABELS[prev] : '';
+  const isPaidRerun = PAID_RERUN_STAGES.has(stage);
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {canBack && (
+        <button
+          type="button"
+          className="studio-cta-secondary"
+          style={{ fontSize: 12.5, padding: '8px 14px' }}
+          disabled={pending}
+          onClick={() => {
+            const confirmed = window.confirm(
+              `Go back to ${prevLabel}? You can re-run from there.`,
+            );
+            if (confirmed) onBack();
+          }}
+        >
+          {pending && <Loader2 size={12} className="studio-spinner" />}
+          Back to {prevLabel}
+        </button>
+      )}
+      {canRerun && (
+        <button
+          type="button"
+          className="studio-cta-secondary"
+          style={{ fontSize: 12.5, padding: '8px 14px' }}
+          disabled={pending}
+          onClick={() => {
+            const warningText = isPaidRerun
+              ? `This re-runs a paid render/generation for the ${STAGE_LABELS[stage]} step. Proceed?`
+              : `Re-run the ${STAGE_LABELS[stage]} step?`;
+            const confirmed = window.confirm(warningText);
+            if (confirmed) onRerun();
+          }}
+        >
+          {pending && <Loader2 size={12} className="studio-spinner" />}
+          Rerun this step
+        </button>
+      )}
       {error && (
         <span className="studio-error-strip" style={{ padding: '4px 10px', fontSize: 12 }}>
           {error}

@@ -23,6 +23,9 @@ const mockComposeMusic = vi.fn();
 const mockDbInsert = vi.fn();
 const mockDbStorage = vi.fn();
 const mockRunAssembleStage = vi.fn();
+const mockRevertRun = vi.fn();
+const mockRunScrapeStage = vi.fn();
+const mockRunJudgePass = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -36,6 +39,13 @@ vi.mock('../../../../../lib/delivery/runs', () => ({
   updateRun: (...a: unknown[]) => mockUpdateRun(...a),
   recordMlEvent: (...a: unknown[]) => mockRecordMlEvent(...a),
   setListingDetails: (...a: unknown[]) => mockSetListingDetails(...a),
+  revertRun: (...a: unknown[]) => mockRevertRun(...a),
+}));
+vi.mock('../../../../../lib/delivery/scrape', () => ({
+  runScrapeStage: (...a: unknown[]) => mockRunScrapeStage(...a),
+}));
+vi.mock('../../../../../lib/delivery/judge', () => ({
+  runJudgePass: (...a: unknown[]) => mockRunJudgePass(...a),
 }));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
@@ -143,6 +153,9 @@ beforeEach(() => {
   mockAdvanceRun.mockResolvedValue({ ...run, stage: 'delivered' });
   mockBuildFeedbackBlock.mockReturnValue('');
   mockBuildGenrePrompt.mockImplementation((mood: string, frag: string, fb: string) => `${mood} ${frag}${fb ? ' ' + fb : ''}`);
+  mockRevertRun.mockResolvedValue({ ...run, stage: 'judging' });
+  mockRunScrapeStage.mockResolvedValue(undefined);
+  mockRunJudgePass.mockResolvedValue({ ready: true });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -1330,5 +1343,231 @@ describe('POST music_feedback (T23)', () => {
     );
     expect(res._status).toBe(400);
     expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST back action
+// ---------------------------------------------------------------------------
+
+describe('POST back (T-back)', () => {
+  it('back with no body.to → goes one step back using revertRun', async () => {
+    // run is at checkpoint_a; back should target judging
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    mockRevertRun.mockResolvedValue({ ...run, stage: 'judging' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRevertRun).toHaveBeenCalledWith('r1', 'judging');
+    expect((res._body as { run: { stage: string } }).run.stage).toBe('judging');
+  });
+
+  it('back with explicit body.to → calls revertRun with that stage', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    mockRevertRun.mockResolvedValue({ ...run, stage: 'scraping' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back', to: 'scraping' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRevertRun).toHaveBeenCalledWith('r1', 'scraping');
+  });
+
+  it('back at the first stage (intake) returns 400 "already at the first step"', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'intake' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/already at the first step/i);
+    expect(mockRevertRun).not.toHaveBeenCalled();
+  });
+
+  it('back with an invalid to stage → 400', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back', to: 'bogus_stage' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockRevertRun).not.toHaveBeenCalled();
+  });
+
+  it('back with a stage-moved conflict from revertRun → 409', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    mockRevertRun.mockRejectedValue(new Error('revertRun: stage moved (expected checkpoint_a)'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(409);
+  });
+
+  it('back with an illegal-transition error from revertRun → 400', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    mockRevertRun.mockRejectedValue(new Error('revertRun: illegal transition checkpoint_a -> music (must be strictly backward)'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back', to: 'music' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+  });
+
+  it('back → 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
+    expect(mockRevertRun).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST rerun action
+// ---------------------------------------------------------------------------
+
+describe('POST rerun (T-rerun)', () => {
+  it('rerun at scraping → calls runScrapeStage', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'scraping' });
+    mockRunScrapeStage.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRunScrapeStage).toHaveBeenCalledWith('r1');
+  });
+
+  it('rerun at judging → calls runJudgePass', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'judging' });
+    mockRunJudgePass.mockResolvedValue({ ready: true });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRunJudgePass).toHaveBeenCalledWith('r1');
+  });
+
+  it('rerun at checkpoint_a → calls runJudgePass (re-run the judge pass that produced the checkpoint)', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    mockRunJudgePass.mockResolvedValue({ ready: true });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRunJudgePass).toHaveBeenCalledWith('r1');
+  });
+
+  it('rerun at voiceover → calls generate_audio helper (generateVoiceoverAudio), returns run', async () => {
+    const voRun = { ...run, stage: 'voiceover', voiceover_script: 'Welcome.', voiceover_voice_id: 'v-123', property_id: 'p1', duration_seconds: 30 };
+    mockGetRun.mockResolvedValue(voRun);
+    mockUpdateRun.mockResolvedValue({ ...voRun, voiceover_audio_url: 'https://cdn.example.com/vo.mp3' });
+    mockGenerateVoiceoverAudio.mockResolvedValue({ audioUrl: 'https://cdn.example.com/vo.mp3', durationMs: 8000 });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockGenerateVoiceoverAudio).toHaveBeenCalled();
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('rerun at assembling → calls runAssembleStage', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'assembling' });
+    mockRunAssembleStage.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRunAssembleStage).toHaveBeenCalledWith('r1');
+  });
+
+  it('rerun at checkpoint_b → calls runAssembleStage (re-run the assemble pass that produced the checkpoint)', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_b' });
+    mockRunAssembleStage.mockResolvedValue(undefined);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockRunAssembleStage).toHaveBeenCalledWith('r1');
+  });
+
+  it('rerun at intake → 400 "nothing to re-run"', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'intake' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
+  });
+
+  it('rerun at details → 400 "nothing to re-run"', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'details' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
+  });
+
+  it('rerun at delivered → 400 "nothing to re-run"', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'delivered' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
+  });
+
+  it('rerun at generating → 400 with guidance to use Back', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/re-runs automatically/i);
+  });
+
+  it('rerun → 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(404);
+    expect(mockRunScrapeStage).not.toHaveBeenCalled();
+    expect(mockRunJudgePass).not.toHaveBeenCalled();
+    expect(mockRunAssembleStage).not.toHaveBeenCalled();
   });
 });

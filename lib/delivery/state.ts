@@ -29,3 +29,17 @@ export function nextStage(s: DeliveryStage): DeliveryStage | null {
 export function canAdvance(from: DeliveryStage, to: DeliveryStage): boolean {
   return nextStage(from) === to;
 }
+
+/** The stage immediately before `s`, or null if `s` is the first stage. */
+export function prevStage(s: DeliveryStage): DeliveryStage | null {
+  const i = stageIndex(s);
+  return i > 0 ? DELIVERY_STAGES[i - 1] : null;
+}
+
+/**
+ * True when `to` is strictly before `from` in the stage sequence.
+ * This is the backward-only gate for revertRun — forward paths must keep using canAdvance.
+ */
+export function canRevert(from: DeliveryStage, to: DeliveryStage): boolean {
+  return stageIndex(to) >= 0 && stageIndex(to) < stageIndex(from);
+}
