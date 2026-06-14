@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { reapStuckScenes } from '../../lib/pipeline/stuck-reaper.js';
 
 export const maxDuration = 300;
 
@@ -33,6 +34,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Reap scenes stuck in 'generating' or 'pending' before the main polling work.
+    // A reaper failure must never break the cron — errors are logged inside.
+    try {
+      const { getSupabase: getDb } = await import('../../lib/db.js');
+      await reapStuckScenes(getDb());
+    } catch (reaperErr) {
+      console.error('[poll-scenes] reaper threw unexpectedly:', reaperErr);
+    }
+
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
     const { selectProvider } = await import('../../lib/providers/router.js');
     const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } = await import('../../lib/providers/bunny-stream.js');
