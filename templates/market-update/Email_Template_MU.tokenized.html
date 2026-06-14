@@ -1,0 +1,381 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html dir="ltr" xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+<meta charset="UTF-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<meta content="light" name="color-scheme">
+<title>Local Housing Report &amp; Update - {{REPORT_MONTH}} {{REPORT_YEAR}}</title>
+<!--[if !mso]><!-->
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&display=swap" rel="stylesheet">
+<!--<![endif]-->
+<!--[if mso]><xml>
+<w:WordDocument xmlns:w="urn:schemas-microsoft-com:office:word">
+<w:DontUseAdvancedTypographyReadingMail/>
+</w:WordDocument>
+</xml><![endif]-->
+<style type="text/css">
+body { margin: 0; font-size: 16px; color: #000000; }
+td { font-family: Helvetica, Arial, sans-serif; }
+
+@media only screen and (max-width: 600px) {
+  .wrapper    { width: 100% !important; max-width: 100% !important; }
+  .stat-cell  { display: block !important; width: 100% !important; box-sizing: border-box !important; padding: 20px 20px 10px 20px !important; }
+  .rec-cell   { display: block !important; width: 100% !important; box-sizing: border-box !important; padding: 20px 20px 10px 20px !important; }
+  .cta-cell   { display: block !important; width: 100% !important; box-sizing: border-box !important; padding: 4px 0 !important; }
+  .stat-num   { font-size: 32px !important; line-height: 1 !important; }
+  .hero-title { font-size: 20px !important; line-height: 1.3 !important; }
+  .logo-img   { width: 180px !important; }
+  .mob-pad    { padding-left: 20px !important; padding-right: 20px !important; }
+  .badge-td   { font-size: 10px !important; letter-spacing: 0.08em !important; padding: 7px 12px !important; white-space: normal !important; }
+  .read-btn   { display: block !important; box-sizing: border-box !important; width: 100% !important; }
+  .table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; display: block !important; }
+  .data-table { min-width: 360px !important; }
+  .data-table td, .data-table th { font-size: 11px !important; padding: 9px 5px !important; }
+  .yt-img     { width: 100% !important; max-width: 100% !important; height: auto !important; }
+}
+
+@media screen and (max-width: 384px) { .mail-message-content { width: 414px !important } }
+</style>
+</head>
+
+<body style="background-color:#f5f5f5;margin:0;padding:0">
+
+<!-- Preheader -->
+<div style="overflow:hidden;display:none;max-height:0">{{REGION_NAME}} {{REPORT_MONTH}} {{REPORT_YEAR}}: Pending sales {{PENDED_YOY}} YoY, inventory {{FOR_SALE_YOY}}, median holds at {{MEDIAN_SOLD_PRICE}}, sold/list ratio {{SOLD_TO_LIST}}. Your monthly market insights inside.&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;&zwnj;</div>
+
+<table cellpadding="0" cellspacing="0" width="100%" style="background-color:#f5f5f5" role="none">
+<tr>
+<td align="center" style="padding:0">
+<table cellspacing="0" cellpadding="0" class="wrapper" style="background-color:#ffffff;max-width:600px;width:100%" role="none">
+
+  <!-- Logo -->
+  <tr>
+    <td align="center" style="padding:30px 50px 20px">
+      <img alt="The Helgemo Team | Compass" class="logo-img" src="https://qedobl.stripocdn.email/content/guids/CABINET_d5fb0291752ef2938f5e0997073cfaae1979ebff2eadd7f806307ee6140a95a7/images/image.png" width="250" style="height:auto;display:block;width:250px">
+    </td>
+  </tr>
+
+  <!-- Hero Image -->
+  <tr>
+    <td style="padding:0">
+      <a href="{{CTA_URL}}" target="_blank">
+        <img width="600" src="{{HERO_IMAGE_URL}}" alt="{{HERO_ALT}}" title="" style="width:100%;max-width:600px;height:auto;border:0;display:block">
+      </a>
+    </td>
+  </tr>
+
+  <!-- Title — warm gray -->
+  <tr>
+    <td class="mob-pad" style="background-color:#f7f6f3;padding:30px 30px 10px">
+      <p style="text-transform:uppercase;margin:0;font-size:12px;letter-spacing:0.2em;color:#000">{{REPORT_MONTH}} {{REPORT_YEAR}} MARKET UPDATE</p>
+    </td>
+  </tr>
+  <tr>
+    <td class="mob-pad" style="padding:0 30px 5px;background-color:#f7f6f3">
+      <p class="hero-title" style="margin:0;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:28px;color:#000;line-height:1.2">{{REGION_NAME}}</p>
+    </td>
+  </tr>
+  <tr>
+    <td class="mob-pad" style="padding:5px 30px 0;background-color:#f7f6f3">
+      <p style="margin:0;font-size:12px;color:#666;letter-spacing:0.05em">{{REPORT_MONTH}} Data &bull; Single Family Homes</p>
+    </td>
+  </tr>
+
+  <!-- Market Condition Badge -->
+  <tr>
+    <td class="mob-pad" style="background-color:#f7f6f3;padding:20px 30px 25px">
+      <table cellpadding="0" cellspacing="0" style="border:1px solid #ccc" role="none">
+        <tr>
+          <td class="badge-td" style="padding:8px 20px;font-size:11px;letter-spacing:0.15em;color:#000;text-transform:uppercase">{{MARKET_VERDICT}} Market &bull; {{MOI_CLOSED}} Months Inventory</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Divider -->
+  <tr>
+    <td class="mob-pad" style="padding:0 30px">
+      <table cellspacing="0" width="100%" cellpadding="0" role="none">
+        <tr><td style="border-top:1px solid #000"></td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- YouTube Video (click-to-watch — iframe-free, email safe) -->
+  <tr>
+    <td class="mob-pad" style="padding:25px 30px 5px">
+      <a href="{{CTA_URL}}" target="_blank" style="display:block;text-decoration:none;line-height:0;">
+        <img class="yt-img" src="{{HERO_IMAGE_URL}}" alt="{{HERO_ALT}}" width="540" style="width:100%;max-width:540px;height:auto;display:block;border:0;">
+      </a>
+      <p style="font-size:11px;color:#888;text-align:center;margin:8px 0 0;letter-spacing:0.05em;">&#9658;&nbsp;Watch on YouTube: {{REGION_NAME}} Real Estate Market Update &mdash; {{REPORT_MONTH}} {{REPORT_YEAR}}</p>
+    </td>
+  </tr>
+
+  <!-- Key Metrics Row 1 -->
+  <tr>
+    <td style="padding:0">
+      <table width="100%" cellpadding="0" cellspacing="0" role="none">
+        <tr>
+          <td valign="top" width="50%" class="stat-cell" style="padding:30px 15px 15px 30px">
+            <p class="stat-num" style="font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:42px;line-height:1;color:#000;margin:0">{{FOR_SALE}}</p>
+            <p style="margin:8px 0 0 0;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#000">Properties For Sale</p>
+            <p style="margin:4px 0 0 0;font-size:11px;color:#888">{{FOR_SALE_MOM}} MoM &bull; {{FOR_SALE_YOY}} YoY</p>
+          </td>
+          <td valign="top" width="50%" class="stat-cell" style="padding:30px 30px 15px 15px">
+            <p class="stat-num" style="font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:42px;line-height:1;color:#000;margin:0">{{SOLD}}</p>
+            <p style="letter-spacing:0.2em;text-transform:uppercase;color:#000;margin:8px 0 0 0;font-size:11px">Properties Sold</p>
+            <p style="font-size:11px;color:#888;margin:4px 0 0 0">{{SOLD_MOM}} MoM &bull; {{SOLD_YOY}} YoY</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Key Metrics Row 2 -->
+  <tr>
+    <td style="padding:0">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr>
+          <td valign="top" width="50%" class="stat-cell" style="padding:15px 15px 15px 30px">
+            <p class="stat-num" style="line-height:1;color:#000;margin:0;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:42px">{{PENDED}}</p>
+            <p style="color:#000;margin:8px 0 0 0;font-size:11px;letter-spacing:0.2em;text-transform:uppercase">Pending Sales</p>
+            <p style="font-size:11px;color:#888;margin:4px 0 0 0">{{PENDED_MOM}} MoM &bull; {{PENDED_YOY}} YoY</p>
+          </td>
+          <td valign="top" width="50%" class="stat-cell" style="padding:15px 30px 15px 15px">
+            <p class="stat-num" style="color:#000;margin:0;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:42px;line-height:1">{{MEDIAN_SOLD_PRICE}}</p>
+            <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#000;margin:8px 0 0 0">Median Sold Price</p>
+            <p style="color:#888;margin:4px 0 0 0;font-size:11px">{{MEDIAN_SOLD_PRICE_MOM}} MoM &bull; {{MEDIAN_SOLD_PRICE_YOY}} YoY</p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Divider -->
+  <tr>
+    <td class="mob-pad" style="padding:15px 30px 0">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr><td style="border-top:1px solid #e0e0e0"></td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Market Summary -->
+  <tr>
+    <td class="mob-pad" style="padding:25px 30px 5px">
+      <p style="margin:0;font-size:12px;letter-spacing:0.2em;color:#000;text-transform:uppercase">Market Summary</p>
+    </td>
+  </tr>
+  <tr>
+    <td class="mob-pad" style="padding:10px 30px 25px">
+      <p style="margin:0;font-size:13px;line-height:1.6;color:#444">{{REGION_NAME}} settled into {{MARKET_VERDICT}} territory in {{REPORT_MONTH}} with {{MOI_CLOSED}} months of inventory. Closed sales of {{SOLD}} pulled back {{SOLD_MOM}} month-over-month off the prior month&rsquo;s strong pace, but pending contracts of {{PENDED}} are {{PENDED_YOY}} year-over-year &mdash; a meaningful signal that forward demand is building heading into summer. Inventory continued its dramatic drawdown, {{FOR_SALE_YOY}} year-over-year to {{FOR_SALE}} active listings. The median sold price held at {{MEDIAN_SOLD_PRICE}}, {{MEDIAN_SOLD_PRICE_YOY}} from a year ago, and the sold/list price ratio improved to {{SOLD_TO_LIST}} &mdash; {{SOLD_TO_LIST_MOM}} month-over-month and {{SOLD_TO_LIST_YOY}} year-over-year. The absorption rate based on closed sales rose {{ABSORPTION_CLOSED_YOY}} YoY to {{ABSORPTION_CLOSED}}, confirming that inventory is being absorbed at a materially faster pace than last year.</p>
+    </td>
+  </tr>
+
+  <!-- Highlights — cool gray -->
+  <tr>
+    <td style="background-color:#EAEEF2;padding:0">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr>
+          <td class="mob-pad" style="padding:25px 30px 10px">
+            <p style="letter-spacing:0.2em;color:#000;text-transform:uppercase;margin:0;font-size:12px">Key Highlights</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="mob-pad" style="padding:5px 30px">
+            <p style="margin:0;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:22px;color:#000;line-height:1.4">Demand Signals Strengthen as Supply Contracts</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="mob-pad" style="padding:15px 30px 25px">
+            <table cellpadding="0" cellspacing="0" width="100%" role="none">
+              <tr>
+                <td valign="top" style="padding:0 10px 12px 0;color:#000;width:20px;font-size:12px">&bull;</td>
+                <td style="font-size:12px;line-height:1.5;color:#333;padding-bottom:12px"><strong>Pending sales {{PENDED_YOY}} YoY</strong> to {{PENDED}} &mdash; the forward pipeline heading into summer is measurably stronger than a year ago</td>
+              </tr>
+              <tr>
+                <td valign="top" style="padding:0 10px 12px 0;color:#000;width:20px;font-size:12px">&bull;</td>
+                <td style="line-height:1.5;color:#333;padding-bottom:12px;font-size:12px"><strong>Inventory {{FOR_SALE_YOY}} YoY</strong> to {{FOR_SALE}} &mdash; buyers have significantly fewer choices than one year ago</td>
+              </tr>
+              <tr>
+                <td valign="top" style="padding:0 10px 12px 0;color:#000;width:20px;font-size:12px">&bull;</td>
+                <td style="color:#333;padding-bottom:12px;font-size:12px;line-height:1.5"><strong>MOI at {{MOI_CLOSED}} months</strong>, down from {{MOI_CLOSED_PREV_YEAR}} last year &mdash; neutral but tightening steadily toward seller territory</td>
+              </tr>
+              <tr>
+                <td valign="top" style="padding:0 10px 0 0;color:#000;width:20px;font-size:12px">&bull;</td>
+                <td style="font-size:12px;line-height:1.5;color:#333"><strong>Sold/list ratio rose to {{SOLD_TO_LIST}}</strong> &mdash; {{SOLD_TO_LIST_MOM}} month-over-month and {{SOLD_TO_LIST_YOY}} year-over-year</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="mob-pad" style="padding:0 30px 30px">
+            <a class="read-btn" target="_blank" href="{{CTA_URL}}" style="width:190px;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;box-sizing:border-box;text-decoration:none;display:inline-block;text-align:center;font-size:15px;background-color:#ffffff;padding:12px 0;color:#000;border:none">Read Full Report</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Recommendations — warm gray -->
+  <tr>
+    <td style="padding:0;background-color:#f7f6f3">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr>
+          <td valign="top" width="50%" class="rec-cell" style="padding:30px 15px 30px 30px">
+            <p style="letter-spacing:0.2em;color:#000;text-transform:uppercase;margin:0 0 10px 0;font-size:12px">For Buyers</p>
+            <p style="line-height:1.6;color:#444;margin:0;font-size:12px">{{MOI_CLOSED}} months of inventory means you still have negotiating room &mdash; sellers are accepting an average of {{SOLD_TO_LIST}} of original list price. But with inventory {{FOR_SALE_YOY}} YoY and pending sales {{PENDED_YOY}}, the window of balance is closing. <u>Act while conditions still favor you.</u></p>
+          </td>
+          <td valign="top" width="50%" class="rec-cell" style="padding:30px 30px 30px 15px">
+            <p style="color:#000;text-transform:uppercase;margin:0 0 10px 0;font-size:12px;letter-spacing:0.2em">For Sellers</p>
+            <p style="color:#444;margin:0;font-size:12px;line-height:1.6">Pending sales {{PENDED_YOY}} YoY and absorption {{ABSORPTION_CLOSED_YOY}} &mdash; buyers are active and the pace of demand is accelerating. Sold/list ratio rose to {{SOLD_TO_LIST}}. <strong>Price competitively from day one to capture the active buyer pool.</strong></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Divider -->
+  <tr>
+    <td class="mob-pad" style="padding:0 30px">
+      <table width="100%" cellpadding="0" cellspacing="0" role="none">
+        <tr><td style="border-top:1px solid #e0e0e0"></td></tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Data Table -->
+  <tr>
+    <td class="mob-pad" style="padding:25px 30px 5px">
+      <p style="font-size:12px;letter-spacing:0.2em;color:#000;text-transform:uppercase;margin:0">{{REPORT_MONTH}} {{REPORT_YEAR}} Data</p>
+    </td>
+  </tr>
+  <tr>
+    <td class="mob-pad table-wrap" style="padding:15px 30px 30px;overflow-x:auto;-webkit-overflow-scrolling:touch;display:block">
+      <table class="data-table" width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;border-collapse:collapse" role="none">
+        <thead>
+          <tr style="border-bottom:2px solid #000">
+            <th align="left"  style="text-transform:uppercase;color:#888;padding:10px 8px 10px 0;font-weight:400;font-size:11px;letter-spacing:0.1em">Metric</th>
+            <th align="center" style="text-transform:uppercase;color:#888;padding:10px 8px;font-weight:400;font-size:11px;letter-spacing:0.1em">{{REPORT_MONTH}} '{{REPORT_YEAR}}</th>
+            <th align="center" style="padding:10px 8px;font-weight:400;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#888">MoM</th>
+            <th align="center" style="font-weight:400;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#888;padding:10px 0 10px 8px">YoY</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #e8e8e8">
+            <td style="padding:12px 8px 12px 0;color:#333">Properties For Sale</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{FOR_SALE}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{FOR_SALE_MOM}}</td>
+            <td align="center" style="padding:12px 0 12px 8px;color:#666">{{FOR_SALE_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8;background-color:#fafaf8">
+            <td style="padding:12px 8px 12px 0;color:#333">Properties Sold</td>
+            <td align="center" style="color:#333;padding:12px 8px">{{SOLD}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{SOLD_MOM}}</td>
+            <td align="center" style="padding:12px 0 12px 8px;color:#666">{{SOLD_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8">
+            <td style="color:#333;padding:12px 8px 12px 0">Pending Sales</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{PENDED}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{PENDED_MOM}}</td>
+            <td align="center" style="color:#333;padding:12px 0 12px 8px">{{PENDED_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8;background-color:#fafaf8">
+            <td style="padding:12px 8px 12px 0;color:#333">Avg Days on Market</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{DOM}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{DOM_MOM}}</td>
+            <td align="center" style="padding:12px 0 12px 8px;color:#666">{{DOM_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8">
+            <td style="padding:12px 8px 12px 0;color:#333">Median Sold Price</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{MEDIAN_SOLD_PRICE}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{MEDIAN_SOLD_PRICE_MOM}}</td>
+            <td align="center" style="color:#333;padding:12px 0 12px 8px">{{MEDIAN_SOLD_PRICE_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8;background-color:#fafaf8">
+            <td style="padding:12px 8px 12px 0;color:#333">Average Sold Price</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{AVG_SOLD_PRICE}}</td>
+            <td align="center" style="padding:12px 8px;color:#666">{{AVG_SOLD_PRICE_MOM}}</td>
+            <td align="center" style="padding:12px 0 12px 8px;color:#333">{{AVG_SOLD_PRICE_YOY}}</td>
+          </tr>
+          <tr style="border-bottom:1px solid #e8e8e8">
+            <td style="padding:12px 8px 12px 0;color:#333">Months of Inventory</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{MOI_CLOSED}}</td>
+            <td align="center" style="color:#666;padding:12px 8px">{{MOI_CLOSED_MOM}}</td>
+            <td align="center" style="padding:12px 0 12px 8px;color:#666">{{MOI_CLOSED_YOY}}</td>
+          </tr>
+          <tr style="background-color:#fafaf8">
+            <td style="color:#333;padding:12px 8px 12px 0">Sold/List Price Ratio</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{SOLD_TO_LIST}}</td>
+            <td align="center" style="padding:12px 8px;color:#333">{{SOLD_TO_LIST_MOM}}</td>
+            <td align="center" style="color:#333;padding:12px 0 12px 8px">{{SOLD_TO_LIST_YOY}}</td>
+          </tr>
+        </tbody>
+      </table>
+    </td>
+  </tr>
+
+  <!-- CTA Buttons — cool gray band -->
+  <tr>
+    <td style="background-color:#EAEEF2;padding:30px">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr>
+          <td align="center" width="33%" class="cta-cell" style="padding:0 5px">
+            <a href="https://www.thehelgemoteam.com/property-search/results/" target="_blank" style="background-color:#fff;padding:12px 5px;border:none;color:#000;display:block;font-size:13px;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;text-decoration:none;text-align:center">Property Search</a>
+          </td>
+          <td align="center" width="33%" class="cta-cell" style="padding:0 5px">
+            <a href="https://www.thehelgemoteam.com/property-search/results/?searchid=4090193" target="_blank" style="border:none;text-decoration:none;padding:12px 5px;text-align:center;font-size:13px;color:#000;display:block;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;background-color:#fff">Featured Listings</a>
+          </td>
+          <td align="center" width="33%" class="cta-cell" style="padding:0 5px">
+            <a href="https://www.thehelgemoteam.com/home-value/" target="_blank" style="border:none;background-color:#fff;color:#000;text-align:center;font-size:13px;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;text-decoration:none;padding:12px 5px;display:block">Home Valuation</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Contact -->
+  <tr>
+    <td align="center" style="padding:30px">
+      <p style="margin:0 0 3px 0;font-family:'Cormorant Garamond', Georgia, 'Times New Roman', serif;font-size:18px;color:#000">Brian Helgemo, Realtor</p>
+      <p style="font-size:11px;letter-spacing:0.15em;color:#888;text-transform:uppercase;margin:0 0 12px 0">The Helgemo Team &bull; Compass</p>
+      <p style="color:#444;margin:0 0 3px 0;font-size:13px"><a href="tel:9412059011" style="text-decoration:none;color:#000">941.205.9011</a></p>
+      <p style="margin:0;font-size:13px;color:#444"><a href="mailto:brian@helgemoteam.com" style="color:#000;text-decoration:none">brian@helgemoteam.com</a></p>
+    </td>
+  </tr>
+
+  <!-- Dark Footer -->
+  <tr>
+    <td style="padding:25px 50px;background-color:#2B2B2B">
+      <table cellpadding="0" cellspacing="0" width="100%" role="none">
+        <tr>
+          <td align="center" style="padding:0 0 15px">
+            <img width="100" src="https://cdn.filestackcontent.com/ALjVIPyY5SBCdSTP1630Sz/output=format:png,density:360,background:2b2b2b/resize=width:600,fit:max/auto_image/compress/%22https://www.compass.com/ucfe-assets/mc-assets/3/Compass_Logo_H_W.svg%22" style="width:100px;display:block" alt="">
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:0 0 15px">
+            <p style="font-size:10px;color:#999;letter-spacing:0.1em;margin:0">Source: Stellar MLS Data &bull; {{REPORT_MONTH}} {{REPORT_YEAR}}</p>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <p style="line-height:1.4;margin:0 0 15px 0;font-size:10px;color:#808080">Compass RE is a licensed real estate broker. All material is intended for informational purposes only and is compiled from sources deemed reliable but is subject to errors, omissions, changes in price, condition, sale, or withdrawal without notice. Equal Housing Opportunity.</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center">
+            <p style="margin:0;font-size:10px;color:#808080"><a target="_blank" href="{{UNSUBSCRIBE_URL}}" style="color:#999;text-decoration:underline">Unsubscribe</a> &nbsp;|&nbsp; <a href="#" style="color:#999;text-decoration:underline">View in Browser</a></p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+</table>
+</td>
+</tr>
+</table>
+
+</body>
+</html>

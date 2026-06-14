@@ -35,12 +35,17 @@ describe("validateTemplateTokens", () => {
   });
 
   it("does NOT flag passthrough tokens as unknown", () => {
-    // All PASSTHROUGH_TOKENS must pass through without errors.
+    // Passthrough tokens must never appear in the "Unknown token" error — they are
+    // intentionally left for downstream systems (Sendy, Sierra) to substitute.
+    // Note: a passthrough-only template will still fail the per-region guard (a
+    // separate blocking error), so we check there is no "Unknown token" error,
+    // not that there are zero errors total.
     const passthroughHtml = [...PASSTHROUGH_TOKENS]
       .map((t) => `{{${t}}}`)
       .join(" ");
     const result = validateTemplateTokens(passthroughHtml, "blog");
-    expect(result.errors).toHaveLength(0);
+    const hasUnknownError = result.errors.some((e) => /unknown token/i.test(e));
+    expect(hasUnknownError, "passthrough tokens must not be flagged as unknown").toBe(false);
   });
 
   it("returns a warning (not an error) for canonical tokens absent from the template", () => {
@@ -64,14 +69,31 @@ describe("validateTemplateTokens", () => {
     expect(result.errors.some((e) => /no.*token|zero.*token|token.*found/i.test(e))).toBe(true);
   });
 
-  it("does not error on HTML that contains only passthrough tokens (warns for missing canonical tokens)", () => {
-    // A template with ONLY passthrough tokens has valid tokens but no canonical
-    // tokens — warn but do not block.
-    const passthroughOnly = "{{CTA_URL}} {{UNSUBSCRIBE_URL}}";
+  it("returns a blocking error when the template contains ONLY passthrough tokens (passthrough-only guard)", () => {
+    // A template with ONLY passthrough tokens (e.g. {{HEADLINE}}, {{UNSUBSCRIBE_URL}})
+    // has no per-region differentiation — fillTemplate would produce byte-identical output
+    // for every region ("3 identical posts" incident class). Must be a blocking error.
+    const passthroughOnly = "{{CTA_URL}} {{UNSUBSCRIBE_URL}} {{HEADLINE}} {{HERO_IMAGE_URL}}";
     const result = validateTemplateTokens(passthroughOnly, "blog");
-    // Passthrough-only — no unknown-token errors, but canonical missing warnings apply.
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.some((e) => /per-region/i.test(e))).toBe(true);
+  });
+
+  it("returns a blocking error for passthrough-only email template too (both roles require per-region tokens)", () => {
+    // A MU email template with only {{EYEBROW}}, {{CTA_TEXT}}, {{UNSUBSCRIBE_URL}} etc.
+    // is just as broken — per-region guard applies equally to the email role.
+    const emailPassthroughOnly = "{{EYEBROW}} {{CTA_TEXT}} {{UNSUBSCRIBE_URL}} {{HERO_ALT}}";
+    const result = validateTemplateTokens(emailPassthroughOnly, "email");
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.errors.some((e) => /per-region/i.test(e))).toBe(true);
+  });
+
+  it("does NOT error when template has ≥1 per-region token alongside passthrough tokens", () => {
+    // A real MU email has both passthrough tokens (UNSUBSCRIBE_URL, HEADLINE, etc.)
+    // AND per-region tokens (REGION_NAME, metric tokens). The guard must not fire.
+    const emailMixed = `<p>{{HEADLINE}}</p><p>{{REGION_NAME}} — {{SOLD}} homes sold. <a href="{{UNSUBSCRIBE_URL}}">Unsubscribe</a></p>`;
+    const result = validateTemplateTokens(emailMixed, "email");
     expect(result.errors).toHaveLength(0);
-    expect(result.warnings.length).toBeGreaterThan(0);
   });
 
   it("works the same way for email role (same vocab)", () => {

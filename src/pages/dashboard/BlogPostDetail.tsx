@@ -12,6 +12,7 @@ import { AIChatModal } from "@/components/blog/AIChatModal";
 import { AllyFloatingChat } from "@/components/blog/AllyFloatingChat";
 import BlogPostChatCompose from "./BlogPostChatCompose";
 import { ImagePickerModal } from "@/components/blog/ImagePickerModal";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { PublishHistoryPanel } from "@/components/blog/PublishHistoryPanel";
 import {
   createPost, getPost, updatePost, publishPost, rejectPost, editOnSierra,
@@ -451,7 +452,18 @@ export default function BlogPostDetailPage() {
             <Label>Featured image</Label>
             {form.image ? (
               <div className="space-y-2">
-                <img src={thumbUrl(form.image.blob_url, { width: 600, quality: 75 })} loading="lazy" decoding="async" className="w-full rounded-md" alt={form.image.vision_caption ?? ""} />
+                <AspectRatio
+                  ratio={16 / 9}
+                  style={{ borderRadius: "var(--le-r-md)", overflow: "hidden" }}
+                >
+                  <img
+                    src={thumbUrl(form.image.blob_url, { width: 600, quality: 75 })}
+                    loading="lazy"
+                    decoding="async"
+                    alt={form.image.vision_caption ?? ""}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                  />
+                </AspectRatio>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={() => setPickerOpen(true)}>Change</Button>
                   <Button size="sm" variant="ghost" onClick={() => setForm({ ...form, image: null })}>Remove</Button>
