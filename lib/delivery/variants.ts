@@ -454,6 +454,23 @@ export async function regenerateVariant(
         { jobId: genJob.jobId, delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
       return;
     } catch (err) {
+      // Atlas 402 insufficient-balance: permanent billing failure. Do NOT
+      // failover to another provider (that silently degrades quality to e.g.
+      // native-Kling 720p and hides the account problem — the original
+      // quality-drop incident). Surface loudly, mark this variant degraded so
+      // the operator sees it, and re-throw instead of routing to a worse clip.
+      if (err instanceof AtlasInsufficientBalanceError) {
+        console.error(
+          `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant ${variant} regenerate: ${err.message}`,
+        );
+        await supabase.from('scene_variants')
+          .update({ degraded: true, error: err.message, updated_at: new Date().toISOString() })
+          .eq('delivery_run_id', runId).eq('scene_id', sceneId).eq('variant', variant);
+        await log(scene.property_id, 'generation', 'error',
+          `[atlas] insufficient balance — scene ${scene.scene_number} variant ${variant} regenerate NOT submitted; operator action required: ${err.message}`,
+          { delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
+        throw err;
+      }
       const classified = classifyProviderError(err);
       lastError = err;
       if (!classified.shouldFailover) {
