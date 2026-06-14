@@ -23,7 +23,7 @@ function fullMetrics(name: string): RegionMetrics {
 
 // Minimal in-memory Supabase stub supporting the chained calls run.ts uses.
 function makeSupabase(seed: Record<string, any[]> = {}) {
-  const tables: Record<string, any[]> = { market_update_runs: [], blog_posts: [], emails: [], blog_templates: [{ id: "btpl", body_html: "<p>{{REGION_NAME}} {{SOLD}}</p>" }], email_templates: [{ id: "etpl", body_html: "<p>{{REGION_NAME}}</p>" }], ...seed };
+  const tables: Record<string, any[]> = { market_update_runs: [], blog_posts: [], emails: [], blog_templates: [{ id: "btpl", name: "Blog Template", body_html: "<p>{{REGION_NAME}} {{SOLD}}</p>" }], email_templates: [{ id: "etpl", name: "Email Template", body_html: "<p>{{REGION_NAME}}</p>" }], ...seed };
   let idc = 0;
   const nextId = (t: string) => `${t}-${++idc}`;
 
@@ -144,5 +144,111 @@ describe("generateDrafts", () => {
     });
     await expect(generateDrafts({ supabase, siteId: "site1", runId: analyzed.runId })).rejects.toThrow(/error-severity/);
     expect(supabase._tables.blog_posts).toHaveLength(0);
+  });
+});
+
+describe("generateDrafts — template-token guard", () => {
+  // Sets up a healthy analyzeRun (both regions extract fine) then swaps the
+  // template HTML via the seed so the guard fires during generateDrafts.
+
+  async function runWithBlogTemplate(blogHtml: string) {
+    (extractRegion as any).mockImplementation(async (_pdf: string, name: string) => ({
+      metrics: fullMetrics(name),
+      costCents: 1,
+    }));
+    const supabase = makeSupabase({
+      blog_templates: [{ id: "btpl", name: "Blog_Template_MU", body_html: blogHtml }],
+      email_templates: [{ id: "etpl", name: "Email Template", body_html: "<p>{{REGION_NAME}}</p>" }],
+    });
+    const analyzed = await analyzeRun({
+      supabase, siteId: "site1", periodMonth: 3, periodYear: 2026,
+      blogTemplateId: "btpl", emailTemplateId: "etpl",
+      regions: [regionInput("charlotte_county", "Charlotte County", { email: true })],
+    });
+    return { supabase, runId: analyzed.runId };
+  }
+
+  async function runWithEmailTemplate(emailHtml: string) {
+    (extractRegion as any).mockImplementation(async (_pdf: string, name: string) => ({
+      metrics: fullMetrics(name),
+      costCents: 1,
+    }));
+    const supabase = makeSupabase({
+      blog_templates: [{ id: "btpl", name: "Blog Template", body_html: "<p>{{REGION_NAME}} {{SOLD}}</p>" }],
+      email_templates: [{ id: "etpl", name: "Email_Template_MU", body_html: emailHtml }],
+    });
+    const analyzed = await analyzeRun({
+      supabase, siteId: "site1", periodMonth: 3, periodYear: 2026,
+      blogTemplateId: "btpl", emailTemplateId: "etpl",
+      regions: [regionInput("charlotte_county", "Charlotte County", { email: true })],
+    });
+    return { supabase, runId: analyzed.runId };
+  }
+
+  it("blocks generation and creates zero drafts when the blog template has no tokens", async () => {
+    const { supabase, runId } = await runWithBlogTemplate("<p>Hardcoded content with no placeholders at all.</p>");
+    // Both the failure sentinel and the offending template name must appear in the error.
+    await expect(generateDrafts({ supabase, siteId: "site1", runId })).rejects.toThrow(
+      /template validation failed.*Blog_Template_MU|Blog_Template_MU.*template validation failed/,
+    );
+    expect(supabase._tables.blog_posts).toHaveLength(0);
+    expect(supabase._tables.emails).toHaveLength(0);
+  });
+
+  it("sets run status to needs_review when blog template has no tokens", async () => {
+    const { supabase, runId } = await runWithBlogTemplate("<p>No placeholders here.</p>");
+    await generateDrafts({ supabase, siteId: "site1", runId }).catch(() => {/* expected */});
+    const run = supabase._tables.market_update_runs.find((r: any) => r.id === runId);
+    expect(run.status).toBe("needs_review");
+  });
+
+  it("blocks generation when blog template contains only unknown tokens", async () => {
+    // A template with tokens, but all unknown (not in the canonical vocabulary).
+    const { supabase, runId } = await runWithBlogTemplate("<p>{{UNKNOWN_TOKEN_XYZ}} {{ANOTHER_BAD_ONE}}</p>");
+    await expect(generateDrafts({ supabase, siteId: "site1", runId })).rejects.toThrow(/template validation failed/);
+    expect(supabase._tables.blog_posts).toHaveLength(0);
+  });
+
+  it("blocks generation and creates zero drafts when the email template has no tokens", async () => {
+    const { supabase, runId } = await runWithEmailTemplate("<p>Finished email with hardcoded content.</p>");
+    await expect(generateDrafts({ supabase, siteId: "site1", runId })).rejects.toThrow(/Email_Template_MU/);
+    expect(supabase._tables.blog_posts).toHaveLength(0);
+    expect(supabase._tables.emails).toHaveLength(0);
+  });
+
+  it("allows generation when both templates are properly tokenized (happy path unchanged)", async () => {
+    (extractRegion as any).mockImplementation(async (_pdf: string, name: string) => ({
+      metrics: fullMetrics(name),
+      costCents: 1,
+    }));
+    const supabase = makeSupabase();
+    const analyzed = await analyzeRun({
+      supabase, siteId: "site1", periodMonth: 4, periodYear: 2026,
+      blogTemplateId: "btpl", emailTemplateId: "etpl",
+      regions: [regionInput("charlotte_county", "Charlotte County", { email: true })],
+    });
+    const gen = await generateDrafts({ supabase, siteId: "site1", runId: analyzed.runId });
+    expect(gen.postIds).toHaveLength(1);
+    expect(gen.emailIds).toHaveLength(1);
+    expect(supabase._tables.blog_posts).toHaveLength(1);
+  });
+
+  it("does NOT block on a template with warnings (missing canonical tokens but not zero/unknown)", async () => {
+    // Template has only a subset of canonical tokens — warnings only, not errors.
+    (extractRegion as any).mockImplementation(async (_pdf: string, name: string) => ({
+      metrics: fullMetrics(name),
+      costCents: 1,
+    }));
+    const supabase = makeSupabase({
+      blog_templates: [{ id: "btpl", name: "Blog Template", body_html: "<p>{{REGION_NAME}}</p>" }],
+    });
+    const analyzed = await analyzeRun({
+      supabase, siteId: "site1", periodMonth: 4, periodYear: 2026,
+      blogTemplateId: "btpl", emailTemplateId: null,
+      regions: [regionInput("charlotte_county", "Charlotte County")],
+    });
+    const gen = await generateDrafts({ supabase, siteId: "site1", runId: analyzed.runId });
+    expect(gen.postIds).toHaveLength(1);
+    expect(supabase._tables.blog_posts).toHaveLength(1);
   });
 });

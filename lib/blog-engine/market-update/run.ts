@@ -11,6 +11,7 @@ import { fillTemplate } from "./fill.js";
 import { rewriteFaq } from "./faq.js";
 import { stripImages } from "./strip-images.js";
 import type { MathIssue, RegionMetrics } from "./types.js";
+import { validateTemplateTokens } from "./validate-template.js";
 
 export interface RegionInput {
   slug: string;
@@ -135,6 +136,54 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
   const blogTpl = await loadTemplateHtml(supabase, "blog_templates", run.blog_template_id);
   const emailTpl = run.email_template_id ? await loadTemplateHtml(supabase, "email_templates", run.email_template_id) : null;
 
+  // ── Template-token guard ─────────────────────────────────────────────────
+  // Validate BOTH templates before touching any draft rows. A token-less or
+  // unknown-token template would produce N byte-identical drafts (the
+  // Blog_Template_MU incident: 3 identical Charlotte County posts). Fail loudly
+  // now so zero drafts are created and the run surfaces a clear, actionable error.
+  const templateErrors: string[] = [];
+
+  const blogValidation = validateTemplateTokens(blogTpl.html, "blog");
+  if (blogValidation.errors.length > 0) {
+    templateErrors.push(
+      `Blog template "${blogTpl.name}" has token errors: ${blogValidation.errors.join("; ")}`,
+    );
+  }
+
+  if (emailTpl) {
+    const emailValidation = validateTemplateTokens(emailTpl.html, "email");
+    if (emailValidation.errors.length > 0) {
+      templateErrors.push(
+        `Email template "${emailTpl.name}" has token errors: ${emailValidation.errors.join("; ")}`,
+      );
+    }
+  }
+
+  if (templateErrors.length > 0) {
+    const combinedMessage = templateErrors.join(" | ");
+    // Record the failure on the run in the same needs_review shape used elsewhere.
+    const failureIssue: MathIssue = {
+      severity: "error",
+      field: "template.tokens",
+      message: combinedMessage,
+    };
+    const failedResults: RegionResult[] = results.map((r) => ({
+      ...r,
+      issues: [...r.issues, failureIssue],
+      error: combinedMessage,
+    }));
+    await supabase
+      .from("market_update_runs")
+      .update({
+        status: "needs_review",
+        region_results: failedResults,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", runId);
+    throw new Error(`generateDrafts: template validation failed — ${combinedMessage}`);
+  }
+  // ────────────────────────────────────────────────────────────────────────
+
   const period = `${monthName(run.period_month)} ${run.period_year}`;
   const postIds: string[] = [];
   const emailIds: string[] = [];
@@ -145,7 +194,7 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
     const tokenMap = buildTokenMap(r.metrics);
 
     // --- Blog post ---
-    const filled = fillTemplate(blogTpl, tokenMap);
+    const filled = fillTemplate(blogTpl.html, tokenMap);
     if (filled.unknownTokens.length > 0) {
       r.issues.push({
         severity: "warning",
@@ -180,7 +229,7 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
 
     // --- Email (Charlotte County only) ---
     if (r.emits_email && emailTpl) {
-      const eFilled = fillTemplate(emailTpl, tokenMap);
+      const eFilled = fillTemplate(emailTpl.html, tokenMap);
       if (eFilled.unknownTokens.length > 0) {
         r.issues.push({
           severity: "warning",
@@ -229,8 +278,13 @@ export async function generateDrafts(args: GenerateArgs): Promise<{ status: stri
   return { status: "generated", postIds, emailIds, costCents };
 }
 
-async function loadTemplateHtml(supabase: SupabaseClient, table: string, id: string): Promise<string> {
-  const { data, error } = await supabase.from(table).select("body_html").eq("id", id).single();
+interface TemplateRecord {
+  html: string;
+  name: string;
+}
+
+async function loadTemplateHtml(supabase: SupabaseClient, table: string, id: string): Promise<TemplateRecord> {
+  const { data, error } = await supabase.from(table).select("name,body_html").eq("id", id).single();
   if (error || !data) throw new Error(`loadTemplateHtml(${table}/${id}): ${error?.message ?? "not found"}`);
-  return (data.body_html as string) ?? "";
+  return { html: (data.body_html as string) ?? "", name: (data.name as string) ?? id };
 }
