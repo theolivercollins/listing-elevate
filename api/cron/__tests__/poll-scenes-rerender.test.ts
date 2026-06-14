@@ -36,6 +36,13 @@ vi.mock("../../../lib/pipeline.js", () => ({
   resubmitScene: vi.fn(),
 }));
 
+// Mock stuck-reaper so its from('scenes') calls don't interfere with this
+// test's counter-based Supabase mock. The reaper is exercised by its own
+// dedicated test suite; here it must be a no-op.
+vi.mock("../../../lib/pipeline/stuck-reaper.js", () => ({
+  reapStuckScenes: vi.fn().mockResolvedValue({ reaped: 0, ids: [] }),
+}));
+
 import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase } from "../../../lib/db.js";
 import { selectProvider } from "../../../lib/providers/router.js";
