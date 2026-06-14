@@ -4,14 +4,15 @@
 import "dotenv/config";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 import { getSupabase } from "../../lib/client.js";
 
 const BLOG_TEMPLATE_ID = "718e9f58-cb55-4f11-8c5a-664f0be0391c";
 const EMAIL_TEMPLATE_ID = "8757c0e2-6551-4580-8f96-44177f5aa517";
 
-// Write to absolute worktree path so it works regardless of cwd.
-const WORKTREE = "/Users/oliverhelgemo/listing-elevate/.claude/worktrees/mu-template-tokenize-fix";
-const OUT_DIR = join(WORKTREE, "tmp");
+// Resolve repo root portably — works from any checkout or worktree.
+const REPO_ROOT = execSync("git rev-parse --show-toplevel").toString().trim();
+const OUT_DIR = join(REPO_ROOT, "tmp");
 
 async function main(): Promise<void> {
   mkdirSync(OUT_DIR, { recursive: true });

@@ -18,3 +18,6 @@ docs/CREDENTIALS.md
 # Local brainstorming + worktree fragments — not part of repo state
 .superpowers/
 le-1/
+
+# Scratch exports from scripts (e.g. mu-export-templates.ts) — never commit
+tmp/

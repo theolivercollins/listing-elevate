@@ -4,19 +4,21 @@
 // EXIT 0 = zero errors on both templates; EXIT 1 = any errors found.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { execSync } from "node:child_process";
 import { validateTemplateTokens } from "../../lib/blog-engine/market-update/validate-template.js";
 import { tokensInTemplate } from "../../lib/blog-engine/market-update/fill.js";
 
-const WORKTREE = "/Users/oliverhelgemo/listing-elevate/.claude/worktrees/mu-template-tokenize-fix";
+// Resolve repo root portably — works from any checkout or worktree.
+const REPO_ROOT = execSync("git rev-parse --show-toplevel").toString().trim();
 
 const TEMPLATES: Array<{ file: string; role: "blog" | "email"; label: string }> = [
   {
-    file: join(WORKTREE, "templates/market-update/Blog_Template_MU.tokenized.html"),
+    file: join(REPO_ROOT, "templates/market-update/Blog_Template_MU.tokenized.html"),
     role: "blog",
     label: "Blog_Template_MU.tokenized.html",
   },
   {
-    file: join(WORKTREE, "templates/market-update/Email_Template_MU.tokenized.html"),
+    file: join(REPO_ROOT, "templates/market-update/Email_Template_MU.tokenized.html"),
     role: "email",
     label: "Email_Template_MU.tokenized.html",
   },
