@@ -186,7 +186,6 @@ describe("reapStuckLabIterations", () => {
 describe("reapStuckScenes", () => {
   const NOW = new Date("2026-06-14T12:00:00Z");
   const GENERATING_ID = "scene-gen-001";
-  const PENDING_ID = "scene-pend-001";
 
   /**
    * reapStuckScenes makes TWO select queries (generating + pending) and one
@@ -246,25 +245,11 @@ describe("reapStuckScenes", () => {
     expect(db._inSpy).toHaveBeenCalledWith("id", [GENERATING_ID]);
   });
 
-  it("reaps a pending scene (no provider_task_id) older than SUBMIT_STUCK_MINUTES", async () => {
+  it("reaps multiple stuck generating scenes in one update call", async () => {
+    const SECOND_ID = "scene-gen-002";
     const db = buildScenesDb({
-      generatingData: [],
-      pendingData: [{ id: PENDING_ID }],
-      updateError: null,
-    });
-
-    const result = await reapStuckScenes(db as unknown as import("@supabase/supabase-js").SupabaseClient, NOW);
-
-    expect(result.reaped).toBe(1);
-    expect(result.ids).toContain(PENDING_ID);
-    expect(db._updateSpy).toHaveBeenCalledWith({ status: "needs_review" });
-    expect(db._inSpy).toHaveBeenCalledWith("id", [PENDING_ID]);
-  });
-
-  it("combines generating + pending ids into one update call", async () => {
-    const db = buildScenesDb({
-      generatingData: [{ id: GENERATING_ID }],
-      pendingData: [{ id: PENDING_ID }],
+      generatingData: [{ id: GENERATING_ID }, { id: SECOND_ID }],
+      pendingData: [],
       updateError: null,
     });
 
@@ -272,9 +257,23 @@ describe("reapStuckScenes", () => {
 
     expect(result.reaped).toBe(2);
     expect(result.ids).toContain(GENERATING_ID);
-    expect(result.ids).toContain(PENDING_ID);
-    // Exactly one update call combining both ids.
+    expect(result.ids).toContain(SECOND_ID);
     expect(db._updateSpy).toHaveBeenCalledTimes(1);
+    expect(db._inSpy).toHaveBeenCalledWith("id", [GENERATING_ID, SECOND_ID]);
+  });
+
+  it("ages generating scenes by submitted_at, older-than direction (column + direction guard)", async () => {
+    const db = buildScenesDb({ generatingData: [], pendingData: [], updateError: null });
+
+    await reapStuckScenes(db as unknown as import("@supabase/supabase-js").SupabaseClient, NOW);
+
+    const fromResult = db.from.mock.results[0]?.value;
+    const selectChain = fromResult?.select?.mock?.results?.[0]?.value;
+    const expectedCutoff = new Date(NOW.getTime() - GENERATE_STUCK_MINUTES * 60 * 1000).toISOString();
+    // A flipped column or comparison direction here would orphan stuck scenes
+    // or reap fresh ones — assert both explicitly.
+    expect(selectChain?.eq).toHaveBeenCalledWith("status", "generating");
+    expect(selectChain?.lt).toHaveBeenCalledWith("submitted_at", expectedCutoff);
   });
 
   it("returns { reaped: 0, ids: [] } when both selects return empty", async () => {
@@ -316,9 +315,7 @@ describe("reapStuckScenes", () => {
     expect(result.ids).toEqual([]);
   });
 
-  it("now param controls the cutoff — two distinct thresholds applied", async () => {
-    // We only verify the function doesn't throw and uses the correct table.
-    // The cutoff computation is tested implicitly by the threshold constants.
+  it("now param controls the cutoff and resolves without throwing", async () => {
     const db = buildScenesDb({
       generatingData: [],
       pendingData: [],
@@ -329,8 +326,8 @@ describe("reapStuckScenes", () => {
       reapStuckScenes(db as unknown as import("@supabase/supabase-js").SupabaseClient, minutesAgo(NOW, 0)),
     ).resolves.not.toThrow();
 
-    // GENERATE_STUCK_MINUTES and SUBMIT_STUCK_MINUTES are distinct constants.
     expect(GENERATE_STUCK_MINUTES).toBe(30);
+    // SUBMIT_STUCK_MINUTES is reserved for the property-level pending reaper (follow-up).
     expect(SUBMIT_STUCK_MINUTES).toBe(20);
   });
 });
