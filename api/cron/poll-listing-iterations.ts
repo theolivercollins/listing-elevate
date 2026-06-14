@@ -101,13 +101,20 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
           void (async () => {
             const { error: bErr } = await supabase.from("cost_events").insert({
               property_id: null,
-              scene_id: iter.scene_id,
+              // scene_id MUST stay null here: iter.scene_id references the
+              // prompt_lab_listing scene tables, NOT the production `scenes`
+              // table that cost_events.scene_id FKs to. Writing it directly
+              // throws a foreign-key violation on every lab iteration (the
+              // source of the per-minute "bunny cost_event insert failed"
+              // log spam). The lab scene id is preserved in metadata instead —
+              // mirrors the atlas/kling render insert below.
+              scene_id: null,
               stage: "generation",
               provider: "bunny",
               units_consumed: 1,
               unit_type: "renders",
               cost_cents: bunnyStreamCostCents(buffer.byteLength),
-              metadata: { bunny_hosted: mp4Valid, path: rehostPath, source: "lab_listing", iteration_id: iter.id },
+              metadata: { bunny_hosted: mp4Valid, path: rehostPath, source: "lab_listing", scene_id: iter.scene_id, iteration_id: iter.id },
             });
             if (bErr) console.warn("[poll-listing-iterations] bunny cost_event insert failed:", bErr);
           })();

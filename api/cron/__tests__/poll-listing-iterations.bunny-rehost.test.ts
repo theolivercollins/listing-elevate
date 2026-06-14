@@ -193,6 +193,11 @@ describe("poll-listing-iterations — Bunny rehost migration", () => {
       .find((row: Record<string, unknown>) => row?.provider === "bunny");
     expect(bunnyRow).toBeDefined();
     expect(bunnyRow?.cost_cents).toBe(2);
+    // scene_id column MUST be null — iter.scene_id references a lab table, not
+    // the production `scenes` table cost_events.scene_id FKs to (FK violation
+    // → per-minute insert-failed spam if written directly). Preserved in metadata.
+    expect(bunnyRow?.scene_id).toBeNull();
+    expect((bunnyRow?.metadata as Record<string, unknown>)?.scene_id).toBe("scene-77");
     expect((bunnyRow?.metadata as Record<string, unknown>)?.bunny_hosted).toBe(true);
     expect((bunnyRow?.metadata as Record<string, unknown>)?.source).toBe("lab_listing");
   });
