@@ -9,7 +9,7 @@ import {
   getEnabledProviders,
 } from '../providers/router.js';
 import { classifyProviderError } from '../providers/errors.js';
-import { atlasClipCostCents, V1_DEFAULT_SKU } from '../providers/atlas.js';
+import { atlasClipCostCents, V1_DEFAULT_SKU, AtlasInsufficientBalanceError } from '../providers/atlas.js';
 import type { SceneVariantRow } from '../types/operator-studio.js';
 import type { RoomType, CameraMovement, VideoProvider, PipelineMode } from '../types.js';
 
@@ -110,6 +110,20 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
             bSubmitted = true;
             break;
           } catch (err) {
+            // Atlas 402 insufficient-balance: permanent billing failure.
+            // Do NOT failover to another provider (that would silently degrade
+            // quality and hide the account problem from the operator). Surface
+            // it loudly and degrade this variant immediately.
+            if (err instanceof AtlasInsufficientBalanceError) {
+              lastErrMsg = err.message;
+              console.error(
+                `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant B: ${err.message}`,
+              );
+              await log(propertyId, 'generation', 'error',
+                `[atlas] insufficient balance — scene ${scene.scene_number} variant B NOT submitted; operator action required: ${err.message}`,
+                { delivery_run_id: runId, modelKey: decision.modelKey }, scene.id);
+              break;
+            }
             const classified = classifyProviderError(err);
             lastErrMsg = classified.message;
             if (!classified.shouldFailover) {

@@ -51,6 +51,7 @@ import { resolveEndFrameUrl } from "./services/end-frame.js";
 import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
+import { AtlasInsufficientBalanceError } from "./providers/atlas.js";
 import { orderScenesForAssembly } from "./assembly/scene-ordering.js";
 import { fitScenesToDuration } from "./assembly/duration-fit.js";
 import { fetchPropertyBranding } from "./assembly/branding.js";
@@ -1029,6 +1030,21 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
           { jobId: genJob.jobId, attempt: attempt + 1, modelKey: decision.modelKey }, scene.id);
         return;
       } catch (err) {
+        // Atlas 402 insufficient-balance: permanent billing failure.
+        // Do NOT failover to another provider — that would silently degrade
+        // quality and mask the account problem from the operator. Surface
+        // it loudly and send the scene to needs_review immediately.
+        if (err instanceof AtlasInsufficientBalanceError) {
+          console.error(
+            `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number}: ${err.message}`,
+          );
+          await updateSceneStatus(scene.id, "needs_review");
+          await log(propertyId, "generation", "error",
+            `[atlas] insufficient balance — scene ${scene.scene_number} NOT submitted; operator action required: ${err.message}`,
+            { kind: "permanent" }, scene.id);
+          lastError = { message: err.message, kind: "permanent", provider: provider.name };
+          break;
+        }
         const classified = classifyProviderError(err);
         lastError = { message: classified.message, kind: classified.kind, provider: provider.name };
 
@@ -1276,6 +1292,28 @@ export async function resubmitScene(
 
       return { ok: true, provider: provider.name, jobId: genJob.jobId, attempt: nextAttemptCount };
     } catch (err) {
+      // Atlas 402 insufficient-balance: permanent billing failure.
+      // Do NOT failover — surface loudly and mark needs_review so the operator
+      // sees it instead of getting a silently worse (or missing) video.
+      if (err instanceof AtlasInsufficientBalanceError) {
+        console.error(
+          `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} resubmit: ${err.message}`,
+        );
+        await supabase
+          .from("scenes")
+          .update({ status: "needs_review" })
+          .eq("id", sceneId);
+        await log(scene.property_id, "generation", "error",
+          `[atlas] insufficient balance — scene ${scene.scene_number} resubmit NOT submitted; operator action required: ${err.message}`,
+          { kind: "permanent", modelKey: decision.modelKey }, sceneId);
+        return {
+          ok: false,
+          provider: provider.name,
+          error: err.message,
+          kind: "permanent",
+          retryable: false,
+        };
+      }
       const classified = classifyProviderError(err);
       lastError = { message: classified.message, kind: classified.kind, provider: provider.name };
 
