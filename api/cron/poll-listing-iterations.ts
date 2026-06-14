@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../lib/client.js";
 import { atlasClipCostCents } from "../../lib/providers/atlas.js";
 import { pickProvider, isNativeKling } from "../../lib/providers/dispatch.js";
-import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "../../lib/providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } from "../../lib/providers/bunny-stream.js";
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
@@ -85,7 +85,16 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         const buffer = await provider.downloadClip(status.videoUrl!);
         if (isBunnyConfigured()) {
           const bunnyResult = await hostVideoOnBunny(rehostPath, buffer);
-          persistedUrl = bunnyResult.mp4Url;
+          // HEAD-validate before persisting — sends the Referer header required by
+          // Bunny library 679131's referrer allow-listing (server-side fetches have
+          // no Referer by default → 403). bunny_hosted reflects the actual result.
+          const mp4Valid = await validateBunnyMp4Url(bunnyResult.mp4Url);
+          if (mp4Valid) {
+            persistedUrl = bunnyResult.mp4Url;
+          } else {
+            console.warn(`[poll-listing-iterations] bunny mp4Url HEAD failed for ${rehostPath} — keeping provider URL`);
+            deleteBunnyVideo(bunnyResult.guid).catch(() => {});
+          }
           // Record Bunny hosting cost (even when cost rounds to 0¢).
           // Fire-and-forget: Bunny cost event. Wrapped in void IIFE so the
           // PromiseLike returned by Supabase doesn't block the outer await.
@@ -98,13 +107,16 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
               units_consumed: 1,
               unit_type: "renders",
               cost_cents: bunnyStreamCostCents(buffer.byteLength),
-              metadata: { bunny_hosted: true, path: rehostPath, source: "lab_listing", iteration_id: iter.id },
+              metadata: { bunny_hosted: mp4Valid, path: rehostPath, source: "lab_listing", iteration_id: iter.id },
             });
-            if (bErr) console.error("[poll-listing-iterations] bunny cost_event insert failed:", bErr);
+            if (bErr) console.warn("[poll-listing-iterations] bunny cost_event insert failed:", bErr);
           })();
         }
       } catch (rehostErr) {
-        console.error(`[poll-listing-iterations] rehost failed for ${iter.id}:`, rehostErr);
+        // warn not error — a Bunny hosting failure is non-fatal (we fall back to
+        // the provider URL). console.error was causing misleading error-level spam
+        // in the prod cron logs on every tick when the Referer fix was absent.
+        console.warn(`[poll-listing-iterations] rehost failed for ${iter.id}:`, rehostErr);
       }
 
       await supabase
@@ -137,8 +149,13 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       // Fire-and-forget Gemini judge hook. Mirrors finalizeLabRender's hook
       // for the single-image Lab — without this the Listing Lab clips never
       // get auto-judged. Non-blocking so clip finalization isn't held up.
+      //
+      // IMPORTANT: pass the PROVIDER url (status.videoUrl), not the Bunny CDN
+      // persistedUrl. Gemini's fetchers send no Referer and would 403 against
+      // the Bunny CDN referrer allow-list. The provider URL is still alive at
+      // judge time (clips are judged immediately after collection).
       if (process.env.JUDGE_ENABLED === "true") {
-        const persistedForJudge = persistedUrl;
+        const persistedForJudge = status.videoUrl!;
         const iterIdForJudge = iter.id;
         const sceneIdForJudge = iter.scene_id;
         (async () => {

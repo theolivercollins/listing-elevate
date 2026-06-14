@@ -149,6 +149,8 @@ vi.mock('../providers/atlas.js', () => ({
 // + successful host returning a CDN mp4 URL derived from the title (old clipPath),
 // so tests can assert clip_url is the Bunny URL. Tests override per-case to
 // simulate unconfigured / host failure.
+// validateBunnyMp4Url defaults to true (HEAD valid) so the Bunny URL gets
+// persisted; tests override to false to exercise the fallback path.
 vi.mock('../providers/bunny-stream.js', () => ({
   isBunnyConfigured: vi.fn().mockReturnValue(true),
   hostVideoOnBunny: vi.fn(async (title: string) => {
@@ -161,6 +163,8 @@ vi.mock('../providers/bunny-stream.js', () => ({
     };
   }),
   bunnyStreamCostCents: vi.fn().mockReturnValue(0),
+  deleteBunnyVideo: vi.fn().mockResolvedValue(undefined),
+  validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
 }));
 
 // Helper: build a mock provider that resolves checkStatus to completed with a clip.

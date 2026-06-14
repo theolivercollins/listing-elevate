@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { hostVideoOnBunny, bunnyStreamCostCents, bestMp4Res, BUNNY_STATUS } from "./bunny-stream.js";
+import { hostVideoOnBunny, bunnyStreamCostCents, bestMp4Res, BUNNY_STATUS, bunnyCdnHeaders, validateBunnyMp4Url } from "./bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -259,5 +259,106 @@ describe("bestMp4Res", () => {
   it("never returns a resolution not in the allowed list (rejects unknown labels)", () => {
     // "2160p" is not in RESOLUTION_PREFERENCE, so fallback to 720p
     expect(bestMp4Res("2160p")).toBe("720p");
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// bunnyCdnHeaders — Referer header injection
+// ---------------------------------------------------------------------------
+
+describe("bunnyCdnHeaders", () => {
+  afterEach(() => {
+    delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  });
+
+  it("returns {Referer: 'https://www.listingelevate.com/'} for a Bunny CDN URL", () => {
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = "vz-01cb8232-b48.b-cdn.net";
+    const headers = bunnyCdnHeaders("https://vz-01cb8232-b48.b-cdn.net/some-guid/play_1080p.mp4");
+    expect(headers).toEqual({ Referer: "https://www.listingelevate.com/" });
+  });
+
+  it("returns {} for a non-Bunny URL (no Referer leakage to external services)", () => {
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = "vz-01cb8232-b48.b-cdn.net";
+    const headers = bunnyCdnHeaders("https://storage.googleapis.com/some-video.mp4");
+    expect(headers).toEqual({});
+  });
+
+  it("returns {} when BUNNY_STREAM_CDN_HOSTNAME is unset", () => {
+    delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+    const headers = bunnyCdnHeaders("https://vz-01cb8232-b48.b-cdn.net/any.mp4");
+    expect(headers).toEqual({});
+  });
+
+  it("returns {} for a malformed URL (no throw)", () => {
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = "vz-01cb8232-b48.b-cdn.net";
+    expect(() => bunnyCdnHeaders("not-a-valid-url")).not.toThrow();
+    expect(bunnyCdnHeaders("not-a-valid-url")).toEqual({});
+  });
+
+  it("returns {} for an empty string (no throw)", () => {
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = "vz-01cb8232-b48.b-cdn.net";
+    expect(bunnyCdnHeaders("")).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateBunnyMp4Url — HEAD fetch carries Referer for b-cdn.net URLs
+// ---------------------------------------------------------------------------
+
+describe("validateBunnyMp4Url", () => {
+  beforeEach(() => {
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = "vz-01cb8232-b48.b-cdn.net";
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  });
+
+  it("returns true when HEAD responds 200 and sends Referer for Bunny CDN URL", async () => {
+    const capturedInit: RequestInit[] = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      capturedInit.push(init ?? {});
+      return Promise.resolve({ ok: true, status: 200 } as Response);
+    }));
+
+    const url = "https://vz-01cb8232-b48.b-cdn.net/fake-guid/play_1080p.mp4";
+    const result = await validateBunnyMp4Url(url);
+
+    expect(result).toBe(true);
+    expect(capturedInit).toHaveLength(1);
+    // The critical assertion: the HEAD request must carry the LE Referer header
+    // so Bunny library 679131's referrer allow-list passes (server-side fetches
+    // send no Referer by default → 403 without this).
+    const sentHeaders = capturedInit[0]?.headers as Record<string, string> | undefined;
+    expect(sentHeaders?.Referer).toBe("https://www.listingelevate.com/");
+    expect(capturedInit[0]?.method).toBe("HEAD");
+  });
+
+  it("returns false when HEAD responds non-2xx", async () => {
+    vi.stubGlobal("fetch", vi.fn(() =>
+      Promise.resolve({ ok: false, status: 403 } as Response),
+    ));
+    const result = await validateBunnyMp4Url("https://vz-01cb8232-b48.b-cdn.net/guid/play_1080p.mp4");
+    expect(result).toBe(false);
+  });
+
+  it("returns false (never throws) on network error", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("network error"))));
+    const result = await validateBunnyMp4Url("https://vz-01cb8232-b48.b-cdn.net/guid/play_1080p.mp4");
+    expect(result).toBe(false);
+  });
+
+  it("does NOT send Referer for non-Bunny URLs", async () => {
+    const capturedInit: RequestInit[] = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      capturedInit.push(init ?? {});
+      return Promise.resolve({ ok: true, status: 200 } as Response);
+    }));
+
+    await validateBunnyMp4Url("https://other-cdn.example.com/video.mp4");
+    const sentHeaders = capturedInit[0]?.headers as Record<string, string> | undefined;
+    expect(sentHeaders?.Referer).toBeUndefined();
   });
 });

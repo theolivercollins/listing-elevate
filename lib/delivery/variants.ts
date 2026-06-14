@@ -1,6 +1,6 @@
 import { getSupabase } from '../client.js';
 import { recordCostEvent, log } from '../db.js';
-import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from '../providers/bunny-stream.js';
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } from '../providers/bunny-stream.js';
 import {
   selectProviderForScene,
   buildProviderFromDecision,
@@ -237,14 +237,27 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
       if (isBunnyConfigured()) {
         try {
           const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
-          clipUrl = hosted.mp4Url;
-          // Additional Bunny hosting cost row (the render cost_event below is
-          // unchanged). Wrapped in .catch so a cost-row failure never breaks the run.
+          // HEAD-validate before persisting — sends the Referer header required
+          // by Bunny library 679131's referrer allow-listing (server-side fetches
+          // have no Referer by default → 403). Also guards against MP4 Fallback
+          // being disabled (Bunny returns FINISHED but URL 404s). bunny_hosted
+          // reflects the actual result — never hardcoded true (that is how
+          // dead URLs were persisted before this fix).
+          const mp4Valid = await validateBunnyMp4Url(hosted.mp4Url);
+          if (mp4Valid) {
+            clipUrl = hosted.mp4Url;
+          } else {
+            console.warn(`[delivery/variants] bunny mp4Url HEAD failed for ${clipPath} — keeping provider URL`);
+            // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
+            deleteBunnyVideo(hosted.guid).catch(() => {});
+          }
+          // Cost row regardless of HEAD result — Bunny was called either way.
+          // Wrapped in .catch so a cost-row failure never breaks the run.
           recordCostEvent({
             propertyId: scene.property_id, sceneId: v.scene_id, stage: 'generation',
             provider: 'bunny', unitsConsumed: 1, unitType: 'renders',
             costCents: bunnyStreamCostCents(clipBuffer.byteLength),
-            metadata: { bunny_hosted: true, clip_path: clipPath, source: 'delivery' },
+            metadata: { bunny_hosted: mp4Valid, clip_path: clipPath, source: 'delivery' },
           }).catch((e) => console.error('[delivery/variants] bunny cost_event failed:', e));
         } catch (bunnyErr) {
           console.warn(

@@ -13,6 +13,7 @@
  */
 
 import { FileState, type GoogleGenAI } from '@google/genai';
+import { bunnyCdnHeaders } from './bunny-stream.js';
 
 const POLL_INTERVAL_MS = 2_000;
 const PROCESSING_TIMEOUT_MS = 60_000;
@@ -36,7 +37,10 @@ export async function uploadVideoToGeminiFiles(
   url: string,
   mimeType = 'video/mp4',
 ): Promise<UploadedGeminiFile> {
-  const r = await fetch(url);
+  // Bunny CDN library 679131 requires Referer: https://www.listingelevate.com/ on server-side
+  // fetches — no referer causes 403. bunnyCdnHeaders() returns the header for b-cdn.net URLs
+  // and an empty object for all other hosts (safe to call unconditionally).
+  const r = await fetch(url, { headers: bunnyCdnHeaders(url) });
   if (!r.ok) throw new Error(`Gemini Files upload: fetch ${r.status} for ${url}`);
   const blob = new Blob([await r.arrayBuffer()], { type: mimeType });
 

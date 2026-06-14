@@ -30,7 +30,7 @@
  *   revert to the raw provider URL (pre-finalize behavior).
  */
 
-import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url } from "../providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -215,30 +215,19 @@ export async function finalizeAssemblyRender(
 
   try {
     const hosted = await hostVideoOnBunny(bunnyTitle, videoBytes);
-    // Validate the MP4 URL with a HEAD check before persisting. If the library
-    // doesn't have "MP4 Fallback" enabled, Bunny returns status FINISHED but the
-    // rendition URL 404s. A 404 would persist a dead URL as horizontal_video_url;
-    // we must fall back to providerUrl instead (zero-HITL guarantee).
-    try {
-      const headRes = await fetch(hosted.mp4Url, { method: "HEAD" });
-      if (!headRes.ok) {
-        console.warn(
-          "[assembly-finalize] mp4Url HEAD check failed — falling back to provider URL",
-          { status: headRes.status, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
-        );
-        // Clean up the orphaned Bunny object — upload succeeded but the rendition
-        // URL is inaccessible. Best-effort: a delete failure is non-fatal.
-        deleteBunnyVideo(hosted.guid).catch(() => {});
-        return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true };
-      }
-    } catch (headErr) {
-      const headMsg = headErr instanceof Error ? headErr.message : String(headErr);
+    // Validate the MP4 URL before persisting — sends the Referer header required
+    // by Bunny library 679131's referrer allow-listing (server-side fetches have
+    // no Referer by default → 403). If MP4 Fallback is also disabled, Bunny
+    // returns status FINISHED but the rendition URL 404s — either way a bad URL
+    // must never become horizontal_video_url (zero-HITL guarantee).
+    const mp4Valid = await validateBunnyMp4Url(hosted.mp4Url);
+    if (!mp4Valid) {
       console.warn(
-        "[assembly-finalize] mp4Url HEAD check threw — falling back to provider URL",
-        { headMsg, mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
+        "[assembly-finalize] mp4Url HEAD check failed — falling back to provider URL",
+        { mp4Url: hosted.mp4Url, propertyId, bunnyTitle },
       );
-      // Clean up the orphaned Bunny object — upload succeeded but HEAD threw.
-      // Best-effort: a delete failure is non-fatal.
+      // Clean up the orphaned Bunny object — upload succeeded but the rendition
+      // URL is inaccessible or 403. Best-effort: a delete failure is non-fatal.
       deleteBunnyVideo(hosted.guid).catch(() => {});
       return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true };
     }
