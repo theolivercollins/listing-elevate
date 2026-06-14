@@ -153,14 +153,19 @@ export function DeliveryStageControls({
       {canBack && (
         <button
           type="button"
-          className="studio-cta-secondary"
+          className="studio-btn-ghost"
           style={{ fontSize: 12.5, padding: '8px 14px' }}
           disabled={pending}
           onClick={() => {
-            const confirmed = window.confirm(
-              `Go back to ${prevLabel}? You can re-run from there.`,
-            );
-            if (confirmed) onBack();
+            // Going back into the judge window re-runs the AI judge. Manual
+            // winner picks are preserved (winner_source='operator' is skipped on
+            // re-judge), but the drafted scene order is recomputed — warn so the
+            // operator isn't surprised by a reset ordering.
+            const reJudges = prev === 'judging' || prev === 'generating';
+            const confirmText = reJudges
+              ? `Go back to ${prevLabel}? This re-runs the AI judge — your manual winner picks are kept, but scene ordering may reset.`
+              : `Go back to ${prevLabel}? You can re-run from there.`;
+            if (window.confirm(confirmText)) onBack();
           }}
         >
           {pending && <Loader2 size={12} className="studio-spinner" />}
@@ -170,7 +175,7 @@ export function DeliveryStageControls({
       {canRerun && (
         <button
           type="button"
-          className="studio-cta-secondary"
+          className="studio-btn-dark"
           style={{ fontSize: 12.5, padding: '8px 14px' }}
           disabled={pending}
           onClick={() => {

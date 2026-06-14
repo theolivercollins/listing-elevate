@@ -176,6 +176,23 @@ describe('runJudgePass winner_source marking', () => {
     expect(wins[0].patch.gemini_scores).toBeUndefined(); // scores already on the rows; no judge_error overwrite
   });
 
+  it('preserves an operator winner pick — re-judge skips the pair, never overwrites', async () => {
+    // Operator flipped the winner to A at checkpoint_a (winner_source='operator').
+    // A subsequent re-judge (cron sweep / Back-to-judging / Rerun) must leave the
+    // pick untouched: no Gemini call, no winner write for this pair.
+    mockGetVariants.mockResolvedValue([
+      variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4', winner: true, winner_source: 'operator' }),
+      variantRow({ id: 'vb', variant: 'B', clip_url: 'https://x/b.mp4', winner: false }),
+    ]);
+    // Even if the judge WOULD pick B, the operator's choice must win.
+    mockGenerateContent.mockResolvedValue({ text: JSON.stringify({ a: s(1, 1, 1, 1), b: s(5, 5, 5, 5) }) });
+
+    const { ready } = await runJudgePass('r1');
+    expect(ready).toBe(true);
+    expect(mockGenerateContent).not.toHaveBeenCalled();
+    expect(winnerUpdates()).toHaveLength(0);
+  });
+
   it('upload failure -> treated as judge failure (default + judge_error), never falls back to raw URL', async () => {
     mockGetVariants.mockResolvedValue([
       variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),

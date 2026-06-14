@@ -522,10 +522,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 error: 'generation re-runs automatically; use Back to checkpoint_a to regenerate a scene',
               });
             }
-            case 'judging':
+            case 'judging': {
+              const { runJudgePass } = await import('../../../../lib/delivery/judge.js');
+              await runJudgePass(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
             case 'checkpoint_a': {
-              // checkpoint_a is the human gate after judging; re-running it
-              // means re-running the judge pass that produced it.
+              // checkpoint_a is the human gate AFTER judging. runJudgePass only
+              // acts while the run is in generating/judging (it early-returns at
+              // checkpoint_a), so step the pointer back to 'judging' first; the
+              // pass re-judges and re-advances to checkpoint_a. Operator winner
+              // picks are preserved inside runJudgePass (winner_source='operator').
+              const { revertRun } = await import('../../../../lib/delivery/runs.js');
+              await revertRun(runId, 'judging');
               const { runJudgePass } = await import('../../../../lib/delivery/judge.js');
               await runJudgePass(runId);
               const updated = await getRun(runId);
@@ -547,10 +557,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               }
               return res.status(musicResult.status).json(musicResult.body);
             }
-            case 'assembling':
+            case 'assembling': {
+              const { runAssembleStage } = await import('../../../../lib/delivery/assemble.js');
+              await runAssembleStage(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
             case 'checkpoint_b': {
-              // checkpoint_b is the human gate after assembly; re-running it
-              // means re-running the assemble pass that produced it.
+              // checkpoint_b is the human gate AFTER assembly. runAssembleStage
+              // hard-guards stage==='assembling' (throws otherwise), so step the
+              // pointer back to 'assembling' first; the assemble re-renders and
+              // re-advances to checkpoint_b.
+              const { revertRun } = await import('../../../../lib/delivery/runs.js');
+              await revertRun(runId, 'assembling');
               const { runAssembleStage } = await import('../../../../lib/delivery/assemble.js');
               await runAssembleStage(runId);
               const updated = await getRun(runId);
