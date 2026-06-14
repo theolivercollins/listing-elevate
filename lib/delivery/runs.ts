@@ -1,5 +1,5 @@
 import { getSupabase } from '../client.js';
-import { canAdvance, isDeliveryStage, type DeliveryStage } from './state.js';
+import { canAdvance, canRevert, isDeliveryStage, type DeliveryStage } from './state.js';
 import type { DeliveryRunRow, ListingDetails, MlEventRow, MlEventType, SceneVariantRow, DeliveryVideoType } from '../types/operator-studio.js';
 
 const ML_EVENT_TYPES: readonly MlEventType[] = [
@@ -122,6 +122,35 @@ export async function advanceRun(runId: string, to: string): Promise<DeliveryRun
     .maybeSingle();
   if (error) throw new Error(`advanceRun: ${error.message}`);
   if (!data) throw new Error(`advanceRun: stage moved (expected ${from})`);
+  return data as DeliveryRunRow;
+}
+
+/**
+ * Move the run BACKWARD to an earlier stage. Strictly backward — forward paths must
+ * keep using advanceRun. Uses the same CAS pattern (WHERE id=runId AND stage=from)
+ * to prevent silent races. Clears any existing error.
+ *
+ * Does NOT write an ml_event: ml_event event_type values are defined by a fixed DB
+ * CHECK constraint and "revert" is not in it. A console.log is enough to trace.
+ */
+export async function revertRun(runId: string, to: string): Promise<DeliveryRunRow> {
+  if (!isDeliveryStage(to)) throw new Error(`revertRun: '${to}' is not a delivery stage`);
+  const run = await getRun(runId);
+  if (!run) throw new Error(`revertRun: run not found: ${runId}`);
+  const from = run.stage as DeliveryStage;
+  if (!canRevert(from, to)) {
+    throw new Error(`revertRun: illegal transition ${from} -> ${to} (must be strictly backward)`);
+  }
+  console.log(`[delivery] revertRun: ${runId} ${from} -> ${to}`);
+  const { data, error } = await getSupabase()
+    .from('delivery_runs')
+    .update({ stage: to, error: null, updated_at: new Date().toISOString() })
+    .eq('id', runId)
+    .eq('stage', from)
+    .select()
+    .maybeSingle();
+  if (error) throw new Error(`revertRun: ${error.message}`);
+  if (!data) throw new Error(`revertRun: stage moved (expected ${from})`);
   return data as DeliveryRunRow;
 }
 
