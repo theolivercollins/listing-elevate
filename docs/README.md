@@ -27,6 +27,7 @@ Every Claude session on this project MUST:
 
 | Folder | What lives here |
 |---|---|
+| [`product/`](./product/) | **Customer-facing product documentation** — the published help-center / user-guide content (getting started, ordering, sharing, FAQ). Written for agents, not engineers. |
 | [`state/`](./state/) | Living docs — updated as the system evolves (PROJECT-STATE, STACK, TODO) |
 | [`plans/`](./plans/) | Active roadmap + future backlog |
 | [`specs/`](./specs/) | Design docs per feature. Specs that land become retired to archive once their plan fully executes. |
