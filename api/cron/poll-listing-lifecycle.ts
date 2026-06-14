@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../lib/client.js";
 import { analyzeListingPhotos, directListingScenes } from "../../lib/prompt-lab-listings.js";
+import { reapStuckLabListings } from "../../lib/pipeline/stuck-reaper.js";
 
 // Vercel serverless kills the function lambda as soon as the POST
 // response is written, so the fire-and-forget chain in the create
@@ -18,6 +19,14 @@ export const maxDuration = 300;
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
+
+  // Reap listings stuck in 'analyzing' or 'directing' before the main polling work.
+  // A reaper failure must never break the cron — errors are logged inside.
+  try {
+    await reapStuckLabListings(supabase);
+  } catch (reaperErr) {
+    console.error("[poll-listing-lifecycle] reaper threw unexpectedly:", reaperErr);
+  }
 
   const { data: analyzing } = await supabase
     .from("prompt_lab_listings")

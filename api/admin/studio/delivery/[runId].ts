@@ -2,10 +2,203 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import {
   getRun, getVariantsForRun, getEventsForRun, getPairedSceneIds,
-  advanceRun, clearRunError,
+  advanceRun, clearRunError, revertRun,
 } from '../../../../lib/delivery/runs.js';
+import { prevStage, isDeliveryStage, type DeliveryStage } from '../../../../lib/delivery/state.js';
 
 export const maxDuration = 300; // scrape/regenerate/assemble actions run long
+
+// ─── Factored stage helpers (called by both the existing action cases and 'rerun') ───
+
+/**
+ * Core of the generate_audio action — extracted so 'rerun' can call it without
+ * duplicating the duration-audit and auto-shorten loop.
+ * Returns the response shape; caller is responsible for res.json().
+ */
+async function runGenerateAudio(runId: string): Promise<
+  | { ok: true; run: unknown; duration_warning?: string }
+  | { ok: false; status: number; error: string }
+> {
+  const run = await getRun(runId);
+  if (!run) return { ok: false, status: 404, error: 'not_found' };
+  if (!run.voiceover_script) return { ok: false, status: 400, error: 'generate the script first' };
+  if (!run.voiceover_voice_id) return { ok: false, status: 400, error: 'pick a voice first' };
+
+  const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
+  const { updateRun: uRun3, setRunError: sre3, recordMlEvent: rme3 } = await import('../../../../lib/delivery/runs.js');
+
+  try {
+    const voiceId = run.voiceover_voice_id;
+    const genAudio = async (script: string) => {
+      const input = {
+        script, voiceId,
+        propertyId: run.property_id, storageFolder: run.property_id,
+        deliveryRunId: runId,
+      };
+      try {
+        return await generateVoiceoverAudio(input);
+      } catch {
+        return await generateVoiceoverAudio(input);
+      }
+    };
+
+    let script = run.voiceover_script;
+    let { audioUrl, durationMs } = await genAudio(script);
+
+    // Duration audit: the audio must fit the video. If it overruns the
+    // target by >1s, ask Claude to shorten naturally and re-render —
+    // at most 2 attempts, then proceed with a warning.
+    const targetSec = run.duration_seconds ?? 30;
+    const toleranceMs = 1000;
+    let shortenUnavailable = false;
+    if (durationMs > targetSec * 1000 + toleranceMs) {
+      const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
+      const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
+      const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
+      for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
+        const fromWords = countWords(stripAudioTags(script));
+        // A shorten or re-render failure must NOT discard the good audio
+        // we already paid for: keep the last good {script, audio} pair
+        // (always consistent — script is only swapped once its audio
+        // exists) and fall through to persist it with a warning.
+        try {
+          const { script: shortened } = await shortenDeliveryScript({
+            runId, propertyId: run.property_id, script,
+            actualSeconds: durationMs / 1000, targetSeconds: targetSec,
+          });
+          ({ audioUrl, durationMs } = await genAudio(shortened));
+          script = shortened;
+        } catch (shortenErr) {
+          console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
+          shortenUnavailable = true;
+          break;
+        }
+        await rme3(runId, 'script_edit', {
+          source: 'auto_shorten',
+          from_words: fromWords,
+          to_words: countWords(stripAudioTags(script)),
+          target_seconds: targetSec,
+        });
+      }
+    }
+
+    // Persist the script actually spoken so the UI matches the audio.
+    const updated = await uRun3(runId, { voiceover_script: script, voiceover_audio_url: audioUrl } as never);
+    if (durationMs > targetSec * 1000 + toleranceMs) {
+      return {
+        ok: true,
+        run: updated,
+        duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
+      };
+    }
+    return { ok: true, run: updated };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await sre3(runId, `Voiceover audio failed twice: ${msg} — you can skip (assembly proceeds without VO).`);
+    return { ok: false, status: 502, error: msg };
+  }
+}
+
+/**
+ * Core of the generate_music action — extracted so 'rerun' can call it without
+ * duplicating the 4-genre parallel generation logic.
+ * Returns a structured result that the caller converts to a response.
+ */
+async function runGenerateMusic(runId: string): Promise<
+  | { ok: true; status: number; body: unknown }
+  | { ok: false; status: number; error: string }
+> {
+  const run = await getRun(runId);
+  if (!run) return { ok: false, status: 404, error: 'not_found' };
+
+  const { moodForPackage, pickRandom } = await import('../../../../lib/assembly/music.js');
+  const {
+    composeMusic, MOOD_PROMPTS, GENRE_VARIANTS, buildFeedbackBlock, buildGenrePrompt,
+  } = await import('../../../../lib/providers/elevenlabs-music.js');
+  const mood = moodForPackage(run.video_type);
+  const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
+  const db = (await import('../../../../lib/client.js')).getSupabase();
+
+  // Fetch the latest 5 feedback rows for this mood to build the feedback block.
+  const { data: feedbackRows } = await db
+    .from('music_track_feedback')
+    .select('verdict, genre, comment, created_at')
+    .eq('mood', mood)
+    .order('created_at', { ascending: false })
+    .limit(5);
+  const feedbackBlock = buildFeedbackBlock(
+    (feedbackRows ?? []) as Array<{ verdict: 'up' | 'down'; genre: string | null; comment: string | null; created_at: string }>,
+  );
+
+  // Fire 4 composeMusic calls in parallel — one per genre variant.
+  type TrackOption = { id: string; name: string; file_url: string; mood_tag: string; source: string; genre: string | null };
+  type SettledResult = { status: 'fulfilled'; value: TrackOption } | { status: 'rejected'; reason: unknown };
+
+  const today = new Date().toISOString().slice(0, 10);
+  const results = await Promise.allSettled(
+    GENRE_VARIANTS.map(async (variant) => {
+      const fullPrompt = buildGenrePrompt(MOOD_PROMPTS[mood], variant.promptFragment, feedbackBlock);
+      const { audio } = await composeMusic(fullPrompt, lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
+      const path = `delivery/${run.id}/${Date.now()}-${variant.key}.mp3`;
+      const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
+      if (upErr) throw new Error(upErr.message);
+      const { data: urlData } = db.storage.from('music').getPublicUrl(path);
+      const { data: track, error: insErr } = await db.from('music_tracks').insert({
+        name: `Generated · ${mood} · ${variant.key} · ${today}`,
+        file_url: urlData.publicUrl,
+        mood_tag: mood,
+        source: 'elevenlabs_music',
+        genre: variant.key,
+        prompt: fullPrompt,
+        active: true,
+      }).select('id, name, file_url, mood_tag, source, genre').single();
+      if (insErr) throw new Error(insErr.message);
+      return track as TrackOption;
+    }),
+  ) as SettledResult[];
+
+  const successTracks = results
+    .filter((r): r is { status: 'fulfilled'; value: TrackOption } => r.status === 'fulfilled')
+    .map((r) => r.value);
+  const failures = results.filter((r) => r.status === 'rejected').length;
+
+  if (successTracks.length > 0) {
+    const warning = failures > 0 ? `${failures} of 4 generations failed` : undefined;
+    const body: { tracks: TrackOption[]; failures: number; warning?: string } = {
+      tracks: successTracks, failures,
+    };
+    if (warning) body.warning = warning;
+    return { ok: true, status: 201, body };
+  }
+
+  // All 4 failed — fall back to library.
+  const firstError = results.find((r) => r.status === 'rejected');
+  const msg = firstError?.status === 'rejected'
+    ? (firstError.reason instanceof Error ? firstError.reason.message : String(firstError.reason))
+    : 'All 4 music generations failed';
+
+  type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
+  const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
+  const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
+  const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
+
+  const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
+  if (!fallbackRow) {
+    const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
+    await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
+    return { ok: false, status: 502, error: msg };
+  }
+
+  const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
+  await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
+  await rme5(runId, 'music_choice', {
+    music_track_id: (fallbackRow as LibraryTrackRow).id,
+    source: 'library_fallback',
+    generation_error: msg,
+  });
+  const fallbackTrack: TrackOption = { ...(fallbackRow as LibraryTrackRow), genre: null };
+  return { ok: true, status: 200, body: { tracks: [fallbackTrack], failures: 4, fallback: true, warning: msg } };
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
@@ -152,81 +345,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ run: updated });
         }
         case 'generate_audio': {
-          const run = await getRun(runId);
-          if (!run) return res.status(404).json({ error: 'not_found' });
-          if (!run.voiceover_script) return res.status(400).json({ error: 'generate the script first' });
-          if (!run.voiceover_voice_id) return res.status(400).json({ error: 'pick a voice first' });
-          const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
-          const { updateRun: uRun3, setRunError: sre3, recordMlEvent: rme3 } = await import('../../../../lib/delivery/runs.js');
-          try {
-            const voiceId = run.voiceover_voice_id;
-            const genAudio = async (script: string) => {
-              const input = {
-                script, voiceId,
-                propertyId: run.property_id, storageFolder: run.property_id,
-                deliveryRunId: runId,
-              };
-              try {
-                return await generateVoiceoverAudio(input);
-              } catch {
-                return await generateVoiceoverAudio(input);
-              }
-            };
-
-            let script = run.voiceover_script;
-            let { audioUrl, durationMs } = await genAudio(script);
-
-            // Duration audit: the audio must fit the video. If it overruns the
-            // target by >1s, ask Claude to shorten naturally and re-render —
-            // at most 2 attempts, then proceed with a warning.
-            const targetSec = run.duration_seconds ?? 30;
-            const toleranceMs = 1000;
-            let shortenUnavailable = false;
-            if (durationMs > targetSec * 1000 + toleranceMs) {
-              const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
-              const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
-              const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
-              for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
-                const fromWords = countWords(stripAudioTags(script));
-                // A shorten or re-render failure must NOT discard the good audio
-                // we already paid for: keep the last good {script, audio} pair
-                // (always consistent — script is only swapped once its audio
-                // exists) and fall through to persist it with a warning.
-                try {
-                  const { script: shortened } = await shortenDeliveryScript({
-                    runId, propertyId: run.property_id, script,
-                    actualSeconds: durationMs / 1000, targetSeconds: targetSec,
-                  });
-                  ({ audioUrl, durationMs } = await genAudio(shortened));
-                  script = shortened;
-                } catch (shortenErr) {
-                  console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
-                  shortenUnavailable = true;
-                  break;
-                }
-                await rme3(runId, 'script_edit', {
-                  source: 'auto_shorten',
-                  from_words: fromWords,
-                  to_words: countWords(stripAudioTags(script)),
-                  target_seconds: targetSec,
-                });
-              }
-            }
-
-            // Persist the script actually spoken so the UI matches the audio.
-            const updated = await uRun3(runId, { voiceover_script: script, voiceover_audio_url: audioUrl } as never);
-            if (durationMs > targetSec * 1000 + toleranceMs) {
-              return res.status(200).json({
-                run: updated,
-                duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
-              });
-            }
-            return res.status(200).json({ run: updated });
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            await sre3(runId, `Voiceover audio failed twice: ${msg} — you can skip (assembly proceeds without VO).`);
-            return res.status(502).json({ error: msg });
+          const audioResult = await runGenerateAudio(runId);
+          if (audioResult.ok === false) {
+            return res.status(audioResult.status).json({ error: audioResult.error });
           }
+          const audioBody: { run: unknown; duration_warning?: string } = { run: audioResult.run };
+          if (audioResult.duration_warning) audioBody.duration_warning = audioResult.duration_warning;
+          return res.status(200).json(audioBody);
         }
         case 'set_music': {
           const trackId = String(req.body?.music_track_id ?? '');
@@ -237,95 +362,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ run: updated });
         }
         case 'generate_music': {
-          const run = await getRun(runId);
-          if (!run) return res.status(404).json({ error: 'not_found' });
-          const { moodForPackage, pickRandom } = await import('../../../../lib/assembly/music.js');
-          const {
-            composeMusic, MOOD_PROMPTS, GENRE_VARIANTS, buildFeedbackBlock, buildGenrePrompt,
-          } = await import('../../../../lib/providers/elevenlabs-music.js');
-          const mood = moodForPackage(run.video_type);
-          const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
-          const db = (await import('../../../../lib/client.js')).getSupabase();
-
-          // Fetch the latest 5 feedback rows for this mood to build the feedback block.
-          const { data: feedbackRows } = await db
-            .from('music_track_feedback')
-            .select('verdict, genre, comment, created_at')
-            .eq('mood', mood)
-            .order('created_at', { ascending: false })
-            .limit(5);
-          const feedbackBlock = buildFeedbackBlock(
-            (feedbackRows ?? []) as Array<{ verdict: 'up' | 'down'; genre: string | null; comment: string | null; created_at: string }>,
-          );
-
-          // Fire 4 composeMusic calls in parallel — one per genre variant.
-          type TrackOption = { id: string; name: string; file_url: string; mood_tag: string; source: string; genre: string | null };
-          type SettledResult = { status: 'fulfilled'; value: TrackOption } | { status: 'rejected'; reason: unknown };
-
-          const today = new Date().toISOString().slice(0, 10);
-          const results = await Promise.allSettled(
-            GENRE_VARIANTS.map(async (variant) => {
-              const fullPrompt = buildGenrePrompt(MOOD_PROMPTS[mood], variant.promptFragment, feedbackBlock);
-              const { audio } = await composeMusic(fullPrompt, lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
-              const path = `delivery/${run.id}/${Date.now()}-${variant.key}.mp3`;
-              const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
-              if (upErr) throw new Error(upErr.message);
-              const { data: urlData } = db.storage.from('music').getPublicUrl(path);
-              const { data: track, error: insErr } = await db.from('music_tracks').insert({
-                name: `Generated · ${mood} · ${variant.key} · ${today}`,
-                file_url: urlData.publicUrl,
-                mood_tag: mood,
-                source: 'elevenlabs_music',
-                genre: variant.key,
-                prompt: fullPrompt,
-                active: true,
-              }).select('id, name, file_url, mood_tag, source, genre').single();
-              if (insErr) throw new Error(insErr.message);
-              return track as TrackOption;
-            }),
-          ) as SettledResult[];
-
-          const successTracks = results
-            .filter((r): r is { status: 'fulfilled'; value: TrackOption } => r.status === 'fulfilled')
-            .map((r) => r.value);
-          const failures = results.filter((r) => r.status === 'rejected').length;
-
-          if (successTracks.length > 0) {
-            const warning = failures > 0 ? `${failures} of 4 generations failed` : undefined;
-            const response: { tracks: TrackOption[]; failures: number; warning?: string } = {
-              tracks: successTracks, failures,
-            };
-            if (warning) response.warning = warning;
-            return res.status(201).json(response);
+          const musicResult = await runGenerateMusic(runId);
+          if (musicResult.ok === false) {
+            return res.status(musicResult.status).json({ error: musicResult.error });
           }
-
-          // All 4 failed — fall back to library.
-          const firstError = results.find((r) => r.status === 'rejected');
-          const msg = firstError?.status === 'rejected'
-            ? (firstError.reason instanceof Error ? firstError.reason.message : String(firstError.reason))
-            : 'All 4 music generations failed';
-
-          type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
-          const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
-          const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
-          const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
-
-          const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
-          if (!fallbackRow) {
-            const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
-            await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
-            return res.status(502).json({ error: msg });
-          }
-
-          const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
-          await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
-          await rme5(runId, 'music_choice', {
-            music_track_id: (fallbackRow as LibraryTrackRow).id,
-            source: 'library_fallback',
-            generation_error: msg,
-          });
-          const fallbackTrack: TrackOption = { ...(fallbackRow as LibraryTrackRow), genre: null };
-          return res.status(200).json({ tracks: [fallbackTrack], failures: 4, fallback: true, warning: msg });
+          return res.status(musicResult.status).json(musicResult.body);
         }
         case 'music_feedback': {
           const trackId = String(req.body?.track_id ?? '');
@@ -433,6 +474,122 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const updated = await advanceRun(runId, 'delivered');
           return res.status(200).json({ run: updated });
         }
+        case 'back': {
+          // Move the run to an earlier stage. Optional `to` in the body lets the
+          // caller target a specific stage; without it we go one step back.
+          const currentRun = await getRun(runId);
+          if (!currentRun) return res.status(404).json({ error: 'not_found' });
+          const currentStage = currentRun.stage as DeliveryStage;
+
+          let targetStage: DeliveryStage;
+          const rawTo = req.body?.to;
+          if (rawTo != null && rawTo !== '') {
+            const toStr = String(rawTo);
+            if (!isDeliveryStage(toStr)) {
+              return res.status(400).json({ error: `'${toStr}' is not a delivery stage` });
+            }
+            targetStage = toStr;
+          } else {
+            const prev = prevStage(currentStage);
+            if (prev === null) {
+              return res.status(400).json({ error: 'already at the first step' });
+            }
+            targetStage = prev;
+          }
+
+          const revertedRun = await revertRun(runId, targetStage);
+          return res.status(200).json({ run: revertedRun });
+        }
+
+        case 'rerun': {
+          // Re-execute the machine side-effect for the current stage.
+          const rerunRun = await getRun(runId);
+          if (!rerunRun) return res.status(404).json({ error: 'not_found' });
+          const rerunStage = rerunRun.stage as DeliveryStage;
+
+          switch (rerunStage) {
+            case 'scraping': {
+              const { runScrapeStage } = await import('../../../../lib/delivery/scrape.js');
+              await runScrapeStage(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
+            case 'generating': {
+              // Generation is asynchronous polling — the pipeline re-polls
+              // automatically. Operators who want fresh clips should go back
+              // to checkpoint_a and regenerate individual scenes from there.
+              return res.status(400).json({
+                error: 'generation re-runs automatically; use Back to checkpoint_a to regenerate a scene',
+              });
+            }
+            case 'judging': {
+              const { runJudgePass } = await import('../../../../lib/delivery/judge.js');
+              await runJudgePass(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
+            case 'checkpoint_a': {
+              // checkpoint_a is the human gate AFTER judging. runJudgePass only
+              // acts while the run is in generating/judging (it early-returns at
+              // checkpoint_a), so step the pointer back to 'judging' first; the
+              // pass re-judges and re-advances to checkpoint_a. Operator winner
+              // picks are preserved inside runJudgePass (winner_source='operator').
+              const { revertRun } = await import('../../../../lib/delivery/runs.js');
+              await revertRun(runId, 'judging');
+              const { runJudgePass } = await import('../../../../lib/delivery/judge.js');
+              await runJudgePass(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
+            case 'voiceover': {
+              const audioResult = await runGenerateAudio(runId);
+              if (audioResult.ok === false) {
+                return res.status(audioResult.status).json({ error: audioResult.error });
+              }
+              const audioBody: { run: unknown; duration_warning?: string } = { run: audioResult.run };
+              if (audioResult.duration_warning) audioBody.duration_warning = audioResult.duration_warning;
+              return res.status(200).json(audioBody);
+            }
+            case 'music': {
+              const musicResult = await runGenerateMusic(runId);
+              if (musicResult.ok === false) {
+                return res.status(musicResult.status).json({ error: musicResult.error });
+              }
+              return res.status(musicResult.status).json(musicResult.body);
+            }
+            case 'assembling': {
+              const { runAssembleStage } = await import('../../../../lib/delivery/assemble.js');
+              await runAssembleStage(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
+            case 'checkpoint_b': {
+              // checkpoint_b is the human gate AFTER assembly. runAssembleStage
+              // hard-guards stage==='assembling' (throws otherwise), so step the
+              // pointer back to 'assembling' first; the assemble re-renders and
+              // re-advances to checkpoint_b.
+              const { revertRun } = await import('../../../../lib/delivery/runs.js');
+              await revertRun(runId, 'assembling');
+              const { runAssembleStage } = await import('../../../../lib/delivery/assemble.js');
+              await runAssembleStage(runId);
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
+            }
+            case 'intake':
+            case 'details':
+            case 'delivered': {
+              return res.status(400).json({ error: 'nothing to re-run at this stage' });
+            }
+            default: {
+              // Exhaustiveness assertion — all DeliveryStage values are handled above.
+              // This branch is unreachable at runtime; the cast silences the TS error
+              // without using `any` while preserving the compile-time completeness check.
+              const exhausted = rerunStage as never;
+              return res.status(400).json({ error: `unhandled stage: ${String(exhausted)}` });
+            }
+          }
+        }
+
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

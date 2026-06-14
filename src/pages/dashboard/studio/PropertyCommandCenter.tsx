@@ -15,7 +15,7 @@ import {
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
-import { DeliveryStepper, DeliveryNextButton } from '@/components/studio/DeliveryStepper';
+import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls } from '@/components/studio/DeliveryStepper';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
@@ -290,6 +290,8 @@ const PropertyCommandCenter = () => {
 
   const [advancePending, setAdvancePending] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
+  const [stagePending, setStagePending] = useState(false);
+  const [stageError, setStageError] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -625,6 +627,33 @@ const PropertyCommandCenter = () => {
                 setAdvanceError(err instanceof Error ? err.message : 'Advance failed');
               } finally {
                 setAdvancePending(false);
+              }
+            }}
+          />
+          <DeliveryStageControls
+            stage={bundle.delivery_run.stage}
+            pending={stagePending}
+            error={stageError}
+            onBack={async () => {
+              setStagePending(true);
+              setStageError(null);
+              try {
+                await deliveryAction({ action: 'back' });
+              } catch (err) {
+                setStageError(err instanceof Error ? err.message : 'Back failed');
+              } finally {
+                setStagePending(false);
+              }
+            }}
+            onRerun={async () => {
+              setStagePending(true);
+              setStageError(null);
+              try {
+                await deliveryAction({ action: 'rerun' });
+              } catch (err) {
+                setStageError(err instanceof Error ? err.message : 'Rerun failed');
+              } finally {
+                setStagePending(false);
               }
             }}
           />

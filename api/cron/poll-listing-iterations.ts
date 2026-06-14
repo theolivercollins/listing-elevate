@@ -3,9 +3,19 @@ import { getSupabase } from "../../lib/client.js";
 import { atlasClipCostCents } from "../../lib/providers/atlas.js";
 import { pickProvider, isNativeKling } from "../../lib/providers/dispatch.js";
 import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } from "../../lib/providers/bunny-stream.js";
+import { reapStuckLabIterations } from "../../lib/pipeline/stuck-reaper.js";
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
+
+  // Reap iterations stuck in 'rendering' before the main polling work.
+  // A reaper failure must never break the cron — errors are logged inside.
+  try {
+    await reapStuckLabIterations(supabase);
+  } catch (reaperErr) {
+    console.error("[poll-listing-iterations] reaper threw unexpectedly:", reaperErr);
+  }
+
   const { data: rendering } = await supabase
     .from("prompt_lab_listing_scene_iterations")
     .select("id, scene_id, provider_task_id, model_used")

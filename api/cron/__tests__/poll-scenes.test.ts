@@ -40,6 +40,13 @@ vi.mock("../../../lib/pipeline.js", () => ({
   resubmitScene: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
+// Mock stuck-reaper so its from('scenes') calls don't interfere with this
+// test's counter-based Supabase mock. The reaper is exercised by its own
+// dedicated test suite; here it must be a no-op.
+vi.mock("../../../lib/pipeline/stuck-reaper.js", () => ({
+  reapStuckScenes: vi.fn().mockResolvedValue({ reaped: 0, ids: [] }),
+}));
+
 // Mock Bunny Stream — video hosting target since 2026-06-12. Default: NOT
 // configured, so the existing judge-wiring tests exercise the graceful
 // provider-URL fallback (clip_url := status.videoUrl). The dedicated Bunny test

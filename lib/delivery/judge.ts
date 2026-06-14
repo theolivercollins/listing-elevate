@@ -206,6 +206,11 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
   for (const { scene, a, b } of pairs) {
     const status = variantPairStatus(a, b);
     if (status === 'failed') continue; // operator regenerates at checkpoint A
+    // Preserve a manual operator winner pick: once the operator has flipped the
+    // winner for this pair (winner_source='operator'), a re-judge — the cron
+    // sweep, a Back-to-judging, or an explicit Rerun — must NOT silently
+    // overwrite that deliberate choice. Leave the pair exactly as set.
+    if (a?.winner_source === 'operator' || b?.winner_source === 'operator') continue;
     let winner: 'A' | 'B';
     // winner_source='gemini' is reserved for pairs Gemini ACTUALLY watched.
     // Anything that wins without judging (degraded pair, judge failure) is
