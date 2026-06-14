@@ -25,7 +25,7 @@ import { AtlasProvider, type V1AtlasSku } from "./providers/atlas.js";
 import { VeoProvider } from "./providers/veo.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "./embeddings.js";
 import { recordCostEvent } from "./db.js";
-import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "./providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } from "./providers/bunny-stream.js";
 import type { RoomType, CameraMovement } from "./types.js";
 
 // Lab cost_events use property_id = null. The earlier "zero-UUID sentinel"
@@ -822,7 +822,16 @@ export async function finalizeLabRender(params: {
     const buffer = await providerImpl.downloadClip(result.videoUrl);
     if (isBunnyConfigured()) {
       const bunnyResult = await hostVideoOnBunny(rehostPath, buffer);
-      persistedUrl = bunnyResult.mp4Url;
+      // HEAD-validate before persisting — sends the Referer header required by
+      // Bunny library 679131's referrer allow-listing (server-side fetches have
+      // no Referer by default → 403). bunny_hosted reflects the actual result.
+      const mp4Valid = await validateBunnyMp4Url(bunnyResult.mp4Url);
+      if (mp4Valid) {
+        persistedUrl = bunnyResult.mp4Url;
+      } else {
+        console.warn(`[finalizeLabRender] bunny mp4Url HEAD failed for ${rehostPath} — keeping provider URL`);
+        deleteBunnyVideo(bunnyResult.guid).catch(() => {});
+      }
       // Record Bunny hosting cost (even when cost rounds to 0¢).
       recordCostEvent({
         propertyId: null,
@@ -832,7 +841,7 @@ export async function finalizeLabRender(params: {
         unitsConsumed: 1,
         unitType: "renders",
         costCents: bunnyStreamCostCents(buffer.byteLength),
-        metadata: { bunny_hosted: true, path: rehostPath, source: "prompt_lab" },
+        metadata: { bunny_hosted: mp4Valid, path: rehostPath, source: "prompt_lab" },
       }).catch((err) =>
         console.error("[finalizeLabRender] bunny cost_event insert failed (non-fatal):", err),
       );

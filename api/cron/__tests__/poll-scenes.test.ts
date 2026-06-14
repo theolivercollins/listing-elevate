@@ -54,6 +54,9 @@ vi.mock("../../../lib/providers/bunny-stream.js", () => ({
   })),
   bunnyStreamCostCents: vi.fn().mockReturnValue(0),
   deleteBunnyVideo: vi.fn().mockResolvedValue(undefined),
+  // validateBunnyMp4Url defaults true; individual tests that test the
+  // HEAD-failure path stub fetch globally via vi.stubGlobal("fetch", ...).
+  validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
 }));
 
 // ---------------------------------------------------------------------------
@@ -64,7 +67,7 @@ import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase, recordCostEvent, log } from "../../../lib/db.js";
 import { selectProvider } from "../../../lib/providers/router.js";
 import { resubmitScene } from "../../../lib/pipeline.js";
-import { isBunnyConfigured, hostVideoOnBunny, deleteBunnyVideo } from "../../../lib/providers/bunny-stream.js";
+import { isBunnyConfigured, hostVideoOnBunny, deleteBunnyVideo, validateBunnyMp4Url } from "../../../lib/providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -274,6 +277,10 @@ describe("poll-scenes — Gemini judge wiring", () => {
     // Reset Bunny config to the default-unconfigured state so the judge-wiring
     // tests exercise the provider-URL fallback; the Bunny-host tests opt in.
     vi.mocked(isBunnyConfigured).mockReturnValue(false);
+    // clearAllMocks resets the validateBunnyMp4Url implementation; restore the
+    // default (HEAD passes) so Bunny-host tests that set isBunnyConfigured=true
+    // don't have to repeat this setup.
+    vi.mocked(validateBunnyMp4Url).mockResolvedValue(true);
   });
 
   it("qc_hard_reject at re-render cap: scene gets status:'needs_review', qc_verdict:'qc_hard_reject', qc_issues with flags", async () => {
@@ -402,9 +409,9 @@ describe("poll-scenes — Gemini judge wiring", () => {
   it("hosts the completed clip on Bunny Stream and stores the Bunny mp4 URL as clip_url (provider:'bunny' cost_event emitted)", async () => {
     // Bunny configured → the collected clip is hosted on Bunny and clip_url is the
     // returned CDN mp4 URL, NOT a Supabase Storage URL.
+    // validateBunnyMp4Url defaults to true (mock default) → mp4Url is valid;
+    // clip_url must be the Bunny CDN URL.
     vi.mocked(isBunnyConfigured).mockReturnValue(true);
-    // HEAD 200 → mp4Url is valid; clip_url must be the Bunny CDN URL.
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response));
     const scene = makeScene();
     const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
     const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
@@ -435,11 +442,15 @@ describe("poll-scenes — Gemini judge wiring", () => {
 
   it("HEAD-404: falls back to provider URL, emits bunny_hosted:false cost row, calls deleteBunnyVideo with hosted guid", async () => {
     // Bunny upload succeeds but HEAD check returns 404 (MP4 Fallback disabled on
-    // the library). poll-scenes must: (1) keep clip_url = provider URL, (2) emit
-    // exactly one bunny cost row with bunny_hosted:false, (3) call deleteBunnyVideo
-    // to clean up the orphaned video object. Zero-HITL: handler must return 200.
+    // the library). validateBunnyMp4Url now sends the Referer header and returns
+    // a boolean — control it directly via the mock so tests aren't coupled to
+    // global fetch behavior.
+    // poll-scenes must: (1) keep clip_url = provider URL, (2) emit exactly one
+    // bunny cost row with bunny_hosted:false, (3) call deleteBunnyVideo to clean
+    // up the orphaned video object. Zero-HITL: handler must return 200.
     vi.mocked(isBunnyConfigured).mockReturnValue(true);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 } as Response));
+    // Simulate HEAD returning 403/404 (referrer mismatch or MP4 Fallback disabled).
+    vi.mocked(validateBunnyMp4Url).mockResolvedValueOnce(false);
     const scene = makeScene();
     const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
     const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });

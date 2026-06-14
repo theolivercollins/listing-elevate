@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Readable } from 'node:stream';
 import { requireAdmin } from '../../../../../lib/auth.js';
 import { getSupabase } from '../../../../../lib/client.js';
+import { bunnyCdnHeaders } from '../../../../../lib/providers/bunny-stream.js';
 
 /** Convert a property address to a safe filename slug (lowercase, alphanum+dash). */
 function slugify(text: string): string {
@@ -44,7 +45,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // 60 s timeout — CDN videos are large; without a cap a stalled upstream
     // holds the Vercel function slot indefinitely.
-    upstream = await fetch(videoUrl, { signal: AbortSignal.timeout(60_000) });
+    // Include the Referer header for Bunny CDN URLs — library 679131 has
+    // referrer allow-listing ON; server-side fetches send no Referer by
+    // default and would 403. bunnyCdnHeaders() is a no-op for non-Bunny URLs.
+    upstream = await fetch(videoUrl, {
+      signal: AbortSignal.timeout(60_000),
+      headers: bunnyCdnHeaders(videoUrl),
+    });
   } catch {
     return res.status(502).json({ error: 'upstream_fetch_failed' });
   }

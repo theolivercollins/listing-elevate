@@ -12,6 +12,7 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import { uploadVideoToGeminiFiles, deleteGeminiFile } from "./gemini-files.js";
 import type { JudgeRubricResult } from "../prompts/judge-rubric.js";
 import { JUDGE_SYSTEM_PROMPT, judgeVersionFor, validateJudgeOutput } from "../prompts/judge-rubric.js";
 import { recordCostEvent } from "../db.js";
@@ -143,24 +144,38 @@ export async function judgeLabIteration(input: JudgeInput): Promise<JudgeOutput>
 
     const genai = new GoogleGenAI({ apiKey });
 
-    const resp = await genai.models.generateContent({
-      model: judge_model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: userText },
-            ...photoInline,
-            { fileData: { fileUri: input.clipUrl, mimeType: "video/mp4" } },
-          ],
+    // Upload the clip via the Gemini Files API instead of passing the URL as
+    // fileData.fileUri. Google's servers fetch fileUri with no Referer header,
+    // which causes Bunny CDN library 679131's referrer allow-list to 403.
+    // uploadVideoToGeminiFiles downloads the clip server-side (using bunnyCdnHeaders,
+    // so b-cdn.net URLs get the required Referer) then uploads to Files API.
+    // The Files-API uri (files/...) is what Gemini's model receives.
+    const uploadedClip = await uploadVideoToGeminiFiles(genai, input.clipUrl);
+
+    let resp;
+    try {
+      resp = await genai.models.generateContent({
+        model: judge_model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: userText },
+              ...photoInline,
+              { fileData: { fileUri: uploadedClip.uri, mimeType: uploadedClip.mimeType } },
+            ],
+          },
+        ],
+        config: {
+          systemInstruction: JUDGE_SYSTEM_PROMPT,
+          responseMimeType: "application/json",
+          temperature: 0.1,
         },
-      ],
-      config: {
-        systemInstruction: JUDGE_SYSTEM_PROMPT,
-        responseMimeType: "application/json",
-        temperature: 0.1,
-      },
-    });
+      });
+    } finally {
+      // Best-effort cleanup — files auto-expire in 48h if this fails.
+      await deleteGeminiFile(genai, uploadedClip.name);
+    }
 
     // Extract text — mirror gemini-analyzer.ts's res.text pattern.
     const rawText =

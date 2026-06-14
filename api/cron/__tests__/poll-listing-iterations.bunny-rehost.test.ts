@@ -19,6 +19,8 @@ vi.mock("../../../lib/providers/bunny-stream.js", () => ({
   hostVideoOnBunny: vi.fn(),
   isBunnyConfigured: vi.fn(),
   bunnyStreamCostCents: vi.fn(),
+  deleteBunnyVideo: vi.fn().mockResolvedValue(undefined),
+  validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
 }));
 
 // ---------------------------------------------------------------------------
@@ -100,13 +102,14 @@ vi.mock("../../../lib/providers/atlas.js", async (orig) => {
 // ---------------------------------------------------------------------------
 // Imports after mocks.
 // ---------------------------------------------------------------------------
-import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "../../../lib/providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, validateBunnyMp4Url } from "../../../lib/providers/bunny-stream.js";
 import handler from "../poll-listing-iterations.js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
 const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
 const bunnyStreamCostCentsMock = vi.mocked(bunnyStreamCostCents);
+const validateBunnyMp4UrlMock = vi.mocked(validateBunnyMp4Url);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -137,6 +140,8 @@ describe("poll-listing-iterations — Bunny rehost migration", () => {
     });
 
     isBunnyConfiguredMock.mockReturnValue(true);
+    // clearAllMocks resets the mock implementation; restore the default (HEAD passes).
+    validateBunnyMp4UrlMock.mockResolvedValue(true);
     mockDownloadClip.mockResolvedValue(FAKE_BYTES);
     mockCheckStatus.mockResolvedValue({ status: "done", videoUrl: PROVIDER_URL, costCents: 50 });
     hostVideoOnBunnyMock.mockResolvedValue({
@@ -188,6 +193,11 @@ describe("poll-listing-iterations — Bunny rehost migration", () => {
       .find((row: Record<string, unknown>) => row?.provider === "bunny");
     expect(bunnyRow).toBeDefined();
     expect(bunnyRow?.cost_cents).toBe(2);
+    // scene_id column MUST be null — iter.scene_id references a lab table, not
+    // the production `scenes` table cost_events.scene_id FKs to (FK violation
+    // → per-minute insert-failed spam if written directly). Preserved in metadata.
+    expect(bunnyRow?.scene_id).toBeNull();
+    expect((bunnyRow?.metadata as Record<string, unknown>)?.scene_id).toBe("scene-77");
     expect((bunnyRow?.metadata as Record<string, unknown>)?.bunny_hosted).toBe(true);
     expect((bunnyRow?.metadata as Record<string, unknown>)?.source).toBe("lab_listing");
   });

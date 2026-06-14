@@ -19,6 +19,8 @@ vi.mock("./providers/bunny-stream.js", () => ({
   hostVideoOnBunny: vi.fn(),
   isBunnyConfigured: vi.fn(),
   bunnyStreamCostCents: vi.fn(),
+  deleteBunnyVideo: vi.fn().mockResolvedValue(undefined),
+  validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
 }));
 
 // ---------------------------------------------------------------------------
@@ -67,13 +69,14 @@ vi.mock("./providers/atlas.js", async (importOriginal) => {
 // ---------------------------------------------------------------------------
 // Imports after mocks.
 // ---------------------------------------------------------------------------
-import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents } from "./providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, validateBunnyMp4Url } from "./providers/bunny-stream.js";
 import { recordCostEvent } from "./db.js";
 import { finalizeLabRender } from "./prompt-lab.js";
 
 const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
 const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
 const bunnyStreamCostCentsMock = vi.mocked(bunnyStreamCostCents);
+const validateBunnyMp4UrlMock = vi.mocked(validateBunnyMp4Url);
 const recordCostEventMock = vi.mocked(recordCostEvent);
 
 // ---------------------------------------------------------------------------
@@ -105,6 +108,8 @@ describe("finalizeLabRender — Bunny rehost migration", () => {
     mockSupabase.storage.from.mockReturnValue(mockSupabaseStorage);
 
     isBunnyConfiguredMock.mockReturnValue(true);
+    // clearAllMocks resets the mock implementation; restore the default (HEAD passes).
+    validateBunnyMp4UrlMock.mockResolvedValue(true);
     mockDownloadClip.mockResolvedValue(FAKE_BYTES);
     hostVideoOnBunnyMock.mockResolvedValue({
       guid: "guid-rehost",

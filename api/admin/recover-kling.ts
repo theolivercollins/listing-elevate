@@ -24,7 +24,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { KlingProvider } = await import('../../lib/providers/kling.js');
     const { getSupabase, recordCostEvent } = await import('../../lib/db.js');
-    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo } = await import('../../lib/providers/bunny-stream.js');
+    const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } = await import('../../lib/providers/bunny-stream.js');
     const kling = new KlingProvider();
     const supabase = getSupabase();
 
@@ -75,22 +75,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (isBunnyConfigured()) {
           try {
             const hosted = await hostVideoOnBunny(clipPath, clipBuffer);
-            // HEAD-validate before persisting — if MP4 Fallback is disabled on the
-            // library, Bunny returns FINISHED but the rendition URL 404s. A 404
-            // clip_url would break the Gemini judge and SPA player (zero-HITL).
-            let mp4Valid = false;
-            try {
-              const headRes = await fetch(hosted.mp4Url, { method: 'HEAD' });
-              mp4Valid = headRes.ok;
-              if (!mp4Valid) {
-                console.warn(`[recover-kling] bunny mp4Url HEAD ${headRes.status} for ${clipPath} — keeping provider URL`);
-                // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
-                deleteBunnyVideo(hosted.guid).catch(() => {});
-              }
-            } catch (headErr) {
-              console.warn(`[recover-kling] bunny mp4Url HEAD threw for ${clipPath} — keeping provider URL:`,
-                headErr instanceof Error ? headErr.message : String(headErr));
-              // Clean up the orphaned Bunny object (upload succeeded but HEAD threw).
+            // HEAD-validate before persisting — sends the Referer header required
+            // by Bunny library 679131's referrer allow-listing (server-side fetches
+            // have no Referer by default → 403). If MP4 Fallback is also disabled,
+            // Bunny returns FINISHED but the URL 404s — either way a bad URL must
+            // never reach the DB (zero-HITL).
+            const mp4Valid = await validateBunnyMp4Url(hosted.mp4Url);
+            if (!mp4Valid) {
+              console.warn(`[recover-kling] bunny mp4Url HEAD failed for ${clipPath} — keeping provider URL`);
+              // Clean up the orphaned Bunny object (upload succeeded but URL inaccessible).
               deleteBunnyVideo(hosted.guid).catch(() => {});
             }
             if (mp4Valid) {
