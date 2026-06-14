@@ -6,7 +6,7 @@
 // Both are safe to bundle into the client chunk.
 
 import { tokensInTemplate } from "./fill.js";
-import { allTokenNames, PASSTHROUGH_TOKENS } from "./types.js";
+import { allTokenNames, META_TOKENS, PASSTHROUGH_TOKENS } from "./types.js";
 
 export interface TemplateValidationResult {
   /**
@@ -54,6 +54,24 @@ export function validateTemplateTokens(
     errors.push(
       `Unknown token${unknown.length === 1 ? "" : "s"} — these will appear as raw text in published drafts: ` +
         unknown.map((t) => `{{${t}}}`).join(", "),
+    );
+  }
+
+  // ── Passthrough-only guard (blocking) ────────────────────────────────────
+  // A template that contains tokens but NONE of them are "per-region" (i.e.
+  // every token is a passthrough like {{HEADLINE}} or {{UNSUBSCRIBE_URL}})
+  // will produce byte-identical output for every region — the exact "3 identical
+  // posts" incident class. Reject it before any drafts are written.
+  //
+  // A per-region token is any canonical token that is NOT in PASSTHROUGH_TOKENS:
+  // that is, any META_TOKEN (REGION_NAME, REPORT_MONTH, …) or any metric token.
+  const perRegionVocab = new Set(allTokenNames()); // already excludes passthroughs
+  const hasPerRegionToken = found.some((name) => perRegionVocab.has(name));
+  if (!hasPerRegionToken) {
+    // Surface a representative pair of per-region tokens so the message is actionable.
+    const examples = ([...META_TOKENS] as string[]).slice(0, 2).map((t) => `{{${t}}}`).join(", ");
+    errors.push(
+      `Template has no per-region tokens (e.g. ${examples}) — every region would render identical content.`,
     );
   }
 

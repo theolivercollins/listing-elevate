@@ -216,6 +216,19 @@ describe("generateDrafts — template-token guard", () => {
     expect(supabase._tables.emails).toHaveLength(0);
   });
 
+  it("blocks generation when blog template contains ONLY passthrough tokens (per-region guard)", async () => {
+    // Passthrough-only template passes the zero-token and unknown-token checks but
+    // contains no per-region differentiation — every region would get identical HTML.
+    const { supabase, runId } = await runWithBlogTemplate(
+      "<p>{{HEADLINE}}</p><p>Check out our latest update! <a href='{{CTA_URL}}'>{{CTA_TEXT}}</a></p><a href='{{UNSUBSCRIBE_URL}}'>Unsubscribe</a>",
+    );
+    await expect(generateDrafts({ supabase, siteId: "site1", runId })).rejects.toThrow(
+      /template validation failed/,
+    );
+    expect(supabase._tables.blog_posts).toHaveLength(0);
+    expect(supabase._tables.emails).toHaveLength(0);
+  });
+
   it("allows generation when both templates are properly tokenized (happy path unchanged)", async () => {
     (extractRegion as any).mockImplementation(async (_pdf: string, name: string) => ({
       metrics: fullMetrics(name),
