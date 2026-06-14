@@ -309,9 +309,15 @@ function DraggableCard({
         {card.clipUrl ? (
           <video
             src={card.clipUrl}
+            // autoPlay (muted) is REQUIRED for the clip to paint: a <video>
+            // with no autoPlay and no poster renders a blank frame until the
+            // user interacts — that was the "missing videos" at Checkpoint A.
+            // Mirrors SceneStrip's working pattern.
+            autoPlay
             muted
             loop
             playsInline
+            preload="metadata"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : (

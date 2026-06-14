@@ -9,7 +9,7 @@ import {
   getEnabledProviders,
 } from '../providers/router.js';
 import { classifyProviderError } from '../providers/errors.js';
-import { atlasClipCostCents, V1_DEFAULT_SKU } from '../providers/atlas.js';
+import { atlasClipCostCents, V1_DEFAULT_SKU, AtlasInsufficientBalanceError } from '../providers/atlas.js';
 import type { SceneVariantRow } from '../types/operator-studio.js';
 import type { RoomType, CameraMovement, VideoProvider, PipelineMode } from '../types.js';
 
@@ -110,6 +110,20 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
             bSubmitted = true;
             break;
           } catch (err) {
+            // Atlas 402 insufficient-balance: permanent billing failure.
+            // Do NOT failover to another provider (that would silently degrade
+            // quality and hide the account problem from the operator). Surface
+            // it loudly and degrade this variant immediately.
+            if (err instanceof AtlasInsufficientBalanceError) {
+              lastErrMsg = err.message;
+              console.error(
+                `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant B: ${err.message}`,
+              );
+              await log(propertyId, 'generation', 'error',
+                `[atlas] insufficient balance — scene ${scene.scene_number} variant B NOT submitted; operator action required: ${err.message}`,
+                { delivery_run_id: runId, modelKey: decision.modelKey }, scene.id);
+              break;
+            }
             const classified = classifyProviderError(err);
             lastErrMsg = classified.message;
             if (!classified.shouldFailover) {
@@ -440,6 +454,23 @@ export async function regenerateVariant(
         { jobId: genJob.jobId, delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
       return;
     } catch (err) {
+      // Atlas 402 insufficient-balance: permanent billing failure. Do NOT
+      // failover to another provider (that silently degrades quality to e.g.
+      // native-Kling 720p and hides the account problem — the original
+      // quality-drop incident). Surface loudly, mark this variant degraded so
+      // the operator sees it, and re-throw instead of routing to a worse clip.
+      if (err instanceof AtlasInsufficientBalanceError) {
+        console.error(
+          `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant ${variant} regenerate: ${err.message}`,
+        );
+        await supabase.from('scene_variants')
+          .update({ degraded: true, error: err.message, updated_at: new Date().toISOString() })
+          .eq('delivery_run_id', runId).eq('scene_id', sceneId).eq('variant', variant);
+        await log(scene.property_id, 'generation', 'error',
+          `[atlas] insufficient balance — scene ${scene.scene_number} variant ${variant} regenerate NOT submitted; operator action required: ${err.message}`,
+          { delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
+        throw err;
+      }
       const classified = classifyProviderError(err);
       lastError = err;
       if (!classified.shouldFailover) {

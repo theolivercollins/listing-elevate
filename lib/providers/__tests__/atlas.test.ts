@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider, atlasClipCostCents } from "../atlas.js";
+import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider, atlasClipCostCents, AtlasInsufficientBalanceError } from "../atlas.js";
 import { __setTransformForTests } from "../../services/source-aspect.js";
 import type { GenerateClipParams } from "../provider.interface.js";
 
@@ -342,5 +342,108 @@ describe("ATLAS_MODELS — Kling aspect-copy guard", () => {
 
   it("kling-v2-master is declared 720p-class (measured ~0.92 MP fixed budget), not 1080p", () => {
     expect(ATLAS_MODELS["kling-v2-master"].supportedResolutions).toEqual(["720p"]);
+  });
+});
+
+// ── Atlas 402 / insufficient-balance error handling ──
+
+describe("AtlasInsufficientBalanceError", () => {
+  it("is an instance of Error with a recognizable message prefix", () => {
+    const err = new AtlasInsufficientBalanceError("not enough credits");
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe("AtlasInsufficientBalanceError");
+    expect(err.message).toMatch(/atlas_insufficient_balance/);
+    expect(err.code).toBe(402);
+  });
+
+  it("works without a detail string", () => {
+    const err = new AtlasInsufficientBalanceError();
+    expect(err.message).toBe("atlas_insufficient_balance");
+  });
+});
+
+describe("parseAtlasSubmitResponse — 402 / insufficient balance", () => {
+  it("throws AtlasInsufficientBalanceError for a JSON body with code=402", () => {
+    expect(() =>
+      parseAtlasSubmitResponse({ code: 402, msg: "insufficient balance", data: null }),
+    ).toThrow(AtlasInsufficientBalanceError);
+  });
+
+  it("the thrown error message matches the atlas_insufficient_balance prefix", () => {
+    let caught: unknown;
+    try {
+      parseAtlasSubmitResponse({ code: 402, msg: "insufficient balance", data: null });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(AtlasInsufficientBalanceError);
+    expect((caught as AtlasInsufficientBalanceError).message).toMatch(/atlas_insufficient_balance/);
+  });
+
+  it("generic non-200 code still throws a plain Error, NOT AtlasInsufficientBalanceError", () => {
+    expect(() =>
+      parseAtlasSubmitResponse({ code: 500, msg: "internal server error", data: null }),
+    ).toThrow(Error);
+    // Confirm it is NOT the balance-specific subclass.
+    let caught: unknown;
+    try {
+      parseAtlasSubmitResponse({ code: 500, msg: "internal server error", data: null });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).not.toBeInstanceOf(AtlasInsufficientBalanceError);
+  });
+});
+
+describe("AtlasProvider.generateClip — 402 HTTP response throws AtlasInsufficientBalanceError", () => {
+  beforeEach(() => {
+    process.env.ATLASCLOUD_API_KEY = "test-key";
+    __setTransformForTests(null);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a 402 HTTP response throws AtlasInsufficientBalanceError, not a generic error", async () => {
+    // ensureSourceAspectRatio would call fetch on the sourceImageUrl first —
+    // bypass the crop path so only the Atlas API fetch sees the stubbed 402.
+    __setTransformForTests(async (url: string) => url);
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      statusText: "Payment Required",
+      // 402s can return plain-text bodies — test that path.
+      text: async () => "Insufficient balance to create prediction",
+      json: async () => { throw new Error("should not parse JSON on 402"); },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("kling-v2-6-pro");
+    await expect(provider.generateClip(baseParams)).rejects.toBeInstanceOf(AtlasInsufficientBalanceError);
+  });
+
+  it("the 402 error is NOT retried by classifyProviderError (shouldFailover guard)", async () => {
+    // Import the classifier and confirm the balance error is classified as permanent.
+    const { classifyProviderError } = await import("../../providers/errors.js");
+    const err = new AtlasInsufficientBalanceError("insufficient balance");
+    const classified = classifyProviderError(err);
+    expect(classified.kind).toBe("permanent");
+    expect(classified.retryable).toBe(false);
+    // shouldFailover=true, but consumers must NOT auto-failover on AtlasInsufficientBalanceError
+    // (they check instanceof before reaching the generic shouldFailover branch).
+  });
+
+  it("a successful submit still works normally after adding the 402 guard", async () => {
+    __setTransformForTests(async (url: string) => url); // no-op crop for kling (already 16:9 in test)
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 200, data: { id: "job-ok-123" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = new AtlasProvider("kling-v2-6-pro");
+    const job = await provider.generateClip(baseParams);
+    expect(job.jobId).toBe("job-ok-123");
   });
 });
