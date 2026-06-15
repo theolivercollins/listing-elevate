@@ -315,10 +315,9 @@ export async function reapStuckLabListings(
  *   - It ALWAYS tries to advance to 'generating' after the scrape, so calling
  *     it on a stuck run is idempotent and recovers both stages in one shot.
  *
- * The existing reapers (reapStuckLabIterations, reapStuckScenes,
- * reapStuckLabListings) do NOT use a non-prod write guard — they reap in every
- * environment. This reaper matches that pattern. If re-firing is ever
- * undesirable in non-prod, add a VERCEL_ENV guard here.
+ * Non-prod write guard: this reaper re-fires a Redfin/Apify PAID scrape
+ * (cost_events are recorded), so it must not fire outside production. Guard
+ * mirrors lib/assembly/finalize.ts.
  *
  * @param db   Supabase client (service-role).
  * @param now  Reference timestamp; pass explicitly so tests are deterministic.
@@ -327,6 +326,16 @@ export async function reapStuckDeliveryRuns(
   db: SupabaseClient,
   now: Date = new Date(),
 ): Promise<ReapResult> {
+  // P2a: non-prod write guard. The Redfin/Apify scrape is a PAID operation
+  // (cost_event recorded). All 3 envs share one Supabase, so we must not
+  // re-fire on preview/dev. Mirror of lib/assembly/finalize.ts guard.
+  const canWrite =
+    process.env.VERCEL_ENV === "production" ||
+    process.env.LE_ALLOW_NONPROD_WRITES === "true";
+  if (!canWrite) {
+    return { reaped: 0, ids: [] };
+  }
+
   try {
     const stuckCutoff = cutoffIso(now, DELIVERY_STUCK_MINUTES);
     const exhaustedCutoff = cutoffIso(now, DELIVERY_MAX_AGE_MINUTES);
@@ -379,9 +388,24 @@ export async function reapStuckDeliveryRuns(
             `[stuck-reaper] delivery_run ${row.id} exhausted in '${row.stage}' >60m — annotated; use Rerun`,
           );
         } else {
-          // Re-fire the scrape stage. runScrapeStage updates updated_at via
-          // advanceRun/setRunError, so this run won't be eligible again for
-          // DELIVERY_STUCK_MINUTES — that is the re-fire rate-limit.
+          // P1b: bump updated_at BEFORE calling runScrapeStage so that an early
+          // throw (getRun null, illegal-transition, etc.) still rate-limits.
+          // The Apify scrape IS a paid operation — without this bump a thrown
+          // error leaves the row eligible for re-fire every cron tick (60s).
+          const { error: preBumpErr } = await db
+            .from("delivery_runs")
+            .update({ updated_at: new Date().toISOString() })
+            .eq("id", row.id);
+          if (preBumpErr) {
+            console.warn(
+              `[stuck-reaper] reapStuckDeliveryRuns pre-bump failed for ${row.id}:`,
+              preBumpErr.message,
+            );
+            // Still attempt the scrape — worst case is one duplicate fire.
+          }
+
+          // Re-fire the scrape stage. runScrapeStage also updates updated_at via
+          // advanceRun/setRunError (belt-and-suspenders with the pre-bump above).
           await runScrapeStage(row.id);
           console.warn(
             `[stuck-reaper] re-fired runScrapeStage for delivery_run ${row.id} (was stuck in '${row.stage}')`,
@@ -437,6 +461,10 @@ export async function reapStuckDeliveryRuns(
  * selects and the give-up status write. Tests mock resubmitScene via the
  * module mock system.
  *
+ * Non-prod write guard: resubmitScene initiates a PAID provider render. All 3
+ * envs share one Supabase, so this reaper must not fire outside production.
+ * Mirror of lib/assembly/finalize.ts guard.
+ *
  * @param db   Supabase client (service-role).
  * @param now  Reference timestamp; pass explicitly so tests are deterministic.
  */
@@ -444,6 +472,15 @@ export async function reapStuckGeneratingProperties(
   db: SupabaseClient,
   now: Date = new Date(),
 ): Promise<ReapResult> {
+  // P2a: non-prod write guard. resubmitScene initiates a PAID render. All 3
+  // envs share one Supabase, so we must not fire outside production.
+  const canWrite =
+    process.env.VERCEL_ENV === "production" ||
+    process.env.LE_ALLOW_NONPROD_WRITES === "true";
+  if (!canWrite) {
+    return { reaped: 0, ids: [] };
+  }
+
   try {
     const stuckCutoff = cutoffIso(now, GENERATING_STUCK_MINUTES);
     const exhaustedCutoff = cutoffIso(now, GENERATING_MAX_AGE_MINUTES);
@@ -516,44 +553,51 @@ export async function reapStuckGeneratingProperties(
             `[stuck-reaper] property ${prop.id} exhausted in 'generating' >60m with ${unsubmitted.length} unsubmitted scene(s) — set needs_review`,
           );
         } else {
-          // Re-submit each never-submitted scene. resubmitScene is safe:
-          //   - Returns {ok:false, error} on failure (never throws).
-          //   - On failure it leaves the scene at needs_review itself.
-          //   - On success it stamps provider_task_id + submitted_at.
-          // We bump the property's updated_at afterward to rate-limit re-fires.
+          // P1a: bump property updated_at FIRST (in a finally block) so that
+          // any throw inside the resubmit loop still rate-limits. Without this
+          // guarantee, a thrown error skips the bump and the property re-fires
+          // every cron tick (60s), triggering a new PAID render each time.
           let anySubmitted = false;
-          for (const scene of unsubmitted) {
-            const result = await resubmitScene(scene.id);
-            if (result.ok) {
-              anySubmitted = true;
+          try {
+            // Re-submit each never-submitted scene. resubmitScene normally
+            // returns {ok, error} and does not throw, but we guard with finally
+            // anyway so a future regression can't re-open the money-loop.
+            //   - On failure it leaves the scene at needs_review itself.
+            //   - On success it stamps provider_task_id + submitted_at.
+            for (const scene of unsubmitted) {
+              const result = await resubmitScene(scene.id);
+              if (result.ok) {
+                anySubmitted = true;
+                console.warn(
+                  `[stuck-reaper] re-submitted scene ${scene.id} for property ${prop.id} (provider=${result.provider})`,
+                );
+              } else {
+                console.warn(
+                  `[stuck-reaper] resubmitScene failed for scene ${scene.id} (property ${prop.id}): ${result.error ?? "unknown"}`,
+                );
+              }
+            }
+
+            if (anySubmitted) {
               console.warn(
-                `[stuck-reaper] re-submitted scene ${scene.id} for property ${prop.id} (provider=${result.provider})`,
-              );
-            } else {
-              console.warn(
-                `[stuck-reaper] resubmitScene failed for scene ${scene.id} (property ${prop.id}): ${result.error ?? "unknown"}`,
+                `[stuck-reaper] property ${prop.id}: re-submitted ${unsubmitted.length} scene(s) that were never dispatched`,
               );
             }
-          }
+          } finally {
+            // Guaranteed bump — runs even if resubmitScene threw above.
+            // Rate-limits re-fires regardless of submit outcome (all-failed
+            // or thrown) to prevent a tight paid-render storm.
+            const { error: touchErr } = await db
+              .from("properties")
+              .update({ updated_at: new Date().toISOString() })
+              .eq("id", prop.id);
 
-          // Bump property updated_at to rate-limit future re-fires regardless
-          // of submit outcome (even all-failed), to avoid a tight retry storm.
-          const { error: touchErr } = await db
-            .from("properties")
-            .update({ updated_at: new Date().toISOString() })
-            .eq("id", prop.id);
-
-          if (touchErr) {
-            console.warn(
-              `[stuck-reaper] reapStuckGeneratingProperties timestamp bump failed for property ${prop.id}:`,
-              touchErr.message,
-            );
-          }
-
-          if (anySubmitted) {
-            console.warn(
-              `[stuck-reaper] property ${prop.id}: re-submitted ${unsubmitted.length} scene(s) that were never dispatched`,
-            );
+            if (touchErr) {
+              console.warn(
+                `[stuck-reaper] reapStuckGeneratingProperties timestamp bump failed for property ${prop.id}:`,
+                touchErr.message,
+              );
+            }
           }
         }
 
