@@ -793,71 +793,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.studio-scope .le-video-command {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px 24px;
-  align-items: start;
-  margin: 0 0 22px;
-  padding: 22px;
-  border: 1px solid var(--le-line);
-  border-radius: var(--le-radius);
-  background:
-    linear-gradient(135deg, rgba(42,111,219,0.08), rgba(47,138,85,0.06)),
-    var(--le-surface);
-  box-shadow: var(--le-shadow-sm);
-}
-.studio-scope .le-video-command-copy {
-  min-width: 0;
-}
-.studio-scope .le-video-command-copy h2 {
-  margin: 4px 0 8px;
-  color: var(--le-ink);
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: 0;
-  line-height: 1.16;
-  max-width: 760px;
-}
-.studio-scope .le-video-command-copy p {
-  margin: 0;
-  color: var(--le-ink-2);
-  font-size: 13.5px;
-  line-height: 1.55;
-  max-width: 680px;
-}
-.studio-scope .le-video-command-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.studio-scope .le-video-command-actions .studio-cta-primary,
-.studio-scope .le-video-command-actions .studio-btn-ghost {
-  min-height: 38px;
-}
-.studio-scope .le-video-command-metrics {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.studio-scope .le-video-command-metric {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 32px;
-  padding: 0 11px;
-  border: 1px solid var(--le-line);
-  border-radius: var(--le-r-pill);
-  background: rgba(255,255,255,0.58);
-  color: var(--le-ink-2);
-  font-size: 12.5px;
-  font-weight: 600;
-  white-space: nowrap;
-}
 .studio-scope .le-video-upload-handoff {
   display: flex;
   align-items: center;
@@ -891,13 +826,6 @@
 }
 
 @media (max-width: 860px) {
-  .studio-scope .le-video-command {
-    grid-template-columns: 1fr;
-    padding: 18px;
-  }
-  .studio-scope .le-video-command-actions {
-    justify-content: flex-start;
-  }
   .studio-scope .le-video-upload-handoff {
     align-items: flex-start;
     flex-direction: column;
@@ -1621,17 +1549,6 @@
 
 .dark .studio-scope .le-video-orient-badge {
   background: rgba(0,0,0,0.55);
-}
-.dark .studio-scope .le-video-command {
-  background:
-    linear-gradient(135deg, rgba(111,141,245,0.16), rgba(76,179,123,0.08)),
-    rgba(255,255,255,0.03);
-  border-color: rgba(255,255,255,0.1);
-}
-.dark .studio-scope .le-video-command-metric {
-  background: rgba(255,255,255,0.05);
-  border-color: rgba(255,255,255,0.1);
-  color: var(--le-ink-2);
 }
 .dark .studio-scope .le-video-upload-handoff {
   background: rgba(76,179,123,0.12);

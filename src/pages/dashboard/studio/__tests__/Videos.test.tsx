@@ -187,11 +187,13 @@ afterEach(() => {
 });
 
 describe('Videos library page', () => {
-  it('frames LE Video as a self-hosted platform and opens the video upload dropzone', async () => {
+  it('opens video upload from the page header without the old command band', async () => {
     mockFetch({ items: [makeItem()] });
     renderPage();
 
-    expect(await screen.findByText(/owned playback, links, embeds, downloads, and analytics/i)).toBeTruthy();
+    await screen.findByText('123 Ocean Drive');
+    expect(screen.queryByText(/owned playback, links, embeds, downloads, and analytics/i)).toBeNull();
+    expect(screen.queryByRole('link', { name: /share library/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /upload video/i }));
     expect(screen.getByTestId('videos-upload-dropzone')).toBeTruthy();
   });
