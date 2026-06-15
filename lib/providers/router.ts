@@ -277,7 +277,7 @@ export function selectProviderForScene(
 // trail in the DB stays human-authored.
 
 const MOVEMENT_VERB_PATTERN =
-  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
+  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan|drone|aerial|glid(?:e|es|ing)|descend(?:s|ing)?|ascend(?:s|ing)?|tracking)\b[^.;]*[.;]?/gi;
 
 // ─── FOCAL-FIXATION STRIP ────────────────────────────────────────────────────
 //
@@ -292,7 +292,8 @@ const MOVEMENT_VERB_PATTERN =
 //   "close-up of/on the X"             → strip the close-up+prep; keep "the X"
 //   "focused on the X"                 → strip "focused on"; keep "the X"
 //   "background softly blurred" / "blurred background" → drop entirely (no noun)
-//   "bokeh …sentence…" / "macro …sentence…"            → drop entirely
+//   "bokeh from/of/around the X"  → strip the optical word + connector; keep "the X"
+//   "macro (detail/shot/push) of/toward the X" → strip optical word; keep "the X"
 //
 // Each replacement is applied in order. The final cleanup pass removes stray
 // leading/trailing punctuation artefacts.
@@ -345,19 +346,43 @@ export function stripFocalFixation(prompt: string): string {
   s = s.replace(/[,;.]?\s*\bbackground\s+(?:is\s+)?(?:softly\s+)?blurred\b[,;.]?\s*/gi, " ");
   s = s.replace(/[,;.]?\s*(?:softly\s+)?blurred\s+background\b[,;.]?\s*/gi, " ");
 
-  // 7. Bokeh / macro full-clause drops.
-  s = s.replace(/\bbokeh\b[^.;]*[.;]?\s*/gi, " ");
-  s = s.replace(/\bmacro\b[^.;]*[.;]?\s*/gi, " ");
+  // 7. Bokeh / macro — SURGICAL optical-word removal, subject noun preserved.
+  //    These are OPTICAL framing (a modifier on a director-chosen subject), NOT
+  //    camera movement, so we must NOT consume the clause to the next period —
+  //    that deletes the subject. Strip the optical word + its leading connector
+  //    ("bokeh from the X" → "the X"; "macro detail of the X" → "the X") and
+  //    fall back to a bare-word strip when no connector follows.
+  //    Before (whole-clause bug): "Macro push toward the faucet, water beading
+  //    on the basin" → "" (faucet + basin GONE).
+  //    After (surgical):          "push toward the faucet, water beading on the
+  //    basin" (subject preserved).
+  s = s.replace(/\bmacro\s+(?:detail|shot|push|view|close-?up)\s+(?:of|toward|on)?\s*/gi, "");
+  s = s.replace(/\bmacro\b\s*/gi, "");
+  s = s.replace(/\bbokeh\s+(?:from|of|around|surrounds?|surrounding)\s+/gi, "");
+  s = s.replace(/\bbokeh\b\s*/gi, "");
 
   // ── Cleanup ──────────────────────────────────────────────────────────────
   // Remove stray leading "with" / "and" / commas left by the strips above.
   s = s.replace(/^\s*(?:with|and)\s+/i, "");
+  // Orphan leading style-adjective left dangling on an article after its
+  // optical qualifier was stripped. e.g. "Cinematic close-up of the wine
+  // fridge" → close-up+of removed → "Cinematic the wine fridge" → drop the
+  // orphan "Cinematic" → "the wine fridge". Restricted to known cinematography
+  // style words so we never eat a real subject noun.
+  s = s.replace(/^\s*(?:cinematic|dramatic|moody|soft|sharp|crisp|tight|wide)\s+(?=(?:the|a|an)\s)/i, "");
   // Remove dangling "toward the ." / "toward it." artifacts.
   s = s.replace(/\btoward\s+(?:the\s+)?[.,;]\s*/gi, "");
+  // Collapse a lost comma that now abuts another article/clause: ", the X"
+  // following an article-led head reads as a fused list — keep it, but drop a
+  // comma immediately before end-of-string and collapse comma-space-comma runs.
+  s = s.replace(/\s*,\s*(?=,)/g, "");
   // Collapse double spaces; trim.
   s = s.replace(/\s{2,}/g, " ").trim();
   // Strip a leading comma/semicolon.
   s = s.replace(/^[,;]\s*/, "");
+  // Strip a dangling trailing comma/semicolon left by an end-of-string strip
+  // (e.g. "Cinematic the wine fridge," → "Cinematic the wine fridge").
+  s = s.replace(/\s*[,;]+\s*$/, "");
 
   return s;
 }

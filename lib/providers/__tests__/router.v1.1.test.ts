@@ -134,6 +134,120 @@ describe("forceSeedancePushInPrompt", () => {
   });
 });
 
+// ─── STRIP MATRIX (the safety net) ───────────────────────────────────────────
+//
+// This is the regression net the P0 slipped through last time: the old tests
+// only asserted the optical keyword was GONE, never that the director's subject
+// noun SURVIVED. The macro/bokeh whole-clause regex deleted the subject and
+// still passed. Every case below pins BOTH directions.
+//
+// Two distinct contracts, enforced separately:
+//   • OPTICAL framing (DoF / close-up / focused-on / macro / bokeh) is a
+//     modifier on a director-chosen subject → strip the optical word SURGICALLY,
+//     KEEP the subject noun.
+//   • CAMERA MOVEMENT (orbit / drone / aerial / glide / parallax / …) is a
+//     camera path → remove the whole movement clause. Dropping the subject too
+//     is the ACCEPTED, DELIBERATE behavior — the source photo re-establishes the
+//     subject and the preamble supplies the push-in.
+
+describe("forceSeedancePushInPrompt — OPTICAL strip keeps the subject noun", () => {
+  it("DoF: keeps the vanity fixture, drops depth-of-field + blurred", () => {
+    const out = forceSeedancePushInPrompt(
+      "cinematic slow push in with shallow depth of field on the five-light glass vanity fixture, background softly blurred",
+    );
+    expect(out).toMatch(/vanity fixture/i);
+    expect(out).not.toMatch(/depth of field/i);
+    expect(out).not.toMatch(/blurred/i);
+  });
+
+  it("close-up: keeps the marble countertop, drops close-up", () => {
+    const out = forceSeedancePushInPrompt("extreme close-up of the marble countertop");
+    expect(out).toMatch(/marble countertop/i);
+    expect(out).not.toMatch(/close-?up/i);
+  });
+
+  it("focused-on: keeps the brass faucet, drops focus", () => {
+    const out = forceSeedancePushInPrompt("focused on the brass faucet");
+    expect(out).toMatch(/brass faucet/i);
+    expect(out).not.toMatch(/focus/i);
+  });
+
+  it("macro: keeps faucet AND basin, drops macro (P0 regression — was preamble-only)", () => {
+    const out = forceSeedancePushInPrompt(
+      "Macro push toward the brushed-gold faucet, water beading on the basin",
+    );
+    expect(out).toMatch(/faucet/i);
+    expect(out).toMatch(/basin/i);
+    expect(out).not.toMatch(/macro/i);
+  });
+
+  it("bokeh: keeps wine fridge AND under-cabinet lights, drops bokeh + close-up (P0 — was 'Cinematic the wine fridge,')", () => {
+    const out = forceSeedancePushInPrompt(
+      "Cinematic close-up of the wine fridge, bokeh from the under-cabinet lights",
+    );
+    expect(out).toMatch(/wine fridge/i);
+    expect(out).toMatch(/under-cabinet lights/i);
+    expect(out).not.toMatch(/bokeh/i);
+    expect(out).not.toMatch(/close-?up/i);
+    // P2 cleanup: no orphan "Cinematic" article-head, no dangling trailing comma.
+    expect(out).not.toMatch(/Cinematic the/i);
+    expect(out).not.toMatch(/,\s*$/);
+  });
+});
+
+describe("forceSeedancePushInPrompt — MOVEMENT strip removes the movement word (subject-drop is deliberate)", () => {
+  // The preamble intentionally enumerates "No tilt, no rotation, no parallax,
+  // no orbit." — so for movement words that ALSO appear in the preamble (orbit,
+  // parallax) we must assert against the SUFFIX (subject text after the
+  // preamble), matching the established pattern above. Movement words absent
+  // from the preamble (drone, aerial, glide, descend, tracking) are safe to
+  // assert against the full output.
+  const PREAMBLE =
+    "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
+  const suffixOf = (out: string) => (out.startsWith(PREAMBLE) ? out.slice(PREAMBLE.length) : out);
+
+  it("drone: removes the drone clause, preamble push-in present", () => {
+    const out = forceSeedancePushInPrompt("drone flying forward over the front of the house");
+    expect(out).toMatch(/push in/i);
+    expect(out).not.toMatch(/drone/i);
+  });
+
+  it("aerial: removes aerial + sweep", () => {
+    const out = forceSeedancePushInPrompt("aerial view sweeping over the backyard");
+    expect(out).not.toMatch(/aerial/i);
+    expect(out).not.toMatch(/sweep/i);
+  });
+
+  it("glide: removes gliding", () => {
+    const out = forceSeedancePushInPrompt("gliding past the staircase");
+    expect(out).not.toMatch(/glid/i);
+  });
+
+  it("descend: removes the descend clause", () => {
+    const out = forceSeedancePushInPrompt("Drone descends toward the front entry");
+    expect(out).not.toMatch(/descend/i);
+    expect(out).not.toMatch(/drone/i);
+  });
+
+  it("tracking: removes the tracking clause", () => {
+    const out = forceSeedancePushInPrompt("tracking shot moving forward through the hallway");
+    expect(out).not.toMatch(/tracking/i);
+  });
+
+  it("parallax+glide combined: removes both (subject 'kitchen island' is DELIBERATELY dropped — movement clause-nuke)", () => {
+    // "parallax" appears in the preamble, so assert against the suffix only.
+    const suffix = suffixOf(forceSeedancePushInPrompt("parallax glide past the kitchen island"));
+    expect(suffix).not.toMatch(/parallax/i);
+    expect(suffix).not.toMatch(/glid/i);
+  });
+
+  it("orbit: removes the orbit clause", () => {
+    // "orbit" appears in the preamble, so assert against the suffix only.
+    const suffix = suffixOf(forceSeedancePushInPrompt("slow orbit around the living room"));
+    expect(suffix).not.toMatch(/orbit/i);
+  });
+});
+
 describe("stripMovementVerbs (regex sanity)", () => {
   it("removes 'slowly orbit' phrasing entirely", () => {
     const out = stripMovementVerbs("Slowly orbit the dining table. Keep the chandelier centered.");
