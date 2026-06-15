@@ -276,20 +276,153 @@ export function selectProviderForScene(
 // stored scene.prompt is NOT mutated; this is render-time only so the audit
 // trail in the DB stays human-authored.
 
+// Determiner guard (negative lookbehind, placed verb-adjacent): a real
+// camera-MOVEMENT instruction is clause-leading ("drone flying forward…",
+// "slow orbit around…", "gliding past…"). A movement WORD living inside a
+// director-chosen SUBJECT noun is preceded by a determiner ("the gliding glass
+// doors", "on the descending staircase", "a porch swing", "close-up of the
+// pan"). The lookbehind MUST sit immediately before the verb alternation, not
+// at the outer boundary — the optional leading adverb group consumes its own
+// trailing space ((?:adverb\s+)?) so that, with no adverb, the determiner+space
+// abuts the verb and (?<!\bthe\s)(?<!\ba\s)(?<!\ban\s) blocks the match. Put at
+// the outer boundary the guard is defeated by the \s* loophole (the match
+// anchors on the space before the verb, so "the " never sits adjacent). This
+// keeps the subject for the optical strip downstream while still nuking genuine
+// clause-leading movement. JS/Node supports fixed-width lookbehind.
 const MOVEMENT_VERB_PATTERN =
-  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
+  /\b(?:(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)\s+)?(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan|drone|aerial|glid(?:e|es|ing)|descend(?:s|ing)?|ascend(?:s|ing)?|tracking)\b[^.;]*[.;]?/gi;
+
+// ─── FOCAL-FIXATION STRIP ────────────────────────────────────────────────────
+//
+// Focal-fixation phrases fight a push-in by locking the model onto a single
+// fixture instead of dollying into the room. These appear in feature_closeup
+// prompts ("shallow depth of field on the vanity fixture, background softly
+// blurred") and survive MOVEMENT_VERB_PATTERN because they have no movement
+// verb. We strip the OPTICAL prefix only — subject nouns are preserved.
+//
+// Subject-preservation rule:
+//   "shallow depth of field on the X"  → strip the DoF clause; keep "the X"
+//   "close-up of/on the X"             → strip the close-up+prep; keep "the X"
+//   "focused on the X"                 → strip "focused on"; keep "the X"
+//   "background softly blurred" / "blurred background" → drop entirely (no noun)
+//   "bokeh from/of/around the X"  → strip the optical word + connector; keep "the X"
+//   "macro (detail/shot/push) of/toward the X" → strip optical word; keep "the X"
+//
+// Each replacement is applied in order. The final cleanup pass removes stray
+// leading/trailing punctuation artefacts.
 
 export function stripMovementVerbs(prompt: string): string {
   return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * stripFocalFixation — removes optical-framing language that contradicts a
+ * push-in (shallow DoF on a fixture, background blurred, close-up, macro,
+ * bokeh, "focused on the X"). Subject nouns are preserved; only the
+ * camera/optical framing words are removed.
+ *
+ * Applied at render-time inside forceSeedancePushInPrompt; scene.prompt in
+ * the DB is never mutated.
+ */
+export function stripFocalFixation(prompt: string): string {
+  let s = prompt;
+
+  // 1. "cinematic" as a bare style prefix (e.g. "cinematic slow push in with …")
+  //    — strip it only when followed by another optical qualifier; "cinematic"
+  //    alone is kept. Handled implicitly by the patterns below which already
+  //    strip "with shallow depth of field …", leaving "cinematic slow push in".
+
+  // 2. "(with) shallow depth of field (on)"  — strip prefix, keep subject noun.
+  //    Before: "with shallow depth of field on the vanity fixture,"
+  //    After:  "the vanity fixture,"
+  s = s.replace(/\bwith\s+shallow\s+depth\s+of\s+field\s+on\s+/gi, "");
+  s = s.replace(/\bshallow\s+depth\s+of\s+field\s+on\s+/gi, "");
+  // Standalone "(with) shallow depth of field" with no following object.
+  s = s.replace(/[,;]?\s*\bwith\s+shallow\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;]?\s*\bshallow\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+
+  // 3. "(with) depth of field" standalone.
+  s = s.replace(/[,;]?\s*\bwith\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;]?\s*\bdepth\s+of\s+field\b[,;.]?\s*/gi, " ");
+
+  // 4. "(extreme) close-up of/on the X" — strip prefix+prep, keep "the X".
+  s = s.replace(/\b(?:extreme\s+)?close-?up\s+(?:of|on)\s+/gi, "");
+  // "(extreme) close-up" standalone (no object noun follows directly).
+  s = s.replace(/[,;.]?\s*\b(?:extreme\s+)?close-?up\b[,;.]?\s*/gi, " ");
+
+  // 5. "focused on the X" → keep "the X" (drop "focused on ").
+  s = s.replace(/\bfocus(?:ed)?\s+on\s+(?=the\s)/gi, "");
+  // "focused on [anything without 'the']" — drop the whole phrase.
+  s = s.replace(/\bfocus(?:ed)?\s+on\s+\S+(?:\s+\S+){0,4}[,;.]?\s*/gi, " ");
+
+  // 6. Background-blurred phrases — drop entirely (no subject noun).
+  s = s.replace(/[,;.]?\s*\bbackground\s+(?:is\s+)?(?:softly\s+)?blurred\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;.]?\s*(?:softly\s+)?blurred\s+background\b[,;.]?\s*/gi, " ");
+
+  // 7. Bokeh / macro — SURGICAL optical-word removal, subject noun preserved.
+  //    These are OPTICAL framing (a modifier on a director-chosen subject), NOT
+  //    camera movement, so we must NOT consume the clause to the next period —
+  //    that deletes the subject. Strip the optical word + its leading connector
+  //    ("bokeh from the X" → "the X"; "macro detail of the X" → "the X") and
+  //    fall back to a bare-word strip when no connector follows.
+  //    Before (whole-clause bug): "Macro push toward the faucet, water beading
+  //    on the basin" → "" (faucet + basin GONE).
+  //    After (surgical):          "push toward the faucet, water beading on the
+  //    basin" (subject preserved).
+  s = s.replace(/\bmacro\s+(?:detail|shot|push|view|close-?up)\s+(?:of|toward|on)?\s*/gi, "");
+  s = s.replace(/\bmacro\b\s*/gi, "");
+  s = s.replace(/\bbokeh\s+(?:from|of|around|surrounds?|surrounding)\s+/gi, "");
+  s = s.replace(/\bbokeh\b\s*/gi, "");
+
+  // ── Cleanup ──────────────────────────────────────────────────────────────
+  // Remove stray leading "with" / "and" / commas left by the strips above.
+  s = s.replace(/^\s*(?:with|and)\s+/i, "");
+  // Orphan leading style-adjective left dangling on an article after its
+  // optical qualifier was stripped. e.g. "Cinematic close-up of the wine
+  // fridge" → close-up+of removed → "Cinematic the wine fridge" → drop the
+  // orphan "Cinematic" → "the wine fridge". Restricted to known cinematography
+  // style words so we never eat a real subject noun.
+  s = s.replace(/^\s*(?:cinematic|dramatic|moody|soft|sharp|crisp|tight|wide)\s+(?=(?:the|a|an)\s)/i, "");
+  // Remove dangling "toward the ." / "toward it." artifacts.
+  s = s.replace(/\btoward\s+(?:the\s+)?[.,;]\s*/gi, "");
+  // Collapse a lost comma that now abuts another article/clause: ", the X"
+  // following an article-led head reads as a fused list — keep it, but drop a
+  // comma immediately before end-of-string and collapse comma-space-comma runs.
+  s = s.replace(/\s*,\s*(?=,)/g, "");
+  // Collapse double spaces; trim.
+  s = s.replace(/\s{2,}/g, " ").trim();
+  // Strip a leading comma/semicolon.
+  s = s.replace(/^[,;]\s*/, "");
+  // Strip a dangling trailing comma/semicolon left by an end-of-string strip
+  // (e.g. "Cinematic the wine fridge," → "Cinematic the wine fridge").
+  s = s.replace(/\s*[,;]+\s*$/, "");
+
+  return s;
 }
 
 const SEEDANCE_PUSHIN_PREAMBLE =
   "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
 
 export function forceSeedancePushInPrompt(originalPrompt: string): string {
-  const stripped = stripMovementVerbs(originalPrompt);
+  const stripped = stripFocalFixation(stripMovementVerbs(originalPrompt));
   if (!stripped) return SEEDANCE_PUSHIN_PREAMBLE;
   return `${SEEDANCE_PUSHIN_PREAMBLE} ${stripped}`;
+}
+
+/**
+ * shouldForcePushIn — returns true when the scene must receive the push-in
+ * prompt override at render time. Gate is on the SCENE, not the chosen
+ * provider/SKU, so retries that failover to native Kling (or any other model)
+ * are still forced to push-in as long as the pipeline and scene qualify.
+ *
+ * Paired scenes (end_photo_id set) are intentional transitions on kling-v3-pro
+ * and are always exempt.
+ */
+export function shouldForcePushIn(
+  pipelineMode: string,
+  endPhotoId: string | null | undefined,
+): boolean {
+  return pipelineMode === "v1.1" && !endPhotoId;
 }
 
 /**

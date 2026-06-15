@@ -6,6 +6,7 @@ import {
   buildProviderFromDecision,
   selectProvider,
   forceSeedancePushInPrompt,
+  shouldForcePushIn,
   getEnabledProviders,
 } from '../providers/router.js';
 import { classifyProviderError } from '../providers/errors.js';
@@ -100,10 +101,11 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
             pipelineMode,
           );
           const provider = buildProviderFromDecision(decision);
-          // Same render-time prompt convention as runGenerationSubmit: the Seedance
-          // push-in SKU gets the movement-stripped directive; scene.prompt in the DB
-          // is never mutated. Re-apply per attempt because modelKey changes on failover.
-          const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
+          // v1.1: force push-in prompt for every non-paired scene regardless of
+          // which provider/SKU was selected (failovers may change modelKey).
+          // Gate is on the SCENE, not the modelKey. scene.prompt in the DB is
+          // never mutated — render-time only.
+          const renderPrompt = shouldForcePushIn(pipelineMode, (scene as { end_photo_id?: string | null }).end_photo_id)
             ? forceSeedancePushInPrompt(scene.prompt as string)
             : (scene.prompt as string);
           try {
@@ -429,9 +431,10 @@ export async function regenerateVariant(
         );
     const provider = buildProviderFromDecision(decision);
 
-    // Apply the Seedance push-in prompt directive if applicable.
-    // Re-applied per attempt because modelKey changes across failovers.
-    const renderPrompt = decision.modelKey === 'seedance-pro-pushin'
+    // v1.1: force push-in prompt for every non-paired scene regardless of
+    // which provider/SKU was selected. Gate is on the SCENE, not the modelKey,
+    // so explicit modelOverride calls also get forced when they qualify.
+    const renderPrompt = shouldForcePushIn(pipelineMode, (scene as { end_photo_id?: string | null }).end_photo_id)
       ? forceSeedancePushInPrompt(scene.prompt as string)
       : (scene.prompt as string);
 
