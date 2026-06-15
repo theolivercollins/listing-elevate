@@ -1,4 +1,6 @@
--- 088_cost_events_unit_type_characters.sql
+-- 089_cost_events_unit_type_characters.sql
+-- (renumbered from 088 to avoid a collision with 088_delivery_photo_selection_checkpoint.sql,
+--  which landed on main first via PR #120.)
 --
 -- Root cause: lib/voiceover/generate-audio.ts (line ~155) calls
 -- recordCostEvent({ unitType: "characters" }) for every ElevenLabs TTS render.
