@@ -158,6 +158,44 @@ describe("selectPhotosWithExplanation", () => {
     expect(learning.room_type_adjustments.exterior_front).toBeGreaterThan(0);
   });
 
+  it("learns from rejection categories beyond low-value rooms", () => {
+    const learning = buildPhotoSelectionLearning([
+      {
+        payload: {
+          removed: [
+            { id: "laundry-a", room_type: "laundry", operator_feedback: { category: "weak_video_potential" } },
+            { id: "garage-a", room_type: "garage", operator_feedback: { category: "bad_composition" } },
+            { id: "closet-a", room_type: "closet", operator_feedback: { category: "not_representative" } },
+          ],
+        },
+      },
+    ]);
+
+    expect(learning.room_type_adjustments.laundry).toBeLessThan(0);
+    expect(learning.room_type_adjustments.garage).toBeLessThan(0);
+    expect(learning.room_type_adjustments.closet).toBeLessThan(0);
+  });
+
+  it("learns from operator reordering of kept photos", () => {
+    const learning = buildPhotoSelectionLearning([
+      {
+        payload: {
+          before: ["laundry-a", "kitchen-a", "office-a"],
+          after: ["kitchen-a", "office-a", "laundry-a"],
+          kept: [
+            { id: "laundry-a", room_type: "laundry", operator_feedback: { category: "necessary_coverage" } },
+            { id: "kitchen-a", room_type: "kitchen", operator_feedback: { category: "primary_room" } },
+            { id: "office-a", room_type: "office", operator_feedback: { category: "feature_room" } },
+          ],
+        },
+      },
+    ]);
+
+    expect(learning.room_type_adjustments.kitchen).toBeGreaterThan(0);
+    expect(learning.room_type_adjustments.office).toBeGreaterThan(0);
+    expect(learning.room_type_adjustments.laundry).toBeLessThan(0);
+  });
+
   it("uses static and learned value adjustments so high-scoring laundry loses fill slots", () => {
     const results = [
       candidate("ef", "exterior_front", 8.4),
