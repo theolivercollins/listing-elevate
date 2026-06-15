@@ -11,25 +11,33 @@ const MAX_BYTES = 500 * 1024 * 1024; // 500 MB cap (client-side, per spec)
 /**
  * UploadDropzone — modal with drag/drop + file picker. Uploads the chosen file
  * to the private creatives bucket (with coarse progress), then creates the
- * creative row and fires `onCreated`.
+ * creative row and fires `onCreated`. `acceptKind="video"` narrows the same flow
+ * for LE Video library uploads without forking the Share uploader surface.
  */
 export function UploadDropzone({
   onCreated,
   onClose,
+  acceptKind = 'any',
 }: {
   onCreated: (creative: Creative) => void;
   onClose: () => void;
+  acceptKind?: 'any' | 'video';
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const videoOnly = acceptKind === 'video';
 
   async function handleFile(file: File) {
     setError(null);
     if (file.size > MAX_BYTES) {
       setError('File is larger than 500 MB. Please pick a smaller file.');
+      return;
+    }
+    if (videoOnly && !file.type.startsWith('video/')) {
+      setError('Only video files are supported here.');
       return;
     }
     if (!file.type.startsWith('video/') && !file.type.startsWith('image/')) {
@@ -67,7 +75,7 @@ export function UploadDropzone({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="Upload a creative"
+        aria-label={videoOnly ? 'Upload a video' : 'Upload a creative'}
       >
         <div className="share-drawer-head" style={{ position: 'static', borderBottom: 'none' }}>
           <h2>Upload a creative</h2>
@@ -120,7 +128,7 @@ export function UploadDropzone({
             <>
               <UploadCloud size={26} strokeWidth={1.5} style={{ color: 'var(--le-muted)' }} />
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--le-ink)' }}>
-                Drop a video or image here
+                {videoOnly ? 'Drop a video here' : 'Drop a video or image here'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--le-muted)' }}>
                 or click to browse · up to 500 MB
@@ -130,7 +138,7 @@ export function UploadDropzone({
           <input
             ref={inputRef}
             type="file"
-            accept="video/*,image/*"
+            accept={videoOnly ? 'video/*' : 'video/*,image/*'}
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0];

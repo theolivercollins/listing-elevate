@@ -12,18 +12,76 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Videos from '../Videos';
+import StudioShare from '../Share';
+import type { Creative } from '@/lib/share-api';
 
 // ---------------------------------------------------------------------------
 // API mocks — authedFetch is the single network seam used by the page.
 // ---------------------------------------------------------------------------
 
 const authedFetch = vi.fn();
+const listCreatives = vi.fn();
+const patchCreative = vi.fn();
+const deleteCreative = vi.fn();
 vi.mock('@/lib/api', () => ({
   authedFetch: (...args: unknown[]) => authedFetch(...args),
 }));
 
+vi.mock('@/lib/share-api', () => ({
+  listCreatives: () => listCreatives(),
+  patchCreative: (...args: unknown[]) => patchCreative(...args),
+  deleteCreative: (...args: unknown[]) => deleteCreative(...args),
+}));
+
+vi.mock('@/components/studio/share/CreativeSettingsPanel', () => ({
+  CreativeSettingsPanel: ({ creative }: { creative: Creative }) => (
+    <div data-testid={`creative-settings-${creative.id}`}>{creative.title}</div>
+  ),
+}));
+
+vi.mock('@/components/studio/share/UploadDropzone', () => ({
+  UploadDropzone: ({ onCreated, onClose }: { onCreated: (creative: unknown) => void; onClose: () => void }) => (
+    <div data-testid="videos-upload-dropzone">
+      <button
+        type="button"
+        onClick={() => onCreated({
+          id: 'creative-1',
+          title: 'Aysen hosted master',
+          description: 'Listing Elevate upload',
+          source: 'upload',
+          kind: 'video',
+          public_url: 'https://stream.example/play.mp4',
+          storage_path: null,
+          bucket: 'bunny',
+          thumbnail_url: 'https://cdn/thumb.jpg',
+          visibility: 'unlisted',
+          allow_download: true,
+          allow_embed: true,
+          presentation_enabled: true,
+          expires_at: null,
+          view_count: 42,
+          share_token: 'hosted-token',
+          property_id: null,
+          created_at: '2026-06-12T12:00:00Z',
+          bunny_video_id: 'bunny-1',
+          appearance: {},
+          shareUrl: 'https://listingelevate.com/v/hosted-token',
+          embedUrl: 'https://listingelevate.com/embed/hosted-token',
+          previewUrl: 'https://stream.example/play.mp4',
+          bunnyEmbedUrl: null,
+        })}
+      >
+        Finish upload
+      </button>
+      <button type="button" onClick={onClose}>Close upload</button>
+    </div>
+  ),
+}));
+
 type VideoItem = {
   id: string;
+  title?: string;
+  description?: string | null;
   address: string | null;
   videos: { horizontal: string | null; vertical: string | null };
   approved_at: string | null;
@@ -32,6 +90,10 @@ type VideoItem = {
   hero_photo_url: string | null;
   link_count: number;
   total_views: number;
+  library_source?: 'property' | 'upload';
+  shareUrl?: string;
+  embedUrl?: string;
+  manageUrl?: string;
 };
 
 function makeItem(overrides: Partial<VideoItem> = {}): VideoItem {
@@ -45,6 +107,36 @@ function makeItem(overrides: Partial<VideoItem> = {}): VideoItem {
     hero_photo_url: 'https://cdn/hero.jpg',
     link_count: 2,
     total_views: 17,
+    ...overrides,
+  };
+}
+
+function makeCreative(overrides: Partial<Creative> = {}): Creative {
+  return {
+    id: 'creative-1',
+    title: 'Aysen hosted master',
+    description: 'Listing Elevate upload',
+    source: 'upload',
+    kind: 'video',
+    public_url: 'https://stream.example/play.mp4',
+    storage_path: null,
+    bucket: 'bunny',
+    thumbnail_url: 'https://cdn/thumb.jpg',
+    visibility: 'unlisted',
+    allow_download: true,
+    allow_embed: true,
+    presentation_enabled: true,
+    expires_at: null,
+    view_count: 42,
+    share_token: 'hosted-token',
+    property_id: null,
+    created_at: '2026-06-12T12:00:00Z',
+    bunny_video_id: 'bunny-1',
+    appearance: {},
+    shareUrl: 'https://listingelevate.com/v/hosted-token',
+    embedUrl: 'https://listingelevate.com/embed/hosted-token',
+    previewUrl: 'https://stream.example/play.mp4',
+    bunnyEmbedUrl: null,
     ...overrides,
   };
 }
@@ -82,6 +174,10 @@ function renderPage() {
 
 beforeEach(() => {
   authedFetch.mockReset();
+  listCreatives.mockReset();
+  patchCreative.mockReset();
+  deleteCreative.mockReset();
+  listCreatives.mockResolvedValue([makeCreative()]);
   vi.useFakeTimers({ shouldAdvanceTime: true });
 });
 
@@ -91,6 +187,65 @@ afterEach(() => {
 });
 
 describe('Videos library page', () => {
+  it('frames LE Video as a self-hosted platform and opens the video upload dropzone', async () => {
+    mockFetch({ items: [makeItem()] });
+    renderPage();
+
+    expect(await screen.findByText(/owned playback, links, embeds, downloads, and analytics/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /upload video/i }));
+    expect(screen.getByTestId('videos-upload-dropzone')).toBeTruthy();
+  });
+
+  it('promotes a completed hosted upload into the library with share handoff links', async () => {
+    mockFetch({ items: [], total: 0 });
+    renderPage();
+    await screen.findByText(/no videos/i);
+
+    fireEvent.click(screen.getByRole('button', { name: /upload video/i }));
+    fireEvent.click(screen.getByRole('button', { name: /finish upload/i }));
+
+    expect(await screen.findAllByText('Aysen hosted master')).toHaveLength(2);
+    expect(screen.getByRole('link', { name: /presentation link/i }).getAttribute('href')).toBe('https://listingelevate.com/v/hosted-token');
+    expect(screen.getByRole('link', { name: /embed link/i }).getAttribute('href')).toBe('https://listingelevate.com/embed/hosted-token');
+    expect(screen.getByRole('link', { name: /manage in share/i }).getAttribute('href')).toBe('/dashboard/studio/video/share?creative=creative-1');
+
+    const card = screen.getByRole('link', { name: /open settings for aysen hosted master/i });
+    expect(card.getAttribute('href')).toBe('/dashboard/studio/video/share?creative=creative-1');
+    expect(within(card).getByText('Hosted upload')).toBeTruthy();
+    expect(within(card).getByText('42')).toBeTruthy();
+  });
+
+  it('renders uploaded hosted videos from the API as share-managed cards', async () => {
+    mockFetch({
+      items: [
+        makeItem({
+          id: 'creative-9',
+          title: 'Aysen hosted master',
+          address: 'Aysen hosted master',
+          description: 'Listing Elevate upload',
+          videos: { horizontal: 'https://stream.example/play.mp4', vertical: null },
+          approved_at: null,
+          client: null,
+          hero_photo_url: 'https://cdn/thumb.jpg',
+          link_count: 1,
+          total_views: 42,
+          library_source: 'upload',
+          shareUrl: 'https://listingelevate.com/v/hosted-token-9',
+          embedUrl: 'https://listingelevate.com/embed/hosted-token-9',
+          manageUrl: '/dashboard/studio/video/share?creative=creative-9',
+        }),
+      ],
+    });
+    renderPage();
+
+    const card = await screen.findByRole('link', { name: /open settings for aysen hosted master/i });
+    expect(card.getAttribute('href')).toBe('/dashboard/studio/video/share?creative=creative-9');
+    expect(within(card).getByText('Hosted')).toBeTruthy();
+    expect(within(card).getByText('Share-ready')).toBeTruthy();
+    expect(within(card).getByText('Hosted upload')).toBeTruthy();
+    expect(within(card).getByText('42')).toBeTruthy();
+  });
+
   it('renders cards from the API with address, client, views and orientation badges', async () => {
     mockFetch({ items: [makeItem()] });
     renderPage();
@@ -196,5 +351,17 @@ describe('Videos library page', () => {
     fireEvent.click(next);
 
     await waitFor(() => expect(lastVideosUrl()).toContain('page=2'));
+  });
+});
+
+describe('StudioShare deep links', () => {
+  it('opens the requested creative settings panel from the creative query param', async () => {
+    render(
+      <MemoryRouter initialEntries={['/dashboard/studio/video/share?creative=creative-1']}>
+        <StudioShare />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByTestId('creative-settings-creative-1')).toHaveTextContent('Aysen hosted master');
   });
 });
