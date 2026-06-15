@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { reapStuckScenes } from '../../lib/pipeline/stuck-reaper.js';
+import { reapStuckScenes, reapStuckDeliveryRuns, reapStuckGeneratingProperties } from '../../lib/pipeline/stuck-reaper.js';
 
 export const maxDuration = 300;
 
@@ -34,11 +34,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Reap scenes stuck in 'generating' or 'pending' before the main polling work.
-    // A reaper failure must never break the cron — errors are logged inside.
+    // Reap stuck rows before the main polling work.
+    // Each reaper catches its own errors internally; the outer try/catch here is
+    // a final backstop so a reaper throw never breaks the cron body.
     try {
       const { getSupabase: getDb } = await import('../../lib/db.js');
-      await reapStuckScenes(getDb());
+      const db = getDb();
+      await reapStuckScenes(db);
+      await reapStuckDeliveryRuns(db);
+      await reapStuckGeneratingProperties(db);
     } catch (reaperErr) {
       console.error('[poll-scenes] reaper threw unexpectedly:', reaperErr);
     }
