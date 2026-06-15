@@ -279,13 +279,23 @@ export function selectProviderForScene(
 const MOVEMENT_VERB_PATTERN =
   /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
 
-// Focal-fixation phrases that fight a push-in by telling the model to lock
-// focus on a single fixture rather than dolly into the room. These appear in
-// feature_closeup prompts ("shallow depth of field on the vanity fixture,
-// background softly blurred") and survive MOVEMENT_VERB_PATTERN because they
-// contain no movement verb. Stripped separately; subject nouns are kept.
-const FOCAL_FIXATION_PATTERN =
-  /(?:\bcinematic\s+)?(?:\bwith\s+)?(?:extreme\s+)?close-?up(?:\s+(?:of|on)\b[^,;.]*)?[,;.]?\s*|(?:\bwith\s+)?shallow\s+depth\s+of\s+field(?:\s+on\b[^,;.]*)?[,;.]?\s*|(?:\bwith\s+)?depth\s+of\s+field[,;.]?\s*|background\s+(?:is\s+)?(?:softly\s+)?blurred[,;.]?\s*|(?:softly\s+)?blurred\s+background[,;.]?\s*|\bmacro\b[^.;]*[.;]?\s*|\bbokeh\b[^.;]*[.;]?\s*|focus(?:ed)?\s+on\s+the\s+\S+(?:\s+\S+){0,5}[,;.]?\s*/gi;
+// ─── FOCAL-FIXATION STRIP ────────────────────────────────────────────────────
+//
+// Focal-fixation phrases fight a push-in by locking the model onto a single
+// fixture instead of dollying into the room. These appear in feature_closeup
+// prompts ("shallow depth of field on the vanity fixture, background softly
+// blurred") and survive MOVEMENT_VERB_PATTERN because they have no movement
+// verb. We strip the OPTICAL prefix only — subject nouns are preserved.
+//
+// Subject-preservation rule:
+//   "shallow depth of field on the X"  → strip the DoF clause; keep "the X"
+//   "close-up of/on the X"             → strip the close-up+prep; keep "the X"
+//   "focused on the X"                 → strip "focused on"; keep "the X"
+//   "background softly blurred" / "blurred background" → drop entirely (no noun)
+//   "bokeh …sentence…" / "macro …sentence…"            → drop entirely
+//
+// Each replacement is applied in order. The final cleanup pass removes stray
+// leading/trailing punctuation artefacts.
 
 export function stripMovementVerbs(prompt: string): string {
   return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
@@ -301,7 +311,55 @@ export function stripMovementVerbs(prompt: string): string {
  * the DB is never mutated.
  */
 export function stripFocalFixation(prompt: string): string {
-  return prompt.replace(FOCAL_FIXATION_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+  let s = prompt;
+
+  // 1. "cinematic" as a bare style prefix (e.g. "cinematic slow push in with …")
+  //    — strip it only when followed by another optical qualifier; "cinematic"
+  //    alone is kept. Handled implicitly by the patterns below which already
+  //    strip "with shallow depth of field …", leaving "cinematic slow push in".
+
+  // 2. "(with) shallow depth of field (on)"  — strip prefix, keep subject noun.
+  //    Before: "with shallow depth of field on the vanity fixture,"
+  //    After:  "the vanity fixture,"
+  s = s.replace(/\bwith\s+shallow\s+depth\s+of\s+field\s+on\s+/gi, "");
+  s = s.replace(/\bshallow\s+depth\s+of\s+field\s+on\s+/gi, "");
+  // Standalone "(with) shallow depth of field" with no following object.
+  s = s.replace(/[,;]?\s*\bwith\s+shallow\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;]?\s*\bshallow\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+
+  // 3. "(with) depth of field" standalone.
+  s = s.replace(/[,;]?\s*\bwith\s+depth\s+of\s+field\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;]?\s*\bdepth\s+of\s+field\b[,;.]?\s*/gi, " ");
+
+  // 4. "(extreme) close-up of/on the X" — strip prefix+prep, keep "the X".
+  s = s.replace(/\b(?:extreme\s+)?close-?up\s+(?:of|on)\s+/gi, "");
+  // "(extreme) close-up" standalone (no object noun follows directly).
+  s = s.replace(/[,;.]?\s*\b(?:extreme\s+)?close-?up\b[,;.]?\s*/gi, " ");
+
+  // 5. "focused on the X" → keep "the X" (drop "focused on ").
+  s = s.replace(/\bfocus(?:ed)?\s+on\s+(?=the\s)/gi, "");
+  // "focused on [anything without 'the']" — drop the whole phrase.
+  s = s.replace(/\bfocus(?:ed)?\s+on\s+\S+(?:\s+\S+){0,4}[,;.]?\s*/gi, " ");
+
+  // 6. Background-blurred phrases — drop entirely (no subject noun).
+  s = s.replace(/[,;.]?\s*\bbackground\s+(?:is\s+)?(?:softly\s+)?blurred\b[,;.]?\s*/gi, " ");
+  s = s.replace(/[,;.]?\s*(?:softly\s+)?blurred\s+background\b[,;.]?\s*/gi, " ");
+
+  // 7. Bokeh / macro full-clause drops.
+  s = s.replace(/\bbokeh\b[^.;]*[.;]?\s*/gi, " ");
+  s = s.replace(/\bmacro\b[^.;]*[.;]?\s*/gi, " ");
+
+  // ── Cleanup ──────────────────────────────────────────────────────────────
+  // Remove stray leading "with" / "and" / commas left by the strips above.
+  s = s.replace(/^\s*(?:with|and)\s+/i, "");
+  // Remove dangling "toward the ." / "toward it." artifacts.
+  s = s.replace(/\btoward\s+(?:the\s+)?[.,;]\s*/gi, "");
+  // Collapse double spaces; trim.
+  s = s.replace(/\s{2,}/g, " ").trim();
+  // Strip a leading comma/semicolon.
+  s = s.replace(/^[,;]\s*/, "");
+
+  return s;
 }
 
 const SEEDANCE_PUSHIN_PREAMBLE =

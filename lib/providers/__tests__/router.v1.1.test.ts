@@ -179,6 +179,38 @@ describe("stripFocalFixation", () => {
     // Subject words like 'vanity' should survive
     expect(out.toLowerCase()).toMatch(/vanity|fixture/);
   });
+
+  // ── Positive subject-retention assertions ────────────────────────────────
+  // A future regex change that strips DoF by consuming the rest of the
+  // clause would delete the subject noun and cause these to fail, catching
+  // the regression before it ships.
+
+  it("keeps the subject noun after 'shallow depth of field on the X'", () => {
+    const out = stripFocalFixation("with shallow depth of field on the marble island in the kitchen");
+    expect(out.toLowerCase()).not.toMatch(/shallow depth of field/);
+    // "marble island" must survive — it's the subject, not the optical framing.
+    expect(out.toLowerCase()).toMatch(/marble island/);
+  });
+
+  it("keeps the subject noun after 'focus on the X' (multi-word subject)", () => {
+    const out = stripFocalFixation("Tight shot focused on the kitchen sink, showing the farmhouse basin.");
+    expect(out.toLowerCase()).not.toMatch(/focused on the/);
+    // "kitchen sink" is the subject and must survive.
+    expect(out.toLowerCase()).toMatch(/kitchen sink/);
+  });
+
+  it("keeps the subject noun after 'close-up of the X' while stripping the close-up prefix", () => {
+    const out = stripFocalFixation("Extreme close-up of the faucet handle, water droplets visible.");
+    expect(out.toLowerCase()).not.toMatch(/close-?up/);
+    expect(out.toLowerCase()).toMatch(/faucet/);
+  });
+
+  it("strips focal-fixation at a semicolon boundary without eating the next clause", () => {
+    // Semicolons are clause separators; what comes after must survive intact.
+    const out = stripFocalFixation("shallow depth of field; warm afternoon light fills the room");
+    expect(out.toLowerCase()).not.toMatch(/shallow depth of field/);
+    expect(out.toLowerCase()).toMatch(/warm afternoon light/);
+  });
 });
 
 describe("forceSeedancePushInPrompt — scene-6 regression", () => {
@@ -192,6 +224,9 @@ describe("forceSeedancePushInPrompt — scene-6 regression", () => {
     expect(out.startsWith(PREAMBLE)).toBe(true);
     expect(out.toLowerCase()).not.toMatch(/shallow depth of field/);
     expect(out.toLowerCase()).not.toMatch(/background.*blurred|blurred background/);
+    // Positive: the subject noun must survive — the whole-clause deletion bug
+    // produced "cinematic slow push in" with the vanity gone entirely.
+    expect(out.toLowerCase()).toMatch(/vanity|fixture/);
   });
 
   it("the push-in preamble is present after stripping", () => {

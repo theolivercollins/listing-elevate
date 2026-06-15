@@ -130,6 +130,7 @@ vi.mock('../providers/router.js', () => ({
     }),
   })),
   forceSeedancePushInPrompt: vi.fn((p: string) => `pushin:${p}`),
+  shouldForcePushIn: vi.fn((mode: string, endPhotoId: string | null | undefined) => mode === 'v1.1' && !endPhotoId),
   getEnabledProviders: vi.fn(() => ['atlas', 'kling']),
 }));
 
