@@ -3,6 +3,8 @@ import {
   selectProviderForScene,
   forceSeedancePushInPrompt,
   stripMovementVerbs,
+  stripFocalFixation,
+  shouldForcePushIn,
   V1_DEFAULT_SKU,
   getEnabledProviders,
 } from "../router.js";
@@ -137,6 +139,92 @@ describe("stripMovementVerbs (regex sanity)", () => {
     const out = stripMovementVerbs("Slowly orbit the dining table. Keep the chandelier centered.");
     expect(out.toLowerCase()).not.toContain("orbit");
     expect(out).toContain("chandelier");
+  });
+});
+
+describe("stripFocalFixation", () => {
+  it("removes 'shallow depth of field'", () => {
+    const out = stripFocalFixation("cinematic slow push in with shallow depth of field on the vanity fixture, background softly blurred");
+    expect(out.toLowerCase()).not.toMatch(/shallow depth of field/);
+  });
+
+  it("removes 'background softly blurred'", () => {
+    const out = stripFocalFixation("A wide shot, background softly blurred.");
+    expect(out.toLowerCase()).not.toMatch(/background.*blurred|blurred background/);
+  });
+
+  it("removes 'background blurred'", () => {
+    const out = stripFocalFixation("The kitchen, background blurred.");
+    expect(out.toLowerCase()).not.toMatch(/background.*blurred/);
+  });
+
+  it("removes 'close-up'", () => {
+    const out = stripFocalFixation("Extreme close-up of the faucet. The marble is beautiful.");
+    expect(out.toLowerCase()).not.toMatch(/close-?up/);
+    expect(out).toContain("marble");
+  });
+
+  it("removes 'bokeh'", () => {
+    const out = stripFocalFixation("Soft bokeh surrounds the pendant light.");
+    expect(out.toLowerCase()).not.toContain("bokeh");
+  });
+
+  it("removes 'focused on the X' phrase", () => {
+    const out = stripFocalFixation("Camera focused on the chandelier above.");
+    expect(out.toLowerCase()).not.toMatch(/focused on the/);
+  });
+
+  it("preserves subject nouns (does not nuke the whole sentence)", () => {
+    const out = stripFocalFixation("cinematic slow push in with shallow depth of field on the five-light glass vanity fixture, background softly blurred");
+    // Subject words like 'vanity' should survive
+    expect(out.toLowerCase()).toMatch(/vanity|fixture/);
+  });
+});
+
+describe("forceSeedancePushInPrompt — scene-6 regression", () => {
+  const PREAMBLE =
+    "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
+
+  it("strips shallow-DoF + background-blurred from a feature_closeup prompt", () => {
+    const input =
+      "cinematic slow push in with shallow depth of field on the five-light glass vanity fixture, background softly blurred";
+    const out = forceSeedancePushInPrompt(input);
+    expect(out.startsWith(PREAMBLE)).toBe(true);
+    expect(out.toLowerCase()).not.toMatch(/shallow depth of field/);
+    expect(out.toLowerCase()).not.toMatch(/background.*blurred|blurred background/);
+  });
+
+  it("the push-in preamble is present after stripping", () => {
+    const input =
+      "cinematic slow push in with shallow depth of field on the five-light glass vanity fixture, background softly blurred";
+    const out = forceSeedancePushInPrompt(input);
+    expect(out).toContain("Slow, steady push in toward the room.");
+  });
+
+  it("retains subject noun after stripping focal-fixation", () => {
+    const input =
+      "shallow depth of field on the five-light glass vanity fixture, background softly blurred";
+    const out = forceSeedancePushInPrompt(input);
+    expect(out.toLowerCase()).toMatch(/vanity|fixture/);
+  });
+});
+
+describe("shouldForcePushIn", () => {
+  it("returns true for v1.1 non-paired scene", () => {
+    expect(shouldForcePushIn("v1.1", null)).toBe(true);
+    expect(shouldForcePushIn("v1.1", undefined)).toBe(true);
+  });
+
+  it("returns false for v1.1 paired scene (end_photo_id set)", () => {
+    expect(shouldForcePushIn("v1.1", "some-photo-id")).toBe(false);
+  });
+
+  it("returns false for v1 non-paired scene", () => {
+    expect(shouldForcePushIn("v1", null)).toBe(false);
+  });
+
+  it("returns false for empty string pipeline mode", () => {
+    expect(shouldForcePushIn("", null)).toBe(false);
   });
 });
 

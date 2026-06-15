@@ -279,17 +279,54 @@ export function selectProviderForScene(
 const MOVEMENT_VERB_PATTERN =
   /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan)\b[^.;]*[.;]?/gi;
 
+// Focal-fixation phrases that fight a push-in by telling the model to lock
+// focus on a single fixture rather than dolly into the room. These appear in
+// feature_closeup prompts ("shallow depth of field on the vanity fixture,
+// background softly blurred") and survive MOVEMENT_VERB_PATTERN because they
+// contain no movement verb. Stripped separately; subject nouns are kept.
+const FOCAL_FIXATION_PATTERN =
+  /(?:\bcinematic\s+)?(?:\bwith\s+)?(?:extreme\s+)?close-?up(?:\s+(?:of|on)\b[^,;.]*)?[,;.]?\s*|(?:\bwith\s+)?shallow\s+depth\s+of\s+field(?:\s+on\b[^,;.]*)?[,;.]?\s*|(?:\bwith\s+)?depth\s+of\s+field[,;.]?\s*|background\s+(?:is\s+)?(?:softly\s+)?blurred[,;.]?\s*|(?:softly\s+)?blurred\s+background[,;.]?\s*|\bmacro\b[^.;]*[.;]?\s*|\bbokeh\b[^.;]*[.;]?\s*|focus(?:ed)?\s+on\s+the\s+\S+(?:\s+\S+){0,5}[,;.]?\s*/gi;
+
 export function stripMovementVerbs(prompt: string): string {
   return prompt.replace(MOVEMENT_VERB_PATTERN, "").replace(/\s{2,}/g, " ").trim();
+}
+
+/**
+ * stripFocalFixation — removes optical-framing language that contradicts a
+ * push-in (shallow DoF on a fixture, background blurred, close-up, macro,
+ * bokeh, "focused on the X"). Subject nouns are preserved; only the
+ * camera/optical framing words are removed.
+ *
+ * Applied at render-time inside forceSeedancePushInPrompt; scene.prompt in
+ * the DB is never mutated.
+ */
+export function stripFocalFixation(prompt: string): string {
+  return prompt.replace(FOCAL_FIXATION_PATTERN, "").replace(/\s{2,}/g, " ").trim();
 }
 
 const SEEDANCE_PUSHIN_PREAMBLE =
   "Slow, steady push in toward the room. Camera moves smoothly forward on a fixed dolly. No tilt, no rotation, no parallax, no orbit.";
 
 export function forceSeedancePushInPrompt(originalPrompt: string): string {
-  const stripped = stripMovementVerbs(originalPrompt);
+  const stripped = stripFocalFixation(stripMovementVerbs(originalPrompt));
   if (!stripped) return SEEDANCE_PUSHIN_PREAMBLE;
   return `${SEEDANCE_PUSHIN_PREAMBLE} ${stripped}`;
+}
+
+/**
+ * shouldForcePushIn — returns true when the scene must receive the push-in
+ * prompt override at render time. Gate is on the SCENE, not the chosen
+ * provider/SKU, so retries that failover to native Kling (or any other model)
+ * are still forced to push-in as long as the pipeline and scene qualify.
+ *
+ * Paired scenes (end_photo_id set) are intentional transitions on kling-v3-pro
+ * and are always exempt.
+ */
+export function shouldForcePushIn(
+  pipelineMode: string,
+  endPhotoId: string | null | undefined,
+): boolean {
+  return pipelineMode === "v1.1" && !endPhotoId;
 }
 
 /**
