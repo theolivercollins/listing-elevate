@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight, Play, Check, Film,
   MoreHorizontal, FolderInput, Archive, ArchiveRestore, Trash2, Plus,
-  Pencil, FolderX, ArrowUp, ArrowDown, Upload, ShieldCheck, Link2, BarChart3,
+  Pencil, FolderX, ArrowUp, ArrowDown, Upload, Link2,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -886,6 +886,10 @@ const Videos = () => {
           )}
         </div>
         <div className="studio-page-actions">
+          <button type="button" className="studio-cta-primary" onClick={() => setUploadOpen(true)}>
+            <Upload size={14} strokeWidth={2} />
+            Upload video
+          </button>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <Search
               size={13}
@@ -906,41 +910,6 @@ const Videos = () => {
 
       {/* ─── StudioNav ─── */}
       <StudioNav />
-
-      <section className="le-video-command" aria-label="Self-hosted video platform">
-        <div className="le-video-command-copy">
-          <span className="studio-page-eyebrow">Self-hosted video platform</span>
-          <h2>Owned playback, links, embeds, downloads, and analytics in one place.</h2>
-          <p>
-            Upload finished films straight into Listing Elevate, keep the share
-            page on our domain, and manage every privacy setting without leaving Studio.
-          </p>
-        </div>
-        <div className="le-video-command-actions">
-          <button type="button" className="studio-cta-primary" onClick={() => setUploadOpen(true)}>
-            <Upload size={14} strokeWidth={2} />
-            Upload video
-          </button>
-          <Link to="/dashboard/studio/video/share" className="studio-btn-ghost">
-            <Link2 size={14} strokeWidth={2} />
-            Share library
-          </Link>
-        </div>
-        <div className="le-video-command-metrics" aria-label="Hosted video capabilities">
-          <span className="le-video-command-metric">
-            <ShieldCheck size={15} strokeWidth={1.8} />
-            Privacy controls
-          </span>
-          <span className="le-video-command-metric">
-            <Link2 size={15} strokeWidth={1.8} />
-            Presentation links
-          </span>
-          <span className="le-video-command-metric">
-            <BarChart3 size={15} strokeWidth={1.8} />
-            View analytics
-          </span>
-        </div>
-      </section>
 
       {hostedUpload && hostedUpload.kind === 'video' && (
         <section className="le-video-upload-handoff" aria-label="Uploaded video handoff">
