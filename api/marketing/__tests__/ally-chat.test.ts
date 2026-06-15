@@ -23,6 +23,9 @@ I can help troubleshoot that. If a video is delayed, first check whether the upl
 <ally_followup_chips>
 My video is stuck; What photos work best?; Show pricing
 </ally_followup_chips>`;
+let marketingFlags = { key: "homepage_ally", kill_switch: false, kill_reason: null, daily_cap_cents: 2000 };
+let marketingDailyCostRows: Array<{ cost_cents: number }> = [];
+let costEventsInsertError: { message: string } | null = null;
 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class MockAnthropic {
@@ -79,26 +82,33 @@ function makeSupabaseStub() {
     from: (table: string) => ({
       insert: (rows: unknown) => {
         inserts.push({ table, rows });
-        return { error: null };
+        return { error: table === "cost_events" ? costEventsInsertError : null };
       },
       upsert: (rows: unknown, opts?: unknown) => {
         upserts.push({ table, rows, opts });
         return { error: null, data: rows };
       },
       select: () => ({
-        eq: () => ({
-          maybeSingle: async () => ({
-            data: table === "marketing_flags"
-              ? { key: "homepage_ally", kill_switch: false, kill_reason: null, daily_cap_cents: 2000 }
-              : {
-                  conversation: [{ role: "user", content: "Prior server-stored question" }],
-                  total_messages: 1,
-                  total_cost_cents: 0,
-                  email: null,
-                },
-            error: null,
-          }),
-        }),
+        eq: () => {
+          if (table === "cost_events") {
+            return {
+              gte: async () => ({ data: marketingDailyCostRows, error: null }),
+            };
+          }
+          return {
+            maybeSingle: async () => ({
+              data: table === "marketing_flags"
+                ? marketingFlags
+                : {
+                    conversation: [{ role: "user", content: "Prior server-stored question" }],
+                    total_messages: 1,
+                    total_cost_cents: 0,
+                    email: null,
+                  },
+              error: null,
+            }),
+          };
+        },
       }),
       delete: () => ({
         lt: () => ({ error: null }),
@@ -143,6 +153,9 @@ function makeReqRes(body: unknown) {
 
 beforeEach(() => {
   calls.length = 0;
+  marketingFlags = { key: "homepage_ally", kill_switch: false, kill_reason: null, daily_cap_cents: 2000 };
+  marketingDailyCostRows = [];
+  costEventsInsertError = null;
   assistantText = `<reply>
 I can help troubleshoot that. If a video is delayed, first check whether the upload finished and whether every required listing detail is filled in.
 </reply>
@@ -201,6 +214,29 @@ get_started
       role: "agent",
       intent: "try Listing Elevate on a new listing",
     });
+  });
+
+  it("blocks before Anthropic when the marketing daily cents cap is reached", async () => {
+    marketingFlags = { key: "homepage_ally", kill_switch: false, kill_reason: null, daily_cap_cents: 1 };
+    marketingDailyCostRows = [{ cost_cents: 1 }];
+
+    const ctx = makeReqRes({ messages: [{ role: "user", content: "How much does it cost?" }] });
+    await handler(ctx.req, ctx.res);
+
+    expect(ctx.statusCode).toBe(503);
+    expect(ctx.payload).toEqual({ error: "service_unavailable", reason: "daily_cap" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("returns the assistant reply even when cost_events insert fails after a paid model call", async () => {
+    costEventsInsertError = { message: "stage constraint violation" };
+
+    const ctx = makeReqRes({ messages: [{ role: "user", content: "Can Ally help troubleshoot uploads?" }] });
+    await handler(ctx.req, ctx.res);
+
+    expect(ctx.statusCode).toBe(200);
+    expect(ctx.payload.reply).toMatch(/upload finished/i);
+    expect(calls).toHaveLength(1);
   });
 });
 

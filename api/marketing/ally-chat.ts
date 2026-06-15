@@ -119,6 +119,11 @@ interface LeadCapture { name?: string; email?: string; phone?: string; role?: st
 interface SupabaseInsertClient {
   from(table: string): {
     insert(rows: unknown[]): Promise<{ error: { message: string } | null }> | { error: { message: string } | null };
+    select(columns: string): {
+      eq(column: string, value: unknown): {
+        gte(column: string, value: unknown): Promise<{ data: Array<{ cost_cents: number | null }> | null; error: { message: string } | null }>;
+      };
+    };
   };
 }
 interface ChatResponseBody {
@@ -194,6 +199,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     res.setHeader("Retry-After", "3600");
     return res.status(503).json({ error: "service_unavailable", reason: "kill_switch" });
+  }
+  const dailySpendCents = await readMarketingDailySpendCents(supabase);
+  if (dailySpendCents >= flags.daily_cap_cents) {
+    await recordAllyEvent(supabase, {
+      conversation_id: conversationId,
+      event_type: "rate_limited",
+      ip_hash: ipHash,
+      payload: {
+        scope: "daily_cost_cap",
+        spent_cents: dailySpendCents,
+        cap_cents: flags.daily_cap_cents,
+      },
+    });
+    res.setHeader("Retry-After", "3600");
+    return res.status(503).json({ error: "service_unavailable", reason: "daily_cap" });
   }
 
   try {
@@ -383,6 +403,22 @@ function extractTag(text: string, tag: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+async function readMarketingDailySpendCents(supabase: SupabaseInsertClient): Promise<number> {
+  const startOfUtcDay = new Date();
+  startOfUtcDay.setUTCHours(0, 0, 0, 0);
+  const query = supabase
+    .from("cost_events")
+    .select("cost_cents")
+    .eq("stage", "marketing_chat")
+    .gte("created_at", startOfUtcDay.toISOString());
+  const { data, error } = await query;
+  if (error) {
+    console.error("readMarketingDailySpendCents failed:", error.message);
+    return 0;
+  }
+  return (data ?? []).reduce((sum, row) => sum + (row.cost_cents ?? 0), 0);
+}
+
 async function recordMarketingCost(
   supabase: SupabaseInsertClient,
   input: {
@@ -403,6 +439,6 @@ async function recordMarketingCost(
     metadata: input.metadata,
   }]);
   if (error) {
-    throw new Error(`recordMarketingCost failed: ${error.message}`);
+    console.error("recordMarketingCost failed:", error.message);
   }
 }
