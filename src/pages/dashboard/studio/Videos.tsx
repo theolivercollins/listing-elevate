@@ -3,24 +3,29 @@ import { Link } from 'react-router-dom';
 import {
   Search, ChevronDown, ChevronLeft, ChevronRight, Play, Check, Film,
   MoreHorizontal, FolderInput, Archive, ArchiveRestore, Trash2, Plus,
-  Pencil, FolderX, ArrowUp, ArrowDown,
+  Pencil, FolderX, ArrowUp, ArrowDown, Upload, ShieldCheck, Link2, BarChart3,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
+import { UploadDropzone } from '@/components/studio/share/UploadDropzone';
 import { getRelativeTime } from '@/lib/types';
 import { authedFetch } from '@/lib/api';
 import {
   fetchFolders, createFolder, renameFolder, reorderFolder, deleteFolder,
   videoLibraryAction, type VideoFolder,
 } from '@/lib/studio/library-api';
+import type { Creative } from '@/lib/share-api';
+import '@/styles/share-studio.css';
 
 const PAGE_SIZE = 24;
 const SEARCH_DEBOUNCE_MS = 300;
 
-// ─── Types (mirror GET /api/admin/studio/videos item shape) ─────────────────────
+// ─── Types (mirror GET /api/admin/studio/videos item shape, including uploads) ───
 
 interface VideoItem {
   id: string;
+  title?: string;
+  description?: string | null;
   address: string | null;
   videos: { horizontal: string | null; vertical: string | null };
   approved_at: string | null;
@@ -33,6 +38,11 @@ interface VideoItem {
   // list endpoint returns null/absent pre-migration, hence the optional shape).
   folder_id?: string | null;
   archived_at?: string | null;
+  library_source?: 'property' | 'upload';
+  share_token?: string;
+  shareUrl?: string;
+  embedUrl?: string;
+  manageUrl?: string;
 }
 
 interface VideosResponse {
@@ -61,6 +71,33 @@ function splitAddress(address: string | null): { street: string; locality: strin
   return {
     street: address.slice(0, idx).trim(),
     locality: address.slice(idx + 1).trim(),
+  };
+}
+
+function manageUrlForCreative(id: string): string {
+  return `/dashboard/studio/video/share?creative=${id}`;
+}
+
+function videoItemFromCreative(creative: Creative): VideoItem {
+  return {
+    id: creative.id,
+    title: creative.title,
+    description: creative.description,
+    address: creative.title,
+    videos: { horizontal: creative.public_url ?? creative.previewUrl, vertical: null },
+    approved_at: null,
+    created_at: creative.created_at,
+    client: null,
+    hero_photo_url: creative.thumbnail_url,
+    link_count: 1,
+    total_views: creative.view_count ?? 0,
+    folder_id: null,
+    archived_at: null,
+    library_source: 'upload',
+    share_token: creative.share_token,
+    shareUrl: creative.shareUrl,
+    embedUrl: creative.embedUrl,
+    manageUrl: manageUrlForCreative(creative.id),
   };
 }
 
@@ -226,16 +263,23 @@ function VideoCard({
   onArchiveToggle: () => void;
   onDelete: () => void;
 }) {
-  const { street, locality } = splitAddress(item.address);
+  const hosted = item.library_source === 'upload';
+  const { street, locality } = hosted
+    ? {
+      street: item.title ?? item.address ?? 'Untitled hosted video',
+      locality: item.description ?? 'Hosted upload',
+    }
+    : splitAddress(item.address);
   const hasH = !!item.videos.horizontal;
   const hasV = !!item.videos.vertical;
+  const cardTo = hosted ? item.manageUrl ?? manageUrlForCreative(item.id) : `/dashboard/studio/videos/${item.id}`;
 
   return (
     <div className="le-video-card-wrap">
       <Link
-        to={`/dashboard/studio/videos/${item.id}`}
+        to={cardTo}
         className="le-video-card"
-        aria-label={item.address ?? 'Untitled property'}
+        aria-label={hosted ? `Open settings for ${street}` : item.address ?? 'Untitled property'}
       >
         {/* Poster */}
         <div className="le-video-card-poster">
@@ -254,15 +298,23 @@ function VideoCard({
           </div>
           {/* Orientation badges, top-left */}
           <div className="le-video-card-badges" aria-hidden="true">
+            {hosted && <span className="le-video-orient-badge le-video-hosted-badge">Hosted</span>}
             {hasH && <span className="le-video-orient-badge">16:9</span>}
             {hasV && <span className="le-video-orient-badge">9:16</span>}
           </div>
           {/* Approved badge, top-right */}
-          {item.approved_at && (
+          {item.approved_at ? (
             <span className="le-video-approved-badge">
               <Check size={10} strokeWidth={2.4} />
               Approved
             </span>
+          ) : hosted && item.shareUrl ? (
+            <span className="le-video-approved-badge le-video-share-badge">
+              <Link2 size={10} strokeWidth={2.4} />
+              Share-ready
+            </span>
+          ) : (
+            null
           )}
         </div>
 
@@ -271,7 +323,7 @@ function VideoCard({
           <div className="le-video-card-title">{street}</div>
           {locality && <div className="le-video-card-locality">{locality}</div>}
           <div className="le-video-card-footer">
-            <span className="le-video-card-client">{item.client?.name ?? '—'}</span>
+            <span className="le-video-card-client">{hosted ? 'Hosted upload' : item.client?.name ?? '—'}</span>
             <span className="le-video-card-stats">
               <span className="le-video-card-views" title={`${item.total_views} views`}>
                 {item.total_views.toLocaleString()}
@@ -285,15 +337,17 @@ function VideoCard({
       </Link>
 
       {/* ⋯ menu — sibling of the link so clicks never trigger navigation */}
-      <CardMenu
-        archived={archivedView}
-        folders={folders}
-        currentFolderId={item.folder_id}
-        foldersAvailable={foldersAvailable}
-        onMove={onMove}
-        onArchiveToggle={onArchiveToggle}
-        onDelete={onDelete}
-      />
+      {!hosted && (
+        <CardMenu
+          archived={archivedView}
+          folders={folders}
+          currentFolderId={item.folder_id}
+          foldersAvailable={foldersAvailable}
+          onMove={onMove}
+          onArchiveToggle={onArchiveToggle}
+          onDelete={onDelete}
+        />
+      )}
     </div>
   );
 }
@@ -602,6 +656,8 @@ const Videos = () => {
   const [pendingDelete, setPendingDelete] = useState<VideoItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [hostedUpload, setHostedUpload] = useState<Creative | null>(null);
 
   const archivedView = view.kind === 'archived';
 
@@ -791,6 +847,28 @@ const Videos = () => {
     await reloadFolders();
   }
 
+  const handleUploadCreated = useCallback((creative: Creative) => {
+    setUploadOpen(false);
+    setHostedUpload(creative);
+    if (creative.kind !== 'video') {
+      setActionError('That upload finished, but only videos appear in this library.');
+      return;
+    }
+    setActionError(null);
+    setView({ kind: 'all' });
+    setClientId('');
+    setFromDate('');
+    setToDate('');
+    setSearchInput('');
+    setDebouncedSearch('');
+    setPage(1);
+    setItems((cur) => [
+      videoItemFromCreative(creative),
+      ...cur.filter((item) => item.id !== creative.id),
+    ]);
+    setTotal((cur) => cur + (items.some((item) => item.id === creative.id) ? 0 : 1));
+  }, [items]);
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const hasFilters = !!(clientId || debouncedSearch || fromDate || toDate);
 
@@ -828,6 +906,62 @@ const Videos = () => {
 
       {/* ─── StudioNav ─── */}
       <StudioNav />
+
+      <section className="le-video-command" aria-label="Self-hosted video platform">
+        <div className="le-video-command-copy">
+          <span className="studio-page-eyebrow">Self-hosted video platform</span>
+          <h2>Owned playback, links, embeds, downloads, and analytics in one place.</h2>
+          <p>
+            Upload finished films straight into Listing Elevate, keep the share
+            page on our domain, and manage every privacy setting without leaving Studio.
+          </p>
+        </div>
+        <div className="le-video-command-actions">
+          <button type="button" className="studio-cta-primary" onClick={() => setUploadOpen(true)}>
+            <Upload size={14} strokeWidth={2} />
+            Upload video
+          </button>
+          <Link to="/dashboard/studio/video/share" className="studio-btn-ghost">
+            <Link2 size={14} strokeWidth={2} />
+            Share library
+          </Link>
+        </div>
+        <div className="le-video-command-metrics" aria-label="Hosted video capabilities">
+          <span className="le-video-command-metric">
+            <ShieldCheck size={15} strokeWidth={1.8} />
+            Privacy controls
+          </span>
+          <span className="le-video-command-metric">
+            <Link2 size={15} strokeWidth={1.8} />
+            Presentation links
+          </span>
+          <span className="le-video-command-metric">
+            <BarChart3 size={15} strokeWidth={1.8} />
+            View analytics
+          </span>
+        </div>
+      </section>
+
+      {hostedUpload && hostedUpload.kind === 'video' && (
+        <section className="le-video-upload-handoff" aria-label="Uploaded video handoff">
+          <div>
+            <span className="studio-page-eyebrow">Upload ready</span>
+            <h3>{hostedUpload.title}</h3>
+            <p>Publish the owned link, copy the embed target, or tune privacy and downloads in Share.</p>
+          </div>
+          <div className="le-video-upload-actions">
+            <a href={hostedUpload.shareUrl} className="studio-btn-ghost" target="_blank" rel="noreferrer">
+              Presentation link
+            </a>
+            <a href={hostedUpload.embedUrl} className="studio-btn-ghost" target="_blank" rel="noreferrer">
+              Embed link
+            </a>
+            <Link to={manageUrlForCreative(hostedUpload.id)} className="studio-cta-primary">
+              Manage in Share
+            </Link>
+          </div>
+        </section>
+      )}
 
       {/* ─── Folder rail ─── */}
       <FolderRail
@@ -987,6 +1121,13 @@ const Videos = () => {
           busy={deleting}
           onCancel={() => setPendingDelete(null)}
           onConfirm={confirmDelete}
+        />
+      )}
+      {uploadOpen && (
+        <UploadDropzone
+          acceptKind="video"
+          onCreated={handleUploadCreated}
+          onClose={() => setUploadOpen(false)}
         />
       )}
     </StudioShell>

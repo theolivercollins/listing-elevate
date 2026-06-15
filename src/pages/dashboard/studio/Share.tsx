@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Film, Loader2, Upload } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -19,9 +20,10 @@ import '@/styles/share-studio.css';
  * StudioShare — the Operator Studio "Share" tab. Lists shareable creatives,
  * lets the operator upload new ones or pull rendered property videos, and opens
  * a Vimeo-style settings drawer per creative for privacy / embed / download /
- * sharing configuration.
+ * sharing configuration. `?creative=<id>` deep-links from Videos directly into that drawer.
  */
 const StudioShare = () => {
+  const location = useLocation();
   const [creatives, setCreatives] = useState<Creative[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,14 @@ const StudioShare = () => {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    const requested = new URLSearchParams(location.search).get('creative');
+    if (!requested) return;
+    if (creatives.some((creative) => creative.id === requested)) {
+      setSelectedId(requested);
+    }
+  }, [location.search, creatives]);
 
   const selected = creatives.find((c) => c.id === selectedId) ?? null;
 
