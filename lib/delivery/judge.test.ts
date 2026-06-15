@@ -34,6 +34,7 @@ vi.mock('../judge/retry', () => ({
 const mockGenerateContent = vi.fn();
 const mockUpload = vi.fn();
 const mockDeleteFile = vi.fn();
+const mockGetRun = vi.fn().mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' });
 
 vi.mock('../client', () => ({ getSupabase: () => fakeDb }));
 vi.mock('../db', () => ({
@@ -52,7 +53,7 @@ vi.mock('@google/genai', () => ({
   },
 }));
 vi.mock('./runs', () => ({
-  getRun: vi.fn().mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' }),
+  getRun: (...a: unknown[]) => mockGetRun(...a),
   getVariantsForRun: (...a: unknown[]) => mockGetVariants(...a),
   advanceRun: vi.fn().mockResolvedValue(undefined),
   updateRun: vi.fn().mockResolvedValue(undefined),
@@ -120,12 +121,21 @@ beforeEach(() => {
   vi.clearAllMocks();
   updates.length = 0;
   scenesData = [sceneRow];
+  mockGetRun.mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' });
   process.env.GEMINI_API_KEY = 'test-key';
   mockUpload.mockResolvedValue({ name: 'files/test', uri: 'https://generativelanguage.googleapis.com/v1beta/files/test', mimeType: 'video/mp4' });
   mockDeleteFile.mockResolvedValue(undefined);
 });
 
 describe('runJudgePass winner_source marking', () => {
+  it('returns ready:false before generation starts', async () => {
+    mockGetRun.mockResolvedValue({ id: 'r1', stage: 'photo_selection', property_id: 'p1' });
+
+    await expect(runJudgePass('r1')).resolves.toEqual({ ready: false });
+
+    expect(mockGetVariants).not.toHaveBeenCalled();
+  });
+
   it('judge failure (unparseable response) -> winner_source=default + judge_error in gemini_scores', async () => {
     mockGetVariants.mockResolvedValue([
       variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),

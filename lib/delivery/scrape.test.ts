@@ -71,27 +71,25 @@ function stubSupabase(address = '123 Main St') {
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: advance resolves immediately with the advanced run.
-  mockAdvanceRun.mockResolvedValue(fakeRun('generating'));
-  mockSetRunError.mockResolvedValue(fakeRun('generating'));
-  mockSetListingDetails.mockResolvedValue(fakeRun('generating'));
+  mockAdvanceRun.mockResolvedValue(fakeRun('scraping'));
+  mockSetRunError.mockResolvedValue(fakeRun('scraping'));
+  mockSetListingDetails.mockResolvedValue(fakeRun('scraping'));
   stubSupabase();
 });
 
 describe('runScrapeStage', () => {
-  it('scrape miss → advances to generating AND setRunError called AFTER advance', async () => {
+  it('scrape miss at scraping stage -> saves manual-entry error without advancing to photo_selection', async () => {
     // Arrange: run is in 'scraping' (advance already happened), scrape returns null (miss).
     const calls: string[] = [];
-    mockGetRun
-      .mockResolvedValueOnce(fakeRun('scraping')) // initial getRun
-      .mockResolvedValueOnce(fakeRun('scraping')); // post-scrape getRun for advance guard
+    mockGetRun.mockResolvedValueOnce(fakeRun('scraping'));
     mockScrapeRedfin.mockResolvedValue(null); // miss
-    mockAdvanceRun.mockImplementation(async () => { calls.push('advance'); return fakeRun('generating'); });
-    mockSetRunError.mockImplementation(async () => { calls.push('setRunError'); return fakeRun('generating'); });
+    mockAdvanceRun.mockImplementation(async () => { calls.push('advance'); return fakeRun('scraping'); });
+    mockSetRunError.mockImplementation(async () => { calls.push('setRunError'); return fakeRun('scraping'); });
 
     await runScrapeStage(RUN_ID);
 
-    // advance must appear before setRunError in the call log
-    expect(calls).toEqual(['advance', 'setRunError']);
+    expect(calls).toEqual(['setRunError']);
+    expect(mockAdvanceRun).not.toHaveBeenCalled();
     // listing_details written with source 'scraped' even on miss
     expect(mockSetListingDetails).toHaveBeenCalledWith(RUN_ID, { source: 'scraped' });
     // error message mentions manual entry
@@ -101,19 +99,17 @@ describe('runScrapeStage', () => {
     );
   });
 
-  it('scrapeRedfinByAddress throws → still advances to generating, setRunError called after', async () => {
+  it('scrapeRedfinByAddress throws at scraping stage -> stores error without advancing to photo_selection', async () => {
     const calls: string[] = [];
-    mockGetRun
-      .mockResolvedValueOnce(fakeRun('scraping'))
-      .mockResolvedValueOnce(fakeRun('scraping'));
+    mockGetRun.mockResolvedValueOnce(fakeRun('scraping'));
     mockScrapeRedfin.mockRejectedValue(new Error('network timeout'));
-    mockAdvanceRun.mockImplementation(async () => { calls.push('advance'); return fakeRun('generating'); });
-    mockSetRunError.mockImplementation(async () => { calls.push('setRunError'); return fakeRun('generating'); });
+    mockAdvanceRun.mockImplementation(async () => { calls.push('advance'); return fakeRun('scraping'); });
+    mockSetRunError.mockImplementation(async () => { calls.push('setRunError'); return fakeRun('scraping'); });
 
     await runScrapeStage(RUN_ID);
 
-    // advance must precede setRunError
-    expect(calls).toEqual(['advance', 'setRunError']);
+    expect(calls).toEqual(['setRunError']);
+    expect(mockAdvanceRun).not.toHaveBeenCalled();
     expect(mockSetRunError).toHaveBeenCalledWith(
       RUN_ID,
       expect.stringContaining('network timeout'),
@@ -123,10 +119,10 @@ describe('runScrapeStage', () => {
   });
 
   it('run already past intake (stage=generating) → no advance calls, no crash', async () => {
-    // Both getRun calls return 'generating' — the guard blocks advanceRun.
+    // The guard blocks intake->scraping advance when already past intake.
     mockGetRun
       .mockResolvedValueOnce(fakeRun('generating')) // initial: skip intake→scraping advance
-      .mockResolvedValueOnce(fakeRun('generating')); // post-scrape: skip scraping→generating advance
+      .mockResolvedValueOnce(fakeRun('generating'));
     mockScrapeRedfin.mockResolvedValue({ price: 500000, bedrooms: 3, bathrooms: 2, sqft: 1500, description: 'Nice', listingUrl: 'http://x', agent: 'B', source: 'redfin', address: '1 A St' });
 
     await expect(runScrapeStage(RUN_ID)).resolves.toBeUndefined();

@@ -6,7 +6,7 @@
  */
 
 export const DELIVERY_STAGES = [
-  'intake', 'scraping', 'generating', 'judging', 'checkpoint_a',
+  'intake', 'scraping', 'photo_selection', 'generating', 'judging', 'checkpoint_a',
   'details', 'voiceover', 'music', 'assembling', 'checkpoint_b', 'delivered',
 ] as const;
 

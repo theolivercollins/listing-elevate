@@ -27,6 +27,7 @@ import { getRun, getVariantsForRun, advanceRun, updateRun } from './runs.js';
 import { variantPairStatus } from './variants.js';
 import { withJudgeRetry } from '../judge/retry.js';
 import type { SceneVariantRow, DeliveryRunRow } from '../types/operator-studio.js';
+import { stageIndex } from './state.js';
 
 const AB_JUDGE_MODEL_DEFAULT = 'gemini-2.5-flash';
 
@@ -155,7 +156,9 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
   const supabase = getSupabase();
   const run = await getRun(runId);
   if (!run) throw new Error(`runJudgePass: run not found: ${runId}`);
-  if (run.stage !== 'generating' && run.stage !== 'judging') return { ready: true }; // already past
+  if (run.stage !== 'generating' && run.stage !== 'judging') {
+    return stageIndex(run.stage) < stageIndex('generating') ? { ready: false } : { ready: true };
+  }
 
   const variants = await getVariantsForRun(runId);
   const { data: scenes } = await supabase

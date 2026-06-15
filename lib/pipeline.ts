@@ -67,13 +67,16 @@ import {
 } from "./providers/gemini-analyzer.js";
 import { mapCameraMovementToHeadroomKey } from "./prompt-lab-listings.js";
 import {
-  selectPhotos,
+  buildPhotoSelectionLearning,
+  type PhotoSelectionLearning,
+  selectPhotosWithExplanation,
   TARGET_SCENE_COUNT,
   MAX_PER_ROOM_TYPE,
   REQUIRED_ROOM_TYPES,
 } from "./pipeline/selection.js";
 import { tryClaimPipelineRun } from "./pipeline-claim.js";
 import { emitBunnyFinalizeCostEvent } from "./assembly/bunny-finalize-cost.js";
+import { advanceRunToPhotoSelection } from "./delivery/photo-selection-stage.js";
 
 // Used by analyzer batching; keep here since it's only a concern of this file.
 const BATCH_SIZE = 8;
@@ -208,37 +211,74 @@ export async function runPipeline(propertyId: string): Promise<void> {
     // Stage 2: Analyze
     await runAnalysis(propertyId, photos);
 
-    // Stage 2.5: Build Property Style Guide — one vision pass that sees all
-    // selected photos at once so later scene prompts can describe adjacent
-    // rooms accurately instead of the video model hallucinating them.
-    await runPropertyStyleGuide(propertyId);
+    if (await pauseForOperatorPhotoSelection(propertyId, opCtx)) {
+      return;
+    }
 
-    // Stage 3: Script
-    await runScripting(propertyId);
-
-    // Stage 3.5 (Pre-flight prompt QA) REMOVED. It was burning ~95s of the
-    // 300s function budget on 12 sequential Claude vision calls AND
-    // silently rewriting the director's short crisp prompts into long
-    // narrative paragraphs that regressed output quality. The director
-    // + video_viable filter + Oliver's per-room feature vocab + the
-    // rating-based learning loop are the real quality levers. QA was
-    // adding more bugs than it prevented.
-
-    // Stage 4: Generate — fire-and-forget submission only. The cron
-    // backstop at api/cron/poll-scenes.ts handles ALL polling, clip
-    // collection, AND assembly invocation, so this function can exit
-    // in ~60s instead of hitting the 300s maxDuration with half the
-    // scenes never submitted. See poll-scenes.ts finalize block — when
-    // all scenes have settled it calls runAssembly(propertyId).
-    await runGenerationSubmit(propertyId);
-    await log(propertyId, "generation", "info",
-      "All scenes submitted to providers. Cron will collect clips + assemble.", opCtx);
+    await continuePipelineAfterPhotoSelection(propertyId, opCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await updatePropertyStatus(propertyId, "failed");
     await log(propertyId, "intake", "error", `Pipeline failed: ${msg}`);
     throw err;
   }
+}
+
+async function pauseForOperatorPhotoSelection(
+  propertyId: string,
+  logContext: Record<string, unknown> = {},
+): Promise<boolean> {
+  const { data: run } = await getSupabase()
+    .from("delivery_runs")
+    .select("id, stage")
+    .eq("property_id", propertyId)
+    .neq("stage", "delivered")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const activeRun = run as { id: string; stage: string } | null;
+  if (!activeRun) return false;
+
+  const checkpointReady = await advanceRunToPhotoSelection(activeRun.id, activeRun.stage);
+  if (!checkpointReady) {
+    return false;
+  }
+
+  await log(propertyId, "analysis", "info",
+    "Photo Checkpoint A ready; waiting for operator photo selection before generation",
+    { ...logContext, delivery_run_id: activeRun.id });
+  return true;
+}
+
+export async function continuePipelineAfterPhotoSelection(
+  propertyId: string,
+  logContext: Record<string, unknown> = {},
+): Promise<void> {
+  // Stage 2.5: Build Property Style Guide — one vision pass that sees all
+  // selected photos at once so later scene prompts can describe adjacent
+  // rooms accurately instead of the video model hallucinating them.
+  await runPropertyStyleGuide(propertyId);
+
+  // Stage 3: Script
+  await runScripting(propertyId);
+
+  // Stage 3.5 (Pre-flight prompt QA) REMOVED. It was burning ~95s of the
+  // 300s function budget on 12 sequential Claude vision calls AND
+  // silently rewriting the director's short crisp prompts into long
+  // narrative paragraphs that regressed output quality. The director
+  // + video_viable filter + Oliver's per-room feature vocab + the
+  // rating-based learning loop are the real quality levers. QA was
+  // adding more bugs than it prevented.
+
+  // Stage 4: Generate — fire-and-forget submission only. The cron
+  // backstop at api/cron/poll-scenes.ts handles ALL polling, clip
+  // collection, AND assembly invocation, so this function can exit
+  // in ~60s instead of hitting the 300s maxDuration with half the
+  // scenes never submitted. See poll-scenes.ts finalize block — when
+  // all scenes have settled it calls runAssembly(propertyId).
+  await runGenerationSubmit(propertyId);
+  await log(propertyId, "generation", "info",
+    "All scenes submitted to providers. Cron will collect clips + assemble.", logContext);
 }
 
 // ─── STAGE 2: ANALYZE ──────────────────────────────────────────
@@ -398,16 +438,37 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
     }
   }
 
-  // Selection algorithm — only video-viable photos are eligible
-  const selected = selectPhotos(allResults);
+  let selectionLearning: PhotoSelectionLearning | undefined;
+  try {
+    const { data: recentSelectionEvents, error } = await getSupabase()
+      .from("ml_events")
+      .select("payload")
+      .eq("event_type", "photo_selection")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    selectionLearning = buildPhotoSelectionLearning(
+      (recentSelectionEvents ?? []) as Array<{ payload?: unknown }>,
+    );
+  } catch (err) {
+    await log(propertyId, "analysis", "warn", `Photo selection learning unavailable; continuing without it: ${err}`);
+  }
+
+  // Selection algorithm — only video-viable photos are eligible.
+  const selection = selectPhotosWithExplanation(
+    allResults.map((result) => ({
+      id: result.photo.id,
+      original: result,
+      analysis: result.analysis,
+    })),
+    { learning: selectionLearning },
+  );
+  const selected = selection.selected.map((result) => result.original);
+  const selectionRank = new Map(selected.map((s, i) => [s.photo.id, i + 1]));
 
   for (const { photo, analysis, provider } of allResults) {
-    const isSelected = selected.some((s) => s.photo.id === photo.id);
-    // If the analyzer marked the photo non-viable for video, surface that
-    // as the discard reason in the UI so Oliver can see WHY it wasn't picked.
-    const notViableReason = analysis.video_viable === false
-      ? `Not usable as video starting frame: ${analysis.motion_rationale ?? "no clean motion path"}`
-      : null;
+    const verdict = selection.verdicts.get(photo.id);
+    const isSelected = verdict?.status === "selected";
     await updatePhotoAnalysis(photo.id, {
       room_type: analysis.room_type,
       quality_score: analysis.quality_score,
@@ -416,16 +477,18 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
       key_features: analysis.key_features,
       composition: analysis.composition ?? null,
       selected: isSelected,
-      discard_reason: analysis.suggested_discard
-        ? analysis.discard_reason
-        : notViableReason ?? (isSelected ? null : "Not selected"),
+      photo_selection_rank: selectionRank.get(photo.id) ?? null,
+      discard_reason: isSelected ? null : verdict?.reason ?? "Not selected",
       video_viable: analysis.video_viable ?? null,
       suggested_motion: analysis.suggested_motion ?? null,
       motion_rationale: analysis.motion_rationale ?? null,
       // DA.1 — persist the full ExtendedPhotoAnalysis blob + which model
       // produced it. The director reads motion_headroom from analysis_json
       // in runScripting below.
-      analysis_json: analysis as unknown as Record<string, unknown>,
+      analysis_json: {
+        ...(analysis as unknown as Record<string, unknown>),
+        selection_verdict: verdict ?? null,
+      },
       analysis_provider: provider,
     });
   }
@@ -482,6 +545,12 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
 
 async function runPropertyStyleGuide(propertyId: string): Promise<void> {
   await log(propertyId, "scripting", "info", "Building property style guide");
+
+  const property = await getProperty(propertyId);
+  if ((property as { style_guide?: unknown }).style_guide) {
+    await log(propertyId, "scripting", "info", "Property style guide already exists; skipping rebuild");
+    return;
+  }
 
   const photos = await getSelectedPhotos(propertyId);
   if (photos.length === 0) {
@@ -584,6 +653,13 @@ async function getPhotoUrlById(photoId: string): Promise<string | null> {
 async function runScripting(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "scripting");
   await log(propertyId, "scripting", "info", "Planning shots");
+
+  const existingScenes = await getScenesForProperty(propertyId);
+  if (existingScenes.length > 0) {
+    await log(propertyId, "scripting", "info",
+      `Shot plan already exists (${existingScenes.length} scenes); skipping scene insertion`);
+    return;
+  }
 
   const photos = await getSelectedPhotos(propertyId);
   if (photos.length === 0) {
@@ -917,7 +993,8 @@ async function runScripting(propertyId: string): Promise<void> {
 
 async function runGenerationSubmit(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "generating");
-  const scenes = await getScenesForProperty(propertyId);
+  const allScenes = await getScenesForProperty(propertyId);
+  const scenes = allScenes.filter((scene) => !scene.provider_task_id && !scene.clip_url);
   const supabase = getSupabase();
 
   // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
@@ -927,7 +1004,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
 
   const GENERATION_CONCURRENCY = parseInt(process.env.GENERATION_CONCURRENCY ?? "4", 10);
   await log(propertyId, "generation", "info",
-    `Submitting ${scenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel${pipelineMode === "v1.1" ? " (mode=v1.1 seedance push-in)" : ""}`);
+    `Submitting ${scenes.length}/${allScenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel${pipelineMode === "v1.1" ? " (mode=v1.1 seedance push-in)" : ""}`);
 
   const submitScene = async (scene: typeof scenes[number]) => {
     // Get the source photo once. Providers share the same source image,
