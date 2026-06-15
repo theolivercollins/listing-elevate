@@ -64,7 +64,7 @@ export function Hero() {
 
       {/* Split grid — copy left, media right (stacks <960px) */}
       <div className="le-hero-grid" style={{ maxWidth: 1200, margin: "0 auto", position: "relative", zIndex: 1 }}>
-        <div>
+        <div className="le-hero-copy">
 
         {/* Eyebrow */}
         <motion.div {...fadeProps(0, reduced)}>
@@ -97,10 +97,13 @@ export function Hero() {
         {/* Headline */}
         <motion.div {...fadeProps(80, reduced)}>
           <h1
+            className="le-hero-heading"
             style={{
-              fontSize: "clamp(44px, 4.8vw, 68px)",
+              fontSize: "clamp(32px, 9vw, 68px)",
               lineHeight: 1.0,
               margin: 0,
+              width: "min(100%, calc(100vw - 64px))",
+              maxWidth: "min(100%, calc(100vw - 64px))",
               fontWeight: 600,
               letterSpacing: "-0.03em",
               fontFamily: "var(--le-font-sans)",
@@ -114,29 +117,33 @@ export function Hero() {
         {/* Lede — one sentence */}
         <motion.div {...fadeProps(160, reduced)}>
           <p
+            className="le-hero-lede"
             style={{
               fontSize: 17,
               lineHeight: 1.55,
-              maxWidth: 480,
+              width: "min(100%, calc(100vw - 64px))",
+              maxWidth: "min(480px, calc(100vw - 64px))",
               marginTop: 28,
               color: "var(--le-text-muted)",
               fontWeight: 400,
               fontFamily: "var(--le-font-sans)",
             }}
           >
-            Upload photos. Get a directed, edited, cinematic listing video back within 24&nbsp;hours.
+            Upload photos. Get a cinematic video back in 24&nbsp;hours.
           </p>
         </motion.div>
 
         {/* CTAs */}
         <motion.div {...fadeProps(240, reduced)}>
           <div
-            className="le-flexcol-sm"
+            className="le-flexcol-sm le-hero-ctas"
             style={{
               display: "flex",
               alignItems: "center",
               gap: 28,
               marginTop: 36,
+              width: "min(100%, calc(100vw - 64px))",
+              maxWidth: "min(100%, calc(100vw - 64px))",
             }}
           >
             <LEButtonLink
@@ -144,6 +151,7 @@ export function Hero() {
               variant="primary"
               size="lg"
               className="le-cta-primary-hover"
+              style={{ width: "fit-content", maxWidth: "100%" }}
             >
               Start a video <LEIcon name="arrow" size={14} color="currentColor" />
             </LEButtonLink>
@@ -157,19 +165,23 @@ export function Hero() {
         {/* Proof-point row */}
         <motion.div {...fadeProps(320, reduced)}>
           <div
+            className="le-proof-row"
             style={{
               display: "flex",
               alignItems: "center",
               gap: 0,
               marginTop: 24,
               flexWrap: "wrap",
+              width: "min(100%, calc(100vw - 64px))",
+              maxWidth: "min(100%, calc(100vw - 64px))",
             }}
           >
             {PROOF_POINTS.map((point, i) => (
-              <div key={point} style={{ display: "flex", alignItems: "center" }}>
+              <div key={point} className="le-proof-item" style={{ display: "flex", alignItems: "center" }}>
                 {i > 0 && (
                   <span
                     aria-hidden
+                    className="le-proof-separator"
                     style={{
                       width: 1,
                       height: 12,
@@ -181,6 +193,7 @@ export function Hero() {
                   />
                 )}
                 <span
+                  className="le-proof-label"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -189,7 +202,6 @@ export function Hero() {
                     fontWeight: 500,
                     color: "var(--le-text-muted)",
                     fontFamily: "var(--le-font-sans)",
-                    whiteSpace: "nowrap",
                   }}
                 >
                   <span
@@ -213,6 +225,7 @@ export function Hero() {
 
         {/* Framed media card — photo beside the copy */}
         <motion.div
+          className="le-hero-media"
           {...(reduced
             ? { initial: { opacity: 1, scale: 1 }, animate: { opacity: 1, scale: 1 } }
             : {
@@ -224,6 +237,8 @@ export function Hero() {
             borderRadius: 18,
             overflow: "hidden",
             aspectRatio: "4 / 3.4",
+            width: "min(100%, calc(100vw - 64px))",
+            maxWidth: "min(100%, calc(100vw - 64px))",
             boxShadow: "var(--le-shadow-lg)",
             border: "1px solid var(--le-border)",
             position: "relative",

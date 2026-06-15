@@ -94,7 +94,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
   const toggleAriaLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
 
   return (
-    <nav style={navStyle}>
+    <nav className="le-site-nav" style={navStyle}>
       <Link
         to="/"
         style={{
@@ -108,6 +108,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
 
       {showSectionLinks ? (
         <div
+          className="le-site-nav-links"
           style={{
             display: "flex",
             gap: 44,
@@ -136,7 +137,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
         <span aria-hidden />
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+      <div className="le-site-nav-actions" style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <button
           type="button"
           aria-label={toggleAriaLabel}
@@ -216,7 +217,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             <button
               type="button"
               onClick={openLogin}
-              className="le-nav-link"
+              className="le-nav-link le-site-nav-signin"
               style={{
                 background: "transparent",
                 border: "none",
@@ -230,7 +231,7 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
             >
               Sign in
             </button>
-            <LEButtonLink to="/upload" variant="primary" size="sm" className="le-cta-primary-hover">
+            <LEButtonLink to="/upload" variant="primary" size="sm" className="le-cta-primary-hover le-site-nav-primary">
               Get started <LEIcon name="arrow" size={12} color="var(--le-accent-fg)" />
             </LEButtonLink>
           </>
@@ -239,4 +240,3 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
     </nav>
   );
 }
-

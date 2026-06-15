@@ -8,6 +8,7 @@ import { FounderOffer } from "@/v2/components/landing/FounderOffer";
 import { FAQ } from "@/v2/components/landing/FAQ";
 import { FinalCTA } from "@/v2/components/landing/FinalCTA";
 import { Footer } from "@/v2/components/landing/Footer";
+import { MarketingAllyChat } from "@/components/marketing/MarketingAllyChat";
 
 /**
  * Landing — composes the light SaaS surface top-to-bottom.
@@ -30,6 +31,8 @@ import { Footer } from "@/v2/components/landing/Footer";
  *   9. Footer             (ported)
  */
 export default function Landing() {
+  const allyEnabled = import.meta.env.VITE_HOMEPAGE_ALLY_ENABLED === "true";
+
   return (
     <div
       data-testid="v2-landing-root"
@@ -39,6 +42,9 @@ export default function Landing() {
         minHeight: "100vh",
         background: "var(--le-bg)",
         position: "relative",
+        width: "100%",
+        maxWidth: "100vw",
+        overflowX: "hidden",
         color: "var(--le-text)",
         fontFamily: "var(--le-font-sans)",
       }}
@@ -52,6 +58,7 @@ export default function Landing() {
       <FAQ />
       <FinalCTA />
       <Footer />
+      {allyEnabled && <MarketingAllyChat onGetStarted={() => { window.location.href = "/upload"; }} />}
     </div>
   );
 }
