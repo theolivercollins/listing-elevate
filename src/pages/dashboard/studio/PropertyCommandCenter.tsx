@@ -11,6 +11,9 @@ import {
   ArrowLeft,
   Download,
   Share2,
+  Search,
+  FileText,
+  RefreshCw,
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
@@ -81,6 +84,21 @@ interface Bundle {
   previews: PropertyPreviewRow[];
   cost: CostBundle;
   delivery_run: DeliveryRunSummary | null;
+}
+
+interface SeoArtifactRow {
+  id: string;
+  slug: string;
+  status: 'generated' | 'failed';
+  indexable: boolean;
+  title: string;
+  meta_description: string;
+  generated_by: string;
+  model: string | null;
+  cost_cents: number;
+  error: string | null;
+  generated_at: string | null;
+  updated_at: string;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -270,6 +288,164 @@ function MetaValue({
   );
 }
 
+// ─── AI SEO card ─────────────────────────────────────────────────────────────
+
+function SeoPackageCard({
+  artifact,
+  baseUrl,
+  loading,
+  generating,
+  error,
+  onGenerate,
+  onOpenShare,
+}: {
+  artifact: SeoArtifactRow | null;
+  baseUrl: string;
+  loading: boolean;
+  generating: boolean;
+  error: string | null;
+  onGenerate: () => void;
+  onOpenShare: () => void;
+}) {
+  const listingUrl = artifact ? `${baseUrl}/listings/${artifact.slug}` : null;
+  const markdownUrl = listingUrl ? `${listingUrl}.md` : null;
+
+  return (
+    <SectionCard eyebrow="AI SEO" title="Search package">
+      {error && (
+        <div className="studio-error-strip" style={{ marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--le-muted)' }}>
+          <Loader2 size={14} className="studio-spinner" />
+          <span style={{ fontSize: 12.5 }}>Loading SEO package</span>
+        </div>
+      ) : artifact ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div
+            className="studio-card-flat"
+            style={{
+              padding: 14,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <span className={`studio-status-pill ${artifact.indexable ? 'complete' : 'queued'}`}>
+                <span className="studio-status-dot" />
+                {artifact.indexable ? 'Indexable' : 'Not indexable'}
+              </span>
+              <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+                {artifact.generated_at ? getRelativeTime(artifact.generated_at) : 'Generated'}
+              </span>
+              <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)' }}>
+                {artifact.generated_by === 'anthropic' ? 'AI enhanced' : 'Rule based'}
+              </span>
+              {artifact.cost_cents > 0 && (
+                <span style={{ fontSize: 11.5, color: 'var(--le-muted-2)', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatCents(artifact.cost_cents)}
+                </span>
+              )}
+            </div>
+            <div>
+              <p style={{ margin: '0 0 5px', fontSize: 13.5, fontWeight: 600, color: 'var(--le-ink)' }}>
+                {artifact.title}
+              </p>
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: 'var(--le-muted)' }}>
+                {artifact.meta_description}
+              </p>
+            </div>
+            {artifact.error && (
+              <div className="studio-warn-strip" style={{ padding: '8px 10px', fontSize: 12 }}>
+                <AlertTriangle size={13} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{artifact.error}</span>
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {listingUrl && (
+              <>
+                <a
+                  href={listingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="studio-btn-ghost studio-btn-sm"
+                >
+                  <ExternalLink size={11} strokeWidth={1.6} />
+                  Open page
+                </a>
+                <CopyButton text={listingUrl} />
+              </>
+            )}
+            {markdownUrl && (
+              <>
+                <a
+                  href={markdownUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="studio-btn-ghost studio-btn-sm"
+                >
+                  <FileText size={11} strokeWidth={1.6} />
+                  Markdown
+                </a>
+                <CopyButton text={markdownUrl} />
+              </>
+            )}
+            <button
+              type="button"
+              className="studio-btn-ghost studio-btn-sm"
+              onClick={onGenerate}
+              disabled={generating}
+            >
+              {generating ? (
+                <Loader2 size={11} className="studio-spinner" />
+              ) : (
+                <RefreshCw size={11} strokeWidth={1.6} />
+              )}
+              {generating ? 'Refreshing' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6, color: 'var(--le-muted)' }}>
+            Generate the public listing page, markdown file, schema graph, sitemap entry, and LLM resource link.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button
+              type="button"
+              className="studio-cta-primary"
+              style={{ fontSize: 12.5, padding: '8px 14px' }}
+              onClick={onGenerate}
+              disabled={generating}
+            >
+              {generating ? (
+                <Loader2 size={12} className="studio-spinner" />
+              ) : (
+                <Search size={12} strokeWidth={1.8} />
+              )}
+              {generating ? 'Generating' : 'Generate AI SEO'}
+            </button>
+            <button
+              type="button"
+              className="studio-btn-ghost studio-btn-sm"
+              onClick={onOpenShare}
+            >
+              <Share2 size={11} strokeWidth={1.8} />
+              Manage public link
+            </button>
+          </div>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 // ─── Main component ────────────────────────────────────────────────────────────
 
 const PropertyCommandCenter = () => {
@@ -287,6 +463,10 @@ const PropertyCommandCenter = () => {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [shareLinks, setShareLinks] = useState<ShareLinks>({ client: null, public: null });
+  const [seoArtifact, setSeoArtifact] = useState<SeoArtifactRow | null>(null);
+  const [seoLoading, setSeoLoading] = useState(true);
+  const [seoGenerating, setSeoGenerating] = useState(false);
+  const [seoError, setSeoError] = useState<string | null>(null);
 
   const [advancePending, setAdvancePending] = useState(false);
   const [advanceError, setAdvanceError] = useState<string | null>(null);
@@ -321,6 +501,27 @@ const PropertyCommandCenter = () => {
     pollRef.current = setInterval(fetchBundle, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchBundle]);
+
+  const fetchSeo = useCallback(async () => {
+    try {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/seo`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { artifact: SeoArtifactRow | null };
+      setSeoArtifact(data.artifact);
+      setSeoError(null);
+    } catch (err) {
+      setSeoError(err instanceof Error ? err.message : 'Failed to load SEO package');
+    } finally {
+      setSeoLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void fetchSeo();
+  }, [fetchSeo]);
 
   const handleSaveNote = async () => {
     if (!noteBody.trim()) return;
@@ -392,10 +593,48 @@ const PropertyCommandCenter = () => {
       const body = await res.json().catch(() => ({}));
       throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
     }
+    const body = await res.json().catch(() => ({}));
+    if (kind === 'public') {
+      const artifact = (body as { seo?: SeoArtifactRow }).seo ?? null;
+      const seoError = (body as { seo_error?: string }).seo_error ?? null;
+      if (artifact) setSeoArtifact(artifact);
+      else if (seoError) {
+        setSeoError(seoError);
+        setSeoLoading(false);
+      } else {
+        await fetchSeo();
+      }
+    }
     // Fetch the new link token from the server (create genuinely needs it).
     // Do NOT call fetchBundle() — that flips the command-center loading state
     // and remounts the whole page (spec §4b flash fix).
     await fetchShareLinks();
+  };
+
+  const handleGenerateSeo = async () => {
+    setSeoGenerating(true);
+    setSeoError(null);
+    try {
+      const res = await authedFetch(`/api/admin/studio/properties/${id}/seo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ use_ai: true }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          (body as { message?: string; error?: string }).message
+          ?? (body as { error?: string }).error
+          ?? `HTTP ${res.status}`,
+        );
+      }
+      const data = (await res.json()) as { artifact: SeoArtifactRow };
+      setSeoArtifact(data.artifact);
+    } catch (err) {
+      setSeoError(err instanceof Error ? err.message : 'Failed to generate SEO package');
+    } finally {
+      setSeoGenerating(false);
+    }
   };
 
   const handleToggle = async (pvId: string, field: ToggleField, value: boolean) => {
@@ -894,6 +1133,16 @@ const PropertyCommandCenter = () => {
             Manage share links
           </button>
         </SectionCard>
+
+        <SeoPackageCard
+          artifact={seoArtifact}
+          baseUrl={baseUrl}
+          loading={seoLoading}
+          generating={seoGenerating}
+          error={seoError}
+          onGenerate={() => void handleGenerateSeo()}
+          onOpenShare={() => void handleOpenShare()}
+        />
 
         {/* ── Brand kit summary ── */}
         <SectionCard eyebrow="Client" title="Brand kit">

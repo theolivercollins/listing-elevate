@@ -99,6 +99,14 @@ const GUARDED_PATHS = [
   'api/scenes/[id]/approve.ts',
   'api/admin/studio/properties/[id]/download.ts',
   'api/admin/studio/properties/[id]/preview-link.ts',
+
+  // ai-seo branch — public crawl endpoints + property generation endpoint
+  'api/admin/studio/properties/[id]/seo.ts',
+  'api/seo/listings/[slug].ts',
+  'api/seo/listings/[slug].md.ts',
+  'api/seo/listings/[slug].json.ts',
+  'api/seo/sitemap.xml.ts',
+  'api/seo/llms.txt.ts',
 ];
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -218,5 +226,21 @@ describe('vercel.json route coverage', () => {
     expect(embedIdx).toBeGreaterThanOrEqual(0);
     expect(bareIdx).toBeGreaterThanOrEqual(0);
     expect(embedIdx).toBeLessThan(bareIdx);
+  });
+
+  it('/listings/:slug.md route precedes the bare /listings/:slug route', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const markdownIdx = routes.findIndex((r) =>
+      r.src === '/listings/([^/]+)\\.md',
+    );
+    const bareIdx = routes.findIndex((r) =>
+      r.src === '/listings/([^/]+)' && r.dest?.includes('/api/seo/listings/[slug]'),
+    );
+
+    expect(markdownIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(markdownIdx).toBeLessThan(bareIdx);
   });
 });

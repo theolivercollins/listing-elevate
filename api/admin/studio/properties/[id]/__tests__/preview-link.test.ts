@@ -3,12 +3,16 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const mockRequireAdmin = vi.fn();
 const mockCreatePreviewLink = vi.fn();
+const mockGenerateListingSeo = vi.fn();
 
 vi.mock('../../../../../../lib/auth', () => ({
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
 }));
 vi.mock('../../../../../../lib/operator-studio/preview', () => ({
   createPreviewLink: (...args: unknown[]) => mockCreatePreviewLink(...args),
+}));
+vi.mock('../../../../../../lib/seo/generate', () => ({
+  generateListingSeoForProperty: (...args: unknown[]) => mockGenerateListingSeo(...args),
 }));
 
 import handler from '../preview-link';
@@ -36,6 +40,7 @@ function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
 beforeEach(() => {
   mockRequireAdmin.mockReset();
   mockCreatePreviewLink.mockReset();
+  mockGenerateListingSeo.mockReset();
 });
 
 describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
@@ -105,9 +110,35 @@ describe('POST /api/admin/studio/properties/[id]/preview-link', () => {
   it('passes kind=public when body sets kind=public', async () => {
     mockRequireAdmin.mockResolvedValue({ user: { id: 'u1' }, profile: { role: 'admin' } });
     mockCreatePreviewLink.mockResolvedValue({ id: 'pv5', token: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', property_id: 'prop-abc' });
+    mockGenerateListingSeo.mockResolvedValue({ id: 'seo-1', slug: 'listing-slug' });
     const res = makeRes();
     await handler(makeReq({ body: { kind: 'public' } }), res as unknown as VercelResponse);
     expect(mockCreatePreviewLink).toHaveBeenCalledWith('prop-abc', null, 'public', null);
+    expect(mockGenerateListingSeo).toHaveBeenCalledWith({
+      propertyId: 'prop-abc',
+      useAi: true,
+    });
+    expect((res._body as { seo?: { slug: string } }).seo?.slug).toBe('listing-slug');
+  });
+
+  it('does not generate SEO for client preview links', async () => {
+    mockRequireAdmin.mockResolvedValue({ user: { id: 'u1' }, profile: { role: 'admin' } });
+    mockCreatePreviewLink.mockResolvedValue({ id: 'pv-client', token: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh', property_id: 'prop-abc' });
+    const res = makeRes();
+    await handler(makeReq({ body: { kind: 'client' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(201);
+    expect(mockGenerateListingSeo).not.toHaveBeenCalled();
+  });
+
+  it('returns the preview link when automatic SEO generation fails', async () => {
+    mockRequireAdmin.mockResolvedValue({ user: { id: 'u1' }, profile: { role: 'admin' } });
+    mockCreatePreviewLink.mockResolvedValue({ id: 'pv-public', token: 'iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', property_id: 'prop-abc' });
+    mockGenerateListingSeo.mockRejectedValue(new Error('ai_seo_artifacts table missing'));
+    const res = makeRes();
+    await handler(makeReq({ body: { kind: 'public' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(201);
+    expect((res._body as { token: string }).token).toBe('iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii');
+    expect((res._body as { seo_error?: string }).seo_error).toBe('ai_seo_artifacts table missing');
   });
 
   it('returns 400 for invalid kind value', async () => {
