@@ -13,16 +13,43 @@
  * Mirrors the mock pattern in api/cron/__tests__/poll-listing-iterations.bunny-rehost.test.ts.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   reapStuckLabIterations,
   reapStuckScenes,
   reapStuckLabListings,
+  reapStuckDeliveryRuns,
+  reapStuckGeneratingProperties,
   RENDER_STUCK_MINUTES,
   GENERATE_STUCK_MINUTES,
   SUBMIT_STUCK_MINUTES,
   ANALYZE_STUCK_MINUTES,
+  DELIVERY_STUCK_MINUTES,
+  DELIVERY_MAX_AGE_MINUTES,
+  GENERATING_STUCK_MINUTES,
+  GENERATING_MAX_AGE_MINUTES,
 } from "../stuck-reaper.js";
+
+// ── Module mocks for dynamic imports inside the two new reapers ──────────────
+// reapStuckDeliveryRuns dynamically imports lib/delivery/scrape.js.
+// reapStuckGeneratingProperties dynamically imports lib/pipeline.js.
+// We hoist these mocks so they're in place before any test runs.
+
+const mockRunScrapeStage = vi.fn();
+vi.mock("../../delivery/scrape.js", () => ({
+  runScrapeStage: (...args: unknown[]) => mockRunScrapeStage(...args),
+}));
+
+const mockResubmitScene = vi.fn();
+vi.mock("../../pipeline.js", () => ({
+  resubmitScene: (...args: unknown[]) => mockResubmitScene(...args),
+}));
+
+// Reset mock implementations before each test so they don't bleed across suites.
+beforeEach(() => {
+  mockRunScrapeStage.mockReset();
+  mockResubmitScene.mockReset();
+});
 
 // ── Supabase mock factory ────────────────────────────────────────────────────
 
@@ -446,6 +473,635 @@ describe("reapStuckLabListings", () => {
     expect(result.reaped).toBe(2);
     expect(result.ids).toEqual(ids);
     expect(db._inSpy).toHaveBeenCalledWith("id", ids);
+  });
+});
+
+// ── reapStuckDeliveryRuns ────────────────────────────────────────────────────
+
+/**
+ * Mock factory for reapStuckDeliveryRuns.
+ *
+ * The reaper does:
+ *   1. db.from("delivery_runs").select(...).in(...).lt(...)  → selectResult
+ *   2. For each row (if exhausted): db.from("delivery_runs").update(...).eq(...)  → updateResult
+ *   3. For each row (if young): runScrapeStage(runId) via dynamic import (mocked above)
+ *
+ * The update chain for the exhausted path ends with .eq("id", id) — not .in().
+ * We expose a separate `_eqSpy` for the update terminal.
+ */
+function buildDeliveryRunsDb(opts: {
+  selectResult: { data: Array<{ id: string; stage: string; created_at: string }> | null; error: { message: string } | null };
+  updateResult: { error: { message: string } | null };
+}) {
+  const updateSpy = vi.fn();
+  const eqUpdateSpy = vi.fn().mockResolvedValue(opts.updateResult);
+
+  const updateChain: Record<string, unknown> = {};
+  updateChain.eq = eqUpdateSpy;
+  updateSpy.mockReturnValue(updateChain);
+
+  // Select chain: terminal is .lt()
+  const selectChain: Record<string, unknown> = {};
+  selectChain.in = vi.fn().mockReturnValue(selectChain);
+  selectChain.eq = vi.fn().mockReturnValue(selectChain);
+  selectChain.is = vi.fn().mockReturnValue(selectChain);
+  selectChain.not = vi.fn().mockReturnValue(selectChain);
+  selectChain.lt = vi.fn().mockResolvedValue(opts.selectResult);
+
+  const fromSpy = vi.fn().mockImplementation(() => ({
+    select: vi.fn().mockReturnValue(selectChain),
+    update: updateSpy,
+  }));
+
+  return {
+    from: fromSpy,
+    _updateSpy: updateSpy,
+    _eqUpdateSpy: eqUpdateSpy,
+  } as unknown as {
+    from: typeof fromSpy;
+    _updateSpy: typeof updateSpy;
+    _eqUpdateSpy: typeof eqUpdateSpy;
+  };
+}
+
+describe("reapStuckDeliveryRuns", () => {
+  const NOW = new Date("2026-06-14T12:00:00Z");
+  const RUN_ID = "run-stuck-001";
+
+  // P2a: reapStuckDeliveryRuns has a non-prod write guard. Set production env
+  // for this describe block so existing tests exercise the reaper logic, not
+  // the guard early-return.
+  beforeEach(() => { process.env.VERCEL_ENV = "production"; });
+  afterEach(() => { delete process.env.VERCEL_ENV; });
+
+  /** A run created 10 minutes ago — young enough to re-fire (< 60m exhausted). */
+  function youngRun(stage = "scraping"): { id: string; stage: string; created_at: string } {
+    return {
+      id: RUN_ID,
+      stage,
+      created_at: new Date(NOW.getTime() - 10 * 60 * 1000).toISOString(),
+    };
+  }
+
+  /** A run created 70 minutes ago — past the 60m exhausted ceiling. */
+  function oldRun(stage = "scraping"): { id: string; stage: string; created_at: string } {
+    return {
+      id: RUN_ID,
+      stage,
+      created_at: new Date(NOW.getTime() - 70 * 60 * 1000).toISOString(),
+    };
+  }
+
+  it("(a) stuck-and-young → runScrapeStage fired, count=1", async () => {
+    mockRunScrapeStage.mockResolvedValue(undefined);
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [youngRun()], error: null },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual([RUN_ID]);
+    expect(mockRunScrapeStage).toHaveBeenCalledWith(RUN_ID);
+    // P1b: pre-bump update IS now called once (for rate-limit before runScrapeStage).
+    expect(db._updateSpy).toHaveBeenCalledOnce();
+    const prePatch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(prePatch).toHaveProperty("updated_at"); // pre-bump only has updated_at
+    expect(prePatch).not.toHaveProperty("error"); // not the exhausted-error patch
+  });
+
+  it("(a) stuck intake run → runScrapeStage fired (covers intake stage)", async () => {
+    mockRunScrapeStage.mockResolvedValue(undefined);
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [youngRun("intake")], error: null },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(mockRunScrapeStage).toHaveBeenCalledWith(RUN_ID);
+  });
+
+  it("(b) stuck-and-exhausted → error written, runScrapeStage NOT fired", async () => {
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [oldRun()], error: null },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual([RUN_ID]);
+    expect(mockRunScrapeStage).not.toHaveBeenCalled();
+    // exhausted update written
+    expect(db._updateSpy).toHaveBeenCalledOnce();
+    const patch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(patch.error).toMatch(/stuck in scraping >60m/);
+    expect(patch.error).toMatch(/auto-recovery exhausted/);
+  });
+
+  it("(c) no rows exceed the stuck threshold → nothing reaped", async () => {
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [], error: null },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+    expect(mockRunScrapeStage).not.toHaveBeenCalled();
+  });
+
+  it("(d) reaper never throws when the select query errors", async () => {
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: null, error: { message: "connection refused" } },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+  });
+
+  it("(d) reaper never throws when runScrapeStage throws", async () => {
+    mockRunScrapeStage.mockRejectedValue(new Error("network timeout"));
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [youngRun()], error: null },
+      updateResult: { error: null },
+    });
+
+    await expect(
+      reapStuckDeliveryRuns(
+        db as unknown as import("@supabase/supabase-js").SupabaseClient,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ reaped: 0, ids: [] });
+  });
+
+  it("(d) reaper never throws when the exhausted update errors", async () => {
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [oldRun()], error: null },
+      updateResult: { error: { message: "update failed" } },
+    });
+
+    await expect(
+      reapStuckDeliveryRuns(
+        db as unknown as import("@supabase/supabase-js").SupabaseClient,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ reaped: 0, ids: [] });
+  });
+
+  it("cutoff is based on now param (DELIVERY_STUCK_MINUTES threshold)", async () => {
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [], error: null },
+      updateResult: { error: null },
+    });
+
+    await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(db.from).toHaveBeenCalledWith("delivery_runs");
+    const expectedCutoff = new Date(NOW.getTime() - DELIVERY_STUCK_MINUTES * 60 * 1000).toISOString();
+    const fromResult = db.from.mock.results[0]?.value;
+    const selectChain = fromResult?.select?.mock?.results?.[0]?.value;
+    expect(selectChain?.lt).toHaveBeenCalledWith("updated_at", expectedCutoff);
+  });
+
+  it("constants: DELIVERY_STUCK_MINUTES=15, DELIVERY_MAX_AGE_MINUTES=60", () => {
+    expect(DELIVERY_STUCK_MINUTES).toBe(15);
+    expect(DELIVERY_MAX_AGE_MINUTES).toBe(60);
+  });
+});
+
+// ── reapStuckGeneratingProperties ────────────────────────────────────────────
+
+/**
+ * Mock factory for reapStuckGeneratingProperties.
+ *
+ * The reaper does (per property):
+ *   1. db.from("properties").select("id, updated_at").eq("status","generating").lt("updated_at", cutoff)
+ *   2. db.from("scenes").select("id").eq(...).is(...).is(...).is(...)  → scene select (terminal: last .is())
+ *   3. If exhausted: db.from("properties").update({status:"needs_review",...}).eq("id", prop.id)
+ *   4. If young: resubmitScene(sceneId) via dynamic import + db.from("properties").update({updated_at}).eq(...)
+ *
+ * We use a stateful call-count to return different data for the property select vs scene select.
+ */
+function buildGeneratingPropertiesDb(opts: {
+  propertyRows: Array<{ id: string; updated_at: string }>;
+  sceneRows: Array<{ id: string }>;
+  propSelectError: { message: string } | null;
+  sceneSelectError: { message: string } | null;
+  updateResult: { error: { message: string } | null };
+}) {
+  const updateSpy = vi.fn();
+  const eqUpdateSpy = vi.fn().mockResolvedValue(opts.updateResult);
+  const updateChain: Record<string, unknown> = {};
+  updateChain.eq = eqUpdateSpy;
+  updateSpy.mockReturnValue(updateChain);
+
+  // Each call to .from() returns a fresh chain.
+  // Call 1: property select — terminal is .lt()
+  // Call 2+: scene select — terminal is last .is() — we make all filter methods also resolve
+  let fromCallCount = 0;
+
+  const fromSpy = vi.fn().mockImplementation(() => {
+    fromCallCount++;
+    const chain: Record<string, unknown> = {};
+    if (fromCallCount === 1) {
+      // Property select: terminal is .lt()
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.is = vi.fn().mockReturnValue(chain);
+      chain.not = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.lt = vi.fn().mockResolvedValue({ data: opts.propertyRows, error: opts.propSelectError });
+    } else {
+      // Scene select (per property): the query ends with three .is() calls.
+      // We make the chain thenable so that `await chain` resolves with scene data
+      // regardless of which filter is called last. All filter methods return `chain`
+      // so they are chainable; `chain.then` makes the whole chain awaitable.
+      chain.eq = vi.fn().mockReturnValue(chain);
+      chain.not = vi.fn().mockReturnValue(chain);
+      chain.in = vi.fn().mockReturnValue(chain);
+      chain.lt = vi.fn().mockReturnValue(chain);
+      chain.is = vi.fn().mockReturnValue(chain);
+      // Make the chain a thenable — when awaited, resolves with scene data.
+      chain.then = vi.fn().mockImplementation((resolve: (v: unknown) => void) => {
+        resolve({ data: opts.sceneRows, error: opts.sceneSelectError });
+        return Promise.resolve({ data: opts.sceneRows, error: opts.sceneSelectError });
+      });
+    }
+    return {
+      select: vi.fn().mockReturnValue(chain),
+      update: updateSpy,
+    };
+  });
+
+  return {
+    from: fromSpy,
+    _updateSpy: updateSpy,
+    _eqUpdateSpy: eqUpdateSpy,
+  } as unknown as {
+    from: typeof fromSpy;
+    _updateSpy: typeof updateSpy;
+    _eqUpdateSpy: typeof eqUpdateSpy;
+  };
+}
+
+describe("reapStuckGeneratingProperties", () => {
+  const NOW = new Date("2026-06-14T12:00:00Z");
+  const PROP_ID = "prop-stuck-001";
+  const SCENE_ID = "scene-never-sub-001";
+
+  // P2a: reapStuckGeneratingProperties has a non-prod write guard. Set
+  // production env so existing tests exercise the reaper logic.
+  beforeEach(() => { process.env.VERCEL_ENV = "production"; });
+  afterEach(() => { delete process.env.VERCEL_ENV; });
+
+  /** A property updated 25 minutes ago — stuck (>20m) but young (< 60m). */
+  function youngProp(): { id: string; updated_at: string } {
+    return {
+      id: PROP_ID,
+      updated_at: new Date(NOW.getTime() - 25 * 60 * 1000).toISOString(),
+    };
+  }
+
+  /** A property updated 65 minutes ago — exhausted (> 60m). */
+  function oldProp(): { id: string; updated_at: string } {
+    return {
+      id: PROP_ID,
+      updated_at: new Date(NOW.getTime() - 65 * 60 * 1000).toISOString(),
+    };
+  }
+
+  it("(a) stuck-and-young with never-submitted scene → resubmitScene fired, timestamp bumped", async () => {
+    mockResubmitScene.mockResolvedValue({ ok: true, provider: "atlas" });
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [{ id: SCENE_ID }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual([PROP_ID]);
+    expect(mockResubmitScene).toHaveBeenCalledWith(SCENE_ID);
+    // property timestamp bump written (updated_at)
+    expect(db._updateSpy).toHaveBeenCalledOnce();
+    const patch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(patch).toHaveProperty("updated_at");
+    expect(patch).not.toHaveProperty("status"); // not changing status on re-fire path
+  });
+
+  it("(a) resubmitScene failure still bumps timestamp (rate-limit) and counts as reaped", async () => {
+    mockResubmitScene.mockResolvedValue({ ok: false, error: "all providers exhausted" });
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [{ id: SCENE_ID }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    // timestamp bump still happened even though resubmit failed
+    expect(db._updateSpy).toHaveBeenCalledOnce();
+  });
+
+  it("(b) stuck-and-exhausted → status set to needs_review, resubmitScene NOT fired", async () => {
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [oldProp()],
+      sceneRows: [{ id: SCENE_ID }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual([PROP_ID]);
+    expect(mockResubmitScene).not.toHaveBeenCalled();
+    // give-up update written
+    expect(db._updateSpy).toHaveBeenCalledOnce();
+    const patch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(patch.status).toBe("needs_review");
+  });
+
+  it("(c) no rows exceed stuck threshold → nothing reaped", async () => {
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [],
+      sceneRows: [],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+    expect(mockResubmitScene).not.toHaveBeenCalled();
+  });
+
+  it("(c) property stuck but has no never-submitted scenes → skipped", async () => {
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [], // no never-submitted scenes
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+    expect(mockResubmitScene).not.toHaveBeenCalled();
+  });
+
+  it("(d) reaper never throws when property select errors", async () => {
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [],
+      sceneRows: [],
+      propSelectError: { message: "connection refused" },
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    await expect(
+      reapStuckGeneratingProperties(
+        db as unknown as import("@supabase/supabase-js").SupabaseClient,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ reaped: 0, ids: [] });
+  });
+
+  it("(d) reaper never throws when resubmitScene throws", async () => {
+    mockResubmitScene.mockRejectedValue(new Error("unexpected throw"));
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [{ id: SCENE_ID }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    await expect(
+      reapStuckGeneratingProperties(
+        db as unknown as import("@supabase/supabase-js").SupabaseClient,
+        NOW,
+      ),
+    ).resolves.not.toThrow();
+  });
+
+  it("cutoff is based on now param (GENERATING_STUCK_MINUTES threshold)", async () => {
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [],
+      sceneRows: [],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(db.from).toHaveBeenCalledWith("properties");
+    const expectedCutoff = new Date(NOW.getTime() - GENERATING_STUCK_MINUTES * 60 * 1000).toISOString();
+    const fromResult = db.from.mock.results[0]?.value;
+    const selectChain = fromResult?.select?.mock?.results?.[0]?.value;
+    expect(selectChain?.lt).toHaveBeenCalledWith("updated_at", expectedCutoff);
+  });
+
+  it("constants: GENERATING_STUCK_MINUTES=20, GENERATING_MAX_AGE_MINUTES=60", () => {
+    expect(GENERATING_STUCK_MINUTES).toBe(20);
+    expect(GENERATING_MAX_AGE_MINUTES).toBe(60);
+  });
+});
+
+// ── P1a fix: 3-scene resubmit + throw-still-bumps ───────────────────────────
+
+describe("reapStuckGeneratingProperties — P1a fix", () => {
+  const NOW = new Date("2026-06-14T12:00:00Z");
+  const PROP_ID = "prop-p1a-001";
+
+  // P2a guard must be open so P1a fix exercises the resubmit path.
+  beforeEach(() => { process.env.VERCEL_ENV = "production"; });
+  afterEach(() => { delete process.env.VERCEL_ENV; });
+
+  /** A property updated 25 minutes ago — stuck but young. */
+  function youngProp(): { id: string; updated_at: string } {
+    return {
+      id: PROP_ID,
+      updated_at: new Date(NOW.getTime() - 25 * 60 * 1000).toISOString(),
+    };
+  }
+
+  it("3 never-submitted scenes → resubmitScene called 3×, updated_at bump called exactly once", async () => {
+    mockResubmitScene.mockResolvedValue({ ok: true, provider: "atlas" });
+    const sceneIds = ["scene-p1a-001", "scene-p1a-002", "scene-p1a-003"];
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: sceneIds.map((id) => ({ id })),
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result.reaped).toBe(1);
+    expect(mockResubmitScene).toHaveBeenCalledTimes(3);
+    expect(mockResubmitScene).toHaveBeenCalledWith("scene-p1a-001");
+    expect(mockResubmitScene).toHaveBeenCalledWith("scene-p1a-002");
+    expect(mockResubmitScene).toHaveBeenCalledWith("scene-p1a-003");
+    // The updated_at bump (properties.update) must be called exactly once
+    // regardless of how many scenes were resubmitted.
+    expect(db._updateSpy).toHaveBeenCalledTimes(1);
+    const patch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(patch).toHaveProperty("updated_at");
+  });
+
+  it("resubmitScene throws → reaper still resolves AND updated_at bump was called once (P1a)", async () => {
+    mockResubmitScene.mockRejectedValue(new Error("provider timeout"));
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [{ id: "scene-p1a-throw" }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    // Reaper must NOT throw even when resubmitScene throws.
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    // Reaper resolves (doesn't throw) because the inner try/catch covers it.
+    expect(result).toMatchObject({ reaped: 0, ids: [] });
+    // The finally block must have run the bump exactly once.
+    expect(db._updateSpy).toHaveBeenCalledTimes(1);
+    const patch = db._updateSpy.mock.calls[0]?.[0] as Record<string, string>;
+    expect(patch).toHaveProperty("updated_at");
+  });
+});
+
+// ── P2a fix: non-prod write guard ────────────────────────────────────────────
+
+describe("non-prod write guard (P2a)", () => {
+  const NOW = new Date("2026-06-14T12:00:00Z");
+  const PROP_ID = "prop-guard-001";
+  const RUN_ID = "run-guard-001";
+
+  function youngProp(): { id: string; updated_at: string } {
+    return {
+      id: PROP_ID,
+      updated_at: new Date(NOW.getTime() - 25 * 60 * 1000).toISOString(),
+    };
+  }
+
+  function youngRun(): { id: string; stage: string; created_at: string } {
+    return {
+      id: RUN_ID,
+      stage: "scraping",
+      created_at: new Date(NOW.getTime() - 10 * 60 * 1000).toISOString(),
+    };
+  }
+
+  afterEach(() => {
+    delete process.env.VERCEL_ENV;
+    delete process.env.LE_ALLOW_NONPROD_WRITES;
+  });
+
+  it("reapStuckGeneratingProperties: VERCEL_ENV unset, LE_ALLOW_NONPROD_WRITES unset → reaped:0, no DB writes, no resubmit", async () => {
+    delete process.env.VERCEL_ENV;
+    delete process.env.LE_ALLOW_NONPROD_WRITES;
+    mockResubmitScene.mockResolvedValue({ ok: true, provider: "atlas" });
+
+    const db = buildGeneratingPropertiesDb({
+      propertyRows: [youngProp()],
+      sceneRows: [{ id: "scene-guard-001" }],
+      propSelectError: null,
+      sceneSelectError: null,
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckGeneratingProperties(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result).toEqual({ reaped: 0, ids: [] });
+    expect(db.from).not.toHaveBeenCalled();
+    expect(mockResubmitScene).not.toHaveBeenCalled();
+  });
+
+  it("reapStuckDeliveryRuns: VERCEL_ENV unset, LE_ALLOW_NONPROD_WRITES unset → reaped:0, no DB writes, no scrape", async () => {
+    delete process.env.VERCEL_ENV;
+    delete process.env.LE_ALLOW_NONPROD_WRITES;
+    mockRunScrapeStage.mockResolvedValue(undefined);
+
+    const db = buildDeliveryRunsDb({
+      selectResult: { data: [youngRun()], error: null },
+      updateResult: { error: null },
+    });
+
+    const result = await reapStuckDeliveryRuns(
+      db as unknown as import("@supabase/supabase-js").SupabaseClient,
+      NOW,
+    );
+
+    expect(result).toEqual({ reaped: 0, ids: [] });
+    expect(db.from).not.toHaveBeenCalled();
+    expect(mockRunScrapeStage).not.toHaveBeenCalled();
   });
 });
 
