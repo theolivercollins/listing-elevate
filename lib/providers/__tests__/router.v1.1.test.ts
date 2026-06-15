@@ -193,6 +193,50 @@ describe("forceSeedancePushInPrompt — OPTICAL strip keeps the subject noun", (
     expect(out).not.toMatch(/Cinematic the/i);
     expect(out).not.toMatch(/,\s*$/);
   });
+
+  // ── Movement WORD inside a SUBJECT noun must NOT trigger the movement nuke ──
+  // Regression from review of bafe79a: MOVEMENT_VERB_PATTERN's [^.;]* ate the
+  // rest of the clause, and because stripMovementVerbs runs BEFORE the surgical
+  // optical strip, a movement word sitting in a director-chosen subject noun
+  // ("the gliding glass doors", "the descending staircase") got the subject
+  // deleted → "[PRE] cinematic slow push in the". The director DOES emit such
+  // feature-closeup prompts (staircases are named hero subjects). A determiner
+  // negative-lookbehind (verb-adjacent) keeps these in subject position so the
+  // optical strip preserves the noun. Each asserts the subject SURVIVES while
+  // the optical framing (DoF + blurred) is still removed.
+
+  it("subject 'gliding glass doors': keeps the subject, drops DoF + blurred", () => {
+    const out = forceSeedancePushInPrompt(
+      "cinematic slow push in with shallow depth of field on the gliding glass doors, background softly blurred",
+    );
+    expect(out.toLowerCase()).toMatch(/glass doors/);
+    expect(out).not.toMatch(/shallow depth of field/i);
+    expect(out).not.toMatch(/blurred/i);
+  });
+
+  it("subject 'descending staircase': keeps the subject, drops DoF", () => {
+    const out = forceSeedancePushInPrompt(
+      "cinematic slow push in with shallow depth of field on the descending staircase",
+    );
+    expect(out.toLowerCase()).toMatch(/staircase/);
+    expect(out).not.toMatch(/shallow depth of field/i);
+  });
+
+  it("subject 'aerial antenna': keeps the subject, drops DoF", () => {
+    const out = forceSeedancePushInPrompt(
+      "cinematic slow push in with shallow depth of field on the aerial antenna",
+    );
+    expect(out.toLowerCase()).toMatch(/antenna/);
+    expect(out).not.toMatch(/shallow depth of field/i);
+  });
+
+  it("subject 'tracking light fixture': keeps the subject, drops DoF", () => {
+    const out = forceSeedancePushInPrompt(
+      "cinematic slow push in with shallow depth of field on the tracking light fixture",
+    );
+    expect(out.toLowerCase()).toMatch(/light fixture/);
+    expect(out).not.toMatch(/shallow depth of field/i);
+  });
 });
 
 describe("forceSeedancePushInPrompt — MOVEMENT strip removes the movement word (subject-drop is deliberate)", () => {

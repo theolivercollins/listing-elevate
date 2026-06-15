@@ -276,8 +276,21 @@ export function selectProviderForScene(
 // stored scene.prompt is NOT mutated; this is render-time only so the audit
 // trail in the DB stays human-authored.
 
+// Determiner guard (negative lookbehind, placed verb-adjacent): a real
+// camera-MOVEMENT instruction is clause-leading ("drone flying forward…",
+// "slow orbit around…", "gliding past…"). A movement WORD living inside a
+// director-chosen SUBJECT noun is preceded by a determiner ("the gliding glass
+// doors", "on the descending staircase", "a porch swing", "close-up of the
+// pan"). The lookbehind MUST sit immediately before the verb alternation, not
+// at the outer boundary — the optional leading adverb group consumes its own
+// trailing space ((?:adverb\s+)?) so that, with no adverb, the determiner+space
+// abuts the verb and (?<!\bthe\s)(?<!\ba\s)(?<!\ban\s) blocks the match. Put at
+// the outer boundary the guard is defeated by the \s* loophole (the match
+// anchors on the space before the verb, so "the " never sits adjacent). This
+// keeps the subject for the optical strip downstream while still nuking genuine
+// clause-leading movement. JS/Node supports fixed-width lookbehind.
 const MOVEMENT_VERB_PATTERN =
-  /\b(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)?\s*(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan|drone|aerial|glid(?:e|es|ing)|descend(?:s|ing)?|ascend(?:s|ing)?|tracking)\b[^.;]*[.;]?/gi;
+  /\b(?:(?:slow(?:ly)?|smoothly|gently|gracefully|subtle|wide|tight|fast|quick(?:ly)?)\s+)?(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?:orbit(?:s|ing)?|rotate(?:s|d|ing)?|tilt(?:s|ed|ing)?|pan(?:s|ned|ning)?|parallax(?:es|ed|ing)?|swing(?:s|ing)?|sweep(?:s|ing)?|dolly\s+out|pull(?:s|ing)?\s+back|pull\s+away|fly(?:s|ing)?\s+through|fly\s+over|fly\s+around|circle(?:s|d|ing)?|spin(?:s|ning)?|crane(?:s|d|ing)?(?:\s+up|\s+down)?|truck(?:s|ed|ing)?|whip(?:s|ped|ping)?\s+pan|drone|aerial|glid(?:e|es|ing)|descend(?:s|ing)?|ascend(?:s|ing)?|tracking)\b[^.;]*[.;]?/gi;
 
 // ─── FOCAL-FIXATION STRIP ────────────────────────────────────────────────────
 //
