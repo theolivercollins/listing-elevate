@@ -120,7 +120,10 @@ async function enhanceWithAi(
     system: "You write accurate, concise real estate SEO content. You never invent facts.",
     messages: [{ role: "user", content: buildAiPrompt(source, baseArtifact) }],
   });
-  const text = (resp.content ?? []).filter((block) => block.type === "text").map((block) => block.text ?? "").join("");
+  const text = (resp.content ?? [])
+    .filter((block) => block.type === "text")
+    .map((block) => ("text" in block ? block.text ?? "" : ""))
+    .join("");
   const parsed = parseJsonObject(text);
   const cost = computeClaudeCost(resp.usage, MU_MODEL);
   const next: ListingSeoArtifact = {

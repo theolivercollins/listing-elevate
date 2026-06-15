@@ -88,7 +88,6 @@ async function pageFunction(context) {
         navigationTimeoutSecs: 60,
         maxConcurrency: 1,
       },
-      { waitSecs: 60 },
     );
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems();

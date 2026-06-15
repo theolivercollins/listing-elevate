@@ -10,6 +10,13 @@ export const maxDuration = 120;
 
 const MAX_PDF_BASE64 = 5 * 1024 * 1024; // ~3.75MB decoded; Stellar reports are ~150KB
 
+interface MuRegionConfigRow {
+  slug: string;
+  display_name: string;
+  strip_images: boolean;
+  emits_email: boolean;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
@@ -49,7 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select("slug, display_name, strip_images, emits_email")
       .eq("site_id", site.id).eq("active", true);
     if (rcErr) return res.status(500).json({ error: rcErr.message });
-    const bySlug = new Map((regionConfig ?? []).map((r: any) => [r.slug, r]));
+    const regionRows = (regionConfig ?? []) as MuRegionConfigRow[];
+    const bySlug = new Map(regionRows.map((r) => [r.slug, r]));
 
     const regions: RegionInput[] = [];
     for (const r of b.regions) {
@@ -87,8 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         region_results: result.results,
         cost_usd_cents: result.costCents,
       });
-    } catch (e: any) {
-      return res.status(502).json({ error: `analyze failed: ${e?.message ?? String(e)}` });
+    } catch (e: unknown) {
+      return res.status(502).json({ error: `analyze failed: ${e instanceof Error ? e.message : String(e)}` });
     }
   }
 

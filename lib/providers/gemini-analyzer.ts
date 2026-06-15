@@ -264,7 +264,7 @@ const AERIALISH: ReadonlySet<string> = new Set(["aerial", "elevated", "overhead"
 
 export function gateVerticalHeadroom<T extends {
   camera_height?: string | null;
-  motion_headroom?: Record<string, boolean> | null;
+  motion_headroom?: Partial<Record<keyof MotionHeadroom, boolean>> | null;
   motion_headroom_rationale?: Record<string, string> | null;
 }>(analysis: T): T {
   if (!analysis.motion_headroom) {
@@ -278,7 +278,7 @@ export function gateVerticalHeadroom<T extends {
 
   // Ground-level (or unknown): force the two vertical movements off.
   const VERTICAL_KEYS = ["drone_push_in", "top_down"] as const;
-  const newHeadroom: Record<string, boolean> = { ...analysis.motion_headroom };
+  const newHeadroom: Partial<Record<keyof MotionHeadroom, boolean>> = { ...analysis.motion_headroom };
   const newRationale: Record<string, string> = { ...(analysis.motion_headroom_rationale ?? {}) };
 
   let changed = false;

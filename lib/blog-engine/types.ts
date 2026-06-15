@@ -7,7 +7,7 @@ export type BlogPostState =
   | 'edit_pending' | 'editing' | 'quarantined';
 
 export type BlogJobKind =
-  | 'research' | 'distill_topics' | 'draft' | 'image_match'
+  | 'research' | 'distill_topics' | 'draft' | 'image_tag' | 'image_match'
   | 'publish' | 'edit' | 'unpublish' | 'fetch_taxonomy' | 'distill_correction';
 
 export type BlogJobState = 'queued' | 'running' | 'done' | 'failed';

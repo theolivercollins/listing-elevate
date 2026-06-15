@@ -600,7 +600,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const run = await getRun(runId);
       if (!run) return res.status(404).json({ error: 'not_found' });
       const v = validateListingDetails(req.body ?? {});
-      if (!v.ok) return res.status(400).json({ error: v.error });
+      if (v.ok === false) return res.status(400).json({ error: v.error });
       const { setListingDetails, recordMlEvent } = await import('../../../../lib/delivery/runs.js');
       const updated = await setListingDetails(runId, v.details);
       await recordMlEvent(runId, 'details_edit', { before: run.listing_details, after: v.details });

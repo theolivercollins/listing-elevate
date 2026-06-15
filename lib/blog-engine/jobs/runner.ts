@@ -1,6 +1,6 @@
 // lib/blog-engine/jobs/runner.ts
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { BlogJob, BlogJobKind } from '../types';
+import type { BlogJob, BlogJobKind } from '../types.js';
 
 export interface JobHandlerArgs {
   supabase: SupabaseClient;

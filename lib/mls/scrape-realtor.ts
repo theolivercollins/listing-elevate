@@ -110,7 +110,7 @@ export async function scrapeRealtorByAddress(
           useApifyProxy: true,
           apifyProxyGroups: ["RESIDENTIAL"],
         },
-        maxRequestsPerCrawl: 2, maxPagesPerCrawl: 2,
+        maxRequestsPerCrawl: 2,
         maxPagesPerCrawl: 2,
         pageLoadTimeoutSecs: 60,
         maxScrollHeightPixels: 0,
@@ -121,7 +121,6 @@ export async function scrapeRealtorByAddress(
           }
         ]`,
       },
-      { waitSecs: 120 },
     );
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems();

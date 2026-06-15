@@ -100,10 +100,12 @@ export async function uploadBunnyVideoBytes(
   bytes: Buffer | Uint8Array,
 ): Promise<void> {
   const { apiKey, libraryId } = cfg();
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const body = view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
   const res = await fetch(`${STREAM_API}/library/${libraryId}/videos/${videoId}`, {
     method: "PUT",
     headers: { AccessKey: apiKey },
-    body: bytes,
+    body,
   });
   if (!res.ok) {
     throw new Error(`Bunny upload failed: ${res.status} ${await res.text()}`);

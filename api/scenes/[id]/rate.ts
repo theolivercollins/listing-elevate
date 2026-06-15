@@ -1,6 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { upsertSceneRating, getSupabase } from '../../../lib/db.js';
 
+type SupabaseAuthWithGetUser = {
+  getUser(token: string): Promise<{
+    data: { user: { id: string } | null };
+    error: { message: string } | null;
+  }>;
+};
+
 // Admin-only rating endpoint. Upserts one rating per scene (unique
 // constraint on scene_id) with rating 1-5, free-text comment, and
 // optional tags array. Used by the admin dashboard Deliverables card.
@@ -34,7 +41,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const token = auth.slice(7);
     const supabase = getSupabase();
-    const { data: userData, error: userErr } = await supabase.auth.getUser(token);
+    const { data: userData, error: userErr } = await (
+      supabase.auth as unknown as SupabaseAuthWithGetUser
+    ).getUser(token);
     if (userErr || !userData?.user) {
       return res.status(401).json({ error: 'invalid token' });
     }

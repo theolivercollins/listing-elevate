@@ -21,7 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const templates = await Promise.all(
     TEMPLATE_ENV_VARS
       .map((envVar) => ({ envVar, templateId: process.env[envVar] }))
-      .filter((t): t is { envVar: string; templateId: string } => Boolean(t.templateId))
+      .filter((t): t is { envVar: typeof TEMPLATE_ENV_VARS[number]; templateId: string } => typeof t.templateId === 'string' && t.templateId.length > 0)
       .map(async ({ envVar, templateId }) => {
         try {
           const tpl = await provider.getTemplate(templateId);

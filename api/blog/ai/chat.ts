@@ -404,7 +404,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const attResult = validateAttachments(b.attachments);
-  if (!attResult.ok) return res.status(400).json({ error: attResult.error });
+  if (attResult.ok === false) return res.status(400).json({ error: attResult.error });
   const attachments = attResult.attachments;
 
   const currentHtml = typeof b.current_html === "string" ? b.current_html.slice(0, MAX_DRAFT_CHARS) : "";

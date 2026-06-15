@@ -79,10 +79,7 @@ export async function scrapeRedfinByAddress(
   let errorMsg: string | undefined;
 
   try {
-    const run = await client.actor("tri_angle/redfin-detail").call(
-      { addresses: [address] },
-      { waitSecs: 180 },
-    );
+    const run = await client.actor("tri_angle/redfin-detail").call({ addresses: [address] });
 
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
     const item = items[0] as Record<string, unknown> | undefined;

@@ -33,10 +33,12 @@ export function getStripeClient(): Stripe {
       "STRIPE_SECRET_KEY is not set. Add it to your Vercel environment variables.",
     );
   }
-  _stripeClient = new Stripe(key, {
-    // Pin the API version we code against.
+  const stripeConfig = {
+    // Pin the API version we code against. Stripe v22 narrows this constructor
+    // type to its latest literal, but the runtime still accepts older pins.
     apiVersion: "2025-06-30.basil",
-  });
+  } as unknown as ConstructorParameters<typeof Stripe>[1];
+  _stripeClient = new Stripe(key, stripeConfig);
   return _stripeClient;
 }
 
@@ -77,15 +79,14 @@ export async function createCheckoutSession(
 ): Promise<CheckoutSessionResult> {
   const stripe = getStripeClient();
 
-  const stripeLineItems: Stripe.Checkout.SessionCreateParams.LineItem[] =
-    opts.lineItems.map((item) => ({
-      price_data: {
-        currency: "usd",
-        unit_amount: item.amountCents,
-        product_data: { name: item.name },
-      },
-      quantity: item.quantity ?? 1,
-    }));
+  const stripeLineItems = opts.lineItems.map((item) => ({
+    price_data: {
+      currency: "usd",
+      unit_amount: item.amountCents,
+      product_data: { name: item.name },
+    },
+    quantity: item.quantity ?? 1,
+  }));
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",

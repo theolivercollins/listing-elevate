@@ -227,7 +227,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error("[router_shadow_log] insert failed:", err);
     }
 
-    return res.status(200).json({ ...(updated ?? {}), sku: resolvedSku });
+    const updatedBody = updated && typeof updated === "object"
+      ? updated as Record<string, unknown>
+      : {};
+    return res.status(200).json({ ...updatedBody, sku: resolvedSku });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (err instanceof ProviderCapacityError) {

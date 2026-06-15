@@ -71,7 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let attachments: Attachment[] | undefined;
   if (b.attachments !== undefined && b.attachments !== null) {
     const result = validateAttachments(b.attachments);
-    if (!result.valid) return res.status(400).json({ error: result.error });
+    if (result.valid === false) return res.status(400).json({ error: result.error });
     attachments = result.attachments;
   }
 

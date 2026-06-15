@@ -8,6 +8,12 @@ import { recordCostEvent } from "../../../lib/db.js";
 import { CreatomateProvider, creatomateCostCents } from "../../../lib/providers/creatomate.js";
 import { pollAssemblyJob } from "../../../lib/providers/assembly-router.js";
 
+interface ListingIterationRow {
+  id: string;
+  clip_url: string | null;
+  scene_id: string;
+}
+
 // POST /api/admin/prompt-lab/assemble-listing
 // Body: { listing_id: string, iteration_ids: string[], aspect_ratio?: "16:9" | "9:16" }
 //   (iteration_ids ordered; duplicates allowed)
@@ -96,7 +102,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: `failed to fetch iterations: ${iterErr.message}` });
   }
 
-  const iterMap = new Map((iterations ?? []).map((it) => [it.id as string, it]));
+  const iterationRows = (iterations ?? []) as ListingIterationRow[];
+  const iterMap = new Map(iterationRows.map((it) => [it.id, it]));
 
   for (const id of iteration_ids) {
     const it = iterMap.get(id);
