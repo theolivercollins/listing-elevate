@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildPhotoSelectionLearning,
   selectPhotosWithExplanation,
   TARGET_SCENE_COUNT,
   MAX_PER_ROOM_TYPE,
@@ -131,5 +132,56 @@ describe("selectPhotosWithExplanation", () => {
     // REQUIRED_ROOM_TYPES order is [exterior_front, kitchen, ...] — so ef is #1.
     expect(verdicts.get("ef")?.rank).toBe(1);
     expect(verdicts.get("k")?.rank).toBe(2);
+  });
+
+  it("builds room-level learning from photo_selection events", () => {
+    const learning = buildPhotoSelectionLearning([
+      {
+        payload: {
+          removed: [
+            { id: "laundry-a", room_type: "laundry", operator_feedback: { category: "low_value_room" } },
+            { id: "mudroom-a", room_type: "mudroom", operator_feedback: { category: "low_value_room" } },
+          ],
+          added: [
+            { id: "office-a", room_type: "office", operator_feedback: { category: "feature_room" } },
+          ],
+          kept: [
+            { id: "front-a", room_type: "exterior_front", operator_feedback: { category: "hero_exterior" } },
+          ],
+        },
+      },
+    ]);
+
+    expect(learning.room_type_adjustments.laundry).toBeLessThan(-1);
+    expect(learning.room_type_adjustments.mudroom).toBeLessThan(-1);
+    expect(learning.room_type_adjustments.office).toBeGreaterThan(0);
+    expect(learning.room_type_adjustments.exterior_front).toBeGreaterThan(0);
+  });
+
+  it("uses static and learned value adjustments so high-scoring laundry loses fill slots", () => {
+    const results = [
+      candidate("ef", "exterior_front", 8.4),
+      candidate("k", "kitchen", 8.2),
+      candidate("lr", "living_room", 8.1),
+      candidate("mb", "master_bedroom", 8.0),
+      candidate("ba", "bathroom", 7.9),
+      candidate("office", "office", 8.0),
+      candidate("dining", "dining", 7.9),
+      candidate("deck", "deck", 7.8),
+      candidate("pool", "pool", 7.7),
+      candidate("media", "media_room", 7.6),
+      candidate("foyer", "foyer", 7.5),
+      candidate("gym", "gym", 7.4),
+      candidate("laundry", "laundry", 9.8),
+    ];
+    const learning = buildPhotoSelectionLearning([
+      { payload: { removed: [{ room_type: "laundry", operator_feedback: { category: "low_value_room" } }] } },
+    ]);
+
+    const { selected, verdicts } = selectPhotosWithExplanation(results, { learning });
+
+    expect(selected.map((s) => s.id)).not.toContain("laundry");
+    expect(verdicts.get("laundry")?.status).toBe("not_selected");
+    expect(verdicts.get("laundry")?.reason).toMatch(/selection learning|low-value/i);
   });
 });

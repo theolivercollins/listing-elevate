@@ -186,6 +186,7 @@ export interface Photo {
   aesthetic_score: number | null;
   depth_rating: DepthRating | null;
   selected: boolean;
+  photo_selection_rank: number | null;
   discard_reason: string | null;
   key_features: string[] | null;
 }

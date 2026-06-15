@@ -45,6 +45,15 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
     .select('id, scene_number, photo_id, prompt, duration_seconds, camera_movement, provider, provider_task_id, end_photo_id, end_image_url')
     .eq('property_id', propertyId)
     .not('provider_task_id', 'is', null);
+  const { data: existingVariants } = await supabase
+    .from('scene_variants')
+    .select('scene_id, variant, provider_task_id, clip_url, error')
+    .eq('delivery_run_id', runId);
+  const existingBByScene = new Map(
+    (existingVariants ?? [])
+      .filter((v) => (v as { variant?: string }).variant === 'B')
+      .map((v) => [(v as { scene_id: string }).scene_id, v as SceneVariantRow]),
+  );
 
   let pipelineMode: PipelineMode = 'v1';
   const { data: prop } = await supabase.from('properties').select('pipeline_mode').eq('id', propertyId).maybeSingle();
@@ -56,6 +65,14 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
       delivery_run_id: runId, scene_id: scene.id, variant: 'A',
       provider: scene.provider, provider_task_id: scene.provider_task_id,
     }, { onConflict: 'delivery_run_id,scene_id,variant' });
+
+    const existingB = existingBByScene.get(scene.id as string) ?? null;
+    if (inFlight(existingB) || landed(existingB)) {
+      await log(propertyId, 'generation', 'info',
+        `Scene ${scene.scene_number}: variant B already submitted; skipping duplicate submit`,
+        { delivery_run_id: runId }, scene.id as string);
+      continue;
+    }
 
     // Variant B: an independent second render of the same prompt.
     // Mirrors runGenerationSubmit's failover loop — on a permanent provider
