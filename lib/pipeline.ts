@@ -48,7 +48,7 @@ import {
   renderPerPhotoBlock,
 } from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
-import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt } from "./providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt, shouldForcePushIn } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
 import { AtlasInsufficientBalanceError } from "./providers/atlas.js";
@@ -1069,11 +1069,12 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         pipelineMode,
       );
       const provider = buildProviderFromDecision(decision);
-      // v1.1: when the Seedance Atlas SKU is selected, strip movement verbs
-      // from the scene prompt and prepend the stable push-in directive. We do
-      // NOT mutate scene.prompt in the DB — the override is render-time only
-      // so the audit trail remains the human-authored prompt.
-      const renderPrompt = decision.modelKey === "seedance-pro-pushin"
+      // v1.1: force push-in prompt for every non-paired scene regardless of
+      // which provider/SKU was selected. The gate is on the SCENE (pipeline
+      // mode + no end_photo_id), not the modelKey, so retries that failover
+      // to native Kling are still push-in-forced. scene.prompt in the DB is
+      // never mutated — this override is render-time only.
+      const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
         ? forceSeedancePushInPrompt(scene.prompt)
         : scene.prompt;
       try {
@@ -1334,9 +1335,10 @@ export async function resubmitScene(
       pipelineMode,
     );
     const provider = buildProviderFromDecision(decision);
-    // v1.1: when the Seedance push-in SKU is selected, normalize the prompt to a
-    // stable push-in directive (render-time only, same as runGenerationSubmit).
-    const renderPrompt = decision.modelKey === "seedance-pro-pushin"
+    // v1.1: force push-in prompt for every non-paired scene regardless of which
+    // provider/SKU was selected on this attempt (retry may have failed over to
+    // native Kling). Gate is on the SCENE, not the modelKey.
+    const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
       ? forceSeedancePushInPrompt(effectivePrompt)
       : effectivePrompt;
     try {
