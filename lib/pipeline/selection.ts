@@ -66,6 +66,17 @@ const POSITIVE_FEEDBACK_WEIGHTS: Record<string, number> = {
   strong_motion_potential: 0.2,
 };
 
+const NEGATIVE_FEEDBACK_WEIGHTS: Record<string, number> = {
+  low_value_room: -1.3,
+  weak_video_potential: -0.9,
+  not_representative: -0.65,
+  bad_composition: -0.5,
+  poor_quality: -0.45,
+  duplicate_or_redundant: -0.3,
+  other: -0.15,
+};
+
+const ORDER_CHANGE_WEIGHT = 0.25;
 const LEARNING_MIN_ADJUSTMENT = -2.5;
 const LEARNING_MAX_ADJUSTMENT = 1.25;
 
@@ -261,13 +272,13 @@ export function buildPhotoSelectionLearning(
   for (const event of events) {
     if (!isRecord(event?.payload)) continue;
     eventCount += 1;
+    const orderAdjustments = buildOrderAdjustments(event.payload);
 
     for (const signal of getSignals(event.payload, "removed")) {
       const roomType = parseRoomType(signal.room_type);
       if (!roomType) continue;
-      if (getFeedbackCategory(signal) === "low_value_room") {
-        addAdjustment(totals, roomType, -1.3);
-      }
+      const delta = getNegativeFeedbackWeight(getFeedbackCategory(signal));
+      if (delta !== 0) addAdjustment(totals, roomType, delta);
     }
 
     for (const signal of getSignals(event.payload, "added")) {
@@ -282,6 +293,8 @@ export function buildPhotoSelectionLearning(
       if (!roomType) continue;
       const delta = getPositiveFeedbackWeight(getFeedbackCategory(signal), "kept");
       if (delta !== 0) addAdjustment(totals, roomType, delta);
+      const orderDelta = getOrderAdjustment(signal, orderAdjustments);
+      if (orderDelta !== 0) addAdjustment(totals, roomType, orderDelta);
     }
   }
 
@@ -331,7 +344,7 @@ function addAdjustment(map: Map<RoomType, number>, roomType: RoomType, delta: nu
 function getSignals(
   payload: Record<string, unknown>,
   key: "removed" | "added" | "kept",
-): Array<{ room_type?: unknown; operator_feedback?: unknown }> {
+): Array<{ id?: unknown; room_type?: unknown; operator_feedback?: unknown }> {
   const raw = payload[key];
   if (!Array.isArray(raw)) return [];
   return raw.filter(isRecord);
@@ -349,6 +362,37 @@ function getPositiveFeedbackWeight(category: string | null, source: "added" | "k
   const base = POSITIVE_FEEDBACK_WEIGHTS[category] ?? 0;
   if (base === 0) return 0;
   return source === "added" ? base : base * 0.75;
+}
+
+function getNegativeFeedbackWeight(category: string | null): number {
+  if (!category) return 0;
+  return NEGATIVE_FEEDBACK_WEIGHTS[category] ?? 0;
+}
+
+function buildOrderAdjustments(payload: Record<string, unknown>): Map<string, number> {
+  if (!Array.isArray(payload.before) || !Array.isArray(payload.after)) return new Map();
+  const before = payload.before.filter((id): id is string => typeof id === "string");
+  const after = payload.after.filter((id): id is string => typeof id === "string");
+  const afterIndex = new Map(after.map((id, index) => [id, index]));
+  const adjustments = new Map<string, number>();
+
+  for (const [index, id] of before.entries()) {
+    const nextIndex = afterIndex.get(id);
+    if (nextIndex == null) continue;
+    const movement = index - nextIndex;
+    if (movement !== 0) {
+      adjustments.set(id, clamp(movement * ORDER_CHANGE_WEIGHT, -0.75, 0.75));
+    }
+  }
+
+  return adjustments;
+}
+
+function getOrderAdjustment(
+  signal: { id?: unknown },
+  adjustments: Map<string, number>,
+): number {
+  return typeof signal.id === "string" ? adjustments.get(signal.id) ?? 0 : 0;
 }
 
 function parseRoomType(value: unknown): RoomType | null {
