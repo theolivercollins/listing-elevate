@@ -296,6 +296,23 @@ export function atlasClipCostCents(modelKey: string, durationSeconds: number = D
 const ENDPOINT = "https://api.atlascloud.ai/api/v1/model/generateVideo";
 const PREDICTION_BASE = "https://api.atlascloud.ai/api/v1/model/prediction";
 
+/**
+ * Thrown when Atlas returns HTTP 402 or an "insufficient balance" body.
+ * Classified as PERMANENT by classifyProviderError (pattern match on
+ * 'atlas_insufficient_balance') — retrying an unfunded account is pointless.
+ * Consumers must surface this to the operator (needs_review / degraded with
+ * the error message visible) rather than auto-failing-over silently.
+ */
+export class AtlasInsufficientBalanceError extends Error {
+  readonly code = 402;
+  constructor(detail?: string) {
+    super(
+      `atlas_insufficient_balance${detail ? `: ${detail}` : ""}`,
+    );
+    this.name = "AtlasInsufficientBalanceError";
+  }
+}
+
 export interface AtlasSubmitBody {
   model: string;
   image: string;
@@ -402,6 +419,11 @@ export interface AtlasSubmitResponse {
 export function parseAtlasSubmitResponse(resp: AtlasSubmitResponse): string {
   if (resp.code !== 200) {
     const msg = resp.message || resp.msg || "unknown error";
+    // 402 is a permanent billing failure — surface it distinctly so consumers
+    // can mark the scene/variant needs_review without silently failing over.
+    if (resp.code === 402 || /insufficient.*balance|payment required/i.test(msg)) {
+      throw new AtlasInsufficientBalanceError(msg);
+    }
     throw new Error(`Atlas submit failed: code=${resp.code} msg=${msg}`);
   }
   const id = resp.data?.id;
@@ -484,6 +506,12 @@ export class AtlasProvider implements IVideoProvider {
       headers: this.authHeaders(),
       body: JSON.stringify(body),
     });
+    // Detect 402 at the HTTP layer before attempting JSON parse — the body
+    // may be HTML or plain-text when the billing gateway rejects the request.
+    if (res.status === 402) {
+      const detail = await res.text().catch(() => "");
+      throw new AtlasInsufficientBalanceError(detail.slice(0, 200) || res.statusText);
+    }
     const parsed = (await res.json()) as AtlasSubmitResponse;
     if (!res.ok) {
       throw new Error(`Atlas API error: HTTP ${res.status} ${res.statusText} — ${JSON.stringify(parsed).slice(0, 200)}`);

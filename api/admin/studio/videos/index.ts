@@ -23,6 +23,7 @@ interface PropertyRow {
 /**
  * GET /api/admin/studio/videos — the LE Video library (spec §1).
  * Lists every property with a delivered video (horizontal OR vertical URL non-null),
+ * plus uploaded hosted video creatives in the default All videos view. Property rows are
  * joined with client name + hero photo + per-property link/view aggregates.
  * Filters: ?client_id= ?q= (case-insensitive address search) ?page= (size 24)
  *   ?folder=<id> (only that folder) ?folder=none (only unfiled)
@@ -36,6 +37,47 @@ interface MetaRow {
   folder_id: string | null;
   archived_at: string | null;
   library_deleted_at: string | null;
+}
+
+interface HostedCreativeRow {
+  id: string;
+  title: string;
+  description: string | null;
+  public_url: string | null;
+  thumbnail_url: string | null;
+  created_at: string;
+  share_token: string;
+  view_count: number | null;
+}
+
+interface LibraryItem {
+  id: string;
+  address: string | null;
+  title?: string;
+  description?: string | null;
+  videos: { horizontal: string | null; vertical: string | null };
+  approved_at: string | null;
+  created_at: string;
+  client: { id: string; name: string } | null;
+  hero_photo_url: string | null;
+  link_count: number;
+  total_views: number;
+  folder_id: string | null;
+  archived_at: string | null;
+  library_source: 'property' | 'upload';
+  share_token?: string;
+  shareUrl?: string;
+  embedUrl?: string;
+  manageUrl?: string;
+}
+
+function publicBase(): string {
+  return (process.env.PUBLIC_SITE_URL ?? process.env.VITE_PUBLIC_SITE_URL ?? 'https://listingelevate.com')
+    .replace(/\/$/, '');
+}
+
+function isMissingOptionalCreativeSurface(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42P01' || error?.code === '42703';
 }
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
@@ -52,6 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
+  // Overfetch properties through the requested page, then merge uploaded hosted
+  // creatives and slice the combined feed so both sources share one sort order.
   let qb = db
     .from('properties')
     .select(
@@ -61,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // At least one video render delivered.
     .or('horizontal_video_url.not.is.null,vertical_video_url.not.is.null')
     .order('created_at', { ascending: false })
-    .range(from, to);
+    .range(0, to);
 
   if (clientId) qb = qb.eq('client_id', clientId);
   // Case-insensitive address search; escape % and _ so user input is literal.
@@ -71,6 +115,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (error) return res.status(500).json({ error: error.message });
 
   const allRows = (data ?? []) as PropertyRow[];
+
+  let hostedRows: HostedCreativeRow[] = [];
+  let hostedTotal = 0;
+  const includeHostedUploads = !clientId && !folder && !archivedOnly;
+  if (includeHostedUploads) {
+    let hostedQb = db
+      .from('creatives')
+      .select('id, title, description, public_url, thumbnail_url, created_at, share_token, view_count', { count: 'exact' })
+      .eq('kind', 'video')
+      .eq('source', 'upload')
+      .order('created_at', { ascending: false })
+      .range(0, to);
+
+    if (q) hostedQb = hostedQb.ilike('title', `%${q.replace(/[%_]/g, '\\$&')}%`);
+
+    const { data: creativeData, error: creativeError, count: creativeCount } = await hostedQb;
+    if (creativeError && !isMissingOptionalCreativeSurface(creativeError)) {
+      return res.status(500).json({ error: creativeError.message });
+    }
+    if (!creativeError) {
+      hostedRows = (creativeData ?? []) as HostedCreativeRow[];
+      hostedTotal = creativeCount ?? hostedRows.length;
+    }
+  }
 
   // Library-management sidecar: folder / archive / soft-delete state lives in
   // video_library_meta (migration 085), a separate table — NOT embeddable in the
@@ -145,8 +213,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const items = await Promise.all(
-    rows.map(async (r) => {
+  const propertyItems = await Promise.all<LibraryItem>(
+    rows.map(async (r): Promise<LibraryItem> => {
       const client = Array.isArray(r.client) ? r.client[0] ?? null : r.client;
       const agg = byProperty.get(r.id) ?? { link_count: 0, total_views: 0, approved_at: null };
       const meta = metaByProperty.get(r.id);
@@ -164,15 +232,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Library-management state from the video_library_meta sidecar (null pre-migration).
         folder_id: meta?.folder_id ?? null,
         archived_at: meta?.archived_at ?? null,
+        library_source: 'property',
       };
     }),
   );
+
+  const base = publicBase();
+  const hostedItems: LibraryItem[] = hostedRows.map((row) => ({
+    id: row.id,
+    address: row.title,
+    title: row.title,
+    description: row.description,
+    videos: { horizontal: row.public_url, vertical: null },
+    approved_at: null,
+    created_at: row.created_at,
+    client: null,
+    hero_photo_url: row.thumbnail_url,
+    link_count: 1,
+    total_views: row.view_count ?? 0,
+    folder_id: null,
+    archived_at: null,
+    library_source: 'upload',
+    share_token: row.share_token,
+    shareUrl: `${base}/v/${row.share_token}`,
+    embedUrl: `${base}/embed/${row.share_token}`,
+    manageUrl: `/dashboard/studio/video/share?creative=${row.id}`,
+  }));
+
+  const items = [...propertyItems, ...hostedItems]
+    .sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0))
+    .slice(from, from + PAGE_SIZE);
 
   // total starts from the DB exact count over properties, less the rows excluded by
   // the JS-side meta filters on THIS page. The cross-page residue (meta exclusions on
   // pages other than the current one) is a known limitation the spec accepts for this
   // sub-project rather than a DB-level filtered count. Floors at the page's item count.
-  const excludedOnPage = allRows.length - items.length;
-  const total = Math.max(items.length, (count ?? items.length) - excludedOnPage);
+  const excludedOnPage = allRows.length - propertyItems.length;
+  const propertyTotal = Math.max(propertyItems.length, (count ?? propertyItems.length) - excludedOnPage);
+  const total = Math.max(items.length, propertyTotal + hostedTotal);
   return res.status(200).json({ items, total, page, pageSize: PAGE_SIZE });
 }

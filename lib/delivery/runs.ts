@@ -3,7 +3,7 @@ import { canAdvance, canRevert, isDeliveryStage, type DeliveryStage } from './st
 import type { DeliveryRunRow, ListingDetails, MlEventRow, MlEventType, SceneVariantRow, DeliveryVideoType } from '../types/operator-studio.js';
 
 const ML_EVENT_TYPES: readonly MlEventType[] = [
-  'reorder', 'regenerate', 'variant_override', 'script_edit',
+  'photo_selection', 'reorder', 'regenerate', 'variant_override', 'script_edit',
   'voice_choice', 'music_choice', 'rating', 'comment', 'details_edit',
   'music_feedback',
 ];

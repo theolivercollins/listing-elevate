@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { DELIVERY_STAGES, nextStage, canAdvance, isDeliveryStage, stageIndex } from './state';
 
 describe('DELIVERY_STAGES', () => {
-  it('is the locked 11-stage sequence', () => {
+  it('is the locked 12-stage sequence with photo Checkpoint A before generation', () => {
     expect(DELIVERY_STAGES).toEqual([
-      'intake', 'scraping', 'generating', 'judging', 'checkpoint_a',
+      'intake', 'scraping', 'photo_selection', 'generating', 'judging', 'checkpoint_a',
       'details', 'voiceover', 'music', 'assembling', 'checkpoint_b', 'delivered',
     ]);
   });
@@ -13,6 +13,8 @@ describe('DELIVERY_STAGES', () => {
 describe('nextStage', () => {
   it('walks the chain', () => {
     expect(nextStage('intake')).toBe('scraping');
+    expect(nextStage('scraping')).toBe('photo_selection');
+    expect(nextStage('photo_selection')).toBe('generating');
     expect(nextStage('checkpoint_a')).toBe('details');
     expect(nextStage('checkpoint_b')).toBe('delivered');
   });
@@ -23,6 +25,8 @@ describe('nextStage', () => {
 
 describe('canAdvance', () => {
   it('allows only single forward steps', () => {
+    expect(canAdvance('scraping', 'photo_selection')).toBe(true);
+    expect(canAdvance('photo_selection', 'generating')).toBe(true);
     expect(canAdvance('judging', 'checkpoint_a')).toBe(true);
     expect(canAdvance('intake', 'generating')).toBe(false); // no skipping
     expect(canAdvance('details', 'checkpoint_a')).toBe(false); // no going back
@@ -35,6 +39,6 @@ describe('isDeliveryStage / stageIndex', () => {
     expect(isDeliveryStage('voiceover')).toBe(true);
     expect(isDeliveryStage('nonsense')).toBe(false);
     expect(stageIndex('intake')).toBe(0);
-    expect(stageIndex('delivered')).toBe(10);
+    expect(stageIndex('delivered')).toBe(11);
   });
 });

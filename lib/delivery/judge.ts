@@ -25,7 +25,9 @@ import { geminiCostCents } from '../providers/gemini-judge.js';
 import { uploadVideoToGeminiFiles, deleteGeminiFile, type UploadedGeminiFile } from '../providers/gemini-files.js';
 import { getRun, getVariantsForRun, advanceRun, updateRun } from './runs.js';
 import { variantPairStatus } from './variants.js';
+import { withJudgeRetry } from '../judge/retry.js';
 import type { SceneVariantRow, DeliveryRunRow } from '../types/operator-studio.js';
+import { stageIndex } from './state.js';
 
 const AB_JUDGE_MODEL_DEFAULT = 'gemini-2.5-flash';
 
@@ -154,7 +156,9 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
   const supabase = getSupabase();
   const run = await getRun(runId);
   if (!run) throw new Error(`runJudgePass: run not found: ${runId}`);
-  if (run.stage !== 'generating' && run.stage !== 'judging') return { ready: true }; // already past
+  if (run.stage !== 'generating' && run.stage !== 'judging') {
+    return stageIndex(run.stage) < stageIndex('generating') ? { ready: false } : { ready: true };
+  }
 
   const variants = await getVariantsForRun(runId);
   const { data: scenes } = await supabase
@@ -224,7 +228,13 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
       judgeError = 'degraded pair — no judging possible';
     } else {
       try {
-        const scores = await judgePair(a!.clip_url!, b!.clip_url!, String(scene.prompt ?? ''), runId, scene.id as string, run.property_id);
+        // withJudgeRetry retries transient Gemini failures (429/5xx/network)
+        // up to 3 times with exponential backoff before letting the error
+        // propagate to the catch block below. Only after all retries are
+        // exhausted (or on a permanent error) does winner default to A.
+        const scores = await withJudgeRetry(() =>
+          judgePair(a!.clip_url!, b!.clip_url!, String(scene.prompt ?? ''), runId, scene.id as string, run.property_id)
+        );
         await supabase.from('scene_variants').update({ gemini_scores: scores.a, updated_at: new Date().toISOString() }).eq('id', a!.id);
         await supabase.from('scene_variants').update({ gemini_scores: scores.b, updated_at: new Date().toISOString() }).eq('id', b!.id);
         winner = pickWinner(scores.a, scores.b);

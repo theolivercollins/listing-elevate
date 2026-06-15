@@ -9,7 +9,7 @@ import {
   getEnabledProviders,
 } from '../providers/router.js';
 import { classifyProviderError } from '../providers/errors.js';
-import { atlasClipCostCents, V1_DEFAULT_SKU } from '../providers/atlas.js';
+import { atlasClipCostCents, V1_DEFAULT_SKU, AtlasInsufficientBalanceError } from '../providers/atlas.js';
 import type { SceneVariantRow } from '../types/operator-studio.js';
 import type { RoomType, CameraMovement, VideoProvider, PipelineMode } from '../types.js';
 
@@ -45,6 +45,15 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
     .select('id, scene_number, photo_id, prompt, duration_seconds, camera_movement, provider, provider_task_id, end_photo_id, end_image_url')
     .eq('property_id', propertyId)
     .not('provider_task_id', 'is', null);
+  const { data: existingVariants } = await supabase
+    .from('scene_variants')
+    .select('scene_id, variant, provider_task_id, clip_url, error')
+    .eq('delivery_run_id', runId);
+  const existingBByScene = new Map(
+    (existingVariants ?? [])
+      .filter((v) => (v as { variant?: string }).variant === 'B')
+      .map((v) => [(v as { scene_id: string }).scene_id, v as SceneVariantRow]),
+  );
 
   let pipelineMode: PipelineMode = 'v1';
   const { data: prop } = await supabase.from('properties').select('pipeline_mode').eq('id', propertyId).maybeSingle();
@@ -56,6 +65,14 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
       delivery_run_id: runId, scene_id: scene.id, variant: 'A',
       provider: scene.provider, provider_task_id: scene.provider_task_id,
     }, { onConflict: 'delivery_run_id,scene_id,variant' });
+
+    const existingB = existingBByScene.get(scene.id as string) ?? null;
+    if (inFlight(existingB) || landed(existingB)) {
+      await log(propertyId, 'generation', 'info',
+        `Scene ${scene.scene_number}: variant B already submitted; skipping duplicate submit`,
+        { delivery_run_id: runId }, scene.id as string);
+      continue;
+    }
 
     // Variant B: an independent second render of the same prompt.
     // Mirrors runGenerationSubmit's failover loop — on a permanent provider
@@ -110,6 +127,20 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
             bSubmitted = true;
             break;
           } catch (err) {
+            // Atlas 402 insufficient-balance: permanent billing failure.
+            // Do NOT failover to another provider (that would silently degrade
+            // quality and hide the account problem from the operator). Surface
+            // it loudly and degrade this variant immediately.
+            if (err instanceof AtlasInsufficientBalanceError) {
+              lastErrMsg = err.message;
+              console.error(
+                `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant B: ${err.message}`,
+              );
+              await log(propertyId, 'generation', 'error',
+                `[atlas] insufficient balance — scene ${scene.scene_number} variant B NOT submitted; operator action required: ${err.message}`,
+                { delivery_run_id: runId, modelKey: decision.modelKey }, scene.id);
+              break;
+            }
             const classified = classifyProviderError(err);
             lastErrMsg = classified.message;
             if (!classified.shouldFailover) {
@@ -440,6 +471,23 @@ export async function regenerateVariant(
         { jobId: genJob.jobId, delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
       return;
     } catch (err) {
+      // Atlas 402 insufficient-balance: permanent billing failure. Do NOT
+      // failover to another provider (that silently degrades quality to e.g.
+      // native-Kling 720p and hides the account problem — the original
+      // quality-drop incident). Surface loudly, mark this variant degraded so
+      // the operator sees it, and re-throw instead of routing to a worse clip.
+      if (err instanceof AtlasInsufficientBalanceError) {
+        console.error(
+          `[atlas] insufficient balance — render NOT silently degraded; scene ${scene.scene_number} variant ${variant} regenerate: ${err.message}`,
+        );
+        await supabase.from('scene_variants')
+          .update({ degraded: true, error: err.message, updated_at: new Date().toISOString() })
+          .eq('delivery_run_id', runId).eq('scene_id', sceneId).eq('variant', variant);
+        await log(scene.property_id, 'generation', 'error',
+          `[atlas] insufficient balance — scene ${scene.scene_number} variant ${variant} regenerate NOT submitted; operator action required: ${err.message}`,
+          { delivery_run_id: runId, modelKey: decision.modelKey }, sceneId);
+        throw err;
+      }
       const classified = classifyProviderError(err);
       lastError = err;
       if (!classified.shouldFailover) {

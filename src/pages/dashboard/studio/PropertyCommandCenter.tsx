@@ -16,6 +16,7 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls } from '@/components/studio/DeliveryStepper';
+import { PhotoCheckpointA } from '@/components/studio/PhotoCheckpointA';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
@@ -558,6 +559,10 @@ const PropertyCommandCenter = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
           <DeliveryStepper stage={bundle.delivery_run.stage} error={bundle.delivery_run.error} />
           {/* Shared Next button — rendered on gate stages where the operator manually advances */}
+          {/* ─── Checkpoint A: photo selection before paid generation ─── */}
+          {bundle.delivery_run.stage === 'photo_selection' && (
+            <PhotoCheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />
+          )}
           {/* ─── Checkpoint A: clip reorder panel ─── */}
           {bundle.delivery_run.stage === 'checkpoint_a' && (
             <CheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />

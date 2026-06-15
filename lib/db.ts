@@ -449,6 +449,7 @@ export async function updatePhotoAnalysis(
     key_features: string[];
     composition?: string | null;
     selected: boolean;
+    photo_selection_rank?: number | null;
     discard_reason: string | null;
     video_viable?: boolean | null;
     suggested_motion?: string | null;
@@ -463,16 +464,35 @@ export async function updatePhotoAnalysis(
   }
 ): Promise<void> {
   const { error } = await getSupabase().from("photos").update(analysis).eq("id", id);
+  if ((error as { code?: string } | null)?.code === "42703" && "photo_selection_rank" in analysis) {
+    const fallback = { ...analysis } as Record<string, unknown>;
+    delete fallback["photo_selection_rank"];
+    const { error: retryError } = await getSupabase().from("photos").update(fallback).eq("id", id);
+    if (retryError) throw retryError;
+    return;
+  }
   if (error) throw error;
 }
 
 export async function getSelectedPhotos(propertyId: string): Promise<Photo[]> {
-  const { data, error } = await getSupabase()
+  const query = getSupabase()
     .from("photos")
     .select()
     .eq("property_id", propertyId)
-    .eq("selected", true)
+    .eq("selected", true);
+  const { data, error } = await query
+    .order("photo_selection_rank", { ascending: true, nullsFirst: false })
     .order("aesthetic_score", { ascending: false });
+  if ((error as { code?: string } | null)?.code === "42703") {
+    const { data: fallbackData, error: fallbackError } = await getSupabase()
+      .from("photos")
+      .select()
+      .eq("property_id", propertyId)
+      .eq("selected", true)
+      .order("aesthetic_score", { ascending: false });
+    if (fallbackError) throw fallbackError;
+    return fallbackData as Photo[];
+  }
   if (error) throw error;
   return data as Photo[];
 }

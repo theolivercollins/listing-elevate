@@ -2,8 +2,8 @@ import { Loader2 } from 'lucide-react';
 import { DELIVERY_STAGES, type DeliveryStage, stageIndex, nextStage, prevStage } from '../../../lib/delivery/state';
 
 const STAGE_LABELS: Record<DeliveryStage, string> = {
-  intake: 'Intake', scraping: 'Scrape', generating: 'Generate', judging: 'Judge',
-  checkpoint_a: 'Checkpoint A', details: 'Details', voiceover: 'Voiceover',
+  intake: 'Intake', scraping: 'Scrape', photo_selection: 'Checkpoint A', generating: 'Generate', judging: 'Judge',
+  checkpoint_a: 'Clip Review', details: 'Details', voiceover: 'Voiceover',
   music: 'Music', assembling: 'Assemble', checkpoint_b: 'Checkpoint B', delivered: 'Delivered',
 };
 
@@ -29,6 +29,13 @@ const RERUNNABLE_STAGES = new Set<DeliveryStage>([
 const PAID_RERUN_STAGES = new Set<DeliveryStage>([
   'voiceover', 'music', 'assembling', 'checkpoint_b',
 ]);
+
+function canBackToStage(stage: DeliveryStage, prev: DeliveryStage | null): prev is DeliveryStage {
+  if (!prev) return false;
+  if (stage === 'photo_selection' && prev === 'scraping') return false;
+  if (stage !== 'photo_selection' && prev === 'photo_selection') return false;
+  return true;
+}
 
 // ─── DeliveryStepper ──────────────────────────────────────────────────────────
 
@@ -140,7 +147,7 @@ export function DeliveryStageControls({
   stage, pending, error, onBack, onRerun,
 }: DeliveryStageControlsProps) {
   const prev = prevStage(stage);
-  const canBack = prev !== null;
+  const canBack = canBackToStage(stage, prev);
   const canRerun = RERUNNABLE_STAGES.has(stage);
 
   if (!canBack && !canRerun) return null;

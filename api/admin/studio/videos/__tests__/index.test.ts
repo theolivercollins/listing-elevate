@@ -53,6 +53,7 @@ function makeDb(opts: {
   properties: { data: unknown; count: number | null; error: unknown };
   previews?: { data: unknown; error: unknown };
   meta?: { data: unknown; error: unknown };
+  creatives?: { data: unknown; count: number | null; error: unknown };
   captured: Captured[];
 }) {
   return {
@@ -63,12 +64,15 @@ function makeDb(opts: {
       const result =
         table === 'properties'
           ? { data: opts.properties.data, count: opts.properties.count, error: opts.properties.error }
+          : table === 'creatives'
+            ? (opts.creatives ?? { data: [], count: 0, error: null })
           : table === 'video_library_meta'
             ? (opts.meta ?? { data: [], error: null })
             : (opts.previews ?? { data: [], error: null });
       const chain: Record<string, unknown> = {};
       chain.select = record('select');
       chain.eq = record('eq');
+      chain.not = record('not');
       chain.or = record('or');
       chain.ilike = record('ilike');
       chain.in = record('in');
@@ -196,7 +200,7 @@ describe('GET /api/admin/studio/videos — listing', () => {
     expect(String(ilike!.args[1])).toContain('Main');
   });
 
-  it('paginates with page size 24 (page 2 → range 24..47)', async () => {
+  it('paginates with page size 24 (page 2 → overfetches range 0..47 before hosted merge)', async () => {
     const captured: Captured[] = [];
     mockGetSupabase.mockReturnValue(makeDb({
       properties: { data: [], count: 100, error: null },
@@ -212,7 +216,72 @@ describe('GET /api/admin/studio/videos — listing', () => {
     const propsQuery = captured.find((c) => c.table === 'properties')!;
     const range = propsQuery.filters.find((f) => f.op === 'range');
     expect(range).toBeDefined();
-    expect(range!.args).toEqual([24, 47]);
+    expect(range!.args).toEqual([0, 47]);
+  });
+
+  it('includes uploaded hosted videos from creatives as first-class library items', async () => {
+    const captured: Captured[] = [];
+    mockGetSupabase.mockReturnValue(makeDb({
+      properties: { data: [], count: 0, error: null },
+      creatives: {
+        data: [
+          {
+            id: 'creative-1',
+            title: 'Aysen hosted master',
+            description: 'Listing Elevate upload',
+            public_url: 'https://stream.example/play.mp4',
+            thumbnail_url: 'https://cdn/thumb.jpg',
+            created_at: '2026-06-12T12:00:00Z',
+            share_token: 'hosted-token',
+            view_count: 42,
+          },
+        ],
+        count: 1,
+        error: null,
+      },
+      captured,
+    }));
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      items: Array<{
+        id: string;
+        title: string;
+        address: string;
+        description: string | null;
+        library_source: string;
+        hero_photo_url: string | null;
+        total_views: number;
+        link_count: number;
+        shareUrl: string;
+        embedUrl: string;
+        manageUrl: string;
+      }>;
+      total: number;
+    };
+    expect(body.total).toBe(1);
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]).toMatchObject({
+      id: 'creative-1',
+      title: 'Aysen hosted master',
+      address: 'Aysen hosted master',
+      description: 'Listing Elevate upload',
+      library_source: 'upload',
+      hero_photo_url: 'https://cdn/thumb.jpg',
+      total_views: 42,
+      link_count: 1,
+      shareUrl: 'https://listingelevate.com/v/hosted-token',
+      embedUrl: 'https://listingelevate.com/embed/hosted-token',
+      manageUrl: '/dashboard/studio/video/share?creative=creative-1',
+    });
+
+    const creativesQuery = captured.find((c) => c.table === 'creatives')!;
+    expect(creativesQuery).toBeDefined();
+    expect(creativesQuery.filters.some((f) => f.op === 'eq' && f.args[0] === 'kind' && f.args[1] === 'video')).toBe(true);
+    expect(creativesQuery.filters.some((f) => f.op === 'eq' && f.args[0] === 'source' && f.args[1] === 'upload')).toBe(true);
   });
 
   it('returns 500 when the properties query errors (not column-missing)', async () => {

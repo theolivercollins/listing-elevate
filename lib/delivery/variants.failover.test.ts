@@ -163,6 +163,7 @@ vi.mock('../db.js', () => ({
 vi.mock('../providers/atlas.js', () => ({
   atlasClipCostCents: vi.fn().mockReturnValue(50),
   V1_DEFAULT_SKU: 'kling-v2-6-pro',
+  AtlasInsufficientBalanceError: class AtlasInsufficientBalanceError extends Error {},
 }));
 
 // ---------------------------------------------------------------------------

@@ -79,6 +79,7 @@ export interface Photo {
   key_features: string[] | null;
   composition: string | null;
   selected: boolean;
+  photo_selection_rank: number | null;
   discard_reason: string | null;
   video_viable: boolean | null;
   suggested_motion: CameraMovement | null;
@@ -95,12 +96,13 @@ export interface Scene {
   duration_seconds: number;
   status: SceneStatus;
   provider: "runway" | "kling" | "atlas";
+  provider_task_id: string | null;
   generation_cost_cents: number;
   generation_time_ms: number;
   clip_url: string | null;
   attempt_count: number;
   qc_verdict: string | null;
-  qc_issues: any;
+  qc_issues: unknown;
   qc_confidence: number;
 }
 
@@ -112,7 +114,7 @@ export interface PipelineLog {
   stage: PipelineStage;
   level: LogLevel;
   message: string;
-  metadata: any;
+  metadata: unknown;
 }
 
 export interface SceneRating {

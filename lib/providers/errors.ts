@@ -75,7 +75,8 @@ export function classifyProviderError(err: unknown): ClassifiedError {
   }
 
   // Keyword fallbacks for SDKs that don't expose status cleanly.
-  if (/unauthor|forbidden|invalid api key|api key.*(missing|invalid)|quota exceeded|insufficient.*credit|payment required|billing/i.test(message)) {
+  // atlas_insufficient_balance is a permanent billing failure — retrying is pointless.
+  if (/unauthor|forbidden|invalid api key|api key.*(missing|invalid)|quota exceeded|insufficient.*(credit|balance)|atlas_insufficient_balance|payment required|billing/i.test(message)) {
     return { kind: "permanent", status, message, retryable: false, shouldFailover: true };
   }
   if (/rate.?limit|too many|concurrency|capacity|slots.*full/i.test(message)) {

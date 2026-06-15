@@ -18,8 +18,9 @@ export function listingDetailsFromRedfin(r: RedfinScrapeResult | null): ListingD
 /**
  * Stage side effect for 'scraping'. Never a blocker: a miss or error leaves
  * listing_details empty (amber manual-entry state in the UI), notes the
- * error on the run, and STILL advances to 'generating' so the pipeline
- * (kicked in parallel by StudioNew) is never gated on Redfin.
+ * error on the run. The pipeline analysis stage advances to 'photo_selection'
+ * once Gemini has actually selected photos, so operators never see an empty
+ * photo checkpoint just because the scrape finished first.
  * scrapeRedfinByAddress records its own apify cost_event.
  *
  * NOTE (Task 16): The details UI keys off empty listing_details for the amber
@@ -47,10 +48,7 @@ export async function runScrapeStage(runId: string): Promise<void> {
     scrapeError = `Redfin scrape failed: ${msg} — enter details manually.`;
   }
 
-  // Advance regardless of scrape outcome (resumable; details editable later).
-  const after = await getRun(runId);
-  if (after?.stage === 'scraping') await advanceRun(runId, 'generating');
-
-  // Set error AFTER advance so it is not wiped by advanceRun's error:null reset.
+  // If intake was advanced to scraping above, write this after that CAS update
+  // so advanceRun's error:null reset does not clobber the scrape message.
   if (scrapeError) await setRunError(runId, scrapeError);
 }

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import {
   getRun, getVariantsForRun, getEventsForRun, getPairedSceneIds,
-  advanceRun, clearRunError, revertRun,
+  advanceRun, clearRunError, revertRun, setRunError,
 } from '../../../../lib/delivery/runs.js';
 import { prevStage, isDeliveryStage, type DeliveryStage } from '../../../../lib/delivery/state.js';
 
@@ -216,7 +216,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // model picker (kling-v3-pro default / seedance-pair opt-in).
         getPairedSceneIds(run.property_id),
       ]);
-      return res.status(200).json({ run, variants, events, paired_scene_ids: pairedSceneIds });
+      let photoSelection: unknown = null;
+      if (run.stage === 'photo_selection') {
+        const { getPhotoSelectionForRun } = await import('../../../../lib/delivery/photo-selection.js');
+        photoSelection = await getPhotoSelectionForRun(runId);
+      }
+      return res.status(200).json({ run, variants, events, paired_scene_ids: pairedSceneIds, photo_selection: photoSelection });
     }
 
     if (req.method === 'POST') {
@@ -248,6 +253,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const updated = await updateRun(runId, { scene_order: after });
           await recordMlEvent(runId, 'reorder', { before, after });
           return res.status(200).json({ run: updated });
+        }
+        case 'approve_photo_selection': {
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+          if (run.stage !== 'photo_selection') {
+            return res.status(400).json({ error: `approve_photo_selection requires stage photo_selection, got ${run.stage}` });
+          }
+          const photoOrder = Array.isArray(req.body?.photo_order)
+            ? (req.body.photo_order as unknown[]).map(String)
+            : [];
+          const rejected = Array.isArray(req.body?.rejected)
+            ? (req.body.rejected as Array<{ photo_id?: unknown; category?: unknown; reason?: unknown }>).map((r) => ({
+                photo_id: String(r.photo_id ?? ''),
+                category: r.category == null ? null : String(r.category),
+                reason: r.reason == null ? null : String(r.reason),
+              })).filter((r) => r.photo_id)
+            : [];
+          const accepted = Array.isArray(req.body?.accepted)
+            ? (req.body.accepted as Array<{ photo_id?: unknown; category?: unknown; note?: unknown }>).map((a) => ({
+                photo_id: String(a.photo_id ?? ''),
+                category: a.category == null ? null : String(a.category),
+                note: a.note == null ? null : String(a.note),
+              })).filter((a) => a.photo_id)
+            : [];
+          const { applyPhotoSelectionForRun, normalizePhotoFeedbackCategory } = await import('../../../../lib/delivery/photo-selection.js');
+          const result = await applyPhotoSelectionForRun(runId, {
+            photo_order: photoOrder,
+            accepted: accepted.map((a) => ({
+              photo_id: a.photo_id,
+              category: normalizePhotoFeedbackCategory(a.category),
+              note: a.note,
+            })),
+            rejected: rejected.map((r) => ({
+              photo_id: r.photo_id,
+              category: normalizePhotoFeedbackCategory(r.category),
+              reason: r.reason,
+            })),
+          });
+          const advanced = await getRun(runId);
+          const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+          try {
+            await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            await setRunError(runId, `Photo selection approved, but generation resume failed: ${msg}`);
+            const failedRun = await getRun(runId);
+            return res.status(200).json({
+              run: failedRun ?? advanced,
+              selected_photo_ids: result.selected_photo_ids,
+              resume_error: 'generation_resume_failed',
+              message: msg,
+            });
+          }
+          return res.status(200).json({ run: advanced, selected_photo_ids: result.selected_photo_ids });
         }
         case 'flip_winner': {
           const sceneId = String(req.body?.scene_id ?? '');
@@ -497,6 +556,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             targetStage = prev;
           }
 
+          if (currentStage === 'photo_selection' && targetStage === 'scraping') {
+            return res.status(400).json({ error: 'photo selection cannot go back to scraping; rerun the intake/scrape flow from the order if needed' });
+          }
+          if (targetStage === 'photo_selection' && currentStage !== 'photo_selection') {
+            return res.status(400).json({ error: 'photo selection is locked after generation starts; create a new run to change source photos' });
+          }
+
           const revertedRun = await revertRun(runId, targetStage);
           return res.status(200).json({ run: revertedRun });
         }
@@ -515,12 +581,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(200).json({ run: updated });
             }
             case 'generating': {
-              // Generation is asynchronous polling — the pipeline re-polls
-              // automatically. Operators who want fresh clips should go back
-              // to checkpoint_a and regenerate individual scenes from there.
-              return res.status(400).json({
-                error: 'generation re-runs automatically; use Back to checkpoint_a to regenerate a scene',
-              });
+              const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+              try {
+                await continuePipelineAfterPhotoSelection(rerunRun.property_id, {
+                  order_mode: 'operator',
+                  delivery_run_id: runId,
+                  rerun_stage: 'generating',
+                });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await setRunError(runId, `Generation resume failed: ${msg}`);
+                return res.status(502).json({ error: 'generation_resume_failed', message: msg });
+              }
+              const updated = await getRun(runId);
+              return res.status(200).json({ run: updated });
             }
             case 'judging': {
               const { runJudgePass } = await import('../../../../lib/delivery/judge.js');
@@ -576,6 +650,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(200).json({ run: updated });
             }
             case 'intake':
+            case 'photo_selection':
             case 'details':
             case 'delivered': {
               return res.status(400).json({ error: 'nothing to re-run at this stage' });

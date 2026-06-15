@@ -22,9 +22,19 @@ const fakeDb = {
   },
 };
 
+// withJudgeRetry mock — hoisted so it's available when vi.mock factory runs.
+// By default it passes through to fn() so existing tests are unaffected.
+const { mockWithJudgeRetry } = vi.hoisted(() => {
+  return { mockWithJudgeRetry: vi.fn(<T>(fn: () => Promise<T>) => fn()) };
+});
+vi.mock('../judge/retry', () => ({
+  withJudgeRetry: (...args: Parameters<typeof mockWithJudgeRetry>) => mockWithJudgeRetry(...args),
+}));
+
 const mockGenerateContent = vi.fn();
 const mockUpload = vi.fn();
 const mockDeleteFile = vi.fn();
+const mockGetRun = vi.fn().mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' });
 
 vi.mock('../client', () => ({ getSupabase: () => fakeDb }));
 vi.mock('../db', () => ({
@@ -43,7 +53,7 @@ vi.mock('@google/genai', () => ({
   },
 }));
 vi.mock('./runs', () => ({
-  getRun: vi.fn().mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' }),
+  getRun: (...a: unknown[]) => mockGetRun(...a),
   getVariantsForRun: (...a: unknown[]) => mockGetVariants(...a),
   advanceRun: vi.fn().mockResolvedValue(undefined),
   updateRun: vi.fn().mockResolvedValue(undefined),
@@ -111,12 +121,21 @@ beforeEach(() => {
   vi.clearAllMocks();
   updates.length = 0;
   scenesData = [sceneRow];
+  mockGetRun.mockResolvedValue({ id: 'r1', stage: 'judging', property_id: 'p1' });
   process.env.GEMINI_API_KEY = 'test-key';
   mockUpload.mockResolvedValue({ name: 'files/test', uri: 'https://generativelanguage.googleapis.com/v1beta/files/test', mimeType: 'video/mp4' });
   mockDeleteFile.mockResolvedValue(undefined);
 });
 
 describe('runJudgePass winner_source marking', () => {
+  it('returns ready:false before generation starts', async () => {
+    mockGetRun.mockResolvedValue({ id: 'r1', stage: 'photo_selection', property_id: 'p1' });
+
+    await expect(runJudgePass('r1')).resolves.toEqual({ ready: false });
+
+    expect(mockGetVariants).not.toHaveBeenCalled();
+  });
+
   it('judge failure (unparseable response) -> winner_source=default + judge_error in gemini_scores', async () => {
     mockGetVariants.mockResolvedValue([
       variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),
@@ -207,5 +226,89 @@ describe('runJudgePass winner_source marking', () => {
     expect(wins).toHaveLength(1);
     expect(wins[0].patch.winner_source).toBe('default');
     expect(wins[0].patch.gemini_scores).toEqual({ judge_error: expect.stringMatching(/Files upload/) });
+  });
+});
+
+// ── withJudgeRetry integration ──
+//
+// These tests verify that runJudgePass wraps judgePair with withJudgeRetry so
+// that transient Gemini failures are retried before the default-A fallback fires.
+
+describe('runJudgePass withJudgeRetry integration', () => {
+  // vi.clearAllMocks() in the outer beforeEach resets mockWithJudgeRetry;
+  // restore the pass-through default so non-override tests still work.
+  beforeEach(() => {
+    mockWithJudgeRetry.mockImplementation(<T>(fn: () => Promise<T>) => fn());
+  });
+
+  it('invokes withJudgeRetry for each ready pair — transient retry path is wired', async () => {
+    mockGetVariants.mockResolvedValue([
+      variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),
+      variantRow({ id: 'vb', variant: 'B', clip_url: 'https://x/b.mp4' }),
+    ]);
+    mockGenerateContent.mockResolvedValue({
+      text: JSON.stringify({ a: s(4, 4, 4, 4), b: s(3, 3, 3, 3) }),
+    });
+
+    await runJudgePass('r1');
+
+    // withJudgeRetry must have been called at least once (for the pair above).
+    expect(mockWithJudgeRetry).toHaveBeenCalled();
+  });
+
+  it('a transient judgePair error retries via withJudgeRetry and a successful retry yields winner_source=gemini', async () => {
+    mockGetVariants.mockResolvedValue([
+      variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),
+      variantRow({ id: 'vb', variant: 'B', clip_url: 'https://x/b.mp4' }),
+    ]);
+
+    // First upload attempt (first call) raises a transient error;
+    // second call (the retry pass-through) returns valid scores.
+    let callCount = 0;
+    mockGenerateContent.mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) throw new Error('HTTP 503 UNAVAILABLE');
+      return Promise.resolve({ text: JSON.stringify({ a: s(2, 2, 2, 2), b: s(5, 5, 5, 5) }) });
+    });
+
+    // Let withJudgeRetry actually execute the real retry logic by restoring
+    // the real implementation for this test.
+    mockWithJudgeRetry.mockImplementationOnce(async <T>(fn: () => Promise<T>) => {
+      // Simulate one retry: call fn twice — first throws, second succeeds.
+      try {
+        return await fn();
+      } catch {
+        return await fn(); // one retry
+      }
+    });
+
+    const { ready } = await runJudgePass('r1');
+    expect(ready).toBe(true);
+
+    // After the simulated retry, B should win (higher scores) and winner_source=gemini.
+    const wins = winnerUpdates();
+    expect(wins).toHaveLength(1);
+    expect(wins[0].id).toBe('vb');
+    expect(wins[0].patch.winner_source).toBe('gemini');
+    expect(wins[0].patch.gemini_scores).toBeUndefined();
+  });
+
+  it('when withJudgeRetry exhausts all retries (permanent error), runJudgePass defaults to winner=A with winner_source=default', async () => {
+    mockGetVariants.mockResolvedValue([
+      variantRow({ id: 'va', variant: 'A', clip_url: 'https://x/a.mp4' }),
+      variantRow({ id: 'vb', variant: 'B', clip_url: 'https://x/b.mp4' }),
+    ]);
+
+    // withJudgeRetry re-throws after exhaustion — simulate that by throwing.
+    mockWithJudgeRetry.mockRejectedValueOnce(new Error('Gemini RESOURCE_EXHAUSTED after all retries'));
+
+    const { ready } = await runJudgePass('r1');
+    expect(ready).toBe(true);
+
+    const wins = winnerUpdates();
+    expect(wins).toHaveLength(1);
+    expect(wins[0].id).toBe('va'); // defaults to A on exhaustion
+    expect(wins[0].patch.winner_source).toBe('default');
+    expect((wins[0].patch.gemini_scores as Record<string, unknown>).judge_error).toMatch(/RESOURCE_EXHAUSTED/);
   });
 });

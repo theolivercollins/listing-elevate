@@ -26,6 +26,9 @@ const mockRunAssembleStage = vi.fn();
 const mockRevertRun = vi.fn();
 const mockRunScrapeStage = vi.fn();
 const mockRunJudgePass = vi.fn();
+const mockGetPhotoSelectionForRun = vi.fn();
+const mockApplyPhotoSelectionForRun = vi.fn();
+const mockContinuePipelineAfterPhotoSelection = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -46,6 +49,14 @@ vi.mock('../../../../../lib/delivery/scrape', () => ({
 }));
 vi.mock('../../../../../lib/delivery/judge', () => ({
   runJudgePass: (...a: unknown[]) => mockRunJudgePass(...a),
+}));
+vi.mock('../../../../../lib/delivery/photo-selection', () => ({
+  getPhotoSelectionForRun: (...a: unknown[]) => mockGetPhotoSelectionForRun(...a),
+  applyPhotoSelectionForRun: (...a: unknown[]) => mockApplyPhotoSelectionForRun(...a),
+  normalizePhotoFeedbackCategory: (value: unknown) => value,
+}));
+vi.mock('../../../../../lib/pipeline', () => ({
+  continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipelineAfterPhotoSelection(...a),
 }));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
@@ -156,6 +167,9 @@ beforeEach(() => {
   mockRevertRun.mockResolvedValue({ ...run, stage: 'judging' });
   mockRunScrapeStage.mockResolvedValue(undefined);
   mockRunJudgePass.mockResolvedValue({ ready: true });
+  mockGetPhotoSelectionForRun.mockResolvedValue({ photos: [], selected_photo_ids: [] });
+  mockApplyPhotoSelectionForRun.mockResolvedValue({ selected_photo_ids: ['photo-2', 'photo-1'] });
+  mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -173,6 +187,27 @@ describe('GET /api/admin/studio/delivery/[runId]', () => {
     expect(res._status).toBe(200);
     expect(mockGetPairedSceneIds).toHaveBeenCalledWith('p1');
     expect((res._body as { paired_scene_ids: string[] }).paired_scene_ids).toEqual(['s-paired-1', 's-paired-2']);
+  });
+
+  it('GET bundle exposes photo_selection when the run is at photo Checkpoint A', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection' });
+    mockGetPhotoSelectionForRun.mockResolvedValue({
+      selected_photo_ids: ['photo-2', 'photo-1'],
+      photos: [
+        { id: 'photo-1', file_url: 'https://cdn.test/kitchen.jpg', selected: true, room_type: 'kitchen', aesthetic_score: 8.4, analysis_provider: 'google', discard_reason: null },
+        { id: 'photo-2', file_url: 'https://cdn.test/front.jpg', selected: true, room_type: 'exterior_front', aesthetic_score: 9.1, analysis_provider: 'google', discard_reason: null },
+        { id: 'photo-3', file_url: 'https://cdn.test/laundry.jpg', selected: false, room_type: 'laundry', aesthetic_score: 7.8, analysis_provider: 'google', discard_reason: 'Not selected' },
+      ],
+    });
+
+    const res = makeRes();
+    await handler({ method: 'GET', query: { runId: 'r1' }, headers: {}, body: {} } as unknown as VercelRequest, res as unknown as VercelResponse);
+
+    expect(res._status).toBe(200);
+    expect(mockGetPhotoSelectionForRun).toHaveBeenCalledWith('r1');
+    expect((res._body as { photo_selection: unknown }).photo_selection).toEqual(expect.objectContaining({
+      selected_photo_ids: ['photo-2', 'photo-1'],
+    }));
   });
 
   it('GET 404s on unknown run', async () => {
@@ -233,6 +268,96 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(400);
+  });
+
+  it('POST approve_photo_selection saves ordered photo picks, records learning signal, and continues generation', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection', scene_order: ['photo-1', 'photo-3'] });
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST',
+        query: { runId: 'r1' },
+        headers: {},
+        body: {
+          action: 'approve_photo_selection',
+          photo_order: ['photo-2', 'photo-1'],
+          accepted: [
+            { photo_id: 'photo-2', category: 'primary_room', note: null },
+            { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
+          ],
+          rejected: [{
+            photo_id: 'photo-3',
+            category: 'low_value_room',
+            reason: 'Laundry room is not useful for this listing video',
+          }],
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockApplyPhotoSelectionForRun).toHaveBeenCalledWith('r1', {
+      photo_order: ['photo-2', 'photo-1'],
+      accepted: [
+        { photo_id: 'photo-2', category: 'primary_room', note: null },
+        { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
+      ],
+      rejected: [{
+        photo_id: 'photo-3',
+        category: 'low_value_room',
+        reason: 'Laundry room is not useful for this listing video',
+      }],
+    });
+    expect(mockAdvanceRun).not.toHaveBeenCalledWith('r1', 'generating');
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
+      order_mode: 'operator',
+      delivery_run_id: 'r1',
+    });
+  });
+
+  it('POST approve_photo_selection records a run error and returns the updated run when generation resume fails', async () => {
+    mockGetRun
+      .mockResolvedValueOnce({ ...run, stage: 'photo_selection', scene_order: ['photo-1'] })
+      .mockResolvedValueOnce({ ...run, stage: 'generating', scene_order: ['photo-1'] })
+      .mockResolvedValueOnce({ ...run, stage: 'generating', error_message: 'Photo selection approved, but generation resume failed: provider timeout' });
+    mockContinuePipelineAfterPhotoSelection.mockRejectedValueOnce(new Error('provider timeout'));
+    const res = makeRes();
+    await handler(
+      {
+        method: 'POST',
+        query: { runId: 'r1' },
+        headers: {},
+        body: {
+          action: 'approve_photo_selection',
+          photo_order: ['photo-1'],
+          rejected: [],
+        },
+      } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('generation resume failed'));
+    expect(res._body).toMatchObject({
+      resume_error: 'generation_resume_failed',
+      message: 'provider timeout',
+      selected_photo_ids: ['photo-2', 'photo-1'],
+      run: { stage: 'generating' },
+    });
+  });
+
+  it('POST approve_photo_selection only works from photo_selection stage', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'checkpoint_a' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'approve_photo_selection', photo_order: ['photo-1'] } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/photo_selection/);
+    expect(mockApplyPhotoSelectionForRun).not.toHaveBeenCalled();
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
   });
 
   it('POST flip_winner -> 200 and calls recordMlEvent with variant_override', async () => {
@@ -1377,6 +1502,30 @@ describe('POST back (T-back)', () => {
     expect(mockRevertRun).toHaveBeenCalledWith('r1', 'scraping');
   });
 
+  it('back from photo_selection is blocked so the run cannot strand in scraping', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/photo selection cannot go back to scraping/i);
+    expect(mockRevertRun).not.toHaveBeenCalled();
+  });
+
+  it('back from generating to photo_selection is blocked because generation artifacts may exist', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'back' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/photo selection is locked after generation starts/i);
+    expect(mockRevertRun).not.toHaveBeenCalled();
+  });
+
   it('back at the first stage (intake) returns 400 "already at the first step"', async () => {
     mockGetRun.mockResolvedValue({ ...run, stage: 'intake' });
     const res = makeRes();
@@ -1536,6 +1685,17 @@ describe('POST rerun (T-rerun)', () => {
     expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
   });
 
+  it('rerun at photo_selection → 400 "nothing to re-run"', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
+  });
+
   it('rerun at delivered → 400 "nothing to re-run"', async () => {
     mockGetRun.mockResolvedValue({ ...run, stage: 'delivered' });
     const res = makeRes();
@@ -1547,15 +1707,19 @@ describe('POST rerun (T-rerun)', () => {
     expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
   });
 
-  it('rerun at generating → 400 with guidance to use Back', async () => {
+  it('rerun at generating resumes the idempotent generation pipeline', async () => {
     mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
     const res = makeRes();
     await handler(
       { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
       res as unknown as VercelResponse,
     );
-    expect(res._status).toBe(400);
-    expect((res._body as { error: string }).error).toMatch(/re-runs automatically/i);
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
+      order_mode: 'operator',
+      delivery_run_id: 'r1',
+      rerun_stage: 'generating',
+    });
   });
 
   it('rerun → 404 on unknown run', async () => {
