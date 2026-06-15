@@ -55,12 +55,24 @@ function plural(value: number | null | undefined, singular: string, pluralLabel 
   return `${value.toLocaleString("en-US")} ${label}`;
 }
 
+function finishSentence(text: string): string {
+  const body = clean(text)
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .replace(/([.!?]){2,}$/g, "$1")
+    .replace(/[.,;:]+$/g, "")
+    .replace(/\b(?:and|or|with|including)\s*$/i, "")
+    .replace(/[.,;:]+$/g, "")
+    .trim();
+  if (!body) return "";
+  return /[.!?]$/.test(body) ? body : `${body}.`;
+}
+
 function trimSentence(text: string, maxLength: number): string {
   const compact = clean(text);
-  if (compact.length <= maxLength) return compact;
+  if (compact.length <= maxLength) return finishSentence(compact);
   const truncated = compact.slice(0, maxLength - 1);
   const lastSpace = truncated.lastIndexOf(" ");
-  return `${truncated.slice(0, lastSpace > 80 ? lastSpace : truncated.length).replace(/[.,;:]+$/g, "")}.`;
+  return finishSentence(truncated.slice(0, lastSpace > 80 ? lastSpace : truncated.length));
 }
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
@@ -344,7 +356,7 @@ export function buildListingSeoArtifact(source: ListingSeoSource): ListingSeoArt
     155,
   );
   const longDescription = trimSentence(
-    `${summary}. Watch the Listing Elevate film, review the property highlights, and use the structured listing details for tour planning or market research.`,
+    `${summary.replace(/[.!?]+$/g, "")}. Watch the Listing Elevate film, review the property highlights, and use the structured listing details for tour planning or market research.`,
     520,
   );
   const faqs = buildFaqs(source, address);

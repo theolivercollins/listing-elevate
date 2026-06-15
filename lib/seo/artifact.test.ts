@@ -112,4 +112,30 @@ describe("listing SEO artifact", () => {
     expect(markdown).toContain("## Q&A");
     expect(markdown).not.toMatch(/<script/i);
   });
+
+  it("does not emit dangling conjunctions or double punctuation in deterministic copy", () => {
+    const noisySource: ListingSeoSource = {
+      ...source,
+      photos: [
+        {
+          file_url: "https://cdn.example.com/aerial.jpg",
+          room_type: "aerial",
+          key_features: [
+            "red tile roofed home with screened-in pool",
+            "interconnected canal system with boat docks",
+            "lush green lawns and palm tree landscaping",
+          ],
+          selected: true,
+          quality_score: 0.99,
+        },
+      ],
+    };
+
+    const artifact = buildListingSeoArtifact(noisySource);
+
+    expect(artifact.summary).not.toMatch(/\b(and|or|with|including)\.$/i);
+    expect(artifact.summary).not.toContain("..");
+    expect(artifact.long_description).not.toContain("..");
+    expect(artifact.meta_description).not.toMatch(/\b(and|or|with|including)\.$/i);
+  });
 });
