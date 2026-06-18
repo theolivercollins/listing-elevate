@@ -1,7 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { reapStuckScenes, reapStuckDeliveryRuns, reapStuckGeneratingProperties } from '../../lib/pipeline/stuck-reaper.js';
+import { reapStuckScenes, reapStuckDeliveryRuns, reapStuckGeneratingProperties, reapStuckGeneratingDeliveryRuns } from '../../lib/pipeline/stuck-reaper.js';
 
 export const maxDuration = 300;
+
+/**
+ * passingThreshold — minimum number of qc_pass scenes required for a property
+ * to proceed to assembly (rather than being flagged needs_review).
+ *
+ * Uses ceil(totalScenes * 0.8) so short videos (e.g. 4-scene 15s clips) are
+ * not wrongly penalised by a hardcoded scene count that was tuned for longer
+ * videos. Examples: 4 scenes → 4, 5 scenes → 4, 6 scenes → 5, 8 scenes → 7.
+ *
+ * Pure; no I/O.
+ */
+export function passingThreshold(totalScenes: number): number {
+  return Math.ceil(totalScenes * 0.8);
+}
 
 /**
  * buildCorrectiveSuffix — turn a judge's hallucination_flags into corrective
@@ -43,6 +57,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await reapStuckScenes(db);
       await reapStuckDeliveryRuns(db);
       await reapStuckGeneratingProperties(db);
+      await reapStuckGeneratingDeliveryRuns(db);
     } catch (reaperErr) {
       console.error('[poll-scenes] reaper threw unexpectedly:', reaperErr);
     }
@@ -459,7 +474,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const passed = scenes.filter(s => s.status === 'qc_pass').length;
       const needsReview = scenes.filter(s => s.status === 'needs_review').length;
-      const finalStatus = needsReview > 0 && passed < 6 ? 'needs_review' : 'complete';
+      // Threshold is scene-count-aware: pass when passed >= ceil(totalScenes * 0.8).
+      // A hardcoded 6 was wrong for short (15s / ~4-scene) videos — any needs_review
+      // scene would wrongly force the whole property to needs_review even when all
+      // 4 scenes passed. passingThreshold() derives the minimum from the actual count.
+      const finalStatus = needsReview > 0 && passed < passingThreshold(scenes.length) ? 'needs_review' : 'complete';
 
       // Only flip if the property is still in a non-terminal state — don't
       // clobber an already-completed property. 'assembling' is also skipped
