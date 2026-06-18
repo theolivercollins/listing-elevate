@@ -96,6 +96,20 @@ export const GENERATING_STUCK_MINUTES = 20;
  */
 export const GENERATING_MAX_AGE_MINUTES = 60;
 
+/**
+ * Minutes a delivery_run may sit at stage='generating' before its scenes are
+ * inspected for a genuinely-dead generation. Covers the post-Checkpoint-A
+ * decouple failure modes that leave the run pinned at 'generating' with
+ * error=NULL: (1) the continue hop never landed / was killed before any scene
+ * was inserted, (2) the director returned no parseable script (zero scenes),
+ * (3) Atlas 402 / all providers permanent-fail at submit (every scene bounced
+ * to needs_review with no clip). 15m is long enough that a healthy in-progress
+ * render — whose scenes are pending/generating with task_ids — is never
+ * touched; those are caught (and recovered) by reapStuckScenes /
+ * reapStuckGeneratingProperties instead.
+ */
+export const DELIVERY_GENERATING_STUCK_MINUTES = 15;
+
 // ── Return type ──
 
 export interface ReapResult {
@@ -614,6 +628,140 @@ export async function reapStuckGeneratingProperties(
     return { reaped, ids };
   } catch (err) {
     console.error("[stuck-reaper] reapStuckGeneratingProperties unexpected error:", err);
+    return { reaped: 0, ids: [] };
+  }
+}
+
+/**
+ * Reap delivery_runs stuck at stage='generating' that are genuinely dead.
+ *
+ * After Checkpoint A approval, the post-approval compute runs in a decoupled
+ * /api/pipeline/continue function. Three failure shapes leave the run pinned at
+ * stage='generating' with error=NULL — visually identical to a healthy render,
+ * with no autonomous recovery (the existing reapStuckDeliveryRuns covers only
+ * intake/scraping; reapStuckGeneratingProperties only re-fires never-submitted
+ * scenes for a PROPERTY in 'generating'):
+ *   (1) the continue hop never landed / was killed before any scene insert,
+ *   (2) the director returned no parseable script (zero scenes inserted),
+ *   (3) Atlas 402 / all providers permanent-fail (every scene bounced to
+ *       needs_review with no clip).
+ *
+ * Death test (conservative — only annotate, never re-fire a paid render here):
+ *   - ZERO scenes exist for the property, OR
+ *   - scenes exist AND EVERY scene is status='needs_review' with clip_url NULL.
+ * Any other shape — a single pending/generating/qc_pass scene, OR any scene
+ * with a clip_url — means the render is still progressing (or partially
+ * succeeded) and is LEFT ALONE. This is the critical no-false-positive guard:
+ * a healthy in-progress run whose scenes carry task_ids is never touched.
+ *
+ * Recovery action: setRunError with an actionable message so DeliveryStepper
+ * surfaces it and the operator (or a future auto-rerun) can retry. We do NOT
+ * change stage or re-submit — no paid provider call is made by this reaper, so
+ * the non-prod write guard is strictly about not annotating shared rows on
+ * preview/dev (kept for parity with the other reapers in this file).
+ *
+ * Age measured from updated_at (delivery_runs always bumps it on writes), so a
+ * run that just entered 'generating' is not eligible for
+ * DELIVERY_GENERATING_STUCK_MINUTES.
+ *
+ * @param db   Supabase client (service-role).
+ * @param now  Reference timestamp; pass explicitly so tests are deterministic.
+ */
+export async function reapStuckGeneratingDeliveryRuns(
+  db: SupabaseClient,
+  now: Date = new Date(),
+): Promise<ReapResult> {
+  // Non-prod write guard — all 3 envs share one Supabase, so we must not
+  // annotate shared delivery_run rows on preview/dev. Mirror of the other
+  // reapers' guard in this file.
+  const canWrite =
+    process.env.VERCEL_ENV === "production" ||
+    process.env.LE_ALLOW_NONPROD_WRITES === "true";
+  if (!canWrite) {
+    return { reaped: 0, ids: [] };
+  }
+
+  try {
+    const stuckCutoff = cutoffIso(now, DELIVERY_GENERATING_STUCK_MINUTES);
+
+    // Find runs stuck at 'generating' with no error yet, old enough to inspect.
+    const { data: candidates, error: selErr } = await db
+      .from("delivery_runs")
+      .select("id, property_id, updated_at")
+      .eq("stage", "generating")
+      .is("error", null)
+      .lt("updated_at", stuckCutoff);
+
+    if (selErr) {
+      console.error("[stuck-reaper] reapStuckGeneratingDeliveryRuns select failed:", selErr.message);
+      return { reaped: 0, ids: [] };
+    }
+
+    const rows = (candidates ?? []) as Array<{ id: string; property_id: string; updated_at: string }>;
+    if (rows.length === 0) return { reaped: 0, ids: [] };
+
+    // setRunError lives in lib/delivery/runs.js; dynamic-import so tests can
+    // mock it independently of the static module graph.
+    const { setRunError } = await import("../delivery/runs.js");
+
+    let reaped = 0;
+    const ids: string[] = [];
+
+    for (const row of rows) {
+      try {
+        // Inspect this property's scenes. We need status + clip_url to classify.
+        const { data: sceneData, error: sceneSelErr } = await db
+          .from("scenes")
+          .select("status, clip_url")
+          .eq("property_id", row.property_id);
+
+        if (sceneSelErr) {
+          console.warn(
+            `[stuck-reaper] reapStuckGeneratingDeliveryRuns scene select failed for property ${row.property_id}:`,
+            sceneSelErr.message,
+          );
+          continue;
+        }
+
+        const scenes = (sceneData ?? []) as Array<{ status: string; clip_url: string | null }>;
+
+        // Death test — see the function doc. Default to NOT dead.
+        const isDead =
+          scenes.length === 0 ||
+          scenes.every((s) => s.status === "needs_review" && s.clip_url == null);
+
+        if (!isDead) {
+          // Still progressing or partially succeeded — leave it alone. This is
+          // the no-false-positive guard for healthy in-progress runs.
+          continue;
+        }
+
+        const reason =
+          scenes.length === 0
+            ? "generation stalled — no scenes were created (director or submit failed); rerun to retry"
+            : "generation stalled — all scenes need review with no clip (providers failed); rerun to retry";
+
+        // setRunError bumps updated_at, so the same run won't be re-annotated
+        // on the next cron tick. If setRunError itself throws, the per-row
+        // catch below logs it; we never re-annotate a healthy run.
+        await setRunError(row.id, reason);
+        console.warn(
+          `[stuck-reaper] delivery_run ${row.id} dead at 'generating' (${scenes.length} scene(s)) — annotated: ${reason}`,
+        );
+
+        reaped++;
+        ids.push(row.id);
+      } catch (rowErr) {
+        console.warn(
+          `[stuck-reaper] reapStuckGeneratingDeliveryRuns failed for run ${row.id}:`,
+          rowErr instanceof Error ? rowErr.message : String(rowErr),
+        );
+      }
+    }
+
+    return { reaped, ids };
+  } catch (err) {
+    console.error("[stuck-reaper] reapStuckGeneratingDeliveryRuns unexpected error:", err);
     return { reaped: 0, ids: [] };
   }
 }

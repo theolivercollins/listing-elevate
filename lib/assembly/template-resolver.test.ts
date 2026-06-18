@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { resolveTemplateId } from "./template-resolver.js";
+import { resolveTemplateId, isTemplateConfigured } from "./template-resolver.js";
 
 const ENV_VARS = [
   "CREATOMATE_TEMPLATE_ID_JUST_LISTED",
@@ -165,5 +165,108 @@ describe("resolveTemplateId", () => {
         aspectRatio: "9:16",
       }),
     ).toBe("vert-override");
+  });
+});
+
+describe("isTemplateConfigured", () => {
+  const snapshot: Record<string, string | undefined> = {};
+  const VARS_UNDER_TEST = [
+    "CREATOMATE_TEMPLATE_ID_JUST_LISTED_30",
+    "CREATOMATE_TEMPLATE_ID_JUST_PENDED_30",
+    "CREATOMATE_TEMPLATE_ID_JUST_LISTED_30_VERTICAL",
+    "CREATOMATE_TEMPLATE_ID_JUST_LISTED",
+    "CREATOMATE_TEMPLATE_ID_DEFAULT",
+  ];
+
+  beforeEach(() => {
+    for (const k of VARS_UNDER_TEST) {
+      snapshot[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+
+  afterEach(() => {
+    for (const k of VARS_UNDER_TEST) {
+      if (snapshot[k] === undefined) delete process.env[k];
+      else process.env[k] = snapshot[k];
+    }
+  });
+
+  it("returns true for just_listed/30/16:9 when env var is set", () => {
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED_30 = "tmpl-listed-30";
+    expect(
+      isTemplateConfigured({
+        selectedPackage: "just_listed",
+        selectedDuration: 30,
+        aspectRatio: "16:9",
+      }),
+    ).toBe(true);
+  });
+
+  it("returns false for just_listed/30/16:9 when env var is NOT set", () => {
+    // env var not set (cleared in beforeEach)
+    expect(
+      isTemplateConfigured({
+        selectedPackage: "just_listed",
+        selectedDuration: 30,
+        aspectRatio: "16:9",
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false for just_pended/30 even when DEFAULT or legacy just_listed vars are set", () => {
+    process.env.CREATOMATE_TEMPLATE_ID_DEFAULT = "default-id";
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED = "listed-legacy";
+    // just_pended_30 is not set → should be false (no fallback to default/legacy)
+    expect(
+      isTemplateConfigured({
+        selectedPackage: "just_pended",
+        selectedDuration: 30,
+        aspectRatio: "16:9",
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false when selectedDuration is missing", () => {
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED = "legacy-id";
+    expect(
+      isTemplateConfigured({ selectedPackage: "just_listed" }),
+    ).toBe(false);
+  });
+
+  it("returns false when selectedPackage is missing", () => {
+    process.env.CREATOMATE_TEMPLATE_ID_DEFAULT = "default-id";
+    expect(
+      isTemplateConfigured({ selectedDuration: 30 }),
+    ).toBe(false);
+  });
+
+  it("checks the _VERTICAL env var for 9:16 aspect", () => {
+    // Horizontal set but not vertical → false for 9:16
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED_30 = "horiz-id";
+    expect(
+      isTemplateConfigured({
+        selectedPackage: "just_listed",
+        selectedDuration: 30,
+        aspectRatio: "9:16",
+      }),
+    ).toBe(false);
+
+    // Now set vertical → true
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED_30_VERTICAL = "vert-id";
+    expect(
+      isTemplateConfigured({
+        selectedPackage: "just_listed",
+        selectedDuration: 30,
+        aspectRatio: "9:16",
+      }),
+    ).toBe(true);
+  });
+
+  it("defaults to 16:9 when aspectRatio is omitted", () => {
+    process.env.CREATOMATE_TEMPLATE_ID_JUST_LISTED_30 = "tmpl-30";
+    expect(
+      isTemplateConfigured({ selectedPackage: "just_listed", selectedDuration: 30 }),
+    ).toBe(true);
   });
 });

@@ -291,22 +291,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               reason: r.reason,
             })),
           });
+          // applyPhotoSelectionForRun's RPC has already advanced the run to
+          // stage='generating'. The post-approval compute (style guide +
+          // director scripting + N provider submits) is heavy and previously
+          // ran SYNCHRONOUSLY inside this 300s approve-POST — three failure
+          // shapes (Vercel kill on overrun, no-JSON director output, all
+          // providers permanent-fail) left the run pinned at 'generating'
+          // with error=NULL and no autonomous recovery.
+          //
+          // DECOUPLE: respond 202 to the operator immediately and hand the
+          // compute off to a SEPARATE serverless function
+          // (/api/pipeline/continue/[runId]) which gets its OWN fresh 300s
+          // maxDuration and, on any thrown error, calls setRunError so the
+          // failure is visible. We do NOT await it — this mirrors the
+          // browser's fire-and-forget call to /api/pipeline/[propertyId] in
+          // StudioNew.tsx. A bare un-awaited promise in THIS function would be
+          // killed on response-return; a real HTTP hop to a fresh function is
+          // not. The generating-stage stuck-reaper is the safety net if the
+          // hop itself fails to land.
           const advanced = await getRun(runId);
-          const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
-          try {
-            await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            await setRunError(runId, `Photo selection approved, but generation resume failed: ${msg}`);
-            const failedRun = await getRun(runId);
-            return res.status(200).json({
-              run: failedRun ?? advanced,
-              selected_photo_ids: result.selected_photo_ids,
-              resume_error: 'generation_resume_failed',
-              message: msg,
+          const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'https';
+          const host =
+            (req.headers['x-forwarded-host'] as string | undefined)
+            ?? (req.headers.host as string | undefined)
+            ?? process.env.VERCEL_URL;
+          if (host) {
+            const continueUrl = `${proto}://${host}/api/pipeline/continue/${encodeURIComponent(runId)}`;
+            // Fire-and-forget: don't await. The continue endpoint owns the
+            // compute lifecycle (including setRunError on failure). We swallow
+            // network errors here — the reaper recovers a hop that never lands.
+            void fetch(continueUrl, { method: 'POST' }).catch((e) => {
+              console.warn(`[delivery] continue hop to ${continueUrl} failed to dispatch; reaper will recover`, e);
             });
+          } else {
+            // No resolvable host (e.g. a non-Vercel execution context). Fall
+            // back to surfacing an actionable error rather than silently
+            // stalling at 'generating'. The operator can Rerun.
+            await setRunError(runId, 'Photo selection approved, but the generation continue hop could not be dispatched (no host) — use Rerun');
           }
-          return res.status(200).json({ run: advanced, selected_photo_ids: result.selected_photo_ids });
+          return res.status(202).json({ run: advanced, selected_photo_ids: result.selected_photo_ids });
         }
         case 'flip_winner': {
           const sceneId = String(req.body?.scene_id ?? '');
