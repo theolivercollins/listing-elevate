@@ -68,21 +68,75 @@ describe("splitAddress", () => {
     ]);
   });
 
-  it("splits on the LAST comma when there are multiple", () => {
+  it("3-segment: street = first, cityState = remaining joined with ', '", () => {
+    // This is the primary bug-fix case: "Street, City, ST" must yield
+    // cityState="City, ST", not cityState="ST".
+    expect(splitAddress("5019 San Massimo Dr, Punta Gorda, FL")).toEqual([
+      "5019 San Massimo Dr",
+      "Punta Gorda, FL",
+    ]);
+  });
+
+  it("3-segment unit line, last segment is combined city/state (no-zip variant)", () => {
+    // Last segment "Punta Gorda FL" has 2 tokens → not bare state → street = all before it.
     expect(splitAddress("123 Main St, Apt 4, Punta Gorda FL")).toEqual([
       "123 Main St, Apt 4",
       "Punta Gorda FL",
     ]);
   });
 
-  it("returns the whole string + empty city when no comma", () => {
-    expect(splitAddress("123 Waymay Dr")).toEqual(["123 Waymay Dr", ""]);
+  it("4-segment unit line, last segment is bare state", () => {
+    // "456 Oak Ave, Apt B, Tampa, FL" → last="FL" bare → city="Tampa", street="456 Oak Ave, Apt B"
+    expect(splitAddress("456 Oak Ave, Apt B, Tampa, FL")).toEqual([
+      "456 Oak Ave, Apt B",
+      "Tampa, FL",
+    ]);
   });
 
-  it("trims whitespace on both sides", () => {
+  it("3-segment unit line, last segment is combined city/state", () => {
+    // "456 Oak Ave, Apt B, Tampa FL" → last="Tampa FL" (2 tokens) → street="456 Oak Ave, Apt B"
+    expect(splitAddress("456 Oak Ave, Apt B, Tampa FL")).toEqual([
+      "456 Oak Ave, Apt B",
+      "Tampa FL",
+    ]);
+  });
+
+  it("2-segment with comma between street and city/state", () => {
+    expect(splitAddress("123 Main St, Tampa, FL")).toEqual([
+      "123 Main St",
+      "Tampa, FL",
+    ]);
+  });
+
+  it("2-segment: no comma between city and state (original no-comma path)", () => {
+    // "City ST" stays intact — this is the pre-existing no-comma-city/state case.
+    expect(splitAddress("123 Waymay Dr, Punta Gorda FL")).toEqual([
+      "123 Waymay Dr",
+      "Punta Gorda FL",
+    ]);
+  });
+
+  it("2-segment: just city and bare state (no street) → street empty, cityState rejoined", () => {
+    // Last segment "FL" is a bare state → city="Punta Gorda", street="" (no earlier segments).
+    expect(splitAddress("Punta Gorda, FL")).toEqual(["", "Punta Gorda, FL"]);
+  });
+
+  it("single-segment: no comma → street empty, cityState = whole string", () => {
+    // No commas → treated as a bare cityState with no street component.
+    expect(splitAddress("123 Waymay Dr")).toEqual(["", "123 Waymay Dr"]);
+  });
+
+  it("trims whitespace on both sides of each segment", () => {
     expect(splitAddress("  123 Waymay Dr  ,  Punta Gorda FL  ")).toEqual([
       "123 Waymay Dr",
       "Punta Gorda FL",
+    ]);
+  });
+
+  it("trims whitespace in 3-segment case", () => {
+    expect(splitAddress("  5019 San Massimo Dr  ,  Punta Gorda  ,  FL  ")).toEqual([
+      "5019 San Massimo Dr",
+      "Punta Gorda, FL",
     ]);
   });
 });
@@ -216,7 +270,8 @@ describe("buildTemplateModifications", () => {
       brokerageName: "Compass",
     });
     expect(mods["Full-Address-Final.text"]).toBe("456 Oak Ave, Apt B, Tampa FL");
-    // And the intro split keeps street vs city/state distinct
+    // 3 segments; last segment "Tampa FL" has 2 tokens → not bare state.
+    // street = all segments before the last, joined ", "; cityState = last segment.
     expect(mods["St#/StName-Intro.text"]).toBe("456 Oak Ave, Apt B");
     expect(mods["City/State-Intro.text"]).toBe("Tampa FL");
   });
@@ -316,13 +371,17 @@ describe("buildTemplateModifications — address display: no zip, one-line fit",
     );
   });
 
-  it("strips the zip from the City/State-Intro split line too", () => {
+  it("strips the zip from the City/State-Intro split line too — city included", () => {
+    // After zip-strip, displayAddress yields "5019 San Massimo Dr, Punta Gorda, FL"
+    // (3 comma-segments). splitAddress must put the first segment on the street line
+    // and rejoin the rest as "Punta Gorda, FL" for the City/State-Intro field.
+    // The OLD behavior (last-comma split) incorrectly produced cityState="FL".
     const mods = buildTemplateModifications({
       ...ctx,
       address: "5019 San Massimo Dr, Punta Gorda, FL 33950",
     });
-    expect(mods["St#/StName-Intro.text"]).toBe("5019 San Massimo Dr, Punta Gorda");
-    expect(mods["City/State-Intro.text"]).toBe("FL");
+    expect(mods["St#/StName-Intro.text"]).toBe("5019 San Massimo Dr");
+    expect(mods["City/State-Intro.text"]).toBe("Punta Gorda, FL");
   });
 
   it("emits auto-size + no-wrap (font_size: null, text_wrap: false) for long addresses", () => {
