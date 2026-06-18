@@ -7,7 +7,7 @@ See also:
 - [../plans/back-on-track-plan.md](../plans/back-on-track-plan.md) — active roadmap
 - [../specs/2026-04-20-back-on-track-design.md](../specs/2026-04-20-back-on-track-design.md) — full roadmap spec
 
-Last updated: **2026-06-14 (durability + missing-vids — branch harden/durability, PR #119 open awaiting main-merge approval): (1) Checkpoint A scene-card `<video>` lacked `autoPlay` — browser loaded metadata only, painted blank grey frames; fixed by adding `autoPlay`+`preload="metadata"` in `src/components/studio/CheckpointA.tsx`. (2) Judge transient-retry: `judgePair` wrapped in `withJudgeRetry` in `lib/delivery/judge.ts` — 429/5xx/timeout no longer fail a delivery judge pass; operator winner picks preserved. (3) Atlas-402 surfacing: `AtlasInsufficientBalanceError` classified PERMANENT and guarded at all 4 call sites (`submitScene`, `resubmitScene`, `submitVariantsForProperty`, `regenerateVariant`) — insufficient-balance 402 now fails loudly instead of silently degrading to lower-quality fallback. No migrations.** For current right-now state and the complete shipping log, read HANDOFF.md first. Earlier header updates: 2026-06-12 (MU merge to main: Market Update workflow complete E2E; migrations table 082 + 084 + 085; feat/le-video docs-sync gate). Earlier body entry: 2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).
+Last updated: **2026-06-15 (durability + missing-vids — branch harden/durability, PR #119 open awaiting main-merge approval): (1) Checkpoint A scene-card `<video>` lacked `autoPlay` — browser loaded metadata only, painted blank grey frames; fixed by adding `autoPlay`+`preload="metadata"` in `src/components/studio/CheckpointA.tsx`. (2) Judge transient-retry: `judgePair` wrapped in `withJudgeRetry` in `lib/delivery/judge.ts` — 429/5xx/timeout no longer fail a delivery judge pass; operator winner picks preserved. (3) Atlas-402 surfacing: `AtlasInsufficientBalanceError` classified PERMANENT and guarded at all 4 call sites (`submitScene`, `resubmitScene`, `submitVariantsForProperty`, `regenerateVariant`) — insufficient-balance 402 now fails loudly instead of silently degrading to lower-quality fallback. No migrations.** For current right-now state and the complete shipping log, read HANDOFF.md first. Earlier header updates: 2026-06-12 (MU merge to main: Market Update workflow complete E2E; migrations table 082 + 084 + 085; feat/le-video docs-sync gate). Earlier body entry: 2026-04-28 (lab cost-tracking fix + ledger-driven system update merged to main, commit `cd242fc`).
 
 Authoritative state doc. Read first when entering the repo. If anything here conflicts with the code, trust the code and update this doc.
 
@@ -854,6 +854,28 @@ SQL files in `supabase/migrations/` for record; MCP `apply_migration` is the liv
 | 084 | `le_video` | `property_previews` +2 columns: `label text` (user-facing link alias), `revoked_at timestamptz` (when set, link is expired on watch page). New table `preview_view_events`: id, preview_id (FK→property_previews cascade), session_id, event CHECK('view','play','progress_25','progress_50','progress_75','complete'), position_seconds, orientation, referrer, user_agent, created_at. Two indexes: `idx_preview_events_preview(preview_id, created_at desc)`, `idx_preview_events_session(preview_id, session_id)`. RLS enabled, no policies (service-role only). **Applied to shared Supabase 2026-06-12** (verified in supabase_migrations as 084_le_video). Back-compat: beacon endpoint always returns 204 pre-migration; library/hub reads fall back to null label/revoked_at/empty event aggregates. Rollback: drop `preview_view_events`; drop columns `label`, `revoked_at` from `property_previews`. Branch `feat/le-video`. |
 | 084 | `scenes_provider_preference` | `scenes.provider_preference text` — sticky-provider fix: written at scene-creation time by `insertScenes`; read by `resubmitScene` to bias routing on reruns. **Applied to shared Supabase 2026-06-12.** Branch `fix/max-quality-assembly`. |
 | 085 | `cost_events_bunny` | Widens `cost_events` provider CHECK constraint to add `'bunny'` and `'veo'`. Required by Bunny Stream video-hosting writes and forward-compatible with Veo. **Applied to shared Supabase 2026-06-12.** Branch `fix/max-quality-assembly`. |
+| 086 | `le_video_library` | `video_folders` + `video_library_meta` sidecar tables; folder FK (ON DELETE SET NULL un-files); `archived_at` reversible hide; `library_deleted_at` soft-delete. RLS service-role-only. **Applied to shared Supabase 2026-06-12.** Branch `feat/le-video`. |
+| 087 | `preview_show_branding` | `show_branding boolean DEFAULT true` on `property_previews`. Guarded with 42703-retry pattern (`fetchPreviewMeta`) so a pre-migration DB can't nuke kind/capabilities. **Applied to shared Supabase 2026-06-12.** Branch `feat/le-video-links-settings`. |
+| 088 | `delivery_photo_selection_checkpoint` | Photo-selection checkpoint schema for the delivery pipeline. File `088_delivery_photo_selection_checkpoint.sql` is on `main`. **Not applied to prod** — owner-gated (different parallel session); applying is that session's call. |
+| 089 | `cost_events_unit_type_characters` | Widens `cost_events_unit_type_check` to allow `'characters'`, `'seconds'`, `'minutes'`. Fixes silent DROP of ElevenLabs TTS cost events. Repo file is `089_cost_events_unit_type_characters.sql` (renumbered from `088` at merge to avoid colliding with 088_delivery above). **Applied to shared Supabase 2026-06-15 via Supabase MCP**; recorded in prod history under the legacy name `088_cost_events_unit_type_characters` — name differs from repo filename due to merge-time renumber; constraint verified live. Branch `harden/front-reaper`. |
+
+### Ally-branch migrations (applied, files pending merge)
+
+These were applied to prod via Supabase MCP but their SQL files live on the unmerged `ally` session branch — not yet on `main`:
+
+| Prod history name | Applied | What |
+|---|---|---|
+| `088a_ally_seo_job_kind` | 2026-06-14 | SEO job kind addition (ally branch) |
+| `088b_ally_seo_tables` | 2026-06-14 | SEO tables (ally branch) |
+| `089_ally_core` | 2026-06-15 | Ally core schema (ally branch) |
+
+### Pipeline self-healing (shipped PR #121, commit fc741fa)
+
+`lib/pipeline/stuck-reaper.ts`, wired into `api/cron/poll-scenes.ts`:
+
+- **`reapStuckDeliveryRuns`** — delivery runs stuck in `intake`/`scraping` >15 min re-fire `runScrapeStage` (paid Apify call); exhausted >60 min → error surfaced. Money-safe: gated on `VERCEL_ENV==='production'||LE_ALLOW_NONPROD_WRITES==='true'`; rate-limited by a pre-bump of `updated_at` before the re-fire so a thrown call can't loop paid work every tick.
+- **`reapStuckGeneratingProperties`** — properties `generating` >20 min with never-submitted scenes (`provider_task_id NULL`) re-submit via `resubmitScene` (paid render); exhausted >60 min → `needs_review`. Rate-limited by a `finally`-block bump around the resubmit loop.
+- 48 reaper unit tests.
 
 ---
 
