@@ -260,7 +260,15 @@ export async function continuePipelineAfterPhotoSelection(
   await runPropertyStyleGuide(propertyId);
 
   // Stage 3: Script
-  await runScripting(propertyId);
+  // Thread the delivery_run id (present on operator/checkpoint-A runs) so a
+  // no-parseable-script director failure surfaces via setRunError + a throw
+  // the caller (api/pipeline/continue) turns into a visible error, instead of
+  // a silent updatePropertyStatus('failed') the operator can't see.
+  const deliveryRunId =
+    typeof logContext.delivery_run_id === "string"
+      ? logContext.delivery_run_id
+      : undefined;
+  await runScripting(propertyId, deliveryRunId);
 
   // Stage 3.5 (Pre-flight prompt QA) REMOVED. It was burning ~95s of the
   // 300s function budget on 12 sequential Claude vision calls AND
@@ -650,7 +658,10 @@ async function getPhotoUrlById(photoId: string): Promise<string | null> {
   return (data as { file_url?: string | null } | null)?.file_url ?? null;
 }
 
-async function runScripting(propertyId: string): Promise<void> {
+async function runScripting(
+  propertyId: string,
+  deliveryRunId?: string,
+): Promise<void> {
   await updatePropertyStatus(propertyId, "scripting");
   await log(propertyId, "scripting", "info", "Planning shots");
 
@@ -819,8 +830,43 @@ async function runScripting(propertyId: string): Promise<void> {
   const text = response.content[0].type === "text" ? response.content[0].text : "";
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
+    // Cost is first-class: the director Anthropic call consumed tokens even
+    // though we can't parse its output. The success path records its own
+    // (richer) cost_event at the end of this function; on this FAILURE path it
+    // would otherwise never be recorded, so record it here. Mirrors the
+    // computeClaudeCost + recordCostEvent shape used elsewhere in this file.
+    const failedUsage = computeClaudeCost(response.usage as never, DIRECTOR_MODEL);
+    await recordCostEvent({
+      propertyId,
+      stage: "scripting",
+      provider: "anthropic",
+      unitsConsumed: failedUsage.totalTokens,
+      unitType: "tokens",
+      costCents: failedUsage.costCents,
+      metadata: {
+        model: DIRECTOR_MODEL,
+        parse_failed: true,
+        ...failedUsage.breakdown,
+      },
+    });
+
     await updatePropertyStatus(propertyId, "failed");
     await log(propertyId, "scripting", "error", "Failed to parse director output");
+    // When this run is operator/checkpoint-A driven we have a delivery_run to
+    // attach the failure to: set a visible, actionable error AND throw so the
+    // api/pipeline/continue catch surfaces it (the property is already 'failed'
+    // for the autonomous/customer path, which has no run id and keeps its prior
+    // silent-return behavior — no uncaught crash introduced there).
+    if (deliveryRunId) {
+      const { setRunError } = await import("./delivery/runs.js");
+      await setRunError(
+        deliveryRunId,
+        "Director script generation failed: model returned no parseable script — rerun to retry",
+      );
+      throw new Error(
+        "Director script generation failed: model returned no parseable script",
+      );
+    }
     return;
   }
 
@@ -1715,6 +1761,22 @@ async function runAssemblyStep(
             aspectRatio: "9:16",
           })
         : null;
+
+      // Loud, greppable warning when a creatomate render has NO resolved
+      // template and therefore falls through to the code-gen RenderScript path
+      // (provider.assemble below). This is the silent root cause of
+      // "wrong-looking video" reports — the code-gen output differs from the
+      // branded template render. Behavior is unchanged; this only makes the
+      // fallback visible in logs. See docs MEMORY: "Don't drive the pipeline
+      // locally" (local env lacks the template id and silently code-gens).
+      if (providerName === "creatomate") {
+        if (wantHorizontal && !horizontalTemplateId) {
+          console.warn(`[assembly] no Creatomate template for ${property.selected_package}/${property.selected_duration ?? "?"}s/16:9 — falling back to code-gen RenderScript`);
+        }
+        if (wantVertical && !verticalTemplateId && horizontalTemplateId === null) {
+          console.warn(`[assembly] no Creatomate template for ${property.selected_package}/${property.selected_duration ?? "?"}s/9:16 — falling back to code-gen RenderScript`);
+        }
+      }
 
       if (horizontalTemplateId) {
         await log(propertyId, "assembly", "info",
