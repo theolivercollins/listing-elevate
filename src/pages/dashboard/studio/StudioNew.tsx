@@ -2,6 +2,7 @@ import {
   useState,
   useCallback,
   useRef,
+  useEffect,
   type ChangeEvent,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -123,6 +124,36 @@ const StudioNew = () => {
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
+  // ─── template availability ───
+  interface ComboKey { video_type: string; duration: number; orientation: string }
+  interface ComboAvailability extends ComboKey { available: boolean }
+  const [templateAvailability, setTemplateAvailability] = useState<ComboAvailability[]>([]);
+
+  useEffect(() => {
+    authedFetch('/api/admin/studio/template-availability')
+      .then((r) => r.json())
+      .then((data: { combos?: ComboAvailability[] }) => {
+        if (data.combos) setTemplateAvailability(data.combos);
+      })
+      .catch(() => {
+        // Intentionally optimistic: a fetch error leaves templateAvailability empty,
+        // so isComboAvailable returns true for every combo (the "not yet loaded"
+        // branch). This is best-effort UI — the real backstop is server-side:
+        // resolveTemplateId returns null for an unconfigured combo, which falls
+        // through to the assembly code-gen path rather than ever blocking the
+        // operator here.
+      });
+  }, []);
+
+  /** Returns true when this combo has a configured template (or availability info not yet loaded). */
+  const isComboAvailable = (vt: string, dur: number, orientation = 'horizontal'): boolean => {
+    if (templateAvailability.length === 0) return true; // not yet loaded → optimistic
+    const match = templateAvailability.find(
+      (c) => c.video_type === vt && c.duration === dur && c.orientation === orientation,
+    );
+    return match?.available ?? true;
+  };
+
   // ─── MLS lookup state ───
   const [mlsLooking, setMlsLooking] = useState(false);
   const [mlsMsg, setMlsMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
@@ -137,7 +168,8 @@ const StudioNew = () => {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
-  const isValid = address.trim() && files.length >= MIN_PHOTOS;
+  const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
+  const isValid = address.trim() && files.length >= MIN_PHOTOS && currentComboAvailable;
 
   // Step indicator — which conceptual step the user is on
   // Step 0: address (required); client is optional, no longer gates step 0
@@ -479,26 +511,57 @@ const StudioNew = () => {
               >
                 {(['just_listed', 'just_pended', 'just_closed'] as const).map((vt) => {
                   const active = videoType === vt;
+                  // Check whether *any* duration for this video type is available.
+                  // A type is reachable if at least one duration combo is live.
+                  const vtAvailable = ([15, 30, 60] as const).some((d) => isComboAvailable(vt, d));
                   const label = vt === 'just_listed' ? 'Just Listed' : vt === 'just_pended' ? 'Just Pended' : 'Just Closed';
                   return (
-                    <button
+                    <div
                       key={vt}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setVideoType(vt)}
-                      className="studio-input"
-                      style={{
-                        flex: 1,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        fontWeight: active ? 600 : 500,
-                        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
-                        borderColor: active ? 'var(--le-ink)' : undefined,
-                        background: active ? 'var(--le-surface-2, rgba(0,0,0,0.04))' : undefined,
-                      }}
+                      style={{ flex: 1, position: 'relative' }}
+                      title={!vtAvailable ? 'Not available yet' : undefined}
                     >
-                      {label}
-                    </button>
+                      <button
+                        type="button"
+                        aria-pressed={active}
+                        aria-disabled={!vtAvailable}
+                        onClick={() => { if (vtAvailable) setVideoType(vt); }}
+                        className="studio-input"
+                        style={{
+                          width: '100%',
+                          cursor: vtAvailable ? 'pointer' : 'not-allowed',
+                          textAlign: 'center',
+                          fontWeight: active ? 600 : 500,
+                          color: !vtAvailable
+                            ? 'var(--le-muted-2, rgba(11,11,16,0.3))'
+                            : active
+                              ? 'var(--le-ink)'
+                              : 'var(--le-muted)',
+                          borderColor: active && vtAvailable ? 'var(--le-ink)' : undefined,
+                          background: active && vtAvailable
+                            ? 'var(--le-surface-2, rgba(0,0,0,0.04))'
+                            : !vtAvailable
+                              ? 'rgba(11,11,16,0.02)'
+                              : undefined,
+                          opacity: vtAvailable ? 1 : 0.5,
+                        }}
+                      >
+                        {label}
+                        {!vtAvailable && (
+                          <span
+                            style={{
+                              display: 'block',
+                              fontSize: 10,
+                              fontWeight: 400,
+                              color: 'var(--le-muted-2, rgba(11,11,16,0.3))',
+                              marginTop: 2,
+                            }}
+                          >
+                            not available yet
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -514,25 +577,54 @@ const StudioNew = () => {
               >
                 {([15, 30, 60] as const).map((d) => {
                   const active = selectedDuration === d;
+                  const dAvailable = isComboAvailable(videoType, d);
                   return (
-                    <button
+                    <div
                       key={d}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setSelectedDuration(d)}
-                      className="studio-input"
-                      style={{
-                        flex: 1,
-                        cursor: 'pointer',
-                        textAlign: 'center',
-                        fontWeight: active ? 600 : 500,
-                        color: active ? 'var(--le-ink)' : 'var(--le-muted)',
-                        borderColor: active ? 'var(--le-ink)' : undefined,
-                        background: active ? 'var(--le-surface-2, rgba(0,0,0,0.04))' : undefined,
-                      }}
+                      style={{ flex: 1, position: 'relative' }}
+                      title={!dAvailable ? 'Not available yet' : undefined}
                     >
-                      {d} seconds
-                    </button>
+                      <button
+                        type="button"
+                        aria-pressed={active}
+                        aria-disabled={!dAvailable}
+                        onClick={() => { if (dAvailable) setSelectedDuration(d); }}
+                        className="studio-input"
+                        style={{
+                          width: '100%',
+                          cursor: dAvailable ? 'pointer' : 'not-allowed',
+                          textAlign: 'center',
+                          fontWeight: active ? 600 : 500,
+                          color: !dAvailable
+                            ? 'var(--le-muted-2, rgba(11,11,16,0.3))'
+                            : active
+                              ? 'var(--le-ink)'
+                              : 'var(--le-muted)',
+                          borderColor: active && dAvailable ? 'var(--le-ink)' : undefined,
+                          background: active && dAvailable
+                            ? 'var(--le-surface-2, rgba(0,0,0,0.04))'
+                            : !dAvailable
+                              ? 'rgba(11,11,16,0.02)'
+                              : undefined,
+                          opacity: dAvailable ? 1 : 0.5,
+                        }}
+                      >
+                        {d}s
+                        {!dAvailable && (
+                          <span
+                            style={{
+                              display: 'block',
+                              fontSize: 10,
+                              fontWeight: 400,
+                              color: 'var(--le-muted-2, rgba(11,11,16,0.3))',
+                              marginTop: 2,
+                            }}
+                          >
+                            not available yet
+                          </span>
+                        )}
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -755,7 +847,9 @@ const StudioNew = () => {
                     ? 'Address required'
                     : files.length < MIN_PHOTOS
                       ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
-                      : ''}
+                      : !currentComboAvailable
+                        ? 'Selected combination not available yet — choose a different type or duration'
+                        : ''}
                 </span>
               )}
               <button
