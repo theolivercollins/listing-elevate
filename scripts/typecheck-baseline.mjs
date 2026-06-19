@@ -60,6 +60,33 @@ const CONFIGS = ["tsconfig.app.json", "tsconfig.api.json", "tsconfig.node.json"]
 const SEP = "\x1F";
 
 /**
+ * Normalize a tsc diagnostic message so the error identity is portable across
+ * environments (local macOS dev vs GitHub CI vs different pnpm store locations).
+ *
+ * tsc embeds absolute paths in some diagnostics:
+ *   1. pnpm virtual-store paths: `/home/runner/.../node_modules/.pnpm/stripe@22.1.1_.../node_modules/stripe/...`
+ *      (the prefix + version/peer hash differ per environment)
+ *   2. Repo-root-prefixed source paths: `import("/abs/path/to/repo/lib/providers/gemini-judge")`
+ *      (the repo root differs between local worktree and CI checkout)
+ *
+ * Both must be collapsed so the same logical error produces the same key everywhere.
+ *
+ * Apply order matters: 1 → 2 → 3.
+ */
+function normalizeMessage(msg) {
+  // 1. Collapse pnpm virtual-store paths (env-specific prefix + version/peer hash)
+  //    e.g. "/home/runner/.../node_modules/.pnpm/stripe@22.1.1_.../node_modules/" → "node_modules/"
+  msg = msg.replace(/\/?[^\s"'()]*\/node_modules\/\.pnpm\/[^/]+\/node_modules\//g, "node_modules/");
+  // 2. Collapse any other absolute .../node_modules/ to a bare relative prefix
+  //    e.g. "/Users/oliverhelgemo/listing-elevate/node_modules/" → "node_modules/"
+  msg = msg.replace(/\/?[^\s"'()]*\/node_modules\//g, "node_modules/");
+  // 3. Strip the runtime repo-root prefix so in-repo source paths become repo-relative.
+  //    Use string split/join (not regex) to avoid escaping issues with platform path chars.
+  msg = msg.split(repoRoot + "/").join("").split(repoRoot).join("");
+  return msg;
+}
+
+/**
  * Plain error line format when --pretty false:
  *   path/to/file.ts(line,col): error TSxxxx: message text
  */
@@ -94,8 +121,9 @@ function collectErrorCounts(cfg) {
     const m = ERROR_RE.exec(line);
     if (!m) continue;
     const [, file, , , code, message] = m;
-    // Identity: file + TS error code + message (no line/col → survives shifts)
-    const key = `${file}${SEP}${code}${SEP}${message}`;
+    // Identity: file + TS error code + normalized message (no line/col → survives shifts;
+    // message is normalized so env-specific absolute paths don't break portability).
+    const key = `${file}${SEP}${code}${SEP}${normalizeMessage(message)}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
 
