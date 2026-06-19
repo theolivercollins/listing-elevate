@@ -569,6 +569,7 @@ Lab iterations include analysis + director + render cost in `prompt_lab_iteratio
 
 ## Known bugs / gotchas
 
+- **compute_units untracked-spend bug (P0, 2026-06-19)** — `unit_type='compute_units'` is emitted by the MLS scrapers (`lib/mls/scrape-realtor.ts`, `lib/mls/scrape-redfin.ts`, `lib/compass/scrape-listing.ts`) but is missing from the `cost_events_unit_type_check` constraint, so all Apify/Browserbase scraping spend has been silently dropped in prod since launch. Caught by `lib/__tests__/cost-constraint-drift.test.ts` (carved into `KNOWN_PENDING_DRIFT`). Fix: add `compute_units` to the constraint in Phase-1 migration 090. See `docs/plans/2026-06-19-observability-system-plan.md`.
 - **Runway ignores non-push motion** — router avoids sending those to Runway now; fallback path could still misroute.
 - **Production pipeline base64 image input** — 4 places in `lib/pipeline.ts` still use base64 instead of URL. Lab is fixed; prod is not.
 - **File-revert mystery** — unresolved. All Shotstack MVP files + the entire Lab build survived multiple sessions; probably dormant or specific to certain paths.
