@@ -23,6 +23,7 @@
     { "src": "/api/scenes/([^/]+)/skip", "dest": "/api/scenes/[id]/skip?id=$1" },
     { "src": "/api/scenes/([^/]+)/rate", "dest": "/api/scenes/[id]/rate?id=$1" },
     { "src": "/api/scenes/([^/]+)", "dest": "/api/scenes/[id]?id=$1" },
+    { "src": "/api/pipeline/continue/([^/]+)", "dest": "/api/pipeline/continue/[runId]?runId=$1" },
     { "src": "/api/pipeline/([^/]+)", "dest": "/api/pipeline/[propertyId]?propertyId=$1" },
     { "src": "/api/admin/prompt-lab/listings/([^/]+)/iterations/([^/]+)/rate", "dest": "/api/admin/prompt-lab/listings/[id]/iterations/[iterId]/rate?id=$1&iterId=$2" },
     { "src": "/api/admin/prompt-lab/listings/([^/]+)/iterations/([^/]+)/chat/clear", "dest": "/api/admin/prompt-lab/listings/[id]/iterations/[iterId]/clear-chat?id=$1&iterId=$2" },
