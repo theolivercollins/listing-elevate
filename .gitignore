@@ -21,3 +21,7 @@ le-1/
 
 # Scratch exports from scripts (e.g. mu-export-templates.ts) — never commit
 tmp/
+
+# Autonomy module — live config/goals/state are local-only (never commit armed autonomy flags)
+.autonomy/*
+!.autonomy/goals.example.md

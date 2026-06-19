@@ -1,0 +1,30 @@
+{
+  "project": "listing-elevate",
+
+  "gates": {
+    "typecheck": "pnpm typecheck:baseline",
+    "lint": "pnpm run lint",
+    "build": "pnpm run build",
+    "test": "pnpm run test"
+  },
+
+  "goalsFile": ".autonomy/goals.md",
+  "stateDir": ".autonomy/state",
+
+  "telegram": {
+    "chatId": "8204688766",
+    "envFile": "~/.claude/channels/telegram/.env"
+  },
+
+  "refuter": {
+    "enabled": false,
+    "model": "openai/gpt-4o",
+    "via": "openrouter"
+  },
+
+  "autonomy": {
+    "unattended": false,
+    "autoCommit": false,
+    "autoMerge": false
+  }
+}
