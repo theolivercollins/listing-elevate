@@ -1,0 +1,24 @@
+name: typecheck
+on:
+  pull_request:
+  push:
+    branches: [main, staging, dev]
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: pnpm install --frozen-lockfile --ignore-workspace
+      # Run the gate directly via node (not `pnpm run`): the repo's placeholder
+      # pnpm-workspace.yaml lacks a `packages:` field, which makes every pnpm
+      # command error "packages field missing or empty" on a clean CI runner.
+      - run: node scripts/typecheck-baseline.mjs

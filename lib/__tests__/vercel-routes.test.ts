@@ -94,6 +94,9 @@ const GUARDED_PATHS = [
   'api/admin/studio/video-folders/[id].ts',
   'api/admin/studio/videos/[id]/library.ts',
 
+  // studio hardening batch (PR #125) — post-approval decouple endpoint
+  'api/pipeline/continue/[runId].ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -218,5 +221,20 @@ describe('vercel.json route coverage', () => {
     expect(embedIdx).toBeGreaterThanOrEqual(0);
     expect(bareIdx).toBeGreaterThanOrEqual(0);
     expect(embedIdx).toBeLessThan(bareIdx);
+  });
+
+  it('pipeline/continue/[runId] entry precedes the bare pipeline/[propertyId] entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const continueIdx = routes.findIndex((r) =>
+      /\/api\/pipeline\/continue\/\(\[\^\/\]\+\)/.test(r.src),
+    );
+    const bareIdx = routes.findIndex((r) =>
+      /^\/api\/pipeline\/\(\[\^\/\]\+\)$/.test(r.src),
+    );
+    expect(continueIdx).toBeGreaterThanOrEqual(0);
+    expect(bareIdx).toBeGreaterThanOrEqual(0);
+    expect(continueIdx).toBeLessThan(bareIdx);
   });
 });

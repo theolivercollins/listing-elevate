@@ -13,7 +13,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "doctor": "tsx scripts/doctor.ts",
-    "blog:import-drive": "tsx scripts/blog/import-from-drive.ts"
+    "blog:import-drive": "tsx scripts/blog/import-from-drive.ts",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.api.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "typecheck:baseline": "node scripts/typecheck-baseline.mjs",
+    "typecheck:baseline:update": "node scripts/typecheck-baseline.mjs --update"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

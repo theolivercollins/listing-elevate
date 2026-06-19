@@ -90,3 +90,31 @@ export function resolveTemplateId(ctx: TemplateResolutionContext): string | null
 
   return null;
 }
+
+/**
+ * Returns true iff the env var that resolveTemplateId would select for this
+ * combo is set to a non-empty value (i.e. a real template exists, not the
+ * code-gen fallback). Reuses the same PACKAGE_ENV_PREFIX map and aspect suffix
+ * logic — never duplicates var-name construction.
+ *
+ * propertyTemplateId overrides are intentionally excluded: this helper is
+ * about whether the *product* has configured a template for the combo, not
+ * whether a specific property has an ad-hoc override.
+ */
+export function isTemplateConfigured({
+  selectedPackage,
+  selectedDuration,
+  aspectRatio,
+}: Pick<TemplateResolutionContext, 'selectedPackage' | 'selectedDuration' | 'aspectRatio'>): boolean {
+  const aspect = aspectRatio ?? "16:9";
+  const aspectSuffix = aspect === "9:16" ? "_VERTICAL" : "";
+  const prefix = selectedPackage ? PACKAGE_ENV_PREFIX[selectedPackage] : null;
+
+  if (!prefix || !selectedDuration) {
+    // Without a known package + duration the combo is not a well-defined
+    // template slot — treat as not configured.
+    return false;
+  }
+
+  return readEnv(`${prefix}_${selectedDuration}${aspectSuffix}`) !== null;
+}

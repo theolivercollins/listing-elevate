@@ -270,80 +270,102 @@ describe('POST /api/admin/studio/delivery/[runId]', () => {
     expect(res._status).toBe(400);
   });
 
-  it('POST approve_photo_selection saves ordered photo picks, records learning signal, and continues generation', async () => {
-    mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection', scene_order: ['photo-1', 'photo-3'] });
-    const res = makeRes();
-    await handler(
-      {
-        method: 'POST',
-        query: { runId: 'r1' },
-        headers: {},
-        body: {
-          action: 'approve_photo_selection',
-          photo_order: ['photo-2', 'photo-1'],
-          accepted: [
-            { photo_id: 'photo-2', category: 'primary_room', note: null },
-            { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
-          ],
-          rejected: [{
-            photo_id: 'photo-3',
-            category: 'low_value_room',
-            reason: 'Laundry room is not useful for this listing video',
-          }],
-        },
-      } as unknown as VercelRequest,
-      res as unknown as VercelResponse,
-    );
+  it('POST approve_photo_selection saves ordered photo picks, responds 202, and fires the decoupled continue hop', async () => {
+    // Decouple: the approve handler no longer runs the heavy post-approval
+    // compute synchronously. It responds 202 immediately and fires a
+    // fire-and-forget POST to /api/pipeline/continue/<runId> (which owns the
+    // compute lifecycle, including setRunError on failure). The handler must
+    // NOT call continuePipelineAfterPhotoSelection directly anymore.
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      mockGetRun.mockResolvedValue({ ...run, stage: 'photo_selection', scene_order: ['photo-1', 'photo-3'] });
+      const res = makeRes();
+      await handler(
+        {
+          method: 'POST',
+          query: { runId: 'r1' },
+          headers: { 'x-forwarded-host': 'listingelevate.com', 'x-forwarded-proto': 'https' },
+          body: {
+            action: 'approve_photo_selection',
+            photo_order: ['photo-2', 'photo-1'],
+            accepted: [
+              { photo_id: 'photo-2', category: 'primary_room', note: null },
+              { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
+            ],
+            rejected: [{
+              photo_id: 'photo-3',
+              category: 'low_value_room',
+              reason: 'Laundry room is not useful for this listing video',
+            }],
+          },
+        } as unknown as VercelRequest,
+        res as unknown as VercelResponse,
+      );
 
-    expect(res._status).toBe(200);
-    expect(mockApplyPhotoSelectionForRun).toHaveBeenCalledWith('r1', {
-      photo_order: ['photo-2', 'photo-1'],
-      accepted: [
-        { photo_id: 'photo-2', category: 'primary_room', note: null },
-        { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
-      ],
-      rejected: [{
-        photo_id: 'photo-3',
-        category: 'low_value_room',
-        reason: 'Laundry room is not useful for this listing video',
-      }],
-    });
-    expect(mockAdvanceRun).not.toHaveBeenCalledWith('r1', 'generating');
-    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
-      order_mode: 'operator',
-      delivery_run_id: 'r1',
-    });
+      expect(res._status).toBe(202);
+      expect(mockApplyPhotoSelectionForRun).toHaveBeenCalledWith('r1', {
+        photo_order: ['photo-2', 'photo-1'],
+        accepted: [
+          { photo_id: 'photo-2', category: 'primary_room', note: null },
+          { photo_id: 'photo-1', category: 'hero_exterior', note: 'Best opener' },
+        ],
+        rejected: [{
+          photo_id: 'photo-3',
+          category: 'low_value_room',
+          reason: 'Laundry room is not useful for this listing video',
+        }],
+      });
+      expect(mockAdvanceRun).not.toHaveBeenCalledWith('r1', 'generating');
+      // Compute is decoupled — NOT run inline.
+      expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+      // Fire-and-forget hop to the continue endpoint with a POST.
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://listingelevate.com/api/pipeline/continue/r1',
+        { method: 'POST' },
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
-  it('POST approve_photo_selection records a run error and returns the updated run when generation resume fails', async () => {
-    mockGetRun
-      .mockResolvedValueOnce({ ...run, stage: 'photo_selection', scene_order: ['photo-1'] })
-      .mockResolvedValueOnce({ ...run, stage: 'generating', scene_order: ['photo-1'] })
-      .mockResolvedValueOnce({ ...run, stage: 'generating', error_message: 'Photo selection approved, but generation resume failed: provider timeout' });
-    mockContinuePipelineAfterPhotoSelection.mockRejectedValueOnce(new Error('provider timeout'));
-    const res = makeRes();
-    await handler(
-      {
-        method: 'POST',
-        query: { runId: 'r1' },
-        headers: {},
-        body: {
-          action: 'approve_photo_selection',
-          photo_order: ['photo-1'],
-          rejected: [],
-        },
-      } as unknown as VercelRequest,
-      res as unknown as VercelResponse,
-    );
+  it('POST approve_photo_selection sets a run error when the continue hop cannot be dispatched (no host)', async () => {
+    // With no resolvable host we cannot fire the decoupled hop, so the handler
+    // surfaces an actionable error rather than silently stalling at 'generating'.
+    const prevVercelUrl = process.env.VERCEL_URL;
+    delete process.env.VERCEL_URL;
+    const fetchSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      mockGetRun
+        .mockResolvedValueOnce({ ...run, stage: 'photo_selection', scene_order: ['photo-1'] })
+        .mockResolvedValueOnce({ ...run, stage: 'generating', scene_order: ['photo-1'] });
+      const res = makeRes();
+      await handler(
+        {
+          method: 'POST',
+          query: { runId: 'r1' },
+          headers: {}, // no x-forwarded-host, no host
+          body: {
+            action: 'approve_photo_selection',
+            photo_order: ['photo-1'],
+            rejected: [],
+          },
+        } as unknown as VercelRequest,
+        res as unknown as VercelResponse,
+      );
 
-    expect(res._status).toBe(200);
-    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('generation resume failed'));
-    expect(res._body).toMatchObject({
-      resume_error: 'generation_resume_failed',
-      message: 'provider timeout',
-      selected_photo_ids: ['photo-2', 'photo-1'],
-      run: { stage: 'generating' },
-    });
+      expect(res._status).toBe(202);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('continue hop could not be dispatched'));
+      expect(res._body).toMatchObject({
+        selected_photo_ids: ['photo-2', 'photo-1'],
+        run: { stage: 'generating' },
+      });
+    } finally {
+      if (prevVercelUrl !== undefined) process.env.VERCEL_URL = prevVercelUrl;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('POST approve_photo_selection only works from photo_selection stage', async () => {

@@ -52,17 +52,55 @@ export function categoryLabelForPackage(pkg: string | null | undefined): string 
 }
 
 /**
- * Split a free-text address into street line + city/state line.
- * Convention: split on the LAST comma.
+ * Split a display-ready address (country + zip already stripped by displayAddress)
+ * into a street line and a city/state line.
+ *
+ * Heuristic — inspect the LAST comma-segment:
+ *
+ *   • Bare-state last segment (single whitespace-delimited token, e.g. "FL"):
+ *       state   = last segment
+ *       city    = second-to-last segment
+ *       street  = all remaining earlier segments joined ", "
+ *       cityState = `${city}, ${state}`
+ *
+ *   • City+State combined last segment (2+ tokens, e.g. "Punta Gorda FL"):
+ *       street  = all segments except the last, joined ", "
+ *       cityState = the last segment as-is
+ *
+ *   • Single segment (no comma): street = "", cityState = the whole string.
+ *
+ * Examples:
+ *   "5019 San Massimo Dr, Punta Gorda, FL" → ["5019 San Massimo Dr", "Punta Gorda, FL"]
+ *   "456 Oak Ave, Apt B, Tampa, FL"        → ["456 Oak Ave, Apt B", "Tampa, FL"]
+ *   "456 Oak Ave, Apt B, Tampa FL"         → ["456 Oak Ave, Apt B", "Tampa FL"]
+ *   "5019 San Massimo Dr, Punta Gorda FL"  → ["5019 San Massimo Dr", "Punta Gorda FL"]
+ *   "Punta Gorda, FL"                      → ["", "Punta Gorda, FL"]
+ *   "Just A Street"                        → ["", "Just A Street"]
  */
 export function splitAddress(address: string | null | undefined): [string, string] {
   const trimmed = (address ?? "").trim();
   if (!trimmed) return ["", ""];
-  const lastCommaIdx = trimmed.lastIndexOf(",");
-  if (lastCommaIdx < 0) return [trimmed, ""];
-  const street = trimmed.slice(0, lastCommaIdx).trim();
-  const cityState = trimmed.slice(lastCommaIdx + 1).trim();
-  return [street, cityState];
+  const segments = trimmed.split(",").map((s) => s.trim());
+
+  // Single segment — no commas at all; treat the whole string as cityState.
+  if (segments.length === 1) return ["", segments[0]];
+
+  const lastSegment = segments[segments.length - 1];
+  const isBareState = lastSegment.split(/\s+/).length === 1;
+
+  if (isBareState) {
+    // Last segment is a standalone state abbreviation or name (e.g. "FL", "Texas").
+    // The second-to-last segment is the city; everything before that is the street.
+    const state = lastSegment;
+    const city = segments[segments.length - 2];
+    const streetSegments = segments.slice(0, segments.length - 2);
+    const street = streetSegments.join(", ");
+    return [street, `${city}, ${state}`];
+  }
+
+  // Last segment already holds "City ST" — split before it.
+  const street = segments.slice(0, segments.length - 1).join(", ");
+  return [street, lastSegment];
 }
 
 /**

@@ -61,6 +61,8 @@ Also recorded: the run under diagnosis degraded because Atlas returned HTTP 402 
 
 ## Dated gate-catch log (one line per lesson, max 30 most recent)
 
+- 2026-06-18: review claimed a duplicate-scenes money bug that was actually mitigated by the existing runScripting scenes-exist guard (lib/pipeline.ts:668-673) — read the code before trusting a review's risk assessment; guards already in place are not "unfixed" bugs.
+- 2026-06-18: verifier trusted a stale HANDOFF note that `CREATOMATE_TEMPLATE_ID_JUST_LISTED_30` was unwired when the live Vercel env had it set (a9f8…30c9) — check live infra (Vercel env vars, Supabase applied migrations) over docs when the two disagree; docs lag, infra is ground truth.
 - 2026-06-11: tests gate caught a vi.mock factory missing a newly-imported export (stringifyDbError, 4 failures) — when a handler gains an import, update every mock factory; prefer the importOriginal pattern so real exports survive.
 - 2026-06-11: tests gate caught stale-base test files silently reverting origin/main's fixes (ingest.test.ts, MarketComparison.test.tsx) — `git diff origin/main -- <file>` before editing any test on a feature branch; restore main's copy and layer changes on top.
 - 2026-06-11: tests gate caught Edit/Write blocked for pinned subagents under the worktree-isolation guard — spawn fixer seats with cwd inside the run worktree (or isolation: worktree) so file edits use the proper tools.
