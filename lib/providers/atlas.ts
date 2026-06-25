@@ -215,11 +215,16 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
   // all browsers). Push-in SKU: endFrameField null (same as seedance-pro-pushin
   // — paired scenes still go through seedance-pair or kling-v3-pro).
   //
-  // PRICING PLACEHOLDER: $0.096/s is copied from the 1080p-SR SKU. 4K likely
-  // costs more — reconcile against the next Atlas invoice and update
-  // SEEDANCE_4K_PRICE_CENTS_PER_SECOND once the real rate is known.
-  // Cost-tracking-first-class: NEVER zero this field; the placeholder errs
-  // conservatively (if 4K is more expensive, under-billing is the worst case).
+  // PRICING: Live Atlas catalog rate for the full Seedance 2.0 model
+  // (bytedance/seedance-2.0/image-to-video), verified 2026-06-26 against
+  // GET https://api.atlascloud.ai/api/v1/models:
+  //   price.actual.base_price = "0.112" → $0.112/s = 11.2¢/s
+  // (The Fast variant is $0.022/s; the full model — which renders 4K — is what
+  // Atlas selects here.) Atlas does not publish a separate 4K line-item; billing
+  // follows the active pricing for the selected resolution. 4K may carry a
+  // resolution premium not separately published — reconcile against the first 4K
+  // invoice and update SEEDANCE_4K_PRICE_CENTS_PER_SECOND if the real rate differs.
+  // Cost-tracking-first-class: NEVER zero this field.
   //
   // Both slug and resolution are env-overridable for instant rollback without
   // a deploy (SEEDANCE_ATLAS_SLUG / SEEDANCE_4K_RESOLUTION).
@@ -231,9 +236,9 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     supportedResolutions: ["4k", "1440p-SR", "1080p-SR", "1080p", "720p-SR", "720p", "480p"],
     generateAudio: false,         // Seedance 2.0 generates music by default — kill it
     forceSourceAspectRatio: "16:9", // Seedance copies input AR → crop 3:2 sources to 16:9
-    priceCentsPerSecond: Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 9.6,
+    priceCentsPerSecond: Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 11.2,
     // priceCentsPerClip = perSec × 5 (standard clip). Math.round so we get an integer cent value.
-    priceCentsPerClip: Math.round((Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 9.6) * 5),
+    priceCentsPerClip: Math.round((Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 11.2) * 5),
   },
   // OPT-IN pair mode (added 2026-06-10) — Bytedance Seedance 2.0 with
   // start+end-frame interpolation via the `last_image` input field

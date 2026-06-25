@@ -459,10 +459,12 @@ describe("ATLAS_MODELS['seedance-2-0-4k'] descriptor", () => {
     expect(ATLAS_MODELS["seedance-2-0-4k"].forceSourceAspectRatio).toBe("16:9");
   });
 
-  it("has priceCentsPerSecond defaulting to 9.6", () => {
-    // Guard: cost must never be 0 — placeholder pending invoice verification.
+  it("has priceCentsPerSecond defaulting to 11.2 (live Atlas catalog rate, verified 2026-06-26)", () => {
+    // Guard: cost must never be 0.
     expect(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerSecond).toBeGreaterThan(0);
-    expect(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerSecond).toBe(9.6);
+    // $0.112/s = 11.2¢/s — live Atlas catalog for full Seedance 2.0 (verified 2026-06-26).
+    // Reconcile against first 4K invoice; update SEEDANCE_4K_PRICE_CENTS_PER_SECOND if it differs.
+    expect(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerSecond).toBe(11.2);
   });
 
   it("priceCentsPerClip is perSecond × 5 (rounded)", () => {

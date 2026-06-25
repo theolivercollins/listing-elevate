@@ -454,7 +454,7 @@ describe("AtlasProvider.generateClip — 402 HTTP response throws AtlasInsuffici
 // BUG: buildProviderFromDecision passed no arg to AtlasProvider(), so this.model
 // defaulted to the env/kling-v2-6-pro SKU (60¢). checkStatus() then returned
 // 60¢ regardless of the SKU that actually rendered (e.g. kling-v2-master = 111¢,
-// seedance-2-0-4k = 48¢). Fix 1 (atlas.ts): generateClip() writes this.model =
+// seedance-2-0-4k = 56¢). Fix 1 (atlas.ts): generateClip() writes this.model =
 // modelForCall. Fix 2 (router.ts): buildProviderFromDecision passes decision.modelKey
 // to the constructor. Both together ensure every checkStatus() row is accurate.
 
@@ -517,7 +517,7 @@ describe("cost-attribution regression — checkStatus reports the SKU that actua
     const provider = buildProviderFromDecision({ provider: "atlas", modelKey: "seedance-2-0-4k" });
     const result = await provider.checkStatus("job-4k-1");
     expect(result.status).toBe("complete");
-    // seedance-2-0-4k priceCentsPerClip = Math.round(9.6 * 5) = 48.
+    // seedance-2-0-4k priceCentsPerClip = Math.round(11.2 * 5) = 56.
     // Different from the kling-v2-6-pro default (60) — confirms correct SKU is recorded.
     expect(result.costCents).toBe(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerClip);
   });
