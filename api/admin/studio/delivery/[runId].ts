@@ -688,6 +688,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
 
+        case 'set_auto_run': {
+          // Kill-switch / arm: flip auto_run on or off for this run.
+          // body: { enabled: boolean }
+          const enabled = req.body?.enabled;
+          if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+          const { updateRun: uRun9, recordMlEvent: rme9 } = await import('../../../../lib/delivery/runs.js');
+          const updated9 = await uRun9(runId, { auto_run: enabled } as never);
+          await rme9(runId, 'auto_advance', { source: 'operator', action: 'set_auto_run', enabled });
+          // Best-effort gate kick: when arming, resolve immediately if the run
+          // already sits at a gate stage rather than waiting for the next cron sweep.
+          let gateOutcome9: unknown;
+          if (enabled) {
+            try {
+              const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+              const freshRun9 = await getRun(runId);
+              if (freshRun9) gateOutcome9 = await resolveGate(freshRun9);
+            } catch (e) {
+              console.warn('[delivery] set_auto_run: resolveGate best-effort failed', e);
+            }
+          }
+          const body9: { run: unknown; gate_outcome?: unknown } = { run: updated9 };
+          if (gateOutcome9 !== undefined) body9.gate_outcome = gateOutcome9;
+          return res.status(200).json(body9);
+        }
+
+        case 'resume_autopilot': {
+          // Clear the pause state set by pauseForHuman, re-arm autopilot, and
+          // immediately kick the gate resolver so the run continues without delay.
+          const { updateRun: uRun10, recordMlEvent: rme10 } = await import('../../../../lib/delivery/runs.js');
+          const updated10 = await uRun10(runId, { paused_reason: null, auto_paused_at: null, auto_run: true } as never);
+          await rme10(runId, 'auto_resume', { source: 'operator' });
+          let gateOutcome10: unknown;
+          try {
+            const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+            gateOutcome10 = await resolveGate(updated10);
+          } catch (e) {
+            console.warn('[delivery] resume_autopilot: resolveGate best-effort failed', e);
+          }
+          return res.status(200).json({ run: updated10, gate_outcome: gateOutcome10 });
+        }
+
         default:
           return res.status(400).json({ error: `unknown action '${action}'` });
       }

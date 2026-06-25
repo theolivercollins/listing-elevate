@@ -158,8 +158,8 @@ export type MlEventType =
   | 'photo_selection' | 'reorder' | 'regenerate' | 'variant_override' | 'script_edit'
   | 'voice_choice' | 'music_choice' | 'rating' | 'comment' | 'details_edit'
   | 'music_feedback'
-  // Added for autopilot — DB migration T1 must add this value to the CHECK constraint on ml_events.event_type.
-  | 'auto_pause';
+  // Added for autopilot — DB migration 090 adds these values to the CHECK constraint on ml_events.event_type.
+  | 'auto_pause' | 'auto_advance' | 'auto_resume';
 
 export type MlEventRow = {
   id: string;
