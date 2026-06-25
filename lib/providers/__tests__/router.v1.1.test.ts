@@ -5,10 +5,11 @@ import {
   stripMovementVerbs,
   stripFocalFixation,
   shouldForcePushIn,
+  isSeedancePushInSku,
   V1_DEFAULT_SKU,
   getEnabledProviders,
 } from "../router.js";
-import { ATLAS_MODELS } from "../atlas.js";
+import { ATLAS_MODELS, getOperatorVideoSkus, isOperatorSkuAvailable } from "../atlas.js";
 import type { RoomType, CameraMovement } from "../../types.js";
 
 const baseScene = {
@@ -428,5 +429,153 @@ describe("getEnabledProviders — v1.1 needs atlas", () => {
     // there is no longer a Seedance-specific entry leaking through.
     const enabled = getEnabledProviders();
     expect(enabled).not.toContain("seedance" as never);
+  });
+});
+
+// ─── SEEDANCE 2.0 · 4K SKU (seedance-2-0-4k) ────────────────────────────────
+
+describe("ATLAS_MODELS['seedance-2-0-4k'] descriptor", () => {
+  it("is registered in ATLAS_MODELS", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"]).toBeDefined();
+  });
+
+  it("defaults to resolution '4k'", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"].resolution).toBe("4k");
+  });
+
+  it("is a push-in SKU — endFrameField is null", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"].endFrameField).toBeNull();
+  });
+
+  it("has '4k' as the first entry in supportedResolutions", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"].supportedResolutions?.[0]).toBe("4k");
+  });
+
+  it("has generateAudio false (kill Seedance default music track)", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"].generateAudio).toBe(false);
+  });
+
+  it("has forceSourceAspectRatio '16:9'", () => {
+    expect(ATLAS_MODELS["seedance-2-0-4k"].forceSourceAspectRatio).toBe("16:9");
+  });
+
+  it("has priceCentsPerSecond defaulting to 9.6", () => {
+    // Guard: cost must never be 0 — placeholder pending invoice verification.
+    expect(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerSecond).toBeGreaterThan(0);
+    expect(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerSecond).toBe(9.6);
+  });
+
+  it("priceCentsPerClip is perSecond × 5 (rounded)", () => {
+    const desc = ATLAS_MODELS["seedance-2-0-4k"];
+    expect(desc.priceCentsPerClip).toBe(Math.round(desc.priceCentsPerSecond * 5));
+  });
+});
+
+// ─── isSeedancePushInSku ─────────────────────────────────────────────────────
+
+describe("isSeedancePushInSku", () => {
+  it("returns true for 'seedance-pro-pushin'", () => {
+    expect(isSeedancePushInSku("seedance-pro-pushin")).toBe(true);
+  });
+
+  it("returns true for 'seedance-2-0-4k'", () => {
+    expect(isSeedancePushInSku("seedance-2-0-4k")).toBe(true);
+  });
+
+  it("returns false for other SKUs", () => {
+    expect(isSeedancePushInSku("kling-v3-pro")).toBe(false);
+    expect(isSeedancePushInSku("kling-v2-6-pro")).toBe(false);
+    expect(isSeedancePushInSku("seedance-pair")).toBe(false);
+  });
+
+  it("returns false for null/undefined", () => {
+    expect(isSeedancePushInSku(null)).toBe(false);
+    expect(isSeedancePushInSku(undefined)).toBe(false);
+  });
+});
+
+// ─── getOperatorVideoSkus + isOperatorSkuAvailable ───────────────────────────
+
+describe("getOperatorVideoSkus", () => {
+  it("includes 'seedance-2-0-4k' as available", () => {
+    const skus = getOperatorVideoSkus();
+    const entry = skus.find((s) => s.key === "seedance-2-0-4k");
+    expect(entry).toBeDefined();
+    expect(entry?.available).toBe(true);
+    expect(entry?.label).toBe("Seedance 2.0 · 4K");
+  });
+
+  it("includes null key (Automatic) as first entry", () => {
+    const skus = getOperatorVideoSkus();
+    expect(skus[0].key).toBeNull();
+    expect(skus[0].available).toBe(true);
+  });
+
+  it("includes seedance-pro-pushin as available", () => {
+    const skus = getOperatorVideoSkus();
+    const entry = skus.find((s) => s.key === "seedance-pro-pushin");
+    expect(entry).toBeDefined();
+    expect(entry?.available).toBe(true);
+  });
+
+  it("all entries have an available flag", () => {
+    for (const entry of getOperatorVideoSkus()) {
+      expect(typeof entry.available).toBe("boolean");
+    }
+  });
+});
+
+describe("isOperatorSkuAvailable", () => {
+  it("null key (Automatic) is always available", () => {
+    expect(isOperatorSkuAvailable(null)).toBe(true);
+  });
+
+  it("'seedance-2-0-4k' is available", () => {
+    expect(isOperatorSkuAvailable("seedance-2-0-4k")).toBe(true);
+  });
+
+  it("'seedance-pro-pushin' is available", () => {
+    expect(isOperatorSkuAvailable("seedance-pro-pushin")).toBe(true);
+  });
+
+  it("unknown key returns false", () => {
+    expect(isOperatorSkuAvailable("nonexistent-sku-xyz")).toBe(false);
+  });
+});
+
+// ─── selectProviderForScene — skuOverride (4th param) ────────────────────────
+
+describe("selectProviderForScene — skuOverride param", () => {
+  it("a valid skuOverride forces that SKU (seedance-2-0-4k)", () => {
+    const decision = selectProviderForScene(baseScene, [], "v1", "seedance-2-0-4k");
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe("seedance-2-0-4k");
+    expect(decision.fallback).toBeUndefined(); // terminal — no failover
+  });
+
+  it("a valid skuOverride forces that SKU (kling-v3-pro)", () => {
+    const decision = selectProviderForScene(baseScene, [], "v1", "kling-v3-pro");
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe("kling-v3-pro");
+    expect(decision.fallback).toBeUndefined();
+  });
+
+  it("skuOverride is ignored when atlas is in excluded list", () => {
+    const decision = selectProviderForScene(baseScene, ["atlas"], "v1", "seedance-2-0-4k");
+    expect(decision.modelKey).not.toBe("seedance-2-0-4k");
+  });
+
+  it("an unknown/unregistered skuOverride falls through to normal routing", () => {
+    const decision = selectProviderForScene(baseScene, [], "v1", "nonexistent-sku-xyz");
+    // Falls through — normal v1 routing returns atlas+V1_DEFAULT_SKU
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe(V1_DEFAULT_SKU);
+  });
+
+  it("null skuOverride (Automatic) behaves identically to omitting the param", () => {
+    const withNull = selectProviderForScene(baseScene, [], "v1.1", null);
+    const withOmit = selectProviderForScene(baseScene, [], "v1.1");
+    expect(withNull.provider).toBe(withOmit.provider);
+    expect(withNull.modelKey).toBe(withOmit.modelKey);
   });
 });

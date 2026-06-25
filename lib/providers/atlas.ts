@@ -205,6 +205,32 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
     priceCentsPerClip: 48,       // 9.6 × 5
   },
+  // Native UHD 4K tier of Seedance 2.0 (2026-06-26) — same model/slug as
+  // seedance-pro-pushin but rendered at the native "4k" resolution tier
+  // (3840×2160 16:9, 10-bit H.265/HEVC; Atlas re-encodes for delivery).
+  // Push-in SKU: endFrameField null (same as seedance-pro-pushin — paired
+  // scenes still go through seedance-pair or kling-v3-pro).
+  //
+  // PRICING PLACEHOLDER: $0.096/s is copied from the 1080p-SR SKU. 4K likely
+  // costs more — reconcile against the next Atlas invoice and update
+  // SEEDANCE_4K_PRICE_CENTS_PER_SECOND once the real rate is known.
+  // Cost-tracking-first-class: NEVER zero this field; the placeholder errs
+  // conservatively (if 4K is more expensive, under-billing is the worst case).
+  //
+  // Both slug and resolution are env-overridable for instant rollback without
+  // a deploy (SEEDANCE_ATLAS_SLUG / SEEDANCE_4K_RESOLUTION).
+  "seedance-2-0-4k": {
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: null,          // push-in SKU — no end-frame (same as seedance-pro-pushin)
+    allowedDurations: [5, 10],    // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_4K_RESOLUTION as AtlasResolution | undefined) ?? "4k",
+    supportedResolutions: ["4k", "1440p-SR", "1080p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,         // Seedance 2.0 generates music by default — kill it
+    forceSourceAspectRatio: "16:9", // Seedance copies input AR → crop 3:2 sources to 16:9
+    priceCentsPerSecond: Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 9.6,
+    // priceCentsPerClip = perSec × 5 (standard clip). Math.round so we get an integer cent value.
+    priceCentsPerClip: Math.round((Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 9.6) * 5),
+  },
   // OPT-IN pair mode (added 2026-06-10) — Bytedance Seedance 2.0 with
   // start+end-frame interpolation via the `last_image` input field
   // (confirmed against the live Atlas input schema for
@@ -291,6 +317,48 @@ export function atlasClipCostCents(modelKey: string, durationSeconds: number = D
   const descriptor = ATLAS_MODELS[modelKey];
   if (!descriptor) return 0;
   return descriptor.priceCentsPerSecond * durationSeconds;
+}
+
+// ─── OPERATOR VIDEO SKU PICKER ──────────────────────────────────────────────
+//
+// Server-side source of truth for the operator model picker. Keeps the UI and
+// any API validation layer in sync without duplicating the list. The `available`
+// flag exists to support future gated SKUs (e.g. Seedance 2.5 when it launches)
+// that should appear grayed-out before enablement — wire them in here with
+// `available: false` and they slot into the UI automatically.
+
+export interface OperatorVideoSkuOption {
+  key: string | null;
+  label: string;
+  available: boolean;
+}
+
+/**
+ * getOperatorVideoSkus — returns the canonical ordered list of operator-selectable
+ * video SKUs. `null` key means "Automatic (recommended)" — the router decides.
+ * All entries are currently available; future gated SKUs (e.g. Seedance 2.5)
+ * add with `available: false` until the provider unlocks them.
+ */
+export function getOperatorVideoSkus(): OperatorVideoSkuOption[] {
+  return [
+    { key: null,                  label: "Automatic (recommended)", available: true },
+    { key: "seedance-pro-pushin", label: "Seedance 2.0",            available: true },
+    { key: "seedance-2-0-4k",     label: "Seedance 2.0 · 4K",       available: true },
+    { key: "kling-v3-pro",        label: "Kling 3.0 Pro",           available: true },
+    { key: "kling-v3-std",        label: "Kling 3.0 Std",           available: true },
+    { key: "kling-v2-6-pro",      label: "Kling 2.6 Pro",           available: true },
+    { key: "kling-v2-master",     label: "Kling 2.0 Master",        available: true },
+    { key: "kling-o3-pro",        label: "Kling O3 Pro",            available: true },
+  ];
+}
+
+/**
+ * isOperatorSkuAvailable — true when `key` is null (Automatic) OR is present
+ * in the operator picker list with `available: true`.
+ */
+export function isOperatorSkuAvailable(key: string | null): boolean {
+  if (key === null) return true;
+  return getOperatorVideoSkus().some((opt) => opt.key === key && opt.available);
 }
 
 const ENDPOINT = "https://api.atlascloud.ai/api/v1/model/generateVideo";
