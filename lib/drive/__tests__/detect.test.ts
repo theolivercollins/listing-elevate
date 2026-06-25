@@ -299,9 +299,9 @@ describe("renewChannelIfNeeded", () => {
     );
     expect(upsertWatchState).toHaveBeenCalledWith(
       expect.objectContaining({
-        channelId: "ch-new",
-        resourceId: "res-new",
-        startPageToken: "new-token",
+        channel_id: "ch-new",
+        resource_id: "res-new",
+        start_page_token: "new-token",
       }),
     );
     expect(stopChannel).not.toHaveBeenCalled();

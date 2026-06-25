@@ -49,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (startPageToken) {
       const result = await listChanges(startPageToken);
       if (result.newStartPageToken) {
-        await upsertWatchState({ startPageToken: result.newStartPageToken });
+        await upsertWatchState({ start_page_token: result.newStartPageToken });
       }
     }
   } catch (err) {

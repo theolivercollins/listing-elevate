@@ -132,7 +132,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
         images.map(async ({ id, name, mimeType }) => {
           const { bytes } = await downloadFile(id);
           // Node 18+ provides a global File class.
-          return new File([bytes], name, { type: mimeType });
+          return new File([Buffer.from(bytes)], name, { type: mimeType });
         }),
       );
       await uploadPhotosToStorage(files, `${propertyId}/raw`);

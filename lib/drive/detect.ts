@@ -172,7 +172,7 @@ export async function renewChannelIfNeeded(): Promise<{ renewed: boolean }> {
     }
   }
 
-  await upsertWatchState({ channelId, resourceId, expiration, startPageToken });
+  await upsertWatchState({ channel_id: channelId, resource_id: resourceId, expiration, start_page_token: startPageToken });
 
   return { renewed: true };
 }
