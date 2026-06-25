@@ -1,0 +1,242 @@
+/**
+ * Approve / regenerate orchestration for Drive-intake rows.
+ *
+ * Non-prod write guard (mirrors lib/assembly/finalize.ts and
+ * lib/pipeline/stuck-reaper.ts): property creation, photo uploads, and pipeline
+ * triggers only run when VERCEL_ENV==='production' OR
+ * LE_ALLOW_NONPROD_WRITES==='true'.
+ *
+ * Pipeline trigger pattern: runPipeline(propertyId).catch(...) — fire-and-
+ * forget without await, exactly as done in api/stripe/webhook.ts and the
+ * owner-bypass path of api/properties/index.ts.
+ */
+
+import {
+  getIntake,
+  setStatus,
+  setPropertyId,
+  appendFeedback,
+} from "./intake-db.js";
+import { lookupMlsByAddress } from "../mls/lookup.js";
+import { createProperty, getSupabase, updatePropertyStatus } from "../db.js";
+import { listFinalImages, downloadFile } from "./client.js";
+import { uploadPhotosToStorage } from "../../src/lib/photo-upload.js";
+import { runPipeline } from "../pipeline.js";
+
+// ── Defaults ──────────────────────────────────────────────────────────────────
+// Match the only live production templates (JUST_LISTED 15/30 horizontal).
+// See docs/state/PROJECT-STATE.md and MEMORY.md operator-studio-template-config.
+
+const DEFAULT_PACKAGE = "JUST_LISTED";
+const DEFAULT_DURATION = 30;
+const DEFAULT_ORIENTATION = "horizontal";
+
+// ── Write guard ───────────────────────────────────────────────────────────────
+
+function isWriteAllowed(): boolean {
+  return (
+    process.env.VERCEL_ENV === "production" ||
+    process.env.LE_ALLOW_NONPROD_WRITES === "true"
+  );
+}
+
+// ── Result types ──────────────────────────────────────────────────────────────
+
+export interface ApproveResult {
+  status: "generating" | "skipped" | "error";
+  propertyId?: string;
+  reason?: string;
+}
+
+export interface RegenerateResult {
+  status: "generating" | "skipped" | "error";
+  propertyId?: string;
+  reason?: string;
+}
+
+// ── approveIntake ─────────────────────────────────────────────────────────────
+
+/**
+ * Approve a drive_intake row:
+ *   1. Guard — must be awaiting_approval or approved.
+ *   2. Non-prod write guard — return {status:'skipped'} when off.
+ *   3. Mark ingesting, enrich via MLS (best-effort), create property (queued),
+ *      download + upload Final images, fire pipeline, mark generating.
+ *   4. On any throw — mark error and return {status:'error'}.
+ */
+export async function approveIntake(intakeId: string): Promise<ApproveResult> {
+  // 1. Load intake
+  const intake = await getIntake(intakeId);
+  if (!intake) {
+    return { status: "error", reason: "intake not found" };
+  }
+  if (intake.status !== "awaiting_approval" && intake.status !== "approved") {
+    return {
+      status: "error",
+      reason: `intake status is '${intake.status}', expected awaiting_approval or approved`,
+    };
+  }
+
+  // 2. Write-guard check — bail early without touching anything
+  if (!isWriteAllowed()) {
+    return { status: "skipped", reason: "non-prod" };
+  }
+
+  try {
+    // 3. Mark ingesting
+    await setStatus(intakeId, "ingesting");
+
+    // 4. MLS enrichment (tolerate failure — fall back to nulls so we always
+    //    create the property, even if Apify is unconfigured or the address
+    //    is not indexed yet)
+    let mlsPrice: number | null = null;
+    let mlsBedrooms: number | null = null;
+    let mlsBathrooms: number | null = null;
+    let mlsAgent: string | null = null;
+    try {
+      const mls = await lookupMlsByAddress(intake.address, null);
+      mlsPrice = mls.price ?? null;
+      mlsBedrooms = mls.bedrooms ?? null;
+      mlsBathrooms = mls.bathrooms ?? null;
+      mlsAgent = mls.agent ?? null;
+    } catch {
+      console.warn(
+        `[drive/orchestrate] MLS lookup failed for '${intake.address}' — creating property with null fallbacks`,
+      );
+    }
+
+    // 5. Create property with status='queued' so runPipeline can claim it.
+    //    Mirrors the owner-bypass path in api/properties/index.ts which sets
+    //    status='queued' and immediately fires runPipeline.
+    const property = await createProperty({
+      address: intake.address,
+      price: mlsPrice ?? 0,
+      bedrooms: mlsBedrooms ?? 0,
+      bathrooms: mlsBathrooms ?? 0,
+      listing_agent: mlsAgent ?? "Unknown",
+      selected_package: DEFAULT_PACKAGE,
+      selected_duration: DEFAULT_DURATION,
+      selected_orientation: DEFAULT_ORIENTATION,
+      submitted_by: "drive-intake",
+      add_custom_request: !!intake.feedback_notes,
+      custom_request_text: intake.feedback_notes ?? null,
+      status: "queued",
+    });
+
+    const propertyId = property.id;
+
+    // 6. Download each Final/ image from Drive and upload to property-photos bucket.
+    if (intake.final_folder_id) {
+      const images = await listFinalImages(intake.final_folder_id);
+      const files: File[] = await Promise.all(
+        images.map(async ({ id, name, mimeType }) => {
+          const { bytes } = await downloadFile(id);
+          // Node 18+ provides a global File class.
+          return new File([bytes], name, { type: mimeType });
+        }),
+      );
+      await uploadPhotosToStorage(files, `${propertyId}/raw`);
+    }
+
+    // 7. Fire pipeline — fire-and-forget, exactly as in api/stripe/webhook.ts.
+    runPipeline(propertyId).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[drive/orchestrate] runPipeline error for ${propertyId}:`,
+        msg,
+      );
+    });
+
+    await setPropertyId(intakeId, propertyId);
+    await setStatus(intakeId, "generating");
+
+    return { status: "generating", propertyId };
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[drive/orchestrate] approveIntake failed for ${intakeId}:`,
+      reason,
+    );
+    // Best-effort status update — don't throw if this also fails
+    await setStatus(intakeId, "error").catch(() => {});
+    return { status: "error", reason };
+  }
+}
+
+// ── regenerateIntake ──────────────────────────────────────────────────────────
+
+/**
+ * Append operator notes to the intake and property, reset property to 'queued',
+ * and re-fire the pipeline. Intake status stays 'generating'.
+ *
+ * There is no dedicated "regenerate" entrypoint in lib/pipeline.ts; the
+ * existing fire-and-forget runPipeline pattern with a status reset is used
+ * (same as how the Re-run UI works via api/pipeline/[propertyId].ts).
+ */
+export async function regenerateIntake(
+  intakeId: string,
+  notes: string,
+): Promise<RegenerateResult> {
+  // Write-guard check
+  if (!isWriteAllowed()) {
+    return { status: "skipped", reason: "non-prod" };
+  }
+
+  const intake = await getIntake(intakeId);
+  if (!intake) {
+    return { status: "error", reason: "intake not found" };
+  }
+  if (!intake.property_id) {
+    return {
+      status: "error",
+      reason: "no property_id on intake — call approveIntake first",
+    };
+  }
+
+  try {
+    // Append feedback notes to intake row
+    await appendFeedback(intakeId, notes);
+
+    // Merge notes into property.custom_request_text
+    const supabase = getSupabase();
+    const { data: propRow } = await supabase
+      .from("properties")
+      .select("custom_request_text")
+      .eq("id", intake.property_id)
+      .maybeSingle();
+    const existingText =
+      (propRow as { custom_request_text?: string | null } | null)
+        ?.custom_request_text ?? null;
+    const combinedText = existingText ? `${existingText}\n${notes}` : notes;
+
+    await supabase
+      .from("properties")
+      .update({
+        add_custom_request: true,
+        custom_request_text: combinedText,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", intake.property_id);
+
+    // Reset property to 'queued' so tryClaimPipelineRun can acquire it
+    await updatePropertyStatus(intake.property_id, "queued");
+
+    // Fire pipeline — fire-and-forget
+    runPipeline(intake.property_id).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[drive/orchestrate] runPipeline error on regen for ${intake.property_id}:`,
+        msg,
+      );
+    });
+
+    return { status: "generating", propertyId: intake.property_id };
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[drive/orchestrate] regenerateIntake failed for ${intakeId}:`,
+      reason,
+    );
+    return { status: "error", reason };
+  }
+}
