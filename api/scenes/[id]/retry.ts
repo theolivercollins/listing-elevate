@@ -62,6 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from("scenes")
     .update({
       provider_task_id: null,
+      atlas_model_sku: null,
       clip_url: null,
       generation_cost_cents: null,
       generation_time_ms: null,
@@ -103,6 +104,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           submitted_at: new Date().toISOString(),
           status: "generating",
           attempt_count: nextAttemptCount,
+          // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+          // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+          // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+          atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
         })
         .eq("id", sceneId);
 
