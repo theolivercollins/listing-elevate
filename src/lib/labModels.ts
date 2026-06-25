@@ -200,6 +200,28 @@ export const LAB_MODELS: LabModelInfo[] = [
   },
 ];
 
+// ─── Operator inception SKU list ─────────────────────────────────────────────
+//
+// Mirror of getOperatorVideoSkus() in lib/providers/atlas.ts — keep in lockstep.
+// The server module reads process.env at import time and must never be bundled
+// into the browser; this list is the client-safe equivalent.
+export interface OperatorVideoSkuOption {
+  key: string | null;
+  label: string;
+  available: boolean;
+}
+
+export const OPERATOR_VIDEO_SKUS: OperatorVideoSkuOption[] = [
+  { key: null,                  label: 'Automatic (recommended)', available: true },
+  { key: 'seedance-pro-pushin', label: 'Seedance 2.0',            available: true },
+  { key: 'seedance-2-0-4k',     label: 'Seedance 2.0 · 4K',       available: true },
+  { key: 'kling-v3-pro',        label: 'Kling 3.0 Pro',           available: true },
+  { key: 'kling-v3-std',        label: 'Kling 3.0 Std',           available: true },
+  { key: 'kling-v2-6-pro',      label: 'Kling 2.6 Pro',           available: true },
+  { key: 'kling-v2-master',     label: 'Kling 2.0 Master',        available: true },
+  { key: 'kling-o3-pro',        label: 'Kling O3 Pro',            available: true },
+];
+
 export function getLabModel(key: string): LabModelInfo | undefined {
   return LAB_MODELS.find((m) => m.key === key);
 }
