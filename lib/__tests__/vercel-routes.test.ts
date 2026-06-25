@@ -97,6 +97,10 @@ const GUARDED_PATHS = [
   // studio hardening batch (PR #125) — post-approval decouple endpoint
   'api/pipeline/continue/[runId].ts',
 
+  // drive-pull-brian branch — new Drive Pull endpoints
+  'api/admin/studio/drive/folders.ts',
+  'api/admin/studio/drive/pull.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
