@@ -1,31 +1,55 @@
 /**
- * AutopilotPanel — command-center section for autopilot-enabled delivery runs.
+ * AutopilotPanel — command-center section for autopilot delivery runs.
  *
- * Renders:
- *  - Pause / Take over button  (when autoRun && !paused)
- *  - Resume autopilot button   (when paused)
- *  - Paused banner with reason (when pausedReason is set)
- *  - Decision log: timeline of ml_events where payload.source === 'auto'
+ * Two modes:
+ *  - autoRun=false: compact "Enable autopilot" affordance (POSTs set_auto_run {enabled:true})
+ *  - autoRun=true:  full panel — Pause/Take-over + Resume + decision log
  *
- * The component fetches ml_events from the delivery GET endpoint on mount.
- * If the endpoint doesn't yet return ml_events the log shows gracefully empty.
+ * Decision log maps the ACTUAL ml_events payload keys written by auto-run.ts:
+ *   checkpoint_a → confidence + margins
+ *   details      → confidence + fields_present
+ *   voiceover    → voice_id + tone_pick
+ *   music        → mood + music_track_id
+ *   checkpoint_b → score (confidence alias)
+ *   auto_pause   → reason
  *
- * Action dispatch is delegated back to the parent via onAction so the parent's
- * deliveryAction helper (which already re-syncs the bundle) is reused —
- * no duplicate fetch logic here.
+ * Action dispatch is delegated to the parent via onAction so deliveryAction
+ * (which already re-syncs the bundle) is reused — no duplicate fetch logic here.
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, AlertTriangle, Pause, Play } from 'lucide-react';
+import { Loader2, AlertTriangle, Pause, Play, Zap } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
 import { getRelativeTime } from '@/lib/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface MlEventPayload {
+  source?: string;
+  gate?: string;
+  confidence?: number;
+  // checkpoint_a
+  margins?: Array<{ sceneId: string; margin: number }>;
+  // details
+  fields_present?: string[];
+  // voiceover
+  voice_id?: string;
+  tone_pick?: string;
+  // music
+  mood?: string;
+  music_track_id?: string;
+  // checkpoint_b
+  score?: number;
+  confident_scenes?: number;
+  degraded_scenes?: number;
+  // auto_pause events (from pauseForHuman)
+  reason?: string;
+}
+
 interface MlEvent {
   id: string;
   event_type: string;
-  payload: Record<string, unknown>;
+  payload: MlEventPayload;
   created_at: string;
 }
 
@@ -42,6 +66,50 @@ export interface AutopilotPanelProps {
   onAction: (body: Record<string, unknown>) => Promise<void>;
 }
 
+// ─── Per-gate event description ────────────────────────────────────────────────
+
+/**
+ * Produces a short human-readable summary for each gate's ml_event payload.
+ * Reads the actual keys written by auto-run.ts resolvers, not fictional keys.
+ */
+function describeEvent(pl: MlEventPayload, eventType: string): string {
+  // Pause events always surface their reason (auto_pause type, or payloads with reason + no gate)
+  if (eventType === 'auto_pause' || (!pl.gate && pl.reason)) {
+    return pl.reason ?? 'Paused — waiting for human review';
+  }
+
+  switch (pl.gate) {
+    case 'checkpoint_a': {
+      const margin =
+        typeof pl.confidence === 'number' ? pl.confidence.toFixed(2) : '—';
+      return `Checkpoint A — confident (avg margin ${margin})`;
+    }
+    case 'details':
+      return 'Details — all fields present';
+    case 'voiceover': {
+      const voice = pl.voice_id ?? '—';
+      const tone = pl.tone_pick ? ` (${pl.tone_pick})` : '';
+      return `Voiceover — picked voice ${voice}${tone}`;
+    }
+    case 'music': {
+      const mood = pl.mood ?? '—';
+      const track = pl.music_track_id ?? '—';
+      return `Music — mood ${mood}, track ${track}`;
+    }
+    case 'checkpoint_b': {
+      const score =
+        typeof pl.score === 'number'
+          ? pl.score.toFixed(2)
+          : typeof pl.confidence === 'number'
+            ? pl.confidence.toFixed(2)
+            : '—';
+      return `Checkpoint B — quality ${score}`;
+    }
+    default:
+      return pl.gate ? `${pl.gate} — advanced` : 'Autopilot advanced';
+  }
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AutopilotPanel({
@@ -54,6 +122,8 @@ export function AutopilotPanel({
   const [events, setEvents] = useState<MlEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
 
+  const [enablePending, setEnablePending] = useState(false);
+  const [enableError, setEnableError] = useState<string | null>(null);
   const [pausePending, setPausePending] = useState(false);
   const [pauseError, setPauseError] = useState<string | null>(null);
   const [resumePending, setResumePending] = useState(false);
@@ -69,7 +139,7 @@ export function AutopilotPanel({
       if (!res.ok) return;
       const data = (await res.json()) as DeliveryBundleWithEvents;
       const autoEvents = (data.ml_events ?? []).filter(
-        (e) => (e.payload as { source?: string }).source === 'auto',
+        (e) => (e.payload as MlEventPayload).source === 'auto',
       );
       setEvents(autoEvents);
     } catch {
@@ -84,6 +154,18 @@ export function AutopilotPanel({
   }, [loadEvents]);
 
   // ── Action handlers ────────────────────────────────────────────────────────
+
+  const handleEnable = async () => {
+    setEnablePending(true);
+    setEnableError(null);
+    try {
+      await onAction({ action: 'set_auto_run', enabled: true });
+    } catch (err) {
+      setEnableError(err instanceof Error ? err.message : 'Enable failed');
+    } finally {
+      setEnablePending(false);
+    }
+  };
 
   const handlePause = async () => {
     setPausePending(true);
@@ -109,7 +191,66 @@ export function AutopilotPanel({
     }
   };
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Compact enable affordance (autopilot is off) ───────────────────────────
+
+  if (!autoRun) {
+    return (
+      <div
+        className="studio-card"
+        style={{
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Zap size={13} strokeWidth={1.8} style={{ color: 'var(--le-muted)' }} />
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--le-ink)' }}>
+            Autopilot
+          </span>
+          <span style={{ fontSize: 12, color: 'var(--le-muted-2)', fontWeight: 400 }}>
+            — off
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {enableError && (
+            <span
+              className="studio-error-strip"
+              style={{ padding: '3px 8px', fontSize: 11.5 }}
+            >
+              {enableError}
+            </span>
+          )}
+          <button
+            type="button"
+            className="studio-cta-primary"
+            style={{
+              fontSize: 12,
+              padding: '6px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+            disabled={enablePending}
+            onClick={() => void handleEnable()}
+            data-testid="autopilot-enable-btn"
+          >
+            {enablePending ? (
+              <Loader2 size={12} className="studio-spinner" />
+            ) : (
+              <Zap size={12} strokeWidth={2} />
+            )}
+            Enable autopilot
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full panel (autopilot is on) ───────────────────────────────────────────
 
   return (
     <div
@@ -117,7 +258,14 @@ export function AutopilotPanel({
       style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}
     >
       {/* Header + action buttons */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
         <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--le-ink)' }}>
           Autopilot
         </span>
@@ -127,7 +275,13 @@ export function AutopilotPanel({
             <button
               type="button"
               className="studio-cta-primary"
-              style={{ fontSize: 12, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+              style={{
+                fontSize: 12,
+                padding: '6px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
               disabled={resumePending}
               onClick={() => void handleResume()}
               data-testid="autopilot-resume-btn"
@@ -139,11 +293,17 @@ export function AutopilotPanel({
               )}
               Resume autopilot
             </button>
-          ) : autoRun ? (
+          ) : (
             <button
               type="button"
               className="studio-btn-ghost"
-              style={{ fontSize: 12, padding: '6px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
+              style={{
+                fontSize: 12,
+                padding: '6px 14px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
               disabled={pausePending}
               onClick={() => void handlePause()}
               data-testid="autopilot-pause-btn"
@@ -155,7 +315,7 @@ export function AutopilotPanel({
               )}
               Take over / Pause
             </button>
-          ) : null}
+          )}
         </div>
       </div>
 
@@ -171,7 +331,7 @@ export function AutopilotPanel({
         </div>
       )}
 
-      {/* Paused banner — prompts operator to finish this gate manually */}
+      {/* Paused banner */}
       {isPaused && (
         <div className="studio-warn-strip">
           <AlertTriangle size={14} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -234,13 +394,9 @@ export function AutopilotPanel({
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {events.map((ev, idx) => {
-              const pl = ev.payload as {
-                gate?: string;
-                choice?: string;
-                confidence?: number;
-                reason?: string;
-              };
+              const pl = ev.payload as MlEventPayload;
               const isLast = idx === events.length - 1;
+              const summary = describeEvent(pl, ev.event_type);
 
               return (
                 <div
@@ -289,7 +445,6 @@ export function AutopilotPanel({
                         alignItems: 'center',
                         gap: 8,
                         flexWrap: 'wrap',
-                        marginBottom: pl.reason ? 4 : 0,
                       }}
                     >
                       {pl.gate && (
@@ -304,17 +459,6 @@ export function AutopilotPanel({
                           }}
                         >
                           {pl.gate}
-                        </span>
-                      )}
-                      {pl.choice && (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: 'var(--le-ink-2)',
-                            fontWeight: 500,
-                          }}
-                        >
-                          {pl.choice}
                         </span>
                       )}
                       {pl.confidence !== undefined && (
@@ -346,18 +490,16 @@ export function AutopilotPanel({
                       </span>
                     </div>
 
-                    {pl.reason && (
-                      <p
-                        style={{
-                          margin: 0,
-                          fontSize: 12,
-                          color: 'var(--le-muted)',
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        {pl.reason}
-                      </p>
-                    )}
+                    <p
+                      style={{
+                        margin: '2px 0 0',
+                        fontSize: 12,
+                        color: 'var(--le-muted)',
+                        lineHeight: 1.45,
+                      }}
+                    >
+                      {summary}
+                    </p>
                   </div>
                 </div>
               );

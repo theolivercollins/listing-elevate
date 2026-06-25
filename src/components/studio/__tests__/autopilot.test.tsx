@@ -107,7 +107,7 @@ describe('AutopilotPanel', () => {
     expect(await screen.findByText('Checkpoint B rating below threshold')).toBeInTheDocument();
   });
 
-  it('renders decision log entries from ml_events with source=auto', async () => {
+  it('renders decision log entries from ml_events with source=auto (realistic checkpoint_a payload)', async () => {
     authedFetch.mockImplementation(() =>
       jsonOk({
         ml_events: [
@@ -117,9 +117,8 @@ describe('AutopilotPanel', () => {
             payload: {
               source: 'auto',
               gate: 'checkpoint_a',
-              choice: 'advance',
               confidence: 0.92,
-              reason: 'Scene order approved by AI.',
+              margins: [{ sceneId: 'scene-1', margin: 0.92 }],
             },
             created_at: '2026-06-26T10:00:00Z',
           },
@@ -143,11 +142,13 @@ describe('AutopilotPanel', () => {
       />,
     );
 
-    // Only the 'auto' event should appear
+    // Gate badge still shows
     expect(await screen.findByText('checkpoint_a')).toBeInTheDocument();
-    expect(screen.getByText('Scene order approved by AI.')).toBeInTheDocument();
+    // Human-readable summary for checkpoint_a
+    expect(screen.getByText('Checkpoint A — confident (avg margin 0.92)')).toBeInTheDocument();
+    // Confidence percentage still shows
     expect(screen.getByText('92% confidence')).toBeInTheDocument();
-    // operator event should not appear
+    // Operator event filtered out — its id never appears
     expect(screen.queryByText('ev-2')).not.toBeInTheDocument();
   });
 
@@ -163,5 +164,137 @@ describe('AutopilotPanel', () => {
     );
 
     expect(await screen.findByText('No autopilot decisions yet.')).toBeInTheDocument();
+  });
+
+  // ── FIX 1 — Enable from off ───────────────────────────────────────────────
+
+  it('renders Enable autopilot button when autoRun is false', async () => {
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={false}
+        pausedReason={null}
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(await screen.findByTestId('autopilot-enable-btn')).toBeInTheDocument();
+    expect(screen.queryByTestId('autopilot-pause-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('autopilot-resume-btn')).not.toBeInTheDocument();
+  });
+
+  it('Enable button dispatches set_auto_run enabled:true', async () => {
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={false}
+        pausedReason={null}
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    const btn = await screen.findByTestId('autopilot-enable-btn');
+    fireEvent.click(btn);
+    await waitFor(() =>
+      expect(onAction).toHaveBeenCalledWith({ action: 'set_auto_run', enabled: true }),
+    );
+  });
+
+  // ── FIX 2 — Per-gate decision log summaries ───────────────────────────────
+
+  it('decision log renders per-gate summaries from realistic payloads (voice, music, checkpoint_b)', async () => {
+    authedFetch.mockImplementation(() =>
+      jsonOk({
+        ml_events: [
+          {
+            id: 'ev-vo',
+            event_type: 'auto_advance',
+            payload: {
+              source: 'auto',
+              gate: 'voiceover',
+              confidence: 0.9,
+              voice_id: 'alice',
+              tone_pick: 'Warm',
+            },
+            created_at: '2026-06-26T10:00:00Z',
+          },
+          {
+            id: 'ev-mu',
+            event_type: 'auto_advance',
+            payload: {
+              source: 'auto',
+              gate: 'music',
+              confidence: 0.9,
+              mood: 'upbeat',
+              music_track_id: 'track-123',
+            },
+            created_at: '2026-06-26T10:01:00Z',
+          },
+          {
+            id: 'ev-cb',
+            event_type: 'auto_advance',
+            payload: {
+              source: 'auto',
+              gate: 'checkpoint_b',
+              confidence: 0.82,
+              score: 0.82,
+              confident_scenes: 3,
+              degraded_scenes: 0,
+            },
+            created_at: '2026-06-26T10:02:00Z',
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={true}
+        pausedReason={null}
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(
+      await screen.findByText('Voiceover — picked voice alice (Warm)'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Music — mood upbeat, track track-123')).toBeInTheDocument();
+    expect(screen.getByText('Checkpoint B — quality 0.82')).toBeInTheDocument();
+  });
+
+  it('decision log shows pause reason for auto_pause events', async () => {
+    authedFetch.mockImplementation(() =>
+      jsonOk({
+        ml_events: [
+          {
+            id: 'ev-pause',
+            event_type: 'auto_pause',
+            payload: {
+              source: 'auto',
+              reason: 'low judge margin on scene abc: 0.080',
+            },
+            created_at: '2026-06-26T10:05:00Z',
+          },
+        ],
+      }),
+    );
+
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={true}
+        pausedReason={null}
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(
+      await screen.findByText('low judge margin on scene abc: 0.080'),
+    ).toBeInTheDocument();
   });
 });

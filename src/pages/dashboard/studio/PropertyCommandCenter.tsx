@@ -676,8 +676,10 @@ const PropertyCommandCenter = () => {
         </div>
       )}
 
-      {/* ─── Autopilot panel (visible whenever auto_run is set, any stage) ─── */}
-      {bundle.delivery_run?.auto_run && (
+      {/* ─── Autopilot panel (visible whenever a delivery_run exists, any stage).
+           Renders a compact "Enable autopilot" affordance when auto_run=false,
+           and the full panel + decision log when auto_run=true. ─── */}
+      {bundle.delivery_run && (
         <AutopilotPanel
           runId={bundle.delivery_run.id}
           autoRun={bundle.delivery_run.auto_run}
