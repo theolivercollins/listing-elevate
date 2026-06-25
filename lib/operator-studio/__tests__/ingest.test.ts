@@ -22,6 +22,16 @@ vi.mock('../../client', () => ({
   }),
 }));
 
+// Mock atlas so isOperatorSkuAvailable is controllable without real env vars.
+vi.mock('../../providers/atlas', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../providers/atlas')>();
+  return {
+    ...real,
+    isOperatorSkuAvailable: (key: string | null) =>
+      key === 'seedance-2-0-4k' || key === 'seedance-pro-pushin' || key === 'kling-v2-6-pro',
+  };
+});
+
 import { manualIngest, toPublicPhotoUrl } from '../ingest';
 import type { ManualIngestInput } from '../../types/operator-studio';
 
@@ -141,6 +151,27 @@ describe('manualIngest', () => {
     await manualIngest({ ...baseInput, pipeline_mode: 'v1' });
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       pipeline_mode: 'v1',
+    }));
+  });
+
+  it('persists a valid video_model_sku when provided', async () => {
+    await manualIngest({ ...baseInput, video_model_sku: 'seedance-2-0-4k' });
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      video_model_sku: 'seedance-2-0-4k',
+    }));
+  });
+
+  it('coerces an unknown/invalid video_model_sku to null (stale client guard)', async () => {
+    await manualIngest({ ...baseInput, video_model_sku: 'some-future-unknown-sku' });
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      video_model_sku: null,
+    }));
+  });
+
+  it('persists video_model_sku=null when not provided', async () => {
+    await manualIngest(baseInput); // no video_model_sku in baseInput
+    expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
+      video_model_sku: null,
     }));
   });
 });

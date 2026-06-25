@@ -48,7 +48,7 @@ import {
   renderPerPhotoBlock,
 } from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
-import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt, shouldForcePushIn } from "./providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt, shouldForcePushIn, isSeedancePushInSku } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
 import { AtlasInsufficientBalanceError } from "./providers/atlas.js";
@@ -1113,14 +1113,15 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         },
         excluded,
         pipelineMode,
+        property.video_model_sku ?? null,
       );
       const provider = buildProviderFromDecision(decision);
-      // v1.1: force push-in prompt for every non-paired scene regardless of
-      // which provider/SKU was selected. The gate is on the SCENE (pipeline
-      // mode + no end_photo_id), not the modelKey, so retries that failover
-      // to native Kling are still push-in-forced. scene.prompt in the DB is
-      // never mutated — this override is render-time only.
-      const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
+      // Force push-in prompt when:
+      //   (a) v1.1 mode + non-paired scene (mode-based gate), OR
+      //   (b) the resolved SKU is a Seedance push-in SKU (operator picked
+      //       seedance-2-0-4k or seedance-pro-pushin under any mode, e.g. v1).
+      // Gate is on the SCENE + SKU, never mutates scene.prompt in DB.
+      const renderPrompt = (shouldForcePushIn(pipelineMode, scene.end_photo_id) || isSeedancePushInSku(decision.modelKey))
         ? forceSeedancePushInPrompt(scene.prompt)
         : scene.prompt;
       try {
@@ -1317,12 +1318,14 @@ export async function resubmitScene(
     .single();
   if (!photo) return { ok: false, error: "source photo not found" };
 
-  // Re-fetch pipeline_mode so v1.1 routing (Seedance push-in) is honored on the
-  // re-render exactly as it is on the original submission.
+  // Re-fetch pipeline_mode and video_model_sku so v1.1 routing and operator SKU
+  // overrides are honored on the re-render exactly as on the original submission.
   let pipelineMode: PipelineMode = "v1";
+  let resubmitSkuOverride: string | null = null;
   try {
     const property = await getProperty(scene.property_id);
     pipelineMode = (property.pipeline_mode as PipelineMode | undefined) ?? "v1";
+    resubmitSkuOverride = property.video_model_sku ?? null;
   } catch {
     // Non-fatal: default to v1 routing if the property lookup hiccups.
   }
@@ -1379,12 +1382,14 @@ export async function resubmitScene(
       },
       excluded,
       pipelineMode,
+      resubmitSkuOverride,
     );
     const provider = buildProviderFromDecision(decision);
-    // v1.1: force push-in prompt for every non-paired scene regardless of which
-    // provider/SKU was selected on this attempt (retry may have failed over to
-    // native Kling). Gate is on the SCENE, not the modelKey.
-    const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
+    // Force push-in prompt when:
+    //   (a) v1.1 mode + non-paired scene (mode-based gate), OR
+    //   (b) the resolved SKU is a Seedance push-in SKU (operator picked
+    //       seedance-2-0-4k or seedance-pro-pushin under any mode, e.g. v1).
+    const renderPrompt = (shouldForcePushIn(pipelineMode, scene.end_photo_id) || isSeedancePushInSku(decision.modelKey))
       ? forceSeedancePushInPrompt(effectivePrompt)
       : effectivePrompt;
     try {
