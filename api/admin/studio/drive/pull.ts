@@ -9,11 +9,19 @@
  * Write guard: storage uploads only happen when
  *   VERCEL_ENV === 'production' OR LE_ALLOW_NONPROD_WRITES === 'true'
  * (same convention used across the codebase).
+ *
+ * Security hardening:
+ *   - folderId is validated against a strict character/length pattern.
+ *   - folderId must be a direct child of DRIVE_PARENT_FOLDER_ID (scope check).
+ *   - The authoritative folder name from Drive is used as the address; the
+ *     client-supplied folderName is accepted as a display-only fallback.
+ *   - Error details are never echoed back to the client.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../../lib/auth.js';
 import {
+  listPropertyFolders,
   findFinalSubfolder,
   listFinalImages,
   downloadFile,
@@ -35,10 +43,26 @@ interface PullMetadata {
   bedrooms: number | null;
   bathrooms: number | null;
   sqft: number | null;
-  description: string | null;
 }
 
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+/** Maximum number of images to download in a single pull. */
+const MAX_PULL_IMAGES = 200;
+
+/** Per-file byte ceiling — images larger than this are skipped (not failed). */
+const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Validates a Google Drive resource ID.
+ * Drive IDs are alphanumeric + underscore/dash and at least 10 characters long.
+ * This guard rejects injected values like path traversal attempts before any
+ * Drive API call is made.
+ */
+const isValidDriveId = (s: unknown): s is string =>
+  typeof s === 'string' && /^[A-Za-z0-9_-]{10,}$/.test(s);
 
 /** Strip characters unsafe for a Supabase storage object key. */
 function sanitizeName(name: string): string {
@@ -58,11 +82,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 2. Parse + validate body
   const { folderId, folderName } = (req.body ?? {}) as {
-    folderId?: string;
+    folderId?: unknown;
     folderName?: string;
   };
-  if (!folderId || !folderName) {
-    return res.status(400).json({ error: 'folderId and folderName required' });
+  if (!isValidDriveId(folderId)) {
+    return res.status(400).json({ error: 'invalid folderId' });
   }
 
   // 3. Non-prod write guard (shared-resource safety per project convention)
@@ -73,18 +97,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'writes disabled in this environment' });
   }
 
+  // 4. Scope check prerequisites — DRIVE_PARENT_FOLDER_ID must be set to verify
+  //    that the requested folder is actually under the configured root.
+  const parentId = process.env.DRIVE_PARENT_FOLDER_ID;
+  if (!parentId) {
+    return res.status(503).json({ error: 'Drive parent folder not configured' });
+  }
+
   try {
-    // 4. Resolve image source folder — prefer "Final" subfolder, fall back to
+    // 4a. Verify folderId is a direct child of the configured parent.
+    //     The matched folder's name is authoritative for the address; the
+    //     client-supplied folderName is kept only as a display-side fallback.
+    const allFolders = await listPropertyFolders(parentId);
+    const matchedFolder = allFolders.find((f) => f.id === folderId);
+    if (!matchedFolder) {
+      return res.status(403).json({ error: 'folder not under the configured parent' });
+    }
+    const address = matchedFolder.name;
+
+    // 5. Resolve image source folder — prefer "Final" subfolder, fall back to
     //    the property folder itself when none exists.
     const final = await findFinalSubfolder(folderId);
     const sourceId = final?.id ?? folderId;
 
-    // 5. List images; listFinalImages already filters by image/* via the Drive
-    //    query, but guard here for safety.
+    // 6. List images; apply the 200-image cap and the 25 MB per-file ceiling.
+    //    listFinalImages already filters by image/* via the Drive query.
     const allFiles = await listFinalImages(sourceId);
-    const images = allFiles.filter((f) => f.mimeType.startsWith('image/'));
+    const imageFiles = allFiles.filter((f) => f.mimeType.startsWith('image/'));
 
-    // 6. Download + upload each image in batches of 5.
+    const truncated = imageFiles.length > MAX_PULL_IMAGES;
+    const capped = imageFiles.slice(0, MAX_PULL_IMAGES);
+
+    let skippedTooLarge = 0;
+    const images = capped.filter((f) => {
+      if (Number(f.size) > MAX_FILE_BYTES) {
+        skippedTooLarge++;
+        return false;
+      }
+      return true;
+    });
+
+    // 7. Download + upload each image in batches of 5.
     //    Individual failures are tolerated — skip + log, collect the rest.
     const supabase = getSupabase();
     const timestamp = Date.now();
@@ -126,18 +179,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: 'no photos could be pulled' });
     }
 
-    // 7. Redfin / MLS enrich — never let this fail the pull; photos are priority.
+    // 8. Redfin / MLS enrich — never let this fail the pull; photos are priority.
+    //    Use the Drive-authoritative address (not the client-supplied folderName).
     let metadata: PullMetadata;
     let mlsError: string | undefined;
 
     try {
-      const mls = await lookupMlsByAddress(folderName, null);
+      const mls = await lookupMlsByAddress(address, null);
       metadata = {
         price: mls.price ?? null,
         bedrooms: mls.bedrooms ?? null,
         bathrooms: mls.bathrooms ?? null,
         sqft: mls.sqft ?? null,
-        description: mls.description ?? null,
       };
     } catch (e) {
       metadata = {
@@ -145,36 +198,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         bedrooms: null,
         bathrooms: null,
         sqft: null,
-        description: null,
       };
       const err = e as { name?: string };
       mlsError =
         err?.name === 'MlsProviderUnconfiguredError' ? 'unconfigured' : 'lookup_failed';
     }
 
-    // 8. Return pre-fill payload
+    // 9. Return pre-fill payload.
+    //    folderName from the body is accepted but not used here; the Drive-
+    //    authoritative name is what the form should display.
+    void folderName; // accepted for API compat; prefer address from Drive
+
     const response: {
       address: string;
       metadata: PullMetadata;
       photos: PhotoResult[];
       photoCount: number;
+      truncated?: boolean;
+      skippedTooLarge?: number;
       mlsError?: string;
     } = {
-      address: folderName,
+      address,
       metadata,
       photos,
       photoCount: photos.length,
     };
-    if (mlsError !== undefined) {
-      response.mlsError = mlsError;
-    }
+    if (truncated) response.truncated = true;
+    if (skippedTooLarge > 0) response.skippedTooLarge = skippedTooLarge;
+    if (mlsError !== undefined) response.mlsError = mlsError;
 
     return res.status(200).json(response);
   } catch (err) {
-    // 9. Error handling — distinguish Drive misconfiguration from other failures
+    // 10. Error handling — distinguish Drive misconfiguration from other failures.
+    //     Never echo internal error detail back to the caller.
     if (err instanceof DriveUnconfiguredError) {
       return res.status(503).json({ error: 'Google Drive service account not configured' });
     }
-    return res.status(502).json({ error: 'pull failed', detail: String(err) });
+    console.error('[drive/pull] ', err);
+    return res.status(502).json({ error: 'pull failed' });
   }
 }

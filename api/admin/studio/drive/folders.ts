@@ -7,6 +7,9 @@ import {
   DriveUnconfiguredError,
 } from '../../../../lib/drive/client.js';
 
+/** Process this many property folders in parallel to stay within Drive rate limits. */
+const FOLDER_BATCH_SIZE = 5;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -23,21 +26,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const folders = await listPropertyFolders(parentId);
 
-    const withCounts = await Promise.all(
-      folders.map(async (folder) => {
-        let photoCount: number | null = null;
-        try {
-          const final = await findFinalSubfolder(folder.id);
-          if (final) {
-            photoCount = await countFinalImages(final.id);
+    // Process folders in batches of FOLDER_BATCH_SIZE to avoid saturating the
+    // Drive quota and hitting Vercel function timeout on large folder lists.
+    const withCounts: { id: string; name: string; photoCount: number | null }[] = [];
+    for (let i = 0; i < folders.length; i += FOLDER_BATCH_SIZE) {
+      const batch = folders.slice(i, i + FOLDER_BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (folder) => {
+          let photoCount: number | null = null;
+          try {
+            const final = await findFinalSubfolder(folder.id);
+            if (final) {
+              photoCount = await countFinalImages(final.id);
+            }
+          } catch {
+            // best-effort: one folder failure must not fail the whole request
+            photoCount = null;
           }
-        } catch {
-          // best-effort: one folder failure must not fail the whole request
-          photoCount = null;
-        }
-        return { id: folder.id, name: folder.name, photoCount };
-      }),
-    );
+          return { id: folder.id, name: folder.name, photoCount };
+        }),
+      );
+      withCounts.push(...batchResults);
+    }
 
     withCounts.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -46,6 +56,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (err instanceof DriveUnconfiguredError) {
       return res.status(503).json({ error: 'Google Drive service account not configured' });
     }
-    return res.status(502).json({ error: 'Drive request failed', detail: String(err) });
+    // Never echo internal error detail (may include Google API bodies / URLs).
+    console.error('[drive/folders] ', err);
+    return res.status(502).json({ error: 'Drive request failed' });
   }
 }

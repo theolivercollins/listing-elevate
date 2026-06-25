@@ -42,6 +42,9 @@ export interface DriveFile {
   id: string;
   name: string;
   mimeType: string;
+  /** File size in bytes returned as a string by the Drive API. Present when the
+   *  `size` field is included in the `fields` query parameter. */
+  size?: string;
 }
 
 // ── Module-level token cache ───────────────────────────────────────────────────
@@ -183,19 +186,20 @@ export async function findFinalSubfolder(
  */
 export async function listFinalImages(
   finalFolderId: string,
-): Promise<Array<{ id: string; name: string; mimeType: string }>> {
-  const results: Array<{ id: string; name: string; mimeType: string }> = [];
+): Promise<Array<{ id: string; name: string; mimeType: string; size?: string }>> {
+  const results: Array<{ id: string; name: string; mimeType: string; size?: string }> = [];
   let pageToken: string | undefined;
 
   do {
     const params: Record<string, string> = {
       q: `'${finalFolderId}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: "nextPageToken,files(id,name,mimeType)",
+      // size included so callers can enforce per-file byte caps before downloading.
+      fields: "nextPageToken,files(id,name,mimeType,size)",
     };
     if (pageToken) params.pageToken = pageToken;
 
     const data = (await driveGet("/files", params)) as {
-      files?: Array<{ id: string; name: string; mimeType: string }>;
+      files?: Array<{ id: string; name: string; mimeType: string; size?: string }>;
       nextPageToken?: string;
     };
     results.push(...(data.files ?? []));

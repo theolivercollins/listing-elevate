@@ -167,18 +167,45 @@ describe('GET /api/admin/studio/drive/folders', () => {
     expect(res._body).toEqual({ error: 'Google Drive service account not configured' });
   });
 
-  it('returns 502 when listPropertyFolders throws a generic error', async () => {
+  it('returns 502 when listPropertyFolders throws a generic error — no detail leaked', async () => {
     mockedRequireAdmin.mockResolvedValue({ id: 'admin-1' } as never);
-    mockedListFolders.mockRejectedValue(new Error('network timeout'));
+    mockedListFolders.mockRejectedValue(new Error('network timeout with internal URL'));
 
     const req = makeReq('GET');
     const res = makeRes();
     await handler(req, res);
 
     expect(res._status).toBe(502);
-    expect(res._body).toMatchObject({
-      error: 'Drive request failed',
-      detail: expect.stringContaining('network timeout'),
-    });
+    // error field is present, but detail must never be echoed back
+    expect((res._body as { error: string }).error).toBe('Drive request failed');
+    expect((res._body as Record<string, unknown>).detail).toBeUndefined();
+  });
+
+  it('processes folders in batches of 5 and returns all results', async () => {
+    mockedRequireAdmin.mockResolvedValue({ id: 'admin-1' } as never);
+
+    // 7 folders — two batches (5 + 2) to exercise the batching path
+    const sevenFolders = Array.from({ length: 7 }, (_, i) => ({
+      id: `f${i}`,
+      name: `Folder ${i}`,
+    }));
+    mockedListFolders.mockResolvedValue(sevenFolders);
+    mockedFindFinal.mockResolvedValue({ id: 'fin', name: 'Final' });
+    mockedCountImages.mockResolvedValue(3);
+
+    const req = makeReq('GET');
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._status).toBe(200);
+    const body = res._body as { folders: Array<{ id: string; photoCount: number | null }> };
+    // All 7 folders returned
+    expect(body.folders).toHaveLength(7);
+    // Every folder got a count
+    for (const f of body.folders) {
+      expect(f.photoCount).toBe(3);
+    }
+    // findFinalSubfolder called once per folder
+    expect(mockedFindFinal).toHaveBeenCalledTimes(7);
   });
 });

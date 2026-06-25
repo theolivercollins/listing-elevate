@@ -14,7 +14,6 @@ export type DrivePullResult = {
     bedrooms: number | null;
     bathrooms: number | null;
     sqft: number | null;
-    description: string | null;
   };
   photos: { path: string; url: string }[];
 };

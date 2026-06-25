@@ -346,6 +346,45 @@ describe("listFinalImages", () => {
     expect(images[1].mimeType).toBe("image/png");
   });
 
+  it("includes the size field when Drive returns it", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal(
+      "fetch",
+      buildFetchMock([
+        {
+          files: [
+            { id: "img1", name: "photo1.jpg", mimeType: "image/jpeg", size: "1048576" },
+            { id: "img2", name: "photo2.png", mimeType: "image/png" }, // no size (optional)
+          ],
+        },
+      ]),
+    );
+
+    const images = await listFinalImages("final-folder-id");
+    expect(images).toHaveLength(2);
+    expect(images[0].size).toBe("1048576");
+    expect(images[1].size).toBeUndefined();
+  });
+
+  it("requests the size field in the Drive API fields parameter", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return { ok: true, status: 200, json: async () => ({ access_token: "tok", expires_in: 3600 }), text: async () => "" };
+        }
+        capturedUrls.push(urlStr);
+        return { ok: true, status: 200, json: async () => ({ files: [] }), text: async () => "" };
+      }),
+    );
+
+    await listFinalImages("some-folder-id");
+    expect(capturedUrls[0]).toContain("size");
+  });
+
   it("paginates across multiple pages of images", async () => {
     process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
     vi.stubGlobal(

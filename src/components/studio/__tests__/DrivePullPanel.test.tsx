@@ -35,7 +35,6 @@ const MOCK_PULL: DrivePullResult & { photoCount: number; mlsError?: string } = {
     bedrooms: 3,
     bathrooms: 2,
     sqft: 1800,
-    description: 'Nice house',
   },
   photos: [{ path: 'photos/1.jpg', url: 'https://cdn.test/1.jpg' }],
   photoCount: 42,
