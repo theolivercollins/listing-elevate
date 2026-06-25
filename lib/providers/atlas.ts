@@ -545,6 +545,11 @@ export class AtlasProvider implements IVideoProvider {
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
     const modelForCall = this.resolveModel(params.modelOverride);
+    // Cost-attribution fix (2026-06-26): update this.model to the SKU that
+    // ACTUALLY renders so checkStatus()'s this.model.priceCentsPerClip is
+    // always the rendered SKU's price, not the constructor default.
+    // Safe: each scene gets its own AtlasProvider instance (pipeline.ts ~1118/1387).
+    this.model = modelForCall;
     // Seedance AND every Kling SKU copy the input image's aspect ratio onto
     // their output and ignore `aspect_ratio` (Kling measured 2026-06-11 —
     // see forceSourceAspectRatio docblock). Crop the source to 16:9 first so

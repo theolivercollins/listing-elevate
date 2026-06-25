@@ -180,7 +180,12 @@ function resolveMovementDecision(
 export function buildProviderFromDecision(decision: ProviderDecision): IVideoProvider {
   switch (decision.provider) {
     case "atlas":
-      return new AtlasProvider();
+      // Cost-attribution fix (2026-06-26): pass the SKU to the constructor so
+      // this.model is the actual rendered SKU from the start. Without this,
+      // checkStatus() (which may run on a NEW provider instance in the poll loop,
+      // pipeline.ts ~1387) would read the env-default price instead of the
+      // decision's SKU price. Defense-in-depth alongside the generateClip fix.
+      return new AtlasProvider(decision.modelKey);
     case "kling":
       return new KlingProvider();
     case "runway":
