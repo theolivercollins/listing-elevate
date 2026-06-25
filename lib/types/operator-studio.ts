@@ -124,6 +124,12 @@ export type DeliveryRunRow = {
   voiceover_audio_url: string | null;
   music_track_id: string | null;
   error: string | null;
+  /** True when autopilot is active for this run (set at intake; can be toggled via kill switch). */
+  auto_run: boolean;
+  /** Non-null when autopilot paused the run waiting for human input. Cleared by resume_autopilot action. */
+  paused_reason: string | null;
+  /** ISO timestamp of when autopilot last paused this run. */
+  auto_paused_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -151,7 +157,9 @@ export type SceneVariantRow = {
 export type MlEventType =
   | 'photo_selection' | 'reorder' | 'regenerate' | 'variant_override' | 'script_edit'
   | 'voice_choice' | 'music_choice' | 'rating' | 'comment' | 'details_edit'
-  | 'music_feedback';
+  | 'music_feedback'
+  // Added for autopilot — DB migration T1 must add this value to the CHECK constraint on ml_events.event_type.
+  | 'auto_pause';
 
 export type MlEventRow = {
   id: string;
