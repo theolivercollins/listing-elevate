@@ -267,12 +267,26 @@ export async function runJudgePass(runId: string): Promise<{ ready: boolean }> {
   const { draftOrderForRun } = await import('./order.js');
   const order = await draftOrderForRun(runId);
   await updateRun(runId, { scene_order: order } as Partial<DeliveryRunRow>);
+  let advancedRun: DeliveryRunRow | null = null;
   try {
-    await advanceRun(runId, 'checkpoint_a');
+    advancedRun = await advanceRun(runId, 'checkpoint_a');
   } catch (err) {
     if (!isBenignAdvanceRace(err)) throw err;
   }
   await log(run.property_id, 'qc', 'info', `A/B judging complete; ${order.length} winners ordered; checkpoint A ready`, { delivery_run_id: runId });
+
+  // Inline autopilot kick: immediately resolve the gate if auto_run is enabled.
+  // Best-effort — wrapped so it never breaks the primary judging path.
+  // resolveGate + advanceRun's CAS make double-fire with the sweep cron safe.
+  if (run.auto_run && advancedRun) {
+    try {
+      const { resolveGate } = await import('./auto-run.js');
+      await resolveGate(advancedRun);
+    } catch (kickErr) {
+      console.error(`[delivery/judge] autopilot inline kick failed for run ${runId}:`, kickErr);
+    }
+  }
+
   return { ready: true };
 }
 

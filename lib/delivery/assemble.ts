@@ -85,7 +85,19 @@ export async function runAssembleStage(runId: string): Promise<void> {
     const { rerunAssembly } = await import('../pipeline.js');
     await rerunAssembly(run.property_id);
 
-    await advanceRun(runId, 'checkpoint_b');
+    const advancedRun = await advanceRun(runId, 'checkpoint_b');
+
+    // Inline autopilot kick: immediately resolve the gate if auto_run is enabled.
+    // Best-effort — wrapped so it never breaks the primary assembly path.
+    // resolveGate + advanceRun's CAS make double-fire with the sweep cron safe.
+    if (run.auto_run) {
+      try {
+        const { resolveGate } = await import('./auto-run.js');
+        await resolveGate(advancedRun);
+      } catch (kickErr) {
+        console.error(`[delivery/assemble] autopilot inline kick failed for run ${runId}:`, kickErr);
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await setRunError(runId, `Assembly failed: ${msg}`);
