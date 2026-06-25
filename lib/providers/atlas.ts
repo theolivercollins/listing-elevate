@@ -180,9 +180,11 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
   // every submit against it returned 400 "not found", which silently failed
   // all v1.1 scenes over to the Kling fallback. Atlas folded the upscaled/2K
   // tier into the main model as resolution values: the schema now enumerates
-  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR']
-  // (default 720p) — "2k" is no longer valid. The `-SR` tiers run the
-  // FlashVSR super-resolution pass that the old upscaled variant provided.
+  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR','4k']
+  // (default 720p) — "2k" is no longer valid; '4k' added to the live catalog
+  // and re-verified 2026-06-26 (originally verified 2026-06-10 without '4k').
+  // The `-SR` tiers run the FlashVSR super-resolution pass that the old
+  // upscaled variant provided.
   //
   // Default resolution "1080p-SR": SR is the quality tier that replaced the
   // old 2K upscale, and 1080p matches our delivery output. Both slug and
@@ -205,11 +207,13 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
     priceCentsPerClip: 48,       // 9.6 × 5
   },
-  // Native UHD 4K tier of Seedance 2.0 (2026-06-26) — same model/slug as
-  // seedance-pro-pushin but rendered at the native "4k" resolution tier
-  // (3840×2160 16:9, 10-bit H.265/HEVC; Atlas re-encodes for delivery).
-  // Push-in SKU: endFrameField null (same as seedance-pro-pushin — paired
-  // scenes still go through seedance-pair or kling-v3-pro).
+  // Native UHD 4K tier of Seedance 2.0 — live-verified 2026-06-26 against the
+  // Atlas catalog. Same model/slug as seedance-pro-pushin but rendered at the
+  // native "4k" resolution tier (3840×2160 16:9, 10-bit H.265/HEVC). Available
+  // on the FULL Seedance 2.0 model only (not Fast/Mini). LE re-encodes the
+  // 10-bit HEVC output via assembly before delivery (raw HEVC may not play in
+  // all browsers). Push-in SKU: endFrameField null (same as seedance-pro-pushin
+  // — paired scenes still go through seedance-pair or kling-v3-pro).
   //
   // PRICING PLACEHOLDER: $0.096/s is copied from the 1080p-SR SKU. 4K likely
   // costs more — reconcile against the next Atlas invoice and update
