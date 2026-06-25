@@ -97,6 +97,14 @@ const GUARDED_PATHS = [
   // studio hardening batch (PR #125) — post-approval decouple endpoint
   'api/pipeline/continue/[runId].ts',
 
+  // drive-telegram-intake branch — new endpoints
+  // Webhooks self-authenticate via header secrets; static paths covered by catch-all.
+  'api/drive/webhook.ts',
+  'api/telegram/webhook.ts',
+  'api/cron/drive-settle.ts',
+  'api/cron/drive-intake-poll.ts',
+  'api/cron/drive-channel-renew.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
