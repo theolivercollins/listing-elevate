@@ -15,10 +15,12 @@ export async function createRun(input: {
   client_id: string | null;
   video_type: DeliveryVideoType;
   duration_seconds: number | null;
+  /** Autopilot flag captured at intake. Defaults to false when omitted. */
+  auto_run?: boolean;
 }): Promise<DeliveryRunRow> {
   const { data, error } = await getSupabase()
     .from('delivery_runs')
-    .insert({ ...input, stage: 'intake' })
+    .insert({ ...input, stage: 'intake', auto_run: input.auto_run ?? false })
     .select('*')
     .single();
   if (error) throw new Error(`createRun: ${error.message}`);

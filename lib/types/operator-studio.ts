@@ -51,6 +51,9 @@ export type ManualIngestInput = {
   days_on_market?: number | null;
   sold_price?: number | null;
   pipeline_mode?: 'v1' | 'v1.1' | null;
+  /** When true the delivery run should execute autonomously (autopilot). Set at
+   *  intake and stored on delivery_runs.auto_run. Defaults to false. */
+  auto_run?: boolean;
 };
 
 export type RevisionNoteRow = {

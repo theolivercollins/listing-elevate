@@ -64,6 +64,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     days_on_market,
     sold_price,
     pipeline_mode,
+    auto_run,
     listing_agent: explicit_listing_agent,
     brokerage: explicit_brokerage,
   } = input as ManualIngestWithActor & {
@@ -169,6 +170,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       client_id: client_id ?? null,
       video_type: (video_type ?? 'just_listed') as 'just_listed' | 'just_pended' | 'just_closed',
       duration_seconds: selected_duration ?? 30,
+      auto_run,
     });
   } catch (err) {
     console.error('[ingest] delivery_run create failed:', err);
