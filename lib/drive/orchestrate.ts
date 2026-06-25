@@ -16,11 +16,12 @@ import {
   setStatus,
   setPropertyId,
   appendFeedback,
+  claimForApproval,
 } from "./intake-db.js";
 import { lookupMlsByAddress } from "../mls/lookup.js";
-import { createProperty, getSupabase, updatePropertyStatus } from "../db.js";
+import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from "../db.js";
 import { listFinalImages, downloadFile } from "./client.js";
-import { uploadPhotosToStorage } from "../../src/lib/photo-upload.js";
+import { uploadPhotosToStorage, getStoragePublicUrl } from "../../src/lib/photo-upload.js";
 import { runPipeline } from "../pipeline.js";
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
@@ -30,6 +31,13 @@ import { runPipeline } from "../pipeline.js";
 const DEFAULT_PACKAGE = "JUST_LISTED";
 const DEFAULT_DURATION = 30;
 const DEFAULT_ORIENTATION = "horizontal";
+
+// ── Caps ──────────────────────────────────────────────────────────────────────
+
+/** Hard cap on Final images to download per intake (OOM guard). */
+const MAX_IMAGES = 80;
+/** Max concurrent Drive downloads per batch. */
+const DOWNLOAD_CONCURRENCY = 5;
 
 // ── Write guard ───────────────────────────────────────────────────────────────
 
@@ -54,15 +62,41 @@ export interface RegenerateResult {
   reason?: string;
 }
 
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Download Drive images in batches of DOWNLOAD_CONCURRENCY to avoid OOM on
+ * large folders.
+ */
+async function batchedDownload(
+  images: Array<{ id: string; name: string; mimeType: string }>,
+): Promise<File[]> {
+  const results: File[] = [];
+  for (let i = 0; i < images.length; i += DOWNLOAD_CONCURRENCY) {
+    const batch = images.slice(i, i + DOWNLOAD_CONCURRENCY);
+    const batchFiles = await Promise.all(
+      batch.map(async ({ id, name, mimeType }) => {
+        const { bytes } = await downloadFile(id);
+        return new File([Buffer.from(bytes)], name, { type: mimeType });
+      }),
+    );
+    results.push(...batchFiles);
+  }
+  return results;
+}
+
 // ── approveIntake ─────────────────────────────────────────────────────────────
 
 /**
  * Approve a drive_intake row:
  *   1. Guard — must be awaiting_approval or approved.
  *   2. Non-prod write guard — return {status:'skipped'} when off.
- *   3. Mark ingesting, enrich via MLS (best-effort), create property (queued),
- *      download + upload Final images, fire pipeline, mark generating.
- *   4. On any throw — mark error and return {status:'error'}.
+ *   3. CAS claim (claimForApproval) — atomic status → ingesting; skip if already
+ *      claimed by a concurrent redelivery.
+ *   4. Enrich via MLS (best-effort), create property (queued), download + upload
+ *      Final images (capped at MAX_IMAGES, batched), insert photos rows, update
+ *      photo_count, fire pipeline, mark generating.
+ *   5. On any throw — mark error and return {status:'error'}.
  */
 export async function approveIntake(intakeId: string): Promise<ApproveResult> {
   // 1. Load intake
@@ -83,8 +117,12 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
   }
 
   try {
-    // 3. Mark ingesting
-    await setStatus(intakeId, "ingesting");
+    // 3. Atomic CAS claim — prevents double-render on concurrent Telegram redeliveries.
+    //    claimForApproval does the status → ingesting transition atomically.
+    const claimed = await claimForApproval(intakeId);
+    if (!claimed) {
+      return { status: "skipped", reason: "already-processing" };
+    }
 
     // 4. MLS enrichment (tolerate failure — fall back to nulls so we always
     //    create the property, even if Apify is unconfigured or the address
@@ -126,16 +164,36 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
     const propertyId = property.id;
 
     // 6. Download each Final/ image from Drive and upload to property-photos bucket.
+    //    Cap at MAX_IMAGES to guard against OOM; batch downloads at DOWNLOAD_CONCURRENCY.
+    //    Bridge: insertPhotos rows so the pipeline can read them from the photos table.
     if (intake.final_folder_id) {
-      const images = await listFinalImages(intake.final_folder_id);
-      const files: File[] = await Promise.all(
-        images.map(async ({ id, name, mimeType }) => {
-          const { bytes } = await downloadFile(id);
-          // Node 18+ provides a global File class.
-          return new File([Buffer.from(bytes)], name, { type: mimeType });
-        }),
-      );
-      await uploadPhotosToStorage(files, `${propertyId}/raw`);
+      let images = await listFinalImages(intake.final_folder_id);
+
+      if (images.length > MAX_IMAGES) {
+        console.warn(
+          `[drive/orchestrate] ${images.length} Final images for intake ${intakeId} — truncating to ${MAX_IMAGES}`,
+        );
+        images = images.slice(0, MAX_IMAGES);
+      }
+
+      const files = await batchedDownload(images);
+      const storagePaths = await uploadPhotosToStorage(files, `${propertyId}/raw`);
+
+      if (storagePaths.length > 0) {
+        const photoRecords = storagePaths.map((storagePath) => ({
+          property_id: propertyId,
+          file_url: getStoragePublicUrl(storagePath),
+          file_name: storagePath.split("/").pop() ?? "unknown.jpg",
+        }));
+        await insertPhotos(photoRecords);
+        await getSupabase()
+          .from("properties")
+          .update({
+            photo_count: photoRecords.length,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", propertyId);
+      }
     }
 
     // 7. Fire pipeline — fire-and-forget, exactly as in api/stripe/webhook.ts.
@@ -167,7 +225,8 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
 
 /**
  * Append operator notes to the intake and property, reset property to 'queued',
- * and re-fire the pipeline. Intake status stays 'generating'.
+ * re-fire the pipeline, and mark intake status → 'generating' so pollResults
+ * can detect the new render.
  *
  * There is no dedicated "regenerate" entrypoint in lib/pipeline.ts; the
  * existing fire-and-forget runPipeline pattern with a status reset is used
@@ -194,29 +253,32 @@ export async function regenerateIntake(
   }
 
   try {
-    // Append feedback notes to intake row
-    await appendFeedback(intakeId, notes);
+    // Only append / merge notes when the caller actually provided content.
+    if (notes.trim()) {
+      // Append feedback notes to intake row
+      await appendFeedback(intakeId, notes);
 
-    // Merge notes into property.custom_request_text
-    const supabase = getSupabase();
-    const { data: propRow } = await supabase
-      .from("properties")
-      .select("custom_request_text")
-      .eq("id", intake.property_id)
-      .maybeSingle();
-    const existingText =
-      (propRow as { custom_request_text?: string | null } | null)
-        ?.custom_request_text ?? null;
-    const combinedText = existingText ? `${existingText}\n${notes}` : notes;
+      // Merge notes into property.custom_request_text
+      const supabase = getSupabase();
+      const { data: propRow } = await supabase
+        .from("properties")
+        .select("custom_request_text")
+        .eq("id", intake.property_id)
+        .maybeSingle();
+      const existingText =
+        (propRow as { custom_request_text?: string | null } | null)
+          ?.custom_request_text ?? null;
+      const combinedText = existingText ? `${existingText}\n${notes}` : notes;
 
-    await supabase
-      .from("properties")
-      .update({
-        add_custom_request: true,
-        custom_request_text: combinedText,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", intake.property_id);
+      await supabase
+        .from("properties")
+        .update({
+          add_custom_request: true,
+          custom_request_text: combinedText,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", intake.property_id);
+    }
 
     // Reset property to 'queued' so tryClaimPipelineRun can acquire it
     await updatePropertyStatus(intake.property_id, "queued");
@@ -229,6 +291,9 @@ export async function regenerateIntake(
         msg,
       );
     });
+
+    // Re-arm pollResults by setting intake status back to 'generating'.
+    await setStatus(intakeId, "generating");
 
     return { status: "generating", propertyId: intake.property_id };
   } catch (err: unknown) {

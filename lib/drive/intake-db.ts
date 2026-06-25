@@ -225,6 +225,28 @@ export async function appendFeedback(id: string, notes: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Atomic CAS claim: transitions status → 'ingesting' only when the row is
+ * still in 'awaiting_approval' or 'approved'.
+ *
+ * Returns true if this caller won the race (exactly one row updated), false if
+ * another caller already claimed it (no rows matched the status filter).
+ * Throws on DB error.
+ */
+export async function claimForApproval(id: string): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("drive_intake")
+    .update({
+      status: "ingesting" as DriveIntakeStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .in("status", ["awaiting_approval", "approved"])
+    .select("id");
+  if (error) throw error;
+  return Array.isArray(data) && data.length === 1;
+}
+
 // ── drive_watch_state ─────────────────────────────────────────────────────────
 
 export async function getWatchState(): Promise<DriveWatchState | null> {

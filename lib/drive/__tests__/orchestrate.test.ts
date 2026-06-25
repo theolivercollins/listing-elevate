@@ -2,20 +2,24 @@
  * Tests for lib/drive/orchestrate.ts — approveIntake and regenerateIntake.
  *
  * All external collaborators are mocked:
- *   - intake-db: getIntake, setStatus, setPropertyId, appendFeedback
- *   - lib/db: createProperty, getSupabase, updatePropertyStatus
+ *   - intake-db: getIntake, setStatus, setPropertyId, appendFeedback,
+ *                claimForApproval
+ *   - lib/db: createProperty, getSupabase, updatePropertyStatus, insertPhotos
  *   - lib/mls/lookup: lookupMlsByAddress
  *   - lib/drive/client: listFinalImages, downloadFile
- *   - src/lib/photo-upload: uploadPhotosToStorage
+ *   - src/lib/photo-upload: uploadPhotosToStorage, getStoragePublicUrl
  *   - lib/pipeline: runPipeline
  *
  * Covers:
  *   - Write-guard off → skipped + nothing created
- *   - Happy path → create + upload + trigger + generating
+ *   - CAS claim false → skipped (already-processing)
+ *   - Happy path → create + upload + insertPhotos + photo_count + trigger + generating
  *   - MLS enrichment throw → still creates with null fallbacks
  *   - Download/upload throw → status error
  *   - Wrong status → error (no creates)
- *   - regenerateIntake happy path
+ *   - Batch download: images capped at 80 with warn; batching works
+ *   - regenerateIntake happy path + sets status 'generating'
+ *   - regenerateIntake skips appendFeedback when notes is empty
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -27,12 +31,14 @@ vi.mock("../intake-db.js", () => ({
   setStatus: vi.fn().mockResolvedValue(undefined),
   setPropertyId: vi.fn().mockResolvedValue(undefined),
   appendFeedback: vi.fn().mockResolvedValue(undefined),
+  claimForApproval: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("../../db.js", () => ({
   createProperty: vi.fn(),
   getSupabase: vi.fn(),
   updatePropertyStatus: vi.fn().mockResolvedValue(undefined),
+  insertPhotos: vi.fn().mockResolvedValue([]),
 }));
 
 vi.mock("../../mls/lookup.js", () => ({
@@ -46,6 +52,7 @@ vi.mock("../client.js", () => ({
 
 vi.mock("../../../src/lib/photo-upload.js", () => ({
   uploadPhotosToStorage: vi.fn().mockResolvedValue([]),
+  getStoragePublicUrl: vi.fn().mockImplementation((p: string) => `https://cdn.example.com/${p}`),
 }));
 
 vi.mock("../../pipeline.js", () => ({
@@ -54,11 +61,11 @@ vi.mock("../../pipeline.js", () => ({
 
 // ── Imports (after vi.mock) ───────────────────────────────────────────────────
 
-import { getIntake, setStatus, setPropertyId, appendFeedback } from "../intake-db.js";
-import { createProperty, getSupabase, updatePropertyStatus } from "../../db.js";
+import { getIntake, setStatus, setPropertyId, appendFeedback, claimForApproval } from "../intake-db.js";
+import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from "../../db.js";
 import { lookupMlsByAddress } from "../../mls/lookup.js";
 import { listFinalImages, downloadFile } from "../client.js";
-import { uploadPhotosToStorage } from "../../../src/lib/photo-upload.js";
+import { uploadPhotosToStorage, getStoragePublicUrl } from "../../../src/lib/photo-upload.js";
 import { runPipeline } from "../../pipeline.js";
 import { approveIntake, regenerateIntake } from "../orchestrate.js";
 import type { DriveIntake } from "../intake-db.js";
@@ -101,25 +108,37 @@ const CREATED_PROPERTY = {
   selected_orientation: "horizontal",
 };
 
-// Helper: build a minimal Supabase mock for regenerateIntake (reads + updates properties)
-function makeRegenSupabase(existingCustomText: string | null = null) {
+// Helper: build a chainable Supabase client mock.
+// Handles any number of .from(...).update/select/eq/maybeSingle/... chains.
+function makeSupabaseChain() {
   const chain: Record<string, unknown> = {};
-  const resolved = Promise.resolve({
-    data: { custom_request_text: existingCustomText },
-    error: null,
-  });
-  for (const m of ["select", "update", "eq", "neq", "order", "limit"]) {
+  const resolved = Promise.resolve({ data: null, error: null });
+  for (const m of [
+    "select", "insert", "update", "upsert", "delete",
+    "eq", "neq", "in", "order", "limit",
+  ]) {
     chain[m] = vi.fn().mockReturnValue(chain);
   }
+  chain["maybeSingle"] = vi.fn().mockResolvedValue({ data: null, error: null });
+  chain["single"] = vi.fn().mockResolvedValue({ data: null, error: null });
+  chain["then"] = (resolve?: (v: unknown) => unknown) => resolved.then(resolve);
+  chain["catch"] = (reject?: (e: unknown) => unknown) => resolved.catch(reject);
+  return chain;
+}
+
+function makeSimpleSupabase() {
+  const chain = makeSupabaseChain();
+  return { from: vi.fn().mockReturnValue(chain) };
+}
+
+// Helper: build a Supabase mock for regenerateIntake (reads existing custom text)
+function makeRegenSupabase(existingCustomText: string | null = null) {
+  const chain = makeSupabaseChain();
   chain["maybeSingle"] = vi.fn().mockResolvedValue({
     data: { custom_request_text: existingCustomText },
     error: null,
   });
-  chain["then"] = (resolve?: (v: unknown) => unknown) => resolved.then(resolve);
-  chain["catch"] = (reject?: (e: unknown) => unknown) => resolved.catch(reject);
-  return {
-    from: vi.fn().mockReturnValue(chain),
-  };
+  return { from: vi.fn().mockReturnValue(chain) };
 }
 
 // ── approveIntake ─────────────────────────────────────────────────────────────
@@ -129,6 +148,16 @@ describe("approveIntake", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore default mock behaviours that clearAllMocks wipes
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+    vi.mocked(setPropertyId).mockResolvedValue(undefined);
+    vi.mocked(appendFeedback).mockResolvedValue(undefined);
+    vi.mocked(claimForApproval).mockResolvedValue(true);
+    vi.mocked(insertPhotos).mockResolvedValue([]);
+    vi.mocked(updatePropertyStatus).mockResolvedValue(undefined);
+    vi.mocked(runPipeline).mockResolvedValue(undefined);
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue([]);
+    vi.mocked(getStoragePublicUrl).mockImplementation((p: string) => `https://cdn.example.com/${p}`);
     // Default write-allowed env
     process.env.VERCEL_ENV = "production";
     delete process.env.LE_ALLOW_NONPROD_WRITES;
@@ -153,6 +182,7 @@ describe("approveIntake", () => {
     expect(createProperty).not.toHaveBeenCalled();
     expect(runPipeline).not.toHaveBeenCalled();
     expect(setStatus).not.toHaveBeenCalled();
+    expect(claimForApproval).not.toHaveBeenCalled();
   });
 
   it("returns skipped via LE_ALLOW_NONPROD_WRITES=false, VERCEL_ENV missing", async () => {
@@ -181,10 +211,39 @@ describe("approveIntake", () => {
       name: "img1.jpg",
       mimeType: "image/jpeg",
     });
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
     expect(result.status).toBe("generating");
     expect(createProperty).toHaveBeenCalled();
+  });
+
+  // ── CAS claim guard ────────────────────────────────────────────────────────
+
+  it("returns skipped (already-processing) when claimForApproval returns false", async () => {
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(claimForApproval).mockResolvedValue(false);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("skipped");
+    expect(result.reason).toMatch(/already-processing/);
+    expect(createProperty).not.toHaveBeenCalled();
+    expect(runPipeline).not.toHaveBeenCalled();
+    // setStatus is NOT called — claimForApproval owns the ingesting transition
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+
+  it("calls claimForApproval with the intake id", async () => {
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+
+    await approveIntake("intake-1");
+
+    expect(claimForApproval).toHaveBeenCalledWith("intake-1");
   });
 
   // ── Status guard ───────────────────────────────────────────────────────────
@@ -211,7 +270,7 @@ describe("approveIntake", () => {
 
   // ── Happy path ─────────────────────────────────────────────────────────────
 
-  it("happy path: marks ingesting → creates property → uploads → fires pipeline → generating", async () => {
+  it("happy path: CAS claim → create property → upload → insertPhotos → photo_count → pipeline → generating", async () => {
     vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
@@ -223,16 +282,21 @@ describe("approveIntake", () => {
       name: "img1.jpg",
       mimeType: "image/jpeg",
     });
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
+    vi.mocked(getStoragePublicUrl).mockReturnValue("https://cdn.example.com/prop-new/raw/img1.jpg");
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
     expect(result.status).toBe("generating");
     expect(result.propertyId).toBe("prop-new");
 
-    // Status transitions
-    const statusCalls = vi.mocked(setStatus).mock.calls;
-    expect(statusCalls[0][1]).toBe("ingesting");
-    expect(statusCalls[1][1]).toBe("generating");
+    // CAS claim happened
+    expect(claimForApproval).toHaveBeenCalledWith("intake-1");
+
+    // Status: only 'generating' is set via setStatus (ingesting is done by claimForApproval internally)
+    expect(setStatus).toHaveBeenCalledTimes(1);
+    expect(setStatus).toHaveBeenCalledWith("intake-1", "generating");
 
     // createProperty called with queued status and correct defaults
     expect(createProperty).toHaveBeenCalledWith(
@@ -256,6 +320,15 @@ describe("approveIntake", () => {
       "prop-new/raw",
     );
 
+    // insertPhotos called with correct record structure
+    expect(insertPhotos).toHaveBeenCalledWith([
+      {
+        property_id: "prop-new",
+        file_url: "https://cdn.example.com/prop-new/raw/img1.jpg",
+        file_name: "img1.jpg",
+      },
+    ]);
+
     // Pipeline fired (fire-and-forget — just verify it was called)
     expect(runPipeline).toHaveBeenCalledWith("prop-new");
 
@@ -263,11 +336,34 @@ describe("approveIntake", () => {
     expect(setPropertyId).toHaveBeenCalledWith("intake-1", "prop-new");
   });
 
+  it("does NOT call insertPhotos when uploadPhotosToStorage returns empty paths", async () => {
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([
+      { id: "file-1", name: "img1.jpg", mimeType: "image/jpeg" },
+    ]);
+    vi.mocked(downloadFile).mockResolvedValue({
+      bytes: new ArrayBuffer(8),
+      name: "img1.jpg",
+      mimeType: "image/jpeg",
+    });
+    // All uploads fail → empty paths
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue([]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("generating");
+    expect(insertPhotos).not.toHaveBeenCalled();
+  });
+
   it("happy path works for status=approved too", async () => {
     vi.mocked(getIntake).mockResolvedValue({ ...BASE_INTAKE, status: "approved" });
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
     vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
     expect(result.status).toBe("generating");
@@ -280,6 +376,7 @@ describe("approveIntake", () => {
     vi.mocked(lookupMlsByAddress).mockRejectedValue(new Error("APIFY not configured"));
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
     vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -294,9 +391,9 @@ describe("approveIntake", () => {
     );
   });
 
-  // ── Upload failure → status error ─────────────────────────────────────────
+  // ── Upload / download failure → status error ──────────────────────────────
 
-  it("sets status=error and returns error when upload throws", async () => {
+  it("sets status=error and returns error when download throws", async () => {
     vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
@@ -339,6 +436,7 @@ describe("approveIntake", () => {
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
     vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
 
     await approveIntake("intake-1");
 
@@ -349,6 +447,70 @@ describe("approveIntake", () => {
       }),
     );
   });
+
+  // ── Image cap / batch download ─────────────────────────────────────────────
+
+  it("truncates images to 80 and console.warns when more than 80 are found", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // Build 85 fake images
+    const images = Array.from({ length: 85 }, (_, i) => ({
+      id: `file-${i}`,
+      name: `img${i}.jpg`,
+      mimeType: "image/jpeg",
+    }));
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue(images);
+    vi.mocked(downloadFile).mockResolvedValue({
+      bytes: new ArrayBuffer(4),
+      name: "x.jpg",
+      mimeType: "image/jpeg",
+    });
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+
+    await approveIntake("intake-1");
+
+    // uploadPhotosToStorage receives exactly 80 File objects
+    const uploadCall = vi.mocked(uploadPhotosToStorage).mock.calls[0];
+    expect(uploadCall[0]).toHaveLength(80);
+
+    // downloadFile called exactly 80 times (not 85)
+    expect(vi.mocked(downloadFile)).toHaveBeenCalledTimes(80);
+
+    // warn fired about truncation
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("85"),
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("downloads all images in batches without missing any (≤80)", async () => {
+    const images = Array.from({ length: 12 }, (_, i) => ({
+      id: `file-${i}`,
+      name: `img${i}.jpg`,
+      mimeType: "image/jpeg",
+    }));
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue(images);
+    vi.mocked(downloadFile).mockResolvedValue({
+      bytes: new ArrayBuffer(4),
+      name: "x.jpg",
+      mimeType: "image/jpeg",
+    });
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+
+    await approveIntake("intake-1");
+
+    // All 12 images downloaded and uploaded
+    expect(vi.mocked(downloadFile)).toHaveBeenCalledTimes(12);
+    const uploadCall = vi.mocked(uploadPhotosToStorage).mock.calls[0];
+    expect(uploadCall[0]).toHaveLength(12);
+  });
 });
 
 // ── regenerateIntake ──────────────────────────────────────────────────────────
@@ -358,6 +520,10 @@ describe("regenerateIntake", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+    vi.mocked(appendFeedback).mockResolvedValue(undefined);
+    vi.mocked(updatePropertyStatus).mockResolvedValue(undefined);
+    vi.mocked(runPipeline).mockResolvedValue(undefined);
     process.env.VERCEL_ENV = "production";
     delete process.env.LE_ALLOW_NONPROD_WRITES;
   });
@@ -396,10 +562,10 @@ describe("regenerateIntake", () => {
     expect(result.reason).toMatch(/approveIntake first/);
   });
 
-  it("happy path: appends notes + resets property to queued + fires pipeline", async () => {
+  it("happy path: appends notes + resets property to queued + fires pipeline + sets status generating", async () => {
     const intakeWithProp: DriveIntake = {
       ...BASE_INTAKE,
-      status: "generating",
+      status: "rendered",
       property_id: "prop-existing",
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
@@ -415,12 +581,53 @@ describe("regenerateIntake", () => {
     expect(appendFeedback).toHaveBeenCalledWith("intake-1", "new feedback");
     expect(updatePropertyStatus).toHaveBeenCalledWith("prop-existing", "queued");
     expect(runPipeline).toHaveBeenCalledWith("prop-existing");
+
+    // Re-arms pollResults by setting status back to 'generating'
+    expect(setStatus).toHaveBeenCalledWith("intake-1", "generating");
+  });
+
+  it("skips appendFeedback and notes merge when notes is empty string", async () => {
+    const intakeWithProp: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    // No appendFeedback call for empty notes
+    expect(appendFeedback).not.toHaveBeenCalled();
+    // Pipeline and status still fire
+    expect(runPipeline).toHaveBeenCalledWith("prop-existing");
+    expect(setStatus).toHaveBeenCalledWith("intake-1", "generating");
+  });
+
+  it("skips appendFeedback when notes is whitespace-only", async () => {
+    const intakeWithProp: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await regenerateIntake("intake-1", "   ");
+
+    expect(result.status).toBe("generating");
+    expect(appendFeedback).not.toHaveBeenCalled();
   });
 
   it("returns error when property update throws", async () => {
     const intakeWithProp: DriveIntake = {
       ...BASE_INTAKE,
-      status: "generating",
+      status: "rendered",
       property_id: "prop-existing",
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);

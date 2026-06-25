@@ -28,6 +28,7 @@ import {
   setTelegramMessageId,
   setPropertyId,
   appendFeedback,
+  claimForApproval,
   getWatchState,
   upsertWatchState,
   type DriveIntake,
@@ -453,6 +454,53 @@ describe("getByStatus", () => {
     expect(rows).toHaveLength(1);
   });
 });
+
+// ── claimForApproval ──────────────────────────────────────────────────────────
+
+describe("claimForApproval", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns true when exactly one row is updated (claim succeeds)", async () => {
+    // Supabase returns data: [{id: 'intake-1'}] — one row matched
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForApproval("intake-1");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when no rows are updated (already claimed by another caller)", async () => {
+    // Supabase returns data: [] — no rows matched the status filter
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForApproval("intake-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when data is null (row not found)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForApproval("intake-1");
+    expect(result).toBe(false);
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("DB error") }]) as ReturnType<typeof getSupabase>,
+    );
+
+    await expect(claimForApproval("intake-1")).rejects.toThrow("DB error");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 describe("setTelegramMessageId / setPropertyId", () => {
   beforeEach(() => {
