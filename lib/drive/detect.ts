@@ -27,17 +27,21 @@ import {
   upsertWatchState,
   upsertDetectedFolder,
 } from "./intake-db.js";
-import { sendMessage } from "../telegram/client.js";
+import { sendMessage, escapeMarkdown } from "../telegram/client.js";
 import { getSupabase } from "../db.js";
 import type { Property } from "../types.js";
 
 // ── reconcileWatchedFolder ────────────────────────────────────────────────────
+
+/** Hard cap on folders processed per sweep to bound resource usage and abuse. */
+const MAX_FOLDERS_PER_SWEEP = 200;
 
 /**
  * Scan the watched Google Drive folder and upsert a drive_intake row for
  * every property sub-folder that has a populated Final sub-folder.
  *
  * Tolerate per-folder errors — a single bad folder must never abort the sweep.
+ * Caps at MAX_FOLDERS_PER_SWEEP; logs a warning (never silent truncation).
  */
 export async function reconcileWatchedFolder(): Promise<{ seen: number }> {
   const parentId = process.env.DRIVE_WATCHED_FOLDER_ID;
@@ -46,7 +50,14 @@ export async function reconcileWatchedFolder(): Promise<{ seen: number }> {
     return { seen: 0 };
   }
 
-  const folders = await listPropertyFolders(parentId);
+  const allFolders = await listPropertyFolders(parentId);
+  let folders = allFolders;
+  if (allFolders.length > MAX_FOLDERS_PER_SWEEP) {
+    console.warn(
+      `[drive/detect] reconcileWatchedFolder: ${allFolders.length} folders returned; processing first ${MAX_FOLDERS_PER_SWEEP} only`,
+    );
+    folders = allFolders.slice(0, MAX_FOLDERS_PER_SWEEP);
+  }
   let seen = 0;
 
   for (const folder of folders) {
@@ -93,7 +104,7 @@ export async function settleAndPrompt(
   for (const row of rows) {
     try {
       const { messageId } = await sendMessage(
-        `🏠 New property detected: *${row.address}* — ${row.photo_count} photos in Final.\nGenerate a video?`,
+        `🏠 New property detected: *${escapeMarkdown(row.address)}* — ${row.photo_count} photos in Final.\nGenerate a video?`,
         {
           buttons: [
             [
@@ -214,7 +225,7 @@ export async function pollResults(): Promise<{ notified: number }> {
       if (isComplete) {
         const videoUrl = property.horizontal_video_url ?? "(no video URL)";
         await sendMessage(
-          `✅ *${row.address}* is ready: ${videoUrl}`,
+          `✅ *${escapeMarkdown(row.address)}* is ready: ${videoUrl}`,
           {
             buttons: [
               [{ text: "🔁 Regenerate", callbackData: `regen:${row.id}` }],
@@ -224,7 +235,7 @@ export async function pollResults(): Promise<{ notified: number }> {
         await setStatus(row.id, "rendered");
         notified++;
       } else if (isFailed) {
-        await sendMessage(`⚠️ *${row.address}* failed: render pipeline error`);
+        await sendMessage(`⚠️ *${escapeMarkdown(row.address)}* failed: render pipeline error`);
         await setStatus(row.id, "error");
         notified++;
       }

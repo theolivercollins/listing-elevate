@@ -125,6 +125,18 @@ export async function answerCallback(
 }
 
 /**
+ * Escape legacy-Markdown special characters so attacker-controlled strings
+ * (e.g. folder names) cannot inject links or break formatting in Telegram
+ * messages that use parse_mode:'Markdown'.
+ *
+ * Escaped characters: _ * ` [
+ * Each is prefixed with a backslash.
+ */
+export function escapeMarkdown(s: string): string {
+  return s.replace(/([_*`[])/g, "\\$1");
+}
+
+/**
  * Register the webhook URL with Telegram.
  * Called once during initial setup / re-deployment.
  */

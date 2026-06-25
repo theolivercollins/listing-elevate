@@ -22,11 +22,17 @@ vi.mock("../../../lib/drive/intake-db.js", () => ({
   getByStatus: vi.fn(),
 }));
 
-vi.mock("../../../lib/telegram/client.js", () => ({
-  sendMessage: vi.fn(),
-  editMessageText: vi.fn(),
-  answerCallback: vi.fn(),
-}));
+vi.mock("../../../lib/telegram/client.js", async (importOriginal) => {
+  // Pass escapeMarkdown through from the real module — it's a pure utility and
+  // must not be mocked, otherwise webhook.ts throws at runtime.
+  const actual = await importOriginal<typeof import("../../../lib/telegram/client.js")>();
+  return {
+    ...actual,
+    sendMessage: vi.fn(),
+    editMessageText: vi.fn(),
+    answerCallback: vi.fn(),
+  };
+});
 
 // Import after mocks are in place.
 import handler from "../webhook.js";
@@ -79,13 +85,18 @@ function makeRes() {
   };
 }
 
-/** Make an update that carries a callback_query. */
-function callbackUpdate(data: string, chatId = OWNER_CHAT_ID) {
+/**
+ * Make an update that carries a callback_query.
+ * Uses `from.id` (the clicker's user id) for the owner gate — not
+ * `message.chat.id`, which is the chat the button lives in.
+ */
+function callbackUpdate(data: string, fromId = OWNER_CHAT_ID) {
   return {
     callback_query: {
       id: "cb-query-id",
+      from: { id: Number(fromId) },
       data,
-      message: { chat: { id: Number(chatId) } },
+      message: { chat: { id: Number(fromId) } },
     },
   };
 }
@@ -146,8 +157,55 @@ describe("api/telegram/webhook — auth", () => {
     expect(res._calls[0].status).toBe(401);
   });
 
-  it("returns 200 no-op and ignores strangers (non-owner chat)", async () => {
+  it("returns 401 when TELEGRAM_WEBHOOK_SECRET env is unset (no header)", async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    // header also absent — both undefined; must NOT pass the gate
+    const req = makeReq({ headers: {} });
+    const res = makeRes();
+    await handler(req, res);
+    expect(res._calls[0].status).toBe(401);
+    expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when TELEGRAM_WEBHOOK_SECRET env is unset even with a matching undefined header", async () => {
+    delete process.env.TELEGRAM_WEBHOOK_SECRET;
+    // Omit the header entirely so it reads as undefined
+    const req = makeReq({ headers: { "x-telegram-bot-api-secret-token": undefined as unknown as string } });
+    const res = makeRes();
+    await handler(req, res);
+    expect(res._calls[0].status).toBe(401);
+  });
+
+  it("returns 200 no-op and ignores strangers (non-owner from.id for callback_query)", async () => {
+    // Stranger's from.id is "999", owner is OWNER_CHAT_ID
     const req = makeReq({ body: callbackUpdate("approve:intake-1", "999") });
+    const res = makeRes();
+    await handler(req, res);
+    expect(res._calls[0].status).toBe(200);
+    expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+  });
+
+  it("returns 200 no-op when TELEGRAM_OWNER_CHAT_ID is unset", async () => {
+    delete process.env.TELEGRAM_OWNER_CHAT_ID;
+    const req = makeReq({ body: callbackUpdate("approve:intake-1") });
+    const res = makeRes();
+    await handler(req, res);
+    expect(res._calls[0].status).toBe(200);
+    expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+  });
+
+  it("non-owner cannot approve by spoofing message.chat.id (must use from.id)", async () => {
+    // Simulate a callback where message.chat.id matches owner but from.id is stranger
+    const strangerId = "999999";
+    const update = {
+      callback_query: {
+        id: "cb-spoof",
+        from: { id: Number(strangerId) },  // the actual clicker — stranger
+        data: "approve:intake-spoof",
+        message: { chat: { id: Number(OWNER_CHAT_ID) } }, // owner's chat (spoofable context)
+      },
+    };
+    const req = makeReq({ body: update });
     const res = makeRes();
     await handler(req, res);
     expect(res._calls[0].status).toBe(200);

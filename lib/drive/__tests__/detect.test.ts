@@ -30,9 +30,15 @@ vi.mock("../../drive/intake-db.js", () => ({
   upsertWatchState: vi.fn(),
 }));
 
-vi.mock("../../telegram/client.js", () => ({
-  sendMessage: vi.fn(),
-}));
+vi.mock("../../telegram/client.js", async (importOriginal) => {
+  // Pass escapeMarkdown through from the real module — detect.ts uses it as a
+  // pure utility and it must not be stubbed out, otherwise calls throw.
+  const actual = await importOriginal<typeof import("../../telegram/client.js")>();
+  return {
+    ...actual,
+    sendMessage: vi.fn(),
+  };
+});
 
 vi.mock("../../db.js", () => ({
   getSupabase: vi.fn(),
@@ -176,6 +182,37 @@ describe("reconcileWatchedFolder", () => {
 
     expect(result).toEqual({ seen: 0 });
     expect(listPropertyFolders).not.toHaveBeenCalled();
+  });
+
+  it("caps at 200 folders and warns when more are returned", async () => {
+    // Build 205 folders; only first 200 should be processed
+    const manyFolders = Array.from({ length: 205 }, (_, i) => ({
+      id: `f${i}`,
+      name: `Prop ${i}`,
+    }));
+    vi.mocked(listPropertyFolders).mockResolvedValue(manyFolders);
+
+    // Every folder has a Final subfolder with 1 image — so seen should equal
+    // exactly 200, not 205.
+    vi.mocked(findFinalSubfolder).mockResolvedValue({ id: "final-x", name: "Final" });
+    vi.mocked(countFinalImages).mockResolvedValue(1);
+    vi.mocked(upsertDetectedFolder).mockResolvedValue(makeIntakeRow());
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await reconcileWatchedFolder();
+
+    expect(result).toEqual({ seen: 200 });
+    expect(upsertDetectedFolder).toHaveBeenCalledTimes(200);
+    // Must warn about truncation — no silent cap
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("205"),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("200"),
+    );
+
+    warnSpy.mockRestore();
   });
 });
 

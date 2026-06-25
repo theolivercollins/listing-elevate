@@ -32,6 +32,7 @@ import {
   sendMessage,
   editMessageText,
   answerCallback,
+  escapeMarkdown,
 } from "../../lib/telegram/client.js";
 
 // ── Minimal Telegram update types ─────────────────────────────────────────────
@@ -47,6 +48,7 @@ interface TelegramMessage {
 
 interface TelegramCallbackQuery {
   id: string;
+  from?: { id: number }; // the user who actually clicked
   data?: string;
   message?: TelegramMessage;
 }
@@ -58,10 +60,21 @@ interface TelegramUpdate {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Derive the sender chat ID as a string from an update. */
+/**
+ * Derive the sender ID from an update.
+ *
+ * For callback_query updates, use `from.id` — the user who actually clicked
+ * the button — rather than `message.chat.id`, which is the chat the original
+ * message lives in (could be a group, not necessarily the button-presser).
+ *
+ * For plain message updates, use `message.chat.id`.
+ */
 function senderChatId(update: TelegramUpdate): string | undefined {
-  const numericId =
-    update.callback_query?.message?.chat?.id ?? update.message?.chat?.id;
+  if (update.callback_query) {
+    const numericId = update.callback_query.from?.id;
+    return numericId !== undefined ? String(numericId) : undefined;
+  }
+  const numericId = update.message?.chat?.id;
   return numericId !== undefined ? String(numericId) : undefined;
 }
 
@@ -77,10 +90,11 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
   }
 
   const { address, telegram_message_id } = intake;
+  const safeAddress = escapeMarkdown(address);
 
   // Show in-progress state
   if (telegram_message_id !== null) {
-    await editMessageText(telegram_message_id, `⏳ Generating *${address}*…`);
+    await editMessageText(telegram_message_id, `⏳ Generating *${safeAddress}*…`);
   }
 
   const r = await approveIntake(intakeId);
@@ -88,7 +102,7 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
   if (telegram_message_id === null) {
     // No original message to edit — just notify via a new message
     if (r.status === "generating") {
-      await sendMessage(`✅ Queued *${address}* for generation.`);
+      await sendMessage(`✅ Queued *${safeAddress}* for generation.`);
     } else if (r.status === "skipped") {
       await sendMessage(`⚠️ Skipped (non-prod environment)`);
     } else {
@@ -100,7 +114,7 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
   if (r.status === "generating") {
     await editMessageText(
       telegram_message_id,
-      `✅ Queued *${address}* for generation.`,
+      `✅ Queued *${safeAddress}* for generation.`,
     );
   } else if (r.status === "skipped") {
     await editMessageText(
@@ -121,11 +135,12 @@ async function handleSkip(cbId: string, intakeId: string): Promise<void> {
   await setStatus(intakeId, "skipped");
 
   const address = intake?.address ?? intakeId;
+  const safeAddress = escapeMarkdown(address);
   const msgId = intake?.telegram_message_id ?? null;
   if (msgId !== null) {
-    await editMessageText(msgId, `❌ Skipped *${address}*`);
+    await editMessageText(msgId, `❌ Skipped *${safeAddress}*`);
   } else {
-    await sendMessage(`❌ Skipped *${address}*`);
+    await sendMessage(`❌ Skipped *${safeAddress}*`);
   }
 }
 
@@ -135,7 +150,7 @@ async function handleRegen(cbId: string, intakeId: string): Promise<void> {
   await regenerateIntake(intakeId, "");
 
   const address = intake?.address ?? intakeId;
-  await sendMessage(`🔁 Regenerating *${address}*…`);
+  await sendMessage(`🔁 Regenerating *${escapeMarkdown(address)}*…`);
 }
 
 async function handleCallbackQuery(cq: TelegramCallbackQuery): Promise<void> {
@@ -165,7 +180,7 @@ async function handleFreeText(text: string): Promise<void> {
     )[0];
     await appendFeedback(intake.id, text);
     await sendMessage(
-      `Noted — will steer *${intake.address}* with: ${text}`,
+      `Noted — will steer *${escapeMarkdown(intake.address)}* with: ${text}`,
     );
     return;
   }
@@ -179,7 +194,7 @@ async function handleFreeText(text: string): Promise<void> {
     )[0];
     await regenerateIntake(intake.id, text);
     await sendMessage(
-      `🔁 Regenerating *${intake.address}* with your notes…`,
+      `🔁 Regenerating *${escapeMarkdown(intake.address)}* with your notes…`,
     );
     return;
   }
@@ -203,16 +218,23 @@ export default async function handler(
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // 1. Auth — secret token in header
+  // 1. Auth — secret token in header.
+  // Reject when TELEGRAM_WEBHOOK_SECRET is unset (falsy) to avoid failing
+  // open when env is not configured: undefined !== undefined evaluates false
+  // without this guard.
+  const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const incomingSecret = req.headers["x-telegram-bot-api-secret-token"];
-  if (incomingSecret !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+  if (!expectedSecret || incomingSecret !== expectedSecret) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  // 2. Owner gate — discard updates from strangers silently
+  // 2. Owner gate — discard updates from strangers silently.
+  // Also reject when TELEGRAM_OWNER_CHAT_ID is unset (falsy) so an
+  // unconfigured environment never silently processes updates.
+  const expectedOwner = process.env.TELEGRAM_OWNER_CHAT_ID;
   const update = req.body as TelegramUpdate;
   const chatId = senderChatId(update);
-  if (chatId !== process.env.TELEGRAM_OWNER_CHAT_ID) {
+  if (!expectedOwner || chatId !== expectedOwner) {
     return res.status(200).json({ ok: true });
   }
 
