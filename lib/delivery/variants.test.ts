@@ -337,4 +337,79 @@ describe('pollPendingVariants — discriminator paths', () => {
     expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
     expect(updateCalls[0].patch.clip_url).toBe('https://provider.example.com/clip.mp4');
   });
+
+  // (f) Atlas SKU reconstruction — core cost-attribution fix.
+  //     A variant row with atlas_model_sku='kling-v2-master' must use
+  //     buildProviderFromDecision (not selectProvider) so checkStatus returns
+  //     111¢ (kling-v2-master price), NOT 48¢ (the env-default SKU price).
+  it('(f) atlas_model_sku stored: uses buildProviderFromDecision, records 111¢ costCents, NOT selectProvider', async () => {
+    const { pollPendingVariants } = await import('./variants');
+    const { selectProvider, buildProviderFromDecision } = await import('../providers/router.js');
+    const { recordCostEvent } = await import('../db.js');
+
+    // Provider returned by buildProviderFromDecision reports 111¢ (kling-v2-master).
+    const atlasMasterProvider = {
+      name: 'atlas',
+      checkStatus: vi.fn().mockResolvedValue({
+        status: 'completed',
+        videoUrl: 'https://provider.example.com/clip.mp4',
+        costCents: 111,        // kling-v2-master priceCentsPerClip
+        providerUnits: undefined,
+        providerUnitType: undefined,
+      }),
+      downloadClip: vi.fn().mockResolvedValue(Buffer.from('fakevideo')),
+    };
+    vi.mocked(buildProviderFromDecision).mockReturnValue(atlasMasterProvider as ReturnType<typeof buildProviderFromDecision>);
+
+    // Row has atlas_model_sku set to kling-v2-master (post-migration 091).
+    mockConfig.pendingRows = [v({
+      id: 'var-b-master', variant: 'B', provider: 'atlas',
+      provider_task_id: 'atlas-master-task', scene_id: 'scene-1',
+      atlas_model_sku: 'kling-v2-master',
+    })];
+    mockConfig.sceneRow = { property_id: 'prop-1', scene_number: 1, duration_seconds: 5, provider_task_id: 'scene-task-original' };
+
+    const result = await pollPendingVariants(10);
+
+    expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
+
+    // buildProviderFromDecision called with the stored SKU.
+    expect(vi.mocked(buildProviderFromDecision)).toHaveBeenCalledWith({
+      provider: 'atlas', modelKey: 'kling-v2-master', fallback: undefined,
+    });
+    // selectProvider was NOT used — we bypassed it.
+    expect(vi.mocked(selectProvider)).not.toHaveBeenCalled();
+
+    // The render cost_event must record 111¢, not the default SKU price.
+    const renderCostCalls = vi.mocked(recordCostEvent).mock.calls.filter(
+      ([args]) => args.provider === 'atlas',
+    );
+    expect(renderCostCalls).toHaveLength(1);
+    expect(renderCostCalls[0][0].costCents).toBe(111);
+  });
+
+  // (g) null atlas_model_sku (legacy row): falls back to selectProvider, no crash.
+  it('(g) null atlas_model_sku: falls back to selectProvider without crashing', async () => {
+    const { pollPendingVariants } = await import('./variants');
+    const { selectProvider, buildProviderFromDecision } = await import('../providers/router.js');
+
+    const mockProvider = makeCompletedProvider('atlas');
+    vi.mocked(selectProvider).mockReturnValue(mockProvider as ReturnType<typeof selectProvider>);
+
+    // Row with null atlas_model_sku (pre-migration 091 legacy row).
+    mockConfig.pendingRows = [v({
+      id: 'var-b-legacy', variant: 'B', provider: 'atlas',
+      provider_task_id: 'atlas-legacy-task', scene_id: 'scene-1',
+      // atlas_model_sku intentionally absent (simulates null from DB).
+    })];
+    mockConfig.sceneRow = { property_id: 'prop-1', scene_number: 1, duration_seconds: 5, provider_task_id: 'scene-task-original' };
+
+    const result = await pollPendingVariants(10);
+
+    expect(result).toEqual({ polled: 1, completed: 1, failed: 0 });
+    // Legacy path: selectProvider was used.
+    expect(vi.mocked(selectProvider)).toHaveBeenCalled();
+    // buildProviderFromDecision was NOT called (null sku → no reconstruction).
+    expect(vi.mocked(buildProviderFromDecision)).not.toHaveBeenCalled();
+  });
 });

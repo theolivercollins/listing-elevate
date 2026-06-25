@@ -1146,6 +1146,10 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
             submitted_at: new Date().toISOString(),
             status: "generating",
             attempt_count: attempt + 1,
+            // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+            // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+            // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+            atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
           })
           .eq("id", scene.id);
 
@@ -1412,6 +1416,10 @@ export async function resubmitScene(
           submitted_at: new Date().toISOString(),
           status: "generating",
           attempt_count: nextAttemptCount,
+          // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+          // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+          // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+          atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
         })
         .eq("id", sceneId);
 
