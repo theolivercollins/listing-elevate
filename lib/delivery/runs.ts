@@ -7,7 +7,7 @@ const ML_EVENT_TYPES: readonly MlEventType[] = [
   'voice_choice', 'music_choice', 'rating', 'comment', 'details_edit',
   'music_feedback',
   // Autopilot control events — DB migration 090 extends the CHECK constraint to include these.
-  'auto_advance', 'auto_resume',
+  'auto_pause', 'auto_advance', 'auto_resume',
 ];
 
 export async function createRun(input: {
