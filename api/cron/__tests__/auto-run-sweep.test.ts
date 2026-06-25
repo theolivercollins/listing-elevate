@@ -23,6 +23,8 @@ vi.mock('../../../lib/client.js', () => ({
 
 vi.mock('../../../lib/delivery/auto-run.js', () => ({
   resolveGate: vi.fn(),
+  // The cron now imports the single source of truth for gate stages.
+  GATE_STAGES: ['checkpoint_a', 'details', 'voiceover', 'music', 'checkpoint_b'],
 }));
 
 // ---------------------------------------------------------------------------
@@ -63,11 +65,13 @@ function makeRun(id: string, stage: GateStage = 'checkpoint_a'): DeliveryRunRow 
   } as unknown as DeliveryRunRow;
 }
 
-/** Build a minimal fake VercelRequest. */
+/** Build a minimal fake VercelRequest. Defaults to an AUTHED request (the cron
+ *  now hard-requires CRON_SECRET) so functional tests exercise the happy path;
+ *  the 401 cases override `headers` explicitly. */
 function makeReq(overrides: Partial<{ headers: Record<string, string> }> = {}): VercelRequest {
   return {
     method: 'GET',
-    headers: {},
+    headers: { authorization: 'Bearer test-secret' },
     ...overrides,
   } as unknown as VercelRequest;
 }
@@ -109,7 +113,9 @@ function makeSupabase(rows: DeliveryRunRow[], queryError?: string) {
 describe('auto-run-sweep cron handler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    delete process.env.CRON_SECRET;
+    // Default to a configured secret so the (now hard-required) auth guard lets
+    // authed functional requests through; the 401 cases tweak this per-test.
+    process.env.CRON_SECRET = 'test-secret';
   });
 
   // ── Auth guard ─────────────────────────────────────────────────────────────
@@ -117,7 +123,7 @@ describe('auto-run-sweep cron handler', () => {
   it('returns 401 when CRON_SECRET is set and the header is missing', async () => {
     process.env.CRON_SECRET = 'test-secret';
     const { res, captured } = makeRes();
-    await handler(makeReq(), res);
+    await handler(makeReq({ headers: {} }), res);
     expect(captured.status).toBe(401);
     expect((captured.body as { ok: boolean }).ok).toBe(false);
   });
@@ -137,11 +143,14 @@ describe('auto-run-sweep cron handler', () => {
     expect(captured.status).toBe(200);
   });
 
-  it('passes when CRON_SECRET is not set (no auth required)', async () => {
+  it('returns 401 when CRON_SECRET is NOT set (hard-required, never runs open)', async () => {
+    // This cron drives autonomous spend — a missing secret must reject, not allow.
+    delete process.env.CRON_SECRET;
     vi.mocked(getSupabase).mockReturnValue(makeSupabase([]) as never);
     const { res, captured } = makeRes();
-    await handler(makeReq(), res);
-    expect(captured.status).toBe(200);
+    await handler(makeReq({ headers: { authorization: 'Bearer anything' } }), res);
+    expect(captured.status).toBe(401);
+    expect((captured.body as { ok: boolean }).ok).toBe(false);
   });
 
   // ── resolveGate call-per-run ────────────────────────────────────────────────

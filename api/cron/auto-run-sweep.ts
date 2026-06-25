@@ -5,8 +5,9 @@
  * is sitting at a gate stage and is not paused, calls resolveGate() to let the
  * autopilot decision engine take action (advance, pause-for-human, or noop).
  *
- * Auth: same CRON_SECRET pattern as all other crons in this repo. Vercel
- * auto-sends `Authorization: Bearer <CRON_SECRET>` when the env var is set.
+ * Auth: CRON_SECRET is HARD-REQUIRED here (not best-effort). This route drives
+ * autonomous provider spend, so an unauthenticated/misconfigured request must be
+ * rejected — never run open. Vercel auto-sends `Authorization: Bearer <CRON_SECRET>`.
  *
  * Write guard: resolveGate() itself gates via canWrite() (prod or
  * LE_ALLOW_NONPROD_WRITES=true), so this handler can run on all envs for
@@ -15,24 +16,18 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabase } from '../../lib/client.js';
-import { resolveGate } from '../../lib/delivery/auto-run.js';
+import { resolveGate, GATE_STAGES } from '../../lib/delivery/auto-run.js';
 import type { DeliveryRunRow } from '../../lib/types/operator-studio.js';
 
 export const maxDuration = 120;
 
-/** Gate stages that the autopilot can act on (mirrors GATE_STAGES in auto-run.ts). */
-const GATE_STAGES = [
-  'checkpoint_a',
-  'details',
-  'voiceover',
-  'music',
-  'checkpoint_b',
-] as const;
-
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // CRON_SECRET guard — mirrors every other cron in this repo.
-  const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  // CRON_SECRET guard — HARD-REQUIRED because this cron drives autonomous spend.
+  // Missing secret OR mismatched bearer → 401. Never run open.
+  if (
+    !process.env.CRON_SECRET ||
+    req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
     return res.status(401).json({ ok: false });
   }
 

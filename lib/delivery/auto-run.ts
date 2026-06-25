@@ -15,13 +15,13 @@ import { advanceRun as _advanceRun, getVariantsForRun, updateRun, recordMlEvent 
 import { generateDeliveryScript } from './voiceover-script.js';
 import { scoreTotal } from './judge.js';
 import type { VariantScores } from './judge.js';
-import { generateVoiceoverAudio } from '../voiceover/generate-audio.js';
 import { VOICES, defaultVoiceId } from '../voiceover/voices.js';
 import { moodForPackage } from '../assembly/music.js';
 import type { MoodTag } from '../assembly/music.js';
 import { computeClaudeCost } from '../utils/claude-cost.js';
 import type { ClaudeUsage } from '../utils/claude-cost.js';
 import { recordCostEvent } from '../db.js';
+import { runDeliveryAudio } from './audio.js';
 import type { DeliveryRunRow, SceneVariantRow } from '../types/operator-studio.js';
 
 // Re-export so callers (cron sweep, inline kicks) share the same ref.
@@ -53,8 +53,9 @@ export type GateOutcome =
 
 /** The five stages where a human (or autopilot) makes a decision.
  *  Auto-stages (intake/scraping/generating/judging/assembling) advance via
- *  existing cron/poll paths and are never dispatched to resolvers here. */
-const GATE_STAGES = [
+ *  existing cron/poll paths and are never dispatched to resolvers here.
+ *  Exported so the cron sweep imports the single source of truth (no drift). */
+export const GATE_STAGES = [
   'checkpoint_a',
   'details',
   'voiceover',
@@ -79,12 +80,55 @@ export function canWrite(): boolean {
   );
 }
 
+// ─── RESOLVE LEASE ───────────────────────────────────────────────────────────
+// Primary overlap guard against double-spend. advanceRun's CAS dedups the stage
+// *advance*, not the provider *spend* — two concurrent resolvers (overlapping
+// cron sweeps, or a sweep racing the inline kick) can both pass all four guards
+// and both pay ElevenLabs/Haiku/Creatomate. The lease serializes them: exactly
+// one resolver claims delivery_runs.resolving_at and proceeds; the other no-ops.
+
+/** Lease TTL — a crashed/Vercel-killed resolver's stale lease is reclaimable
+ *  after this window so a run is never permanently wedged. */
+const RESOLVE_LEASE_TTL_MS = 10 * 60 * 1000;
+
+/** CAS-claim the per-run resolve lease. Returns true iff this caller won it.
+ *  Mirrors: UPDATE delivery_runs SET resolving_at = now()
+ *           WHERE id = :id AND (resolving_at IS NULL OR resolving_at < now() - interval '10 minutes'). */
+async function claimResolveLease(runId: string): Promise<boolean> {
+  const db = getSupabase();
+  const staleBefore = new Date(Date.now() - RESOLVE_LEASE_TTL_MS).toISOString();
+  const { data, error } = await db
+    .from('delivery_runs')
+    .update({ resolving_at: new Date().toISOString() })
+    .eq('id', runId)
+    .or(`resolving_at.is.null,resolving_at.lt.${staleBefore}`)
+    .select('id');
+  if (error) throw new Error(`claimResolveLease: ${error.message}`);
+  return Array.isArray(data) && data.length === 1;
+}
+
+/** Release the per-run resolve lease. Best-effort: a failure here must not mask
+ *  the resolver's own outcome (the 10-minute TTL is the backstop). */
+async function releaseResolveLease(runId: string): Promise<void> {
+  try {
+    const db = getSupabase();
+    const { error } = await db
+      .from('delivery_runs')
+      .update({ resolving_at: null })
+      .eq('id', runId);
+    if (error) console.error(`[auto-run] releaseResolveLease failed for ${runId}:`, error.message);
+  } catch (e) {
+    console.error(`[auto-run] releaseResolveLease threw for ${runId}:`, e);
+  }
+}
+
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
 /** Evaluate the current gate for an auto-run delivery run and take action.
  *  All four guards return noop before any I/O so double-fires are safe and cheap.
- *  The CAS guard inside advanceRun prevents double-advance even if two callers
- *  (cron sweep + inline kick) both pass all guards simultaneously. */
+ *  After the guards a per-run lease (delivery_runs.resolving_at) is CAS-claimed
+ *  so two concurrent resolvers can never both spend on the same run; the loser
+ *  no-ops. advanceRun's own CAS still backstops the stage advance. */
 export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
   // Guard 1: autopilot is disabled for this run (kill-switch off or never enabled)
   if (run.auto_run !== true) {
@@ -106,15 +150,25 @@ export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
     return { action: 'noop', reason: 'write guard: non-prod' };
   }
 
-  // Dispatch to the per-gate resolver.
-  // TypeScript exhaustiveness: the switch covers every GateStage value; if a new
-  // gate stage is added to GATE_STAGES without a case, the compiler will error here.
-  switch (run.stage satisfies GateStage) {
-    case 'checkpoint_a': return resolveCheckpointA(run);
-    case 'details':      return resolveDetails(run);
-    case 'voiceover':    return resolveVoiceover(run);
-    case 'music':        return resolveMusic(run);
-    case 'checkpoint_b': return resolveCheckpointB(run);
+  // Lease guard: claim exclusive right to resolve this run before any spend.
+  if (!(await claimResolveLease(run.id))) {
+    return { action: 'noop', reason: 'resolve lease held by concurrent actor' };
+  }
+
+  try {
+    // Dispatch to the per-gate resolver.
+    // TypeScript exhaustiveness: the switch covers every GateStage value; if a new
+    // gate stage is added to GATE_STAGES without a case, the compiler will error here.
+    switch (run.stage satisfies GateStage) {
+      case 'checkpoint_a': return await resolveCheckpointA(run);
+      case 'details':      return await resolveDetails(run);
+      case 'voiceover':    return await resolveVoiceover(run);
+      case 'music':        return await resolveMusic(run);
+      case 'checkpoint_b': return await resolveCheckpointB(run);
+    }
+  } finally {
+    // Always release — a `return` inside the try still runs this.
+    await releaseResolveLease(run.id);
   }
 }
 
@@ -266,86 +320,86 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
     return { action: 'paused', reason };
   }
 
-  // 2. Pick voice tone via Haiku.
-  const client = new Anthropic();
-  const voiceLines = VOICES.map(v => `- ${v.name} (${v.gender}, ${v.description})`).join('\n');
+  // Idempotency: if audio already exists (a prior overlapping resolver paid for
+  // it), skip the voice-pick Haiku call AND the synth entirely — reuse it and
+  // advance. This prevents a double-spend on the expensive ElevenLabs synth.
+  if (!run.voiceover_audio_url) {
+    // 2. Pick voice tone via Haiku.
+    const client = new Anthropic();
+    const voiceLines = VOICES.map(v => `- ${v.name} (${v.gender}, ${v.description})`).join('\n');
 
-  const voicePickPrompt = [
-    'You are selecting a real-estate video voiceover voice.',
-    '',
-    `Listing: ${run.video_type.replace(/_/g, ' ')}`,
-    run.listing_details.price ? `Price: $${run.listing_details.price.toLocaleString('en-US')}` : '',
-    run.listing_details.beds ? `Beds: ${run.listing_details.beds}` : '',
-    run.listing_details.baths ? `Baths: ${run.listing_details.baths}` : '',
-    '',
-    'Available voices:',
-    voiceLines,
-    '',
-    'Reply with ONLY the voice name (e.g. Amanda).',
-  ].filter(Boolean).join('\n');
+    const voicePickPrompt = [
+      'You are selecting a real-estate video voiceover voice.',
+      '',
+      `Listing: ${run.video_type.replace(/_/g, ' ')}`,
+      run.listing_details.price ? `Price: $${run.listing_details.price.toLocaleString('en-US')}` : '',
+      run.listing_details.beds ? `Beds: ${run.listing_details.beds}` : '',
+      run.listing_details.baths ? `Baths: ${run.listing_details.baths}` : '',
+      '',
+      'Available voices:',
+      voiceLines,
+      '',
+      'Reply with ONLY the voice name (e.g. Amanda).',
+    ].filter(Boolean).join('\n');
 
-  const voiceResponse = await client.messages.create({
-    model: PICK_MODEL,
-    max_tokens: 10,
-    messages: [{ role: 'user', content: voicePickPrompt }],
-  });
-
-  // Record cost — never silent.
-  const voiceCost = computeClaudeCost(voiceResponse.usage as ClaudeUsage, PICK_MODEL);
-  await recordCostEvent({
-    propertyId: run.property_id,
-    stage: 'assembly',
-    provider: 'anthropic',
-    unitsConsumed: voiceCost.totalTokens,
-    unitType: 'tokens',
-    costCents: voiceCost.costCents,
-    metadata: {
-      delivery_run_id: run.id,
-      subtype: 'auto_voice_pick',
+    const voiceResponse = await client.messages.create({
       model: PICK_MODEL,
-      input_tokens: voiceResponse.usage.input_tokens,
-      output_tokens: voiceResponse.usage.output_tokens,
-    },
-  });
-
-  const tonePick =
-    voiceResponse.content[0]?.type === 'text' ? voiceResponse.content[0].text.trim() : '';
-
-  // Map picked name → voice ID; fall back to default.
-  const voiceNameMap: Record<string, string> = Object.fromEntries(
-    VOICES.map(v => [v.name.toLowerCase(), v.id]),
-  );
-  const voiceId = voiceNameMap[tonePick.toLowerCase()] ?? defaultVoiceId();
-
-  // 3. Synthesize audio (generateVoiceoverAudio records its own cost_events).
-  let audioUrl: string;
-  try {
-    const result = await generateVoiceoverAudio({
-      script,
-      voiceId,
-      propertyId: run.property_id,
-      deliveryRunId: run.id,
+      max_tokens: 10,
+      messages: [{ role: 'user', content: voicePickPrompt }],
     });
-    audioUrl = result.audioUrl;
-  } catch (err) {
-    const reason = `voiceover: audio synthesis failed — ${err instanceof Error ? err.message : String(err)}`;
-    await pauseForHuman(run.id, reason);
-    return { action: 'paused', reason };
+
+    // Record cost — never silent.
+    const voiceCost = computeClaudeCost(voiceResponse.usage as ClaudeUsage, PICK_MODEL);
+    await recordCostEvent({
+      propertyId: run.property_id,
+      stage: 'assembly',
+      provider: 'anthropic',
+      unitsConsumed: voiceCost.totalTokens,
+      unitType: 'tokens',
+      costCents: voiceCost.costCents,
+      metadata: {
+        delivery_run_id: run.id,
+        subtype: 'auto_voice_pick',
+        model: PICK_MODEL,
+        input_tokens: voiceResponse.usage.input_tokens,
+        output_tokens: voiceResponse.usage.output_tokens,
+      },
+    });
+
+    const tonePick =
+      voiceResponse.content[0]?.type === 'text' ? voiceResponse.content[0].text.trim() : '';
+
+    // Map picked name → voice ID; fall back to default.
+    const voiceNameMap: Record<string, string> = Object.fromEntries(
+      VOICES.map(v => [v.name.toLowerCase(), v.id]),
+    );
+    const voiceId = voiceNameMap[tonePick.toLowerCase()] ?? defaultVoiceId();
+
+    // Persist the picked voice BEFORE synth so the shared audio runner (which
+    // reads the run fresh) sees it.
+    await updateRun(run.id, { voiceover_voice_id: voiceId } as Partial<DeliveryRunRow>);
+
+    // 3. Synthesize audio via the SHARED runner so autopilot gets the same
+    //    duration-audit / auto-shorten loop + retry the human path uses. It
+    //    persists voiceover_audio_url and records its own cost_events; on a
+    //    hard failure it sets the run error, and we pause for a human.
+    const audioResult = await runDeliveryAudio(run.id);
+    if (audioResult.ok === false) {
+      const reason = `voiceover: audio synthesis failed — ${audioResult.error}`;
+      await pauseForHuman(run.id, reason);
+      return { action: 'paused', reason };
+    }
+
+    await recordMlEvent(run.id, 'auto_advance', {
+      source: 'auto',
+      gate: 'voiceover',
+      confidence: 0.9,
+      voice_id: voiceId,
+      tone_pick: tonePick,
+      ...(audioResult.duration_warning ? { duration_warning: audioResult.duration_warning } : {}),
+    });
   }
 
-  // 4. Patch run + log + advance.
-  await updateRun(run.id, {
-    voiceover_voice_id: voiceId,
-    voiceover_audio_url: audioUrl,
-  } as Partial<DeliveryRunRow>);
-
-  await recordMlEvent(run.id, 'auto_advance', {
-    source: 'auto',
-    gate: 'voiceover',
-    confidence: 0.9,
-    voice_id: voiceId,
-    tone_pick: tonePick,
-  });
   await _advanceRun(run.id, 'music');
   return { action: 'advanced', to: 'music' };
 }
@@ -360,6 +414,12 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
  * 4. No track found: pause.
  */
 export async function resolveMusic(run: DeliveryRunRow): Promise<GateOutcome> {
+  // Idempotency: if a track was already chosen (a prior overlapping resolver),
+  // skip the mood Haiku call + track query/pick entirely and reuse it.
+  if (run.music_track_id) {
+    return advanceMusicToAssembling(run);
+  }
+
   // 1. Mood pick via Haiku.
   const client = new Anthropic();
   const VALID_MOODS: MoodTag[] = ['upbeat', 'warm', 'celebratory', 'cinematic', 'neutral'];
@@ -482,7 +542,32 @@ export async function resolveMusic(run: DeliveryRunRow): Promise<GateOutcome> {
     music_track_id: trackId,
     mood,
   });
+  return advanceMusicToAssembling(run);
+}
+
+/**
+ * Advance music → assembling and DRIVE the assembly stage for an autopilot run.
+ *
+ * BLOCKER FIX: nothing else moves an auto-run from 'assembling' to 'checkpoint_b'
+ * — the cron sweep only acts on gate stages and there is no assembling reaper, so
+ * resolveMusic advancing to 'assembling' previously left autopilot stalled.
+ * runAssembleStage self-advances to checkpoint_b and fires the existing inline
+ * kick. We are only reachable through resolveGate, which already passed the
+ * canWrite() guard (Guard 4), so the writes runAssembleStage performs are
+ * permitted here. A failure pauses the run for a human rather than silently
+ * stalling. (The inline checkpoint_b kick re-enters resolveGate and is harmlessly
+ * lease-blocked by the outer claim; the cron sweep resolves checkpoint_b next pass.)
+ */
+async function advanceMusicToAssembling(run: DeliveryRunRow): Promise<GateOutcome> {
   await _advanceRun(run.id, 'assembling');
+  try {
+    const { runAssembleStage } = await import('./assemble.js');
+    await runAssembleStage(run.id);
+  } catch (err) {
+    const reason = `assembly failed: ${err instanceof Error ? err.message : String(err)}`;
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
+  }
   return { action: 'advanced', to: 'assembling' };
 }
 
@@ -516,6 +601,16 @@ export async function resolveCheckpointB(run: DeliveryRunRow): Promise<GateOutco
     if (v.variant === 'A') entry.a = v;
     else if (v.variant === 'B') entry.b = v;
     byScene.set(v.scene_id, entry);
+  }
+
+  // Empty-run guard: the base score (0.5) plus listing/audio/music bonuses can
+  // reach AUTO_DELIVER_THRESHOLD with ZERO scene variants — that would auto-
+  // deliver an empty video. Require at least one real scene before delivering;
+  // otherwise pause for a human.
+  if (byScene.size < 1) {
+    const reason = 'quality below threshold: no scene variants to deliver (empty run)';
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
   }
 
   let score = 0.5;

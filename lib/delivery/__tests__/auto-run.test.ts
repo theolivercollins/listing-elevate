@@ -45,6 +45,16 @@ vi.mock('../../voiceover/generate-audio.js', () => ({
   generateVoiceoverAudio: vi.fn(),
 }));
 
+// Shared audio runner (duration-audit + synth) — resolveVoiceover delegates to it.
+vi.mock('../audio.js', () => ({
+  runDeliveryAudio: vi.fn(),
+}));
+
+// Assembly driver — resolveMusic drives assembling → checkpoint_b through it.
+vi.mock('../assemble.js', () => ({
+  runAssembleStage: vi.fn(),
+}));
+
 vi.mock('../../voiceover/voices.js', () => ({
   VOICES: [
     { id: 'voice-mark', name: 'Mark', gender: 'male', description: 'Natural, conversational' },
@@ -79,7 +89,8 @@ vi.mock('@anthropic-ai/sdk', () => ({
 import { getSupabase } from '../../client.js';
 import { getVariantsForRun, updateRun, recordMlEvent, advanceRun } from '../runs.js';
 import { generateDeliveryScript } from '../voiceover-script.js';
-import { generateVoiceoverAudio } from '../../voiceover/generate-audio.js';
+import { runDeliveryAudio } from '../audio.js';
+import { runAssembleStage } from '../assemble.js';
 import { recordCostEvent } from '../../db.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -434,12 +445,12 @@ describe('resolveVoiceover', () => {
     return db;
   }
 
-  it('advances: generates script, picks voice via LLM, synthesizes audio', async () => {
+  it('advances: generates script, picks voice via LLM, runs shared audio runner', async () => {
     setupDbWithAddress('123 Main St');
     (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Great home!', wordCount: 2 });
     (updateRun as Mock).mockResolvedValue({});
     mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
-    (generateVoiceoverAudio as Mock).mockResolvedValue({ audioUrl: 'https://cdn.example.com/audio.mp3', durationMs: 28000 });
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
     (recordCostEvent as Mock).mockResolvedValue(undefined);
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
@@ -447,10 +458,10 @@ describe('resolveVoiceover', () => {
     const result = await resolveVoiceover(makeRun());
     expect(result).toEqual({ action: 'advanced', to: 'music' });
     expect(generateDeliveryScript).toHaveBeenCalled();
-    expect(generateVoiceoverAudio).toHaveBeenCalledWith(expect.objectContaining({
-      script: 'Great home!',
-      voiceId: 'voice-amanda',
-    }));
+    // Voice is persisted BEFORE synth so the shared runner reads it fresh.
+    expect(updateRun).toHaveBeenCalledWith('run-1', expect.objectContaining({ voiceover_voice_id: 'voice-amanda' }));
+    // Synth goes through the shared duration-audited runner, not a raw call.
+    expect(runDeliveryAudio).toHaveBeenCalledWith('run-1');
     expect(recordCostEvent).toHaveBeenCalled();
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'music');
   });
@@ -458,7 +469,7 @@ describe('resolveVoiceover', () => {
   it('skips script generation if voiceover_script already set', async () => {
     setupDbWithAddress('123 Main St');
     mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Mark'));
-    (generateVoiceoverAudio as Mock).mockResolvedValue({ audioUrl: 'https://cdn.example.com/audio.mp3', durationMs: 28000 });
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
     (recordCostEvent as Mock).mockResolvedValue(undefined);
     (updateRun as Mock).mockResolvedValue({});
     (recordMlEvent as Mock).mockResolvedValue(undefined);
@@ -470,6 +481,21 @@ describe('resolveVoiceover', () => {
     expect(generateDeliveryScript).not.toHaveBeenCalled();
   });
 
+  it('IDEMPOTENT: skips voice-pick LLM + synth when voiceover_audio_url already set', async () => {
+    setupDbWithAddress('123 Main St');
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ voiceover_script: 'Existing.', voiceover_audio_url: 'https://cdn.example.com/x.mp3' });
+    const result = await resolveVoiceover(run);
+    expect(result).toEqual({ action: 'advanced', to: 'music' });
+    // No paid calls: no script gen, no voice-pick Haiku, no audio synth.
+    expect(generateDeliveryScript).not.toHaveBeenCalled();
+    expect(mockAnthropicCreate).not.toHaveBeenCalled();
+    expect(runDeliveryAudio).not.toHaveBeenCalled();
+    expect(advanceRun).toHaveBeenCalledWith('run-1', 'music');
+  });
+
   it('pauses when property address is not found', async () => {
     setupDbWithAddress(null);
 
@@ -478,15 +504,14 @@ describe('resolveVoiceover', () => {
     expect((result as { action: 'paused'; reason: string }).reason).toMatch(/address not found/);
   });
 
-  it('pauses when audio synthesis throws', async () => {
-    setupDbWithAddress('123 Main St');
+  it('pauses when the shared audio runner returns a failure', async () => {
     (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Script.', wordCount: 1 });
     (updateRun as Mock).mockResolvedValue({});
     mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
-    (generateVoiceoverAudio as Mock).mockRejectedValue(new Error('ElevenLabs 500'));
     (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: false, status: 502, error: 'ElevenLabs 500' });
 
-    // pauseForHuman needs a db
+    // getSupabase serves the address lookup (properties) AND pauseForHuman writes.
     const db = {
       from: vi.fn().mockReturnValue({
         update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
@@ -663,6 +688,101 @@ describe('resolveMusic', () => {
     expect(result.action).toBe('paused');
     expect((result as { action: 'paused'; reason: string }).reason).toMatch(/no track for mood/);
   });
+
+  it('drives assembly (runAssembleStage) after advancing music → assembling', async () => {
+    mockAnthropicCreate.mockResolvedValue(makeLlmResponse('upbeat'));
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (updateRun as Mock).mockResolvedValue({});
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockResolvedValue(undefined);
+    setupMusicDb([{ id: 'track-1' }]);
+
+    const result = await resolveMusic(makeRun());
+    expect(advanceRun).toHaveBeenCalledWith('run-1', 'assembling');
+    expect(runAssembleStage).toHaveBeenCalledWith('run-1');
+    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+  });
+
+  it('IDEMPOTENT: skips mood LLM + track pick when music_track_id already set', async () => {
+    (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockResolvedValue(undefined);
+
+    const run = makeRun({ stage: 'music', music_track_id: 'track-existing' });
+    const result = await resolveMusic(run);
+    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+    // No paid mood pick, no track re-selection write.
+    expect(mockAnthropicCreate).not.toHaveBeenCalled();
+    expect(updateRun).not.toHaveBeenCalled();
+    expect(runAssembleStage).toHaveBeenCalledWith('run-1');
+  });
+
+  it('pauses when assembly fails after the music advance', async () => {
+    (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockRejectedValue(new Error('creatomate 500'));
+    // pauseForHuman writes go through getSupabase.
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
+      }),
+    });
+
+    // music_track_id set → idempotent skip → straight into the assembly drive.
+    const run = makeRun({ stage: 'music', music_track_id: 'track-1' });
+    const result = await resolveMusic(run);
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/assembly failed/);
+  });
+});
+
+// ─── resolveGate — resolve lease (double-spend guard) ─────────────────────────
+
+describe('resolveGate — resolve lease', () => {
+  /** getSupabase mock whose CAS lease-claim resolves to `claimRows`. Also serves
+   *  the release update (resolving_at: null). */
+  function makeLeaseDb(claimRows: unknown[]) {
+    const claimSelect = vi.fn().mockResolvedValue({ data: claimRows, error: null });
+    const releaseEq = vi.fn().mockResolvedValue({ error: null });
+    const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
+      if (patch && patch.resolving_at) {
+        // claim: .update({resolving_at: now}).eq().or().select()
+        return { eq: vi.fn().mockReturnValue({ or: vi.fn().mockReturnValue({ select: claimSelect }) }) };
+      }
+      // release: .update({resolving_at: null}).eq()
+      return { eq: releaseEq };
+    });
+    return {
+      db: { from: vi.fn().mockReturnValue({ update }) },
+      releaseEq,
+    };
+  }
+
+  it('no-ops when the lease is already held (CAS claims 0 rows)', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const { db } = makeLeaseDb([]); // 0 rows claimed → lost the race
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const run = makeRun({ stage: 'details', listing_details: { price: 1, beds: 1, baths: 1 } });
+    const result = await resolveGate(run);
+    expect(result).toEqual({ action: 'noop', reason: 'resolve lease held by concurrent actor' });
+    // Resolver never ran → no spend, no advance.
+    expect(advanceRun).not.toHaveBeenCalled();
+  });
+
+  it('claims the lease, dispatches to the resolver, then releases it', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const { db, releaseEq } = makeLeaseDb([{ id: 'run-1' }]); // won the claim
+    (getSupabase as Mock).mockReturnValue(db);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ stage: 'details', listing_details: { price: 1, beds: 1, baths: 1 } });
+    const result = await resolveGate(run);
+    expect(result).toEqual({ action: 'advanced', to: 'voiceover' });
+    expect(advanceRun).toHaveBeenCalledWith('run-1', 'voiceover');
+    expect(releaseEq).toHaveBeenCalled(); // lease released in finally
+  });
 });
 
 // ─── resolveCheckpointB ───────────────────────────────────────────────────────
@@ -705,6 +825,27 @@ describe('resolveCheckpointB', () => {
     expect(recordMlEvent).toHaveBeenCalledWith('run-1', 'auto_advance', expect.objectContaining({
       source: 'auto', gate: 'checkpoint_b',
     }));
+  });
+
+  it('pauses when there are ZERO scene variants (empty run, would deliver nothing)', async () => {
+    // Even with full listing + audio + music bonuses (0.5+0.1+0.1+0.1 = 0.8 ≥ 0.7),
+    // an empty byScene must NOT auto-deliver.
+    (getVariantsForRun as Mock).mockResolvedValue([]);
+    const db = makeDbChain(null);
+    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const run = makeRun({
+      stage: 'checkpoint_b',
+      listing_details: { price: 500000, beds: 3, baths: 2 },
+      voiceover_audio_url: 'https://cdn.example.com/audio.mp3',
+      music_track_id: 'track-1',
+    });
+    const result = await resolveCheckpointB(run);
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/no scene variants|empty run/);
+    expect(advanceRun).not.toHaveBeenCalled();
   });
 
   it('pauses immediately when run.error is set', async () => {
