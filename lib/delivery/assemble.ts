@@ -115,12 +115,21 @@ export async function runAssembleStage(runId: string): Promise<void> {
     }
   } catch (err) {
     // [ASSEMBLY_TIMEOUT] tagged errors mean the render is still in-flight (budget
-    // exceeded), NOT a permanent failure. Don't persist a run error — the autopilot
-    // sweep resumes the run via the persisted job token on the next cron tick.
+    // exceeded), NOT a permanent failure.
+    //
+    // auto_run=true: the autopilot sweep resumes via the persisted job token on the
+    // next cron tick — do NOT persist a run error (it would block future advance).
+    //
+    // auto_run=false (human-triggered): there is no sweep to resume it, so set a
+    // visible error row so the operator can see "render timed out" in the studio and
+    // click Rerun. This is a regression-fix: previously the human path also got no
+    // error row, leaving the run silently stalled at 'assembling'.
     const isTimeout = Boolean((err as { isAssemblyTimeout?: unknown }).isAssemblyTimeout);
     if (!isTimeout) {
       const msg = err instanceof Error ? err.message : String(err);
       await setRunError(runId, `Assembly failed: ${msg}`);
+    } else if (!run.auto_run) {
+      await setRunError(runId, 'Assembly render timed out — render may still be in progress; rerun to retry');
     }
     throw err;
   }

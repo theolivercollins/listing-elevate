@@ -1530,7 +1530,19 @@ async function persistAssemblyJobId(
     .update({ [column]: job })
     .eq("id", runId);
   if (error) {
-    console.error(`[pipeline] persistAssemblyJobId: failed to persist ${column} for run ${runId}:`, error.message);
+    const code = (error as { code?: string }).code;
+    if (code === '42703') {
+      // migration 092 not applied: assembly_*_job column does not exist.
+      // Job token cannot be persisted → autopilot resume will re-submit the render
+      // (re-spend risk) until the migration is applied. Log at ERROR so this surfaces
+      // in observability dashboards. The sweep's leaseError counter also increments
+      // when it catches 42703 from resolveAssembling's job-column read.
+      console.error(
+        `[pipeline] persistAssemblyJobId: migration 092 not applied — ${column} column missing for run ${runId} (42703). Apply supabase/migrations/092_delivery_runs_assembly_jobs.sql to fix.`
+      );
+    } else {
+      console.error(`[pipeline] persistAssemblyJobId: failed to persist ${column} for run ${runId}:`, error.message);
+    }
   }
 }
 

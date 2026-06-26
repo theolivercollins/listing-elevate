@@ -21,6 +21,7 @@ import type { MoodTag } from '../assembly/music.js';
 import { computeClaudeCost } from '../utils/claude-cost.js';
 import type { ClaudeUsage } from '../utils/claude-cost.js';
 import { recordCostEvent } from '../db.js';
+import { emitBunnyFinalizeCostEvent } from '../assembly/bunny-finalize-cost.js';
 import { runDeliveryAudio } from './audio.js';
 import type { DeliveryRunRow, SceneVariantRow } from '../types/operator-studio.js';
 
@@ -235,20 +236,31 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
     }
 
     // Path 2: resume polling persisted in-flight job IDs without re-submitting.
-    const { data: jobRow } = await db
+    // Check for the job columns — this read also surfaces migration-092-missing (42703).
+    const { data: jobRow, error: jobColErr } = await db
       .from('delivery_runs')
       .select('assembly_h_job, assembly_v_job')
       .eq('id', run.id)
       .maybeSingle();
+    if (jobColErr) {
+      // 42703 = undefined_column: migration 092 (assembly_*_job columns) not applied.
+      // Throw so the sweep's catch increments leaseError and the operator sees it.
+      // Also short-circuits Path 3, preventing a silent re-submit (re-spend risk).
+      throw new Error(
+        `resolveAssembling: job column read failed [${(jobColErr as { code?: string }).code ?? 'DB_ERR'}]: ${jobColErr.message}`
+      );
+    }
 
     type JobShape = { jobId: string; environment: 'stage' | 'v1' };
     const hJob = (jobRow as { assembly_h_job?: JobShape | null } | null)?.assembly_h_job ?? null;
     const vJob = (jobRow as { assembly_v_job?: JobShape | null } | null)?.assembly_v_job ?? null;
 
     if ((wantH && !hDone && hJob) || (wantV && !vDone && vJob)) {
-      const renderTimeout = budgetMs ? Math.max(10_000, budgetMs - 5_000) : 200_000;
+      // Track wall-clock start so the V poll can subtract H's elapsed time.
+      const pStart = Date.now();
+      const hTimeout = budgetMs ? Math.max(10_000, budgetMs - 5_000) : 200_000;
 
-      const { selectAssemblyProvider, pollAssemblyJob: poll } = await import('../providers/assembly-router.js');
+      const { selectAssemblyProvider, pollAssemblyJob: poll, assemblyProviderCostCents } = await import('../providers/assembly-router.js');
       let provider;
       try {
         provider = selectAssemblyProvider();
@@ -259,19 +271,46 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
       let allDone = true;
 
       if (wantH && !hDone && hJob) {
-        const hResult = await poll(provider, hJob, renderTimeout);
+        const hResult = await poll(provider, hJob, hTimeout);
         if (hResult.status === 'complete' && hResult.videoUrl) {
           const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
+          const hDurationSeconds = hResult.durationSeconds ?? 0;
           const hFinalize = await finalizeAssemblyRender({
             propertyId: run.property_id,
             aspectRatio: '16:9',
             providerUrl: hResult.videoUrl,
-            durationSeconds: hResult.durationSeconds ?? 0,
+            durationSeconds: hDurationSeconds,
             version: 1,
           });
           await db.from('properties').update({ horizontal_video_url: hFinalize.url }).eq('id', run.property_id);
           // Clear persisted job token — render is done.
           void db.from('delivery_runs').update({ assembly_h_job: null }).eq('id', run.id);
+          // Emit cost rows — same shape the pipeline emits in runAssemblyStep.
+          // Both calls are best-effort (errors must not block delivery advance).
+          await emitBunnyFinalizeCostEvent({
+            propertyId: run.property_id,
+            aspectRatio: '16:9',
+            bunnyWasCalled: hFinalize.bunnyWasCalled,
+            outputBytes: hFinalize.outputBytes,
+            bitrateKbps: hFinalize.bitrateKbps,
+          });
+          const hCostCents = assemblyProviderCostCents(provider.name, hDurationSeconds, '16:9');
+          await recordCostEvent({
+            propertyId: run.property_id,
+            stage: 'assembly',
+            provider: provider.name as Parameters<typeof recordCostEvent>[0]['provider'],
+            unitsConsumed: 1,
+            unitType: 'renders',
+            costCents: hCostCents,
+            metadata: {
+              aspect_ratio: '16:9',
+              output_duration_seconds: hDurationSeconds,
+              job_id: hJob.jobId,
+              reason: 'autopilot_resume',
+              delivered_bitrate_kbps: hFinalize.bitrateKbps,
+              output_bytes: hFinalize.outputBytes,
+            },
+          });
         } else if (hResult.status === 'failed') {
           if (hResult.error === 'Assembly render timed out') {
             // Still in-flight at budget end — stored job ID survives; next tick resumes.
@@ -287,28 +326,65 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
       }
 
       if (wantV && !vDone && vJob) {
-        const vResult = await poll(provider, vJob, renderTimeout);
-        if (vResult.status === 'complete' && vResult.videoUrl) {
-          const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
-          const vFinalize = await finalizeAssemblyRender({
-            propertyId: run.property_id,
-            aspectRatio: '9:16',
-            providerUrl: vResult.videoUrl,
-            durationSeconds: vResult.durationSeconds ?? 0,
-            version: 1,
-          });
-          await db.from('properties').update({ vertical_video_url: vFinalize.url }).eq('id', run.property_id);
-          void db.from('delivery_runs').update({ assembly_v_job: null }).eq('id', run.id);
-        } else if (vResult.status === 'failed') {
-          if (vResult.error === 'Assembly render timed out') {
-            allDone = false;
-          } else {
-            const reason = `assembling: vertical render failed — ${vResult.error ?? 'unknown'}`;
-            await pauseForHuman(run.id, reason);
-            return { action: 'paused', reason };
-          }
-        } else {
+        // Recompute remaining budget after H poll consumed time. Check the raw
+        // remaining time BEFORE the floor so the guard fires correctly.
+        // If budget is nearly exhausted skip V poll entirely — job token survives,
+        // next tick resumes with a fresh budget.
+        const vBudgetRaw = budgetMs ? budgetMs - (Date.now() - pStart) - 5_000 : Number.MAX_SAFE_INTEGER;
+        if (budgetMs && vBudgetRaw < 10_000) {
+          // Not enough budget left for V poll — leave allDone=false so we return noop.
           allDone = false;
+        } else {
+          const vTimeout = Math.max(10_000, vBudgetRaw);
+          const vResult = await poll(provider, vJob, vTimeout);
+          if (vResult.status === 'complete' && vResult.videoUrl) {
+            const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
+            const vDurationSeconds = vResult.durationSeconds ?? 0;
+            const vFinalize = await finalizeAssemblyRender({
+              propertyId: run.property_id,
+              aspectRatio: '9:16',
+              providerUrl: vResult.videoUrl,
+              durationSeconds: vDurationSeconds,
+              version: 1,
+            });
+            await db.from('properties').update({ vertical_video_url: vFinalize.url }).eq('id', run.property_id);
+            void db.from('delivery_runs').update({ assembly_v_job: null }).eq('id', run.id);
+            // Emit cost rows for the vertical render.
+            await emitBunnyFinalizeCostEvent({
+              propertyId: run.property_id,
+              aspectRatio: '9:16',
+              bunnyWasCalled: vFinalize.bunnyWasCalled,
+              outputBytes: vFinalize.outputBytes,
+              bitrateKbps: vFinalize.bitrateKbps,
+            });
+            const vCostCents = assemblyProviderCostCents(provider.name, vDurationSeconds, '9:16');
+            await recordCostEvent({
+              propertyId: run.property_id,
+              stage: 'assembly',
+              provider: provider.name as Parameters<typeof recordCostEvent>[0]['provider'],
+              unitsConsumed: 1,
+              unitType: 'renders',
+              costCents: vCostCents,
+              metadata: {
+                aspect_ratio: '9:16',
+                output_duration_seconds: vDurationSeconds,
+                job_id: vJob.jobId,
+                reason: 'autopilot_resume',
+                delivered_bitrate_kbps: vFinalize.bitrateKbps,
+                output_bytes: vFinalize.outputBytes,
+              },
+            });
+          } else if (vResult.status === 'failed') {
+            if (vResult.error === 'Assembly render timed out') {
+              allDone = false;
+            } else {
+              const reason = `assembling: vertical render failed — ${vResult.error ?? 'unknown'}`;
+              await pauseForHuman(run.id, reason);
+              return { action: 'paused', reason };
+            }
+          } else {
+            allDone = false;
+          }
         }
       }
 

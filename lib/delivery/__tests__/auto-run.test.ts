@@ -100,6 +100,11 @@ vi.mock('../../assembly/finalize.js', () => ({
   }),
 }));
 
+// Bunny cost emitter — resolveAssembling emits per finalized orientation on resume.
+vi.mock('../../assembly/bunny-finalize-cost.js', () => ({
+  emitBunnyFinalizeCostEvent: vi.fn().mockResolvedValue(undefined),
+}));
+
 const mockAnthropicCreate = vi.hoisted(() => vi.fn());
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -114,8 +119,9 @@ import { generateDeliveryScript } from '../voiceover-script.js';
 import { runDeliveryAudio } from '../audio.js';
 import { runAssembleStage } from '../assemble.js';
 import { recordCostEvent } from '../../db.js';
-import { pollAssemblyJob } from '../../providers/assembly-router.js';
+import { pollAssemblyJob, assemblyProviderCostCents } from '../../providers/assembly-router.js';
 import { finalizeAssemblyRender } from '../../assembly/finalize.js';
+import { emitBunnyFinalizeCostEvent } from '../../assembly/bunny-finalize-cost.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -946,7 +952,7 @@ describe('resolveAssembling', () => {
     expect(runAssembleStage).not.toHaveBeenCalled();
   });
 
-  it('Path 2: in-flight job ID + poll completes → finalizes, writes URL, advances to checkpoint_b', async () => {
+  it('Path 2: in-flight job ID + poll completes → finalizes, writes URL, emits cost rows, advances to checkpoint_b', async () => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
 
     const hJob = { jobId: 'job-h-456', environment: 'v1' as const };
@@ -961,6 +967,9 @@ describe('resolveAssembling', () => {
     });
     (getSupabase as Mock).mockReturnValue(db);
     (advanceRun as Mock).mockResolvedValue({});
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (emitBunnyFinalizeCostEvent as Mock).mockResolvedValue(undefined);
+    (assemblyProviderCostCents as Mock).mockReturnValue(150);
 
     // Poll returns complete with a provider URL.
     (pollAssemblyJob as Mock).mockResolvedValue({
@@ -991,6 +1000,115 @@ describe('resolveAssembling', () => {
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'checkpoint_b');
     // No re-submit: runAssembleStage was not called.
     expect(runAssembleStage).not.toHaveBeenCalled();
+    // COST TRACKING: both rows emitted on resume (regression-fix for cost hole).
+    expect(emitBunnyFinalizeCostEvent).toHaveBeenCalledWith(expect.objectContaining({
+      propertyId: 'prop-1',
+      aspectRatio: '16:9',
+    }));
+    expect(recordCostEvent).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'assembly',
+      unitType: 'renders',
+      metadata: expect.objectContaining({ reason: 'autopilot_resume', aspect_ratio: '16:9' }),
+    }));
+  });
+
+  it('Path 2: job-column read returns 42703 → throws so sweep can surface leaseError', async () => {
+    // Scenario: migration 092 deployed but not applied — column does not exist.
+    // resolveAssembling should throw (not noop), short-circuiting Path 3 re-submit.
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const db = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'delivery_runs') {
+          return {
+            update: vi.fn().mockImplementation((patch: Record<string, unknown>) => {
+              if (patch.resolving_at) {
+                return {
+                  eq: vi.fn().mockReturnValue({
+                    or: vi.fn().mockReturnValue({
+                      select: vi.fn().mockResolvedValue({ data: [{ id: 'run-1' }], error: null }),
+                    }),
+                  }),
+                };
+              }
+              return { eq: vi.fn().mockResolvedValue({ error: null }) };
+            }),
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                // Job-column SELECT fails with 42703 — migration 092 not applied.
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: null,
+                  error: { code: '42703', message: 'column assembly_h_job of relation delivery_runs does not exist' },
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'properties') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { horizontal_video_url: null, vertical_video_url: null, selected_orientation: 'horizontal' },
+                  error: null,
+                }),
+              }),
+            }),
+            update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+          };
+        }
+        return {
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }),
+    };
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const run = makeRun({ stage: 'assembling' });
+    // Must throw — not return a noop — so the sweep's catch can increment leaseError.
+    await expect(resolveAssembling(run, 50_000)).rejects.toThrow('42703');
+    // runAssembleStage must NOT have been called (no re-spend on Path 3).
+    expect(runAssembleStage).not.toHaveBeenCalled();
+  });
+
+  it('Path 2: both-orientation — V poll uses remaining budget, skips V when budget exhausted after H', async () => {
+    // Scenario: "both" run, H render job is in-flight but poll immediately returns
+    // timed-out (simulating H consuming all the budget). V job exists but with only
+    // <10_000ms remaining the V poll must be SKIPPED — run stays at assembling.
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-both', environment: 'v1' as const };
+    const vJob = { jobId: 'job-v-both', environment: 'v1' as const };
+    const { db } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'both',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: vJob },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+
+    // H poll times out — simulates it using up nearly all the budget.
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'failed',
+      error: 'Assembly render timed out',
+    });
+
+    // Pass a budget of 14_000ms: hTimeout = max(10_000, 14_000-5_000)=10_000;
+    // after H poll (which is instant in the mock but "consumed" the time),
+    // vTimeout would be ≈ budget - elapsed - 5_000 ≈ near-zero → skip V.
+    // Use a tiny budget to guarantee vTimeout < 10_000.
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run, 14_000);
+
+    // Must be noop — V render also stays in-flight.
+    expect(result.action).toBe('noop');
+    // pollAssemblyJob called once (for H) — V was budget-skipped, NOT polled.
+    expect(pollAssemblyJob).toHaveBeenCalledTimes(1);
+    expect(pollAssemblyJob).toHaveBeenCalledWith(expect.anything(), hJob, expect.any(Number));
   });
 });
 
