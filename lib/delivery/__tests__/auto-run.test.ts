@@ -1012,6 +1012,67 @@ describe('resolveAssembling', () => {
     }));
   });
 
+  it('Path 2: provider returns no durationSeconds → cost row has nonzero costCents + duration_source:fallback', async () => {
+    // Verifies the ?? 0 bug is closed: when the provider omits durationSeconds,
+    // the resume path resolves duration via job-token or run.duration_seconds fallback,
+    // never passes 0 to cost functions, and marks the row with duration_source:'fallback'.
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-nodur', environment: 'v1' as const, expectedDurationSeconds: 45 };
+    const { db } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'horizontal',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: null },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (emitBunnyFinalizeCostEvent as Mock).mockResolvedValue(undefined);
+    // Return a nonzero cost so we can verify the right duration was forwarded.
+    (assemblyProviderCostCents as Mock).mockImplementation(
+      (_prov: string, dur: number, _ratio: string) => Math.round(dur * 5)
+    );
+
+    // Provider returns complete but NO durationSeconds.
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'complete',
+      videoUrl: 'https://provider.example.com/output.mp4',
+      // durationSeconds deliberately absent — simulates provider omission.
+    });
+    (finalizeAssemblyRender as Mock).mockResolvedValue({
+      url: 'https://bunny.cdn/final-h.mp4',
+      bitrateKbps: 9000,
+      outputBytes: null,
+      bunnyWasCalled: false,
+    });
+
+    const run = makeRun({ stage: 'assembling' }); // duration_seconds: 30 from makeRun
+    const result = await resolveAssembling(run, 60_000);
+
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
+
+    // assemblyProviderCostCents must have been called with the fallback duration (45,
+    // from expectedDurationSeconds), NOT with 0.
+    expect(assemblyProviderCostCents).toHaveBeenCalledWith(
+      expect.any(String),
+      45, // expectedDurationSeconds wins over run.duration_seconds(30)
+      '16:9'
+    );
+
+    // The cost row must be nonzero and carry duration_source:'fallback'.
+    expect(recordCostEvent).toHaveBeenCalledWith(expect.objectContaining({
+      costCents: 225, // 45 * 5
+      metadata: expect.objectContaining({
+        output_duration_seconds: 45,
+        duration_source: 'fallback',
+      }),
+    }));
+  });
+
   it('Path 2: job-column read returns 42703 → throws so sweep can surface leaseError', async () => {
     // Scenario: migration 092 deployed but not applied — column does not exist.
     // resolveAssembling should throw (not noop), short-circuiting Path 3 re-submit.

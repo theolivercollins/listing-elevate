@@ -1929,7 +1929,9 @@ async function runAssemblyStep(
           `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
         // Persist job token so the autopilot sweep can resume polling on the next
         // cron tick if this Vercel function is killed before the render completes.
-        if (runId) { void persistAssemblyJobId(runId, "assembly_h_job", horizontalJob); }
+        // Include expectedDurationSeconds (clip-sum) so the resume path can use it
+        // as a cost fallback when the provider poll doesn't return durationSeconds.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_h_job", { ...horizontalJob, expectedDurationSeconds: timelineDurationSeconds }); }
         const horizontalResult = await pollAssemblyJob(provider, horizontalJob, timeoutMs);
         if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
           if (horizontalResult.error === "Assembly render timed out") {
@@ -2037,7 +2039,8 @@ async function runAssemblyStep(
         await log(propertyId, "assembly", "info",
           `${providerName} vertical job queued: ${verticalJob.jobId}`);
         // Persist V job token for autopilot resume on next cron tick.
-        if (runId) { void persistAssemblyJobId(runId, "assembly_v_job", verticalJob); }
+        // Include expectedDurationSeconds so the resume path never falls to 0.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_v_job", { ...verticalJob, expectedDurationSeconds: timelineDurationSeconds }); }
         const verticalResult = await pollAssemblyJob(provider, verticalJob, timeoutMs);
         if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
           if (verticalResult.error === "Assembly render timed out") {

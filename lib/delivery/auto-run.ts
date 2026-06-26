@@ -251,7 +251,7 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
       );
     }
 
-    type JobShape = { jobId: string; environment: 'stage' | 'v1' };
+    type JobShape = { jobId: string; environment: 'stage' | 'v1'; expectedDurationSeconds?: number };
     const hJob = (jobRow as { assembly_h_job?: JobShape | null } | null)?.assembly_h_job ?? null;
     const vJob = (jobRow as { assembly_v_job?: JobShape | null } | null)?.assembly_v_job ?? null;
 
@@ -274,7 +274,18 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
         const hResult = await poll(provider, hJob, hTimeout);
         if (hResult.status === 'complete' && hResult.videoUrl) {
           const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
-          const hDurationSeconds = hResult.durationSeconds ?? 0;
+          // Resolve duration: provider value → job token fallback → run fallback → hard floor.
+          // NEVER pass 0 — silent $0 cost rows are P0 cost-tracking holes.
+          const hDurFallback = hJob.expectedDurationSeconds ?? (run as { duration_seconds?: number }).duration_seconds ?? 30;
+          const hDurationSeconds = hResult.durationSeconds ?? hDurFallback;
+          const hDurationSource = hResult.durationSeconds != null ? undefined : 'fallback';
+          if (hDurationSource) {
+            console.warn('[resolveAssembling] H render: provider returned no durationSeconds; using fallback', {
+              runId: run.id,
+              fallback: hDurationSeconds,
+              source: hJob.expectedDurationSeconds != null ? 'expectedDurationSeconds' : 'run.duration_seconds_or_floor',
+            });
+          }
           const hFinalize = await finalizeAssemblyRender({
             propertyId: run.property_id,
             aspectRatio: '16:9',
@@ -309,6 +320,7 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
               reason: 'autopilot_resume',
               delivered_bitrate_kbps: hFinalize.bitrateKbps,
               output_bytes: hFinalize.outputBytes,
+              ...(hDurationSource ? { duration_source: hDurationSource } : {}),
             },
           });
         } else if (hResult.status === 'failed') {
@@ -339,7 +351,17 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
           const vResult = await poll(provider, vJob, vTimeout);
           if (vResult.status === 'complete' && vResult.videoUrl) {
             const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
-            const vDurationSeconds = vResult.durationSeconds ?? 0;
+            // Resolve duration: provider value → job token fallback → run fallback → hard floor.
+            const vDurFallback = vJob.expectedDurationSeconds ?? (run as { duration_seconds?: number }).duration_seconds ?? 30;
+            const vDurationSeconds = vResult.durationSeconds ?? vDurFallback;
+            const vDurationSource = vResult.durationSeconds != null ? undefined : 'fallback';
+            if (vDurationSource) {
+              console.warn('[resolveAssembling] V render: provider returned no durationSeconds; using fallback', {
+                runId: run.id,
+                fallback: vDurationSeconds,
+                source: vJob.expectedDurationSeconds != null ? 'expectedDurationSeconds' : 'run.duration_seconds_or_floor',
+              });
+            }
             const vFinalize = await finalizeAssemblyRender({
               propertyId: run.property_id,
               aspectRatio: '9:16',
@@ -372,6 +394,7 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
                 reason: 'autopilot_resume',
                 delivered_bitrate_kbps: vFinalize.bitrateKbps,
                 output_bytes: vFinalize.outputBytes,
+                ...(vDurationSource ? { duration_source: vDurationSource } : {}),
               },
             });
           } else if (vResult.status === 'failed') {
