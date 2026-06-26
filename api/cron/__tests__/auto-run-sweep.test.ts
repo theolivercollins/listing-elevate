@@ -23,6 +23,7 @@ vi.mock('../../../lib/client.js', () => ({
 
 vi.mock('../../../lib/delivery/auto-run.js', () => ({
   resolveGate: vi.fn(),
+  resolveAssembling: vi.fn(),
   // The cron now imports the single source of truth for gate stages.
   GATE_STAGES: ['checkpoint_a', 'details', 'voiceover', 'music', 'checkpoint_b'],
 }));
@@ -32,7 +33,7 @@ vi.mock('../../../lib/delivery/auto-run.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { getSupabase } from '../../../lib/client.js';
-import { resolveGate } from '../../../lib/delivery/auto-run.js';
+import { resolveGate, resolveAssembling } from '../../../lib/delivery/auto-run.js';
 import handler from '../auto-run-sweep.js';
 import type { DeliveryRunRow } from '../../../lib/types/operator-studio.js';
 
@@ -42,7 +43,7 @@ import type { DeliveryRunRow } from '../../../lib/types/operator-studio.js';
 
 type GateStage = 'checkpoint_a' | 'details' | 'voiceover' | 'music' | 'checkpoint_b';
 
-function makeRun(id: string, stage: GateStage = 'checkpoint_a'): DeliveryRunRow {
+function makeRun(id: string, stage: GateStage | 'assembling' = 'checkpoint_a'): DeliveryRunRow {
   return {
     id,
     property_id: `prop-${id}`,
@@ -247,5 +248,89 @@ describe('auto-run-sweep cron handler', () => {
     const body = captured.body as { ok: boolean; error: string };
     expect(body.ok).toBe(false);
     expect(body.error).toContain('connection refused');
+  });
+
+  // ── leaseError surfacing (migration 091 column missing) ────────────────────
+
+  it('reports leaseError count when resolveGate throws a 42703 postgres error', async () => {
+    // Migration 091 (resolving_at column) not yet applied: the CAS update fails
+    // with Postgres undefined_column code 42703. The sweep must surface this in
+    // the response body — NOT silently count it as a plain noop — so operators
+    // can diagnose deploy-before-migration scenarios.
+    const runs = [makeRun('run-1', 'checkpoint_a'), makeRun('run-2', 'details')];
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase(runs) as never);
+    vi.mocked(resolveGate)
+      .mockRejectedValueOnce(new Error('claimResolveLease: column delivery_runs.resolving_at does not exist (42703)'))
+      .mockRejectedValueOnce(new Error('claimResolveLease: column delivery_runs.resolving_at does not exist (42703)'));
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    expect(captured.status).toBe(200); // sweep continues; leaseError is diagnostic, not fatal
+    const body = captured.body as { leaseError: number; noop: number; processed: number; ok: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.leaseError).toBe(2);
+    expect(body.noop).toBe(2);
+    expect(body.processed).toBe(2);
+  });
+
+  it('leaseError count is 0 when no 42703 errors occur', async () => {
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase([]) as never);
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    const body = captured.body as { leaseError: number };
+    expect(body.leaseError).toBe(0);
+  });
+
+  // ── assembling runs picked up and routed to resolveAssembling ─────────────
+
+  it('calls resolveAssembling for runs at assembling stage', async () => {
+    const runs = [makeRun('run-asm', 'assembling')];
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase(runs) as never);
+    vi.mocked(resolveAssembling).mockResolvedValue({ action: 'advanced', to: 'checkpoint_b' });
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    expect(vi.mocked(resolveAssembling)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(resolveAssembling)).toHaveBeenCalledWith(runs[0], expect.any(Number));
+    expect(vi.mocked(resolveGate)).not.toHaveBeenCalled();
+    const body = captured.body as { advanced: number; processed: number };
+    expect(body.advanced).toBe(1);
+    expect(body.processed).toBe(1);
+  });
+
+  it('counts resolveAssembling outcomes correctly alongside gate outcomes', async () => {
+    const gateRun = makeRun('run-gate', 'checkpoint_a');
+    const asmRun = makeRun('run-asm', 'assembling');
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase([gateRun, asmRun]) as never);
+    vi.mocked(resolveGate).mockResolvedValue({ action: 'advanced', to: 'details' });
+    vi.mocked(resolveAssembling).mockResolvedValue({ action: 'noop', reason: 'renders still in-flight' });
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    const body = captured.body as { processed: number; advanced: number; noop: number };
+    expect(body.processed).toBe(2);
+    expect(body.advanced).toBe(1);  // gate run advanced
+    expect(body.noop).toBe(1);      // asm run noop (still in-flight)
+  });
+
+  it('reports leaseError when resolveAssembling throws 42703', async () => {
+    const runs = [makeRun('run-asm', 'assembling')];
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase(runs) as never);
+    vi.mocked(resolveAssembling).mockRejectedValue(
+      new Error('claimResolveLease: column delivery_runs.resolving_at does not exist (42703)'),
+    );
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    const body = captured.body as { leaseError: number; noop: number };
+    expect(body.leaseError).toBe(1);
+    expect(body.noop).toBe(1);
+    expect(captured.status).toBe(200);
   });
 });

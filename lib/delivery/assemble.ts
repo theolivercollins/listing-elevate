@@ -80,10 +80,25 @@ export async function runAssembleStage(runId: string): Promise<void> {
       .eq('id', run.property_id);
     if (propErr) throw new Error(`property write-back failed: ${propErr.message}`);
 
-    // 3. Existing assembly path (records its own creatomate cost_events,
-    //    metadata.reason = 'manual_rerun').
-    const { rerunAssembly } = await import('../pipeline.js');
-    await rerunAssembly(run.property_id);
+    // 3. Idempotency: if the required video URLs already exist (render completed
+    //    before a prior Vercel function kill), skip resubmitting the render.
+    //    The run still needs to advance to checkpoint_b below.
+    const { data: propCheck } = await supabase
+      .from('properties')
+      .select('horizontal_video_url, vertical_video_url, selected_orientation')
+      .eq('id', run.property_id)
+      .maybeSingle();
+    const propOrientation = (propCheck as { selected_orientation?: string | null } | null)?.selected_orientation ?? 'horizontal';
+    const needH = propOrientation !== 'vertical';
+    const needV = propOrientation === 'vertical' || propOrientation === 'both';
+    const hUrlExists = Boolean((propCheck as { horizontal_video_url?: string | null } | null)?.horizontal_video_url);
+    const vUrlExists = Boolean((propCheck as { vertical_video_url?: string | null } | null)?.vertical_video_url);
+
+    if (!(!needH || hUrlExists) || !(!needV || vUrlExists)) {
+      // At least one required URL is missing — submit/poll the render.
+      const { rerunAssembly } = await import('../pipeline.js');
+      await rerunAssembly(run.property_id, { runId });
+    }
 
     const advancedRun = await advanceRun(runId, 'checkpoint_b');
 
@@ -99,8 +114,14 @@ export async function runAssembleStage(runId: string): Promise<void> {
       }
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await setRunError(runId, `Assembly failed: ${msg}`);
+    // [ASSEMBLY_TIMEOUT] tagged errors mean the render is still in-flight (budget
+    // exceeded), NOT a permanent failure. Don't persist a run error — the autopilot
+    // sweep resumes the run via the persisted job token on the next cron tick.
+    const isTimeout = Boolean((err as { isAssemblyTimeout?: unknown }).isAssemblyTimeout);
+    if (!isTimeout) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await setRunError(runId, `Assembly failed: ${msg}`);
+    }
     throw err;
   }
 }

@@ -12,6 +12,7 @@
 import { describe, it, expect, afterEach, vi, type Mock } from 'vitest';
 import {
   resolveGate,
+  resolveAssembling,
   canWrite,
   AUTO_JUDGE_MARGIN,
   AUTO_DELIVER_THRESHOLD,
@@ -78,6 +79,27 @@ vi.mock('../../db.js', () => ({
   recordCostEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Assembly-router — used by resolveAssembling (Path 2: resume polling job IDs).
+vi.mock('../../providers/assembly-router.js', () => ({
+  selectAssemblyProvider: vi.fn().mockReturnValue({
+    name: 'creatomate',
+    checkStatus: vi.fn(),
+    assemble: vi.fn(),
+  }),
+  pollAssemblyJob: vi.fn(),
+  assemblyProviderCostCents: vi.fn().mockReturnValue(100),
+}));
+
+// Finalize — resolveAssembling calls this after a job completes.
+vi.mock('../../assembly/finalize.js', () => ({
+  finalizeAssemblyRender: vi.fn().mockResolvedValue({
+    url: 'https://bunny.cdn/final.mp4',
+    bitrateKbps: 9000,
+    outputBytes: null,
+    bunnyWasCalled: false,
+  }),
+}));
+
 const mockAnthropicCreate = vi.hoisted(() => vi.fn());
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -92,6 +114,8 @@ import { generateDeliveryScript } from '../voiceover-script.js';
 import { runDeliveryAudio } from '../audio.js';
 import { runAssembleStage } from '../assemble.js';
 import { recordCostEvent } from '../../db.js';
+import { pollAssemblyJob } from '../../providers/assembly-router.js';
+import { finalizeAssemblyRender } from '../../assembly/finalize.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -614,10 +638,13 @@ describe('resolveMusic', () => {
     (updateRun as Mock).mockResolvedValue({});
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockResolvedValue(undefined);
     setupMusicDb([{ id: 'track-upbeat-1' }]);
 
     const result = await resolveMusic(makeRun());
-    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+    // advanceMusicToAssembling advances to 'assembling' then immediately drives
+    // runAssembleStage → self-advances to 'checkpoint_b'. Report the real final stage.
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'assembling');
     expect(updateRun).toHaveBeenCalledWith('run-1', expect.objectContaining({ music_track_id: 'track-upbeat-1' }));
     expect(recordMlEvent).toHaveBeenCalledWith('run-1', 'auto_advance', expect.objectContaining({
@@ -632,6 +659,7 @@ describe('resolveMusic', () => {
     (updateRun as Mock).mockResolvedValue({});
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockResolvedValue(undefined);
 
     setupMusicDb(
       [{ id: 'track-a' }, { id: 'track-b' }],
@@ -643,7 +671,8 @@ describe('resolveMusic', () => {
     );
 
     const result = await resolveMusic(makeRun());
-    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+    // advanceMusicToAssembling drives runAssembleStage → self-advances to 'checkpoint_b'.
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
     expect(updateRun).toHaveBeenCalledWith('run-1', expect.objectContaining({ music_track_id: 'track-b' }));
   });
 
@@ -701,7 +730,8 @@ describe('resolveMusic', () => {
     const result = await resolveMusic(makeRun());
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'assembling');
     expect(runAssembleStage).toHaveBeenCalledWith('run-1');
-    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+    // runAssembleStage self-advances to checkpoint_b — report the real final stage.
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
   });
 
   it('IDEMPOTENT: skips mood LLM + track pick when music_track_id already set', async () => {
@@ -710,7 +740,8 @@ describe('resolveMusic', () => {
 
     const run = makeRun({ stage: 'music', music_track_id: 'track-existing' });
     const result = await resolveMusic(run);
-    expect(result).toEqual({ action: 'advanced', to: 'assembling' });
+    // runAssembleStage self-advances to checkpoint_b — report the real final stage.
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
     // No paid mood pick, no track re-selection write.
     expect(mockAnthropicCreate).not.toHaveBeenCalled();
     expect(updateRun).not.toHaveBeenCalled();
@@ -733,6 +764,233 @@ describe('resolveMusic', () => {
     const result = await resolveMusic(run);
     expect(result.action).toBe('paused');
     expect((result as { action: 'paused'; reason: string }).reason).toMatch(/assembly failed/);
+  });
+
+  it('noops (does not pause) when assembly times out — run stays at assembling for next tick', async () => {
+    // A render that exceeds the cron budget throws a tagged [ASSEMBLY_TIMEOUT] error.
+    // advanceMusicToAssembling must NOT pauseForHuman — instead return noop so the
+    // run stays at stage='assembling' for resolveAssembling to resume next sweep tick.
+    const timeoutErr = Object.assign(
+      new Error('[ASSEMBLY_TIMEOUT] Horizontal render timed out after 200000ms'),
+      { isAssemblyTimeout: true },
+    );
+    (advanceRun as Mock).mockResolvedValue({});
+    (runAssembleStage as Mock).mockRejectedValue(timeoutErr);
+
+    const run = makeRun({ stage: 'music', music_track_id: 'track-1' });
+    const result = await resolveMusic(run);
+
+    // Should return noop, NOT paused.
+    expect(result.action).toBe('noop');
+    expect((result as { action: 'noop'; reason?: string }).reason).toMatch(/in progress|timeout/i);
+    // pauseForHuman must NOT have been called (no getSupabase interaction needed here).
+  });
+});
+
+// ─── resolveAssembling ───────────────────────────────────────────────────────
+
+describe('resolveAssembling', () => {
+  /**
+   * Build a multi-table getSupabase mock for resolveAssembling paths.
+   *  - claimRows: what the lease CAS select returns ([] = lost, [{id}] = won)
+   *  - propData:  what properties.maybeSingle() returns
+   *  - jobRowData: what delivery_runs job-columns maybeSingle() returns
+   */
+  function makeAssemblingDb(opts: {
+    claimRows: unknown[];
+    propData: unknown;
+    jobRowData?: unknown;
+  }) {
+    const { claimRows, propData, jobRowData = null } = opts;
+
+    const claimSelect = vi.fn().mockResolvedValue({ data: claimRows, error: null });
+    // Single eq-result fn for delivery_runs updates that aren't the lease claim.
+    const drUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const propUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    const mlEventsInsert = vi.fn().mockResolvedValue({ error: null });
+
+    const db = {
+      from: vi.fn().mockImplementation((table: string) => {
+        if (table === 'properties') {
+          return {
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: propData, error: null }),
+              }),
+            }),
+            update: vi.fn().mockReturnValue({ eq: propUpdateEq }),
+          };
+        }
+        if (table === 'delivery_runs') {
+          return {
+            update: vi.fn().mockImplementation((patch: Record<string, unknown>) => {
+              // Lease claim: resolving_at is a truthy ISO timestamp.
+              if (patch.resolving_at) {
+                return {
+                  eq: vi.fn().mockReturnValue({
+                    or: vi.fn().mockReturnValue({ select: claimSelect }),
+                  }),
+                };
+              }
+              // Release, job-clear, pauseForHuman → just needs .eq().
+              return { eq: drUpdateEq };
+            }),
+            select: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({ data: jobRowData, error: null }),
+              }),
+            }),
+          };
+        }
+        if (table === 'ml_events') {
+          return { insert: mlEventsInsert };
+        }
+        return {
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+          insert: vi.fn().mockResolvedValue({ error: null }),
+        };
+      }),
+    };
+
+    return { db, drUpdateEq, propUpdateEq, mlEventsInsert };
+  }
+
+  it('guard: returns noop when auto_run is false', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'assembling', auto_run: false });
+    const result = await resolveAssembling(run);
+    expect(result).toEqual({ action: 'noop', reason: 'auto_run off' });
+  });
+
+  it('guard: returns noop when run is already paused', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'assembling', paused_reason: 'test pause' });
+    const result = await resolveAssembling(run);
+    expect(result).toEqual({ action: 'noop', reason: 'paused' });
+  });
+
+  it('guard: returns noop when stage is not assembling', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'checkpoint_a' });
+    const result = await resolveAssembling(run);
+    expect(result).toEqual({ action: 'noop', reason: 'not assembling stage' });
+  });
+
+  it('guard: returns noop when write guard fails (non-prod)', async () => {
+    setEnv('VERCEL_ENV', undefined);
+    setEnv('LE_ALLOW_NONPROD_WRITES', undefined);
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run);
+    expect(result).toEqual({ action: 'noop', reason: 'write guard: non-prod' });
+  });
+
+  it('Path 1: all required URLs already exist → advances to checkpoint_b, never calls runAssembleStage', async () => {
+    // Scenario: horizontal-only run; render completed but Vercel was killed before
+    // advanceRun('checkpoint_b') could be called. Next sweep tick picks it up here.
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const { db } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: 'https://bunny.cdn/h.mp4',
+        vertical_video_url: null,
+        selected_orientation: 'horizontal', // only H is needed
+      },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run);
+
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
+    expect(advanceRun).toHaveBeenCalledWith('run-1', 'checkpoint_b');
+    // No re-spend: runAssembleStage and pollAssemblyJob must NOT have been called.
+    expect(runAssembleStage).not.toHaveBeenCalled();
+    expect(pollAssemblyJob).not.toHaveBeenCalled();
+  });
+
+  it('Path 2: in-flight job ID + poll times out → noop, NOT pauseForHuman', async () => {
+    // Scenario: H render was submitted (jobId persisted) but the poll exceeded the
+    // cron budget. The run stays at assembling; next tick resumes without re-submitting.
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-123', environment: 'v1' as const };
+    const { db } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'horizontal',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: null },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+
+    // pollAssemblyJob returns the timed-out sentinel — budget was exhausted.
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'failed',
+      error: 'Assembly render timed out',
+    });
+
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run, 50_000);
+
+    // Must be noop — NOT paused. Run stays at assembling; job token survives.
+    expect(result.action).toBe('noop');
+    // advanceRun must NOT have been called — still in-flight.
+    expect(advanceRun).not.toHaveBeenCalled();
+    // No finalize call — render didn't complete.
+    expect(finalizeAssemblyRender).not.toHaveBeenCalled();
+    // runAssembleStage must NOT have been called — job already existed.
+    expect(runAssembleStage).not.toHaveBeenCalled();
+  });
+
+  it('Path 2: in-flight job ID + poll completes → finalizes, writes URL, advances to checkpoint_b', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-456', environment: 'v1' as const };
+    const { db, propUpdateEq } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'horizontal',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: null },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    // Poll returns complete with a provider URL.
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'complete',
+      videoUrl: 'https://provider.example.com/output.mp4',
+      durationSeconds: 30,
+    });
+    (finalizeAssemblyRender as Mock).mockResolvedValue({
+      url: 'https://bunny.cdn/final-h.mp4',
+      bitrateKbps: 9000,
+      outputBytes: null,
+      bunnyWasCalled: false,
+    });
+
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run, 60_000);
+
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
+    // Finalize was called with the provider URL and correct aspect ratio.
+    expect(finalizeAssemblyRender).toHaveBeenCalledWith(expect.objectContaining({
+      propertyId: 'prop-1',
+      aspectRatio: '16:9',
+      providerUrl: 'https://provider.example.com/output.mp4',
+    }));
+    // URL written back to properties.
+    expect(propUpdateEq).toHaveBeenCalled();
+    // Run advanced to checkpoint_b.
+    expect(advanceRun).toHaveBeenCalledWith('run-1', 'checkpoint_b');
+    // No re-submit: runAssembleStage was not called.
+    expect(runAssembleStage).not.toHaveBeenCalled();
   });
 });
 

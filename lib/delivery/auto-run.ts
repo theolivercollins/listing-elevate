@@ -172,6 +172,176 @@ export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
   }
 }
 
+// ─── ASSEMBLING REAPER ────────────────────────────────────────────────────────
+
+/**
+ * Resume or advance a run stranded at the 'assembling' stage.
+ *
+ * The autopilot sweep cron also selects runs with stage='assembling' (not a gate
+ * stage, but can strand when the Vercel function is killed mid-poll). Three paths:
+ *
+ * 1. Video URLs already exist (render completed before a prior function kill) →
+ *    advance to checkpoint_b without any re-spend (idempotent fast-path).
+ * 2. Render job IDs persisted on the run (in-flight when prior function was killed)
+ *    → resume polling with remaining budget. complete → finalize + advance;
+ *    'Assembly render timed out' → noop (stored job ID survives, resumes next tick);
+ *    true provider failure → pauseForHuman.
+ * 3. No job IDs and no URLs → call runAssembleStage (first-time or crash-before-submit).
+ *
+ * `budgetMs` is the sweep's remaining wall-clock budget; passed to pollAssemblyJob
+ * to prevent this cron function from being killed by Vercel between ticks.
+ */
+export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number): Promise<GateOutcome> {
+  if (run.auto_run !== true) return { action: 'noop', reason: 'auto_run off' };
+  if (run.paused_reason != null) return { action: 'noop', reason: 'paused' };
+  if (run.stage !== 'assembling') return { action: 'noop', reason: 'not assembling stage' };
+  if (!canWrite()) return { action: 'noop', reason: 'write guard: non-prod' };
+
+  if (!(await claimResolveLease(run.id))) {
+    return { action: 'noop', reason: 'resolve lease held by concurrent actor' };
+  }
+
+  try {
+    const db = getSupabase();
+
+    // Path 1: property URL completeness check (idempotent fast-path).
+    // Handles: render completed but the Vercel function was killed before
+    // advanceRun('checkpoint_b') was called.
+    const { data: prop } = await db
+      .from('properties')
+      .select('horizontal_video_url, vertical_video_url, selected_orientation')
+      .eq('id', run.property_id)
+      .maybeSingle();
+
+    if (!prop) {
+      const reason = 'assembling: property not found';
+      await pauseForHuman(run.id, reason);
+      return { action: 'paused', reason };
+    }
+
+    const orientation = (prop as { selected_orientation?: string | null }).selected_orientation ?? 'horizontal';
+    const wantH = orientation !== 'vertical';
+    const wantV = orientation === 'vertical' || orientation === 'both';
+    const hUrl = (prop as { horizontal_video_url?: string | null }).horizontal_video_url;
+    const vUrl = (prop as { vertical_video_url?: string | null }).vertical_video_url;
+    const hDone = !wantH || Boolean(hUrl);
+    const vDone = !wantV || Boolean(vUrl);
+
+    if (hDone && vDone) {
+      // All renders complete — advance to checkpoint_b. The normal sweep picks up
+      // checkpoint_b on the next tick (no inline kick needed here).
+      await _advanceRun(run.id, 'checkpoint_b');
+      return { action: 'advanced', to: 'checkpoint_b' };
+    }
+
+    // Path 2: resume polling persisted in-flight job IDs without re-submitting.
+    const { data: jobRow } = await db
+      .from('delivery_runs')
+      .select('assembly_h_job, assembly_v_job')
+      .eq('id', run.id)
+      .maybeSingle();
+
+    type JobShape = { jobId: string; environment: 'stage' | 'v1' };
+    const hJob = (jobRow as { assembly_h_job?: JobShape | null } | null)?.assembly_h_job ?? null;
+    const vJob = (jobRow as { assembly_v_job?: JobShape | null } | null)?.assembly_v_job ?? null;
+
+    if ((wantH && !hDone && hJob) || (wantV && !vDone && vJob)) {
+      const renderTimeout = budgetMs ? Math.max(10_000, budgetMs - 5_000) : 200_000;
+
+      const { selectAssemblyProvider, pollAssemblyJob: poll } = await import('../providers/assembly-router.js');
+      let provider;
+      try {
+        provider = selectAssemblyProvider();
+      } catch {
+        return { action: 'noop', reason: 'assembling: no assembly provider configured' };
+      }
+
+      let allDone = true;
+
+      if (wantH && !hDone && hJob) {
+        const hResult = await poll(provider, hJob, renderTimeout);
+        if (hResult.status === 'complete' && hResult.videoUrl) {
+          const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
+          const hFinalize = await finalizeAssemblyRender({
+            propertyId: run.property_id,
+            aspectRatio: '16:9',
+            providerUrl: hResult.videoUrl,
+            durationSeconds: hResult.durationSeconds ?? 0,
+            version: 1,
+          });
+          await db.from('properties').update({ horizontal_video_url: hFinalize.url }).eq('id', run.property_id);
+          // Clear persisted job token — render is done.
+          void db.from('delivery_runs').update({ assembly_h_job: null }).eq('id', run.id);
+        } else if (hResult.status === 'failed') {
+          if (hResult.error === 'Assembly render timed out') {
+            // Still in-flight at budget end — stored job ID survives; next tick resumes.
+            allDone = false;
+          } else {
+            const reason = `assembling: horizontal render failed — ${hResult.error ?? 'unknown'}`;
+            await pauseForHuman(run.id, reason);
+            return { action: 'paused', reason };
+          }
+        } else {
+          allDone = false; // still processing
+        }
+      }
+
+      if (wantV && !vDone && vJob) {
+        const vResult = await poll(provider, vJob, renderTimeout);
+        if (vResult.status === 'complete' && vResult.videoUrl) {
+          const { finalizeAssemblyRender } = await import('../assembly/finalize.js');
+          const vFinalize = await finalizeAssemblyRender({
+            propertyId: run.property_id,
+            aspectRatio: '9:16',
+            providerUrl: vResult.videoUrl,
+            durationSeconds: vResult.durationSeconds ?? 0,
+            version: 1,
+          });
+          await db.from('properties').update({ vertical_video_url: vFinalize.url }).eq('id', run.property_id);
+          void db.from('delivery_runs').update({ assembly_v_job: null }).eq('id', run.id);
+        } else if (vResult.status === 'failed') {
+          if (vResult.error === 'Assembly render timed out') {
+            allDone = false;
+          } else {
+            const reason = `assembling: vertical render failed — ${vResult.error ?? 'unknown'}`;
+            await pauseForHuman(run.id, reason);
+            return { action: 'paused', reason };
+          }
+        } else {
+          allDone = false;
+        }
+      }
+
+      if (!allDone) {
+        return { action: 'noop', reason: 'assembling: renders still in-flight, will resume next tick' };
+      }
+
+      // All requested renders finalized — advance to checkpoint_b.
+      await _advanceRun(run.id, 'checkpoint_b');
+      return { action: 'advanced', to: 'checkpoint_b' };
+    }
+
+    // Path 3: no job IDs and no URLs → first-time assembly (or crash-before-submit).
+    // runAssembleStage submits, polls, finalizes, and advances to checkpoint_b.
+    try {
+      const { runAssembleStage } = await import('./assemble.js');
+      await runAssembleStage(run.id);
+    } catch (err) {
+      const isTimeout = Boolean((err as { isAssemblyTimeout?: unknown }).isAssemblyTimeout);
+      if (isTimeout) {
+        return { action: 'noop', reason: 'assembly in progress: render timed out, will resume next tick' };
+      }
+      const reason = `assembly failed: ${err instanceof Error ? err.message : String(err)}`;
+      await pauseForHuman(run.id, reason);
+      return { action: 'paused', reason };
+    }
+    return { action: 'advanced', to: 'checkpoint_b' };
+
+  } finally {
+    await releaseResolveLease(run.id);
+  }
+}
+
 // ─── PER-GATE RESOLVERS ───────────────────────────────────────────────────────
 
 /**
@@ -273,7 +443,8 @@ export async function resolveDetails(run: DeliveryRunRow): Promise<GateOutcome> 
  *
  * 1. Generate script if absent (reuses generateDeliveryScript — records its own cost_events).
  * 2. Make a small Haiku LLM call to pick voice tone from listing context (records cost_events).
- * 3. Select voiceover_voice_id from the tone pick; call generateVoiceoverAudio (records its own cost_events).
+ * 3. Select voiceover_voice_id from the tone pick; delegate to runDeliveryAudio shared runner
+ *    (duration-audit / auto-shorten loop + retry, records its own cost_events).
  * 4. On success: patch run (voice_id + audio_url), log auto_advance, advance to 'music'.
  * 5. On script empty or synth failure: pause with reason.
  */
@@ -564,11 +735,19 @@ async function advanceMusicToAssembling(run: DeliveryRunRow): Promise<GateOutcom
     const { runAssembleStage } = await import('./assemble.js');
     await runAssembleStage(run.id);
   } catch (err) {
+    // [ASSEMBLY_TIMEOUT] tagged errors: render is still in-flight at cron budget end.
+    // Leave the run at 'assembling' — resolveAssembling() resumes polling on the next
+    // sweep tick via the persisted job token. Do NOT pause for human.
+    const isTimeout = Boolean((err as { isAssemblyTimeout?: unknown }).isAssemblyTimeout);
+    if (isTimeout) {
+      return { action: 'noop', reason: 'assembly in progress: render timed out, resuming next sweep tick' };
+    }
     const reason = `assembly failed: ${err instanceof Error ? err.message : String(err)}`;
     await pauseForHuman(run.id, reason);
     return { action: 'paused', reason };
   }
-  return { action: 'advanced', to: 'assembling' };
+  // runAssembleStage self-advances to checkpoint_b. Report the actual final stage.
+  return { action: 'advanced', to: 'checkpoint_b' };
 }
 
 /**
