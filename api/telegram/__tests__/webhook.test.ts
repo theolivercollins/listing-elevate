@@ -101,11 +101,17 @@ function callbackUpdate(data: string, fromId = OWNER_CHAT_ID) {
   };
 }
 
-/** Make an update that carries a message with free text. */
-function messageUpdate(text: string, chatId = OWNER_CHAT_ID) {
+/**
+ * Make an update that carries a message with free text.
+ * `fromId` defaults to `chatId` — mirrors a Telegram private chat where
+ * the user's id and the chat id are equal.  Pass a different value to
+ * simulate a group-chat member.
+ */
+function messageUpdate(text: string, chatId = OWNER_CHAT_ID, fromId = chatId) {
   return {
     message: {
       chat: { id: Number(chatId) },
+      from: { id: Number(fromId) },
       text,
     },
   };
@@ -210,6 +216,24 @@ describe("api/telegram/webhook — auth", () => {
     await handler(req, res);
     expect(res._calls[0].status).toBe(200);
     expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+  });
+
+  it("group-chat member cannot trigger free-text actions even when chat.id matches owner (message bypass)", async () => {
+    // chat.id equals the owner (e.g. a group that was originally a private chat)
+    // but from.id is a different user — the sender should be treated as a stranger.
+    // senderChatId() prefers from.id over chat.id, so the owner gate must reject this.
+    const req = makeReq({
+      body: messageUpdate("steer left", OWNER_CHAT_ID, "999"),
+    });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._calls[0].status).toBe(200);
+    // Owner gate fires before any dispatch — none of these should be touched.
+    expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+    expect(orchestrate.regenerateIntake).not.toHaveBeenCalled();
+    expect(intakeDb.appendFeedback).not.toHaveBeenCalled();
+    expect(intakeDb.getByStatus).not.toHaveBeenCalled();
   });
 });
 

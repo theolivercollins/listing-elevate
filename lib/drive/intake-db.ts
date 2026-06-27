@@ -247,6 +247,60 @@ export async function claimForApproval(id: string): Promise<boolean> {
   return Array.isArray(data) && data.length === 1;
 }
 
+/**
+ * Atomic stuck-ingesting reaper: transitions rows stuck in 'ingesting'
+ * (updated_at older than staleMinutes minutes ago) back to 'awaiting_approval'.
+ *
+ * Only reaps pre-property rows (property_id IS NULL). Post-property rows that
+ * are stuck — e.g. a crash AFTER createProperty but during photo upload — are
+ * excluded from the reset because approveIntake would call createProperty a
+ * second time, orphaning the first queued property. Those rows remain in
+ * 'ingesting' and must be resolved via ops/manual intervention.
+ *
+ * The UPDATE … RETURNING * pattern is atomic at the DB level — only rows that
+ * satisfy ALL conditions are touched. Returns the reaped rows so a cron can
+ * notify the operator; returns [] when nothing was reaped.
+ * Throws on DB error.
+ */
+export async function reapStuckIngesting(staleMinutes: number): Promise<DriveIntake[]> {
+  const cutoff = new Date(Date.now() - staleMinutes * 60 * 1_000).toISOString();
+  const { data, error } = await getSupabase()
+    .from("drive_intake")
+    .update({
+      status: "awaiting_approval" as DriveIntakeStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("status", "ingesting")
+    .lt("updated_at", cutoff)
+    .is("property_id", null)
+    .select();
+  if (error) throw error;
+  return (data ?? []) as DriveIntake[];
+}
+
+/**
+ * Atomic CAS claim for regeneration: transitions status → 'ingesting' only when
+ * the row is in 'rendered', 'generating', or 'error' (states from which an
+ * operator 🔁 tap is valid).
+ *
+ * Returns true if this caller won the race (exactly one row updated), false if
+ * another concurrent tap already claimed it (row is already 'ingesting').
+ * Throws on DB error.
+ */
+export async function claimForRegenerate(id: string): Promise<boolean> {
+  const { data, error } = await getSupabase()
+    .from("drive_intake")
+    .update({
+      status: "ingesting" as DriveIntakeStatus,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .in("status", ["rendered", "generating", "error"])
+    .select("id");
+  if (error) throw error;
+  return Array.isArray(data) && data.length === 1;
+}
+
 // ── drive_watch_state ─────────────────────────────────────────────────────────
 
 export async function getWatchState(): Promise<DriveWatchState | null> {

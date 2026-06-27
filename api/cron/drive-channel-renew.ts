@@ -17,9 +17,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true, skipped: "disabled" });
   }
 
-  // Cron auth
+  // Cron auth — fail-closed: reject when CRON_SECRET is unset OR header
+  // doesn't match.  The old `secret && ...` guard failed open when env was
+  // missing.  Mirror the pattern in api/telegram/webhook.ts.
   const secret = process.env.CRON_SECRET;
-  if (secret && req.headers.authorization !== `Bearer ${secret}`) {
+  if (!secret || req.headers.authorization !== `Bearer ${secret}`) {
     return res.status(401).json({ ok: false });
   }
 

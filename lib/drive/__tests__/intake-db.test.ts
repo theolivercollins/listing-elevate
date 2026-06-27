@@ -29,6 +29,8 @@ import {
   setPropertyId,
   appendFeedback,
   claimForApproval,
+  reapStuckIngesting,
+  claimForRegenerate,
   getWatchState,
   upsertWatchState,
   type DriveIntake,
@@ -56,9 +58,11 @@ function makeChain(result: DbResult) {
     "eq",
     "neq",
     "gt",
+    "lt",
     "lte",
     "gte",
     "in",
+    "is",
     "order",
     "limit",
     "range",
@@ -497,6 +501,119 @@ describe("claimForApproval", () => {
     );
 
     await expect(claimForApproval("intake-1")).rejects.toThrow("DB error");
+  });
+});
+
+// ── reapStuckIngesting ────────────────────────────────────────────────────────
+
+describe("reapStuckIngesting", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns reaped rows when stuck-ingesting rows exist", async () => {
+    const stuckRow: DriveIntake = { ...BASE_ROW, status: "ingesting" };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [stuckRow], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const results = await reapStuckIngesting(30);
+    expect(results).toHaveLength(1);
+    expect(results[0].status).toBe("ingesting"); // the row as it was before update
+  });
+
+  it("returns empty array when no stuck rows exist", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const results = await reapStuckIngesting(30);
+    expect(results).toEqual([]);
+  });
+
+  it("passes the correct cutoff to lt filter", async () => {
+    const before = Date.now();
+
+    let capturedLtValue: string | undefined;
+    const chain: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "in", "is", "update", "order", "limit"]) {
+      chain[m] = vi.fn().mockReturnValue(chain);
+    }
+    chain["lt"] = vi.fn().mockImplementation((_col: string, val: string) => {
+      capturedLtValue = val;
+      return chain;
+    });
+    chain["then"] = (resolve?: (v: unknown) => unknown) =>
+      Promise.resolve({ data: [], error: null }).then(resolve);
+    chain["catch"] = (reject?: (e: unknown) => unknown) =>
+      Promise.resolve({ data: [], error: null }).catch(reject);
+    chain["single"] = vi.fn().mockResolvedValue({ data: null, error: null });
+    chain["maybeSingle"] = vi.fn().mockResolvedValue({ data: null, error: null });
+
+    vi.mocked(getSupabase).mockReturnValue({
+      from: vi.fn().mockReturnValue(chain),
+    } as ReturnType<typeof getSupabase>);
+
+    await reapStuckIngesting(15);
+
+    const after = Date.now();
+    expect(capturedLtValue).toBeDefined();
+    const cutoffMs = new Date(capturedLtValue!).getTime();
+    const expectedLow = before - 15 * 60 * 1_000;
+    const expectedHigh = after - 15 * 60 * 1_000;
+    // cutoff should be ~15 minutes in the past
+    expect(cutoffMs).toBeGreaterThanOrEqual(expectedLow - 50);
+    expect(cutoffMs).toBeLessThanOrEqual(expectedHigh + 50);
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("reap failed") }]) as ReturnType<typeof getSupabase>,
+    );
+    await expect(reapStuckIngesting(30)).rejects.toThrow("reap failed");
+  });
+});
+
+// ── claimForRegenerate ────────────────────────────────────────────────────────
+
+describe("claimForRegenerate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns true when exactly one row is updated (claim succeeds)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForRegenerate("intake-1");
+    expect(result).toBe(true);
+  });
+
+  it("returns false when no rows are updated (already claimed by another caller)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForRegenerate("intake-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when data is null (row not found or wrong status)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await claimForRegenerate("intake-1");
+    expect(result).toBe(false);
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("DB error") }]) as ReturnType<typeof getSupabase>,
+    );
+
+    await expect(claimForRegenerate("intake-1")).rejects.toThrow("DB error");
   });
 });
 

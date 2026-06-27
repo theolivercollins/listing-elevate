@@ -545,6 +545,7 @@ describe("downloadFile", () => {
           return {
             ok: true,
             status: 200,
+            headers: { get: (_name: string) => null },
             arrayBuffer: async () => fakeBytes,
           };
         }
@@ -557,5 +558,58 @@ describe("downloadFile", () => {
     expect(result.name).toBe("front.jpg");
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.bytes.byteLength).toBe(4);
+  });
+
+  it("throws when Content-Length header exceeds MAX_DOWNLOAD_BYTES (25 MB)", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    // 26 MB — one byte over the 25 MB cap
+    const overCapBytes = String(26 * 1024 * 1024);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        if (urlStr.includes("alt=media")) {
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: (name: string) => (name === "content-length" ? overCapBytes : null) },
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+        return mockJsonResponse({ id: "big-file", name: "big.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    await expect(downloadFile("big-file")).rejects.toThrow("exceeds MAX_DOWNLOAD_BYTES");
+  });
+
+  it("proceeds normally when Content-Length header is absent", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const fakeBytes = new Uint8Array([9, 8, 7]).buffer;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        if (urlStr.includes("alt=media")) {
+          // No Content-Length — chunked/streaming response
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: (_name: string) => null },
+            arrayBuffer: async () => fakeBytes,
+          };
+        }
+        return mockJsonResponse({ id: "file-no-cl", name: "img.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    const result = await downloadFile("file-no-cl");
+    expect(result.bytes.byteLength).toBe(3);
   });
 });

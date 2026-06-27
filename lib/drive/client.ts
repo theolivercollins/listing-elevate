@@ -136,6 +136,9 @@ async function getAccessToken(): Promise<string> {
 
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 
+/** Hard cap on binary downloads — prevents OOM in serverless from oversized Drive files. */
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+
 async function driveGet(path: string, params?: Record<string, string>): Promise<unknown> {
   const token = await getAccessToken();
   const url = new URL(`${DRIVE_BASE}${path}`);
@@ -239,17 +242,26 @@ export async function downloadFile(
   const token = await getAccessToken();
 
   // Fetch binary content
-  const mediaResp = await fetch(`${DRIVE_BASE}/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const mediaResp = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?alt=media`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
   if (!mediaResp.ok) {
     const text = await mediaResp.text();
     throw new Error(`[drive/client] Download ${fileId} failed ${mediaResp.status}: ${text}`);
   }
+  // Guard against OOM: reject before reading the body if Content-Length exceeds the cap.
+  // (Content-Length may be absent for chunked/media responses; absence is not an error.)
+  const contentLength = mediaResp.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_DOWNLOAD_BYTES) {
+    throw new Error(
+      `Drive file ${fileId} exceeds MAX_DOWNLOAD_BYTES (${MAX_DOWNLOAD_BYTES} bytes)`,
+    );
+  }
   const bytes = await mediaResp.arrayBuffer();
 
   // Fetch metadata separately
-  const meta = (await driveGet(`/files/${fileId}`, {
+  const meta = (await driveGet(`/files/${encodeURIComponent(fileId)}`, {
     fields: "id,name,mimeType",
   })) as { id: string; name: string; mimeType: string };
 

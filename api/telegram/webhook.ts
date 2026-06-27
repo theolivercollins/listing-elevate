@@ -43,6 +43,7 @@ interface TelegramChat {
 
 interface TelegramMessage {
   chat: TelegramChat;
+  from?: { id: number }; // the authenticated sender (absent in channel posts)
   text?: string;
 }
 
@@ -67,14 +68,20 @@ interface TelegramUpdate {
  * the button — rather than `message.chat.id`, which is the chat the original
  * message lives in (could be a group, not necessarily the button-presser).
  *
- * For plain message updates, use `message.chat.id`.
+ * For plain message updates, prefer `from.id` (the authenticated sender's
+ * user id). In a private chat, from.id === chat.id, so the fallback to
+ * chat.id is correct for that case too. This prevents a group-chat member
+ * from triggering intake actions simply because the message lands in a chat
+ * that shares its id with the owner.
  */
 function senderChatId(update: TelegramUpdate): string | undefined {
   if (update.callback_query) {
     const numericId = update.callback_query.from?.id;
     return numericId !== undefined ? String(numericId) : undefined;
   }
-  const numericId = update.message?.chat?.id;
+  // from.id is the authenticated sender; chat.id is the conversation container.
+  const numericId =
+    update.message?.from?.id ?? update.message?.chat?.id;
   return numericId !== undefined ? String(numericId) : undefined;
 }
 

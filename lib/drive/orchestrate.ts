@@ -17,8 +17,10 @@ import {
   setPropertyId,
   appendFeedback,
   claimForApproval,
+  claimForRegenerate,
 } from "./intake-db.js";
 import { lookupMlsByAddress } from "../mls/lookup.js";
+import { sendMessage, escapeMarkdown } from "../telegram/client.js";
 import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from "../db.js";
 import { listFinalImages, downloadFile } from "./client.js";
 import { uploadPhotosToStorage, getStoragePublicUrl } from "../../src/lib/photo-upload.js";
@@ -116,6 +118,10 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
     return { status: "skipped", reason: "non-prod" };
   }
 
+  // Hoist propertyId so the catch block can mark it failed when the property
+  // was created but a subsequent step threw (Fix 2 — orphaned-property guard).
+  let propertyId: string | undefined;
+
   try {
     // 3. Atomic CAS claim — prevents double-render on concurrent Telegram redeliveries.
     //    claimForApproval does the status → ingesting transition atomically.
@@ -161,11 +167,23 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       status: "queued",
     });
 
-    const propertyId = property.id;
+    propertyId = property.id;
+
+    // Fix 2: Link the intake to the property IMMEDIATELY after creation so
+    // a crash during photo download/upload leaves a traceable propertyId on
+    // the intake row (not an orphaned 'queued' property that nothing owns).
+    await setPropertyId(intakeId, propertyId);
 
     // 6. Download each Final/ image from Drive and upload to property-photos bucket.
     //    Cap at MAX_IMAGES to guard against OOM; batch downloads at DOWNLOAD_CONCURRENCY.
     //    Bridge: insertPhotos rows so the pipeline can read them from the photos table.
+    //
+    //    storagePaths is hoisted outside the final_folder_id block so the zero-
+    //    photo guard (Fix 3) can fire unconditionally — catching both the case where
+    //    final_folder_id is null (entire block skipped) and the case where upload
+    //    returned empty after a transient failure.
+    let storagePaths: string[] = [];
+
     if (intake.final_folder_id) {
       let images = await listFinalImages(intake.final_folder_id);
 
@@ -177,23 +195,34 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       }
 
       const files = await batchedDownload(images);
-      const storagePaths = await uploadPhotosToStorage(files, `${propertyId}/raw`);
+      storagePaths = await uploadPhotosToStorage(files, `${propertyId}/raw`);
 
-      if (storagePaths.length > 0) {
-        const photoRecords = storagePaths.map((storagePath) => ({
-          property_id: propertyId,
-          file_url: getStoragePublicUrl(storagePath),
-          file_name: storagePath.split("/").pop() ?? "unknown.jpg",
-        }));
-        await insertPhotos(photoRecords);
-        await getSupabase()
-          .from("properties")
-          .update({
-            photo_count: photoRecords.length,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", propertyId);
+      // Inner guard: images were listed but upload returned empty paths (transient
+      // upload failure). Caught here for a specific early-exit error message.
+      if (storagePaths.length === 0) {
+        throw new Error("Ingest produced 0 photos — pipeline not started");
       }
+
+      const photoRecords = storagePaths.map((storagePath) => ({
+        property_id: propertyId,
+        file_url: getStoragePublicUrl(storagePath),
+        file_name: storagePath.split("/").pop() ?? "unknown.jpg",
+      }));
+      await insertPhotos(photoRecords);
+      await getSupabase()
+        .from("properties")
+        .update({
+          photo_count: photoRecords.length,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", propertyId);
+    }
+
+    // Fix 3: Outer zero-photo guard — fires when final_folder_id was null
+    // (the entire download/upload block was skipped) OR when upload returned
+    // empty. Never fire the pipeline with zero source photos.
+    if (storagePaths.length === 0) {
+      throw new Error("Ingest produced 0 photos — pipeline not started");
     }
 
     // 7. Fire pipeline — fire-and-forget, exactly as in api/stripe/webhook.ts.
@@ -205,7 +234,6 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       );
     });
 
-    await setPropertyId(intakeId, propertyId);
     await setStatus(intakeId, "generating");
 
     return { status: "generating", propertyId };
@@ -215,8 +243,17 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       `[drive/orchestrate] approveIntake failed for ${intakeId}:`,
       reason,
     );
-    // Best-effort status update — don't throw if this also fails
-    await setStatus(intakeId, "error").catch(() => {});
+    // Fix 2: If the property was already created, mark it failed so it is
+    // never claimed by runPipeline as a stale 'queued' row.
+    if (propertyId) {
+      await updatePropertyStatus(propertyId, "failed").catch(() => {});
+    }
+    // Persist the failure reason on the intake row so ops can diagnose.
+    await setStatus(intakeId, "error", { feedback_notes: reason }).catch(() => {});
+    // Notify operator via Telegram (best-effort — tolerate unconfigured bot).
+    sendMessage(
+      `⚠️ *${escapeMarkdown(intake.address)}* intake error: ${escapeMarkdown(reason)}`,
+    ).catch(() => {});
     return { status: "error", reason };
   }
 }
@@ -250,6 +287,13 @@ export async function regenerateIntake(
       status: "error",
       reason: "no property_id on intake — call approveIntake first",
     };
+  }
+
+  // Fix 4: CAS claim — prevents two concurrent 🔁 taps from double-firing a
+  // paid regeneration. Mirrors the claimForApproval pattern on the approve path.
+  const regenClaimed = await claimForRegenerate(intakeId);
+  if (!regenClaimed) {
+    return { status: "skipped", reason: "already-processing" };
   }
 
   try {
@@ -302,6 +346,13 @@ export async function regenerateIntake(
       `[drive/orchestrate] regenerateIntake failed for ${intakeId}:`,
       reason,
     );
+    // Unpin the intake from 'ingesting' so claimForRegenerate can accept it
+    // again on the next operator tap — mirrors approveIntake's catch block.
+    await setStatus(intakeId, "error", { feedback_notes: reason }).catch(() => {});
+    // Notify operator via Telegram (best-effort — tolerate unconfigured bot).
+    sendMessage(
+      `⚠️ *${escapeMarkdown(intake.address)}* regen error: ${escapeMarkdown(reason)}`,
+    ).catch(() => {});
     return { status: "error", reason };
   }
 }
