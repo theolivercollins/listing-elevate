@@ -2,6 +2,25 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://placehold.co https://maps.googleapis.com https://maps.gstatic.com https://storage.googleapis.com https://*.b-cdn.net; media-src 'self' https://*.b-cdn.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com; frame-src https://iframe.mediadelivery.net; frame-ancestors 'none'; object-src 'none'" }
+      ]
+    },
+    {
+      "source": "/preview/:token/embed",
+      "headers": [
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Content-Security-Policy", "value": "frame-ancestors *" },
+        { "key": "Content-Security-Policy-Report-Only", "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://placehold.co https://maps.googleapis.com https://maps.gstatic.com https://storage.googleapis.com https://*.b-cdn.net; media-src 'self' https://*.b-cdn.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com; frame-src https://iframe.mediadelivery.net; frame-ancestors *; object-src 'none'" }
+      ]
+    }
+  ],
   "crons": [
     { "path": "/api/cron/poll-scenes", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-lab-renders", "schedule": "* * * * *" },
