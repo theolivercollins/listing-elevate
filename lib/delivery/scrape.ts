@@ -42,9 +42,12 @@ export async function runScrapeStage(runId: string): Promise<void> {
   // the prefill values immediately. This also applies to any non-Drive order
   // where an operator manually entered all three fields before submission —
   // that is intentional and acceptable (same skip condition).
+  // price must be > 0 (not just non-null): a $0 value is a parse-miss / bad
+  // pre-fill and must fall through to the live Redfin scrape for MLS recovery.
+  // bedrooms/bathrooms stay != null only (0 is valid for land / studio).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- prop is untyped from the generic SupabaseClient
   const p = prop as any;
-  if (p?.bedrooms != null && p?.bathrooms != null && p?.price != null) {
+  if (p?.bedrooms != null && p?.bathrooms != null && p?.price != null && p.price > 0) {
     await setListingDetails(runId, {
       price: p.price as number,
       beds: p.bedrooms as number,

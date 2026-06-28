@@ -164,4 +164,18 @@ describe('runScrapeStage', () => {
 
     expect(mockScrapeRedfin).toHaveBeenCalled();
   });
+
+  it('price is 0 (parse-miss / bad value) → does NOT skip, runs the Apify scrape', async () => {
+    // price === 0 is a parse-miss sentinel — must NOT skip the scrape or we'd
+    // ship a $0 listing with no MLS recovery path.
+    stubSupabase('321 Zero Ln', { bedrooms: 3, bathrooms: 2, price: 0 });
+    mockGetRun.mockResolvedValueOnce(fakeRun('scraping'));
+    mockScrapeRedfin.mockResolvedValue(null);
+
+    await runScrapeStage(RUN_ID);
+
+    expect(mockScrapeRedfin).toHaveBeenCalled();
+    // Must NOT have taken the prefill path
+    expect(mockSetListingDetails).toHaveBeenCalledWith(RUN_ID, { source: 'scraped' });
+  });
 });
