@@ -25,15 +25,16 @@
 --                     service-role server touches them (bypassing RLS). RLS-on
 --                     with no policy is default-deny, so even a stray future
 --                     grant cannot leak rows (defence in depth atop the REVOKE).
---   * Section B (properties) — RLS ON; the pre-existing owner SELECT policy is
---                     (re)asserted so an authenticated agent reads only their own
---                     rows. anon loses SELECT entirely; all writes are revoked
---                     (writes go through service-role api/).
+--   * Section B (properties) — RLS ON; owner-or-admin SELECT policy; anon and
+--                     authenticated both get REVOKE ALL then authenticated gets
+--                     GRANT SELECT only (no TRUNCATE/REFERENCES/TRIGGER footgun).
 --   * Section C (finance tables) — RLS ON, admin-only policies gated by
---                     public.is_admin(); anon gets zero access; authenticated
---                     keeps its grants so the admin Finances/Billing dashboard
---                     operates THROUGH the policies (non-admins denied by the
---                     policy predicate, not by missing grants).
+--                     public.is_admin(); anon gets REVOKE ALL (zero access);
+--                     authenticated gets REVOKE ALL then GRANT SELECT,INSERT,
+--                     UPDATE,DELETE only — TRUNCATE/REFERENCES/TRIGGER revoked
+--                     so a non-admin authenticated user cannot TRUNCATE financial
+--                     tables despite the admin policy (RLS does NOT gate TRUNCATE,
+--                     only grants do). cost_events authenticated gets SELECT only.
 --
 -- SAFETY / IDEMPOTENCY
 --   ENABLE RLS, REVOKE, GRANT, and DROP POLICY IF EXISTS are all idempotent, so
@@ -48,6 +49,11 @@
 --   See 093_security_rls_lockdown_f1_rollback.sql (restores the insecure
 --   pre-F1 state). Use only in an emergency if the lockdown breaks prod.
 -- =============================================================================
+
+-- Fail fast on lock contention rather than stalling live queries.
+-- ALTER TABLE … ENABLE RLS takes brief AccessExclusiveLocks; without this,
+-- a blocked statement hangs every subsequent query on the same relation.
+SET lock_timeout = '3s';
 
 
 -- -----------------------------------------------------------------------------
@@ -180,30 +186,37 @@ END $$;
 -- Guarded with to_regclass() because properties has no CREATE TABLE migration
 -- (bootstrapped out-of-band).
 DO $$
+DECLARE
+  pol record;
 BEGIN
   IF to_regclass('public.properties') IS NOT NULL THEN
     ALTER TABLE public.properties ENABLE ROW LEVEL SECURITY;
 
-    -- (Re)assert the owner SELECT policy so this migration is self-contained: if
-    -- 001's policy were ever dropped, enabling RLS without a policy would lock
-    -- the dashboard out entirely (authenticated would see zero rows). Same name
-    -- as 001 so it is replaced cleanly; USING clause expanded vs. 001 to add the
-    -- admin branch (see comment above).
-    DROP POLICY IF EXISTS "Users can view own properties" ON public.properties;
+    -- Defensive: drop ALL existing policies on properties before creating ours.
+    -- Prevents any legacy permissive policy from OR-composing and re-opening
+    -- access. Live DB has exactly 1 policy (the 001 owner SELECT); this loop
+    -- is future-proofing against any stray policies added between now and apply.
+    FOR pol IN
+      SELECT policyname FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'properties'
+    LOOP
+      EXECUTE format('DROP POLICY %I ON public.properties', pol.policyname);
+    END LOOP;
+
+    -- Owner-or-admin SELECT: non-admin agents see only their own rows; admins
+    -- see all rows (needed by countDeliveredVideos() — see comment above).
     CREATE POLICY "Users can view own properties"
       ON public.properties FOR SELECT
       TO authenticated
       USING (auth.uid() = submitted_by OR public.is_admin());
 
-    -- All writes go through service-role api/ — strip every write privilege.
-    REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
-      ON public.properties FROM anon, authenticated;
-
-    -- Anonymous visitors must not read properties at all.
-    REVOKE SELECT ON public.properties FROM anon;
-
-    -- NOTE: authenticated KEEPS its SELECT grant so the owner policy above can
-    -- let a logged-in agent read their own rows. (Intentionally not revoked.)
+    -- Normalize to exact-privilege grants: REVOKE ALL from both client roles,
+    -- then re-grant only what is actually needed (SELECT for authenticated).
+    -- This eliminates any TRUNCATE/REFERENCES/TRIGGER that may linger from the
+    -- Supabase default grant set (RLS does NOT gate TRUNCATE; grants do).
+    -- All writes go through service-role api/ — authenticated gets no write access.
+    REVOKE ALL ON public.properties FROM anon, authenticated;
+    GRANT SELECT ON public.properties TO authenticated;
   END IF;
 END $$;
 
@@ -219,9 +232,15 @@ END $$;
 -- (bootstrapped out-of-band), so a migrations-only branch DB may lack them.
 
 -- C.1 — full-CRUD finance tables: one FOR ALL admin policy each.
+-- TRUNCATE footgun fix: authenticated ends with exactly the 4 DML verbs the
+-- dashboard needs (SELECT, INSERT, UPDATE, DELETE), and no TRUNCATE/REFERENCES/
+-- TRIGGER. RLS does NOT gate TRUNCATE; only the table grant does — so without
+-- this explicit revoke a non-admin authenticated user could TRUNCATE financial
+-- tables despite the admin policy denying all row access.
 DO $$
 DECLARE
   t text;
+  pol record;
   fin text[] := ARRAY[
     'token_purchases',
     'expenses',
@@ -232,33 +251,50 @@ BEGIN
   FOREACH t IN ARRAY fin LOOP
     IF to_regclass('public.' || t) IS NOT NULL THEN
       EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-      EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', 'Admins manage ' || t, t);
+      -- Defensive: drop ALL existing policies on this table before creating ours.
+      -- (Live DB has 0 policies on these tables; this is future-proofing.)
+      FOR pol IN
+        SELECT policyname FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = t
+      LOOP
+        EXECUTE format('DROP POLICY %I ON public.%I', pol.policyname, t);
+      END LOOP;
       EXECUTE format(
         'CREATE POLICY %I ON public.%I FOR ALL TO authenticated '
         'USING (public.is_admin()) WITH CHECK (public.is_admin())',
         'Admins manage ' || t, t);
-      -- anon: zero access. authenticated: keep grants (gated by the policy).
-      EXECUTE format('REVOKE ALL ON public.%I FROM anon', t);
+      -- anon: zero access.
+      -- authenticated: REVOKE ALL then explicit minimal grant (no TRUNCATE etc.).
+      EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', t);
+      EXECUTE format(
+        'GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO authenticated', t);
     END IF;
   END LOOP;
 END $$;
 
 -- C.2 — cost_events: dashboard READS only (SELECT); writes are service-role only.
 DO $$
+DECLARE
+  pol record;
 BEGIN
   IF to_regclass('public.cost_events') IS NOT NULL THEN
     ALTER TABLE public.cost_events ENABLE ROW LEVEL SECURITY;
-    DROP POLICY IF EXISTS "Admins read cost_events" ON public.cost_events;
+    -- Defensive: drop ALL existing policies before creating ours.
+    FOR pol IN
+      SELECT policyname FROM pg_policies
+      WHERE schemaname = 'public' AND tablename = 'cost_events'
+    LOOP
+      EXECUTE format('DROP POLICY %I ON public.cost_events', pol.policyname);
+    END LOOP;
     CREATE POLICY "Admins read cost_events"
       ON public.cost_events FOR SELECT
       TO authenticated
       USING (public.is_admin());
-    -- No client writes: revoke every write privilege from both client roles.
-    REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
-      ON public.cost_events FROM anon, authenticated;
-    -- anon gets zero access (covers SELECT too); authenticated keeps SELECT,
-    -- gated by the admin policy above.
-    REVOKE ALL ON public.cost_events FROM anon;
+    -- Normalize: REVOKE ALL from both, then re-grant SELECT only to authenticated.
+    -- Eliminates any lingering TRUNCATE/REFERENCES/TRIGGER from Supabase defaults.
+    -- Writes are service-role only; no client write access needed.
+    REVOKE ALL ON public.cost_events FROM anon, authenticated;
+    GRANT SELECT ON public.cost_events TO authenticated;
   END IF;
 END $$;
 
