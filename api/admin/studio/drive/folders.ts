@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
 
-  const parentId = process.env.DRIVE_PARENT_FOLDER_ID;
+  const parentId = process.env.DRIVE_PARENT_FOLDER_ID || process.env.DRIVE_WATCHED_FOLDER_ID;
   if (!parentId) {
     return res.status(503).json({ error: 'Drive parent folder not configured' });
   }

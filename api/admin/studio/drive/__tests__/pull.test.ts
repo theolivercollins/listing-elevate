@@ -149,12 +149,14 @@ beforeEach(() => {
 
   process.env.LE_ALLOW_NONPROD_WRITES = 'true';
   process.env.DRIVE_PARENT_FOLDER_ID = 'parent-folder-id';
+  delete process.env.DRIVE_WATCHED_FOLDER_ID;
 });
 
 afterEach(() => {
   delete process.env.LE_ALLOW_NONPROD_WRITES;
   delete process.env.VERCEL_ENV;
   delete process.env.DRIVE_PARENT_FOLDER_ID;
+  delete process.env.DRIVE_WATCHED_FOLDER_ID;
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -253,8 +255,9 @@ describe('scope check', () => {
     expect((res._body as { error: string }).error).toBe('folder not under the configured parent');
   });
 
-  it('returns 503 when DRIVE_PARENT_FOLDER_ID is not set', async () => {
+  it('returns 503 when neither DRIVE_PARENT_FOLDER_ID nor DRIVE_WATCHED_FOLDER_ID is set', async () => {
     delete process.env.DRIVE_PARENT_FOLDER_ID;
+    delete process.env.DRIVE_WATCHED_FOLDER_ID;
 
     const res = makeRes();
     await handler(
@@ -264,6 +267,24 @@ describe('scope check', () => {
 
     expect(res._status).toBe(503);
     expect((res._body as { error: string }).error).toBe('Drive parent folder not configured');
+  });
+
+  it('uses DRIVE_WATCHED_FOLDER_ID as fallback when DRIVE_PARENT_FOLDER_ID is absent', async () => {
+    delete process.env.DRIVE_PARENT_FOLDER_ID;
+    process.env.DRIVE_WATCHED_FOLDER_ID = 'watched-folder-id';
+    // Scope check: folder-abc is a child of the watched folder
+    mockListPropertyFolders.mockResolvedValue([
+      { id: 'folder-abc', name: '123 Main St, Austin, TX' },
+    ]);
+
+    const res = makeRes();
+    await handler(
+      makeReq({ body: { folderId: 'folder-abc', folderName: '123 Main St' } }),
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockListPropertyFolders).toHaveBeenCalledWith('watched-folder-id');
   });
 
   it('uses the Drive-authoritative folder name as address (not the client-supplied folderName)', async () => {

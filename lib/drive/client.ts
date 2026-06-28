@@ -1,26 +1,38 @@
 /**
- * Google Drive v3 read-only client — service-account JWT-bearer auth.
+ * Google Drive v3 read-only client.
  *
  * No external dependencies: uses Node's built-in `crypto` and the global
- * `fetch`. Configured via GOOGLE_DRIVE_SA_JSON (base64-encoded SA JSON).
+ * `fetch`.
  *
- * Auth flow:
- *  1. Decode + parse GOOGLE_DRIVE_SA_JSON → {client_email, private_key}
- *  2. Build RS256 JWT, exchange at oauth2.googleapis.com/token
- *  3. Cache the access token until 60 s before expiry
- *  4. All Drive v3 calls send Authorization: Bearer <token>
+ * Auth selection (first match wins):
+ *  1. OAuth user refresh-token (preferred) — set all three:
+ *       GOOGLE_DRIVE_OAUTH_CLIENT_ID, GOOGLE_DRIVE_OAUTH_CLIENT_SECRET,
+ *       GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN
+ *     POST refresh_token grant to oauth2.googleapis.com/token.
+ *  2. Service-account JWT-bearer (fallback) — set:
+ *       GOOGLE_DRIVE_SA_JSON (base64-encoded SA JSON)
+ *     Build RS256 JWT, exchange at oauth2.googleapis.com/token.
+ *  3. Neither set → throws DriveUnconfiguredError.
+ *
+ * Either path caches the access token until 60 s before expiry.
+ * All Drive v3 calls send Authorization: Bearer <token>.
  */
 
 import crypto from "node:crypto";
 
 // ── Error sentinel ─────────────────────────────────────────────────────────────
 
-/** Thrown when GOOGLE_DRIVE_SA_JSON is not set — mirrors MlsProviderUnconfiguredError. */
+/**
+ * Thrown when neither the OAuth refresh-token vars nor GOOGLE_DRIVE_SA_JSON are
+ * set — mirrors MlsProviderUnconfiguredError.
+ */
 export class DriveUnconfiguredError extends Error {
   constructor() {
     super(
-      "Google Drive not configured: GOOGLE_DRIVE_SA_JSON env var not set. " +
-        "Set it to the base64-encoded service-account JSON key.",
+      "Google Drive not configured: set either " +
+        "GOOGLE_DRIVE_OAUTH_CLIENT_ID + GOOGLE_DRIVE_OAUTH_CLIENT_SECRET + " +
+        "GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN (preferred, OAuth user-token) " +
+        "or GOOGLE_DRIVE_SA_JSON (base64-encoded service-account JSON key).",
     );
     this.name = "DriveUnconfiguredError";
   }
@@ -90,6 +102,47 @@ function buildJwt(sa: ServiceAccountKey): string {
   return `${signable}.${signature}`;
 }
 
+/** Fetch a fresh token via the OAuth refresh-token grant (preferred path). */
+async function fetchOAuthToken(
+  clientId: string,
+  clientSecret: string,
+  refreshToken: string,
+): Promise<{ access_token: string; expires_in: number }> {
+  const body = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[drive/client] OAuth token refresh failed ${resp.status}: ${text}`);
+  }
+  return resp.json() as Promise<{ access_token: string; expires_in: number }>;
+}
+
+/** Fetch a fresh token via the SA JWT-bearer grant (fallback path). */
+async function fetchSAToken(
+  sa: ServiceAccountKey,
+): Promise<{ access_token: string; expires_in: number }> {
+  const jwt = buildJwt(sa);
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[drive/client] Token exchange failed ${resp.status}: ${text}`);
+  }
+  return resp.json() as Promise<{ access_token: string; expires_in: number }>;
+}
+
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
   // Return cached token if still valid (with 60 s buffer before expiry)
@@ -97,21 +150,20 @@ async function getAccessToken(): Promise<string> {
     return _tokenCache.accessToken;
   }
 
-  const sa = getServiceAccount();
-  const jwt = buildJwt(sa);
+  // Auth selection: OAuth refresh-token (preferred) → SA JWT-bearer → error
+  const clientId = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN;
 
-  const resp = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
-
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`[drive/client] Token exchange failed ${resp.status}: ${text}`);
+  let data: { access_token: string; expires_in: number };
+  if (clientId && clientSecret && refreshToken) {
+    data = await fetchOAuthToken(clientId, clientSecret, refreshToken);
+  } else if (process.env.GOOGLE_DRIVE_SA_JSON) {
+    data = await fetchSAToken(getServiceAccount());
+  } else {
+    throw new DriveUnconfiguredError();
   }
 
-  const data = (await resp.json()) as { access_token: string; expires_in: number };
   _tokenCache = {
     accessToken: data.access_token,
     expiresAt: now + data.expires_in * 1000,
@@ -241,4 +293,3 @@ export async function downloadFile(
 
   return { bytes, name: meta.name, mimeType: meta.mimeType };
 }
-

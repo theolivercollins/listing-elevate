@@ -71,13 +71,20 @@ afterEach(() => {
   _resetTokenCache();
   vi.restoreAllMocks();
   delete process.env.GOOGLE_DRIVE_SA_JSON;
+  delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+  delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+  delete process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN;
 });
 
 // ─── 1. DriveUnconfiguredError ────────────────────────────────────────────────
 
 describe("DriveUnconfiguredError", () => {
-  it("is thrown from listPropertyFolders when GOOGLE_DRIVE_SA_JSON is absent", async () => {
+  it("is thrown from listPropertyFolders when no auth vars are set", async () => {
+    // afterEach clears all auth env vars; ensure none slip in
     delete process.env.GOOGLE_DRIVE_SA_JSON;
+    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+    delete process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN;
     await expect(listPropertyFolders("some-parent")).rejects.toBeInstanceOf(DriveUnconfiguredError);
   });
 
@@ -88,7 +95,102 @@ describe("DriveUnconfiguredError", () => {
   });
 });
 
-// ─── 2. Token exchange and caching ───────────────────────────────────────────
+// ─── 2. Auth selection ────────────────────────────────────────────────────────
+
+describe("auth selection", () => {
+  it("uses OAuth refresh-token grant when all three OAuth vars are set", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN = "oauth-refresh-token";
+
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string ?? "");
+          return mockJsonResponse({ access_token: "oauth-tok", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-1");
+
+    expect(capturedBodies).toHaveLength(1);
+    // Must be a refresh_token grant, not a JWT-bearer grant
+    expect(capturedBodies[0]).toContain("grant_type=refresh_token");
+    expect(capturedBodies[0]).toContain("refresh_token=oauth-refresh-token");
+    expect(capturedBodies[0]).toContain("client_id=oauth-client-id");
+    expect(capturedBodies[0]).toContain("client_secret=oauth-client-secret");
+    // Must NOT be the SA JWT-bearer path
+    expect(capturedBodies[0]).not.toContain("jwt-bearer");
+  });
+
+  it("uses SA JWT-bearer grant when only GOOGLE_DRIVE_SA_JSON is set", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    // No OAuth vars set
+
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string ?? "");
+          return mockJsonResponse({ access_token: "sa-tok", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-1");
+
+    expect(capturedBodies).toHaveLength(1);
+    // The SA body is a raw template literal, not URLSearchParams — colons are not percent-encoded.
+    expect(capturedBodies[0]).toContain("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer");
+    expect(capturedBodies[0]).toContain("assertion=");
+    expect(capturedBodies[0]).not.toContain("refresh_token");
+  });
+
+  it("throws DriveUnconfiguredError when neither OAuth nor SA vars are present", async () => {
+    // All auth env vars absent — afterEach guarantees this but be explicit
+    delete process.env.GOOGLE_DRIVE_SA_JSON;
+    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
+    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
+    delete process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN;
+
+    await expect(listPropertyFolders("parent-1")).rejects.toBeInstanceOf(DriveUnconfiguredError);
+  });
+
+  it("falls back to SA when only partial OAuth vars are set (missing refresh token)", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    // Intentionally NOT setting GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string ?? "");
+          return mockJsonResponse({ access_token: "sa-tok", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-1");
+
+    // Should use the SA path, not the (incomplete) OAuth path
+    expect(capturedBodies[0]).toContain("jwt-bearer");
+  });
+});
+
+// ─── 3. Token exchange and caching ───────────────────────────────────────────
 
 describe("token exchange and caching", () => {
   it("exchanges a JWT for an access token on the first call", async () => {
@@ -178,7 +280,7 @@ describe("token exchange and caching", () => {
   });
 });
 
-// ─── 3. listPropertyFolders ───────────────────────────────────────────────────
+// ─── 4. listPropertyFolders ───────────────────────────────────────────────────
 
 describe("listPropertyFolders", () => {
   it("returns an array of {id, name} for all folders under parentId", async () => {
@@ -252,7 +354,7 @@ describe("listPropertyFolders", () => {
   });
 });
 
-// ─── 4. findFinalSubfolder ────────────────────────────────────────────────────
+// ─── 5. findFinalSubfolder ────────────────────────────────────────────────────
 
 describe("findFinalSubfolder", () => {
   it("returns the folder when a child folder named 'Final' exists (exact case)", async () => {
@@ -323,7 +425,7 @@ describe("findFinalSubfolder", () => {
   });
 });
 
-// ─── 5. countFinalImages / listFinalImages ────────────────────────────────────
+// ─── 6. countFinalImages / listFinalImages ────────────────────────────────────
 
 describe("listFinalImages", () => {
   it("returns only files whose mimeType starts with image/", async () => {
@@ -434,7 +536,7 @@ describe("countFinalImages", () => {
   });
 });
 
-// ─── 6. downloadFile ──────────────────────────────────────────────────────────
+// ─── 7. downloadFile ──────────────────────────────────────────────────────────
 
 describe("downloadFile", () => {
   it("returns bytes, name, and mimeType for a file", async () => {

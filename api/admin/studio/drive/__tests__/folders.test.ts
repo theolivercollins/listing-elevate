@@ -61,6 +61,7 @@ describe('GET /api/admin/studio/drive/folders', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     process.env.DRIVE_PARENT_FOLDER_ID = 'parent-folder-id';
+    delete process.env.DRIVE_WATCHED_FOLDER_ID;
   });
 
   it('returns 405 for non-GET methods', async () => {
@@ -81,14 +82,31 @@ describe('GET /api/admin/studio/drive/folders', () => {
     expect(mockedListFolders).not.toHaveBeenCalled();
   });
 
-  it('returns 503 when DRIVE_PARENT_FOLDER_ID is missing', async () => {
+  it('returns 503 when neither DRIVE_PARENT_FOLDER_ID nor DRIVE_WATCHED_FOLDER_ID is set', async () => {
     delete process.env.DRIVE_PARENT_FOLDER_ID;
+    delete process.env.DRIVE_WATCHED_FOLDER_ID;
     mockedRequireAdmin.mockResolvedValue({ id: 'admin-1' } as never);
     const req = makeReq('GET');
     const res = makeRes();
     await handler(req, res);
     expect(res._status).toBe(503);
     expect(res._body).toEqual({ error: 'Drive parent folder not configured' });
+  });
+
+  it('uses DRIVE_WATCHED_FOLDER_ID as fallback when DRIVE_PARENT_FOLDER_ID is absent', async () => {
+    delete process.env.DRIVE_PARENT_FOLDER_ID;
+    process.env.DRIVE_WATCHED_FOLDER_ID = 'watched-folder-id';
+    mockedRequireAdmin.mockResolvedValue({ id: 'admin-1' } as never);
+    mockedListFolders.mockResolvedValue([{ id: 'f1', name: 'Apple Ave' }]);
+    mockedFindFinal.mockResolvedValue(null);
+
+    const req = makeReq('GET');
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._status).toBe(200);
+    expect(mockedListFolders).toHaveBeenCalledWith('watched-folder-id');
+    delete process.env.DRIVE_WATCHED_FOLDER_ID;
   });
 
   it('returns sorted folders with photo counts on happy path', async () => {

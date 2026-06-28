@@ -99,7 +99,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 4. Scope check prerequisites — DRIVE_PARENT_FOLDER_ID must be set to verify
   //    that the requested folder is actually under the configured root.
-  const parentId = process.env.DRIVE_PARENT_FOLDER_ID;
+  const parentId = process.env.DRIVE_PARENT_FOLDER_ID || process.env.DRIVE_WATCHED_FOLDER_ID;
   if (!parentId) {
     return res.status(503).json({ error: 'Drive parent folder not configured' });
   }
