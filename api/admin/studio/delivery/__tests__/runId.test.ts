@@ -1766,11 +1766,25 @@ describe('POST rerun (T-rerun)', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST retry (T-retry)', () => {
-  const OLD_UPDATED_AT = new Date(Date.now() - 10 * 60_000).toISOString(); // 10 min ago → fires
-  const RECENT_UPDATED_AT = new Date(Date.now() - 60_000).toISOString();   // 1 min ago  → debounced
+  // Claim result for the atomic CAS UPDATE on delivery_runs.
+  // Set via setClaimResult() before each test that reaches the CAS branch.
+  let _claimResult: { data: { id: string } | null; error: { message: string } | null } = {
+    data: null,
+    error: null,
+  };
+
+  /** Control whether the CAS UPDATE wins (claimed) or is rejected (run recently touched). */
+  function setClaimResult(won: boolean, err: { message: string } | null = null) {
+    _claimResult = { data: won ? { id: 'r1' } : null, error: err };
+  }
+
+  beforeEach(() => {
+    _claimResult = { data: null, error: null };
+  });
 
   /**
-   * Wire up db.from('scenes') to return the given rows / error.
+   * Wire up db.from('scenes') to return the given rows / error, and
+   * db.from('delivery_runs') to return the current _claimResult for the CAS UPDATE.
    * error: null by default (query succeeded). Pass { message } to simulate
    * a Supabase error — must NOT be treated as zero scenes.
    */
@@ -1783,18 +1797,32 @@ describe('POST retry (T-retry)', () => {
           }),
         };
       }
+      if (table === 'delivery_runs') {
+        return {
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              lt: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue(_claimResult),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
       if (table === 'properties') return { select: mockDbSelect };
       if (table === 'music_tracks') return { insert: mockDbInsert };
       return { update: mockDbUpdate };
     });
   }
 
-  it('retry at generating with ZERO scenes (old run) → bumps updated_at, calls continuePipelineAfterPhotoSelection, returns 200 with refreshed run; does NOT call clearRunError', async () => {
-    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
+  it('retry at generating with ZERO scenes (CAS claim won) → calls continuePipelineAfterPhotoSelection, returns 200 with refreshed run; does NOT call clearRunError', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
     const refreshedRun = { ...run, stage: 'generating', refreshed: true };
     mockGetRun
       .mockResolvedValueOnce(generatingRun)
       .mockResolvedValueOnce(refreshedRun);
+    setClaimResult(true);
     setScenesResult([]);
     mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
 
@@ -1805,8 +1833,6 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(200);
-    // Debounce bump: updateRun called with empty patch before the re-fire
-    expect(mockUpdateRun).toHaveBeenCalledWith('r1', {});
     expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledTimes(1);
     expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
       order_mode: 'operator',
@@ -1814,11 +1840,14 @@ describe('POST retry (T-retry)', () => {
     });
     expect((res._body as { run: unknown }).run).toEqual(refreshedRun);
     expect(mockClearRunError).not.toHaveBeenCalled();
+    // updateRun must NOT be called — the CAS UPDATE handles the timestamp bump atomically.
+    expect(mockUpdateRun).not.toHaveBeenCalled();
   });
 
   it('retry at generating with ZERO scenes and continuePipelineAfterPhotoSelection throws → calls setRunError and returns 500', async () => {
-    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
+    const generatingRun = { ...run, stage: 'generating' };
     mockGetRun.mockResolvedValueOnce(generatingRun);
+    setClaimResult(true);
     setScenesResult([]);
     mockContinuePipelineAfterPhotoSelection.mockRejectedValue(new Error('director scripting failed'));
 
@@ -1836,7 +1865,7 @@ describe('POST retry (T-retry)', () => {
   });
 
   it('P1 #1 — scenes query error → 500, does NOT treat as zero scenes or call continuePipelineAfterPhotoSelection', async () => {
-    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
+    const generatingRun = { ...run, stage: 'generating' };
     mockGetRun.mockResolvedValueOnce(generatingRun);
     setScenesResult([], { message: 'connection timeout' });
 
@@ -1852,10 +1881,11 @@ describe('POST retry (T-retry)', () => {
     expect(mockClearRunError).not.toHaveBeenCalled();
   });
 
-  it('P1 #2 — zero scenes but run touched recently (debounce) → clearRunError, no continue call', async () => {
-    const generatingRun = { ...run, stage: 'generating', updated_at: RECENT_UPDATED_AT };
+  it('P1 #2 / CAS claim lost (run recently touched) → clearRunError only, no continue call, no updateRun', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
     const clearedRun = { ...run, stage: 'generating', error: null };
     mockGetRun.mockResolvedValueOnce(generatingRun);
+    setClaimResult(false); // CAS returns null → another actor already holds the claim
     setScenesResult([]);
     mockClearRunError.mockResolvedValue(clearedRun);
 
@@ -1873,7 +1903,7 @@ describe('POST retry (T-retry)', () => {
   });
 
   it('retry at generating WITH existing scenes → falls through to clearRunError (no continue call)', async () => {
-    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
+    const generatingRun = { ...run, stage: 'generating' };
     const clearedRun = { ...run, stage: 'generating', error: null };
     mockGetRun.mockResolvedValueOnce(generatingRun);
     setScenesResult([{ id: 'scene-1' }, { id: 'scene-2' }]);

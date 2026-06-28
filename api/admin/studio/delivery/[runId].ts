@@ -246,26 +246,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (sceneErr) return res.status(500).json({ error: sceneErr.message });
             const sceneCount = (scenes ?? []).length;
             if (sceneCount === 0) {
-              // P1 #2: debounce against double-click and reaper-overlap.
-              // If the run was updated recently another actor is already recovering it;
-              // just clear the error and return — don't risk a double fire.
-              // Threshold mirrors DELIVERY_GENERATING_REFIRE_MINUTES in lib/pipeline/stuck-reaper.ts.
+              // Atomic CAS claim: only the first concurrent caller wins the UPDATE.
+              // .lt('updated_at', cutoff) ensures the row is only stamped (and the
+              // claim granted) when the run hasn't been touched within the debounce
+              // window — mirrors the advanceRun / revertRun pattern in lib/delivery/runs.ts.
+              // Threshold: DELIVERY_GENERATING_REFIRE_MINUTES from lib/pipeline/stuck-reaper.ts.
               const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
-              const updatedAt = (run as unknown as { updated_at?: string }).updated_at;
-              const ageMs = updatedAt ? Date.now() - new Date(updatedAt).getTime() : Infinity;
-              if (ageMs < DELIVERY_GENERATING_REFIRE_MINUTES * 60_000) {
-                // Something is already recovering it — do not double-fire.
+              const cutoff = new Date(Date.now() - DELIVERY_GENERATING_REFIRE_MINUTES * 60_000).toISOString();
+              const { data: claimed, error: claimErr } = await db.from('delivery_runs')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', runId)
+                .lt('updated_at', cutoff)
+                .select('id')
+                .maybeSingle();
+              if (claimErr) return res.status(500).json({ error: claimErr.message });
+              if (!claimed) {
+                // Recently touched: another actor/click is already in flight.
+                // Do not double-fire — just clear the error and return.
                 const cleared = await clearRunError(runId);
                 return res.status(200).json({ run: cleared });
               }
-              // Bump updated_at BEFORE the awaited call so that a concurrent retry
-              // (double-click or reaper overlap) sees a fresh timestamp and takes
-              // the debounce path above.
-              const { updateRun } = await import('../../../../lib/delivery/runs.js');
-              await updateRun(runId, {});
-              // Re-fire generation reliably (AWAITED — cannot be dropped). Mirror
-              // api/pipeline/continue/[runId].ts: setRunError on throw so failures
-              // stay visible.
+              // We won the claim → safe to fire exactly once.
+              // Mirror api/pipeline/continue/[runId].ts: setRunError on throw so
+              // failures stay visible in the operator UI.
               try {
                 const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
                 await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
