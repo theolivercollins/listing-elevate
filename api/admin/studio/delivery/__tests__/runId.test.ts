@@ -58,6 +58,9 @@ vi.mock('../../../../../lib/delivery/photo-selection', () => ({
 vi.mock('../../../../../lib/pipeline', () => ({
   continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipelineAfterPhotoSelection(...a),
 }));
+vi.mock('../../../../../lib/pipeline/stuck-reaper', () => ({
+  DELIVERY_GENERATING_REFIRE_MINUTES: 5,
+}));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
 }));
@@ -1763,13 +1766,20 @@ describe('POST rerun (T-rerun)', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST retry (T-retry)', () => {
-  /** Wire up db.from('scenes') to return the given scene rows. */
-  function setScenesResult(scenes: { id: string }[]) {
+  const OLD_UPDATED_AT = new Date(Date.now() - 10 * 60_000).toISOString(); // 10 min ago → fires
+  const RECENT_UPDATED_AT = new Date(Date.now() - 60_000).toISOString();   // 1 min ago  → debounced
+
+  /**
+   * Wire up db.from('scenes') to return the given rows / error.
+   * error: null by default (query succeeded). Pass { message } to simulate
+   * a Supabase error — must NOT be treated as zero scenes.
+   */
+  function setScenesResult(scenes: { id: string }[], error: { message: string } | null = null) {
     mockDbFrom.mockImplementation((table: string) => {
       if (table === 'scenes') {
         return {
           select: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ data: scenes, error: null }),
+            eq: vi.fn().mockResolvedValue({ data: error ? null : scenes, error }),
           }),
         };
       }
@@ -1779,8 +1789,8 @@ describe('POST retry (T-retry)', () => {
     });
   }
 
-  it('retry at generating with ZERO scenes → calls continuePipelineAfterPhotoSelection once and returns 200 with refreshed run; does NOT call clearRunError', async () => {
-    const generatingRun = { ...run, stage: 'generating' };
+  it('retry at generating with ZERO scenes (old run) → bumps updated_at, calls continuePipelineAfterPhotoSelection, returns 200 with refreshed run; does NOT call clearRunError', async () => {
+    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
     const refreshedRun = { ...run, stage: 'generating', refreshed: true };
     mockGetRun
       .mockResolvedValueOnce(generatingRun)
@@ -1795,6 +1805,8 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(200);
+    // Debounce bump: updateRun called with empty patch before the re-fire
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', {});
     expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledTimes(1);
     expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
       order_mode: 'operator',
@@ -1805,7 +1817,7 @@ describe('POST retry (T-retry)', () => {
   });
 
   it('retry at generating with ZERO scenes and continuePipelineAfterPhotoSelection throws → calls setRunError and returns 500', async () => {
-    const generatingRun = { ...run, stage: 'generating' };
+    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
     mockGetRun.mockResolvedValueOnce(generatingRun);
     setScenesResult([]);
     mockContinuePipelineAfterPhotoSelection.mockRejectedValue(new Error('director scripting failed'));
@@ -1823,8 +1835,45 @@ describe('POST retry (T-retry)', () => {
     expect((res._body as { status: string }).status).toBe('failed');
   });
 
+  it('P1 #1 — scenes query error → 500, does NOT treat as zero scenes or call continuePipelineAfterPhotoSelection', async () => {
+    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([], { message: 'connection timeout' });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(500);
+    expect((res._body as { error: string }).error).toContain('connection timeout');
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).not.toHaveBeenCalled();
+  });
+
+  it('P1 #2 — zero scenes but run touched recently (debounce) → clearRunError, no continue call', async () => {
+    const generatingRun = { ...run, stage: 'generating', updated_at: RECENT_UPDATED_AT };
+    const clearedRun = { ...run, stage: 'generating', error: null };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([]);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
   it('retry at generating WITH existing scenes → falls through to clearRunError (no continue call)', async () => {
-    const generatingRun = { ...run, stage: 'generating' };
+    const generatingRun = { ...run, stage: 'generating', updated_at: OLD_UPDATED_AT };
     const clearedRun = { ...run, stage: 'generating', error: null };
     mockGetRun.mockResolvedValueOnce(generatingRun);
     setScenesResult([{ id: 'scene-1' }, { id: 'scene-2' }]);

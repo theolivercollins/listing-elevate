@@ -239,9 +239,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           // other stages keep the existing clear-error behavior.
           if (run.stage === 'generating') {
             const db = (await import('../../../../lib/client.js')).getSupabase();
-            const { data: scenes } = await db.from('scenes').select('id').eq('property_id', run.property_id);
+            const { data: scenes, error: sceneErr } = await db.from('scenes').select('id').eq('property_id', run.property_id);
+            // P1 #1: a Supabase query error must NEVER be treated as "zero scenes" —
+            // that would re-fire continuePipeline on a run that may already have scenes,
+            // duplicating them and doubling provider cost.
+            if (sceneErr) return res.status(500).json({ error: sceneErr.message });
             const sceneCount = (scenes ?? []).length;
             if (sceneCount === 0) {
+              // P1 #2: debounce against double-click and reaper-overlap.
+              // If the run was updated recently another actor is already recovering it;
+              // just clear the error and return — don't risk a double fire.
+              // Threshold mirrors DELIVERY_GENERATING_REFIRE_MINUTES in lib/pipeline/stuck-reaper.ts.
+              const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
+              const updatedAt = (run as unknown as { updated_at?: string }).updated_at;
+              const ageMs = updatedAt ? Date.now() - new Date(updatedAt).getTime() : Infinity;
+              if (ageMs < DELIVERY_GENERATING_REFIRE_MINUTES * 60_000) {
+                // Something is already recovering it — do not double-fire.
+                const cleared = await clearRunError(runId);
+                return res.status(200).json({ run: cleared });
+              }
+              // Bump updated_at BEFORE the awaited call so that a concurrent retry
+              // (double-click or reaper overlap) sees a fresh timestamp and takes
+              // the debounce path above.
+              const { updateRun } = await import('../../../../lib/delivery/runs.js');
+              await updateRun(runId, {});
               // Re-fire generation reliably (AWAITED — cannot be dropped). Mirror
               // api/pipeline/continue/[runId].ts: setRunError on throw so failures
               // stay visible.
