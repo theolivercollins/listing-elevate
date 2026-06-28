@@ -65,7 +65,12 @@ export function requestDriveAccessToken({ clientId }: { clientId: string }): Pro
               reject(new Error(`OAuth error: ${response.error ?? 'unknown'}`));
             }
           },
-          error_callback: (err) => reject(new Error(err.message)),
+          error_callback: (err) => {
+            // GIS SDK types only declare `message`, but at runtime the object
+            // also exposes `type` (e.g. "popup_closed") which is more actionable.
+            const gisErr = err as unknown as { type?: string; message?: string };
+            reject(new Error(gisErr.type ?? gisErr.message ?? 'oauth_error'));
+          },
         });
         client.requestAccessToken();
       }),
@@ -139,6 +144,20 @@ export function openPicker({
 const DRIVE_FILES_API = 'https://www.googleapis.com/drive/v3/files';
 const IMAGE_CAP = 200;
 
+/**
+ * Explicit MIME-type allowlist matching the manual/ZIP upload accept list.
+ * SVG (stored-XSS vector) and unsupported formats (gif, bmp, tiff, …) are
+ * excluded; they are dropped silently both from folder listings and from
+ * directly-picked images.
+ */
+const ALLOWED_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/heic',
+  'image/webp',
+]);
+
 interface DriveFilesResponse {
   files?: Array<{ id: string; name: string; mimeType: string }>;
 }
@@ -163,8 +182,8 @@ export async function expandFoldersToImages(
     if (results.length >= IMAGE_CAP) break;
 
     if (item.mimeType === 'application/vnd.google-apps.folder') {
-      // List immediate children that are images
-      const q = `'${item.id}' in parents and mimeType contains 'image/'`;
+      // List immediate children that are images (query broad; results filtered by allowlist below)
+      const q = `'${item.id}' in parents and mimeType contains 'image/' and trashed = false`;
       const url = `${DRIVE_FILES_API}?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)&pageSize=1000`;
       const res = await fetchFn(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
@@ -174,13 +193,14 @@ export async function expandFoldersToImages(
       }
       const data: DriveFilesResponse = await res.json();
       for (const f of data.files ?? []) {
+        if (!ALLOWED_MIME_TYPES.has(f.mimeType)) continue; // drop gif/svg/bmp/tiff/…
         results.push({ id: f.id, name: f.name, mimeType: f.mimeType });
         if (results.length >= IMAGE_CAP) {
           console.warn(`[google-picker] Truncated to ${IMAGE_CAP} images — some files were not imported`);
           return results;
         }
       }
-    } else if (item.mimeType.startsWith('image/')) {
+    } else if (ALLOWED_MIME_TYPES.has(item.mimeType)) {
       results.push(item);
       if (results.length >= IMAGE_CAP) {
         console.warn(`[google-picker] Truncated to ${IMAGE_CAP} images — some files were not imported`);

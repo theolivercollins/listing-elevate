@@ -738,12 +738,25 @@ const StudioNew = () => {
                     {/* Drive upload — only rendered when VITE_GOOGLE_* env vars are set */}
                     <div onClick={(e) => e.stopPropagation()}>
                       <DriveUploadButton
-                        onFilesImported={(imported) =>
+                        onFilesImported={(imported) => {
+                          // Follow the same 60-photo cap pattern as handleBulkInput.
+                          let droppedForCap = 0;
+                          let addedCount = 0;
                           setFiles((prev) => {
                             const seen = new Set(prev.map((f) => f.id));
-                            return [...prev, ...imported.filter((f) => !seen.has(f.id))];
-                          })
-                        }
+                            const deduped = imported.filter((f) => !seen.has(f.id));
+                            const remaining = 60 - prev.length;
+                            const toAdd = deduped.slice(0, remaining);
+                            droppedForCap = deduped.length - toAdd.length;
+                            addedCount = toAdd.length;
+                            return [...prev, ...toAdd];
+                          });
+                          if (droppedForCap > 0) {
+                            setSubmitError(
+                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+                            );
+                          }
+                        }}
                       />
                     </div>
                   </div>

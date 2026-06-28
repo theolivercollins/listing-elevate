@@ -195,4 +195,76 @@ describe('expandFoldersToImages', () => {
       ),
     ).rejects.toThrow('500');
   });
+
+  // ── MIME allowlist — direct picks ─────────────────────────────────────────────
+
+  it('drops gif and svg from direct picks (allowlist enforcement)', async () => {
+    const mockFetch = vi.fn();
+
+    const result = await expandFoldersToImages(
+      [
+        { id: 'img-1', name: 'photo.jpg', mimeType: 'image/jpeg' },
+        { id: 'gif-1', name: 'anim.gif', mimeType: 'image/gif' },
+        { id: 'svg-1', name: 'icon.svg', mimeType: 'image/svg+xml' },
+        { id: 'img-2', name: 'photo.png', mimeType: 'image/png' },
+        { id: 'bmp-1', name: 'scan.bmp', mimeType: 'image/bmp' },
+        { id: 'img-3', name: 'photo.webp', mimeType: 'image/webp' },
+        { id: 'img-4', name: 'photo.heic', mimeType: 'image/heic' },
+      ],
+      'tok',
+      mockFetch as unknown as typeof fetch,
+    );
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    // Only jpeg, png, webp, heic pass; gif, svg, bmp are dropped.
+    expect(result).toHaveLength(4);
+    expect(result.map((r) => r.id)).toEqual(['img-1', 'img-2', 'img-3', 'img-4']);
+  });
+
+  // ── MIME allowlist — folder listing results ───────────────────────────────────
+
+  it('drops gif and bmp from folder listing results (allowlist enforcement)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        files: [
+          { id: 'img-1', name: 'front.jpg', mimeType: 'image/jpeg' },
+          { id: 'gif-1', name: 'anim.gif', mimeType: 'image/gif' },
+          { id: 'bmp-1', name: 'scan.bmp', mimeType: 'image/bmp' },
+          { id: 'svg-1', name: 'icon.svg', mimeType: 'image/svg+xml' },
+          { id: 'img-2', name: 'back.webp', mimeType: 'image/webp' },
+        ],
+      }),
+    });
+
+    const result = await expandFoldersToImages(
+      [{ id: 'folder-1', name: 'Listing Photos', mimeType: 'application/vnd.google-apps.folder' }],
+      'tok',
+      mockFetch as unknown as typeof fetch,
+    );
+
+    // Only jpeg and webp survive; gif, bmp, svg are excluded by the allowlist.
+    expect(result).toHaveLength(2);
+    expect(result.map((r) => r.id)).toEqual(['img-1', 'img-2']);
+  });
+
+  // ── trashed = false in folder query ──────────────────────────────────────────
+
+  it('includes trashed = false in the folder listing query', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ files: [] }),
+    });
+
+    await expandFoldersToImages(
+      [{ id: 'folder-1', name: 'Photos', mimeType: 'application/vnd.google-apps.folder' }],
+      'tok',
+      mockFetch as unknown as typeof fetch,
+    );
+
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    // The query must exclude trashed items.
+    expect(calledUrl).toContain('trashed');
+    expect(calledUrl).toContain('false');
+  });
 });

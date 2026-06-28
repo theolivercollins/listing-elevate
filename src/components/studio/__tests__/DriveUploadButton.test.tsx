@@ -133,6 +133,71 @@ describe('DriveUploadButton', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Popup blocked');
   });
 
+  // ── Partial-success downloads (Promise.allSettled) ───────────────────────────
+
+  it('imports successful files and shows a non-fatal notice when some downloads fail', async () => {
+    stubEnvs();
+
+    const fakeFile = new File(['img-data'], 'ok.jpg', { type: 'image/jpeg' });
+
+    mockRequestDriveAccessToken.mockResolvedValue('tok');
+    mockOpenPicker.mockResolvedValue([
+      { id: 'file-1', name: 'ok.jpg', mimeType: 'image/jpeg' },
+      { id: 'file-2', name: 'fail.jpg', mimeType: 'image/jpeg' },
+    ]);
+    mockExpandFoldersToImages.mockResolvedValue([
+      { id: 'file-1', name: 'ok.jpg', mimeType: 'image/jpeg' },
+      { id: 'file-2', name: 'fail.jpg', mimeType: 'image/jpeg' },
+    ]);
+    // file-1 succeeds, file-2 fails
+    mockDownloadDriveFile
+      .mockResolvedValueOnce(fakeFile)
+      .mockRejectedValueOnce(new Error('403 Forbidden'));
+
+    const origCreateObjectURL = URL.createObjectURL;
+    URL.createObjectURL = vi.fn(() => 'blob:preview');
+
+    const onFilesImported = vi.fn();
+    render(<DriveUploadButton onFilesImported={onFilesImported} />);
+    fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
+
+    await waitFor(() => expect(onFilesImported).toHaveBeenCalledTimes(1));
+
+    const imported = onFilesImported.mock.calls[0][0] as { id: string }[];
+    expect(imported).toHaveLength(1);
+    expect(imported[0].id).toBe('file-1');
+
+    // Non-fatal progress notice should appear (not an alert).
+    await waitFor(() => {
+      expect(screen.getByText(/imported 1 photo.*1 failed/i)).toBeInTheDocument();
+    });
+    // Hard error alert must NOT appear.
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    URL.createObjectURL = origCreateObjectURL;
+  });
+
+  it('shows a hard error and does not call onFilesImported when all downloads fail', async () => {
+    stubEnvs();
+
+    mockRequestDriveAccessToken.mockResolvedValue('tok');
+    mockOpenPicker.mockResolvedValue([
+      { id: 'file-1', name: 'fail.jpg', mimeType: 'image/jpeg' },
+    ]);
+    mockExpandFoldersToImages.mockResolvedValue([
+      { id: 'file-1', name: 'fail.jpg', mimeType: 'image/jpeg' },
+    ]);
+    mockDownloadDriveFile.mockRejectedValue(new Error('403 Forbidden'));
+
+    const onFilesImported = vi.fn();
+    render(<DriveUploadButton onFilesImported={onFilesImported} />);
+    fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
+
+    await screen.findByRole('alert');
+    expect(screen.getByRole('alert')).toHaveTextContent(/failed/i);
+    expect(onFilesImported).not.toHaveBeenCalled();
+  });
+
   // ── Deduplication within a batch ─────────────────────────────────────────────
 
   it('deduplicates files with the same Drive id within the imported batch', async () => {
@@ -166,5 +231,63 @@ describe('DriveUploadButton', () => {
     expect(imported).toHaveLength(1);
 
     URL.createObjectURL = origCreateObjectURL;
+  });
+});
+
+// ─── 60-photo cap handler logic (StudioNew.onFilesImported) ──────────────────
+//
+// StudioNew has no dedicated test file; the cap logic is a pure functional
+// updater, so we verify it here as a unit test against the algorithm.
+
+describe('60-photo cap handler logic (StudioNew.onFilesImported algorithm)', () => {
+  type Stub = { id: string };
+
+  /** Mirrors the setFiles updater + cap calculation in StudioNew's onFilesImported. */
+  function runCap(prev: Stub[], imported: Stub[]): {
+    result: Stub[];
+    addedCount: number;
+    droppedForCap: number;
+  } {
+    const seen = new Set(prev.map((f) => f.id));
+    const deduped = imported.filter((f) => !seen.has(f.id));
+    const remaining = 60 - prev.length;
+    const toAdd = deduped.slice(0, remaining);
+    const droppedForCap = deduped.length - toAdd.length;
+    const addedCount = toAdd.length;
+    return { result: [...prev, ...toAdd], addedCount, droppedForCap };
+  }
+
+  const make = (n: number, prefix = 'f'): Stub[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `${prefix}-${i}` }));
+
+  it('caps imported Drive files at 60 total and reports dropped count', () => {
+    // 50 existing + 15 imported → 10 added, 5 dropped.
+    const { result, addedCount, droppedForCap } = runCap(make(50), make(15, 'new'));
+    expect(result).toHaveLength(60);
+    expect(addedCount).toBe(10);
+    expect(droppedForCap).toBe(5);
+  });
+
+  it('drops all incoming when already at the 60-photo limit', () => {
+    const { result, addedCount, droppedForCap } = runCap(make(60), make(5, 'new'));
+    expect(result).toHaveLength(60);
+    expect(addedCount).toBe(0);
+    expect(droppedForCap).toBe(5);
+  });
+
+  it('adds all files when under the cap with room to spare', () => {
+    const { addedCount, droppedForCap } = runCap(make(3), make(4, 'new'));
+    expect(addedCount).toBe(4);
+    expect(droppedForCap).toBe(0);
+  });
+
+  it('deduplicates Drive files already present before applying the cap', () => {
+    // prev has 'f-0'; imported has 'f-0' (dup) + 'new-0' (fresh)
+    const prev: Stub[] = [{ id: 'f-0' }];
+    const imported: Stub[] = [{ id: 'f-0' }, { id: 'new-0' }];
+    const { result, addedCount } = runCap(prev, imported);
+    expect(addedCount).toBe(1);
+    expect(result.map((s) => s.id)).toContain('new-0');
+    expect(result.filter((s) => s.id === 'f-0')).toHaveLength(1); // not duplicated
   });
 });

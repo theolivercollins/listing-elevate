@@ -76,19 +76,27 @@ export function DriveUploadButton({ onFilesImported }: DriveUploadButtonProps) {
 
       setProgress(`Importing ${images.length} photo${images.length !== 1 ? 's' : ''} from Drive…`);
 
-      // Step 4 — Download in batches
+      // Step 4 — Download in batches (allSettled so a single 403 doesn't abort
+      // the whole import — successes are kept, failures counted).
       const imported: ImportedFile[] = [];
+      let totalFailures = 0;
       for (let i = 0; i < images.length; i += BATCH_SIZE) {
         const batch = images.slice(i, i + BATCH_SIZE);
-        const files = await Promise.all(
+        const settled = await Promise.allSettled(
           batch.map((img) => downloadDriveFile(img, accessToken)),
         );
-        for (let j = 0; j < files.length; j++) {
-          imported.push({
-            file: files[j],
-            preview: URL.createObjectURL(files[j]),
-            id: images[i + j].id,
-          });
+        for (let j = 0; j < settled.length; j++) {
+          const result = settled[j];
+          if (result.status === 'fulfilled') {
+            const file = result.value;
+            imported.push({
+              file,
+              preview: URL.createObjectURL(file),
+              id: images[i + j].id,
+            });
+          } else {
+            totalFailures++;
+          }
         }
         setProgress(
           `Importing ${imported.length} / ${images.length} photo${images.length !== 1 ? 's' : ''} from Drive…`,
@@ -104,8 +112,23 @@ export function DriveUploadButton({ onFilesImported }: DriveUploadButtonProps) {
         return true;
       });
 
+      if (deduped.length === 0) {
+        // Every download failed — surface as a hard error.
+        throw new Error(
+          `All ${images.length} photo download${images.length !== 1 ? 's' : ''} failed. Check your Drive permissions.`,
+        );
+      }
+
       onFilesImported(deduped);
-      setProgress(null);
+
+      if (totalFailures > 0) {
+        // Partial success — import the winners, show a non-fatal notice.
+        setProgress(
+          `Imported ${deduped.length} photo${deduped.length !== 1 ? 's' : ''}; ${totalFailures} failed to download.`,
+        );
+      } else {
+        setProgress(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Drive import failed');
     } finally {
