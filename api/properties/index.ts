@@ -4,6 +4,7 @@ import {
   getSupabase,
   insertPhotos,
 } from '../../lib/db.js';
+import { isNonProdEnv } from '../../lib/env.js';
 import {
   createCheckoutSession,
   formatLineItemsForOrder,
@@ -47,6 +48,12 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
     // Non-admins may only see their own submitted properties.
     if (auth.profile.role !== 'admin') {
       query = query.eq('submitted_by', auth.user.id);
+    }
+
+    // On production, hide test rows created on preview/dev deploys.
+    // On non-prod, show everything so developers can see their own test data.
+    if (!isNonProdEnv()) {
+      query = query.eq('is_test', false);
     }
 
     if (status) query = query.eq('status', status);
