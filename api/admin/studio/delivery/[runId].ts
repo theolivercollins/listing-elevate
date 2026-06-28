@@ -232,8 +232,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ run });
         }
         case 'retry': {
-          const run = await clearRunError(runId);
-          return res.status(200).json({ run });
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+
+          // Only the 'generating'-stage zero-scene stall needs a real re-fire;
+          // other stages keep the existing clear-error behavior.
+          if (run.stage === 'generating') {
+            const db = (await import('../../../../lib/client.js')).getSupabase();
+            const { data: scenes, error: sceneErr } = await db.from('scenes').select('id').eq('property_id', run.property_id);
+            // P1 #1: a Supabase query error must NEVER be treated as "zero scenes" —
+            // that would re-fire continuePipeline on a run that may already have scenes,
+            // duplicating them and doubling provider cost.
+            if (sceneErr) return res.status(500).json({ error: sceneErr.message });
+            const sceneCount = (scenes ?? []).length;
+            if (sceneCount === 0) {
+              // Atomic CAS claim: only the first concurrent caller wins the UPDATE.
+              // .lt('updated_at', cutoff) ensures the row is only stamped (and the
+              // claim granted) when the run hasn't been touched within the debounce
+              // window — mirrors the advanceRun / revertRun pattern in lib/delivery/runs.ts.
+              // Threshold: DELIVERY_GENERATING_REFIRE_MINUTES from lib/pipeline/stuck-reaper.ts.
+              const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
+              const cutoff = new Date(Date.now() - DELIVERY_GENERATING_REFIRE_MINUTES * 60_000).toISOString();
+              const { data: claimed, error: claimErr } = await db.from('delivery_runs')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', runId)
+                .lt('updated_at', cutoff)
+                .select('id')
+                .maybeSingle();
+              if (claimErr) return res.status(500).json({ error: claimErr.message });
+              if (!claimed) {
+                // Recently touched: another actor/click is already in flight.
+                // Do not double-fire — just clear the error and return.
+                const cleared = await clearRunError(runId);
+                return res.status(200).json({ run: cleared });
+              }
+              // We won the claim → safe to fire exactly once.
+              // Mirror api/pipeline/continue/[runId].ts: setRunError on throw so
+              // failures stay visible in the operator UI.
+              try {
+                const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+                await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
+                const refreshed = await getRun(runId);
+                return res.status(200).json({ run: refreshed });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await setRunError(runId, `Generation resume failed: ${msg}`);
+                return res.status(500).json({ status: 'failed', runId, error: msg });
+              }
+            }
+            // generating stage but scenes already exist → don't duplicate;
+            // fall through to clear-error.
+          }
+
+          const cleared = await clearRunError(runId);
+          return res.status(200).json({ run: cleared });
         }
         case 'scrape': {
           const { runScrapeStage } = await import('../../../../lib/delivery/scrape.js');
