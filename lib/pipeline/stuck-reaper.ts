@@ -107,8 +107,27 @@ export const GENERATING_MAX_AGE_MINUTES = 60;
  * render — whose scenes are pending/generating with task_ids — is never
  * touched; those are caught (and recovered) by reapStuckScenes /
  * reapStuckGeneratingProperties instead.
+ *
+ * This threshold governs Path B (providers-failed classification). Path A
+ * (zero-scene re-fire) uses the lower DELIVERY_GENERATING_REFIRE_MINUTES.
  */
 export const DELIVERY_GENERATING_STUCK_MINUTES = 15;
+
+/**
+ * Minutes a zero-scene delivery_run must sit at stage='generating' before the
+ * reaper concludes that the original HTTP hop to continuePipelineAfterPhotoSelection
+ * was dropped and autonomously re-fires it. The director finishes in ~70s, so
+ * 5 min is a conservative margin that guarantees we are NOT mid-run when we fire.
+ */
+export const DELIVERY_GENERATING_REFIRE_MINUTES = 5;
+
+/**
+ * Recovery window for auto-re-firing zero-scene runs (measured from created_at).
+ * Once a run exceeds this age with still-zero scenes it is presumed to have
+ * failed all retries and is surfaced to the operator as 'failed' instead of
+ * being re-fired again.
+ */
+export const DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES = 45;
 
 // ── Return type ──
 
@@ -682,30 +701,41 @@ export async function reapStuckGeneratingDeliveryRuns(
   }
 
   try {
-    const stuckCutoff = cutoffIso(now, DELIVERY_GENERATING_STUCK_MINUTES);
+    // Use the lower REFIRE threshold (5 min) so we inspect runs early enough
+    // to autonomously re-fire a dropped HTTP hop before the 15-min
+    // providers-failed window kicks in.
+    const refireCutoff = cutoffIso(now, DELIVERY_GENERATING_REFIRE_MINUTES);
 
-    // Find runs stuck at 'generating' with no error yet, old enough to inspect.
+    // Include created_at so we can compute the recovery-window age for Path A.
     const { data: candidates, error: selErr } = await db
       .from("delivery_runs")
-      .select("id, property_id, updated_at")
+      .select("id, property_id, updated_at, created_at")
       .eq("stage", "generating")
       .is("error", null)
-      .lt("updated_at", stuckCutoff);
+      .lt("updated_at", refireCutoff);
 
     if (selErr) {
       console.error("[stuck-reaper] reapStuckGeneratingDeliveryRuns select failed:", selErr.message);
       return { reaped: 0, ids: [] };
     }
 
-    const rows = (candidates ?? []) as Array<{ id: string; property_id: string; updated_at: string }>;
+    const rows = (candidates ?? []) as Array<{
+      id: string;
+      property_id: string;
+      updated_at: string;
+      created_at: string;
+    }>;
     if (rows.length === 0) return { reaped: 0, ids: [] };
 
-    // setRunError lives in lib/delivery/runs.js; dynamic-import so tests can
-    // mock it independently of the static module graph.
-    const { setRunError } = await import("../delivery/runs.js");
+    // Dynamic-import so tests can mock independently of the static module graph.
+    // The JS module system caches these after the first call.
+    const { setRunError, updateRun } = await import("../delivery/runs.js");
 
     let reaped = 0;
     const ids: string[] = [];
+    // Cap: at most 1 re-fire per cron invocation. The director takes ~70s, so
+    // firing several serially would blow the cron's 300s budget.
+    let refiresThisTick = 0;
 
     for (const row of rows) {
       try {
@@ -725,32 +755,100 @@ export async function reapStuckGeneratingDeliveryRuns(
 
         const scenes = (sceneData ?? []) as Array<{ status: string; clip_url: string | null }>;
 
-        // Death test — see the function doc. Default to NOT dead.
-        const isDead =
-          scenes.length === 0 ||
-          scenes.every((s) => s.status === "needs_review" && s.clip_url == null);
+        if (scenes.length === 0) {
+          // ── Path A: no scenes — director/submit never ran (the HTTP hop dropped).
+          const ageFromCreatedMin =
+            (now.getTime() - new Date(row.created_at).getTime()) / 60_000;
 
-        if (!isDead) {
-          // Still progressing or partially succeeded — leave it alone. This is
-          // the no-false-positive guard for healthy in-progress runs.
-          continue;
+          if (ageFromCreatedMin >= DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES) {
+            // Give up — past the recovery window; surface to operator.
+            const { updatePropertyStatus } = await import("../db.js");
+            await setRunError(
+              row.id,
+              "generation stalled — no scenes were created after auto-retry; rerun to retry",
+            );
+            await updatePropertyStatus(row.property_id, "failed");
+            console.warn(
+              `[stuck-reaper] delivery_run ${row.id} (property ${row.property_id}) exhausted re-fire window (${ageFromCreatedMin.toFixed(1)}min) — marked failed`,
+            );
+            reaped++;
+            ids.push(row.id);
+          } else {
+            // Within recovery window — re-fire, capped at 1 per tick.
+            if (refiresThisTick >= 1) {
+              // Another re-fire is already in flight this tick; leave this row
+              // for the next cron tick (1 min later) — do NOT stamp an error.
+              continue;
+            }
+
+            // Bump updated_at BEFORE the awaited pipeline call so the next
+            // overlapping cron tick sees a recent updated_at and skips this row,
+            // preventing a double re-fire while the director (~70s) is still running.
+            // updateRun always sets updated_at to the real current time regardless
+            // of what's in the patch; the explicit field documents the intent.
+            await updateRun(row.id, { updated_at: now.toISOString() });
+
+            try {
+              const { continuePipelineAfterPhotoSelection } = await import(
+                "../pipeline.js"
+              );
+              await continuePipelineAfterPhotoSelection(row.property_id, {
+                order_mode: "operator",
+                delivery_run_id: row.id,
+              });
+              console.warn(
+                `[stuck-reaper] delivery_run ${row.id} auto-re-fired continuePipelineAfterPhotoSelection (age ${ageFromCreatedMin.toFixed(1)}min)`,
+              );
+            } catch (e) {
+              await setRunError(
+                row.id,
+                `Generation auto-retry failed: ${e instanceof Error ? e.message : String(e)}`,
+              );
+              console.warn(
+                `[stuck-reaper] delivery_run ${row.id} re-fire threw — error stamped`,
+              );
+            }
+
+            refiresThisTick++;
+            reaped++;
+            ids.push(row.id);
+          }
+        } else {
+          const allNeedsReviewNoClip = scenes.every(
+            (s) => s.status === "needs_review" && s.clip_url == null,
+          );
+
+          if (!allNeedsReviewNoClip) {
+            // ── Path C: some scene is progressing or has a clip — not dead.
+            // This is the no-false-positive guard for healthy in-progress runs.
+            continue;
+          }
+
+          // ── Path B: all scenes bounced to needs_review with no clip (providers
+          // all permanent-failed). NOT re-fireable — re-running would insert
+          // duplicate scenes on top of the existing ones.
+          // Wait until DELIVERY_GENERATING_STUCK_MINUTES (15) from updated_at —
+          // at 5–14 min the scenes may still be mid-render.
+          const ageFromUpdatedMin =
+            (now.getTime() - new Date(row.updated_at).getTime()) / 60_000;
+
+          if (ageFromUpdatedMin < DELIVERY_GENERATING_STUCK_MINUTES) {
+            continue; // Too early — may still be rendering.
+          }
+
+          const { updatePropertyStatus } = await import("../db.js");
+          await setRunError(
+            row.id,
+            "generation stalled — all scenes need review with no clip (providers failed); rerun to retry",
+          );
+          await updatePropertyStatus(row.property_id, "needs_review");
+          console.warn(
+            `[stuck-reaper] delivery_run ${row.id} dead at 'generating' (${scenes.length} scene(s) all needs_review/no-clip) — annotated`,
+          );
+
+          reaped++;
+          ids.push(row.id);
         }
-
-        const reason =
-          scenes.length === 0
-            ? "generation stalled — no scenes were created (director or submit failed); rerun to retry"
-            : "generation stalled — all scenes need review with no clip (providers failed); rerun to retry";
-
-        // setRunError bumps updated_at, so the same run won't be re-annotated
-        // on the next cron tick. If setRunError itself throws, the per-row
-        // catch below logs it; we never re-annotate a healthy run.
-        await setRunError(row.id, reason);
-        console.warn(
-          `[stuck-reaper] delivery_run ${row.id} dead at 'generating' (${scenes.length} scene(s)) — annotated: ${reason}`,
-        );
-
-        reaped++;
-        ids.push(row.id);
       } catch (rowErr) {
         console.warn(
           `[stuck-reaper] reapStuckGeneratingDeliveryRuns failed for run ${row.id}:`,
