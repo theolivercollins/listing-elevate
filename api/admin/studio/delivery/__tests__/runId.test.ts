@@ -1757,3 +1757,120 @@ describe('POST rerun (T-rerun)', () => {
     expect(mockRunAssembleStage).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// POST retry action (T-retry)
+// ---------------------------------------------------------------------------
+
+describe('POST retry (T-retry)', () => {
+  /** Wire up db.from('scenes') to return the given scene rows. */
+  function setScenesResult(scenes: { id: string }[]) {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'scenes') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: scenes, error: null }),
+          }),
+        };
+      }
+      if (table === 'properties') return { select: mockDbSelect };
+      if (table === 'music_tracks') return { insert: mockDbInsert };
+      return { update: mockDbUpdate };
+    });
+  }
+
+  it('retry at generating with ZERO scenes → calls continuePipelineAfterPhotoSelection once and returns 200 with refreshed run; does NOT call clearRunError', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    const refreshedRun = { ...run, stage: 'generating', refreshed: true };
+    mockGetRun
+      .mockResolvedValueOnce(generatingRun)
+      .mockResolvedValueOnce(refreshedRun);
+    setScenesResult([]);
+    mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledTimes(1);
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
+      order_mode: 'operator',
+      delivery_run_id: 'r1',
+    });
+    expect((res._body as { run: unknown }).run).toEqual(refreshedRun);
+    expect(mockClearRunError).not.toHaveBeenCalled();
+  });
+
+  it('retry at generating with ZERO scenes and continuePipelineAfterPhotoSelection throws → calls setRunError and returns 500', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([]);
+    mockContinuePipelineAfterPhotoSelection.mockRejectedValue(new Error('director scripting failed'));
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(500);
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Generation resume failed'));
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('director scripting failed'));
+    expect(mockClearRunError).not.toHaveBeenCalled();
+    expect((res._body as { status: string }).status).toBe('failed');
+  });
+
+  it('retry at generating WITH existing scenes → falls through to clearRunError (no continue call)', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    const clearedRun = { ...run, stage: 'generating', error: null };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([{ id: 'scene-1' }, { id: 'scene-2' }]);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
+  it('retry at a non-generating stage (voiceover) → clearRunError as before, no continue call', async () => {
+    const voiceoverRun = { ...run, stage: 'voiceover' };
+    const clearedRun = { ...run, stage: 'voiceover', error: null };
+    mockGetRun.mockResolvedValueOnce(voiceoverRun);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
+  it('retry → 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValueOnce(null);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(404);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).not.toHaveBeenCalled();
+  });
+});

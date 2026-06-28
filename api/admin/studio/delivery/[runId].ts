@@ -232,8 +232,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ run });
         }
         case 'retry': {
-          const run = await clearRunError(runId);
-          return res.status(200).json({ run });
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+
+          // Only the 'generating'-stage zero-scene stall needs a real re-fire;
+          // other stages keep the existing clear-error behavior.
+          if (run.stage === 'generating') {
+            const db = (await import('../../../../lib/client.js')).getSupabase();
+            const { data: scenes } = await db.from('scenes').select('id').eq('property_id', run.property_id);
+            const sceneCount = (scenes ?? []).length;
+            if (sceneCount === 0) {
+              // Re-fire generation reliably (AWAITED — cannot be dropped). Mirror
+              // api/pipeline/continue/[runId].ts: setRunError on throw so failures
+              // stay visible.
+              try {
+                const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+                await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
+                const refreshed = await getRun(runId);
+                return res.status(200).json({ run: refreshed });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await setRunError(runId, `Generation resume failed: ${msg}`);
+                return res.status(500).json({ status: 'failed', runId, error: msg });
+              }
+            }
+            // generating stage but scenes already exist → don't duplicate;
+            // fall through to clear-error.
+          }
+
+          const cleared = await clearRunError(runId);
+          return res.status(200).json({ run: cleared });
         }
         case 'scrape': {
           const { runScrapeStage } = await import('../../../../lib/delivery/scrape.js');
