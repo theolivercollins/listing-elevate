@@ -1,0 +1,218 @@
+/**
+ * Framework-agnostic helpers for Google Drive OAuth + Picker integration.
+ *
+ * Design goals:
+ *  - Scripts injected lazily on first use; index.html untouched.
+ *  - Pure-ish functions (accept fetchFn) so unit tests can mock without
+ *    patching globals.
+ *  - No React/component dependencies — usable from any context.
+ */
+
+// ─── Script loader ─────────────────────────────────────────────────────────────
+
+const _scriptPromises = new Map<string, Promise<void>>();
+
+export function loadScript(src: string): Promise<void> {
+  if (_scriptPromises.has(src)) return _scriptPromises.get(src)!;
+  const p = new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
+    if (existing) {
+      // Script already injected by something else — wait for it if still loading,
+      // or resolve immediately if already loaded.
+      if (existing.dataset.loaded) {
+        resolve();
+        return;
+      }
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => reject(new Error(`Script failed: ${src}`)));
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = () => {
+      s.dataset.loaded = '1';
+      resolve();
+    };
+    s.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    document.head.appendChild(s);
+  });
+  _scriptPromises.set(src, p);
+  return p;
+}
+
+const GIS_URL = 'https://accounts.google.com/gsi/client';
+const GAPI_URL = 'https://apis.google.com/js/api.js';
+
+// ─── OAuth access token ────────────────────────────────────────────────────────
+
+/**
+ * Initiates an interactive Google OAuth2 implicit-grant flow via GIS and
+ * resolves with the short-lived access token.
+ * Rejects if the user closes the popup or an error occurs.
+ */
+export function requestDriveAccessToken({ clientId }: { clientId: string }): Promise<string> {
+  return loadScript(GIS_URL).then(
+    () =>
+      new Promise<string>((resolve, reject) => {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: 'https://www.googleapis.com/auth/drive.readonly',
+          callback: (response) => {
+            if (response.access_token) {
+              resolve(response.access_token);
+            } else {
+              reject(new Error(`OAuth error: ${response.error ?? 'unknown'}`));
+            }
+          },
+          error_callback: (err) => reject(new Error(err.message)),
+        });
+        client.requestAccessToken();
+      }),
+  );
+}
+
+// ─── Google Picker ─────────────────────────────────────────────────────────────
+
+export interface DrivePicked {
+  id: string;
+  name: string;
+  mimeType: string;
+}
+
+/**
+ * Opens the Google Picker UI.  Resolves with the array of selected docs
+ * (files and/or folders) on PICKED, or an empty array on CANCEL.
+ *
+ * The picker is configured with:
+ *   - DOCS view that shows images and folders
+ *   - Folder select + folder display enabled
+ *   - Multi-select enabled
+ */
+export function openPicker({
+  accessToken,
+  apiKey,
+  appId,
+}: {
+  accessToken: string;
+  apiKey: string;
+  appId: string;
+}): Promise<DrivePicked[]> {
+  return loadScript(GAPI_URL).then(
+    () =>
+      new Promise<DrivePicked[]>((resolve) => {
+        gapi.load('picker', () => {
+          const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+            .setIncludeFolders(true)
+            .setSelectFolderEnabled(true);
+
+          const picker = new google.picker.PickerBuilder()
+            .addView(view)
+            .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+            .setOAuthToken(accessToken)
+            .setDeveloperKey(apiKey)
+            .setAppId(appId)
+            .setCallback((data) => {
+              if (data.action === google.picker.Action.PICKED) {
+                resolve(
+                  (data.docs ?? []).map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    mimeType: d.mimeType,
+                  })),
+                );
+              } else if (data.action === google.picker.Action.CANCEL) {
+                resolve([]);
+              }
+              // LOADED action is ignored — we wait for PICKED or CANCEL.
+            })
+            .build();
+
+          picker.setVisible(true);
+        });
+      }),
+  );
+}
+
+// ─── Expand folders → flat image list ─────────────────────────────────────────
+
+const DRIVE_FILES_API = 'https://www.googleapis.com/drive/v3/files';
+const IMAGE_CAP = 200;
+
+interface DriveFilesResponse {
+  files?: Array<{ id: string; name: string; mimeType: string }>;
+}
+
+/**
+ * Expands any folder items in `picked` into their child image files via the
+ * Drive v3 Files API.  Non-image, non-folder items are dropped.
+ *
+ * Results are capped at 200 images (logged when truncated).
+ *
+ * @param fetchFn  Injected fetch — defaults to the global `fetch` so
+ *                 callers can pass a mock for unit testing.
+ */
+export async function expandFoldersToImages(
+  picked: DrivePicked[],
+  accessToken: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<DrivePicked[]> {
+  const results: DrivePicked[] = [];
+
+  for (const item of picked) {
+    if (results.length >= IMAGE_CAP) break;
+
+    if (item.mimeType === 'application/vnd.google-apps.folder') {
+      // List immediate children that are images
+      const q = `'${item.id}' in parents and mimeType contains 'image/'`;
+      const url = `${DRIVE_FILES_API}?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType)&pageSize=1000`;
+      const res = await fetchFn(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        throw new Error(`Drive API error ${res.status} listing folder "${item.name}"`);
+      }
+      const data: DriveFilesResponse = await res.json();
+      for (const f of data.files ?? []) {
+        results.push({ id: f.id, name: f.name, mimeType: f.mimeType });
+        if (results.length >= IMAGE_CAP) {
+          console.warn(`[google-picker] Truncated to ${IMAGE_CAP} images — some files were not imported`);
+          return results;
+        }
+      }
+    } else if (item.mimeType.startsWith('image/')) {
+      results.push(item);
+      if (results.length >= IMAGE_CAP) {
+        console.warn(`[google-picker] Truncated to ${IMAGE_CAP} images — some files were not imported`);
+        return results;
+      }
+    }
+    // Non-image, non-folder items are silently dropped per spec.
+  }
+
+  return results;
+}
+
+// ─── Download a Drive file ─────────────────────────────────────────────────────
+
+/**
+ * Downloads a Drive file by ID via the alt=media endpoint and returns it as a
+ * browser `File` object, ready to be handed to any upload path.
+ *
+ * @param fetchFn  Injected fetch — defaults to the global `fetch` so
+ *                 callers can pass a mock for unit testing.
+ */
+export async function downloadDriveFile(
+  { id, name, mimeType }: DrivePicked,
+  accessToken: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<File> {
+  const res = await fetchFn(`${DRIVE_FILES_API}/${id}?alt=media`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Drive download error ${res.status} for file "${name}" (id: ${id})`);
+  }
+  const blob = await res.blob();
+  return new File([blob], name, { type: mimeType });
+}

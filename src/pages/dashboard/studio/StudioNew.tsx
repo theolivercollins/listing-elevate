@@ -12,6 +12,7 @@ import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
 import { DrivePullPanel, type DrivePullResult } from '@/components/studio/DrivePullPanel';
+import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
@@ -719,7 +720,7 @@ const StudioNew = () => {
                   <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
                     or click to browse — JPG, PNG, HEIC, WebP
                   </p>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
@@ -734,6 +735,17 @@ const StudioNew = () => {
                     >
                       Import ZIP
                     </button>
+                    {/* Drive upload — only rendered when VITE_GOOGLE_* env vars are set */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DriveUploadButton
+                        onFilesImported={(imported) =>
+                          setFiles((prev) => {
+                            const seen = new Set(prev.map((f) => f.id));
+                            return [...prev, ...imported.filter((f) => !seen.has(f.id))];
+                          })
+                        }
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

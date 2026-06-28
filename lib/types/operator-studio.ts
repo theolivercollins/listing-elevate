@@ -107,7 +107,8 @@ export type ListingDetails = {
   baths?: number | null;
   sqft?: number | null;
   mls_description?: string | null;
-  source?: 'scraped' | 'manual';
+  /** 'scraped' = Redfin/Apify; 'prefill' = Drive-pull pre-fill (beds/baths/price already known); 'manual' = operator-entered after scrape miss. */
+  source?: 'scraped' | 'prefill' | 'manual';
 };
 
 export type DeliveryRunRow = {

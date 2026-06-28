@@ -144,6 +144,44 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
   }
   const propertyId: string = (property as { id: string }).id;
 
+  // Backfill: attribute the most-recent orphaned pre-fill cost_event to the new
+  // property. When the Drive-pull UI calls scrapeRedfinByAddress BEFORE the
+  // order is submitted, the cost_event is written with property_id = null (no
+  // property row exists yet). Now that we have the UUID, update that row.
+  //
+  // Guard: only the most recent matching row within the last 2 hours to
+  // minimise cross-order mis-attribution on addresses that appear more than
+  // once in a short window.
+  //
+  // Best-effort: a failure must never throw or fail the order.
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data: orphan } = await supabase
+      .from('cost_events')
+      .select('id')
+      .is('property_id', null)
+      .eq('provider', 'apify')
+      .filter('metadata->>address', 'eq', address)
+      .gte('created_at', twoHoursAgo)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (orphan) {
+      const { error: backfillErr } = await supabase
+        .from('cost_events')
+        .update({ property_id: propertyId })
+        .eq('id', (orphan as { id: string }).id);
+      if (backfillErr) {
+        console.error('[ingest] cost_event backfill update failed:', backfillErr.message);
+      }
+    }
+  } catch (err) {
+    console.error(
+      '[ingest] cost_event backfill failed (non-fatal):',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
   // 2. Insert photo rows into the shared `photos` table.
   //    file_url must be an absolute public URL so the pipeline analyzer can
   //    fetch() it. toPublicPhotoUrl() expands bare storage paths (e.g.
