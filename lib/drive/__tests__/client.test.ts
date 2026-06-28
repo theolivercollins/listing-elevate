@@ -188,6 +188,92 @@ describe("auth selection", () => {
     // Should use the SA path, not the (incomplete) OAuth path
     expect(capturedBodies[0]).toContain("jwt-bearer");
   });
+
+  it("OAuth wins over SA when both OAuth vars and GOOGLE_DRIVE_SA_JSON are set", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN = "oauth-refresh-token";
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson; // also present — should be ignored
+
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string ?? "");
+          return mockJsonResponse({ access_token: "oauth-wins-tok", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-oauth-wins");
+
+    // Must use refresh_token grant (OAuth), NOT the SA JWT-bearer
+    expect(capturedBodies).toHaveLength(1);
+    expect(capturedBodies[0]).toContain("grant_type=refresh_token");
+    expect(capturedBodies[0]).not.toContain("jwt-bearer");
+  });
+
+  it("propagates the OAuth-sourced access token as Bearer to Drive API calls", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN = "oauth-refresh-token";
+
+    const capturedAuthHeaders: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "oauth-bearer-check", expires_in: 3600 });
+        }
+        const headers = (opts?.headers ?? {}) as Record<string, string>;
+        capturedAuthHeaders.push(headers["Authorization"] ?? "");
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-bearer");
+
+    expect(capturedAuthHeaders.length).toBeGreaterThan(0);
+    expect(capturedAuthHeaders[0]).toBe("Bearer oauth-bearer-check");
+  });
+
+  it("throws DriveUnconfiguredError when only 1 of 3 OAuth vars is set and no SA", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    // Missing clientSecret, refreshToken — no SA either
+
+    await expect(listPropertyFolders("parent-partial-1")).rejects.toBeInstanceOf(
+      DriveUnconfiguredError,
+    );
+  });
+
+  it("throws with [drive/client] OAuth token refresh failed when OAuth endpoint returns an error", async () => {
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "oauth-client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "oauth-client-secret";
+    process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN = "oauth-refresh-token";
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return {
+            ok: false,
+            status: 401,
+            text: async () => "invalid_grant",
+          };
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await expect(listPropertyFolders("parent-oauth-err")).rejects.toThrow(
+      "[drive/client] OAuth token refresh failed 401",
+    );
+  });
 });
 
 // ─── 3. Token exchange and caching ───────────────────────────────────────────
