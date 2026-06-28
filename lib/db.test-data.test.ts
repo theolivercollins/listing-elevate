@@ -172,3 +172,46 @@ describe("recordCostEvent — is_test marker", () => {
     expect(hit!.payload).toMatchObject({ is_test: false });
   });
 });
+
+// ── rewritePromptWithDirectives (direct cost_events insert) ──────────────────
+// Spot-checks one of the ~15 sites that insert into cost_events directly
+// (bypassing recordCostEvent). lib/refine-prompt.ts is representative:
+// it constructs and fires a cost_events insert with is_test: isNonProdEnv().
+
+// Stub Anthropic — refine-prompt.ts calls the Anthropic SDK.
+vi.mock("@anthropic-ai/sdk", () => ({
+  default: class FakeAnthropic {
+    messages = {
+      create: vi.fn().mockResolvedValue({
+        content: [{ type: "text", text: "rewritten prompt" }],
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }),
+    };
+  },
+}));
+
+describe("refine-prompt (direct cost_events insert) — is_test marker", () => {
+  it("sets is_test=true on a non-prod deploy", async () => {
+    process.env.VERCEL_ENV = "development";
+    delete process.env.LE_ALLOW_NONPROD_WRITES;
+
+    const { rewritePromptWithDirectives } = await import("./refine-prompt.js");
+    await rewritePromptWithDirectives({ basePrompt: "original prompt", directives: "", isPaired: false });
+
+    const hit = inserts.find((i) => i.table === "cost_events");
+    expect(hit).toBeDefined();
+    expect(hit!.payload).toMatchObject({ is_test: true });
+  });
+
+  it("sets is_test=false on production", async () => {
+    process.env.VERCEL_ENV = "production";
+    delete process.env.LE_ALLOW_NONPROD_WRITES;
+
+    const { rewritePromptWithDirectives } = await import("./refine-prompt.js");
+    await rewritePromptWithDirectives({ basePrompt: "original prompt", directives: "", isPaired: false });
+
+    const hit = inserts.find((i) => i.table === "cost_events");
+    expect(hit).toBeDefined();
+    expect(hit!.payload).toMatchObject({ is_test: false });
+  });
+});

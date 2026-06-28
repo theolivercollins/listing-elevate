@@ -148,9 +148,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 5) Budget totals.
     const [today0 , ] = [new Date(new Date().toDateString()).toISOString()];
     const [{ data: todayRows }, { data: rows7d }, { data: rows30d }] = await Promise.all([
-      supabase.from("cost_events").select("cost_cents").gte("created_at", today0),
-      supabase.from("cost_events").select("cost_cents").gte("created_at", SINCE_7D()),
-      supabase.from("cost_events").select("cost_cents").gte("created_at", SINCE_30D()),
+      supabase.from("cost_events").select("cost_cents").eq("is_test", false).gte("created_at", today0),
+      supabase.from("cost_events").select("cost_cents").eq("is_test", false).gte("created_at", SINCE_7D()),
+      supabase.from("cost_events").select("cost_cents").eq("is_test", false).gte("created_at", SINCE_30D()),
     ]);
     const sumCents = (rows?: Array<{ cost_cents: number | null }> | null) =>
       (rows ?? []).reduce((s, r) => s + (typeof r.cost_cents === "number" ? r.cost_cents : 0), 0);

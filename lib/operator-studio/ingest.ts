@@ -11,6 +11,7 @@
 
 import { getSupabase } from '../client.js';
 import type { ManualIngestInput } from '../types/operator-studio.js';
+import { isNonProdEnv } from '../env.js';
 
 /**
  * Convert a raw Supabase storage path to an absolute public URL.
@@ -136,6 +137,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       days_on_market: days_on_market ?? null,
       sold_price: sold_price ?? null,
       pipeline_mode: pipeline_mode ?? 'v1.1',
+      is_test: isNonProdEnv(),
     })
     .select()
     .single();

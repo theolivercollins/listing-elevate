@@ -20,6 +20,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: events } = await supabase
     .from("cost_events")
     .select("provider, stage, cost_cents, metadata, created_at")
+    .eq("is_test", false)
     .gte("created_at", thirtyAgo.toISOString())
     .limit(50000);
 
