@@ -146,6 +146,19 @@ Legacy: `match_lab_iterations` (unused since unified embeddings shipped).
 | `QC_AUTO_APPROVE_ALL` | `false` | Skip QC approval (dead code path, but env checked) |
 | `HIGGSFIELD_CENTS_PER_CREDIT` | `1` | Cost estimate (deferred provider) |
 
+### Drive Pull (Brian-only)
+
+Required when the `DrivePullPanel` feature is active (scoped to `VITE_DRIVE_PULL_CLIENT_ID`).
+All three are live on Vercel prod + preview as of 2026-06-30.
+
+| Variable | Purpose |
+|---|---|
+| `GOOGLE_DRIVE_SA_JSON` | Base64-encoded service-account JSON key for `le-drive-reader@le-drive-430124.iam.gserviceaccount.com` (read-only Drive scope). Active auth path in `lib/drive/client.ts`. |
+| `DRIVE_PARENT_FOLDER_ID` | ID of the "2026 Listing Photos" Compass Shared Drive folder (`1yl536Y_S-rxIYBV_F-jmD4e9Avr5bWkI`). Also read from `DRIVE_WATCHED_FOLDER_ID` as a legacy alias. |
+| `VITE_DRIVE_PULL_CLIENT_ID` | Brian Helgemo's `clients.id` (`5321897b-3cc8-4c27-8619-e75bc216bc9e`). Client-side Vite env; gates the `DrivePullPanel` in `StudioNew.tsx`. |
+
+Note: `lib/drive/client.ts` also accepts `GOOGLE_DRIVE_OAUTH_CLIENT_ID` + `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` + `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN` as an OAuth refresh-token path (takes priority if all three are set), but this path is not in use; SA is active.
+
 ## Key Directories
 
 ```

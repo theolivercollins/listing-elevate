@@ -1,8 +1,8 @@
 # Pull from Google Drive (Operator Studio, Brian-only) — design
 
 **Date:** 2026-06-26
-**Status:** Approved (chat), ready for implementation
-**Branch:** `feat/drive-pull-brian-d7`
+**Status:** Built + verified; PR to main pending (branch `feat/drive-pull-brian-finish`)
+**Branch:** `feat/drive-pull-brian-finish` (originally `feat/drive-pull-brian-d7`)
 
 ## Goal
 
@@ -83,19 +83,46 @@ The pull endpoint does **not** create a property; the form's existing submit doe
 
 | Var | Purpose |
 |---|---|
-| `GOOGLE_DRIVE_SA_JSON` | base64 service-account key (read-only Drive scope) |
-| `DRIVE_PARENT_FOLDER_ID` | the `2026 listing photos` folder id |
-| `DRIVE_PULL_CLIENT_ID` | Brian's `clients.id` (gates the feature) |
+| `GOOGLE_DRIVE_SA_JSON` | base64 service-account JSON key (read-only Drive scope) — active auth path |
+| `DRIVE_PARENT_FOLDER_ID` | the "2026 Listing Photos" Shared Drive folder id (`1yl536Y_S-rxIYBV_F-jmD4e9Avr5bWkI`) |
+| `VITE_DRIVE_PULL_CLIENT_ID` | Brian's `clients.id` (client-side Vite env; gates the `DrivePullPanel` in `StudioNew.tsx`) |
+
+`GOOGLE_DRIVE_OAUTH_CLIENT_ID` / `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` / `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN` — optional OAuth path in `lib/drive/client.ts`; if all three are set they take priority over SA. Not in use; left as a future-fallback hook.
 
 `APIFY_API_TOKEN` (Redfin) already present in `.env.local`.
 
-## Setup (collaborative, before/parallel to build)
+## Auth resolution (implemented 2026-06-30)
 
-1. Install gcloud (`brew install --cask google-cloud-sdk`); Oliver runs `! gcloud auth login`.
-2. Script (CLI): pick/create project, enable Drive API, create service account + JSON key,
-   base64 it → save to `~/credentials.md` + LE `.env.local` + Vercel env (preview).
-3. Oliver shares `2026 listing photos` with the SA email (Viewer) in Drive; capture the
-   folder id from the URL. Save Brian's `clients.id` (from `GET /api/admin/studio/clients`).
+The "2026 Listing Photos" folder is a **Compass-owned Shared Drive** (driveId
+`0AKsR8IWPn6Q3Uk9PVA`), not a regular My-Drive folder. This required two things beyond
+the original spec:
+
+1. The SA `le-drive-reader@le-drive-430124.iam.gserviceaccount.com` was added as a **Viewer
+   on the Shared Drive** (not just on the folder), which grants access to all subfolders.
+2. Every Drive v3 list/get call in `lib/drive/client.ts` sends
+   `supportsAllDrives=true`, `includeItemsFromAllDrives=true`, and `corpora=allDrives`
+   — without these params the API silently returns zero results for Shared Drive items.
+
+`lib/drive/client.ts` auth selector (runtime):
+- If `GOOGLE_DRIVE_OAUTH_CLIENT_ID` + `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` +
+  `GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN` are **all set** → OAuth refresh-token path (higher
+  quota, user context).
+- Otherwise → `GOOGLE_DRIVE_SA_JSON` (active path in prod).
+
+**Verified live:** SA pull listed 137 address folders, found a `Final` subfolder with 72
+images, and downloaded a real 622 KB JPEG end-to-end. All three env vars are live on
+Vercel prod + preview as of 2026-06-30.
+
+## Setup (completed 2026-06-30)
+
+1. GCP project `le-drive-430124`, Drive API enabled.
+2. SA `le-drive-reader@le-drive-430124.iam.gserviceaccount.com` created; JSON key
+   base64-encoded → saved to `~/credentials.md` + LE `.env.local` +
+   Vercel env (prod + preview) as `GOOGLE_DRIVE_SA_JSON`.
+3. SA added as Viewer on the Compass Shared Drive (driveId `0AKsR8IWPn6Q3Uk9PVA`).
+   Parent folder id `1yl536Y_S-rxIYBV_F-jmD4e9Avr5bWkI` captured and stored as
+   `DRIVE_PARENT_FOLDER_ID`. Brian's `clients.id`
+   `5321897b-3cc8-4c27-8619-e75bc216bc9e` stored as `VITE_DRIVE_PULL_CLIENT_ID`.
 
 ## Out of scope (YAGNI)
 
