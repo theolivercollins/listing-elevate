@@ -42,7 +42,7 @@ function RatingWidget({
   const [expanded, setExpanded] = useState<boolean>(!!scene.rating);
   const [justSaved, setJustSaved] = useState(false);
 
-  async function save(nextRating: number, nextComment: string, nextTags: string[]) {
+  async function save(nextRating: number, nextComment: string, nextTags: string[], rollbackRating?: number) {
     setSaving(true);
     try {
       const row = await rateScene(
@@ -55,6 +55,10 @@ function RatingWidget({
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 1500);
     } catch (err) {
+      // Roll back the optimistic star change if this call came from clickStar.
+      if (rollbackRating !== undefined) {
+        setRating(rollbackRating);
+      }
       alert(`Rating save failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSaving(false);
@@ -62,9 +66,11 @@ function RatingWidget({
   }
 
   function clickStar(value: number) {
+    // Optimistic: show stars immediately; pass previous value for rollback on error.
+    const prevRating = rating;
     setRating(value);
     setExpanded(true);
-    save(value, comment, tags);
+    save(value, comment, tags, prevRating);
   }
 
   function toggleTag(tag: string) {
