@@ -53,6 +53,12 @@ import "@/v3/styles/glass.css";
 // Voice catalog for the AI voiceover panel — kept in sync with lib/voiceover/voices.ts
 const VOICE_CATALOG = [
   {
+    id: "nPczCjzI2devNBz1zQrb",
+    name: "Brian",
+    gender: "Male" as const,
+    description: "Deep, resonant, comforting narrator",
+  },
+  {
     id: "UgBBYS2sOqTuMpoF3BR0",
     name: "Mark",
     gender: "Male" as const,

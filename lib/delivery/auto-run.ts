@@ -694,7 +694,7 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
       'Available voices:',
       voiceLines,
       '',
-      'Reply with ONLY the voice name (e.g. Amanda).',
+      'Reply with ONLY the voice name (e.g. Brian).',
     ].filter(Boolean).join('\n');
 
     const voiceResponse = await client.messages.create({
