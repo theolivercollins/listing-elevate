@@ -537,6 +537,29 @@ describe('resolvePhotoSelection', () => {
     expect(applyPhotoSelectionForRun).not.toHaveBeenCalled();
   });
 
+  it('continue hop fires even when recordMlEvent rejects (telemetry must not block the hop)', async () => {
+    const ids = Array.from({ length: 9 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    // Telemetry throws — the hop must still have fired before this and advanced returned.
+    (recordMlEvent as Mock).mockRejectedValue(new Error('ml_events insert failed'));
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', 'listingelevate.vercel.app');
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Hop fired before telemetry — must be present regardless of recordMlEvent outcome.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://listingelevate.vercel.app/api/pipeline/continue/run-1`,
+      { method: 'POST' },
+    );
+    // Returns advanced despite the telemetry error (best-effort).
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+  });
+
   it('continue hop is skipped gracefully when VERCEL_URL is unset', async () => {
     const ids = Array.from({ length: 8 }, (_, i) => `photo-${i + 1}`);
     (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });

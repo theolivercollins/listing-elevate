@@ -495,17 +495,11 @@ export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOu
   // to 'generating' — do NOT call advanceRun after this.
   await applyPhotoSelectionForRun(run.id, { photo_order: selected_photo_ids });
 
-  await recordMlEvent(run.id, 'auto_advance', {
-    source: 'auto',
-    gate: 'photo_selection',
-    confidence: 1,
-    selected_count: selected_photo_ids.length,
-  });
-
-  // Trigger the post-approval continue hop exactly as the operator route does:
-  // fire-and-forget POST to /api/pipeline/continue/[runId] on a fresh function.
-  // Uses VERCEL_URL (always set in Vercel runtimes) as the host.
-  // The generating-stage reaper is the backstop if the hop fails to land.
+  // Fire the continue hop FIRST — unconditionally, before any await that could
+  // throw. The run is already at 'generating'; if telemetry below throws the
+  // hop has still landed so the pipeline resumes. Same ordering guarantee the
+  // operator route uses. Fire-and-forget; the generating-stage reaper backstops
+  // a hop that fails to land. Uses VERCEL_URL (always set in Vercel runtimes).
   const host = process.env.VERCEL_URL;
   if (host) {
     const continueUrl = `https://${host}/api/pipeline/continue/${encodeURIComponent(run.id)}`;
@@ -514,6 +508,19 @@ export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOu
     });
   } else {
     console.warn(`[auto-run] photo_selection: VERCEL_URL unset — continue hop skipped; reaper will recover`);
+  }
+
+  // Telemetry is best-effort: a DB hiccup must not prevent the function from
+  // returning 'advanced' (the hop has already fired above).
+  try {
+    await recordMlEvent(run.id, 'auto_advance', {
+      source: 'auto',
+      gate: 'photo_selection',
+      confidence: 1,
+      selected_count: selected_photo_ids.length,
+    });
+  } catch (e) {
+    console.error(`[auto-run] photo_selection: recordMlEvent failed (non-fatal, hop already fired)`, e);
   }
 
   return { action: 'advanced', to: 'generating' };
