@@ -30,7 +30,7 @@ NPM: `@anthropic-ai/sdk ^0.39.0`, `@google/genai ^1.50`. OpenAI called via raw f
 
 | Provider | Status | Strengths | Notes |
 |---|---|---|---|
-| **Atlas Cloud** | Active (Lab listings) | Aggregator exposing 6 Kling SKUs via one key + endpoint; supports `negative_prompt`, `cfg_scale`, `end_image` | Env `ATLASCLOUD_API_KEY`, `ATLAS_VIDEO_MODEL` (default **`kling-v2-6-pro`**, changed 2026-04-20). Models: kling-v3-pro ($0.095), kling-v3-std ($0.071), kling-v2-6-pro ($0.060 = **$0.60/clip**), kling-v2-1-pair ($0.076, start-end-frame SKU, auto-selected for paired scenes), kling-v2-master ($0.221, no end-frame), kling-o3-pro ($0.095) |
+| **Atlas Cloud** | Active (prod + Lab) | Aggregator exposing Kling + Seedance SKUs via one key + endpoint; supports `negative_prompt`, `cfg_scale`, `end_image`, `resolution` | Env `ATLASCLOUD_API_KEY`, `ATLAS_VIDEO_MODEL` (default **`kling-v2-6-pro`**). Kling SKUs: kling-v3-pro ($0.475/5s), kling-v3-std ($0.355/5s), kling-v2-6-pro ($0.60/5s, v1 default), kling-v2-1-pair ($0.38/5s, start-end-frame, auto-routed for paired scenes), kling-v2-master ($1.105/5s, no end-frame), kling-o3-pro ($0.475/5s). Seedance SKUs: seedance-pro-pushin (9.6¢/s, push-in/v1.1 default), **seedance-2-0-4k** (11.2¢/s, UHD 3840×2160 HEVC, added 2026-06-26). Operator SKU picker (`properties.video_model_sku`) overrides routing at RULE 0 — terminal, no failover. `lib/providers/atlas.ts::ATLAS_MODELS` is the server-side source of truth; `getOperatorVideoSkus()` returns the ordered picker list. |
 | **Kling (native)** | Active (Lab listings) | Oliver's pre-paid Kling credits; $0 variable cost | Model key `kling-v2-native`. Routes via `lib/providers/kling.ts`. 402/credit-exhaustion auto-failovers to Atlas `kling-v2-master`. Cost events: `provider='kling', billing='prepaid_credits'`. Wired 2026-04-20. |
 | Kling (legacy) | Active (legacy Lab + prod) | Interiors, dolly/parallax/reveal | 5-concurrent trial cap, auto-fallback to Runway |
 | Runway Gen-4 Turbo | Active (legacy Lab + prod) | Exteriors, push_in/pull_out/drone | URL-based image input |
@@ -115,8 +115,10 @@ Legacy: `match_lab_iterations` (unused since unified embeddings shipped).
 
 | Variable | Provider |
 |---|---|
-| `ATLASCLOUD_API_KEY` | Atlas Cloud (Lab listings — required for Lab video generation) |
-| `ATLAS_VIDEO_MODEL` | Atlas Cloud default model (default: `kling-v2-6-pro`, changed 2026-04-20) |
+| `ATLASCLOUD_API_KEY` | Atlas Cloud (required for all video generation) |
+| `ATLAS_VIDEO_MODEL` | Atlas Cloud default model (default: `kling-v2-6-pro`) |
+| `SEEDANCE_4K_RESOLUTION` | Seedance 2.0 · 4K render resolution (default: `"4k"`; override for instant rollback) |
+| `SEEDANCE_4K_PRICE_CENTS_PER_SECOND` | Seedance 2.0 · 4K cost in ¢/s (default: `11.2`, live-verified 2026-06-26; reconcile against first Atlas 4K invoice) |
 | `SHOTSTACK_API_KEY` | Shotstack production |
 | `SHOTSTACK_API_KEY_STAGE` | Shotstack staging (fallback to `SHOTSTACK_API_KEY`) |
 | `HIGGSFIELD_API_KEY` | Higgsfield (deferred) |

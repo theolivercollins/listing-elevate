@@ -28,6 +28,7 @@ vi.mock("../../../lib/db.js", () => ({
 
 vi.mock("../../../lib/providers/router.js", () => ({
   selectProvider: vi.fn(),
+  buildProviderFromDecision: vi.fn(),
 }));
 
 // runAssembly (finalize) + resubmitScene (re-render) both live in pipeline.js.

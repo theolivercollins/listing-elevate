@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { buildAtlasRequestBody, parseAtlasSubmitResponse, ATLAS_MODELS, AtlasProvider, atlasClipCostCents, AtlasInsufficientBalanceError } from "../atlas.js";
+import { buildProviderFromDecision } from "../router.js";
 import { __setTransformForTests } from "../../services/source-aspect.js";
 import type { GenerateClipParams } from "../provider.interface.js";
 
@@ -445,5 +446,91 @@ describe("AtlasProvider.generateClip — 402 HTTP response throws AtlasInsuffici
     const provider = new AtlasProvider("kling-v2-6-pro");
     const job = await provider.generateClip(baseParams);
     expect(job.jobId).toBe("job-ok-123");
+  });
+});
+
+// ── Cost-attribution regression (2026-06-26) ──────────────────────────────────
+//
+// BUG: buildProviderFromDecision passed no arg to AtlasProvider(), so this.model
+// defaulted to the env/kling-v2-6-pro SKU (60¢). checkStatus() then returned
+// 60¢ regardless of the SKU that actually rendered (e.g. kling-v2-master = 111¢,
+// seedance-2-0-4k = 56¢). Fix 1 (atlas.ts): generateClip() writes this.model =
+// modelForCall. Fix 2 (router.ts): buildProviderFromDecision passes decision.modelKey
+// to the constructor. Both together ensure every checkStatus() row is accurate.
+
+// Shared mock for a "succeeded" Atlas poll response.
+function makeSuccessStatusMock(videoUrl = "https://cdn.example.com/out.mp4") {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      code: 0,
+      data: { status: "succeeded", outputs: [videoUrl] },
+    }),
+  });
+}
+
+describe("cost-attribution regression — checkStatus reports the SKU that actually rendered", () => {
+  beforeEach(() => {
+    process.env.ATLASCLOUD_API_KEY = "test-key";
+    // Leave ATLAS_VIDEO_MODEL unset so constructor default is kling-v2-6-pro (60¢).
+    delete process.env.ATLAS_VIDEO_MODEL;
+  });
+  afterEach(() => {
+    __setTransformForTests(null);
+    vi.restoreAllMocks();
+  });
+
+  it("Fix 2 — buildProviderFromDecision(kling-v2-master) → checkStatus returns 111¢, not 60¢ default", async () => {
+    vi.stubGlobal("fetch", makeSuccessStatusMock());
+    const provider = buildProviderFromDecision({ provider: "atlas", modelKey: "kling-v2-master" });
+    const result = await provider.checkStatus("job-master-1");
+    expect(result.status).toBe("complete");
+    // kling-v2-master priceCentsPerClip = 111. Before Fix 2 this was 60 (the default SKU).
+    expect(result.costCents).toBe(111);
+  });
+
+  it("Fix 1 — generateClip with modelOverride=kling-v2-master on a default provider → checkStatus returns 111¢", async () => {
+    // Simulate the old pipeline pattern: provider built with no arg (env/default),
+    // then generateClip called with modelOverride. Fix 1 updates this.model so
+    // the subsequent checkStatus on the SAME instance returns the correct cost.
+    __setTransformForTests(async (url: string) => url); // no-op crop so only one fetch needed for submit
+    const submitMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 200, data: { id: "job-override-fix1" } }),
+    });
+    vi.stubGlobal("fetch", submitMock);
+
+    const provider = new AtlasProvider(); // default = kling-v2-6-pro (60¢)
+    await provider.generateClip({ ...baseParams, modelOverride: "kling-v2-master" });
+
+    // Switch fetch mock to the poll response for checkStatus.
+    vi.stubGlobal("fetch", makeSuccessStatusMock());
+    const result = await provider.checkStatus("job-override-fix1");
+    // Must be 111 (kling-v2-master), not 60 (constructor default). Before Fix 1
+    // this returned 60 because this.model was never updated after generateClip.
+    expect(result.costCents).toBe(111);
+  });
+
+  it("Fix 2 — buildProviderFromDecision(seedance-2-0-4k) → checkStatus returns seedance-2-0-4k's own priceCentsPerClip", async () => {
+    vi.stubGlobal("fetch", makeSuccessStatusMock());
+    const provider = buildProviderFromDecision({ provider: "atlas", modelKey: "seedance-2-0-4k" });
+    const result = await provider.checkStatus("job-4k-1");
+    expect(result.status).toBe("complete");
+    // seedance-2-0-4k priceCentsPerClip = Math.round(11.2 * 5) = 56.
+    // Different from the kling-v2-6-pro default (60) — confirms correct SKU is recorded.
+    expect(result.costCents).toBe(ATLAS_MODELS["seedance-2-0-4k"].priceCentsPerClip);
+  });
+
+  it("buildProviderFromDecision without modelKey still works (default branch → env fallback)", async () => {
+    // The default: branch in buildProviderFromDecision passes undefined to
+    // AtlasProvider(), which falls back to ATLAS_VIDEO_MODEL ?? kling-v2-6-pro.
+    // This ensures we haven't broken the fallback path.
+    process.env.ATLAS_VIDEO_MODEL = "kling-v2-6-pro";
+    vi.stubGlobal("fetch", makeSuccessStatusMock());
+    const provider = buildProviderFromDecision({ provider: "atlas" }); // no modelKey
+    const result = await provider.checkStatus("job-default-1");
+    expect(result.status).toBe("complete");
+    expect(result.costCents).toBe(60); // kling-v2-6-pro: 60¢
   });
 });
