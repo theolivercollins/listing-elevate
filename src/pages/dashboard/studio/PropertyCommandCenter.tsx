@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
+import { AutopilotBadge } from '@/components/studio/AutopilotBadge';
+import { AutopilotPanel } from '@/components/studio/AutopilotPanel';
 import { SceneStrip } from '@/components/studio/SceneStrip';
 import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls } from '@/components/studio/DeliveryStepper';
 import { PhotoCheckpointA } from '@/components/studio/PhotoCheckpointA';
@@ -73,6 +75,12 @@ interface DeliveryRunSummary {
   voiceover_audio_url: string | null;
   music_track_id: string | null;
   video_type: string;
+  /** Autopilot is active when true. Set at intake; toggled via set_auto_run action. */
+  auto_run: boolean;
+  /** Non-null when autopilot has paused waiting for human input. Cleared by resume_autopilot. */
+  paused_reason: string | null;
+  /** ISO timestamp of when autopilot last paused this run. */
+  auto_paused_at: string | null;
 }
 
 interface Bundle {
@@ -517,6 +525,9 @@ const PropertyCommandCenter = () => {
           </h1>
           <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
             <StatusPill status={property.status} />
+            {bundle.delivery_run?.auto_run && (
+              <AutopilotBadge paused={Boolean(bundle.delivery_run.paused_reason)} />
+            )}
           </div>
         </div>
         <div className="studio-page-actions">
@@ -663,6 +674,19 @@ const PropertyCommandCenter = () => {
             }}
           />
         </div>
+      )}
+
+      {/* ─── Autopilot panel (visible whenever a delivery_run exists, any stage).
+           Renders a compact "Enable autopilot" affordance when auto_run=false,
+           and the full panel + decision log when auto_run=true. ─── */}
+      {bundle.delivery_run && (
+        <AutopilotPanel
+          runId={bundle.delivery_run.id}
+          autoRun={bundle.delivery_run.auto_run}
+          pausedReason={bundle.delivery_run.paused_reason}
+          autoPausedAt={bundle.delivery_run.auto_paused_at}
+          onAction={deliveryAction}
+        />
       )}
 
       {/* ─── Section stack ─── */}

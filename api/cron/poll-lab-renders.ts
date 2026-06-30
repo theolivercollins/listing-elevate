@@ -4,6 +4,7 @@ export const maxDuration = 120;
 
 import { getSupabase } from "../../lib/client.js";
 import { finalizeLabRender, submitLabRender } from "../../lib/prompt-lab.js";
+import { isNonProdEnv } from "../../lib/env.js";
 
 // Runs every minute per vercel.json crons.
 // Phase 1: submit queued renders when provider slots open.
@@ -180,6 +181,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
                 session_id: row.session_id,
                 render_outcome: "failed",
               },
+          is_test: isNonProdEnv(),
         });
         if (costErr) {
           console.error("[poll-lab-renders] failed cost_events insert:", costErr);

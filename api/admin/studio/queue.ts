@@ -1,18 +1,27 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin } from '../../../lib/auth.js';
 import { getSupabase } from '../../../lib/client.js';
+import { isNonProdEnv } from '../../../lib/env.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const admin = await requireAdmin(req, res);
   if (!admin) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'method_not_allowed' });
 
-  const { data, error } = await getSupabase()
+  let query = getSupabase()
     .from('properties')
     .select('id, address, status, total_cost_cents, created_at, client:client_id(id, name, brand_primary_hex)')
     .eq('order_mode', 'operator')
     .order('created_at', { ascending: false })
     .limit(200);
+
+  // On production, hide test rows created on preview/dev deploys.
+  // On non-prod, show everything so operators can verify their own test jobs.
+  if (!isNonProdEnv()) {
+    query = query.eq('is_test', false);
+  }
+
+  const { data, error } = await query;
 
   if (error) return res.status(500).json({ error: error.message });
 

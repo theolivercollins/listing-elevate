@@ -15,6 +15,7 @@ import {
   DIRECTOR_PROMPT_HASH,
 } from "../../../lib/prompt-lab.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "../../../lib/embeddings.js";
+import { isNonProdEnv } from "../../../lib/env.js";
 
 // POST /api/admin/prompt-lab/analyze
 //   body: { session_id }
@@ -67,6 +68,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           tokens: embedded.usage.totalTokens,
           session_id,
         },
+        is_test: isNonProdEnv(),
       });
       if (costErr) console.error("[embeddings] cost_events insert failed:", costErr);
     }

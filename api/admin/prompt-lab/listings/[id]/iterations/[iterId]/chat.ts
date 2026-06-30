@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAdmin } from "../../../../../../../lib/auth.js";
 import { getSupabase } from "../../../../../../../lib/client.js";
 import { computeClaudeCost } from "../../../../../../../lib/utils/claude-cost.js";
+import { isNonProdEnv } from "../../../../../../../lib/env.js";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -139,6 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       unit_type: "tokens",
       cost_cents: Math.round(cost.costCents),
       metadata: { scope: "lab_listing_iteration_chat", iteration_id: iterId, listing_scene_id: iter.scene_id, model: CHAT_MODEL },
+      is_test: isNonProdEnv(),
     });
     if (costErr) console.error("[lab-listing-iteration-chat] cost_events insert failed:", costErr);
 
