@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { Cloud } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Cloud, Loader2 } from 'lucide-react';
 import {
   requestDriveAccessToken,
   openPicker,
@@ -23,7 +22,7 @@ interface DriveUploadButtonProps {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 /** How many Drive files to download concurrently. */
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 12;
 
 // ─── Component ─────────────────────────────────────────────────────────────────
 
@@ -138,18 +137,20 @@ export function DriveUploadButton({ onFilesImported }: DriveUploadButtonProps) {
 
   return (
     <div>
-      <Button
+      <button
         type="button"
-        variant="outline"
-        size="sm"
         disabled={busy}
         onClick={handleClick}
-        className="gap-1.5 text-[12px] h-8 px-3"
+        className="studio-btn-ghost studio-btn-sm"
         aria-label="Upload photos from Google Drive"
       >
-        <Cloud size={13} strokeWidth={1.8} />
-        {busy ? 'Connecting…' : 'Upload from Drive'}
-      </Button>
+        {busy ? (
+          <Loader2 size={13} strokeWidth={1.8} className="studio-spinner" />
+        ) : (
+          <Cloud size={13} strokeWidth={1.8} />
+        )}
+        {busy ? 'Importing…' : 'Upload from Drive'}
+      </button>
       {progress && (
         <p
           style={{ marginTop: 4, fontSize: 11.5, color: 'var(--le-muted)' }}

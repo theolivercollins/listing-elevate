@@ -46,32 +46,100 @@ const GAPI_URL = 'https://apis.google.com/js/api.js';
 
 // ─── OAuth access token ────────────────────────────────────────────────────────
 
+interface CachedToken {
+  token: string;
+  expiresAt: number;
+}
+
+/** In-memory cache for the current Drive access token. */
+let _tokenCache: CachedToken | null = null;
+
 /**
- * Initiates an interactive Google OAuth2 implicit-grant flow via GIS and
- * resolves with the short-lived access token.
+ * The GIS token client, built once and reused. Building a new client (and
+ * calling requestAccessToken on it) on every call is what forced a fresh
+ * OAuth popup/re-consent on every single click — see FIX 1.
+ */
+let _tokenClient: google.accounts.oauth2.TokenClient | null = null;
+
+/**
+ * GIS bakes the callback into the client at construction time, so the one
+ * reused client's fixed callback delegates to whichever promise is currently
+ * in flight via these refs.
+ */
+let _pendingResolve: ((token: string) => void) | null = null;
+let _pendingReject: ((err: Error) => void) | null = null;
+
+/**
+ * Clears the cached Drive access token and the underlying GIS token client.
+ * Call this on sign-out (so the next session never inherits a previous
+ * user's grant) and from tests that need a clean slate between cases.
+ */
+export function _resetDriveToken(): void {
+  _tokenCache = null;
+  _tokenClient = null;
+  _pendingResolve = null;
+  _pendingReject = null;
+}
+
+function getOrCreateTokenClient(clientId: string): google.accounts.oauth2.TokenClient {
+  if (_tokenClient) return _tokenClient;
+  _tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/drive.readonly',
+    // '' reuses an existing grant silently instead of re-prompting for
+    // consent every time the (now-cached) token needs a refresh.
+    prompt: '',
+    callback: (response) => {
+      const resolve = _pendingResolve;
+      const reject = _pendingReject;
+      _pendingResolve = null;
+      _pendingReject = null;
+      if (response.access_token) {
+        const expiresInSec = Number(response.expires_in ?? 3600);
+        _tokenCache = {
+          token: response.access_token,
+          expiresAt: Date.now() + expiresInSec * 1000,
+        };
+        resolve?.(response.access_token);
+      } else {
+        reject?.(new Error(`OAuth error: ${response.error ?? 'unknown'}`));
+      }
+    },
+    error_callback: (err) => {
+      const reject = _pendingReject;
+      _pendingResolve = null;
+      _pendingReject = null;
+      // GIS SDK types only declare `message`, but at runtime the object
+      // also exposes `type` (e.g. "popup_closed") which is more actionable.
+      const gisErr = err as unknown as { type?: string; message?: string };
+      reject?.(new Error(gisErr.type ?? gisErr.message ?? 'oauth_error'));
+    },
+  });
+  return _tokenClient;
+}
+
+/**
+ * Resolves with a Drive read-only access token.
+ *
+ * A cached token is returned immediately — no popup, no GIS round-trip — as
+ * long as it's more than 60s from expiry. Otherwise this initiates a Google
+ * OAuth2 implicit-grant flow via GIS, reusing a single module-level token
+ * client (built once, lazily) configured with `prompt: ''` so the refresh
+ * reuses the existing grant silently rather than re-prompting for consent.
+ *
  * Rejects if the user closes the popup or an error occurs.
  */
 export function requestDriveAccessToken({ clientId }: { clientId: string }): Promise<string> {
+  if (_tokenCache && Date.now() < _tokenCache.expiresAt - 60_000) {
+    return Promise.resolve(_tokenCache.token);
+  }
+
   return loadScript(GIS_URL).then(
     () =>
       new Promise<string>((resolve, reject) => {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: clientId,
-          scope: 'https://www.googleapis.com/auth/drive.readonly',
-          callback: (response) => {
-            if (response.access_token) {
-              resolve(response.access_token);
-            } else {
-              reject(new Error(`OAuth error: ${response.error ?? 'unknown'}`));
-            }
-          },
-          error_callback: (err) => {
-            // GIS SDK types only declare `message`, but at runtime the object
-            // also exposes `type` (e.g. "popup_closed") which is more actionable.
-            const gisErr = err as unknown as { type?: string; message?: string };
-            reject(new Error(gisErr.type ?? gisErr.message ?? 'oauth_error'));
-          },
-        });
+        _pendingResolve = resolve;
+        _pendingReject = reject;
+        const client = getOrCreateTokenClient(clientId);
         client.requestAccessToken();
       }),
   );
@@ -142,7 +210,7 @@ export function openPicker({
 // ─── Expand folders → flat image list ─────────────────────────────────────────
 
 const DRIVE_FILES_API = 'https://www.googleapis.com/drive/v3/files';
-const IMAGE_CAP = 200;
+const IMAGE_CAP = 300;
 
 /**
  * Explicit MIME-type allowlist matching the manual/ZIP upload accept list.
@@ -166,7 +234,7 @@ interface DriveFilesResponse {
  * Expands any folder items in `picked` into their child image files via the
  * Drive v3 Files API.  Non-image, non-folder items are dropped.
  *
- * Results are capped at 200 images (logged when truncated).
+ * Results are capped at 300 images (logged when truncated).
  *
  * @param fetchFn  Injected fetch — defaults to the global `fetch` so
  *                 callers can pass a mock for unit testing.

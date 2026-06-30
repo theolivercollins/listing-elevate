@@ -11,7 +11,6 @@ import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
-import { DrivePullPanel, type DrivePullResult } from '@/components/studio/DrivePullPanel';
 import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
@@ -20,6 +19,7 @@ import { digitsOnly, formatNumber } from '@/lib/format';
 import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
+const MAX_PHOTOS = 300;
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -115,9 +115,6 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const StudioNew = () => {
   const navigate = useNavigate();
 
-  // ─── Brian gate — Drive Pull panel ───
-  const DRIVE_PULL_CLIENT_ID = import.meta.env.VITE_DRIVE_PULL_CLIENT_ID as string | undefined;
-
   // ─── form state ───
   const [address, setAddress] = useState('');
   const [clientId, setClientId] = useState<string | null>(null);
@@ -131,7 +128,6 @@ const StudioNew = () => {
   const [autoRun, setAutoRun] = useState(false);
   const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
-  const [drivePhotos, setDrivePhotos] = useState<{ path: string; url: string }[]>([]);
 
   // ─── template availability ───
   interface ComboKey { video_type: string; duration: number; orientation: string }
@@ -172,13 +168,17 @@ const StudioNew = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Inline error shown right under the photo import buttons — separate from
+  // submitError (bottom-of-form) so a failed folder/zip/Drive import is never
+  // silent. Clears on the next successful import.
+  const [importError, setImportError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
-  const totalPhotoCount = files.length + drivePhotos.length;
+  const totalPhotoCount = files.length;
   const isValid = address.trim() && totalPhotoCount >= MIN_PHOTOS && currentComboAvailable;
 
   // Step indicator — which conceptual step the user is on
@@ -194,7 +194,7 @@ const StudioNew = () => {
       const accepted = Array.from(newFiles).filter((f) =>
         /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name),
       );
-      const remaining = 60 - files.length;
+      const remaining = MAX_PHOTOS - files.length;
       const toAdd = accepted.slice(0, remaining);
       const mapped = toAdd.map((f) => ({
         file: f,
@@ -202,6 +202,7 @@ const StudioNew = () => {
         id: crypto.randomUUID(),
       }));
       setFiles((prev) => [...prev, ...mapped]);
+      if (toAdd.length > 0) setImportError(null);
     },
     [files.length],
   );
@@ -211,11 +212,16 @@ const StudioNew = () => {
     async (input: File | FileList) => {
       try {
         const extracted = await extractImageFiles(input);
+        if (extracted.length === 0) {
+          // Goal: a failed folder/zip import is never silent.
+          setImportError('No images found in that folder/zip.');
+          return;
+        }
         // Use functional updater to read current length at the time of commit
         let droppedForCap = 0;
         let addedCount = 0;
         setFiles((prev) => {
-          const remaining = 60 - prev.length;
+          const remaining = MAX_PHOTOS - prev.length;
           const toAdd = extracted.slice(0, remaining);
           droppedForCap = extracted.length - toAdd.length;
           addedCount = toAdd.length;
@@ -226,31 +232,23 @@ const StudioNew = () => {
           }));
           return [...prev, ...mapped];
         });
-        // Don't silently truncate — tell the operator what got dropped at the 60-photo cap.
+        setImportError(null); // successful import — clear any prior inline error
+        // Don't silently truncate — tell the operator what got dropped at the photo cap.
         if (droppedForCap > 0) {
           setSubmitError(
-            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
           );
         }
       } catch (err) {
-        setSubmitError(
-          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed',
-        );
+        console.error('[studio import]', err);
+        const message =
+          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed';
+        setSubmitError(message);
+        setImportError(message);
       }
     },
     [],
   );
-
-  // ─── Drive Pull handler ───
-  const handleDrivePulled = (result: DrivePullResult) => {
-    if (result.address) setAddress(result.address);
-    const m = result.metadata;
-    if (m.bedrooms != null) setBedrooms(String(m.bedrooms));
-    if (m.bathrooms != null) setBathrooms(String(m.bathrooms));
-    if (m.sqft != null) setSquareFootage(String(m.sqft));
-    if (m.price != null) setPrice(String(Math.round(m.price)));
-    setDrivePhotos(result.photos);
-  };
 
   const removeFile = (id: string) => {
     setFiles((prev) => {
@@ -324,7 +322,7 @@ const StudioNew = () => {
           bathrooms: bathrooms ? Number(bathrooms) : null,
           square_footage: squareFootage ? Number(squareFootage) : null,
           price: price ? Number(price) : null,
-          photo_storage_paths: [...drivePhotos.map((p) => p.path), ...uploadedPaths],
+          photo_storage_paths: uploadedPaths,
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
@@ -358,7 +356,6 @@ const StudioNew = () => {
         // Recovery owner: the Property Command Center stepper (Task 13) exposes
         // a retry that re-fires the scrape action, which is resumable from 'intake'.
         .catch((e) => console.warn('[studio] scrape kick failed; stepper retry will recover', e));
-      setDrivePhotos([]);
       navigate(`/dashboard/studio/video/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');
@@ -399,11 +396,6 @@ const StudioNew = () => {
                 Leave blank for personal / no-client renders. Brand-kit injection is skipped when there's no client.
               </p>
             </div>
-
-            {/* Drive Pull — gated to Brian's client ID */}
-            {clientId && DRIVE_PULL_CLIENT_ID && clientId === DRIVE_PULL_CLIENT_ID && (
-              <DrivePullPanel onPulled={handleDrivePulled} />
-            )}
 
             {/* Address — Google Places Autocomplete + MLS lookup */}
             <div>
@@ -823,27 +815,38 @@ const StudioNew = () => {
                     <div onClick={(e) => e.stopPropagation()}>
                       <DriveUploadButton
                         onFilesImported={(imported) => {
-                          // Follow the same 60-photo cap pattern as handleBulkInput.
+                          // Follow the same MAX_PHOTOS cap pattern as handleBulkInput.
                           let droppedForCap = 0;
                           let addedCount = 0;
                           setFiles((prev) => {
                             const seen = new Set(prev.map((f) => f.id));
                             const deduped = imported.filter((f) => !seen.has(f.id));
-                            const remaining = 60 - prev.length;
+                            const remaining = MAX_PHOTOS - prev.length;
                             const toAdd = deduped.slice(0, remaining);
                             droppedForCap = deduped.length - toAdd.length;
                             addedCount = toAdd.length;
                             return [...prev, ...toAdd];
                           });
+                          if (addedCount > 0) setImportError(null);
                           if (droppedForCap > 0) {
                             setSubmitError(
-                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
                             );
                           }
                         }}
                       />
                     </div>
                   </div>
+                  {/* Inline import error — near the buttons, not only at the bottom of the form */}
+                  {importError && (
+                    <p
+                      onClick={(e) => e.stopPropagation()}
+                      role="alert"
+                      style={{ marginTop: 4, fontSize: 11.5, color: 'var(--le-bad)' }}
+                    >
+                      {importError}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -895,7 +898,7 @@ const StudioNew = () => {
               )}
 
               {/* Thumbnails */}
-              {(files.length > 0 || drivePhotos.length > 0) && (
+              {files.length > 0 && (
                 <div
                   className="le-cols-3-lg le-cols-2-sm"
                   style={{
@@ -905,63 +908,6 @@ const StudioNew = () => {
                     gap: 6,
                   }}
                 >
-                  {drivePhotos.map((p, i) => (
-                    <div
-                      key={p.path}
-                      style={{
-                        position: 'relative',
-                        aspectRatio: '1',
-                        borderRadius: 'var(--le-r-md)',
-                        overflow: 'hidden',
-                        background: 'rgba(11,11,16,0.06)',
-                      }}
-                    >
-                      <img
-                        src={p.url}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      />
-                      <span
-                        style={{
-                          position: 'absolute',
-                          top: 4,
-                          left: 4,
-                          fontSize: 9,
-                          fontWeight: 600,
-                          letterSpacing: '0.02em',
-                          background: 'rgba(11,11,16,0.72)',
-                          color: '#fff',
-                          borderRadius: 3,
-                          padding: '1px 5px',
-                          pointerEvents: 'none',
-                        }}
-                      >
-                        Drive
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setDrivePhotos((prev) => prev.filter((_, j) => j !== i)); }}
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(11,11,16,0.65)',
-                          opacity: 0,
-                          transition: 'opacity 0.15s',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: '#fff',
-                        }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
-                        aria-label="Remove Drive photo"
-                      >
-                        <X size={14} strokeWidth={2} />
-                      </button>
-                    </div>
-                  ))}
                   {files.map((f) => (
                     <div
                       key={f.id}
