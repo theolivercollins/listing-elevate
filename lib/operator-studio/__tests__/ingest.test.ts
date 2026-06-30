@@ -5,6 +5,7 @@ const insertProperty = vi.fn();
 const insertPhotos = vi.fn();
 const insertRevisionNote = vi.fn();
 const selectClient = vi.fn();
+const mockCreateRun = vi.fn();
 
 // cost_events backfill mocks — fluent select chain where filter methods return
 // the same chain object; maybeSingle() delegates to the inspectable mock fn.
@@ -37,6 +38,11 @@ vi.mock('../../client', () => ({
   }),
 }));
 
+// Mock the dynamic import of runs.ts so we can assert on createRun args.
+vi.mock('../../delivery/runs', () => ({
+  createRun: (...args: unknown[]) => mockCreateRun(...args),
+}));
+
 // Mock atlas so isOperatorSkuAvailable is controllable without real env vars.
 vi.mock('../../providers/atlas', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../providers/atlas')>();
@@ -63,6 +69,7 @@ beforeEach(() => {
   costEventsUpdateEq.mockReset().mockResolvedValue({ data: null, error: null });
   costEventsUpdate.mockReset().mockReturnValue({ eq: costEventsUpdateEq });
   costEventsSelect.mockReset().mockReturnValue(_ceChain);
+  mockCreateRun.mockReset().mockResolvedValue({ id: 'run-1' });
 });
 
 afterEach(() => {
@@ -195,6 +202,22 @@ describe('manualIngest', () => {
     await expect(manualIngest(baseInput)).resolves.toBe('new-prop-id');
     // UPDATE must not have been called since SELECT threw.
     expect(costEventsUpdate).not.toHaveBeenCalled();
+  });
+
+  it('forwards auto_run:true to createRun when set at intake', async () => {
+    await manualIngest({ ...baseInput, auto_run: true });
+    expect(mockCreateRun).toHaveBeenCalledWith(expect.objectContaining({ auto_run: true }));
+  });
+
+  it('forwards auto_run as undefined (falsy) to createRun when omitted from intake', async () => {
+    // baseInput has no auto_run field — createRun receives undefined; the DB
+    // layer (createRun implementation) is responsible for coercing that to false.
+    await manualIngest(baseInput);
+    expect(mockCreateRun).toHaveBeenCalledWith(
+      expect.objectContaining({ property_id: 'new-prop-id' }),
+    );
+    const callArg = mockCreateRun.mock.calls[0][0] as Record<string, unknown>;
+    expect(callArg.auto_run == null || callArg.auto_run === false).toBe(true);
   });
 
   it('persists a valid video_model_sku when provided', async () => {

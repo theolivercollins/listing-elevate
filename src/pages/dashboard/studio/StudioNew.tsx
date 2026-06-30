@@ -128,6 +128,7 @@ const StudioNew = () => {
   const [directorNotes, setDirectorNotes] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
+  const [autoRun, setAutoRun] = useState(false);
   const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [drivePhotos, setDrivePhotos] = useState<{ path: string; url: string }[]>([]);
@@ -327,6 +328,7 @@ const StudioNew = () => {
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
+          auto_run: autoRun,
           video_model_sku: videoModelSku,
         }),
       });
@@ -531,6 +533,51 @@ const StudioNew = () => {
                 placeholder="Specific shots, pacing, brand language, or anything you want the pipeline to consider…"
                 rows={4}
               />
+            </div>
+
+            {/* Autopilot */}
+            <div>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  cursor: 'pointer',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--le-r-md)',
+                  border: `1px solid ${autoRun ? 'rgba(47,138,85,0.35)' : 'var(--le-line)'}`,
+                  background: autoRun ? 'rgba(47,138,85,0.05)' : 'var(--le-surface)',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={autoRun}
+                  onChange={(e) => setAutoRun(e.target.checked)}
+                  style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--le-good)', width: 15, height: 15 }}
+                  aria-describedby="autopilot-hint"
+                />
+                <div>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: autoRun ? 'var(--le-good)' : 'var(--le-ink)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    Auto-run (Autopilot)
+                  </span>
+                  <span
+                    id="autopilot-hint"
+                    style={{ fontSize: 12, color: 'var(--le-muted)', lineHeight: 1.45 }}
+                  >
+                    Let AI run this listing end-to-end. The pipeline will advance through
+                    each gate automatically. You can pause or take over at any time.
+                  </span>
+                </div>
+              </label>
             </div>
 
             {/* Video type */}

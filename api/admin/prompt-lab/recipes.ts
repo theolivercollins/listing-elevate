@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 import { embedTextSafe, buildAnalysisText, toPgVector } from "../../../lib/embeddings.js";
+import { isNonProdEnv } from "../../../lib/env.js";
 
 // GET    /api/admin/prompt-lab/recipes          — list recipes
 // POST   /api/admin/prompt-lab/recipes          — promote an iteration
@@ -73,6 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           tokens: embedded.usage.totalTokens,
           iteration_id,
         },
+        is_test: isNonProdEnv(),
       });
       if (costErr) console.error("[embeddings] cost_events insert failed:", costErr);
     }

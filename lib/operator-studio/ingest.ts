@@ -11,6 +11,7 @@
 
 import { getSupabase } from '../client.js';
 import type { ManualIngestInput } from '../types/operator-studio.js';
+import { isNonProdEnv } from '../env.js';
 import { isOperatorSkuAvailable } from '../providers/atlas.js';
 
 /**
@@ -65,6 +66,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     days_on_market,
     sold_price,
     pipeline_mode,
+    auto_run,
     video_model_sku: raw_video_model_sku,
     listing_agent: explicit_listing_agent,
     brokerage: explicit_brokerage,
@@ -145,6 +147,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       days_on_market: days_on_market ?? null,
       sold_price: sold_price ?? null,
       pipeline_mode: pipeline_mode ?? 'v1.1',
+      is_test: isNonProdEnv(),
       video_model_sku: video_model_sku ?? null,
     })
     .select()
@@ -218,6 +221,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       client_id: client_id ?? null,
       video_type: (video_type ?? 'just_listed') as 'just_listed' | 'just_pended' | 'just_closed',
       duration_seconds: selected_duration ?? 30,
+      auto_run,
     });
   } catch (err) {
     console.error('[ingest] delivery_run create failed:', err);

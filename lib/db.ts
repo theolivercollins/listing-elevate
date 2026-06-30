@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isNonProdEnv } from "./env.js";
 import type {
   Property,
   PropertyStatus,
@@ -72,7 +73,9 @@ export async function createProperty(data: {
 }): Promise<Property> {
   const { data: row, error } = await getSupabase()
     .from("properties")
-    .insert(data)
+    // Tag rows created outside production so they're excluded from live views
+    // and cost reconciliation. The migration adds `is_test boolean default false`.
+    .insert({ ...data, is_test: isNonProdEnv() })
     .select()
     .single();
   if (error) throw error;
@@ -410,6 +413,8 @@ export async function recordCostEvent(event: {
     unit_type: event.unitType ?? null,
     cost_cents: Math.round(event.costCents),
     metadata: event.metadata ?? null,
+    // Tag test-data so reconciliation scripts can unconditionally exclude it.
+    is_test: isNonProdEnv(),
   });
   if (insertErr) throw insertErr;
   // properties.total_cost_cents only updates when the cost actually attributes
@@ -589,6 +594,7 @@ export async function embedScene(sceneId: string): Promise<void> {
       model: embedded.model,
       tokens: embedded.usage.totalTokens,
     },
+    is_test: isNonProdEnv(),
   });
   if (costErr) {
     console.error("[embeddings] cost_events insert failed:", costErr);

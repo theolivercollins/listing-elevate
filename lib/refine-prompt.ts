@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabase } from "./client.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
+import { isNonProdEnv } from "./env.js";
 
 const REWRITE_SYSTEM = `You are a Kling i2v prompt rewriter. You rewrite prompts concisely in the legacy pattern.
 Pattern: [pace] cinematic [movement] [preposition] [subject + feature].
@@ -43,6 +44,7 @@ export async function rewritePromptWithDirectives(input: {
     unit_type: "tokens",
     cost_cents: Math.round(cost.costCents),
     metadata: { scope: "lab_listing_refine_rewrite", model: "claude-sonnet-4-6" },
+    is_test: isNonProdEnv(),
   });
   if (costErr) console.error("[rewritePromptWithDirectives] cost_events insert failed:", costErr);
 

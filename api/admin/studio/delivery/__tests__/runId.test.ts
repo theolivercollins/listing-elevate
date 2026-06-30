@@ -103,6 +103,10 @@ const mockParseFeedbackComment = vi.fn();
 vi.mock('../../../../../lib/delivery/parse-feedback', () => ({
   parseFeedbackComment: (...a: unknown[]) => mockParseFeedbackComment(...a),
 }));
+const mockResolveGate = vi.fn();
+vi.mock('../../../../../lib/delivery/auto-run', () => ({
+  resolveGate: (...a: unknown[]) => mockResolveGate(...a),
+}));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
     from: (...a: unknown[]) => mockDbFrom(...a),
@@ -173,6 +177,7 @@ beforeEach(() => {
   mockGetPhotoSelectionForRun.mockResolvedValue({ photos: [], selected_photo_ids: [] });
   mockApplyPhotoSelectionForRun.mockResolvedValue({ selected_photo_ids: ['photo-2', 'photo-1'] });
   mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+  mockResolveGate.mockResolvedValue({ action: 'noop', reason: 'auto_run off' });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -1758,6 +1763,159 @@ describe('POST rerun (T-rerun)', () => {
     expect(mockRunScrapeStage).not.toHaveBeenCalled();
     expect(mockRunJudgePass).not.toHaveBeenCalled();
     expect(mockRunAssembleStage).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST set_auto_run — autopilot kill-switch / arm
+// ---------------------------------------------------------------------------
+
+describe('POST set_auto_run (autopilot kill-switch)', () => {
+  it('enabled:true → 200, updateRun auto_run=true, records auto_advance ml_event', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ auto_run: true }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_advance', expect.objectContaining({
+      source: 'operator',
+      action: 'set_auto_run',
+      enabled: true,
+    }));
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('enabled:false → 200, updateRun auto_run=false, records auto_advance ml_event, does NOT call resolveGate', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: false });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: false } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ auto_run: false }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_advance', expect.objectContaining({ enabled: false }));
+    // Kill-switch: resolveGate must NOT be called when disabling
+    expect(mockResolveGate).not.toHaveBeenCalled();
+  });
+
+  it('enabled:true calls resolveGate best-effort and includes gate_outcome in response', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    mockResolveGate.mockResolvedValue({ action: 'noop', reason: 'not a gate stage' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockResolveGate).toHaveBeenCalled();
+    expect((res._body as { gate_outcome: unknown }).gate_outcome).toEqual({ action: 'noop', reason: 'not a gate stage' });
+  });
+
+  it('enabled:true — resolveGate failure is swallowed (best-effort), still returns 200 with the updated run', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    mockResolveGate.mockRejectedValue(new Error('resolveGate crashed'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('enabled is a non-boolean string → 400, no DB writes', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: 'yes' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('enabled missing → 400, no DB writes', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('unauthenticated request is rejected — no DB writes', async () => {
+    mockRequireAdmin.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST resume_autopilot — clear pause state and continue
+// ---------------------------------------------------------------------------
+
+describe('POST resume_autopilot', () => {
+  it('→ 200, patches paused_reason=null + auto_paused_at=null + auto_run=true, records auto_resume ml_event', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({
+      paused_reason: null,
+      auto_paused_at: null,
+      auto_run: true,
+    }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_resume', { source: 'operator' });
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('calls resolveGate and includes gate_outcome in response', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    mockResolveGate.mockResolvedValue({ action: 'advanced', to: 'details' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockResolveGate).toHaveBeenCalled();
+    expect((res._body as { gate_outcome: unknown }).gate_outcome).toEqual({ action: 'advanced', to: 'details' });
+  });
+
+  it('resolveGate failure is swallowed (best-effort), still returns 200 with updated run', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    mockResolveGate.mockRejectedValue(new Error('resolveGate crashed'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('unauthenticated request is rejected — no DB writes', async () => {
+    mockRequireAdmin.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
   });
 });
 

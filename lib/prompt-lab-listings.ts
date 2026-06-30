@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabase } from "./client.js";
+import { isNonProdEnv } from "./env.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
 import {
   analyzeSingleImage,
@@ -196,6 +197,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             reason: "gemini_failure",
             gemini_error: msg,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[analyzeListingPhotos] claude fallback cost_events insert failed:", costErr);
       }
@@ -235,6 +237,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             input_tokens: geminiUsage.inputTokens,
             output_tokens: geminiUsage.outputTokens,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[analyzeListingPhotos] gemini cost_events insert failed:", costErr);
       }
@@ -255,6 +258,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             listing_id: listingId,
             photo_id: p.id,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[embeddings] cost_events insert failed:", costErr);
       }
@@ -396,6 +400,7 @@ export async function directListingScenes(listingId: string): Promise<void> {
     unit_type: "tokens",
     cost_cents: Math.round(cost.costCents),
     metadata: { scope: "lab_listing_director", listing_id: listingId, model: LISTING_DIRECTOR_MODEL },
+    is_test: isNonProdEnv(),
   });
   if (costErr) console.error("[directListingScenes] cost_events insert failed:", costErr);
 
