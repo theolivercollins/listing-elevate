@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlaskConical, Image } from 'lucide-react';
+import { FlaskConical, Loader2, AlertTriangle } from 'lucide-react';
 import { IterateInLabModal } from './IterateInLabModal';
 
 interface SceneRow {
@@ -19,6 +19,41 @@ interface SceneStripProps {
 function formatRoomType(rt: string | null): string {
   if (!rt) return 'Unknown';
   return rt.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type DegradedTone = 'queued' | 'generating' | 'needs_review' | 'failed';
+
+interface DegradedSceneMeta {
+  label: string;
+  /** matches a .studio-status-pill modifier class defined in studio-design.css */
+  pillClass: DegradedTone;
+  icon: 'loader' | 'alert';
+}
+
+/**
+ * Maps a clip-less scene's `status` (lib/types.ts SceneStatus) to a visible
+ * tile treatment, so a degraded/failed scene reads as "needs attention"
+ * instead of "missing". Reuses the existing studio-status-pill tone classes.
+ */
+function getDegradedSceneMeta(status: string): DegradedSceneMeta {
+  switch (status) {
+    case 'pending':
+      return { label: 'Queued', pillClass: 'queued', icon: 'loader' };
+    case 'generating':
+    case 'retry_1':
+    case 'retry_2':
+      return { label: 'Generating…', pillClass: 'generating', icon: 'loader' };
+    case 'qc_pass':
+      return { label: 'Processing', pillClass: 'generating', icon: 'loader' };
+    case 'qc_soft_reject':
+    case 'qc_hard_reject':
+    case 'needs_review':
+      return { label: 'Needs review', pillClass: 'needs_review', icon: 'alert' };
+    case 'failed':
+      return { label: 'Generation failed', pillClass: 'failed', icon: 'alert' };
+    default:
+      return { label: 'No clip', pillClass: 'queued', icon: 'alert' };
+  }
 }
 
 /**
@@ -77,17 +112,42 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
                   style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 />
               ) : (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    height: '100%',
-                    color: 'var(--le-muted-2)',
-                  }}
-                >
-                  <Image size={20} strokeWidth={1.4} />
-                </div>
+                (() => {
+                  const meta = getDegradedSceneMeta(scene.status);
+                  return (
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        height: '100%',
+                        color: 'var(--le-muted-2)',
+                      }}
+                    >
+                      {meta.icon === 'loader' ? (
+                        <Loader2 size={18} strokeWidth={1.6} className="studio-spinner" />
+                      ) : (
+                        <AlertTriangle size={18} strokeWidth={1.6} />
+                      )}
+                      <span
+                        className={`studio-status-pill ${meta.pillClass}`}
+                        style={{
+                          position: 'absolute',
+                          bottom: 6,
+                          left: 6,
+                          right: 6,
+                          justifyContent: 'center',
+                          fontSize: 10,
+                          padding: '3px 6px',
+                        }}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                  );
+                })()
               )}
               {/* Scene number badge */}
               <span

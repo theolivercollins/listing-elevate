@@ -15,9 +15,13 @@
  *   CTA-Final                text   call-to-action — left as template default
  *   Agent-Headshot-Final     image  agent headshot — left as template default
  *                                   until user_profiles.headshot_url exists
- *   Audio-Music              audio  background music URL
- *   Audio-Voiceover          audio  AI voiceover URL (current template track name)
- *   Voice-Over               audio  AI voiceover URL (legacy template track name)
+ *   Audio-Music              audio  background music URL, ALWAYS modified —
+ *                                   muted (volume 0) when no track is picked,
+ *                                   ducked (~18%) under the voiceover otherwise
+ *   Audio-Voiceover          audio  AI voiceover URL (current template track name),
+ *                                   full volume (~100%) when set
+ *   Voice-Over               audio  AI voiceover URL (legacy template track name),
+ *                                   full volume (~100%) when set
  *   Clip-1 … Clip-8          video  walkthrough clip URLs
  *
  * Creatomate silently ignores keys for placeholders the template doesn't have,
@@ -129,6 +133,22 @@ export function displayAddress(address: string | null | undefined): string {
  */
 export const ADDRESS_ONE_LINE_FIT_THRESHOLD = 28;
 
+/**
+ * Music/voiceover levels for the TEMPLATE render path.
+ *
+ * Mirrors the 0.18 duck / 1.0 voiceover defaults used by the code-gen
+ * fallback builders (`buildCreatomateConcatScript` / `buildCreatomateTimeline`
+ * in lib/providers/creatomate.ts) so both render paths sound the same:
+ * music is a quiet bed, never competing with the voiceover.
+ *
+ * Format: Creatomate's modification API accepts percentage strings for
+ * `.volume` (same convention already used for the RenderScript `volume`
+ * field elsewhere in this codebase).
+ */
+const TEMPLATE_MUSIC_VOLUME_PCT = "18%";
+const TEMPLATE_MUSIC_MUTED_PCT = "0%";
+const TEMPLATE_VOICEOVER_VOLUME_PCT = "100%";
+
 export interface ModificationContext {
   /** Free-text full address. */
   address: string;
@@ -146,7 +166,13 @@ export interface ModificationContext {
   agentPhone?: string | null;
   /** Ordered property clips → Clip-1.source … Clip-N.source. */
   clips?: AssembleVideoParams["clips"];
-  /** Background music URL → Audio-Music.source. */
+  /**
+   * Background music URL → Audio-Music.source + .volume (ducked, see
+   * TEMPLATE_MUSIC_VOLUME_PCT). When null/undefined (empty or inactive
+   * music_tracks pool), the template's baked-in default track is explicitly
+   * MUTED (Audio-Music.volume = 0) rather than left to play — see the
+   * 2026-06-30 fix in buildTemplateModifications.
+   */
   musicUrl?: string | null;
   /** Optional agent headshot URL → Agent-Headshot-Final.source. */
   agentHeadshotUrl?: string | null;
@@ -223,8 +249,21 @@ export function buildTemplateModifications(
     });
   }
 
+  // Music ALWAYS gets an explicit modification — never leave the key unset.
+  // Bug fix 2026-06-30: when selectMusicTrackForProperty() returns null
+  // (empty/inactive music_tracks pool), the OLD code skipped the
+  // Audio-Music key entirely, so Creatomate fell back to the template's own
+  // baked-in default track — heard in prod as "random/foreign music" under
+  // the listing. Now a missing pick explicitly MUTES the template's
+  // baked-in element (volume 0) instead of leaving it unmodified, so a
+  // foreign track can never play. Mute via volume rather than clearing
+  // `.source` so we don't risk Creatomate erroring on an empty/invalid
+  // source for an element the template may require.
   if (ctx.musicUrl) {
     mods["Audio-Music.source"] = ctx.musicUrl;
+    mods["Audio-Music.volume"] = TEMPLATE_MUSIC_VOLUME_PCT;
+  } else {
+    mods["Audio-Music.volume"] = TEMPLATE_MUSIC_MUTED_PCT;
   }
 
   if (ctx.agentHeadshotUrl) {
@@ -235,7 +274,9 @@ export function buildTemplateModifications(
 
   if (ctx.voiceoverUrl) {
     mods["Audio-Voiceover.source"] = ctx.voiceoverUrl; // current template track name
+    mods["Audio-Voiceover.volume"] = TEMPLATE_VOICEOVER_VOLUME_PCT;
     mods["Voice-Over.source"] = ctx.voiceoverUrl; // legacy templates
+    mods["Voice-Over.volume"] = TEMPLATE_VOICEOVER_VOLUME_PCT;
   }
 
   return mods;

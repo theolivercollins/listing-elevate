@@ -196,3 +196,118 @@ describe("router — production scene routing (Lab parity)", () => {
     expect(decision.modelKey).toBe("kling-v3-pro");
   });
 });
+
+describe("router — Seedance 4K default (2026-06-30)", () => {
+  it("v1.1 mode + video_model_sku=null (Automatic) defaults to seedance-2-0-4k, not seedance-pro-pushin", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "push_in",
+        roomType: "kitchen",
+        preference: null,
+      },
+      [],
+      "v1.1",
+      null,
+    );
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe("seedance-2-0-4k");
+  });
+
+  it("v1.1 default fallback chain degrades 4K -> 1080p Seedance push-in -> V1 default Kling", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "orbit",
+        roomType: "living_room",
+        preference: null,
+      },
+      [],
+      "v1.1",
+      null,
+    );
+    expect(decision.modelKey).toBe("seedance-2-0-4k");
+    expect(decision.fallback?.modelKey).toBe("seedance-pro-pushin");
+    expect(decision.fallback?.fallback?.modelKey).toBe(V1_DEFAULT_SKU);
+    expect(decision.fallback?.fallback?.fallback).toBeUndefined();
+  });
+
+  it("operator SKU override still wins over the 4K default (operator picks 1080p Seedance explicitly)", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "push_in",
+        roomType: "bathroom",
+        preference: null,
+      },
+      [],
+      "v1.1",
+      "seedance-pro-pushin",
+    );
+    expect(decision.modelKey).toBe("seedance-pro-pushin");
+    expect(decision.fallback).toBeUndefined(); // operator override is terminal
+  });
+
+  it("operator SKU override still wins over the 4K default (operator picks Kling explicitly)", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "push_in",
+        roomType: "bathroom",
+        preference: null,
+      },
+      [],
+      "v1.1",
+      "kling-v2-master",
+    );
+    expect(decision.modelKey).toBe("kling-v2-master");
+  });
+
+  it("v1 mode (legacy/customer-checkout default) is UNCHANGED — still routes to V1_DEFAULT_SKU (Kling), not 4K", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "orbit",
+        roomType: "kitchen",
+        preference: null,
+      },
+      [],
+      "v1",
+      null,
+    );
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe(V1_DEFAULT_SKU);
+    expect(decision.modelKey).not.toBe("seedance-2-0-4k");
+  });
+
+  it("paired scenes (DQ.3) are UNCHANGED under v1.1 mode — still kling-v3-pro (1080p), not 4K", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: "photo-end-uuid",
+        movement: "push_in",
+        roomType: "kitchen",
+        preference: null,
+      },
+      [],
+      "v1.1",
+      null,
+    );
+    expect(decision.provider).toBe("atlas");
+    expect(decision.modelKey).toBe("kling-v3-pro");
+  });
+
+  it("atlas excluded mid-failover skips the v1.1 4K branch entirely (no other home for Seedance)", () => {
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: null,
+        movement: "push_in",
+        roomType: "kitchen",
+        preference: null,
+      },
+      ["atlas"],
+      "v1.1",
+      null,
+    );
+    expect(decision.modelKey).not.toBe("seedance-2-0-4k");
+  });
+});

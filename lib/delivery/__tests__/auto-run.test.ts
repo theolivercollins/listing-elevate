@@ -24,6 +24,7 @@ import {
   resolveMusic,
   resolveCheckpointB,
   pauseForHuman,
+  buildOrderedRoomSequence,
 } from '../auto-run.js';
 import type { DeliveryRunRow } from '../../types/operator-studio.js';
 
@@ -579,24 +580,104 @@ describe('resolvePhotoSelection', () => {
   });
 });
 
+// ─── buildOrderedRoomSequence ───────────────────────────────────────────────
+
+describe('buildOrderedRoomSequence', () => {
+  it('returns null (no I/O) when scene_order is null', async () => {
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: null }));
+    expect(result).toBeNull();
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('returns null when scene_order is an empty array', async () => {
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: [] }));
+    expect(result).toBeNull();
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('orders rooms by scene_order position, not DB row order', async () => {
+    const inMock = vi.fn().mockResolvedValue({
+      data: [
+        { id: 'sc-b', room_type: 'kitchen' },
+        { id: 'sc-a', room_type: 'exterior_front' },
+      ],
+      error: null,
+    });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a', 'sc-b'] }));
+    expect(result).toEqual([
+      { position: 1, room: 'exterior_front' },
+      { position: 2, room: 'kitchen' },
+    ]);
+  });
+
+  it('falls back to "interior" for a scene with a null room_type', async () => {
+    const inMock = vi.fn().mockResolvedValue({
+      data: [{ id: 'sc-a', room_type: null }],
+      error: null,
+    });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toEqual([{ position: 1, room: 'interior' }]);
+  });
+
+  it('returns null on a DB error (fail open, no crash)', async () => {
+    const inMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'boom' } });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toBeNull();
+  });
+
+  it('returns null when getSupabase throws (fail open, no crash)', async () => {
+    (getSupabase as Mock).mockImplementation(() => {
+      throw new Error('no client');
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toBeNull();
+  });
+});
+
 // ─── resolveVoiceover ─────────────────────────────────────────────────────────
 
 describe('resolveVoiceover', () => {
-  function setupDbWithAddress(address: string | null) {
+  /**
+   * @param scenesResult - rows (or { error }) returned for .from('scenes').select().in() —
+   *   used by buildOrderedRoomSequence. Defaults to an empty result (no scene_order set).
+   */
+  function setupDbWithAddress(
+    address: string | null,
+    scenesResult: { data?: Array<{ id: string; room_type: string | null }>; error?: unknown } = { data: [] },
+  ) {
     // Build a mock that supports: .from('properties').select().eq().maybeSingle()
     const maybeSingleMock = vi.fn().mockResolvedValue({ data: address ? { address } : null, error: null });
     const eqMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = vi.fn().mockReturnValue({ select: selectMock });
+    // .from('scenes').select().in() — feeds buildOrderedRoomSequence
+    const scenesInMock = vi.fn().mockResolvedValue({
+      data: scenesResult.data ?? null,
+      error: scenesResult.error ?? null,
+    });
+    const scenesSelectMock = vi.fn().mockReturnValue({ in: scenesInMock });
     // Also need update/insert for pauseForHuman when address is null
     const updateEqMock = vi.fn().mockResolvedValue({ error: null });
     const updateMock = vi.fn().mockReturnValue({ eq: updateEqMock });
     const insertMock = vi.fn().mockResolvedValue({ error: null });
-    const db = { from: fromMock, update: updateMock, insert: insertMock };
-    (fromMock as Mock).mockImplementation((table: string) => {
+    const fromMock = vi.fn().mockImplementation((table: string) => {
       if (table === 'properties') return { select: selectMock };
+      if (table === 'scenes') return { select: scenesSelectMock };
       return { update: updateMock, insert: insertMock };
     });
+    const db = { from: fromMock, update: updateMock, insert: insertMock };
     (getSupabase as Mock).mockReturnValue(db);
     return db;
   }
@@ -620,6 +701,57 @@ describe('resolveVoiceover', () => {
     expect(runDeliveryAudio).toHaveBeenCalledWith('run-1');
     expect(recordCostEvent).toHaveBeenCalled();
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'music');
+  });
+
+  it('builds the ordered room sequence from scene_order + scenes.room_type and passes it to generateDeliveryScript', async () => {
+    setupDbWithAddress('123 Main St', {
+      data: [
+        { id: 'sc-3', room_type: 'garage' },
+        { id: 'sc-1', room_type: 'exterior_front' },
+        { id: 'sc-2', room_type: 'kitchen' },
+      ],
+    });
+    (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Great home!', wordCount: 2 });
+    (updateRun as Mock).mockResolvedValue({});
+    mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ scene_order: ['sc-1', 'sc-2', 'sc-3'] });
+    const result = await resolveVoiceover(run);
+
+    expect(result).toEqual({ action: 'advanced', to: 'music' });
+    // Sequence follows scene_order (display order), not the DB row order.
+    expect(generateDeliveryScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomSequence: [
+          { position: 1, room: 'exterior_front' },
+          { position: 2, room: 'kitchen' },
+          { position: 3, room: 'garage' },
+        ],
+      }),
+    );
+  });
+
+  it('falls back to no room sequence (undefined) when scene_order is null', async () => {
+    setupDbWithAddress('123 Main St');
+    (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Great home!', wordCount: 2 });
+    (updateRun as Mock).mockResolvedValue({});
+    mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ scene_order: null });
+    const result = await resolveVoiceover(run);
+
+    expect(result).toEqual({ action: 'advanced', to: 'music' });
+    expect(generateDeliveryScript).toHaveBeenCalledWith(
+      expect.objectContaining({ roomSequence: undefined }),
+    );
   });
 
   it('skips script generation if voiceover_script already set', async () => {

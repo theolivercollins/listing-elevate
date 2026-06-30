@@ -623,9 +623,59 @@ export async function resolveDetails(run: DeliveryRunRow): Promise<GateOutcome> 
 }
 
 /**
+ * Build the ordered room sequence the finalized cut will actually show, from
+ * delivery_runs.scene_order (winning scene ids in display order, set at the
+ * checkpoint_a gate — BEFORE voiceover runs) joined to scenes.room_type
+ * (denormalized from the linked photo — migration 063).
+ *
+ * Feeds generateDeliveryScript so narration beats track the on-screen room
+ * order instead of being generated blind from listing facts alone (the bug:
+ * e.g. "garage" narration over a kitchen clip).
+ *
+ * Robust by design — any missing/empty data returns null and callers fall
+ * back to the prior whole-listing behavior. Never throws.
+ */
+export async function buildOrderedRoomSequence(
+  run: DeliveryRunRow,
+): Promise<Array<{ position: number; room: string }> | null> {
+  const order = run.scene_order;
+  if (!order || order.length === 0) return null;
+
+  try {
+    const db = getSupabase();
+    const { data: scenes, error } = await db
+      .from('scenes')
+      .select('id, room_type')
+      .in('id', order);
+
+    if (error) {
+      console.error('[delivery/auto-run] buildOrderedRoomSequence: scenes lookup failed, falling back to whole-listing narration:', error);
+      return null;
+    }
+    if (!scenes || scenes.length === 0) return null;
+
+    const roomById = new Map<string, string | null>(
+      (scenes as Array<{ id: string; room_type: string | null }>).map(s => [s.id, s.room_type]),
+    );
+
+    const sequence = order
+      .filter(id => roomById.has(id))
+      .map((id, idx) => ({ position: idx + 1, room: roomById.get(id) || 'interior' }));
+
+    return sequence.length > 0 ? sequence : null;
+  } catch (err) {
+    console.error('[delivery/auto-run] buildOrderedRoomSequence threw, falling back to whole-listing narration:', err);
+    return null;
+  }
+}
+
+/**
  * voiceover — Script generation + voice-tone selection gate.
  *
  * 1. Generate script if absent (reuses generateDeliveryScript — records its own cost_events).
+ *    Script generation is grounded in the finalized scene_order's room sequence
+ *    (see buildOrderedRoomSequence) so narration follows the on-screen room order;
+ *    falls back to whole-listing narration when scene_order/room data is unavailable.
  * 2. Make a small Haiku LLM call to pick voice tone from listing context (records cost_events).
  * 3. Select voiceover_voice_id from the tone pick; delegate to runDeliveryAudio shared runner
  *    (duration-audit / auto-shorten loop + retry, records its own cost_events).
@@ -652,6 +702,11 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
   let script = run.voiceover_script;
   if (!script) {
     try {
+      // Ground the script in the actual on-screen room order (set at
+      // checkpoint_a, before this gate runs). Returns null — and
+      // generateDeliveryScript falls back to whole-listing narration — when
+      // scene_order or room data isn't available; never blocks generation.
+      const roomSequence = await buildOrderedRoomSequence(run);
       const result = await generateDeliveryScript({
         runId: run.id,
         propertyId: run.property_id,
@@ -659,6 +714,7 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
         videoType: run.video_type,
         durationSec: run.duration_seconds ?? 30,
         details: run.listing_details,
+        roomSequence: roomSequence ?? undefined,
       });
       script = result.script;
       await updateRun(run.id, { voiceover_script: script } as Partial<DeliveryRunRow>);
@@ -694,7 +750,7 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
       'Available voices:',
       voiceLines,
       '',
-      'Reply with ONLY the voice name (e.g. Amanda).',
+      'Reply with ONLY the voice name (e.g. Brian).',
     ].filter(Boolean).join('\n');
 
     const voiceResponse = await client.messages.create({
