@@ -179,6 +179,7 @@ function makeCompletedProvider(providerName: string) {
       providerUnitType: 'credits',
     }),
     downloadClip: vi.fn().mockResolvedValue(Buffer.from('fakevideo')),
+    generateClip: vi.fn().mockResolvedValue({ jobId: '', estimatedSeconds: 0 }),
   };
 }
 
@@ -358,6 +359,7 @@ describe('pollPendingVariants — discriminator paths', () => {
         providerUnitType: undefined,
       }),
       downloadClip: vi.fn().mockResolvedValue(Buffer.from('fakevideo')),
+      generateClip: vi.fn().mockResolvedValue({ jobId: '', estimatedSeconds: 0 }),
     };
     vi.mocked(buildProviderFromDecision).mockReturnValue(atlasMasterProvider as ReturnType<typeof buildProviderFromDecision>);
 
