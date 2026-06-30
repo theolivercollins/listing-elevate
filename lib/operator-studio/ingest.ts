@@ -12,6 +12,7 @@
 import { getSupabase } from '../client.js';
 import type { ManualIngestInput } from '../types/operator-studio.js';
 import { isNonProdEnv } from '../env.js';
+import { isOperatorSkuAvailable } from '../providers/atlas.js';
 
 /**
  * Convert a raw Supabase storage path to an absolute public URL.
@@ -66,12 +67,21 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     sold_price,
     pipeline_mode,
     auto_run,
+    video_model_sku: raw_video_model_sku,
     listing_agent: explicit_listing_agent,
     brokerage: explicit_brokerage,
   } = input as ManualIngestWithActor & {
     listing_agent?: string | null;
     brokerage?: string | null;
   };
+
+  // Validate the operator SKU. If provided but not in the available operator set
+  // (stale client, unknown key), coerce to null so ingest falls back to automatic
+  // routing rather than hard-failing. null is always accepted (Automatic).
+  const video_model_sku: string | null =
+    raw_video_model_sku != null && isOperatorSkuAvailable(raw_video_model_sku)
+      ? raw_video_model_sku
+      : null;
 
   if (photo_storage_paths.length < 5) {
     throw new Error('At least 5 photos are required to ingest a property.');
@@ -138,6 +148,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       sold_price: sold_price ?? null,
       pipeline_mode: pipeline_mode ?? 'v1.1',
       is_test: isNonProdEnv(),
+      video_model_sku: video_model_sku ?? null,
     })
     .select()
     .single();

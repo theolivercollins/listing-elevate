@@ -30,6 +30,7 @@ vi.mock("../../../lib/db.js", () => ({
 // Mock providers/router.js.
 vi.mock("../../../lib/providers/router.js", () => ({
   selectProvider: vi.fn(),
+  buildProviderFromDecision: vi.fn(),
 }));
 
 // Mock pipeline (runAssembly in the finalize path; resubmitScene in the QC
@@ -72,7 +73,7 @@ vi.mock("../../../lib/providers/bunny-stream.js", () => ({
 
 import { judgeProductionScene } from "../../../lib/qc/judge-scene.js";
 import { getSupabase, recordCostEvent, log } from "../../../lib/db.js";
-import { selectProvider } from "../../../lib/providers/router.js";
+import { selectProvider, buildProviderFromDecision } from "../../../lib/providers/router.js";
 import { resubmitScene } from "../../../lib/pipeline.js";
 import { isBunnyConfigured, hostVideoOnBunny, deleteBunnyVideo, validateBunnyMp4Url } from "../../../lib/providers/bunny-stream.js";
 
@@ -94,6 +95,7 @@ function makeScene(overrides: Partial<{
   prompt: string;
   camera_movement: string;
   room_type: string;
+  atlas_model_sku: string | null;
 }> = {}) {
   return {
     id: "scene-1",
@@ -108,6 +110,7 @@ function makeScene(overrides: Partial<{
     prompt: "Slow pan across the living room",
     camera_movement: "pan_right",
     room_type: "living_room",
+    atlas_model_sku: null,
     ...overrides,
   };
 }
@@ -515,5 +518,125 @@ describe("poll-scenes — Gemini judge wiring", () => {
     expect(getStatus()).toBe(200);
     const update = capturedSceneUpdate.payload!;
     expect(update.clip_url).toBe("https://provider.example.com/raw-clip.mp4");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Poll-side SKU reconstruction — the core cost-attribution bug fix
+// ---------------------------------------------------------------------------
+// These tests verify that the POLL path uses buildProviderFromDecision (not
+// selectProvider) when atlas_model_sku is stored, so checkStatus returns the
+// rendered SKU's priceCentsPerClip rather than the env-default price.
+
+describe("poll-scenes — Atlas SKU reconstruction for cost attribution", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+    delete process.env.MAX_QC_RERENDERS;
+    vi.mocked(isBunnyConfigured).mockReturnValue(false);
+    vi.mocked(validateBunnyMp4Url).mockResolvedValue(true);
+  });
+
+  it("kling-v2-master SKU stored: uses buildProviderFromDecision, records costCents=111, never calls selectProvider", async () => {
+    // kling-v2-master costs 111¢ per 5s clip (atlas.ts ATLAS_MODELS).
+    // The bug: selectProvider yields AtlasProvider(undefined) → env-default price.
+    // The fix: atlas_model_sku → buildProviderFromDecision → AtlasProvider('kling-v2-master')
+    //          → checkStatus returns 111¢.
+    const scene = makeScene({
+      provider: "atlas",
+      provider_task_id: "atlas-task-xyz",
+      atlas_model_sku: "kling-v2-master",
+    });
+    const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
+    const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
+
+    vi.mocked(getSupabase).mockReturnValue(fakeSupabase as never);
+
+    // buildProviderFromDecision returns a provider whose checkStatus reports 111¢
+    // — the cost for kling-v2-master (priceCentsPerClip in atlas.ts).
+    const atlasProvider = {
+      name: "atlas",
+      checkStatus: vi.fn().mockResolvedValue({
+        status: "completed",
+        videoUrl: "https://provider.example.com/atlas-clip.mp4",
+        costCents: 111,        // kling-v2-master price
+        providerUnits: undefined,
+        providerUnitType: undefined,
+      }),
+      downloadClip: vi.fn().mockResolvedValue(Buffer.from("fake-atlas-video")),
+    };
+    vi.mocked(buildProviderFromDecision).mockReturnValue(atlasProvider as never);
+
+    vi.mocked(judgeProductionScene).mockResolvedValue({
+      verdict: "qc_pass", shouldRerender: false, reason: "judge_disabled",
+      judgeRan: false, rubric: null,
+    });
+
+    const { default: handler } = await import("../poll-scenes.js");
+    const { req, res, getStatus } = makeReqRes();
+    await handler(req, res);
+
+    expect(getStatus()).toBe(200);
+
+    // buildProviderFromDecision must have been called with kling-v2-master.
+    expect(vi.mocked(buildProviderFromDecision)).toHaveBeenCalledWith({
+      provider: "atlas",
+      modelKey: "kling-v2-master",
+      fallback: undefined,
+    });
+    // selectProvider must NOT have been called — we bypassed it via buildProviderFromDecision.
+    expect(vi.mocked(selectProvider)).not.toHaveBeenCalled();
+
+    // The cost_events row must record 111¢ (the rendered SKU's price).
+    const renderCostCalls = vi.mocked(recordCostEvent).mock.calls.filter(
+      ([args]) => args.provider === "atlas",
+    );
+    expect(renderCostCalls.length).toBeGreaterThanOrEqual(1);
+    expect(renderCostCalls[0][0].costCents).toBe(111);
+  });
+
+  it("null atlas_model_sku (legacy row): falls back to selectProvider without crashing", async () => {
+    // Pre-migration rows have atlas_model_sku=null. The fix must keep the
+    // existing selectProvider path intact — not crash, not record 0¢.
+    const scene = makeScene({
+      provider: "atlas",
+      provider_task_id: "atlas-task-legacy",
+      atlas_model_sku: null,
+    });
+    const capturedSceneUpdate = { payload: null as Record<string, unknown> | null };
+    const fakeSupabase = makeSupabase({ scene, capturedSceneUpdate });
+
+    vi.mocked(getSupabase).mockReturnValue(fakeSupabase as never);
+    // selectProvider returns the env-default atlas provider (48¢ for kling-v2-6-pro).
+    vi.mocked(selectProvider).mockReturnValue({
+      name: "atlas",
+      checkStatus: vi.fn().mockResolvedValue({
+        status: "completed",
+        videoUrl: "https://provider.example.com/atlas-clip.mp4",
+        costCents: 48,
+        providerUnits: undefined,
+        providerUnitType: undefined,
+      }),
+      downloadClip: vi.fn().mockResolvedValue(Buffer.from("fake-atlas-video")),
+    } as never);
+
+    vi.mocked(judgeProductionScene).mockResolvedValue({
+      verdict: "qc_pass", shouldRerender: false, reason: "judge_disabled",
+      judgeRan: false, rubric: null,
+    });
+
+    const { default: handler } = await import("../poll-scenes.js");
+    const { req, res, getStatus } = makeReqRes();
+    await handler(req, res);
+
+    expect(getStatus()).toBe(200);
+    // Legacy path: selectProvider was used, buildProviderFromDecision was NOT.
+    expect(vi.mocked(selectProvider)).toHaveBeenCalled();
+    expect(vi.mocked(buildProviderFromDecision)).not.toHaveBeenCalled();
+    // Cost recorded without crash.
+    const renderCostCalls = vi.mocked(recordCostEvent).mock.calls.filter(
+      ([args]) => args.provider === "atlas",
+    );
+    expect(renderCostCalls.length).toBeGreaterThanOrEqual(1);
   });
 });

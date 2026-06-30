@@ -152,6 +152,8 @@ export interface Property {
   // Set to true on Preview / dev deploys so rows are excluded from live
   // views + cost reconciliation. Always false on production.
   is_test: boolean;
+  // Operator-selected video model SKU at inception — added migration 090.
+  video_model_sku: string | null;
 }
 
 export interface UserProfile {

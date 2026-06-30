@@ -54,6 +54,8 @@ export type ManualIngestInput = {
   /** When true the delivery run should execute autonomously (autopilot). Set at
    *  intake and stored on delivery_runs.auto_run. Defaults to false. */
   auto_run?: boolean;
+  /** Operator-selected Atlas SKU at inception (e.g. "seedance-2-0-4k"). Null = automatic routing. */
+  video_model_sku?: string | null;
 };
 
 export type RevisionNoteRow = {

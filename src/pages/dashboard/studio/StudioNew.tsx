@@ -15,6 +15,7 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
+import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
 
@@ -123,6 +124,7 @@ const StudioNew = () => {
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
   const [autoRun, setAutoRun] = useState(false);
+  const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
   // ─── template availability ───
@@ -306,6 +308,7 @@ const StudioNew = () => {
           selected_duration: selectedDuration,
           video_type: videoType,
           auto_run: autoRun,
+          video_model_sku: videoModelSku,
         }),
       });
 
@@ -614,6 +617,38 @@ const StudioNew = () => {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Video model */}
+            <div>
+              <FieldLabel>Video model</FieldLabel>
+              <select
+                className="studio-input"
+                value={videoModelSku ?? 'auto'}
+                onChange={(e) =>
+                  setVideoModelSku(e.target.value === 'auto' ? null : e.target.value)
+                }
+              >
+                {OPERATOR_VIDEO_SKUS.map((opt) => (
+                  <option
+                    key={opt.key ?? 'auto'}
+                    value={opt.key ?? 'auto'}
+                    disabled={!opt.available}
+                  >
+                    {opt.label}{!opt.available ? ' (coming soon)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--le-muted)',
+                  lineHeight: 1.4,
+                }}
+              >
+                Applies to every scene in this listing. 4K = native UHD (larger file).
+              </p>
             </div>
 
             {/* Duration */}
