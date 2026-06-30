@@ -476,8 +476,10 @@ export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutco
     }
 
     // Real gemini-judged pair — both rows carry their actual scores.
-    const aScores = a?.gemini_scores as (VariantScores & { judge_error?: string }) | null | undefined;
-    const bScores = b?.gemini_scores as (VariantScores & { judge_error?: string }) | null | undefined;
+    // gemini_scores is JSONB → Supabase types it as Record<string,unknown>; cast
+    // through unknown before narrowing to the domain shape we store at write time.
+    const aScores = a?.gemini_scores as unknown as (VariantScores & { judge_error?: string }) | null | undefined;
+    const bScores = b?.gemini_scores as unknown as (VariantScores & { judge_error?: string }) | null | undefined;
 
     // Missing or error scores — treat as degraded, accept.
     if (!aScores || !bScores || 'judge_error' in aScores || 'judge_error' in bScores) {
@@ -903,8 +905,10 @@ export async function resolveCheckpointB(run: DeliveryRunRow): Promise<GateOutco
       continue;
     }
 
-    const aScores = a?.gemini_scores as (VariantScores & { judge_error?: string }) | null | undefined;
-    const bScores = b?.gemini_scores as (VariantScores & { judge_error?: string }) | null | undefined;
+    // gemini_scores is JSONB → Supabase types it as Record<string,unknown>; cast
+    // through unknown before narrowing to the domain shape we store at write time.
+    const aScores = a?.gemini_scores as unknown as (VariantScores & { judge_error?: string }) | null | undefined;
+    const bScores = b?.gemini_scores as unknown as (VariantScores & { judge_error?: string }) | null | undefined;
     if (!aScores || !bScores || 'judge_error' in aScores || 'judge_error' in bScores) {
       degradedCount++;
       continue;
