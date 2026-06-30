@@ -102,7 +102,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('returns 404 when horizontal URL is null', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-abc', address: '1 Main St', horizontal_video_url: null, vertical_video_url: 'https://cdn/v.mp4' },
+      data: { id: 'prop-abc', address: '1 Main St', horizontal_video_url: null, vertical_video_url: 'https://test.b-cdn.net/v.mp4' },
       error: null,
     }));
     const res = makeRes();
@@ -114,7 +114,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('returns 404 when vertical URL is null', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-abc', address: '1 Main St', horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null },
+      data: { id: 'prop-abc', address: '1 Main St', horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null },
       error: null,
     }));
     const res = makeRes();
@@ -126,7 +126,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('sets Content-Disposition with slugified address for horizontal', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-abc', address: '1 Main St, Springfield, IL', horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null },
+      data: { id: 'prop-abc', address: '1 Main St, Springfield, IL', horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null },
       error: null,
     }));
     // Provide a real Web ReadableStream so Readable.fromWeb is satisfied
@@ -148,7 +148,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('sets Content-Disposition with property id when address is missing', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-xyz', address: null, horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null },
+      data: { id: 'prop-xyz', address: null, horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null },
       error: null,
     }));
     // Provide a real Web ReadableStream so Readable.fromWeb is satisfied
@@ -168,7 +168,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('returns 502 when upstream fetch fails', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-abc', address: '1 Main', horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null },
+      data: { id: 'prop-abc', address: '1 Main', horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null },
       error: null,
     }));
     mockFetch.mockRejectedValue(new Error('network error'));
@@ -182,7 +182,7 @@ describe('GET /api/admin/studio/properties/[id]/download', () => {
   it('returns 502 when upstream responds with non-OK status', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
     mockGetSupabase.mockReturnValue(makeDb({
-      data: { id: 'prop-abc', address: '1 Main', horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null },
+      data: { id: 'prop-abc', address: '1 Main', horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null },
       error: null,
     }));
     mockFetch.mockResolvedValue({ ok: false, status: 403, headers: { get: () => null }, body: null });

@@ -1,38 +1,30 @@
 /**
  * SSRF guard for media URLs fetched server-side.
  *
- * Only URLs whose hostname belongs to the explicit media-CDN allowlist are
- * permitted.  IP-literal hosts (v4 and v6) are unconditionally rejected —
- * they can never appear in the allowlist and would bypass hostname checks
- * for addresses like 169.254.169.254, 127.0.0.1, or any private range.
+ * Video URLs are server-set pipeline outputs across multiple CDNs (Bunny,
+ * Backblaze B2, Supabase Storage, Creatomate, Shotstack, and future render
+ * providers). A strict host allowlist breaks legitimate downloads whenever
+ * a new provider is added, and buys little security when the URL is not
+ * attacker-controlled. Instead this guard targets the actual SSRF risk:
+ * requests that would resolve to private / internal infrastructure.
+ *
+ * Rules (in order):
+ *  1. Must be a well-formed URL.
+ *  2. Scheme must be `https:`.
+ *  3. Hostname must NOT be an IP literal — blocks direct-to-internal-IP and
+ *     the cloud metadata address 169.254.169.254.
+ *  4. Hostname must NOT be a loopback or internal name (`localhost`, any name
+ *     ending in `.local` / `.internal` / `.lan`, or the GCE metadata FQDN
+ *     `metadata.google.internal` / bare `metadata`).
+ *  5. All other public hostnames are allowed.
  */
 
-/** Thrown when a URL fails the media-host allowlist check. */
+/** Thrown when a URL fails the SSRF safety check. */
 export class DisallowedUrlError extends Error {
   constructor(reason: string) {
     super(`Disallowed media URL: ${reason}`);
     this.name = 'DisallowedUrlError';
   }
-}
-
-/**
- * Returns true for hostnames that are allowlisted as valid media CDN origins.
- *
- * Allowed:
- *  - any subdomain of `b-cdn.net`          (Bunny Pull/Storage CDN)
- *  - `iframe.mediadelivery.net`             (Bunny Stream embed/mp4)
- *  - `video.bunnycdn.com`                   (Bunny Stream direct)
- *  - any subdomain of `supabase.co`         (Supabase Storage CDN)
- */
-function isAllowedHostname(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h === 'iframe.mediadelivery.net') return true;
-  if (h === 'video.bunnycdn.com') return true;
-  // Require at least one label before the suffix (bare b-cdn.net / supabase.co alone
-  // would be unusual, but the `.` prefix guarantees a subdomain is present).
-  if (h.endsWith('.b-cdn.net')) return true;
-  if (h.endsWith('.supabase.co')) return true;
-  return false;
 }
 
 /**
@@ -49,14 +41,28 @@ function isIpLiteral(hostname: string): boolean {
   return false;
 }
 
+/** Suffixes whose presence anywhere in a hostname indicates internal infra. */
+const INTERNAL_SUFFIXES = ['.local', '.internal', '.lan'] as const;
+
+/** Exact hostnames (lowercased) that must never be fetched. */
+const INTERNAL_EXACT = new Set(['localhost', 'metadata.google.internal', 'metadata']);
+
+/**
+ * Returns true when the hostname is or is likely to resolve to loopback,
+ * link-local, or cloud-metadata infrastructure.
+ */
+function isInternalHostname(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  if (INTERNAL_EXACT.has(h)) return true;
+  return INTERNAL_SUFFIXES.some((suffix) => h.endsWith(suffix));
+}
+
 /**
  * Asserts that `raw` is a safe media URL eligible for server-side streaming.
  *
- * Rules (in order):
- *  1. Must be a well-formed URL (parseable by `new URL()`).
- *  2. Scheme must be `https:`.
- *  3. Hostname must NOT be an IP literal.
- *  4. Hostname must appear in the media-CDN allowlist.
+ * Blocks SSRF-to-internal (private IPs, loopback, link-local/metadata,
+ * internal hostnames) rather than allowlisting hosts — video URLs span
+ * multiple CDNs and are server-set pipeline outputs, not attacker-supplied.
  *
  * @returns The parsed `URL` object on success.
  * @throws  `DisallowedUrlError` on any violation.
@@ -77,8 +83,8 @@ export function assertAllowedMediaUrl(raw: string): URL {
     throw new DisallowedUrlError('IP-literal hosts are not allowed');
   }
 
-  if (!isAllowedHostname(parsed.hostname)) {
-    throw new DisallowedUrlError(`host is not on the media allowlist`);
+  if (isInternalHostname(parsed.hostname)) {
+    throw new DisallowedUrlError('internal/loopback hostnames are not allowed');
   }
 
   return parsed;
