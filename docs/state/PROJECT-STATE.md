@@ -276,18 +276,22 @@ A second-generation Lab at `/dashboard/development/lab`. The legacy Lab at `/das
 
 ### Provider: Atlas Cloud (replaces Kling/Runway/Luma for Lab)
 
-Atlas Cloud is a multi-model aggregator. One API key, one endpoint, six Kling SKUs registered:
+Atlas Cloud is a multi-model aggregator. One API key, one endpoint, 8 SKUs registered (6 Kling + 2 Seedance):
 
 | Key | Slug | Price | End-frame | Notes |
 |---|---|---|---|---|
-| `kling-v3-pro` | `kwaivgi/kling-v3.0-pro/image-to-video` | $0.095 | yes | Selectable; known shake issue on single-image |
-| `kling-v3-std` | `kwaivgi/kling-v3.0-std/image-to-video` | $0.071 | yes | Cheap exploration |
-| `kling-v2-6-pro` | `kwaivgi/kling-v2.6-pro/image-to-video` | $0.060 | yes | **Default** (changed 2026-04-20 based on rated-iteration signal). HOT-tagged, smoother motion |
-| `kling-v2-1-pair` | `kwaivgi/kling-v2.1-i2v-pro/start-end-frame` | $0.076 | yes | Purpose-built for paired scenes |
-| `kling-v2-master` | `kwaivgi/kling-v2.0-i2v-master` | $0.221 | **no** | Premium; single-frame only |
-| `kling-o3-pro` | `kwaivgi/kling-video-o3-pro/image-to-video` | $0.095 | yes | Newest generation |
+| `kling-v3-pro` | `kwaivgi/kling-v3.0-pro/image-to-video` | $0.475/5s | yes | Selectable; known shake issue on single-image |
+| `kling-v3-std` | `kwaivgi/kling-v3.0-std/image-to-video` | $0.355/5s | yes | Cheap exploration |
+| `kling-v2-6-pro` | `kwaivgi/kling-v2.6-pro/image-to-video` | $0.60/5s | yes | **v1 Default**. HOT-tagged, smoother motion |
+| `kling-v2-1-pair` | `kwaivgi/kling-v2.1-i2v-pro/start-end-frame` | $0.38/5s | yes | Purpose-built for paired scenes (auto-routed by DQ.3) |
+| `kling-v2-master` | `kwaivgi/kling-v2.0-i2v-master` | $1.105/5s | **no** | Premium; single-frame only |
+| `kling-o3-pro` | `kwaivgi/kling-video-o3-pro/image-to-video` | $0.475/5s | yes | Newest Kling generation |
+| `seedance-pro-pushin` | `bytedance/seedance-2.0/image-to-video` | 9.6¢/s | no | v1.1 default; 1080p-SR push-in |
+| `seedance-2-0-4k` | `bytedance/seedance-2.0/image-to-video` | **11.2¢/s** | no | Native UHD 3840×2160 H.265/HEVC (resolution="4k"). Added 2026-06-26; pending smoke render to confirm HEVC assembly end-to-end. |
 
-Wan 2.7 registered briefly, removed 2026-04-20 evening. `lib/providers/atlas.ts::ATLAS_MODELS` is the server-side source of truth; `src/lib/labModels.ts` mirrors it for the UI.
+Wan 2.7 registered briefly, removed 2026-04-20 evening. `lib/providers/atlas.ts::ATLAS_MODELS` is the server-side source of truth; `getOperatorVideoSkus()` returns the ordered operator picker list; `src/lib/labModels.ts::OPERATOR_VIDEO_SKUS` mirrors it for the UI.
+
+**Operator per-listing SKU pin (added 2026-06-26, migration 090):** `properties.video_model_sku` (nullable text) lets operators pin every scene of a listing to a specific Atlas SKU at order inception via the "Video model" dropdown in `StudioNew.tsx`. NULL = Automatic routing (existing behavior). Non-NULL = RULE 0 in `selectProviderForScene` — terminal, no failover. `scenes.atlas_model_sku` (migration 091) and `scene_variants.atlas_model_sku` (migration 092) persist the actual rendered SKU at submit time so `poll-scenes.ts` and `lib/delivery/variants.ts` can read it back and reconstruct the correct `priceCentsPerClip` for cost attribution rather than defaulting to the env-default SKU price.
 
 ### Lifecycle + crons
 
