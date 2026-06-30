@@ -653,3 +653,105 @@ describe("downloadFile", () => {
     expect(result.bytes.byteLength).toBe(4);
   });
 });
+
+// ─── 8. Shared Drive params ───────────────────────────────────────────────────
+//
+// The feature's parent folder ("2026 Listing Photos") lives in a Shared Drive
+// (driveId 0AKsR8IWPn6Q3Uk9PVA). Without these params Drive v3 returns empty
+// results / 404 even when the service account has access.
+
+describe("Shared Drive params", () => {
+  it("listPropertyFolders request URL includes supportsAllDrives, includeItemsFromAllDrives, and corpora=allDrives", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("shared-parent-id");
+
+    expect(capturedUrls[0]).toContain("supportsAllDrives=true");
+    expect(capturedUrls[0]).toContain("includeItemsFromAllDrives=true");
+    expect(capturedUrls[0]).toContain("corpora=allDrives");
+  });
+
+  it("listFinalImages request URL includes supportsAllDrives, includeItemsFromAllDrives, and corpora=allDrives", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listFinalImages("shared-final-folder-id");
+
+    expect(capturedUrls[0]).toContain("supportsAllDrives=true");
+    expect(capturedUrls[0]).toContain("includeItemsFromAllDrives=true");
+    expect(capturedUrls[0]).toContain("corpora=allDrives");
+  });
+
+  it("downloadFile metadata GET (via driveGet) includes supportsAllDrives=true", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        if (urlStr.includes("alt=media")) {
+          return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) };
+        }
+        return mockJsonResponse({ id: "file-meta", name: "photo.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    await downloadFile("file-meta");
+
+    const metaUrl = capturedUrls.find((u) => !u.includes("alt=media"));
+    expect(metaUrl).toBeDefined();
+    expect(metaUrl).toContain("supportsAllDrives=true");
+  });
+
+  it("downloadFile byte fetch (alt=media) includes supportsAllDrives=true", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        if (urlStr.includes("alt=media")) {
+          return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) };
+        }
+        return mockJsonResponse({ id: "file-bytes", name: "photo.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    await downloadFile("file-bytes");
+
+    const mediaUrl = capturedUrls.find((u) => u.includes("alt=media"));
+    expect(mediaUrl).toBeDefined();
+    expect(mediaUrl).toContain("supportsAllDrives=true");
+  });
+});

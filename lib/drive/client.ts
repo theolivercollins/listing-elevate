@@ -176,6 +176,10 @@ const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 async function driveGet(path: string, params?: Record<string, string>): Promise<unknown> {
   const token = await getAccessToken();
   const url = new URL(`${DRIVE_BASE}${path}`);
+  // supportsAllDrives=true is required for Shared Drive items (files.list / files.get /
+  // download) and is a safe no-op for My Drive items, so we seed it unconditionally.
+  // Callers can still override it if ever needed — their params are applied after.
+  url.searchParams.set("supportsAllDrives", "true");
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       url.searchParams.set(k, v);
@@ -207,6 +211,10 @@ export async function listPropertyFolders(
     const params: Record<string, string> = {
       q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: "nextPageToken,files(id,name)",
+      // Required for files.list to traverse Shared Drives (in addition to
+      // supportsAllDrives=true seeded in driveGet).
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
@@ -247,6 +255,10 @@ export async function listFinalImages(
       q: `'${finalFolderId}' in parents and mimeType contains 'image/' and trashed=false`,
       // size included so callers can enforce per-file byte caps before downloading.
       fields: "nextPageToken,files(id,name,mimeType,size)",
+      // Required for files.list to traverse Shared Drives (in addition to
+      // supportsAllDrives=true seeded in driveGet).
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
@@ -276,10 +288,13 @@ export async function downloadFile(
 ): Promise<{ bytes: ArrayBuffer; name: string; mimeType: string }> {
   const token = await getAccessToken();
 
-  // Fetch binary content
-  const mediaResp = await fetch(`${DRIVE_BASE}/files/${fileId}?alt=media`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Fetch binary content.
+  // supportsAllDrives=true is required for Shared Drive files — this fetch is
+  // a direct call (not through driveGet) so the param must be added explicitly.
+  const mediaResp = await fetch(
+    `${DRIVE_BASE}/files/${fileId}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
   if (!mediaResp.ok) {
     const text = await mediaResp.text();
     throw new Error(`[drive/client] Download ${fileId} failed ${mediaResp.status}: ${text}`);
