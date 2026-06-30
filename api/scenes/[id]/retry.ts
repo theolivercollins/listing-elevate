@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase, updateScene, log } from "../../../lib/db.js";
-import { selectDecision, buildProviderFromDecision, getEnabledProviders } from "../../../lib/providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders } from "../../../lib/providers/router.js";
 import { classifyProviderError } from "../../../lib/providers/errors.js";
-import type { CameraMovement, RoomType, VideoProvider } from "../../../lib/types.js";
+import type { CameraMovement, PipelineMode, RoomType, VideoProvider } from "../../../lib/types.js";
 
 export const maxDuration = 120;
 
@@ -42,7 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
   const { data: scene, error } = await supabase
     .from("scenes")
-    .select("id, property_id, photo_id, scene_number, camera_movement, duration_seconds, attempt_count")
+    .select("id, property_id, photo_id, scene_number, camera_movement, duration_seconds, attempt_count, end_photo_id")
     .eq("id", sceneId)
     .single();
   if (error || !scene) return res.status(404).json({ error: "scene not found" });
@@ -54,6 +54,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .single();
   if (!photo) return res.status(404).json({ error: "source photo not found" });
 
+  // Re-fetch pipeline_mode and video_model_sku so operator SKU pins and v1.1
+  // routing are honored on retry exactly as on the original submission.
+  // Non-fatal: default to v1 / no pin if the property lookup hiccups.
+  let pipelineMode: PipelineMode = "v1";
+  let listingSkuPin: string | null = null;
+  try {
+    const { data: property } = await supabase
+      .from("properties")
+      .select("pipeline_mode, video_model_sku")
+      .eq("id", scene.property_id)
+      .single();
+    if (property) {
+      pipelineMode = ((property as { pipeline_mode?: string }).pipeline_mode as PipelineMode | undefined) ?? "v1";
+      listingSkuPin = (property as { video_model_sku?: string | null }).video_model_sku ?? null;
+    }
+  } catch {
+    // Non-fatal: fall through with defaults.
+  }
+
   const patch: Record<string, unknown> = { prompt: prompt.trim() };
   if (camera_movement) patch.camera_movement = camera_movement;
   await updateScene(sceneId, patch);
@@ -62,6 +81,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from("scenes")
     .update({
       provider_task_id: null,
+      atlas_model_sku: null,
       clip_url: null,
       generation_cost_cents: null,
       generation_time_ms: null,
@@ -82,7 +102,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let lastError: { message: string; kind: string; provider: string } | null = null;
 
   for (let attempt = 0; attempt <= maxFailovers; attempt++) {
-    const decision = selectDecision(roomType, movement, providerOverride ?? null, excluded);
+    // Precedence: listing pin (video_model_sku → skuOverride, RULE 0 in
+    // selectProviderForScene) wins over the per-request providerOverride
+    // (→ preference). This mirrors the main pipeline (runGenerationSubmit /
+    // runResubmitScene). If the operator explicitly passes provider= in the
+    // request body but the listing also has a pinned SKU, the pin wins because
+    // the SKU-level choice is the operator's deliberate model selection for this
+    // property, while provider= is a coarser, ad-hoc routing hint.
+    const decision = selectProviderForScene(
+      {
+        endPhotoId: (scene as { end_photo_id?: string | null }).end_photo_id ?? null,
+        movement,
+        roomType,
+        preference: providerOverride ?? null,
+      },
+      excluded,
+      pipelineMode,
+      listingSkuPin,
+    );
     const provider = buildProviderFromDecision(decision);
     try {
       const genJob = await provider.generateClip({
@@ -103,6 +140,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           submitted_at: new Date().toISOString(),
           status: "generating",
           attempt_count: nextAttemptCount,
+          // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+          // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+          // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+          atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
         })
         .eq("id", sceneId);
 

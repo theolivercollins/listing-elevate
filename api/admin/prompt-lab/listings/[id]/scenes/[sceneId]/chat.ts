@@ -4,6 +4,7 @@ import { requireAdmin } from "../../../../../../../lib/auth.js";
 import { getSupabase } from "../../../../../../../lib/client.js";
 import { computeClaudeCost } from "../../../../../../../lib/utils/claude-cost.js";
 import { sanitizeDirectorPrompt } from "../../../../../../../lib/sanitize-prompt.js";
+import { isNonProdEnv } from "../../../../../../../lib/env.js";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -189,6 +190,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       unit_type: "tokens",
       cost_cents: Math.round(cost.costCents),
       metadata: { scope: "lab_listing_scene_chat", listing_id: (scene as { listing_id?: string }).listing_id ?? null, listing_scene_id: sceneId, model: CHAT_MODEL },
+      is_test: isNonProdEnv(),
     });
     if (costErr) console.error("[lab-listing-scene-chat] cost_events insert failed:", costErr);
 

@@ -9,9 +9,12 @@
     { "path": "/api/cron/poll-listing-lifecycle", "schedule": "* * * * *" },
     { "path": "/api/cron/poll-judge", "schedule": "* * * * *" },
     { "path": "/api/cron/refresh-sku-affinity", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/poll-blog-jobs", "schedule": "* * * * *" }
+    { "path": "/api/cron/poll-blog-jobs", "schedule": "* * * * *" },
+    { "path": "/api/cron/auto-run-sweep", "schedule": "* * * * *" }
   ],
   "routes": [
+    { "src": "/((?!preview/[^/]+/embed).*)", "headers": { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY", "Content-Security-Policy-Report-Only": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://placehold.co https://maps.googleapis.com https://maps.gstatic.com https://storage.googleapis.com https://*.b-cdn.net; media-src 'self' https://*.b-cdn.net; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com; frame-src https://iframe.mediadelivery.net; frame-ancestors 'none'; object-src 'none'" }, "continue": true },
+    { "src": "/preview/[^/]+/embed", "headers": { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "Content-Security-Policy": "frame-ancestors *" }, "continue": true },
     { "handle": "filesystem" },
     { "src": "/api/properties/([^/]+)/status", "dest": "/api/properties/[id]/status?id=$1" },
     { "src": "/api/properties/([^/]+)/rerun", "dest": "/api/properties/[id]/rerun?id=$1" },

@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
-    const { selectProvider } = await import('../../lib/providers/router.js');
+    const { selectProvider, buildProviderFromDecision } = await import('../../lib/providers/router.js');
     const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } = await import('../../lib/providers/bunny-stream.js');
     const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     const { resubmitScene } = await import('../../lib/pipeline.js');
@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // yet have a stored clip. Limit batch size to avoid function timeout.
     const { data: pending, error: pendingErr } = await supabase
       .from('scenes')
-      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type')
+      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type, atlas_model_sku')
       .not('provider_task_id', 'is', null)
       .is('clip_url', null)
       .order('submitted_at', { ascending: true })
@@ -139,11 +139,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           failedCount++;
           continue;
         }
-        // We use selectProvider to reconstruct a provider instance by name.
-        // Passing the provider name as preference guarantees we get that exact
-        // one (or fall through if disabled). selectProvider is the backward-
-        // compat wrapper that returns IVideoProvider directly.
-        const provider = selectProvider('other', null, scene.provider as any, []);
+        // Reconstruct provider for cost-accurate polling.
+        // For Atlas scenes with a stored SKU, use buildProviderFromDecision so
+        // AtlasProvider is initialized with the ACTUAL rendered model —
+        // this.model.priceCentsPerClip then reflects the true per-clip cost.
+        // Legacy rows with null atlas_model_sku fall back to selectProvider
+        // (today's behavior — acceptable for rows that predate migration 091).
+        const atlasModelSku = (scene as unknown as { atlas_model_sku?: string | null }).atlas_model_sku;
+        const provider = (scene.provider === 'atlas' && atlasModelSku)
+          ? buildProviderFromDecision({ provider: 'atlas', modelKey: atlasModelSku, fallback: undefined })
+          : selectProvider('other', null, scene.provider as any, []);
         if (provider.name !== scene.provider) {
           // Provider was disabled between submission and polling. Mark stuck.
           await supabase.from('scenes').update({ status: 'needs_review' }).eq('id', scene.id);

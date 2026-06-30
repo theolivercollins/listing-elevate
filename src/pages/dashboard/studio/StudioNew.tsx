@@ -17,6 +17,7 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
+import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
 
@@ -127,6 +128,8 @@ const StudioNew = () => {
   const [directorNotes, setDirectorNotes] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
+  const [autoRun, setAutoRun] = useState(false);
+  const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [drivePhotos, setDrivePhotos] = useState<{ path: string; url: string }[]>([]);
 
@@ -325,6 +328,8 @@ const StudioNew = () => {
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
+          auto_run: autoRun,
+          video_model_sku: videoModelSku,
         }),
       });
 
@@ -334,7 +339,9 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
-      fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      // authedFetch attaches the Supabase Bearer token required by the now-gated
+      // pipeline endpoint (F2 security fix). Fire-and-forget: not awaited.
+      authedFetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
       // Fire scrape action fire-and-forget: fetch the run id from the bundle then kick scrape.
       authedFetch(`/api/admin/studio/properties/${property_id}`)
         .then((r) => r.json())
@@ -528,6 +535,51 @@ const StudioNew = () => {
               />
             </div>
 
+            {/* Autopilot */}
+            <div>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  cursor: 'pointer',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--le-r-md)',
+                  border: `1px solid ${autoRun ? 'rgba(47,138,85,0.35)' : 'var(--le-line)'}`,
+                  background: autoRun ? 'rgba(47,138,85,0.05)' : 'var(--le-surface)',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={autoRun}
+                  onChange={(e) => setAutoRun(e.target.checked)}
+                  style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--le-good)', width: 15, height: 15 }}
+                  aria-describedby="autopilot-hint"
+                />
+                <div>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: autoRun ? 'var(--le-good)' : 'var(--le-ink)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    Auto-run (Autopilot)
+                  </span>
+                  <span
+                    id="autopilot-hint"
+                    style={{ fontSize: 12, color: 'var(--le-muted)', lineHeight: 1.45 }}
+                  >
+                    Let AI run this listing end-to-end. The pipeline will advance through
+                    each gate automatically. You can pause or take over at any time.
+                  </span>
+                </div>
+              </label>
+            </div>
+
             {/* Video type */}
             <div>
               <FieldLabel>Video type</FieldLabel>
@@ -592,6 +644,38 @@ const StudioNew = () => {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Video model */}
+            <div>
+              <FieldLabel>Video model</FieldLabel>
+              <select
+                className="studio-input"
+                value={videoModelSku ?? 'auto'}
+                onChange={(e) =>
+                  setVideoModelSku(e.target.value === 'auto' ? null : e.target.value)
+                }
+              >
+                {OPERATOR_VIDEO_SKUS.map((opt) => (
+                  <option
+                    key={opt.key ?? 'auto'}
+                    value={opt.key ?? 'auto'}
+                    disabled={!opt.available}
+                  >
+                    {opt.label}{!opt.available ? ' (coming soon)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--le-muted)',
+                  lineHeight: 1.4,
+                }}
+              >
+                Applies to every scene in this listing. 4K = native UHD (larger file).
+              </p>
             </div>
 
             {/* Duration */}

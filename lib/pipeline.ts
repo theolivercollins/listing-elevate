@@ -48,7 +48,7 @@ import {
   renderPerPhotoBlock,
 } from "./prompts/per-photo-retrieval.js";
 import { resolveEndFrameUrl } from "./services/end-frame.js";
-import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt, shouldForcePushIn } from "./providers/router.js";
+import { selectProviderForScene, buildProviderFromDecision, getEnabledProviders, forceSeedancePushInPrompt, shouldForcePushIn, isSeedancePushInSku } from "./providers/router.js";
 import { pollUntilComplete } from "./providers/provider.interface.js";
 import { classifyProviderError } from "./providers/errors.js";
 import { AtlasInsufficientBalanceError } from "./providers/atlas.js";
@@ -1113,14 +1113,15 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         },
         excluded,
         pipelineMode,
+        property.video_model_sku ?? null,
       );
       const provider = buildProviderFromDecision(decision);
-      // v1.1: force push-in prompt for every non-paired scene regardless of
-      // which provider/SKU was selected. The gate is on the SCENE (pipeline
-      // mode + no end_photo_id), not the modelKey, so retries that failover
-      // to native Kling are still push-in-forced. scene.prompt in the DB is
-      // never mutated — this override is render-time only.
-      const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
+      // Force push-in prompt when:
+      //   (a) v1.1 mode + non-paired scene (mode-based gate), OR
+      //   (b) the resolved SKU is a Seedance push-in SKU (operator picked
+      //       seedance-2-0-4k or seedance-pro-pushin under any mode, e.g. v1).
+      // Gate is on the SCENE + SKU, never mutates scene.prompt in DB.
+      const renderPrompt = (shouldForcePushIn(pipelineMode, scene.end_photo_id) || isSeedancePushInSku(decision.modelKey))
         ? forceSeedancePushInPrompt(scene.prompt)
         : scene.prompt;
       try {
@@ -1145,6 +1146,10 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
             submitted_at: new Date().toISOString(),
             status: "generating",
             attempt_count: attempt + 1,
+            // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+            // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+            // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+            atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
           })
           .eq("id", scene.id);
 
@@ -1317,12 +1322,14 @@ export async function resubmitScene(
     .single();
   if (!photo) return { ok: false, error: "source photo not found" };
 
-  // Re-fetch pipeline_mode so v1.1 routing (Seedance push-in) is honored on the
-  // re-render exactly as it is on the original submission.
+  // Re-fetch pipeline_mode and video_model_sku so v1.1 routing and operator SKU
+  // overrides are honored on the re-render exactly as on the original submission.
   let pipelineMode: PipelineMode = "v1";
+  let resubmitSkuOverride: string | null = null;
   try {
     const property = await getProperty(scene.property_id);
     pipelineMode = (property.pipeline_mode as PipelineMode | undefined) ?? "v1";
+    resubmitSkuOverride = property.video_model_sku ?? null;
   } catch {
     // Non-fatal: default to v1 routing if the property lookup hiccups.
   }
@@ -1379,12 +1386,14 @@ export async function resubmitScene(
       },
       excluded,
       pipelineMode,
+      resubmitSkuOverride,
     );
     const provider = buildProviderFromDecision(decision);
-    // v1.1: force push-in prompt for every non-paired scene regardless of which
-    // provider/SKU was selected on this attempt (retry may have failed over to
-    // native Kling). Gate is on the SCENE, not the modelKey.
-    const renderPrompt = shouldForcePushIn(pipelineMode, scene.end_photo_id)
+    // Force push-in prompt when:
+    //   (a) v1.1 mode + non-paired scene (mode-based gate), OR
+    //   (b) the resolved SKU is a Seedance push-in SKU (operator picked
+    //       seedance-2-0-4k or seedance-pro-pushin under any mode, e.g. v1).
+    const renderPrompt = (shouldForcePushIn(pipelineMode, scene.end_photo_id) || isSeedancePushInSku(decision.modelKey))
       ? forceSeedancePushInPrompt(effectivePrompt)
       : effectivePrompt;
     try {
@@ -1407,6 +1416,10 @@ export async function resubmitScene(
           submitted_at: new Date().toISOString(),
           status: "generating",
           attempt_count: nextAttemptCount,
+          // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+          // cost-accurate AtlasProvider instance (correct priceCentsPerClip).
+          // Non-atlas providers use null — their cost doesn't come from ATLAS_MODELS.
+          atlas_model_sku: decision.provider === "atlas" ? (decision.modelKey ?? null) : null,
         })
         .eq("id", sceneId);
 
@@ -1515,11 +1528,42 @@ async function runQCForScene(
 // rerunAssembly (manual clip-swap path). The `reason` flag is threaded
 // into cost_events metadata so the ledger can distinguish pipeline-driven
 // renders from operator-triggered re-renders.
+/**
+ * Fire-and-forget: persist an assembly render job token to delivery_runs so the
+ * autopilot sweep can resume polling on the next cron tick without re-submitting.
+ * Errors are logged but never rethrown — a cost-row failure must never block delivery.
+ */
+async function persistAssemblyJobId(
+  runId: string,
+  column: "assembly_h_job" | "assembly_v_job",
+  job: { jobId: string; environment: string },
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("delivery_runs")
+    .update({ [column]: job })
+    .eq("id", runId);
+  if (error) {
+    const code = (error as { code?: string }).code;
+    if (code === '42703') {
+      // migration 092 not applied: assembly_*_job column does not exist.
+      // Job token cannot be persisted → autopilot resume will re-submit the render
+      // (re-spend risk) until the migration is applied. Log at ERROR so this surfaces
+      // in observability dashboards. The sweep's leaseError counter also increments
+      // when it catches 42703 from resolveAssembling's job-column read.
+      console.error(
+        `[pipeline] persistAssemblyJobId: migration 092 not applied — ${column} column missing for run ${runId} (42703). Apply supabase/migrations/092_delivery_runs_assembly_jobs.sql to fix.`
+      );
+    } else {
+      console.error(`[pipeline] persistAssemblyJobId: failed to persist ${column} for run ${runId}:`, error.message);
+    }
+  }
+}
+
 async function runAssemblyStep(
   propertyId: string,
-  opts: { reason?: "pipeline" | "manual_rerun" } = {},
+  opts: { reason?: "pipeline" | "manual_rerun"; timeoutMs?: number; runId?: string } = {},
 ): Promise<void> {
-  const reason = opts.reason ?? "pipeline";
+  const { reason = "pipeline", timeoutMs = 240_000, runId } = opts;
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
@@ -1896,8 +1940,21 @@ async function runAssemblyStep(
             });
         await log(propertyId, "assembly", "info",
           `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
-        const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
+        // Persist job token so the autopilot sweep can resume polling on the next
+        // cron tick if this Vercel function is killed before the render completes.
+        // Include expectedDurationSeconds (clip-sum) so the resume path can use it
+        // as a cost fallback when the provider poll doesn't return durationSeconds.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_h_job", { ...horizontalJob, expectedDurationSeconds: timelineDurationSeconds }); }
+        const horizontalResult = await pollAssemblyJob(provider, horizontalJob, timeoutMs);
         if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
+          if (horizontalResult.error === "Assembly render timed out") {
+            // Still in-flight — throw a tagged error so callers can distinguish a
+            // resumable timeout from a true provider failure (which warrants pauseForHuman).
+            throw Object.assign(
+              new Error(`[ASSEMBLY_TIMEOUT] Horizontal render timed out after ${timeoutMs}ms`),
+              { isAssemblyTimeout: true },
+            );
+          }
           throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
         }
         horizontalRenderMs = horizontalResult.renderTimeMs ?? null;
@@ -1919,6 +1976,10 @@ async function runAssemblyStep(
           version: 1,
         });
         horizontalUrl = hFinalize.url;
+        // Render complete — clear persisted job token (no longer needed for resume).
+        if (runId) {
+          void getSupabase().from("delivery_runs").update({ assembly_h_job: null }).eq("id", runId);
+        }
         await log(propertyId, "assembly", "info",
           `Horizontal finalize: bitrate=${hFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${hFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: hFinalize.bitrateKbps, output_bytes: hFinalize.outputBytes, url: hFinalize.url });
@@ -1990,8 +2051,17 @@ async function runAssemblyStep(
             });
         await log(propertyId, "assembly", "info",
           `${providerName} vertical job queued: ${verticalJob.jobId}`);
-        const verticalResult = await pollAssemblyJob(provider, verticalJob);
+        // Persist V job token for autopilot resume on next cron tick.
+        // Include expectedDurationSeconds so the resume path never falls to 0.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_v_job", { ...verticalJob, expectedDurationSeconds: timelineDurationSeconds }); }
+        const verticalResult = await pollAssemblyJob(provider, verticalJob, timeoutMs);
         if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
+          if (verticalResult.error === "Assembly render timed out") {
+            throw Object.assign(
+              new Error(`[ASSEMBLY_TIMEOUT] Vertical render timed out after ${timeoutMs}ms`),
+              { isAssemblyTimeout: true },
+            );
+          }
           throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
         }
         const verticalDuration =
@@ -2008,6 +2078,10 @@ async function runAssemblyStep(
           version: 1,
         });
         verticalUrl = vFinalize.url;
+        // Render complete — clear persisted V job token.
+        if (runId) {
+          void getSupabase().from("delivery_runs").update({ assembly_v_job: null }).eq("id", runId);
+        }
         await log(propertyId, "assembly", "info",
           `Vertical finalize: bitrate=${vFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${vFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: vFinalize.bitrateKbps, output_bytes: vFinalize.outputBytes, url: vFinalize.url });
@@ -2152,7 +2226,10 @@ export async function runAssembly(propertyId: string): Promise<void> {
  * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
  * or when no completed scenes exist.
  */
-export async function rerunAssembly(propertyId: string): Promise<void> {
+export async function rerunAssembly(
+  propertyId: string,
+  opts?: { timeoutMs?: number; runId?: string },
+): Promise<void> {
   const { data: property } = await getSupabase()
     .from("properties")
     .select("*")
@@ -2181,7 +2258,7 @@ export async function rerunAssembly(propertyId: string): Promise<void> {
 
   await updatePropertyStatus(propertyId, "assembling");
   await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
-  await runAssemblyStep(propertyId, { reason: "manual_rerun" });
+  await runAssemblyStep(propertyId, { reason: "manual_rerun", ...opts });
 }
 
 function formatPrice(price: number): string {

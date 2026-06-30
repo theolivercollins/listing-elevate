@@ -51,6 +51,11 @@ export type ManualIngestInput = {
   days_on_market?: number | null;
   sold_price?: number | null;
   pipeline_mode?: 'v1' | 'v1.1' | null;
+  /** When true the delivery run should execute autonomously (autopilot). Set at
+   *  intake and stored on delivery_runs.auto_run. Defaults to false. */
+  auto_run?: boolean;
+  /** Operator-selected Atlas SKU at inception (e.g. "seedance-2-0-4k"). Null = automatic routing. */
+  video_model_sku?: string | null;
 };
 
 export type RevisionNoteRow = {
@@ -125,6 +130,12 @@ export type DeliveryRunRow = {
   voiceover_audio_url: string | null;
   music_track_id: string | null;
   error: string | null;
+  /** True when autopilot is active for this run (set at intake; can be toggled via kill switch). */
+  auto_run: boolean;
+  /** Non-null when autopilot paused the run waiting for human input. Cleared by resume_autopilot action. */
+  paused_reason: string | null;
+  /** ISO timestamp of when autopilot last paused this run. */
+  auto_paused_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -152,7 +163,9 @@ export type SceneVariantRow = {
 export type MlEventType =
   | 'photo_selection' | 'reorder' | 'regenerate' | 'variant_override' | 'script_edit'
   | 'voice_choice' | 'music_choice' | 'rating' | 'comment' | 'details_edit'
-  | 'music_feedback';
+  | 'music_feedback'
+  // Added for autopilot — DB migration 090 adds these values to the CHECK constraint on ml_events.event_type.
+  | 'auto_pause' | 'auto_advance' | 'auto_resume';
 
 export type MlEventRow = {
   id: string;

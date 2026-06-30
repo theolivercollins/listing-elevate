@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 import { getSupabase } from '../../lib/db.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -7,11 +8,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+
   try {
     const supabase = getSupabase();
     const today = new Date().toISOString().split('T')[0];
     const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
 
+    // All property + cost_events queries unconditionally exclude is_test rows
+    // so that test-data created on preview/dev deploys never pollutes operational
+    // metrics (success rate, cost-per-video, total spend, etc.).
     const [
       { count: completedToday },
       { count: submittedToday },
@@ -22,25 +29,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       { count: totalFailed },
     ] = await Promise.all([
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .eq('status', 'complete').gte('updated_at', `${today}T00:00:00`),
+        .eq('is_test', false).eq('status', 'complete').gte('updated_at', `${today}T00:00:00`),
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .gte('created_at', `${today}T00:00:00`),
+        .eq('is_test', false).gte('created_at', `${today}T00:00:00`),
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .in('status', ['queued', 'analyzing', 'scripting', 'generating', 'qc', 'assembling']),
+        .eq('is_test', false).in('status', ['queued', 'analyzing', 'scripting', 'generating', 'qc', 'assembling']),
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .eq('status', 'needs_review'),
+        .eq('is_test', false).eq('status', 'needs_review'),
       supabase.from('properties').select('processing_time_ms, total_cost_cents')
-        .eq('status', 'complete').gte('updated_at', `${today}T00:00:00`),
+        .eq('is_test', false).eq('status', 'complete').gte('updated_at', `${today}T00:00:00`),
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .eq('status', 'complete').gte('created_at', `${weekAgo}T00:00:00`),
+        .eq('is_test', false).eq('status', 'complete').gte('created_at', `${weekAgo}T00:00:00`),
       supabase.from('properties').select('*', { count: 'exact', head: true })
-        .in('status', ['failed', 'needs_review']).gte('created_at', `${weekAgo}T00:00:00`),
+        .eq('is_test', false).in('status', ['failed', 'needs_review']).gte('created_at', `${weekAgo}T00:00:00`),
     ]);
 
-    // Cost breakdown: fetch last 7 days of cost_events for in-memory aggregation
+    // Cost breakdown: fetch last 7 days of cost_events for in-memory aggregation.
+    // Always exclude is_test rows — test-data spend must not pollute margin numbers.
     const { data: costEvents } = await supabase
       .from('cost_events')
       .select('provider, stage, cost_cents, metadata, created_at')
+      .eq('is_test', false)
       .gte('created_at', `${weekAgo}T00:00:00`)
       .limit(10000);
 

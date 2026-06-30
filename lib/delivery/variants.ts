@@ -43,7 +43,7 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
   const supabase = getSupabase();
   const { data: scenes } = await supabase
     .from('scenes')
-    .select('id, scene_number, photo_id, prompt, duration_seconds, camera_movement, provider, provider_task_id, end_photo_id, end_image_url')
+    .select('id, scene_number, photo_id, prompt, duration_seconds, camera_movement, provider, provider_task_id, end_photo_id, end_image_url, atlas_model_sku')
     .eq('property_id', propertyId)
     .not('provider_task_id', 'is', null);
   const { data: existingVariants } = await supabase
@@ -65,6 +65,8 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
     await supabase.from('scene_variants').upsert({
       delivery_run_id: runId, scene_id: scene.id, variant: 'A',
       provider: scene.provider, provider_task_id: scene.provider_task_id,
+      // Forward the rendered SKU so the poll loop can reconstruct a cost-accurate provider.
+      atlas_model_sku: scene.provider === 'atlas' ? ((scene as unknown as { atlas_model_sku?: string | null }).atlas_model_sku ?? null) : null,
     }, { onConflict: 'delivery_run_id,scene_id,variant' });
 
     const existingB = existingBByScene.get(scene.id as string) ?? null;
@@ -121,6 +123,9 @@ export async function submitVariantsForProperty(propertyId: string, runId: strin
             await supabase.from('scene_variants').upsert({
               delivery_run_id: runId, scene_id: scene.id, variant: 'B',
               provider: provider.name, provider_task_id: genJob.jobId,
+              // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+              // cost-accurate AtlasProvider instance. Non-atlas: null.
+              atlas_model_sku: decision.provider === 'atlas' ? (decision.modelKey ?? null) : null,
             }, { onConflict: 'delivery_run_id,scene_id,variant' });
             const modelNote = decision.modelKey ? ` model=${decision.modelKey}` : '';
             await log(propertyId, 'generation', 'info',
@@ -208,7 +213,7 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
   // filter is intentionally absent — see safety note above.
   const { data: pending } = await supabase
     .from('scene_variants')
-    .select('id, delivery_run_id, scene_id, variant, provider, provider_task_id, created_at')
+    .select('id, delivery_run_id, scene_id, variant, provider, provider_task_id, created_at, atlas_model_sku')
     .not('provider_task_id', 'is', null)
     .is('clip_url', null)
     .is('error', null)
@@ -224,8 +229,16 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
     if (v.variant === 'A' && scene?.provider_task_id === v.provider_task_id) continue;
     if (!scene || !v.provider) continue;
     try {
+      // Reconstruct provider for cost-accurate polling.
+      // For Atlas variants with a stored SKU, use buildProviderFromDecision so
+      // AtlasProvider.checkStatus() returns the rendered SKU's priceCentsPerClip.
+      // Legacy null-sku rows fall back to selectProvider (acceptable: records the
+      // env-default SKU price, same behavior as before migration 091).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const provider = selectProvider('other', null, v.provider as any, []);
+      const variantAtlasModelSku = (v as unknown as { atlas_model_sku?: string | null }).atlas_model_sku;
+      const provider = (v.provider === 'atlas' && variantAtlasModelSku)
+        ? buildProviderFromDecision({ provider: 'atlas', modelKey: variantAtlasModelSku, fallback: undefined })
+        : selectProvider('other', null, v.provider as any, []);
       if (provider.name !== v.provider) {
         await supabase.from('scene_variants')
           .update({ error: `provider ${v.provider} no longer available`, degraded: true, updated_at: new Date().toISOString() })
@@ -305,12 +318,10 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
       // Fallback cost estimate when the provider doesn't return credit
       // usage in its task response. Runway gen4_turbo is ~5 credits/sec;
       // Kling v2-master is 10 units/clip (5s) regardless of duration.
-      // Atlas: use atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds) — the
-      // model key isn't stored on scene_variants, so we use the established
-      // per-second price map (atlas.ts:atlasClipCostCents) with the current
-      // default SKU. If status.costCents is already populated by AtlasProvider
-      // (it returns this.model.priceCentsPerClip on success), this branch is a
-      // safety net for any edge case where that field is null.
+      // Atlas: when atlas_model_sku is stored (post-migration 091) buildProviderFromDecision
+      // was used above, so status.costCents is already the correct SKU price from
+      // AtlasProvider.checkStatus(). The fallback here is a safety net for the null
+      // field case — uses stored SKU when available, V1_DEFAULT_SKU otherwise.
       // keep in sync with api/cron/poll-scenes.ts cost fallback
       const durationSeconds = scene.duration_seconds ?? 5;
       let fallbackUnits: number | undefined;
@@ -325,9 +336,12 @@ export async function pollPendingVariants(limit = 15): Promise<{ polled: number;
         fallbackUnitType = 'kling_units';
         fallbackCents = Math.round(fallbackUnits * parseFloat(process.env.KLING_CENTS_PER_UNIT ?? '0'));
       } else if (provider.name === 'atlas') {
-        fallbackCents = atlasClipCostCents(V1_DEFAULT_SKU, durationSeconds);
+        // Use the stored SKU when available (post-migration 091 rows); fall back
+        // to V1_DEFAULT_SKU for legacy rows where atlas_model_sku is null.
+        const skuForFallback = variantAtlasModelSku ?? V1_DEFAULT_SKU;
+        fallbackCents = atlasClipCostCents(skuForFallback, durationSeconds);
         if (fallbackCents === 0) {
-          console.warn('[cost] atlas render missing costCents — SKU not stored on scene_variants; using V1_DEFAULT_SKU fallback');
+          console.warn('[cost] atlas render missing costCents — using SKU fallback:', skuForFallback);
         }
       }
 
@@ -465,6 +479,9 @@ export async function regenerateVariant(
           degraded: false,
           error: null,
           updated_at: new Date().toISOString(),
+          // Persist the rendered Atlas SKU so the poll loop can reconstruct a
+          // cost-accurate AtlasProvider instance. Non-atlas: null.
+          atlas_model_sku: decision.provider === 'atlas' ? (decision.modelKey ?? null) : null,
         },
         { onConflict: 'delivery_run_id,scene_id,variant' },
       );

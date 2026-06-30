@@ -4,6 +4,7 @@ import { atlasClipCostCents } from "../../lib/providers/atlas.js";
 import { pickProvider, isNativeKling } from "../../lib/providers/dispatch.js";
 import { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } from "../../lib/providers/bunny-stream.js";
 import { reapStuckLabIterations } from "../../lib/pipeline/stuck-reaper.js";
+import { isNonProdEnv } from "../../lib/env.js";
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   const supabase = getSupabase();
@@ -71,6 +72,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
                 model: iter.model_used,
                 render_outcome: "failed",
               },
+          is_test: isNonProdEnv(),
         });
         if (failedCostErr) console.error("[poll-listing-iterations] failed cost_events insert:", failedCostErr);
         failed += 1;
@@ -125,6 +127,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
               unit_type: "renders",
               cost_cents: bunnyStreamCostCents(buffer.byteLength),
               metadata: { bunny_hosted: mp4Valid, path: rehostPath, source: "lab_listing", scene_id: iter.scene_id, iteration_id: iter.id },
+              is_test: isNonProdEnv(),
             });
             if (bErr) console.warn("[poll-listing-iterations] bunny cost_event insert failed:", bErr);
           })();
@@ -160,6 +163,7 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
         metadata: nativeKling
           ? { scope: "lab_listing", scene_id: iter.scene_id, iteration_id: iter.id, model: iter.model_used, billing: "prepaid_credits" }
           : { scope: "lab_listing", scene_id: iter.scene_id, iteration_id: iter.id, model: iter.model_used },
+        is_test: isNonProdEnv(),
       });
       if (costErr) console.error("[poll-listing-iterations] cost_events insert failed:", costErr);
 
