@@ -3,11 +3,15 @@
  *
  * Verifies:
  *  - Missing url param → 400
- *  - Non-Bunny host (arbitrary, evil.com, cloud metadata IP) → 403
+ *  - Non-Bunny host (arbitrary, evil.com, cloud metadata IP) → 403, no fetch
  *  - Non-https scheme → 403
+ *  - Non-default port on Bunny host → 403
  *  - Valid Bunny CDN URL → fetch called with Referer header; Range forwarded
  *  - fetch error → 502
  *  - Upstream not ok → upstream status passed through
+ *  - 3xx with non-Bunny Location → 502, not followed to evil host
+ *  - 3xx with valid Bunny Location → followed once; second 3xx → 502
+ *  - config.maxDuration === 300
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
@@ -38,7 +42,7 @@ afterEach(() => {
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-import handler from '../clip-proxy.js';
+import handler, { config } from '../clip-proxy.js';
 
 // ── Response / Request factories ──────────────────────────────────────────────
 function makeRes() {
@@ -66,7 +70,13 @@ function makeReq(overrides: Partial<VercelRequest> = {}): VercelRequest {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
-describe('GET /api/clip-proxy — missing url', () => {
+describe('GET /api/clip-proxy — module config', () => {
+  it('exports maxDuration: 300 so the Vercel function outlives large clip streams', () => {
+    expect(config.maxDuration).toBe(300);
+  });
+});
+
+describe('GET /api/clip-proxy — missing / invalid url', () => {
   it('returns 400 when url query param is absent', async () => {
     const res = makeRes();
     await handler(makeReq({ query: {} }), res as unknown as VercelResponse);
@@ -94,8 +104,6 @@ describe('GET /api/clip-proxy — SSRF guard rejects disallowed hosts', () => {
 
   it('returns 403 for the cloud metadata IP (IMDS)', async () => {
     const res = makeRes();
-    // Layer 2 (assertAllowedMediaUrl) would block this, but layer 1 also
-    // blocks it because the hostname is not the Bunny CDN host.
     await handler(
       makeReq({ query: { url: 'https://169.254.169.254/latest/meta-data/' } }),
       res as unknown as VercelResponse,
@@ -123,13 +131,126 @@ describe('GET /api/clip-proxy — SSRF guard rejects disallowed hosts', () => {
     expect(res._status).toBe(403);
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it('returns 403 for a Bunny host URL with a non-default port (e.g. :8080)', async () => {
+    const res = makeRes();
+    await handler(
+      makeReq({ query: { url: `https://${BUNNY_HOST}:8080/guid/play_1080p.mp4` } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when BUNNY_STREAM_CDN_HOSTNAME is not set (fail-closed)', async () => {
+    delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+    const res = makeRes();
+    await handler(
+      makeReq({ query: { url: `https://${BUNNY_HOST}/guid/play_1080p.mp4` } }),
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(403);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/clip-proxy — redirect handling', () => {
+  const bunnyUrl = `https://${BUNNY_HOST}/some-guid/play_1080p.mp4`;
+
+  it('returns 502 and does NOT follow a 3xx whose Location is a non-Bunny host', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      headers: new Headers({ location: 'https://evil.com/steal.mp4' }),
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(502);
+    expect((res._body as { error: string }).error).toBe('redirect_forbidden');
+    // fetch called once for the original URL; NOT a second time for evil.com
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 502 and does NOT follow a 3xx with missing Location header', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 302,
+      headers: new Headers(),
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(502);
+    expect((res._body as { error: string }).error).toBe('redirect_forbidden');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('follows a 3xx to a valid Bunny Location exactly once', async () => {
+    const redirectTarget = `https://${BUNNY_HOST}/other-guid/play_1080p.mp4`;
+
+    // First fetch → 301 to another Bunny URL
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 301,
+      headers: new Headers({ location: redirectTarget }),
+    });
+    // Second fetch → ok but body null → handler returns 502 (tests that it ran)
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'video/mp4' }),
+      body: null,
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockFetch.mock.calls[1][0]).toBe(redirectTarget);
+    // Referer still set on the follow hop
+    const secondOpts = mockFetch.mock.calls[1][1] as RequestInit & { headers: Record<string, string> };
+    expect(secondOpts.headers['Referer']).toBe('https://www.listingelevate.com/');
+  });
+
+  it('returns 502 when the followed redirect itself returns another 3xx (no hop loop)', async () => {
+    const hop1 = `https://${BUNNY_HOST}/hop1/play_1080p.mp4`;
+    const hop2 = `https://${BUNNY_HOST}/hop2/play_1080p.mp4`;
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 301, headers: new Headers({ location: hop1 }) })
+      .mockResolvedValueOnce({ ok: false, status: 302, headers: new Headers({ location: hop2 }) });
+
+    const res = makeRes();
+    await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(502);
+    expect((res._body as { error: string }).error).toBe('too_many_redirects');
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('GET /api/clip-proxy — valid Bunny URL', () => {
   const bunnyUrl = `https://${BUNNY_HOST}/some-guid/play_1080p.mp4`;
 
+  it('calls fetch with redirect: manual', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'video/mp4' }),
+      body: null,
+    });
+
+    const res = makeRes();
+    await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
+
+    const [, calledOpts] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(calledOpts.redirect).toBe('manual');
+  });
+
   it('calls fetch with the Referer header set for the Bunny CDN URL', async () => {
-    // Mock: upstream ok but body null → handler returns 502 after the fetch.
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -184,7 +305,6 @@ describe('GET /api/clip-proxy — valid Bunny URL', () => {
     await handler(makeReq({ query: { url: bunnyUrl } }), res as unknown as VercelResponse);
     expect(res._status).toBe(403);
     expect(res._ended).toBe(true);
-    // fetch was still called (SSRF guard passed, Bunny returned 403)
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
