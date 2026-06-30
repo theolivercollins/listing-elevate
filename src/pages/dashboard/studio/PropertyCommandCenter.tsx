@@ -483,7 +483,7 @@ const PropertyCommandCenter = () => {
     <StudioShell>
       {/* ─── Page heading ─── */}
       <div className="studio-page-heading">
-        <div>
+        <div style={{ minWidth: 0, flex: '1 1 auto' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             <Link to="/dashboard/studio" className="studio-btn-ghost studio-btn-sm">
               <ArrowLeft size={11} strokeWidth={1.8} />
@@ -518,7 +518,7 @@ const PropertyCommandCenter = () => {
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: '60vw',
+              maxWidth: '100%',
             }}
           >
             {property.address}
