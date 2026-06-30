@@ -1,5 +1,167 @@
-import { describe, expect, it, vi } from 'vitest';
-import { downloadDriveFile, expandFoldersToImages } from '../google-picker';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  _resetDriveToken,
+  downloadDriveFile,
+  expandFoldersToImages,
+  requestDriveAccessToken,
+} from '../google-picker';
+
+// ─── requestDriveAccessToken (token caching — FIX 1) ──────────────────────────
+//
+// loadScript() injects a real <script src="..."> tag. happy-dom treats that
+// as a real network load attempt ("JavaScript file loading is disabled")
+// and fires `error` synchronously on connection — before a test ever gets a
+// chance to simulate `load`. So instead of letting the script actually
+// connect to the document, we stub document.head.appendChild to capture the
+// element without connecting it, then invoke its `onload` handler directly
+// (a plain function call — no real DOM event dispatch involved).
+
+describe('requestDriveAccessToken', () => {
+  let initTokenClientMock: ReturnType<typeof vi.fn>;
+  let requestAccessTokenMock: ReturnType<typeof vi.fn>;
+  let capturedConfig: google.accounts.oauth2.TokenClientConfig | null;
+  let appendChildSpy: ReturnType<typeof vi.spyOn>;
+  let pendingScriptOnload: (() => void) | null;
+
+  /** Resolves loadScript()'s pending GIS <script> tag, if one is in flight. */
+  function flushGisScriptLoad() {
+    pendingScriptOnload?.();
+    pendingScriptOnload = null;
+  }
+
+  beforeEach(() => {
+    _resetDriveToken();
+    capturedConfig = null;
+    pendingScriptOnload = null;
+    requestAccessTokenMock = vi.fn();
+    initTokenClientMock = vi.fn((config: google.accounts.oauth2.TokenClientConfig) => {
+      capturedConfig = config;
+      return { requestAccessToken: requestAccessTokenMock };
+    });
+    (globalThis as unknown as { google: unknown }).google = {
+      accounts: { oauth2: { initTokenClient: initTokenClientMock } },
+    };
+    appendChildSpy = vi
+      .spyOn(document.head, 'appendChild')
+      .mockImplementation((node: unknown) => {
+        const el = node as { onload?: (() => void) | null };
+        if (typeof el.onload === 'function') pendingScriptOnload = el.onload;
+        return node as Node;
+      });
+  });
+
+  afterEach(() => {
+    delete (globalThis as { google?: unknown }).google;
+    appendChildSpy.mockRestore();
+  });
+
+  it('requests a fresh token via GIS, configured with prompt: "" for silent reuse', async () => {
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-1', expires_in: '3600' });
+    });
+
+    const promise = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    const token = await promise;
+
+    expect(token).toBe('tok-1');
+    expect(initTokenClientMock).toHaveBeenCalledTimes(1);
+    expect(initTokenClientMock.mock.calls[0][0]).toMatchObject({
+      client_id: 'client-1',
+      prompt: '',
+    });
+    expect(requestAccessTokenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the cached token on a second call within expiry, without calling initTokenClient again', async () => {
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-1', expires_in: '3600' });
+    });
+
+    const p1 = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    await p1;
+
+    initTokenClientMock.mockClear();
+    requestAccessTokenMock.mockClear();
+
+    const token2 = await requestDriveAccessToken({ clientId: 'client-1' });
+
+    expect(token2).toBe('tok-1');
+    expect(initTokenClientMock).not.toHaveBeenCalled();
+    expect(requestAccessTokenMock).not.toHaveBeenCalled();
+  });
+
+  it('requests a fresh token once the cached one is within 60s of expiring', async () => {
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-1', expires_in: '100' });
+    });
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+
+    const p1 = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    await p1; // expiresAt = 1_000_000 + 100_000 = 1_100_000
+
+    initTokenClientMock.mockClear();
+    requestAccessTokenMock.mockClear();
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-2', expires_in: '100' });
+    });
+
+    // 1_045_000 is within the 60s safety margin of the 1_100_000 expiry.
+    nowSpy.mockReturnValue(1_045_000);
+
+    const p2 = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    const token2 = await p2;
+
+    expect(token2).toBe('tok-2');
+    // The token refreshes, but the module-level token client itself is
+    // reused — initTokenClient must NOT be called a second time.
+    expect(initTokenClientMock).not.toHaveBeenCalled();
+    expect(requestAccessTokenMock).toHaveBeenCalledTimes(1);
+
+    nowSpy.mockRestore();
+  });
+
+  it('_resetDriveToken clears the cache, forcing a fresh OAuth request on the next call', async () => {
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-1', expires_in: '3600' });
+    });
+
+    const p1 = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    await p1;
+
+    _resetDriveToken();
+    initTokenClientMock.mockClear();
+    requestAccessTokenMock.mockClear();
+    requestAccessTokenMock.mockImplementation(() => {
+      capturedConfig!.callback({ access_token: 'tok-2', expires_in: '3600' });
+    });
+
+    const p2 = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+    const token2 = await p2;
+
+    expect(token2).toBe('tok-2');
+    expect(initTokenClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects with the GIS error_callback type when the popup is closed', async () => {
+    requestAccessTokenMock.mockImplementation(() => {
+      const config = capturedConfig!;
+      (config as unknown as { error_callback: (err: { type: string }) => void }).error_callback?.({
+        type: 'popup_closed',
+      });
+    });
+
+    const promise = requestDriveAccessToken({ clientId: 'client-1' });
+    flushGisScriptLoad();
+
+    await expect(promise).rejects.toThrow('popup_closed');
+  });
+});
 
 // ─── downloadDriveFile ────────────────────────────────────────────────────────
 
@@ -122,9 +284,9 @@ describe('expandFoldersToImages', () => {
     expect(result.map((r) => r.id)).toEqual(['img-1', 'img-2']);
   });
 
-  it('caps total results at 200 images and logs a warning', async () => {
-    // Folder contains 250 images — only the first 200 should be returned.
-    const twoFiftyFiles = Array.from({ length: 250 }, (_, i) => ({
+  it('caps total results at 300 images and logs a warning', async () => {
+    // Folder contains 350 images — only the first 300 should be returned.
+    const manyFiles = Array.from({ length: 350 }, (_, i) => ({
       id: `img-${i}`,
       name: `photo${i}.jpg`,
       mimeType: 'image/jpeg',
@@ -132,7 +294,7 @@ describe('expandFoldersToImages', () => {
 
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ files: twoFiftyFiles }),
+      json: async () => ({ files: manyFiles }),
     });
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -143,20 +305,20 @@ describe('expandFoldersToImages', () => {
       mockFetch as unknown as typeof fetch,
     );
 
-    expect(result).toHaveLength(200);
+    expect(result).toHaveLength(300);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Truncated'));
 
     warnSpy.mockRestore();
   });
 
   it('caps total across multiple picked items (not just within a single folder)', async () => {
-    // 150 images from a folder + 100 direct images = 250 total, capped at 200.
-    const folderImages = Array.from({ length: 150 }, (_, i) => ({
+    // 200 images from a folder + 150 direct images = 350 total, capped at 300.
+    const folderImages = Array.from({ length: 200 }, (_, i) => ({
       id: `folder-img-${i}`,
       name: `f${i}.jpg`,
       mimeType: 'image/jpeg',
     }));
-    const directImages = Array.from({ length: 100 }, (_, i) => ({
+    const directImages = Array.from({ length: 150 }, (_, i) => ({
       id: `direct-img-${i}`,
       name: `d${i}.jpg`,
       mimeType: 'image/jpeg',
@@ -178,7 +340,7 @@ describe('expandFoldersToImages', () => {
       mockFetch as unknown as typeof fetch,
     );
 
-    expect(result).toHaveLength(200);
+    expect(result).toHaveLength(300);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Truncated'));
 
     warnSpy.mockRestore();

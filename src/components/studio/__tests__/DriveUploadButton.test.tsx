@@ -234,13 +234,15 @@ describe('DriveUploadButton', () => {
   });
 });
 
-// ─── 60-photo cap handler logic (StudioNew.onFilesImported) ──────────────────
+// ─── 300-photo cap handler logic (StudioNew.onFilesImported) ─────────────────
 //
 // StudioNew has no dedicated test file; the cap logic is a pure functional
 // updater, so we verify it here as a unit test against the algorithm.
 
-describe('60-photo cap handler logic (StudioNew.onFilesImported algorithm)', () => {
+describe('300-photo cap handler logic (StudioNew.onFilesImported algorithm)', () => {
   type Stub = { id: string };
+
+  const MAX_PHOTOS = 300;
 
   /** Mirrors the setFiles updater + cap calculation in StudioNew's onFilesImported. */
   function runCap(prev: Stub[], imported: Stub[]): {
@@ -250,7 +252,7 @@ describe('60-photo cap handler logic (StudioNew.onFilesImported algorithm)', () 
   } {
     const seen = new Set(prev.map((f) => f.id));
     const deduped = imported.filter((f) => !seen.has(f.id));
-    const remaining = 60 - prev.length;
+    const remaining = MAX_PHOTOS - prev.length;
     const toAdd = deduped.slice(0, remaining);
     const droppedForCap = deduped.length - toAdd.length;
     const addedCount = toAdd.length;
@@ -260,17 +262,17 @@ describe('60-photo cap handler logic (StudioNew.onFilesImported algorithm)', () 
   const make = (n: number, prefix = 'f'): Stub[] =>
     Array.from({ length: n }, (_, i) => ({ id: `${prefix}-${i}` }));
 
-  it('caps imported Drive files at 60 total and reports dropped count', () => {
-    // 50 existing + 15 imported → 10 added, 5 dropped.
-    const { result, addedCount, droppedForCap } = runCap(make(50), make(15, 'new'));
-    expect(result).toHaveLength(60);
+  it('caps imported Drive files at 300 total and reports dropped count', () => {
+    // 290 existing + 15 imported → 10 added, 5 dropped.
+    const { result, addedCount, droppedForCap } = runCap(make(290), make(15, 'new'));
+    expect(result).toHaveLength(300);
     expect(addedCount).toBe(10);
     expect(droppedForCap).toBe(5);
   });
 
-  it('drops all incoming when already at the 60-photo limit', () => {
-    const { result, addedCount, droppedForCap } = runCap(make(60), make(5, 'new'));
-    expect(result).toHaveLength(60);
+  it('drops all incoming when already at the 300-photo limit', () => {
+    const { result, addedCount, droppedForCap } = runCap(make(300), make(5, 'new'));
+    expect(result).toHaveLength(300);
     expect(addedCount).toBe(0);
     expect(droppedForCap).toBe(5);
   });
