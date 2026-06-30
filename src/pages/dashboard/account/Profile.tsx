@@ -183,22 +183,13 @@ function MfaEnrollSection({
         </p>
 
         {/* QR code */}
-        <div
-          style={{
-            display: "inline-flex",
-            padding: 12,
-            background: "#fff",
-            borderRadius: "var(--le-r-md)",
-            border: "1px solid var(--line)",
-            marginBottom: 16,
-          }}
-        >
+        <div className="inline-flex p-3 bg-white rounded-[var(--le-r-md)] border border-[var(--line)] mb-4">
           <img
             src={qrSrc}
             alt="QR code for authenticator app"
             width={160}
             height={160}
-            style={{ display: "block" }}
+            className="block"
           />
         </div>
 
@@ -208,8 +199,7 @@ function MfaEnrollSection({
             Or enter manually
           </div>
           <div
-            className="text-[12px] tabular-nums py-2 px-3 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] select-all"
-            style={{ letterSpacing: "0.1em", wordBreak: "break-all" }}
+            className="text-[12px] tabular-nums py-2 px-3 rounded-[8px] border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] select-all tracking-[0.1em] break-all"
           >
             {state.secret}
           </div>
@@ -244,8 +234,7 @@ function MfaEnrollSection({
           {verifyError && (
             <p
               role="alert"
-              className="text-[12px] leading-[1.5]"
-              style={{ color: "var(--bad)", margin: 0 }}
+              className="text-[12px] leading-[1.5] text-[var(--bad)] m-0"
             >
               {verifyError}
             </p>
@@ -314,12 +303,7 @@ function MfaEnrollSection({
       {requireSetup && (
         <div
           role="alert"
-          className="mb-4 py-2.5 px-3.5 rounded-[10px] text-[12px] leading-[1.5]"
-          style={{
-            background: "rgba(196,74,74,0.07)",
-            border: "1px solid rgba(196,74,74,0.2)",
-            color: "var(--bad)",
-          }}
+          className="mb-4 py-2.5 px-3.5 rounded-[10px] text-[12px] leading-[1.5] bg-[rgba(196,74,74,0.07)] border border-[rgba(196,74,74,0.2)] text-[var(--bad)]"
         >
           Admins must enable 2FA to access the management dashboard. Set it up below.
         </div>

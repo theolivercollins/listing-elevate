@@ -273,6 +273,7 @@ describe("Nav rename — routes unchanged after label rename", () => {
     vi.clearAllMocks();
     mockAuthValue.user = { id: "admin-user-id" };
     mockAuthValue.profile = { role: "admin" };
+    mockAuthValue.mfaVerifiedFactors = [{ id: "mock-totp-factor", factor_type: "totp", status: "verified" }];
   });
 
   it("/dashboard/pipeline still renders Pipeline (sidebar label is now 'Orders')", () => {

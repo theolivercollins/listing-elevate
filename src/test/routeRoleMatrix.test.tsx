@@ -347,6 +347,7 @@ describe("Route × Role Matrix", () => {
       mockAuthValue.user = { id: "admin-user-id" };
       mockAuthValue.profile = { role: "admin" };
       mockAuthValue.loading = false;
+      mockAuthValue.mfaVerifiedFactors = [{ id: "mock-totp-factor", factor_type: "totp", status: "verified" }];
     });
 
     it("/dashboard renders Overview (operator landing)", () => {
