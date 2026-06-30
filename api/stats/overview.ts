@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 import { getSupabase } from '../../lib/db.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -6,6 +7,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });
   }
+
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
 
   try {
     const supabase = getSupabase();

@@ -69,6 +69,12 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
 }
 
 async function handlePatch(req: VercelRequest, res: VercelResponse) {
+  // Auth gate — only the property owner or an admin may write pipeline_mode.
+  const auth = await verifyAuth(req);
+  if (!auth) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   try {
     const id = req.query.id as string;
     const { pipeline_mode } = req.body as { pipeline_mode?: unknown };
@@ -79,6 +85,21 @@ async function handlePatch(req: VercelRequest, res: VercelResponse) {
           error: `Invalid pipeline_mode. Must be one of: ${VALID_PIPELINE_MODES.join(', ')}`,
         });
       }
+    }
+
+    let property;
+    try {
+      property = await getProperty(id);
+    } catch {
+      // getProperty throws (Supabase single()) when no row matches — return 404.
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+    // Only the property owner (submitted_by) or an admin may mutate pipeline_mode.
+    const isOwner = property.submitted_by === auth.user.id;
+    const isAdmin = auth.profile.role === 'admin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
