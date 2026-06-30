@@ -19,6 +19,7 @@ vi.mock('../../../../lib/auth', () => ({
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
   // requireAuth and requireAdmin are NOT used directly in this handler —
   // the handler uses verifyAuth so it can distinguish 401 from 403 itself.
+  setNoStore: vi.fn(),
 }));
 
 // ── DB mock ──────────────────────────────────────────────────────────────────

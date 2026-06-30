@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/lib/auth";
+import { useAuth, IMPERSONATABLE_ROLES } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { fetchLogs, fetchProperties } from "@/lib/api";
 import { Icon, type IconName } from "@/components/dashboard/icons";
@@ -363,6 +363,125 @@ const menuItemStyle = {
   transition: "background .12s",
 };
 
+/**
+ * ImpersonationSwitcher — "Preview as" launcher for real admins.
+ *
+ * Lets an operator preview the app as another role (UI + server APIs, per
+ * the impersonation contract in src/lib/auth.tsx). Only ever rendered when
+ * realRole === "admin"; selecting the real role exits preview.
+ */
+function ImpersonationSwitcher() {
+  const { profile, realRole, isImpersonating, setImpersonatedRole } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    return () => window.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  if (realRole !== "admin") return null;
+
+  const activeValue = profile?.role ?? realRole;
+  const activeLabel =
+    IMPERSONATABLE_ROLES.find((r) => r.value === activeValue)?.label ?? "Admin";
+
+  const handleSelect = async (value: "admin" | "user") => {
+    setOpen(false);
+    setPending(true);
+    setError(null);
+    try {
+      await setImpersonatedRole(value === realRole ? null : value);
+    } catch {
+      setError("Couldn't switch preview.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <div className="le-sidebar-section-label">Preview as</div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={pending}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          width: "100%",
+          padding: "8px 12px",
+          borderRadius: "var(--le-r-md)",
+          border: "1px solid var(--line)",
+          background: isImpersonating ? "var(--warn-soft)" : "var(--surface-2)",
+          color: "var(--ink)",
+          fontFamily: "inherit",
+          fontSize: 12.5,
+          fontWeight: 500,
+          cursor: pending ? "default" : "pointer",
+          opacity: pending ? 0.6 : 1,
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <Icon name="users" size={14} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {activeLabel}
+          </span>
+        </span>
+        <Icon
+          name="chevron-down"
+          size={12}
+          style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
+        />
+      </button>
+      {error && (
+        <div style={{ fontSize: 11, color: "var(--bad)", padding: "4px 2px 0" }}>{error}</div>
+      )}
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            background: "var(--surface)",
+            borderRadius: "var(--le-r-lg)",
+            boxShadow: "var(--shadow-lg)",
+            border: "1px solid var(--line)",
+            padding: 6,
+            zIndex: 1100,
+          }}
+        >
+          {IMPERSONATABLE_ROLES.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={activeValue === r.value}
+              onClick={() => handleSelect(r.value)}
+              style={menuItemStyle}
+            >
+              <span style={{ flex: 1 }}>{r.label}</span>
+              {activeValue === r.value && <Icon name="check" size={14} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
   const { user, profile } = useAuth();
   const location = useLocation();
@@ -437,6 +556,7 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
       </nav>
 
       <div className="le-sidebar-foot">
+        {!collapsed && <ImpersonationSwitcher />}
         <UserMenu
           collapsed={collapsed}
           initials={initials}

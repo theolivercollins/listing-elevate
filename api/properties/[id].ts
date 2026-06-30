@@ -1,11 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getPhotosForProperty, getScenesForProperty, getSupabase, getRatingsForProperty } from '../../lib/db.js';
-import { verifyAuth } from '../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../lib/auth.js';
 import type { PipelineMode } from '../../lib/types.js';
 
 const VALID_PIPELINE_MODES: PipelineMode[] = ['v1', 'v1.1'];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): this endpoint calls verifyAuth directly (not via
+  // requireAuth) so it must set no-store/Vary itself. Set before auth
+  // resolution so it applies to every response path, including errors —
+  // the same URL can return different bodies per impersonation token.
+  setNoStore(res);
+
   if (req.method === 'GET') {
     return handleGet(req, res);
   }
