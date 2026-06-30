@@ -1536,7 +1536,7 @@ async function runQCForScene(
 async function persistAssemblyJobId(
   runId: string,
   column: "assembly_h_job" | "assembly_v_job",
-  job: { jobId: string; environment: string },
+  job: { jobId: string; environment: string; expectedDurationSeconds?: number },
 ): Promise<void> {
   const { error } = await getSupabase()
     .from("delivery_runs")
