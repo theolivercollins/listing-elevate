@@ -135,6 +135,36 @@ export function resolveRoutingPreference(
   return scene.provider_preference ?? null;
 }
 
+// ─── CLIP URL PROXY ────────────────────────────────────────────
+
+/**
+ * Rewrites a Bunny CDN clip URL to route through our /api/clip-proxy endpoint,
+ * which adds the Referer header required by Bunny library 679131.
+ *
+ * Bunny blocks server-side fetches that carry no Referer (HTTP 403) — browsers
+ * send it automatically, but Creatomate's render server does not. Routing
+ * through the proxy injects `Referer: https://www.listingelevate.com/` so the
+ * stitched render succeeds and horizontal_video_url is populated.
+ *
+ * Non-Bunny URLs pass through unchanged. Safe when BUNNY_STREAM_CDN_HOSTNAME
+ * is not configured — returns the original url so assembly still works with
+ * other CDN providers.
+ */
+export function proxifyClipUrl(url: string): string {
+  const cdnHostname = process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  if (!cdnHostname) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === cdnHostname) {
+      const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
+      return `${base}/api/clip-proxy?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Malformed URL — return unchanged so assembly falls back gracefully.
+  }
+  return url;
+}
+
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
 
 // Snapshot every system prompt to prompt_revisions on each pipeline run so
@@ -1738,7 +1768,7 @@ async function runAssemblyStep(
         });
 
       const clipInputs = fitted.map((f) => ({
-        url: f.scene.clip_url as string,
+        url: proxifyClipUrl(f.scene.clip_url as string),
         durationSeconds: f.durationSeconds,
       }));
 
