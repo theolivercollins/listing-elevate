@@ -53,3 +53,32 @@ Security backlog F7–F32 in a follow-on session. Highest-priority remaining ite
 ## Cost snapshot
 
 No provider API calls this session. All work was code + schema changes.
+
+---
+
+## Follow-up batch (branch `worktree-security-backlog`, 2026-06-28)
+
+Continued from Phase 0. Closes the next tier of the security backlog. No provider API calls.
+
+### Migrations applied to prod (Supabase vrhmaeywqsohlztoouxu)
+
+- Commit `6b7621c` — `095_security_function_search_path_f16.sql`: `search_path` pinned on 14 app functions (finding F16). Prevents search-path injection attacks where an attacker-controlled schema could shadow internal functions. APPLIED TO PROD 2026-06-28.
+- `096_security_revoke_internal_rpc_exec_f15.sql`: EXECUTE on `claim_v21_outcomes` + `increment_creative_view` revoked from anon + authenticated roles; service_role kept. These RPCs were reachable by any unauthenticated client (finding F15). APPLIED TO PROD 2026-06-28.
+
+### Code fixes
+
+- Commit `6c029db` — F8 (SSRF): new `lib/security/url-guard.ts` exports `assertAllowedMediaUrl`. Enforces https-only + anchored host allowlist (Bunny CDN, Supabase Storage) and rejects IP literals. Applied before the `fetch()` call in `api/preview/[token]/download.ts` + `api/admin/studio/properties/[id]/download.ts`. Severity reduced post-F1 (anon can no longer set the URL via the API), retained as defense-in-depth.
+- Commit `9476b49` — F25 (filter injection): `sanitizePostgrestLike` strips PostgREST `.or()` grammar characters from the `q` parameter in `api/blog/posts/index.ts` before the `.or()` filter is built. Prevents injection of arbitrary PostgREST filter expressions through the blog search endpoint.
+- Commit `e5a8919` — F23 (PII logging): removed `console.log` calls in `api/properties/index.ts` that were emitting `address`, `price`, `agentName`, `driveLink`, and `email` to Vercel runtime logs. Customer PII no longer appears in log aggregators.
+
+### Verification
+
+- Security posture certified post-batch: 0 critical / 0 high advisories from advisor scan.
+- Anon PostgREST = 401 on all tables/views (confirmed; unchanged from Phase 0).
+- Migrations 095 + 096 applied and confirmed in Supabase migration history.
+
+### Remaining tail (deferred — lower severity)
+
+- F7: `api/pipeline/continue/[runId].ts` lacks a `CRON_SECRET`-style shared-secret header check. Add before the endpoint goes under heavy prod load.
+- F28: HIBP breach-check toggle on signup.
+- F20/F10/F9: optional rate-limiting and additional input validation (lower priority).

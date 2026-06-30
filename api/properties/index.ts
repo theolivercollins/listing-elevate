@@ -98,15 +98,14 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       pipeline_mode,
     } = req.body;
 
-    console.log('POST /api/properties body:', JSON.stringify({
-      address, price, bedrooms, bathrooms, listing_agent,
-      tempId, driveLink,
+    // Non-PII request summary — no address, price, agent name, or driveLink.
+    console.log('[api/properties] POST create', JSON.stringify({
+      tempId: tempId || null,
       photoPathsCount: Array.isArray(photoPaths) ? photoPaths.length : 'not array',
-      photoPathsSample: Array.isArray(photoPaths) ? photoPaths.slice(0, 2) : photoPaths,
+      hasDriveLink: !!driveLink,
       selectedPackage, selectedDuration, selectedOrientation,
       addVoiceover, addVoiceClone, addCustomRequest,
       hasCustomRequestText: !!customRequestText,
-      daysOnMarket, soldPrice,
     }));
 
     if (!address || !price || !bedrooms || !bathrooms || !listing_agent) {
@@ -281,7 +280,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       }
 
       console.log(
-        `[api/properties] Owner bypass for ${auth.user.email} — property ${property.id} comped (would have been ${amountCents}¢). Firing pipeline...`,
+        `[api/properties] Owner bypass — property ${property.id} comped (would have been ${amountCents}¢). Firing pipeline...`,
       );
       // Fire pipeline like the webhook does — async, errors captured inside.
       runPipeline(property.id).catch((err: unknown) => {

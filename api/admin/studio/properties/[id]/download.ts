@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { requireAdmin } from '../../../../../lib/auth.js';
 import { getSupabase } from '../../../../../lib/client.js';
 import { bunnyCdnHeaders } from '../../../../../lib/providers/bunny-stream.js';
+import { DisallowedUrlError, assertAllowedMediaUrl } from '../../../../../lib/security/url-guard.js';
 
 /** Convert a property address to a safe filename slug (lowercase, alphanum+dash). */
 function slugify(text: string): string {
@@ -37,6 +38,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     format === 'horizontal' ? property.horizontal_video_url : property.vertical_video_url;
 
   if (!videoUrl) return res.status(404).json({ error: `${format}_video_not_ready` });
+
+  // SSRF guard — reject non-allowlisted / non-HTTPS / IP-literal hosts before
+  // the fetch so a poisoned DB value can never be used to reach internal services.
+  try {
+    assertAllowedMediaUrl(videoUrl);
+  } catch (err) {
+    if (err instanceof DisallowedUrlError) {
+      return res.status(400).json({ error: 'Invalid media URL' });
+    }
+    throw err;
+  }
 
   const slug = property.address ? slugify(String(property.address)) : String(id);
   const filename = `${slug}-${format}.mp4`;
