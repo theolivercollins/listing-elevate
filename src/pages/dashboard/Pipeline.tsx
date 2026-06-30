@@ -202,7 +202,6 @@ const Pipeline = () => {
   const [avgProcessingMs, setAvgProcessingMs] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"kanban" | "ledger">("ledger");
-  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -289,14 +288,20 @@ const Pipeline = () => {
   }, []);
 
   const wrapAction = async (sceneId: string, fn: () => Promise<void>) => {
-    setActionLoading((p) => ({ ...p, [sceneId]: true }));
+    // Optimistic: remove the scene card immediately, capture the specific scene + index for rollback.
+    const idx = reviewScenes.findIndex((s) => s.id === sceneId);
+    const removed = reviewScenes[idx];
+    setReviewScenes((prev) => prev.filter((s) => s.id !== sceneId));
     try {
       await fn();
-      setReviewScenes((prev) => prev.filter((s) => s.id !== sceneId));
     } catch (err) {
+      // Roll back — re-insert only this scene at its original index if not already present.
+      setReviewScenes((prev) =>
+        prev.some((s) => s.id === sceneId)
+          ? prev
+          : [...prev.slice(0, idx), removed, ...prev.slice(idx)],
+      );
       alert(err instanceof Error ? err.message : "Action failed");
-    } finally {
-      setActionLoading((p) => ({ ...p, [sceneId]: false }));
     }
   };
 
@@ -565,7 +570,7 @@ const Pipeline = () => {
               <ReviewCard
                 key={scene.id}
                 scene={scene}
-                actionLoading={!!actionLoading[scene.id]}
+                actionLoading={false}
                 onApprove={() => wrapAction(scene.id, () => approveScene(scene.id))}
                 onResubmit={() => wrapAction(scene.id, () => resubmitScene(scene.id))}
                 onTryOther={() =>

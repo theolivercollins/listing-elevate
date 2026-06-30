@@ -23,6 +23,7 @@ import type { ClaudeUsage } from '../utils/claude-cost.js';
 import { recordCostEvent } from '../db.js';
 import { emitBunnyFinalizeCostEvent } from '../assembly/bunny-finalize-cost.js';
 import { runDeliveryAudio } from './audio.js';
+import { getPhotoSelectionForRun, applyPhotoSelectionForRun } from './photo-selection.js';
 import type { DeliveryRunRow, SceneVariantRow } from '../types/operator-studio.js';
 
 // Re-export so callers (cron sweep, inline kicks) share the same ref.
@@ -40,6 +41,11 @@ export const AUTO_JUDGE_MARGIN = 0.15;
  *  Runs scoring below this are paused for human review before delivery. */
 export const AUTO_DELIVER_THRESHOLD = 0.7;
 
+/** Minimum number of AI-recommended photos required for autopilot to auto-approve
+ *  the photo_selection gate. Below this threshold (roughly half of TARGET_SCENE_COUNT=12)
+ *  the selection is considered thin coverage and a human should verify. */
+export const AUTO_PHOTO_MIN_SELECTED = 6;
+
 /** Haiku-tier model for cheap subjective picks (voice tone, music mood). */
 const PICK_MODEL = 'claude-haiku-4-5';
 
@@ -52,11 +58,12 @@ export type GateOutcome =
 
 // ─── GATE STAGES ─────────────────────────────────────────────────────────────
 
-/** The five stages where a human (or autopilot) makes a decision.
+/** The stages where a human (or autopilot) makes a decision.
  *  Auto-stages (intake/scraping/generating/judging/assembling) advance via
  *  existing cron/poll paths and are never dispatched to resolvers here.
  *  Exported so the cron sweep imports the single source of truth (no drift). */
 export const GATE_STAGES = [
+  'photo_selection',
   'checkpoint_a',
   'details',
   'voiceover',
@@ -161,11 +168,12 @@ export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
     // TypeScript exhaustiveness: the switch covers every GateStage value; if a new
     // gate stage is added to GATE_STAGES without a case, the compiler will error here.
     switch (run.stage satisfies GateStage) {
-      case 'checkpoint_a': return await resolveCheckpointA(run);
-      case 'details':      return await resolveDetails(run);
-      case 'voiceover':    return await resolveVoiceover(run);
-      case 'music':        return await resolveMusic(run);
-      case 'checkpoint_b': return await resolveCheckpointB(run);
+      case 'photo_selection': return await resolvePhotoSelection(run);
+      case 'checkpoint_a':    return await resolveCheckpointA(run);
+      case 'details':         return await resolveDetails(run);
+      case 'voiceover':       return await resolveVoiceover(run);
+      case 'music':           return await resolveMusic(run);
+      case 'checkpoint_b':    return await resolveCheckpointB(run);
     }
   } finally {
     // Always release — a `return` inside the try still runs this.
@@ -444,6 +452,81 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
 // ─── PER-GATE RESOLVERS ───────────────────────────────────────────────────────
 
 /**
+ * photo_selection — AI-recommended photo set auto-approval gate.
+ *
+ * The AI selection is persisted upstream (lib/pipeline/selection.ts via
+ * lib/pipeline.ts) before the run reaches this stage; getPhotoSelectionForRun
+ * returns the already-ranked selected_photo_ids.
+ *
+ * If the AI selected ≥ AUTO_PHOTO_MIN_SELECTED photos: accept all of them
+ * (passing ONLY photo_order, no rejections, so the "rejection reason required"
+ * guard in applyPhotoSelectionForRun is never triggered). The RPC
+ * approve_photo_selection sets the selected photos AND advances the run to
+ * 'generating' in a single transaction — do NOT call advanceRun separately.
+ *
+ * After applying, fire the same continue hop the operator route fires after
+ * approve_photo_selection: POST /api/pipeline/continue/[runId] on a fresh
+ * Vercel function to start the heavy post-approval compute (style guide +
+ * director scripting + N provider submits). Fire-and-forget; the
+ * generating-stage reaper (reapStuckGeneratingDeliveryRuns) is the backstop if
+ * the hop fails to land.
+ *
+ * Pause paths:
+ *  - selected_photo_ids.length === 0: no AI photos at all.
+ *  - selected_photo_ids.length < AUTO_PHOTO_MIN_SELECTED: thin coverage.
+ */
+export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOutcome> {
+  const { selected_photo_ids } = await getPhotoSelectionForRun(run.id);
+
+  if (selected_photo_ids.length === 0) {
+    const reason = 'photo_selection: no AI-recommended photos';
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
+  }
+
+  if (selected_photo_ids.length < AUTO_PHOTO_MIN_SELECTED) {
+    const reason = `photo_selection: only ${selected_photo_ids.length} photos selected (min ${AUTO_PHOTO_MIN_SELECTED}) — thin coverage`;
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
+  }
+
+  // Accept all AI-recommended photos. Pass ONLY photo_order (no rejected array)
+  // so the removal-rejection-reason guard never fires. The RPC advances the run
+  // to 'generating' — do NOT call advanceRun after this.
+  await applyPhotoSelectionForRun(run.id, { photo_order: selected_photo_ids });
+
+  // Fire the continue hop FIRST — unconditionally, before any await that could
+  // throw. The run is already at 'generating'; if telemetry below throws the
+  // hop has still landed so the pipeline resumes. Same ordering guarantee the
+  // operator route uses. Fire-and-forget; the generating-stage reaper backstops
+  // a hop that fails to land. Uses VERCEL_URL (always set in Vercel runtimes).
+  const host = process.env.VERCEL_URL;
+  if (host) {
+    const continueUrl = `https://${host}/api/pipeline/continue/${encodeURIComponent(run.id)}`;
+    void fetch(continueUrl, { method: 'POST' }).catch((e: unknown) => {
+      console.warn(`[auto-run] photo_selection continue hop failed to dispatch; reaper will recover`, e);
+    });
+  } else {
+    console.warn(`[auto-run] photo_selection: VERCEL_URL unset — continue hop skipped; reaper will recover`);
+  }
+
+  // Telemetry is best-effort: a DB hiccup must not prevent the function from
+  // returning 'advanced' (the hop has already fired above).
+  try {
+    await recordMlEvent(run.id, 'auto_advance', {
+      source: 'auto',
+      gate: 'photo_selection',
+      confidence: 1,
+      selected_count: selected_photo_ids.length,
+    });
+  } catch (e) {
+    console.error(`[auto-run] photo_selection: recordMlEvent failed (non-fatal, hop already fired)`, e);
+  }
+
+  return { action: 'advanced', to: 'generating' };
+}
+
+/**
  * checkpoint_a — Judge-winner confirmation gate.
  *
  * For each scene pair, compute margin = abs(scoreA − scoreB) / 20.
@@ -540,9 +623,59 @@ export async function resolveDetails(run: DeliveryRunRow): Promise<GateOutcome> 
 }
 
 /**
+ * Build the ordered room sequence the finalized cut will actually show, from
+ * delivery_runs.scene_order (winning scene ids in display order, set at the
+ * checkpoint_a gate — BEFORE voiceover runs) joined to scenes.room_type
+ * (denormalized from the linked photo — migration 063).
+ *
+ * Feeds generateDeliveryScript so narration beats track the on-screen room
+ * order instead of being generated blind from listing facts alone (the bug:
+ * e.g. "garage" narration over a kitchen clip).
+ *
+ * Robust by design — any missing/empty data returns null and callers fall
+ * back to the prior whole-listing behavior. Never throws.
+ */
+export async function buildOrderedRoomSequence(
+  run: DeliveryRunRow,
+): Promise<Array<{ position: number; room: string }> | null> {
+  const order = run.scene_order;
+  if (!order || order.length === 0) return null;
+
+  try {
+    const db = getSupabase();
+    const { data: scenes, error } = await db
+      .from('scenes')
+      .select('id, room_type')
+      .in('id', order);
+
+    if (error) {
+      console.error('[delivery/auto-run] buildOrderedRoomSequence: scenes lookup failed, falling back to whole-listing narration:', error);
+      return null;
+    }
+    if (!scenes || scenes.length === 0) return null;
+
+    const roomById = new Map<string, string | null>(
+      (scenes as Array<{ id: string; room_type: string | null }>).map(s => [s.id, s.room_type]),
+    );
+
+    const sequence = order
+      .filter(id => roomById.has(id))
+      .map((id, idx) => ({ position: idx + 1, room: roomById.get(id) || 'interior' }));
+
+    return sequence.length > 0 ? sequence : null;
+  } catch (err) {
+    console.error('[delivery/auto-run] buildOrderedRoomSequence threw, falling back to whole-listing narration:', err);
+    return null;
+  }
+}
+
+/**
  * voiceover — Script generation + voice-tone selection gate.
  *
  * 1. Generate script if absent (reuses generateDeliveryScript — records its own cost_events).
+ *    Script generation is grounded in the finalized scene_order's room sequence
+ *    (see buildOrderedRoomSequence) so narration follows the on-screen room order;
+ *    falls back to whole-listing narration when scene_order/room data is unavailable.
  * 2. Make a small Haiku LLM call to pick voice tone from listing context (records cost_events).
  * 3. Select voiceover_voice_id from the tone pick; delegate to runDeliveryAudio shared runner
  *    (duration-audit / auto-shorten loop + retry, records its own cost_events).
@@ -569,6 +702,11 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
   let script = run.voiceover_script;
   if (!script) {
     try {
+      // Ground the script in the actual on-screen room order (set at
+      // checkpoint_a, before this gate runs). Returns null — and
+      // generateDeliveryScript falls back to whole-listing narration — when
+      // scene_order or room data isn't available; never blocks generation.
+      const roomSequence = await buildOrderedRoomSequence(run);
       const result = await generateDeliveryScript({
         runId: run.id,
         propertyId: run.property_id,
@@ -576,6 +714,7 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
         videoType: run.video_type,
         durationSec: run.duration_seconds ?? 30,
         details: run.listing_details,
+        roomSequence: roomSequence ?? undefined,
       });
       script = result.script;
       await updateRun(run.id, { voiceover_script: script } as Partial<DeliveryRunRow>);
@@ -611,7 +750,7 @@ export async function resolveVoiceover(run: DeliveryRunRow): Promise<GateOutcome
       'Available voices:',
       voiceLines,
       '',
-      'Reply with ONLY the voice name (e.g. Amanda).',
+      'Reply with ONLY the voice name (e.g. Brian).',
     ].filter(Boolean).join('\n');
 
     const voiceResponse = await client.messages.create({

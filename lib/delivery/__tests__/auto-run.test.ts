@@ -16,12 +16,15 @@ import {
   canWrite,
   AUTO_JUDGE_MARGIN,
   AUTO_DELIVER_THRESHOLD,
+  AUTO_PHOTO_MIN_SELECTED,
   resolveCheckpointA,
   resolveDetails,
+  resolvePhotoSelection,
   resolveVoiceover,
   resolveMusic,
   resolveCheckpointB,
   pauseForHuman,
+  buildOrderedRoomSequence,
 } from '../auto-run.js';
 import type { DeliveryRunRow } from '../../types/operator-studio.js';
 
@@ -105,6 +108,12 @@ vi.mock('../../assembly/bunny-finalize-cost.js', () => ({
   emitBunnyFinalizeCostEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Photo selection — resolvePhotoSelection reads AI-recommended ids and applies them.
+vi.mock('../photo-selection.js', () => ({
+  getPhotoSelectionForRun: vi.fn(),
+  applyPhotoSelectionForRun: vi.fn(),
+}));
+
 const mockAnthropicCreate = vi.hoisted(() => vi.fn());
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -122,6 +131,7 @@ import { recordCostEvent } from '../../db.js';
 import { pollAssemblyJob, assemblyProviderCostCents } from '../../providers/assembly-router.js';
 import { finalizeAssemblyRender } from '../../assembly/finalize.js';
 import { emitBunnyFinalizeCostEvent } from '../../assembly/bunny-finalize-cost.js';
+import { getPhotoSelectionForRun, applyPhotoSelectionForRun } from '../photo-selection.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -221,6 +231,7 @@ afterEach(() => {
     delete savedEnv[key];
   }
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // ─── canWrite() ───────────────────────────────────────────────────────────────
@@ -263,6 +274,11 @@ describe('exported config constants', () => {
     expect(AUTO_DELIVER_THRESHOLD).toBeGreaterThan(0);
     expect(AUTO_DELIVER_THRESHOLD).toBeLessThan(1);
   });
+
+  it('AUTO_PHOTO_MIN_SELECTED is a positive integer', () => {
+    expect(AUTO_PHOTO_MIN_SELECTED).toBeGreaterThan(0);
+    expect(Number.isInteger(AUTO_PHOTO_MIN_SELECTED)).toBe(true);
+  });
 });
 
 // ─── resolveGate — guard branches ────────────────────────────────────────────
@@ -295,8 +311,9 @@ describe('resolveGate — Guard 2: already paused', () => {
 });
 
 describe('resolveGate — Guard 3: non-gate stage', () => {
+  // photo_selection is now a GATE stage — it is intentionally absent from this list.
   it.each([
-    'intake', 'scraping', 'photo_selection', 'generating', 'judging', 'assembling', 'delivered',
+    'intake', 'scraping', 'generating', 'judging', 'assembling', 'delivered',
   ])('returns noop for auto-stage "%s"', async (stage) => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const result = await resolveGate(makeRun({ auto_run: true, paused_reason: null, stage }));
@@ -453,24 +470,214 @@ describe('resolveDetails', () => {
   });
 });
 
+// ─── resolvePhotoSelection ────────────────────────────────────────────────────
+
+describe('resolvePhotoSelection', () => {
+  /** Set up getSupabase for pauseForHuman calls (delivery_runs update + ml_events insert). */
+  function setupPauseDb() {
+    const db = makeDbChain(null);
+    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
+    (getSupabase as Mock).mockReturnValue(db);
+  }
+
+  it('confident: 12 photos — applies selection, logs auto_advance, triggers continue hop, returns advanced→generating', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', 'listingelevate.vercel.app');
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Applied with all 12 recommended ids, no rejected array.
+    expect(applyPhotoSelectionForRun).toHaveBeenCalledWith('run-1', { photo_order: ids });
+
+    // auto_advance ml_event logged with correct gate and count.
+    expect(recordMlEvent).toHaveBeenCalledWith('run-1', 'auto_advance', {
+      source: 'auto',
+      gate: 'photo_selection',
+      confidence: 1,
+      selected_count: 12,
+    });
+
+    // Continue hop fired at the correct URL.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://listingelevate.vercel.app/api/pipeline/continue/run-1`,
+      { method: 'POST' },
+    );
+
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+  });
+
+  it('pause: 3 photos (< AUTO_PHOTO_MIN_SELECTED=6) — pauseForHuman called, apply NOT called', async () => {
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ['a', 'b', 'c'], photos: [] });
+    setupPauseDb();
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/only 3 photos selected \(min 6\)/);
+    expect(applyPhotoSelectionForRun).not.toHaveBeenCalled();
+  });
+
+  it('pause: 0 AI-recommended photos — pauseForHuman called with no-photos reason, apply NOT called', async () => {
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: [], photos: [] });
+    setupPauseDb();
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/no AI-recommended photos/);
+    expect(applyPhotoSelectionForRun).not.toHaveBeenCalled();
+  });
+
+  it('continue hop fires even when recordMlEvent rejects (telemetry must not block the hop)', async () => {
+    const ids = Array.from({ length: 9 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    // Telemetry throws — the hop must still have fired before this and advanced returned.
+    (recordMlEvent as Mock).mockRejectedValue(new Error('ml_events insert failed'));
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', 'listingelevate.vercel.app');
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Hop fired before telemetry — must be present regardless of recordMlEvent outcome.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://listingelevate.vercel.app/api/pipeline/continue/run-1`,
+      { method: 'POST' },
+    );
+    // Returns advanced despite the telemetry error (best-effort).
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+  });
+
+  it('continue hop is skipped gracefully when VERCEL_URL is unset', async () => {
+    const ids = Array.from({ length: 8 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', undefined);
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Still advances — missing host is non-fatal (reaper recovers).
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});
+
+// ─── buildOrderedRoomSequence ───────────────────────────────────────────────
+
+describe('buildOrderedRoomSequence', () => {
+  it('returns null (no I/O) when scene_order is null', async () => {
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: null }));
+    expect(result).toBeNull();
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('returns null when scene_order is an empty array', async () => {
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: [] }));
+    expect(result).toBeNull();
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('orders rooms by scene_order position, not DB row order', async () => {
+    const inMock = vi.fn().mockResolvedValue({
+      data: [
+        { id: 'sc-b', room_type: 'kitchen' },
+        { id: 'sc-a', room_type: 'exterior_front' },
+      ],
+      error: null,
+    });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a', 'sc-b'] }));
+    expect(result).toEqual([
+      { position: 1, room: 'exterior_front' },
+      { position: 2, room: 'kitchen' },
+    ]);
+  });
+
+  it('falls back to "interior" for a scene with a null room_type', async () => {
+    const inMock = vi.fn().mockResolvedValue({
+      data: [{ id: 'sc-a', room_type: null }],
+      error: null,
+    });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toEqual([{ position: 1, room: 'interior' }]);
+  });
+
+  it('returns null on a DB error (fail open, no crash)', async () => {
+    const inMock = vi.fn().mockResolvedValue({ data: null, error: { message: 'boom' } });
+    (getSupabase as Mock).mockReturnValue({
+      from: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ in: inMock }) }),
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toBeNull();
+  });
+
+  it('returns null when getSupabase throws (fail open, no crash)', async () => {
+    (getSupabase as Mock).mockImplementation(() => {
+      throw new Error('no client');
+    });
+
+    const result = await buildOrderedRoomSequence(makeRun({ scene_order: ['sc-a'] }));
+    expect(result).toBeNull();
+  });
+});
+
 // ─── resolveVoiceover ─────────────────────────────────────────────────────────
 
 describe('resolveVoiceover', () => {
-  function setupDbWithAddress(address: string | null) {
+  /**
+   * @param scenesResult - rows (or { error }) returned for .from('scenes').select().in() —
+   *   used by buildOrderedRoomSequence. Defaults to an empty result (no scene_order set).
+   */
+  function setupDbWithAddress(
+    address: string | null,
+    scenesResult: { data?: Array<{ id: string; room_type: string | null }>; error?: unknown } = { data: [] },
+  ) {
     // Build a mock that supports: .from('properties').select().eq().maybeSingle()
     const maybeSingleMock = vi.fn().mockResolvedValue({ data: address ? { address } : null, error: null });
     const eqMock = vi.fn().mockReturnValue({ maybeSingle: maybeSingleMock });
     const selectMock = vi.fn().mockReturnValue({ eq: eqMock });
-    const fromMock = vi.fn().mockReturnValue({ select: selectMock });
+    // .from('scenes').select().in() — feeds buildOrderedRoomSequence
+    const scenesInMock = vi.fn().mockResolvedValue({
+      data: scenesResult.data ?? null,
+      error: scenesResult.error ?? null,
+    });
+    const scenesSelectMock = vi.fn().mockReturnValue({ in: scenesInMock });
     // Also need update/insert for pauseForHuman when address is null
     const updateEqMock = vi.fn().mockResolvedValue({ error: null });
     const updateMock = vi.fn().mockReturnValue({ eq: updateEqMock });
     const insertMock = vi.fn().mockResolvedValue({ error: null });
-    const db = { from: fromMock, update: updateMock, insert: insertMock };
-    (fromMock as Mock).mockImplementation((table: string) => {
+    const fromMock = vi.fn().mockImplementation((table: string) => {
       if (table === 'properties') return { select: selectMock };
+      if (table === 'scenes') return { select: scenesSelectMock };
       return { update: updateMock, insert: insertMock };
     });
+    const db = { from: fromMock, update: updateMock, insert: insertMock };
     (getSupabase as Mock).mockReturnValue(db);
     return db;
   }
@@ -494,6 +701,57 @@ describe('resolveVoiceover', () => {
     expect(runDeliveryAudio).toHaveBeenCalledWith('run-1');
     expect(recordCostEvent).toHaveBeenCalled();
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'music');
+  });
+
+  it('builds the ordered room sequence from scene_order + scenes.room_type and passes it to generateDeliveryScript', async () => {
+    setupDbWithAddress('123 Main St', {
+      data: [
+        { id: 'sc-3', room_type: 'garage' },
+        { id: 'sc-1', room_type: 'exterior_front' },
+        { id: 'sc-2', room_type: 'kitchen' },
+      ],
+    });
+    (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Great home!', wordCount: 2 });
+    (updateRun as Mock).mockResolvedValue({});
+    mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ scene_order: ['sc-1', 'sc-2', 'sc-3'] });
+    const result = await resolveVoiceover(run);
+
+    expect(result).toEqual({ action: 'advanced', to: 'music' });
+    // Sequence follows scene_order (display order), not the DB row order.
+    expect(generateDeliveryScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        roomSequence: [
+          { position: 1, room: 'exterior_front' },
+          { position: 2, room: 'kitchen' },
+          { position: 3, room: 'garage' },
+        ],
+      }),
+    );
+  });
+
+  it('falls back to no room sequence (undefined) when scene_order is null', async () => {
+    setupDbWithAddress('123 Main St');
+    (generateDeliveryScript as Mock).mockResolvedValue({ script: 'Great home!', wordCount: 2 });
+    (updateRun as Mock).mockResolvedValue({});
+    mockAnthropicCreate.mockResolvedValue(makeLlmResponse('Amanda'));
+    (runDeliveryAudio as Mock).mockResolvedValue({ ok: true, run: {} });
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const run = makeRun({ scene_order: null });
+    const result = await resolveVoiceover(run);
+
+    expect(result).toEqual({ action: 'advanced', to: 'music' });
+    expect(generateDeliveryScript).toHaveBeenCalledWith(
+      expect.objectContaining({ roomSequence: undefined }),
+    );
   });
 
   it('skips script generation if voiceover_script already set', async () => {

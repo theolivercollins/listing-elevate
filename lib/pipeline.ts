@@ -135,6 +135,36 @@ export function resolveRoutingPreference(
   return scene.provider_preference ?? null;
 }
 
+// ─── CLIP URL PROXY ────────────────────────────────────────────
+
+/**
+ * Rewrites a Bunny CDN clip URL to route through our /api/clip-proxy endpoint,
+ * which adds the Referer header required by Bunny library 679131.
+ *
+ * Bunny blocks server-side fetches that carry no Referer (HTTP 403) — browsers
+ * send it automatically, but Creatomate's render server does not. Routing
+ * through the proxy injects `Referer: https://www.listingelevate.com/` so the
+ * stitched render succeeds and horizontal_video_url is populated.
+ *
+ * Non-Bunny URLs pass through unchanged. Safe when BUNNY_STREAM_CDN_HOSTNAME
+ * is not configured — returns the original url so assembly still works with
+ * other CDN providers.
+ */
+export function proxifyClipUrl(url: string): string {
+  const cdnHostname = process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  if (!cdnHostname) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === cdnHostname) {
+      const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
+      return `${base}/api/clip-proxy?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Malformed URL — return unchanged so assembly falls back gracefully.
+  }
+  return url;
+}
+
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
 
 // Snapshot every system prompt to prompt_revisions on each pipeline run so
@@ -474,10 +504,10 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
   const selected = selection.selected.map((result) => result.original);
   const selectionRank = new Map(selected.map((s, i) => [s.photo.id, i + 1]));
 
-  for (const { photo, analysis, provider } of allResults) {
+  await Promise.all(allResults.map(({ photo, analysis, provider }) => {
     const verdict = selection.verdicts.get(photo.id);
     const isSelected = verdict?.status === "selected";
-    await updatePhotoAnalysis(photo.id, {
+    return updatePhotoAnalysis(photo.id, {
       room_type: analysis.room_type,
       quality_score: analysis.quality_score,
       aesthetic_score: analysis.aesthetic_score,
@@ -499,7 +529,7 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
       },
       analysis_provider: provider,
     });
-  }
+  }));
 
   await getSupabase()
     .from("properties")
@@ -1039,13 +1069,15 @@ async function runScripting(
 
 async function runGenerationSubmit(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "generating");
-  const allScenes = await getScenesForProperty(propertyId);
+  const [allScenes, property] = await Promise.all([
+    getScenesForProperty(propertyId),
+    getProperty(propertyId),
+  ]);
   const scenes = allScenes.filter((scene) => !scene.provider_task_id && !scene.clip_url);
   const supabase = getSupabase();
 
   // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
   // on legacy properties created before migration 062.
-  const property = await getProperty(propertyId);
   const pipelineMode = property.pipeline_mode ?? "v1";
 
   const GENERATION_CONCURRENCY = parseInt(process.env.GENERATION_CONCURRENCY ?? "4", 10);
@@ -1736,7 +1768,7 @@ async function runAssemblyStep(
         });
 
       const clipInputs = fitted.map((f) => ({
-        url: f.scene.clip_url as string,
+        url: proxifyClipUrl(f.scene.clip_url as string),
         durationSeconds: f.durationSeconds,
       }));
 
