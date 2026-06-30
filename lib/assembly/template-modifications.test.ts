@@ -215,7 +215,7 @@ describe("buildTemplateModifications", () => {
     expect(Object.keys(mods).some((k) => k.startsWith("Clip"))).toBe(false);
   });
 
-  it("writes Audio-Music.source + Agent-Headshot-Final.source when provided", () => {
+  it("writes Audio-Music.source + ducked .volume + Agent-Headshot-Final.source when provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
@@ -225,10 +225,40 @@ describe("buildTemplateModifications", () => {
       agentHeadshotUrl: "https://headshots/brian.png",
     });
     expect(mods["Audio-Music.source"]).toBe("https://audio/track.mp3");
+    // Ducked bed level — mirrors the 0.18 duck used by the code-gen fallback
+    // builders (lib/providers/creatomate.ts) so music never overpowers the VO.
+    expect(mods["Audio-Music.volume"]).toBe("18%");
     expect(mods["Agent-Headshot-Final.source"]).toBe("https://headshots/brian.png");
   });
 
-  it("writes Audio-Voiceover.source AND legacy Voice-Over.source when voiceoverUrl is provided", () => {
+  // Regression test for the 2026-06-30 prod bug: when our music selection is
+  // null (empty/inactive music_tracks pool), the template's own baked-in
+  // default track must NOT be left to play ("random/foreign music" heard in
+  // prod). It must be explicitly muted instead of the key being omitted.
+  it("MUTES Audio-Music (volume 0) when musicUrl is null — never falls back to the template's baked-in track", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+      musicUrl: null,
+    });
+    expect(mods["Audio-Music.volume"]).toBe("0%");
+    expect(mods).not.toHaveProperty("Audio-Music.source");
+  });
+
+  it("MUTES Audio-Music (volume 0) when musicUrl is omitted entirely (same as null)", () => {
+    const mods = buildTemplateModifications({
+      address: "1 Main, Punta Gorda FL",
+      selectedPackage: "just_listed",
+      agentName: "Brian",
+      brokerageName: "Compass",
+    });
+    expect(mods["Audio-Music.volume"]).toBe("0%");
+    expect(mods).not.toHaveProperty("Audio-Music.source");
+  });
+
+  it("writes Audio-Voiceover.source + full .volume AND legacy Voice-Over.source + .volume when voiceoverUrl is provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
@@ -237,7 +267,9 @@ describe("buildTemplateModifications", () => {
       voiceoverUrl: "https://audio/vo.mp3",
     });
     expect(mods["Audio-Voiceover.source"]).toBe("https://audio/vo.mp3");
+    expect(mods["Audio-Voiceover.volume"]).toBe("100%");
     expect(mods["Voice-Over.source"]).toBe("https://audio/vo.mp3");
+    expect(mods["Voice-Over.volume"]).toBe("100%");
   });
 
   it("omits voiceover keys when voiceoverUrl is not provided", () => {
@@ -248,17 +280,18 @@ describe("buildTemplateModifications", () => {
       brokerageName: "Compass",
     });
     expect(mods).not.toHaveProperty("Audio-Voiceover.source");
+    expect(mods).not.toHaveProperty("Audio-Voiceover.volume");
     expect(mods).not.toHaveProperty("Voice-Over.source");
+    expect(mods).not.toHaveProperty("Voice-Over.volume");
   });
 
-  it("does not pollute output with music/headshot keys when not provided", () => {
+  it("does not pollute output with headshot keys when not provided", () => {
     const mods = buildTemplateModifications({
       address: "1 Main, Punta Gorda FL",
       selectedPackage: "just_listed",
       agentName: "Brian",
       brokerageName: "Compass",
     });
-    expect(mods).not.toHaveProperty("Audio-Music.source");
     expect(mods).not.toHaveProperty("Agent-Headshot-Final.source");
   });
 
