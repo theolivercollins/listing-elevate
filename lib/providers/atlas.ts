@@ -180,9 +180,11 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
   // every submit against it returned 400 "not found", which silently failed
   // all v1.1 scenes over to the Kling fallback. Atlas folded the upscaled/2K
   // tier into the main model as resolution values: the schema now enumerates
-  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR']
-  // (default 720p) — "2k" is no longer valid. The `-SR` tiers run the
-  // FlashVSR super-resolution pass that the old upscaled variant provided.
+  // resolution: ['480p','720p','720p-SR','1080p','1080p-SR','1440p-SR','4k']
+  // (default 720p) — "2k" is no longer valid; '4k' added to the live catalog
+  // and re-verified 2026-06-26 (originally verified 2026-06-10 without '4k').
+  // The `-SR` tiers run the FlashVSR super-resolution pass that the old
+  // upscaled variant provided.
   //
   // Default resolution "1080p-SR": SR is the quality tier that replaced the
   // old 2K upscale, and 1080p matches our delivery output. Both slug and
@@ -204,6 +206,39 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     forceSourceAspectRatio: "16:9",  // Seedance copies the INPUT image's AR → crop 3:2 sources to 16:9 (see source-aspect.ts)
     priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
     priceCentsPerClip: 48,       // 9.6 × 5
+  },
+  // Native UHD 4K tier of Seedance 2.0 — live-verified 2026-06-26 against the
+  // Atlas catalog. Same model/slug as seedance-pro-pushin but rendered at the
+  // native "4k" resolution tier (3840×2160 16:9, 10-bit H.265/HEVC). Available
+  // on the FULL Seedance 2.0 model only (not Fast/Mini). LE re-encodes the
+  // 10-bit HEVC output via assembly before delivery (raw HEVC may not play in
+  // all browsers). Push-in SKU: endFrameField null (same as seedance-pro-pushin
+  // — paired scenes still go through seedance-pair or kling-v3-pro).
+  //
+  // PRICING: Live Atlas catalog rate for the full Seedance 2.0 model
+  // (bytedance/seedance-2.0/image-to-video), verified 2026-06-26 against
+  // GET https://api.atlascloud.ai/api/v1/models:
+  //   price.actual.base_price = "0.112" → $0.112/s = 11.2¢/s
+  // (The Fast variant is $0.022/s; the full model — which renders 4K — is what
+  // Atlas selects here.) Atlas does not publish a separate 4K line-item; billing
+  // follows the active pricing for the selected resolution. 4K may carry a
+  // resolution premium not separately published — reconcile against the first 4K
+  // invoice and update SEEDANCE_4K_PRICE_CENTS_PER_SECOND if the real rate differs.
+  // Cost-tracking-first-class: NEVER zero this field.
+  //
+  // Both slug and resolution are env-overridable for instant rollback without
+  // a deploy (SEEDANCE_ATLAS_SLUG / SEEDANCE_4K_RESOLUTION).
+  "seedance-2-0-4k": {
+    slug: process.env.SEEDANCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/image-to-video",
+    endFrameField: null,          // push-in SKU — no end-frame (same as seedance-pro-pushin)
+    allowedDurations: [5, 10],    // schema allows 4-15s; we stick to 5/10
+    resolution: (process.env.SEEDANCE_4K_RESOLUTION as AtlasResolution | undefined) ?? "4k",
+    supportedResolutions: ["4k", "1440p-SR", "1080p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,         // Seedance 2.0 generates music by default — kill it
+    forceSourceAspectRatio: "16:9", // Seedance copies input AR → crop 3:2 sources to 16:9
+    priceCentsPerSecond: Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 11.2,
+    // priceCentsPerClip = perSec × 5 (standard clip). Math.round so we get an integer cent value.
+    priceCentsPerClip: Math.round((Number(process.env.SEEDANCE_4K_PRICE_CENTS_PER_SECOND) || 11.2) * 5),
   },
   // OPT-IN pair mode (added 2026-06-10) — Bytedance Seedance 2.0 with
   // start+end-frame interpolation via the `last_image` input field
@@ -291,6 +326,48 @@ export function atlasClipCostCents(modelKey: string, durationSeconds: number = D
   const descriptor = ATLAS_MODELS[modelKey];
   if (!descriptor) return 0;
   return descriptor.priceCentsPerSecond * durationSeconds;
+}
+
+// ─── OPERATOR VIDEO SKU PICKER ──────────────────────────────────────────────
+//
+// Server-side source of truth for the operator model picker. Keeps the UI and
+// any API validation layer in sync without duplicating the list. The `available`
+// flag exists to support future gated SKUs (e.g. Seedance 2.5 when it launches)
+// that should appear grayed-out before enablement — wire them in here with
+// `available: false` and they slot into the UI automatically.
+
+export interface OperatorVideoSkuOption {
+  key: string | null;
+  label: string;
+  available: boolean;
+}
+
+/**
+ * getOperatorVideoSkus — returns the canonical ordered list of operator-selectable
+ * video SKUs. `null` key means "Automatic (recommended)" — the router decides.
+ * All entries are currently available; future gated SKUs (e.g. Seedance 2.5)
+ * add with `available: false` until the provider unlocks them.
+ */
+export function getOperatorVideoSkus(): OperatorVideoSkuOption[] {
+  return [
+    { key: null,                  label: "Automatic (recommended)", available: true },
+    { key: "seedance-pro-pushin", label: "Seedance 2.0",            available: true },
+    { key: "seedance-2-0-4k",     label: "Seedance 2.0 · 4K",       available: true },
+    { key: "kling-v3-pro",        label: "Kling 3.0 Pro",           available: true },
+    { key: "kling-v3-std",        label: "Kling 3.0 Std",           available: true },
+    { key: "kling-v2-6-pro",      label: "Kling 2.6 Pro",           available: true },
+    { key: "kling-v2-master",     label: "Kling 2.0 Master",        available: true },
+    { key: "kling-o3-pro",        label: "Kling O3 Pro",            available: true },
+  ];
+}
+
+/**
+ * isOperatorSkuAvailable — true when `key` is null (Automatic) OR is present
+ * in the operator picker list with `available: true`.
+ */
+export function isOperatorSkuAvailable(key: string | null): boolean {
+  if (key === null) return true;
+  return getOperatorVideoSkus().some((opt) => opt.key === key && opt.available);
 }
 
 const ENDPOINT = "https://api.atlascloud.ai/api/v1/model/generateVideo";
@@ -477,6 +554,11 @@ export class AtlasProvider implements IVideoProvider {
 
   async generateClip(params: GenerateClipParams): Promise<GenerationJob> {
     const modelForCall = this.resolveModel(params.modelOverride);
+    // Cost-attribution fix (2026-06-26): update this.model to the SKU that
+    // ACTUALLY renders so checkStatus()'s this.model.priceCentsPerClip is
+    // always the rendered SKU's price, not the constructor default.
+    // Safe: each scene gets its own AtlasProvider instance (pipeline.ts ~1118/1387).
+    this.model = modelForCall;
     // Seedance AND every Kling SKU copy the input image's aspect ratio onto
     // their output and ignore `aspect_ratio` (Kling measured 2026-06-11 —
     // see forceSourceAspectRatio docblock). Crop the source to 16:9 first so

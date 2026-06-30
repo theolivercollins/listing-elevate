@@ -709,6 +709,16 @@ const PropertyCommandCenter = () => {
                 </div>
               )}
             </div>
+          ) : property.status === 'complete' && scenes.some((s) => s.clip_url) ? (
+            <div
+              className="studio-kanban-empty"
+              style={{ padding: 32, textAlign: 'center' }}
+            >
+              <p style={{ fontSize: 13.5, color: 'var(--le-muted)' }}>
+                Stitched video unavailable (assembly failed) —{' '}
+                <strong style={{ color: 'var(--le-ink)' }}>individual clips ready below.</strong>
+              </p>
+            </div>
           ) : (
             <div
               className="studio-kanban-empty"

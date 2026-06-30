@@ -60,7 +60,7 @@ function makeDownloadResult(overrides: {
       address: overrides.address ?? '5019 San Massimo Dr, Punta Gorda, FL 33950, USA',
       horizontal_video_url: overrides.horizontal_video_url !== undefined
         ? overrides.horizontal_video_url
-        : 'https://cdn/h.mp4',
+        : 'https://test.b-cdn.net/h.mp4',
       vertical_video_url: overrides.vertical_video_url !== undefined
         ? overrides.vertical_video_url
         : null,
@@ -136,7 +136,7 @@ describe('GET /api/preview/[token]/download', () => {
 
   it('returns 404 when horizontal orientation has no URL', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
-    mockFetchByToken.mockResolvedValue(makeDownloadResult({ horizontal_video_url: null, vertical_video_url: 'https://cdn/v.mp4' }));
+    mockFetchByToken.mockResolvedValue(makeDownloadResult({ horizontal_video_url: null, vertical_video_url: 'https://test.b-cdn.net/v.mp4' }));
     const res = makeRes();
     await handler(makeReq({ query: { token: 'validtoken1234567890validtoken12', orientation: 'horizontal' } }), res as unknown as VercelResponse);
     expect(res._status).toBe(404);
@@ -145,7 +145,7 @@ describe('GET /api/preview/[token]/download', () => {
 
   it('returns 404 when vertical orientation has no URL', async () => {
     mockIsWellFormedToken.mockReturnValue(true);
-    mockFetchByToken.mockResolvedValue(makeDownloadResult({ horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null }));
+    mockFetchByToken.mockResolvedValue(makeDownloadResult({ horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null }));
     const res = makeRes();
     await handler(makeReq({ query: { token: 'validtoken1234567890validtoken12', orientation: 'vertical' } }), res as unknown as VercelResponse);
     expect(res._status).toBe(404);
@@ -173,8 +173,8 @@ describe('GET /api/preview/[token]/download', () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue(makeDownloadResult({
       address: '42 Oak Ave, Portland, OR 97201',
-      horizontal_video_url: 'https://cdn/h.mp4',
-      vertical_video_url: 'https://cdn/v.mp4',
+      horizontal_video_url: 'https://test.b-cdn.net/h.mp4',
+      vertical_video_url: 'https://test.b-cdn.net/v.mp4',
     }));
     const fakeBody = new ReadableStream({ start(ctrl) { ctrl.close(); } });
     mockFetch.mockResolvedValue({
@@ -219,7 +219,7 @@ describe('GET /api/preview/[token]/download', () => {
     mockIsWellFormedToken.mockReturnValue(true);
     mockFetchByToken.mockResolvedValue({
       expired: false,
-      property: { id: 'p1', address: '1 Oak', horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null, client_id: null },
+      property: { id: 'p1', address: '1 Oak', horizontal_video_url: 'https://test.b-cdn.net/h.mp4', vertical_video_url: null, client_id: null },
       client: null,
       preview: null, // pre-migration → all-on
     });

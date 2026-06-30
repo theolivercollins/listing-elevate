@@ -17,6 +17,7 @@ import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
+import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
 
@@ -127,6 +128,7 @@ const StudioNew = () => {
   const [directorNotes, setDirectorNotes] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
+  const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [drivePhotos, setDrivePhotos] = useState<{ path: string; url: string }[]>([]);
 
@@ -325,6 +327,7 @@ const StudioNew = () => {
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
+          video_model_sku: videoModelSku,
         }),
       });
 
@@ -334,7 +337,9 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
-      fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      // authedFetch attaches the Supabase Bearer token required by the now-gated
+      // pipeline endpoint (F2 security fix). Fire-and-forget: not awaited.
+      authedFetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
       // Fire scrape action fire-and-forget: fetch the run id from the bundle then kick scrape.
       authedFetch(`/api/admin/studio/properties/${property_id}`)
         .then((r) => r.json())
@@ -592,6 +597,38 @@ const StudioNew = () => {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Video model */}
+            <div>
+              <FieldLabel>Video model</FieldLabel>
+              <select
+                className="studio-input"
+                value={videoModelSku ?? 'auto'}
+                onChange={(e) =>
+                  setVideoModelSku(e.target.value === 'auto' ? null : e.target.value)
+                }
+              >
+                {OPERATOR_VIDEO_SKUS.map((opt) => (
+                  <option
+                    key={opt.key ?? 'auto'}
+                    value={opt.key ?? 'auto'}
+                    disabled={!opt.available}
+                  >
+                    {opt.label}{!opt.available ? ' (coming soon)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--le-muted)',
+                  lineHeight: 1.4,
+                }}
+              >
+                Applies to every scene in this listing. 4K = native UHD (larger file).
+              </p>
             </div>
 
             {/* Duration */}

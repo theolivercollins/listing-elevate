@@ -51,6 +51,8 @@ export type ManualIngestInput = {
   days_on_market?: number | null;
   sold_price?: number | null;
   pipeline_mode?: 'v1' | 'v1.1' | null;
+  /** Operator-selected Atlas SKU at inception (e.g. "seedance-2-0-4k"). Null = automatic routing. */
+  video_model_sku?: string | null;
 };
 
 export type RevisionNoteRow = {

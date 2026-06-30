@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Readable } from 'node:stream';
 import { isWellFormedToken } from '../../../lib/operator-studio/preview-tokens.js';
 import { fetchByToken } from '../../../lib/operator-studio/preview.js';
+import { DisallowedUrlError, assertAllowedMediaUrl } from '../../../lib/security/url-guard.js';
 
 /** Convert an address string to a safe filename slug (lowercase, alphanum+dash). */
 function slugify(text: string): string {
@@ -49,6 +50,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : (property as { vertical_video_url: string | null }).vertical_video_url;
 
   if (!videoUrl) return res.status(404).json({ error: 'no_url' });
+
+  // SSRF guard — reject non-allowlisted / non-HTTPS / IP-literal hosts before
+  // the fetch so a poisoned DB value can never be used to reach internal services.
+  try {
+    assertAllowedMediaUrl(videoUrl);
+  } catch (err) {
+    if (err instanceof DisallowedUrlError) {
+      return res.status(400).json({ error: 'Invalid media URL' });
+    }
+    throw err;
+  }
 
   const slug = property.address ? slugify(String(property.address)) : token.slice(0, 16);
   const suffix = ORIENTATION_SUFFIX[orientation];

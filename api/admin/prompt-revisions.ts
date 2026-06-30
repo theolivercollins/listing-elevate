@@ -1,11 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 import { getSupabase } from '../../lib/db.js';
 
 // Returns the full prompt revision history for every system prompt the
 // pipeline uses, grouped by prompt_name. Used by the Learning dashboard
 // to show a changelog of how the prompts have evolved over time.
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase
