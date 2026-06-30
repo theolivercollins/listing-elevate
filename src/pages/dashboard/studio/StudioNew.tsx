@@ -19,6 +19,7 @@ import { digitsOnly, formatNumber } from '@/lib/format';
 import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
+const MAX_PHOTOS = 300;
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -167,6 +168,10 @@ const StudioNew = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Inline error shown right under the photo import buttons — separate from
+  // submitError (bottom-of-form) so a failed folder/zip/Drive import is never
+  // silent. Clears on the next successful import.
+  const [importError, setImportError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -189,7 +194,7 @@ const StudioNew = () => {
       const accepted = Array.from(newFiles).filter((f) =>
         /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name),
       );
-      const remaining = 60 - files.length;
+      const remaining = MAX_PHOTOS - files.length;
       const toAdd = accepted.slice(0, remaining);
       const mapped = toAdd.map((f) => ({
         file: f,
@@ -197,6 +202,7 @@ const StudioNew = () => {
         id: crypto.randomUUID(),
       }));
       setFiles((prev) => [...prev, ...mapped]);
+      if (toAdd.length > 0) setImportError(null);
     },
     [files.length],
   );
@@ -206,11 +212,16 @@ const StudioNew = () => {
     async (input: File | FileList) => {
       try {
         const extracted = await extractImageFiles(input);
+        if (extracted.length === 0) {
+          // Goal: a failed folder/zip import is never silent.
+          setImportError('No images found in that folder/zip.');
+          return;
+        }
         // Use functional updater to read current length at the time of commit
         let droppedForCap = 0;
         let addedCount = 0;
         setFiles((prev) => {
-          const remaining = 60 - prev.length;
+          const remaining = MAX_PHOTOS - prev.length;
           const toAdd = extracted.slice(0, remaining);
           droppedForCap = extracted.length - toAdd.length;
           addedCount = toAdd.length;
@@ -221,16 +232,19 @@ const StudioNew = () => {
           }));
           return [...prev, ...mapped];
         });
-        // Don't silently truncate — tell the operator what got dropped at the 60-photo cap.
+        setImportError(null); // successful import — clear any prior inline error
+        // Don't silently truncate — tell the operator what got dropped at the photo cap.
         if (droppedForCap > 0) {
           setSubmitError(
-            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
           );
         }
       } catch (err) {
-        setSubmitError(
-          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed',
-        );
+        console.error('[studio import]', err);
+        const message =
+          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed';
+        setSubmitError(message);
+        setImportError(message);
       }
     },
     [],
@@ -801,27 +815,38 @@ const StudioNew = () => {
                     <div onClick={(e) => e.stopPropagation()}>
                       <DriveUploadButton
                         onFilesImported={(imported) => {
-                          // Follow the same 60-photo cap pattern as handleBulkInput.
+                          // Follow the same MAX_PHOTOS cap pattern as handleBulkInput.
                           let droppedForCap = 0;
                           let addedCount = 0;
                           setFiles((prev) => {
                             const seen = new Set(prev.map((f) => f.id));
                             const deduped = imported.filter((f) => !seen.has(f.id));
-                            const remaining = 60 - prev.length;
+                            const remaining = MAX_PHOTOS - prev.length;
                             const toAdd = deduped.slice(0, remaining);
                             droppedForCap = deduped.length - toAdd.length;
                             addedCount = toAdd.length;
                             return [...prev, ...toAdd];
                           });
+                          if (addedCount > 0) setImportError(null);
                           if (droppedForCap > 0) {
                             setSubmitError(
-                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
                             );
                           }
                         }}
                       />
                     </div>
                   </div>
+                  {/* Inline import error — near the buttons, not only at the bottom of the form */}
+                  {importError && (
+                    <p
+                      onClick={(e) => e.stopPropagation()}
+                      role="alert"
+                      style={{ marginTop: 4, fontSize: 11.5, color: 'var(--le-bad)' }}
+                    >
+                      {importError}
+                    </p>
+                  )}
                 </div>
               </div>
 

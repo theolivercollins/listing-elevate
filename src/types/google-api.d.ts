@@ -10,11 +10,18 @@ declare namespace google {
     namespace oauth2 {
       interface TokenResponse {
         access_token?: string;
+        /** Lifetime of the access token, in seconds. GIS returns this as a
+         *  numeric string at runtime; declared loosely so callers normalize
+         *  via `Number(...)`. */
+        expires_in?: string | number;
         error?: string;
       }
       interface TokenClientConfig {
         client_id: string;
         scope: string;
+        /** '' (empty string) lets GIS reuse an existing grant silently;
+         *  'consent' forces the consent screen every time. */
+        prompt?: '' | 'none' | 'consent' | 'select_account';
         callback: (response: TokenResponse) => void;
         error_callback?: (err: { message: string }) => void;
       }
