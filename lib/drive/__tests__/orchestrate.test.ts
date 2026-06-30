@@ -214,7 +214,7 @@ describe("approveIntake", () => {
     });
     // Fix 3 guard: upload must return at least one path or the result will be 'error'.
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
     expect(result.status).toBe("generating");
@@ -242,7 +242,7 @@ describe("approveIntake", () => {
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
     vi.mocked(listFinalImages).mockResolvedValue([]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     await approveIntake("intake-1");
 
@@ -287,7 +287,7 @@ describe("approveIntake", () => {
     });
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
     vi.mocked(getStoragePublicUrl).mockReturnValue("https://cdn.example.com/prop-new/raw/img1.jpg");
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -353,7 +353,7 @@ describe("approveIntake", () => {
     });
     // All uploads fail → empty paths; pipeline must NOT fire with zero photos
     vi.mocked(uploadPhotosToStorage).mockResolvedValue([]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -380,7 +380,7 @@ describe("approveIntake", () => {
     vi.mocked(listFinalImages).mockResolvedValue([]);
     // Fix 3 guard: ensure upload succeeds so the happy path reaches 'generating'.
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
     expect(result.status).toBe("generating");
@@ -395,7 +395,7 @@ describe("approveIntake", () => {
     vi.mocked(listFinalImages).mockResolvedValue([]);
     // Fix 3 guard: ensure upload succeeds so the test reaches 'generating'.
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -455,7 +455,7 @@ describe("approveIntake", () => {
     vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
     vi.mocked(listFinalImages).mockResolvedValue([]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     await approveIntake("intake-1");
 
@@ -490,7 +490,7 @@ describe("approveIntake", () => {
     // Return non-empty paths so the happy path (runPipeline + generating) is
     // exercised, not just the pre-upload truncation logic.
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img0.jpg"]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -531,7 +531,7 @@ describe("approveIntake", () => {
     // Return non-empty paths so the happy path (runPipeline + generating) is
     // exercised, not just the pre-upload batching logic.
     vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img0.jpg"]);
-    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as ReturnType<typeof getSupabase>);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
 
     const result = await approveIntake("intake-1");
 
@@ -595,7 +595,7 @@ describe("regenerateIntake", () => {
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
     vi.mocked(getSupabase).mockReturnValue(
-      makeRegenSupabase(null) as ReturnType<typeof getSupabase>,
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await regenerateIntake("intake-1", "");
@@ -641,7 +641,7 @@ describe("regenerateIntake", () => {
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
     vi.mocked(getSupabase).mockReturnValue(
-      makeRegenSupabase("original notes") as ReturnType<typeof getSupabase>,
+      makeRegenSupabase("original notes") as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await regenerateIntake("intake-1", "new feedback");
@@ -665,7 +665,7 @@ describe("regenerateIntake", () => {
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
     vi.mocked(getSupabase).mockReturnValue(
-      makeRegenSupabase(null) as ReturnType<typeof getSupabase>,
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await regenerateIntake("intake-1", "");
@@ -686,7 +686,7 @@ describe("regenerateIntake", () => {
     };
     vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
     vi.mocked(getSupabase).mockReturnValue(
-      makeRegenSupabase(null) as ReturnType<typeof getSupabase>,
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await regenerateIntake("intake-1", "   ");

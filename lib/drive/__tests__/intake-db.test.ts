@@ -131,7 +131,7 @@ describe("upsertDetectedFolder", () => {
         { data: null, error: null },
         // insert → new row
         { data: newRow, error: null },
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await upsertDetectedFolder({
@@ -155,7 +155,7 @@ describe("upsertDetectedFolder", () => {
         { data: BASE_ROW, error: null },
         // update → row with new count
         { data: updatedRow, error: null },
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await upsertDetectedFolder({
@@ -176,7 +176,7 @@ describe("upsertDetectedFolder", () => {
         // select → existing row with photo_count=10
         { data: BASE_ROW, error: null },
         // NO second call expected
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await upsertDetectedFolder({
@@ -200,7 +200,7 @@ describe("upsertDetectedFolder", () => {
       makeClient([
         { data: approvedRow, error: null },
         { data: afterUpdate, error: null },
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await upsertDetectedFolder({
@@ -216,7 +216,7 @@ describe("upsertDetectedFolder", () => {
 
   it("throws on select error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: new Error("DB error") }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await expect(
@@ -240,7 +240,7 @@ describe("getStableDetected", () => {
   it("returns rows matching the stable filter", async () => {
     const stableRow: DriveIntake = { ...BASE_ROW, photo_count: 5 };
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [stableRow], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [stableRow], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const results = await getStableDetected(15);
@@ -251,7 +251,7 @@ describe("getStableDetected", () => {
 
   it("returns empty array when no stable rows exist", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const results = await getStableDetected(15);
@@ -280,7 +280,7 @@ describe("getStableDetected", () => {
 
     vi.mocked(getSupabase).mockReturnValue({
       from: vi.fn().mockReturnValue(chain),
-    } as ReturnType<typeof getSupabase>);
+    } as unknown as ReturnType<typeof getSupabase>);
 
     await getStableDetected(30);
 
@@ -304,14 +304,14 @@ describe("setStatus", () => {
 
   it("updates status without patch", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(setStatus("intake-1", "ingesting")).resolves.toBeUndefined();
   });
 
   it("merges patch fields", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(
       setStatus("intake-1", "error", { feedback_notes: "pipeline failed" }),
@@ -320,7 +320,7 @@ describe("setStatus", () => {
 
   it("throws on error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: new Error("update failed") }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(setStatus("intake-1", "error")).rejects.toThrow("update failed");
   });
@@ -341,7 +341,7 @@ describe("appendFeedback", () => {
         { data: existingRow, error: null },
         // update
         { data: null, error: null },
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await appendFeedback("intake-1", "note 2");
@@ -355,7 +355,7 @@ describe("appendFeedback", () => {
       makeClient([
         { data: rowNoNotes, error: null },
         { data: null, error: null },
-      ]) as ReturnType<typeof getSupabase>,
+      ]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await expect(appendFeedback("intake-1", "first note")).resolves.toBeUndefined();
@@ -371,7 +371,7 @@ describe("getWatchState", () => {
 
   it("returns null when no singleton row exists", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     const result = await getWatchState();
     expect(result).toBeNull();
@@ -387,7 +387,7 @@ describe("getWatchState", () => {
       updated_at: "2026-01-01T00:00:00.000Z",
     };
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: state, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: state, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     const result = await getWatchState();
     expect(result?.channel_id).toBe("ch-1");
@@ -401,7 +401,7 @@ describe("upsertWatchState", () => {
 
   it("upserts without error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(
       upsertWatchState({ channel_id: "ch-2", start_page_token: "tok-2" }),
@@ -418,14 +418,14 @@ describe("getIntake", () => {
 
   it("returns null when not found", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     expect(await getIntake("missing")).toBeNull();
   });
 
   it("returns the row when found", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: BASE_ROW, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: BASE_ROW, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     const row = await getIntake("intake-1");
     expect(row?.id).toBe("intake-1");
@@ -439,7 +439,7 @@ describe("getIntakeByFolder", () => {
 
   it("returns null when not found", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     expect(await getIntakeByFolder("unknown-folder")).toBeNull();
   });
@@ -452,7 +452,7 @@ describe("getByStatus", () => {
 
   it("returns matching rows", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [BASE_ROW], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [BASE_ROW], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     const rows = await getByStatus("detected");
     expect(rows).toHaveLength(1);
@@ -469,7 +469,7 @@ describe("claimForApproval", () => {
   it("returns true when exactly one row is updated (claim succeeds)", async () => {
     // Supabase returns data: [{id: 'intake-1'}] — one row matched
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForApproval("intake-1");
@@ -479,7 +479,7 @@ describe("claimForApproval", () => {
   it("returns false when no rows are updated (already claimed by another caller)", async () => {
     // Supabase returns data: [] — no rows matched the status filter
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForApproval("intake-1");
@@ -488,7 +488,7 @@ describe("claimForApproval", () => {
 
   it("returns false when data is null (row not found)", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForApproval("intake-1");
@@ -497,7 +497,7 @@ describe("claimForApproval", () => {
 
   it("throws on DB error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: new Error("DB error") }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await expect(claimForApproval("intake-1")).rejects.toThrow("DB error");
@@ -514,7 +514,7 @@ describe("reapStuckIngesting", () => {
   it("returns reaped rows when stuck-ingesting rows exist", async () => {
     const stuckRow: DriveIntake = { ...BASE_ROW, status: "ingesting" };
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [stuckRow], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [stuckRow], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const results = await reapStuckIngesting(30);
@@ -524,7 +524,7 @@ describe("reapStuckIngesting", () => {
 
   it("returns empty array when no stuck rows exist", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const results = await reapStuckIngesting(30);
@@ -552,7 +552,7 @@ describe("reapStuckIngesting", () => {
 
     vi.mocked(getSupabase).mockReturnValue({
       from: vi.fn().mockReturnValue(chain),
-    } as ReturnType<typeof getSupabase>);
+    } as unknown as ReturnType<typeof getSupabase>);
 
     await reapStuckIngesting(15);
 
@@ -568,7 +568,7 @@ describe("reapStuckIngesting", () => {
 
   it("throws on DB error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: new Error("reap failed") }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: new Error("reap failed") }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(reapStuckIngesting(30)).rejects.toThrow("reap failed");
   });
@@ -583,7 +583,7 @@ describe("claimForRegenerate", () => {
 
   it("returns true when exactly one row is updated (claim succeeds)", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForRegenerate("intake-1");
@@ -592,7 +592,7 @@ describe("claimForRegenerate", () => {
 
   it("returns false when no rows are updated (already claimed by another caller)", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: [], error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForRegenerate("intake-1");
@@ -601,7 +601,7 @@ describe("claimForRegenerate", () => {
 
   it("returns false when data is null (row not found or wrong status)", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     const result = await claimForRegenerate("intake-1");
@@ -610,7 +610,7 @@ describe("claimForRegenerate", () => {
 
   it("throws on DB error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: new Error("DB error") }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
     );
 
     await expect(claimForRegenerate("intake-1")).rejects.toThrow("DB error");
@@ -626,14 +626,14 @@ describe("setTelegramMessageId / setPropertyId", () => {
 
   it("setTelegramMessageId resolves without error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(setTelegramMessageId("intake-1", 12345)).resolves.toBeUndefined();
   });
 
   it("setPropertyId resolves without error", async () => {
     vi.mocked(getSupabase).mockReturnValue(
-      makeClient([{ data: null, error: null }]) as ReturnType<typeof getSupabase>,
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(setPropertyId("intake-1", "prop-uuid")).resolves.toBeUndefined();
   });
