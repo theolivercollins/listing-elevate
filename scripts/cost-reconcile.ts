@@ -43,10 +43,13 @@ async function main() {
 
   const supabase = getSupabase();
 
-  // cost_events by provider × stage × unit_type
+  // cost_events by provider × stage × unit_type.
+  // Always exclude is_test rows: test-data spend must never pollute real margin
+  // numbers regardless of where this script is run.
   const { data: events } = await supabase
     .from("cost_events")
     .select("provider, stage, unit_type, units_consumed, cost_cents, metadata, created_at")
+    .eq("is_test", false)
     .gte("created_at", since)
     .lte("created_at", `${until}T23:59:59Z`);
 

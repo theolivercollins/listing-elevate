@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { getSupabase } from "../../lib/client.js";
+import { isNonProdEnv } from "../../lib/env.js";
 
 // POST /api/cron/post-subscription-charges
 //
@@ -63,6 +64,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           billing_period: sub.billing_period,
           charge_date: today,
         },
+        is_test: isNonProdEnv(),
       });
       if (ceErr) throw ceErr;
 

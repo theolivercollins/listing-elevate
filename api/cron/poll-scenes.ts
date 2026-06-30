@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const { getSupabase, updatePropertyStatus, recordCostEvent, log } = await import('../../lib/db.js');
-    const { selectProvider } = await import('../../lib/providers/router.js');
+    const { selectProvider, buildProviderFromDecision } = await import('../../lib/providers/router.js');
     const { hostVideoOnBunny, isBunnyConfigured, bunnyStreamCostCents, deleteBunnyVideo, validateBunnyMp4Url } = await import('../../lib/providers/bunny-stream.js');
     const { judgeProductionScene } = await import('../../lib/qc/judge-scene.js');
     const { resubmitScene } = await import('../../lib/pipeline.js');
@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // yet have a stored clip. Limit batch size to avoid function timeout.
     const { data: pending, error: pendingErr } = await supabase
       .from('scenes')
-      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type')
+      .select('id, property_id, photo_id, scene_number, provider, provider_task_id, duration_seconds, attempt_count, submitted_at, prompt, camera_movement, room_type, atlas_model_sku')
       .not('provider_task_id', 'is', null)
       .is('clip_url', null)
       .order('submitted_at', { ascending: true })
@@ -128,7 +128,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let processingCount = 0;
     const affectedProperties = new Set<string>();
 
-    for (const scene of pending) {
+    // Pull-based bounded-concurrency worker pool — mirrors runGenerationSubmit in
+    // lib/pipeline.ts. Up to POLL_CONCURRENCY scenes are polled concurrently;
+    // each worker owns a distinct scene.id so concurrency is safe. Shared counters
+    // (completedCount / failedCount / processingCount) and affectedProperties are
+    // mutated between await points in JS's single-threaded event loop — no races.
+    const POLL_CONCURRENCY = Number(process.env.POLL_CONCURRENCY ?? 6);
+    const processPendingScene = async (scene: NonNullable<typeof pending>[number]) => {
       affectedProperties.add(scene.property_id);
       try {
         // Reconstruct provider instance. Pass empty room type + no preference —
@@ -137,27 +143,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // IVideoProvider matching scene.provider.
         if (!scene.provider) {
           failedCount++;
-          continue;
+          return;
         }
-        // We use selectProvider to reconstruct a provider instance by name.
-        // Passing the provider name as preference guarantees we get that exact
-        // one (or fall through if disabled). selectProvider is the backward-
-        // compat wrapper that returns IVideoProvider directly.
-        const provider = selectProvider('other', null, scene.provider as any, []);
+        // Reconstruct provider for cost-accurate polling.
+        // For Atlas scenes with a stored SKU, use buildProviderFromDecision so
+        // AtlasProvider is initialized with the ACTUAL rendered model —
+        // this.model.priceCentsPerClip then reflects the true per-clip cost.
+        // Legacy rows with null atlas_model_sku fall back to selectProvider
+        // (today's behavior — acceptable for rows that predate migration 091).
+        const atlasModelSku = (scene as unknown as { atlas_model_sku?: string | null }).atlas_model_sku;
+        const provider = (scene.provider === 'atlas' && atlasModelSku)
+          ? buildProviderFromDecision({ provider: 'atlas', modelKey: atlasModelSku, fallback: undefined })
+          : selectProvider('other', null, scene.provider as any, []);
         if (provider.name !== scene.provider) {
           // Provider was disabled between submission and polling. Mark stuck.
           await supabase.from('scenes').update({ status: 'needs_review' }).eq('id', scene.id);
           await log(scene.property_id, 'generation', 'error',
             `Scene ${scene.scene_number}: provider ${scene.provider} no longer available for polling`, undefined, scene.id);
           failedCount++;
-          continue;
+          return;
         }
 
         const status = await provider.checkStatus(scene.provider_task_id as string);
 
         if (status.status === 'processing') {
           processingCount++;
-          continue;
+          return;
         }
 
         if (status.status === 'failed' || !status.videoUrl) {
@@ -193,7 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               `Scene ${scene.scene_number}: failed cost_events insert: ${costMsg}`, undefined, scene.id);
           }
           failedCount++;
-          continue;
+          return;
         }
 
         // Complete — download + host on Bunny Stream. (No speed-ramp; see comment block above.)
@@ -355,7 +366,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Scene is back in flight (status:'generating', fresh task_id) and
             // will be re-polled + re-judged next tick. Don't write any QC status.
             completedCount++;
-            continue;
+            return;
           }
 
           // Resubmit failed — fall back to needs_review so the property surfaces
@@ -373,7 +384,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             `Scene ${scene.scene_number}: QC re-render submit failed (${resubmit.error ?? 'unknown'}); marking needs_review`,
             { error: resubmit.error }, scene.id);
           failedCount++;
-          continue;
+          return;
         }
 
         const newStatus =
@@ -430,7 +441,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await log(scene.property_id, 'generation', 'warn',
           `Cron poll failed for scene ${scene.scene_number}: ${msg}`, undefined, scene.id);
       }
-    }
+    };
+
+    const pollQueue = [...pending];
+    const pollWorker = async () => {
+      while (pollQueue.length) {
+        const scene = pollQueue.shift();
+        if (!scene) return;
+        await processPendingScene(scene);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(POLL_CONCURRENCY, pending.length) }, () => pollWorker()));
 
     // Operator delivery: poll pending B-variant renders (no-op when none exist).
     try {

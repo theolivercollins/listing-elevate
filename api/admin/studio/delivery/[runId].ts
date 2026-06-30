@@ -11,92 +11,18 @@ export const maxDuration = 300; // scrape/regenerate/assemble actions run long
 // ─── Factored stage helpers (called by both the existing action cases and 'rerun') ───
 
 /**
- * Core of the generate_audio action — extracted so 'rerun' can call it without
- * duplicating the duration-audit and auto-shorten loop.
- * Returns the response shape; caller is responsible for res.json().
+ * Core of the generate_audio action — thin delegate to the shared delivery audio
+ * runner (lib/delivery/audio.ts), which owns the duration-audit / auto-shorten
+ * loop, the per-call retry, and the setRunError failure surface. The same runner
+ * backs the autopilot voiceover gate (resolveVoiceover) so both paths produce
+ * duration-audited audio. Returns the response shape; caller does res.json().
  */
 async function runGenerateAudio(runId: string): Promise<
   | { ok: true; run: unknown; duration_warning?: string }
   | { ok: false; status: number; error: string }
 > {
-  const run = await getRun(runId);
-  if (!run) return { ok: false, status: 404, error: 'not_found' };
-  if (!run.voiceover_script) return { ok: false, status: 400, error: 'generate the script first' };
-  if (!run.voiceover_voice_id) return { ok: false, status: 400, error: 'pick a voice first' };
-
-  const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
-  const { updateRun: uRun3, setRunError: sre3, recordMlEvent: rme3 } = await import('../../../../lib/delivery/runs.js');
-
-  try {
-    const voiceId = run.voiceover_voice_id;
-    const genAudio = async (script: string) => {
-      const input = {
-        script, voiceId,
-        propertyId: run.property_id, storageFolder: run.property_id,
-        deliveryRunId: runId,
-      };
-      try {
-        return await generateVoiceoverAudio(input);
-      } catch {
-        return await generateVoiceoverAudio(input);
-      }
-    };
-
-    let script = run.voiceover_script;
-    let { audioUrl, durationMs } = await genAudio(script);
-
-    // Duration audit: the audio must fit the video. If it overruns the
-    // target by >1s, ask Claude to shorten naturally and re-render —
-    // at most 2 attempts, then proceed with a warning.
-    const targetSec = run.duration_seconds ?? 30;
-    const toleranceMs = 1000;
-    let shortenUnavailable = false;
-    if (durationMs > targetSec * 1000 + toleranceMs) {
-      const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
-      const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
-      const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
-      for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
-        const fromWords = countWords(stripAudioTags(script));
-        // A shorten or re-render failure must NOT discard the good audio
-        // we already paid for: keep the last good {script, audio} pair
-        // (always consistent — script is only swapped once its audio
-        // exists) and fall through to persist it with a warning.
-        try {
-          const { script: shortened } = await shortenDeliveryScript({
-            runId, propertyId: run.property_id, script,
-            actualSeconds: durationMs / 1000, targetSeconds: targetSec,
-          });
-          ({ audioUrl, durationMs } = await genAudio(shortened));
-          script = shortened;
-        } catch (shortenErr) {
-          console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
-          shortenUnavailable = true;
-          break;
-        }
-        await rme3(runId, 'script_edit', {
-          source: 'auto_shorten',
-          from_words: fromWords,
-          to_words: countWords(stripAudioTags(script)),
-          target_seconds: targetSec,
-        });
-      }
-    }
-
-    // Persist the script actually spoken so the UI matches the audio.
-    const updated = await uRun3(runId, { voiceover_script: script, voiceover_audio_url: audioUrl } as never);
-    if (durationMs > targetSec * 1000 + toleranceMs) {
-      return {
-        ok: true,
-        run: updated,
-        duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
-      };
-    }
-    return { ok: true, run: updated };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await sre3(runId, `Voiceover audio failed twice: ${msg} — you can skip (assembly proceeds without VO).`);
-    return { ok: false, status: 502, error: msg };
-  }
+  const { runDeliveryAudio } = await import('../../../../lib/delivery/audio.js');
+  return runDeliveryAudio(runId);
 }
 
 /**
@@ -232,8 +158,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           return res.status(200).json({ run });
         }
         case 'retry': {
-          const run = await clearRunError(runId);
-          return res.status(200).json({ run });
+          const run = await getRun(runId);
+          if (!run) return res.status(404).json({ error: 'not_found' });
+
+          // Only the 'generating'-stage zero-scene stall needs a real re-fire;
+          // other stages keep the existing clear-error behavior.
+          if (run.stage === 'generating') {
+            const db = (await import('../../../../lib/client.js')).getSupabase();
+            const { data: scenes, error: sceneErr } = await db.from('scenes').select('id').eq('property_id', run.property_id);
+            // P1 #1: a Supabase query error must NEVER be treated as "zero scenes" —
+            // that would re-fire continuePipeline on a run that may already have scenes,
+            // duplicating them and doubling provider cost.
+            if (sceneErr) return res.status(500).json({ error: sceneErr.message });
+            const sceneCount = (scenes ?? []).length;
+            if (sceneCount === 0) {
+              // Atomic CAS claim: only the first concurrent caller wins the UPDATE.
+              // .lt('updated_at', cutoff) ensures the row is only stamped (and the
+              // claim granted) when the run hasn't been touched within the debounce
+              // window — mirrors the advanceRun / revertRun pattern in lib/delivery/runs.ts.
+              // Threshold: DELIVERY_GENERATING_REFIRE_MINUTES from lib/pipeline/stuck-reaper.ts.
+              const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
+              const cutoff = new Date(Date.now() - DELIVERY_GENERATING_REFIRE_MINUTES * 60_000).toISOString();
+              const { data: claimed, error: claimErr } = await db.from('delivery_runs')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', runId)
+                .lt('updated_at', cutoff)
+                .select('id')
+                .maybeSingle();
+              if (claimErr) return res.status(500).json({ error: claimErr.message });
+              if (!claimed) {
+                // Recently touched: another actor/click is already in flight.
+                // Do not double-fire — just clear the error and return.
+                const cleared = await clearRunError(runId);
+                return res.status(200).json({ run: cleared });
+              }
+              // We won the claim → safe to fire exactly once.
+              // Mirror api/pipeline/continue/[runId].ts: setRunError on throw so
+              // failures stay visible in the operator UI.
+              try {
+                const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+                await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
+                const refreshed = await getRun(runId);
+                return res.status(200).json({ run: refreshed });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                await setRunError(runId, `Generation resume failed: ${msg}`);
+                return res.status(500).json({ status: 'failed', runId, error: msg });
+              }
+            }
+            // generating stage but scenes already exist → don't duplicate;
+            // fall through to clear-error.
+          }
+
+          const cleared = await clearRunError(runId);
+          return res.status(200).json({ run: cleared });
         }
         case 'scrape': {
           const { runScrapeStage } = await import('../../../../lib/delivery/scrape.js');
@@ -686,6 +664,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(400).json({ error: `unhandled stage: ${String(exhausted)}` });
             }
           }
+        }
+
+        case 'set_auto_run': {
+          // Kill-switch / arm: flip auto_run on or off for this run.
+          // body: { enabled: boolean }
+          const enabled = req.body?.enabled;
+          if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+          const { updateRun: uRun9, recordMlEvent: rme9 } = await import('../../../../lib/delivery/runs.js');
+          const updated9 = await uRun9(runId, { auto_run: enabled } as never);
+          await rme9(runId, 'auto_advance', { source: 'operator', action: 'set_auto_run', enabled });
+          // Best-effort gate kick: when arming, resolve immediately if the run
+          // already sits at a gate stage rather than waiting for the next cron sweep.
+          let gateOutcome9: unknown;
+          if (enabled) {
+            try {
+              const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+              const freshRun9 = await getRun(runId);
+              if (freshRun9) gateOutcome9 = await resolveGate(freshRun9);
+            } catch (e) {
+              console.warn('[delivery] set_auto_run: resolveGate best-effort failed', e);
+            }
+          }
+          const body9: { run: unknown; gate_outcome?: unknown } = { run: updated9 };
+          if (gateOutcome9 !== undefined) body9.gate_outcome = gateOutcome9;
+          return res.status(200).json(body9);
+        }
+
+        case 'resume_autopilot': {
+          // Clear the pause state set by pauseForHuman, re-arm autopilot, and
+          // immediately kick the gate resolver so the run continues without delay.
+          const { updateRun: uRun10, recordMlEvent: rme10 } = await import('../../../../lib/delivery/runs.js');
+          const updated10 = await uRun10(runId, { paused_reason: null, auto_paused_at: null, auto_run: true } as never);
+          await rme10(runId, 'auto_resume', { source: 'operator' });
+          let gateOutcome10: unknown;
+          try {
+            const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+            gateOutcome10 = await resolveGate(updated10);
+          } catch (e) {
+            console.warn('[delivery] resume_autopilot: resolveGate best-effort failed', e);
+          }
+          return res.status(200).json({ run: updated10, gate_outcome: gateOutcome10 });
         }
 
         default:

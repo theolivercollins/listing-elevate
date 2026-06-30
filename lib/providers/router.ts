@@ -5,7 +5,7 @@ import { AtlasProvider } from "./atlas.js";
 import { KlingProvider } from "./kling.js";
 import { RunwayProvider } from "./runway.js";
 import { VeoProvider } from "./veo.js";
-import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku } from "./atlas.js";
+import { V1_ATLAS_SKUS, V1_DEFAULT_SKU, type V1AtlasSku, ATLAS_MODELS, isOperatorSkuAvailable } from "./atlas.js";
 import { pickArm, type ThompsonDecision, type BucketArms } from "./thompson-router.js";
 
 export { V1_ATLAS_SKUS, V1_DEFAULT_SKU };
@@ -115,6 +115,24 @@ const RUNWAY_MOVEMENTS: ReadonlySet<CameraMovement> = new Set([
 
 // Lab-parity primary decision — Atlas + V1_DEFAULT_SKU, used as the bottom of
 // every fallback chain (last resort when everything else is excluded).
+//
+// FLAGGED, NOT BUMPED TO 4K (2026-06-30 Seedance-2.0-4K-default work): this
+// constant drives BOTH (a) production routing for every non-paired v1-mode
+// scene regardless of movement (orbit/parallax/dolly/reveal/drone/interior —
+// see resolveMovementDecision below) and (b) the Lab/Thompson V1 testing
+// path (resolveDecision(), V1_ATLAS_SKUS, resolveDecisionAsync's bucket
+// arms), which is INTENTIONALLY restricted to Kling SKUs (policy decision
+// 2026-04-21, see V1_ATLAS_SKUS comment) to keep the rating signal honest.
+// Seedance has only ever been validated in this codebase for forced PUSH-IN
+// framing (v1.1 mode, see forceSeedancePushInPrompt) — its behavior on
+// orbit/parallax/dolly/reveal/drone movements is UNTESTED, and changing this
+// constant would (1) widen V1_ATLAS_SKUS's type, (2) feed unvalidated camera
+// moves to production for every v1-mode property, and (3) break Lab parity
+// in a new direction (production renders a SKU Lab can't test). v1-mode is
+// the legacy/customer-checkout default (api/properties/index.ts); operator
+// autopilot already defaults to pipeline_mode='v1.1'
+// (lib/operator-studio/ingest.ts:149), which IS now 4K via the change above.
+// Bumping V1 mode to 4K is a separate, larger validation task — left as-is.
 const LAB_PARITY_PRIMARY: ProviderDecision = {
   provider: "atlas",
   modelKey: V1_DEFAULT_SKU,
@@ -180,7 +198,12 @@ function resolveMovementDecision(
 export function buildProviderFromDecision(decision: ProviderDecision): IVideoProvider {
   switch (decision.provider) {
     case "atlas":
-      return new AtlasProvider();
+      // Cost-attribution fix (2026-06-26): pass the SKU to the constructor so
+      // this.model is the actual rendered SKU from the start. Without this,
+      // checkStatus() (which may run on a NEW provider instance in the poll loop,
+      // pipeline.ts ~1387) would read the env-default price instead of the
+      // decision's SKU price. Defense-in-depth alongside the generateClip fix.
+      return new AtlasProvider(decision.modelKey);
     case "kling":
       return new KlingProvider();
     case "runway":
@@ -214,16 +237,24 @@ export function selectDecision(
 /**
  * selectProviderForScene — routing entry point for runGenerationSubmit.
  *
- * Handles the paired-scene rule FIRST:
- * - Paired scenes (end_photo_id set) ALWAYS route to atlas + kling-v3-pro
- *   (declares endFrameField "end_image"). This mirrors DQ.3 in the Lab.
- * - Unpaired scenes fall through to the movement-based routing table.
+ * Routing priority:
+ *   0. EXPLICIT OPERATOR SKU OVERRIDE (`skuOverride`) — terminal, no failover.
+ *      Fires only when the key is registered in ATLAS_MODELS, listed as
+ *      available in the operator picker, and atlas is not excluded.
+ *   1. PAIRED SCENES (DQ.3) — always atlas + kling-v3-pro (1080p; no 4K
+ *      paired SKU exists yet — see DQ.3 comment below).
+ *   2. v1.1 mode — atlas + seedance-2-0-4k (native 4K, default since
+ *      2026-06-30) with seedance-pro-pushin / V1 Atlas fallback.
+ *   3. Movement-based routing table (v1 default — still 1080p, see
+ *      LAB_PARITY_PRIMARY comment for why this was NOT bumped to 4K here).
  *
  * @param scene.endPhotoId  end_photo_id from the scene row
  * @param scene.movement    CameraMovement for the scene
  * @param scene.roomType    RoomType for the scene
  * @param scene.preference  VideoProvider preference from the scene row
  * @param excluded          Providers already tried in this submission attempt
+ * @param mode              Pipeline mode ("v1" | "v1.1")
+ * @param skuOverride       Operator's explicit Atlas SKU choice (null = Automatic)
  */
 export function selectProviderForScene(
   scene: {
@@ -234,12 +265,30 @@ export function selectProviderForScene(
   },
   excluded: VideoProvider[] = [],
   mode: PipelineMode = "v1",
+  skuOverride: string | null = null,
 ): ProviderDecision {
+  // RULE 0 (OPERATOR SKU OVERRIDE): explicit operator choice takes precedence over
+  // every routing rule. Terminal — no failover so the operator's intent is respected.
+  // Guard: key must be registered in ATLAS_MODELS AND listed as available in the
+  // operator picker, AND atlas must not already be excluded mid-failover.
+  if (skuOverride && ATLAS_MODELS[skuOverride] && isOperatorSkuAvailable(skuOverride) && !excluded.includes("atlas")) {
+    return { provider: "atlas", modelKey: skuOverride, fallback: undefined }; // explicit operator choice — terminal, no failover
+  }
+
   // RULE DQ.3: Paired scenes ALWAYS use atlas + kling-v3-pro (Kling 3.0 Pro,
   // endFrameField "end_image" — upgraded from kling-v2-1-pair 2026-06-10).
   // This rule wins over pipeline_mode — v1.1 never replaces the paired path.
   // If atlas itself is excluded, fall through to the movement table
   // as best-effort (better to try something than nothing).
+  //
+  // FLAGGED — NO 4K PAIRED PATH EXISTS (2026-06-30): kling-v3-pro is 1080p
+  // only. seedance-2-0-4k cannot serve here — its descriptor has
+  // endFrameField: null (same as seedance-pro-pushin), so it cannot accept
+  // an end-frame/last_image. The opt-in `seedance-pair` SKU DOES take an end
+  // frame (last_image) but is only registered at 1080p-SR — there is no
+  // `seedance-pair-4k` entry in ATLAS_MODELS today. Paired scenes stay at
+  // 1080p until a 4K-capable end-frame SKU is verified against the live
+  // Atlas catalog and added.
   if (scene.endPhotoId && !excluded.includes("atlas")) {
     return {
       provider: "atlas",
@@ -250,17 +299,37 @@ export function selectProviderForScene(
 
   // v1.1 — Seedance push-in for every non-paired scene, routed through
   // Atlas (Seedance is hosted as an Atlas SKU; no separate provider).
-  // Falls back to the default V1 Atlas SKU if the Seedance render hits
-  // a permanent error (e.g. capacity / model outage). Skips when atlas
-  // is already excluded mid-failover — there's no other home for Seedance.
+  //
+  // DEFAULT BUMPED TO 4K (2026-06-30, Oliver directive — "videos don't look
+  // 4K"): seedance-2-0-4k is the SAME underlying model/slug as
+  // seedance-pro-pushin (bytedance/seedance-2.0/image-to-video) — only the
+  // `resolution` input differs ("4k" vs "1080p-SR", see ATLAS_MODELS). Push-in
+  // compatibility is CONFIRMED, not assumed: `shouldForcePushIn()` gates the
+  // forced push-in prompt on (pipelineMode, endPhotoId), never on SKU string,
+  // and `isSeedancePushInSku()` already recognized 'seedance-2-0-4k' (added
+  // 2026-06-26 in anticipation of exactly this swap) so pipeline.ts's
+  // SKU-based push-in check (the `isSeedancePushInSku(decision.modelKey)`
+  // branch used by resubmit/retry) also fires correctly. No prompt-path
+  // changes were needed for this default move.
+  //
+  // Operator SKU overrides (RULE 0 above) still win — an operator can still
+  // pick seedance-pro-pushin (1080p) or any other SKU explicitly.
+  //
+  // Fallback chain on a permanent Atlas error: 4K → 1080p Seedance push-in →
+  // V1 Atlas default (Kling). Skips entirely when atlas is already excluded
+  // mid-failover — there's no other home for Seedance.
   if (mode === "v1.1" && !excluded.includes("atlas")) {
     return {
       provider: "atlas",
-      modelKey: "seedance-pro-pushin",
+      modelKey: "seedance-2-0-4k",
       fallback: {
         provider: "atlas",
-        modelKey: V1_DEFAULT_SKU,
-        fallback: undefined,
+        modelKey: "seedance-pro-pushin",
+        fallback: {
+          provider: "atlas",
+          modelKey: V1_DEFAULT_SKU,
+          fallback: undefined,
+        },
       },
     };
   }
@@ -423,6 +492,23 @@ export function shouldForcePushIn(
   endPhotoId: string | null | undefined,
 ): boolean {
   return pipelineMode === "v1.1" && !endPhotoId;
+}
+
+/**
+ * isSeedancePushInSku — true when `modelKey` is a Seedance push-in SKU.
+ *
+ * Use this instead of comparing directly to the string 'seedance-pro-pushin'
+ * so that 'seedance-2-0-4k' (and any future Seedance push-in variants) are
+ * covered automatically. Both SKUs share the same push-in prompt preamble and
+ * neither sends an end-frame (endFrameField: null).
+ *
+ * NOTE: pipeline.ts gates push-in via `shouldForcePushIn(pipelineMode, endPhotoId)`
+ * (mode-based, not SKU-based). When routing through the skuOverride path at a
+ * mode other than v1.1, callers that want the push-in prompt for seedance-2-0-4k
+ * must check `isSeedancePushInSku(decision.modelKey)` at their call site.
+ */
+export function isSeedancePushInSku(modelKey: string | null | undefined): boolean {
+  return modelKey === "seedance-pro-pushin" || modelKey === "seedance-2-0-4k";
 }
 
 /**

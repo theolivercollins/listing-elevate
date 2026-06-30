@@ -2,6 +2,16 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAdmin } from "../../../lib/auth.js";
 import { getSupabase } from "../../../lib/client.js";
 
+/**
+ * Strip PostgREST-grammar metacharacters from a user-supplied LIKE search term.
+ * Commas, parentheses, and backslash can break out of the .or() filter string
+ * (comma splits conditions, parens denote grouping, backslash is the escape char).
+ * The percent-wildcard anchors are added by code, not from user input.
+ */
+export function sanitizePostgrestLike(raw: string): string {
+  return raw.replace(/[,()\\]/g, "");
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const auth = await requireAdmin(req, res);
   if (!auth) return;
@@ -27,7 +37,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const states = state.split(",");
       qb = qb.in("state", states);
     }
-    if (q) qb = qb.or(`title.ilike.%${q}%,meta_title.ilike.%${q}%`);
+    if (q) {
+      const safeQ = sanitizePostgrestLike(q);
+      if (safeQ) qb = qb.or(`title.ilike.%${safeQ}%,meta_title.ilike.%${safeQ}%`);
+    }
     if (cursor) qb = qb.lt("updated_at", cursor);
 
     const { data, error } = await qb;

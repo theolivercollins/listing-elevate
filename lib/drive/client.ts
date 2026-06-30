@@ -54,6 +54,9 @@ export interface DriveFile {
   id: string;
   name: string;
   mimeType: string;
+  /** File size in bytes returned as a string by the Drive API. Present when the
+   *  `size` field is included in the `fields` query parameter. */
+  size?: string;
 }
 
 export interface DriveChange {
@@ -225,6 +228,10 @@ export async function listPropertyFolders(
     const params: Record<string, string> = {
       q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: "nextPageToken,files(id,name)",
+      // Required for files that live in a Shared Drive (e.g. Helgemo Team Drive).
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
@@ -256,19 +263,24 @@ export async function findFinalSubfolder(
  */
 export async function listFinalImages(
   finalFolderId: string,
-): Promise<Array<{ id: string; name: string; mimeType: string }>> {
-  const results: Array<{ id: string; name: string; mimeType: string }> = [];
+): Promise<Array<{ id: string; name: string; mimeType: string; size?: string }>> {
+  const results: Array<{ id: string; name: string; mimeType: string; size?: string }> = [];
   let pageToken: string | undefined;
 
   do {
     const params: Record<string, string> = {
       q: `'${finalFolderId}' in parents and mimeType contains 'image/' and trashed=false`,
-      fields: "nextPageToken,files(id,name,mimeType)",
+      // size included so callers can enforce per-file byte caps before downloading.
+      fields: "nextPageToken,files(id,name,mimeType,size)",
+      // Required for files that live in a Shared Drive (e.g. Helgemo Team Drive).
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
     const data = (await driveGet("/files", params)) as {
-      files?: Array<{ id: string; name: string; mimeType: string }>;
+      files?: Array<{ id: string; name: string; mimeType: string; size?: string }>;
       nextPageToken?: string;
     };
     results.push(...(data.files ?? []));
@@ -293,9 +305,10 @@ export async function downloadFile(
 ): Promise<{ bytes: ArrayBuffer; name: string; mimeType: string }> {
   const token = await getAccessToken();
 
-  // Fetch binary content
+  // Fetch binary content.
+  // supportsAllDrives=true is required for Shared Drive files.
   const mediaResp = await fetch(
-    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?alt=media`,
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!mediaResp.ok) {
@@ -312,9 +325,11 @@ export async function downloadFile(
   }
   const bytes = await mediaResp.arrayBuffer();
 
-  // Fetch metadata separately
+  // Fetch metadata separately.
+  // supportsAllDrives=true is required for Shared Drive files.
   const meta = (await driveGet(`/files/${encodeURIComponent(fileId)}`, {
     fields: "id,name,mimeType",
+    supportsAllDrives: "true",
   })) as { id: string; name: string; mimeType: string };
 
   return { bytes, name: meta.name, mimeType: meta.mimeType };

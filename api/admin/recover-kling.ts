@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 
 export const maxDuration = 300;
 
@@ -12,6 +13,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // F4: admin-only gate — spends Kling/Bunny credits and mutates scenes
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+
+  // Env write-guard — prevents accidental credit spend + scene inserts on non-prod
+  if (process.env.VERCEL_ENV !== 'production' && process.env.LE_ALLOW_NONPROD_WRITES !== 'true') {
+    return res.status(200).json({ ok: true, skipped: 'non-prod' });
   }
 
   const body = req.body as { propertyId?: string; taskIds?: string[] };

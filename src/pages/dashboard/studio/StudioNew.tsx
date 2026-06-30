@@ -11,12 +11,15 @@ import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
+import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
+import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 
 const MIN_PHOTOS = 5;
+const MAX_PHOTOS = 300;
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -122,6 +125,8 @@ const StudioNew = () => {
   const [directorNotes, setDirectorNotes] = useState('');
   const [selectedDuration, setSelectedDuration] = useState<15 | 30 | 60>(30);
   const [videoType, setVideoType] = useState<'just_listed' | 'just_pended' | 'just_closed'>('just_listed');
+  const [autoRun, setAutoRun] = useState(false);
+  const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
 
   // ─── template availability ───
@@ -163,19 +168,24 @@ const StudioNew = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Inline error shown right under the photo import buttons — separate from
+  // submitError (bottom-of-form) so a failed folder/zip/Drive import is never
+  // silent. Clears on the next successful import.
+  const [importError, setImportError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
-  const isValid = address.trim() && files.length >= MIN_PHOTOS && currentComboAvailable;
+  const totalPhotoCount = files.length;
+  const isValid = address.trim() && totalPhotoCount >= MIN_PHOTOS && currentComboAvailable;
 
   // Step indicator — which conceptual step the user is on
   // Step 0: address (required); client is optional, no longer gates step 0
   // Step 1: property details + notes
   // Step 2: photos
-  const currentStep = !address.trim() ? 0 : files.length < MIN_PHOTOS ? 1 : 2;
+  const currentStep = !address.trim() ? 0 : totalPhotoCount < MIN_PHOTOS ? 1 : 2;
   const FORM_STEPS = ['Client & address', 'Details & notes', 'Photos'];
 
   // ─── file handling ───
@@ -184,7 +194,7 @@ const StudioNew = () => {
       const accepted = Array.from(newFiles).filter((f) =>
         /\.(jpg|jpeg|png|heic|webp)$/i.test(f.name),
       );
-      const remaining = 60 - files.length;
+      const remaining = MAX_PHOTOS - files.length;
       const toAdd = accepted.slice(0, remaining);
       const mapped = toAdd.map((f) => ({
         file: f,
@@ -192,6 +202,7 @@ const StudioNew = () => {
         id: crypto.randomUUID(),
       }));
       setFiles((prev) => [...prev, ...mapped]);
+      if (toAdd.length > 0) setImportError(null);
     },
     [files.length],
   );
@@ -201,11 +212,16 @@ const StudioNew = () => {
     async (input: File | FileList) => {
       try {
         const extracted = await extractImageFiles(input);
+        if (extracted.length === 0) {
+          // Goal: a failed folder/zip import is never silent.
+          setImportError('No images found in that folder/zip.');
+          return;
+        }
         // Use functional updater to read current length at the time of commit
         let droppedForCap = 0;
         let addedCount = 0;
         setFiles((prev) => {
-          const remaining = 60 - prev.length;
+          const remaining = MAX_PHOTOS - prev.length;
           const toAdd = extracted.slice(0, remaining);
           droppedForCap = extracted.length - toAdd.length;
           addedCount = toAdd.length;
@@ -216,16 +232,19 @@ const StudioNew = () => {
           }));
           return [...prev, ...mapped];
         });
-        // Don't silently truncate — tell the operator what got dropped at the 60-photo cap.
+        setImportError(null); // successful import — clear any prior inline error
+        // Don't silently truncate — tell the operator what got dropped at the photo cap.
         if (droppedForCap > 0) {
           setSubmitError(
-            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
           );
         }
       } catch (err) {
-        setSubmitError(
-          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed',
-        );
+        console.error('[studio import]', err);
+        const message =
+          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed';
+        setSubmitError(message);
+        setImportError(message);
       }
     },
     [],
@@ -278,14 +297,17 @@ const StudioNew = () => {
 
     try {
       const tempId = crypto.randomUUID();
-      const photoPaths = await uploadPhotosToStorage(
-        files.map((f) => f.file),
-        `${tempId}/raw`,
-        (uploaded, total) => setUploadProgress({ uploaded, total }),
-      );
+      let uploadedPaths: string[] = [];
+      if (files.length > 0) {
+        uploadedPaths = await uploadPhotosToStorage(
+          files.map((f) => f.file),
+          `${tempId}/raw`,
+          (uploaded, total) => setUploadProgress({ uploaded, total }),
+        );
 
-      if (photoPaths.length === 0) {
-        throw new Error('All photo uploads failed. Check browser console for details.');
+        if (uploadedPaths.length === 0) {
+          throw new Error('All photo uploads failed. Check browser console for details.');
+        }
       }
 
       setUploadProgress(null);
@@ -300,10 +322,12 @@ const StudioNew = () => {
           bathrooms: bathrooms ? Number(bathrooms) : null,
           square_footage: squareFootage ? Number(squareFootage) : null,
           price: price ? Number(price) : null,
-          photo_storage_paths: photoPaths,
+          photo_storage_paths: uploadedPaths,
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
+          auto_run: autoRun,
+          video_model_sku: videoModelSku,
         }),
       });
 
@@ -313,7 +337,9 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
-      fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      // authedFetch attaches the Supabase Bearer token required by the now-gated
+      // pipeline endpoint (F2 security fix). Fire-and-forget: not awaited.
+      authedFetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
       // Fire scrape action fire-and-forget: fetch the run id from the bundle then kick scrape.
       authedFetch(`/api/admin/studio/properties/${property_id}`)
         .then((r) => r.json())
@@ -501,6 +527,51 @@ const StudioNew = () => {
               />
             </div>
 
+            {/* Autopilot */}
+            <div>
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                  cursor: 'pointer',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--le-r-md)',
+                  border: `1px solid ${autoRun ? 'rgba(47,138,85,0.35)' : 'var(--le-line)'}`,
+                  background: autoRun ? 'rgba(47,138,85,0.05)' : 'var(--le-surface)',
+                  transition: 'border-color 0.15s, background 0.15s',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={autoRun}
+                  onChange={(e) => setAutoRun(e.target.checked)}
+                  style={{ marginTop: 2, flexShrink: 0, accentColor: 'var(--le-good)', width: 15, height: 15 }}
+                  aria-describedby="autopilot-hint"
+                />
+                <div>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: autoRun ? 'var(--le-good)' : 'var(--le-ink)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    Auto-run (Autopilot)
+                  </span>
+                  <span
+                    id="autopilot-hint"
+                    style={{ fontSize: 12, color: 'var(--le-muted)', lineHeight: 1.45 }}
+                  >
+                    Let AI run this listing end-to-end. The pipeline will advance through
+                    each gate automatically. You can pause or take over at any time.
+                  </span>
+                </div>
+              </label>
+            </div>
+
             {/* Video type */}
             <div>
               <FieldLabel>Video type</FieldLabel>
@@ -565,6 +636,38 @@ const StudioNew = () => {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Video model */}
+            <div>
+              <FieldLabel>Video model</FieldLabel>
+              <select
+                className="studio-input"
+                value={videoModelSku ?? 'auto'}
+                onChange={(e) =>
+                  setVideoModelSku(e.target.value === 'auto' ? null : e.target.value)
+                }
+              >
+                {OPERATOR_VIDEO_SKUS.map((opt) => (
+                  <option
+                    key={opt.key ?? 'auto'}
+                    value={opt.key ?? 'auto'}
+                    disabled={!opt.available}
+                  >
+                    {opt.label}{!opt.available ? ' (coming soon)' : ''}
+                  </option>
+                ))}
+              </select>
+              <p
+                style={{
+                  marginTop: 6,
+                  fontSize: 12,
+                  color: 'var(--le-muted)',
+                  lineHeight: 1.4,
+                }}
+              >
+                Applies to every scene in this listing. 4K = native UHD (larger file).
+              </p>
             </div>
 
             {/* Duration */}
@@ -693,7 +796,7 @@ const StudioNew = () => {
                   <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
                     or click to browse — JPG, PNG, HEIC, WebP
                   </p>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
@@ -708,12 +811,47 @@ const StudioNew = () => {
                     >
                       Import ZIP
                     </button>
+                    {/* Drive upload — only rendered when VITE_GOOGLE_* env vars are set */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DriveUploadButton
+                        onFilesImported={(imported) => {
+                          // Follow the same MAX_PHOTOS cap pattern as handleBulkInput.
+                          let droppedForCap = 0;
+                          let addedCount = 0;
+                          setFiles((prev) => {
+                            const seen = new Set(prev.map((f) => f.id));
+                            const deduped = imported.filter((f) => !seen.has(f.id));
+                            const remaining = MAX_PHOTOS - prev.length;
+                            const toAdd = deduped.slice(0, remaining);
+                            droppedForCap = deduped.length - toAdd.length;
+                            addedCount = toAdd.length;
+                            return [...prev, ...toAdd];
+                          });
+                          if (addedCount > 0) setImportError(null);
+                          if (droppedForCap > 0) {
+                            setSubmitError(
+                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
+                            );
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
+                  {/* Inline import error — near the buttons, not only at the bottom of the form */}
+                  {importError && (
+                    <p
+                      onClick={(e) => e.stopPropagation()}
+                      role="alert"
+                      style={{ marginTop: 4, fontSize: 11.5, color: 'var(--le-bad)' }}
+                    >
+                      {importError}
+                    </p>
+                  )}
                 </div>
               </div>
 
               {/* Photo count progress */}
-              {files.length > 0 && files.length < MIN_PHOTOS && (
+              {totalPhotoCount > 0 && totalPhotoCount < MIN_PHOTOS && (
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div
                     style={{
@@ -727,7 +865,7 @@ const StudioNew = () => {
                     <div
                       style={{
                         height: '100%',
-                        width: `${(files.length / MIN_PHOTOS) * 100}%`,
+                        width: `${(totalPhotoCount / MIN_PHOTOS) * 100}%`,
                         background: 'var(--le-accent)',
                         borderRadius: 999,
                         transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
@@ -742,11 +880,11 @@ const StudioNew = () => {
                       flexShrink: 0,
                     }}
                   >
-                    {MIN_PHOTOS - files.length} more required
+                    {MIN_PHOTOS - totalPhotoCount} more required
                   </span>
                 </div>
               )}
-              {files.length >= MIN_PHOTOS && (
+              {totalPhotoCount >= MIN_PHOTOS && (
                 <p
                   style={{
                     marginTop: 8,
@@ -755,7 +893,7 @@ const StudioNew = () => {
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {files.length} photo{files.length !== 1 ? 's' : ''} ready
+                  {totalPhotoCount} photo{totalPhotoCount !== 1 ? 's' : ''} ready
                 </p>
               )}
 
@@ -776,7 +914,7 @@ const StudioNew = () => {
                       style={{
                         position: 'relative',
                         aspectRatio: '1',
-                        borderRadius: "var(--le-r-md)",
+                        borderRadius: 'var(--le-r-md)',
                         overflow: 'hidden',
                         background: 'rgba(11,11,16,0.06)',
                       }}
@@ -845,8 +983,8 @@ const StudioNew = () => {
                 <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
                   {!address.trim()
                     ? 'Address required'
-                    : files.length < MIN_PHOTOS
-                      ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                    : totalPhotoCount < MIN_PHOTOS
+                      ? `${MIN_PHOTOS - totalPhotoCount} more photo${MIN_PHOTOS - totalPhotoCount !== 1 ? 's' : ''} required`
                       : !currentComboAvailable
                         ? 'Selected combination not available yet — choose a different type or duration'
                         : ''}

@@ -58,6 +58,9 @@ vi.mock('../../../../../lib/delivery/photo-selection', () => ({
 vi.mock('../../../../../lib/pipeline', () => ({
   continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipelineAfterPhotoSelection(...a),
 }));
+vi.mock('../../../../../lib/pipeline/stuck-reaper', () => ({
+  DELIVERY_GENERATING_REFIRE_MINUTES: 5,
+}));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
 }));
@@ -99,6 +102,10 @@ vi.mock('../../../../../lib/delivery/assemble', () => ({
 const mockParseFeedbackComment = vi.fn();
 vi.mock('../../../../../lib/delivery/parse-feedback', () => ({
   parseFeedbackComment: (...a: unknown[]) => mockParseFeedbackComment(...a),
+}));
+const mockResolveGate = vi.fn();
+vi.mock('../../../../../lib/delivery/auto-run', () => ({
+  resolveGate: (...a: unknown[]) => mockResolveGate(...a),
 }));
 vi.mock('../../../../../lib/client', () => ({
   getSupabase: () => ({
@@ -170,6 +177,7 @@ beforeEach(() => {
   mockGetPhotoSelectionForRun.mockResolvedValue({ photos: [], selected_photo_ids: [] });
   mockApplyPhotoSelectionForRun.mockResolvedValue({ selected_photo_ids: ['photo-2', 'photo-1'] });
   mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+  mockResolveGate.mockResolvedValue({ action: 'noop', reason: 'auto_run off' });
 });
 
 describe('GET /api/admin/studio/delivery/[runId]', () => {
@@ -1755,5 +1763,351 @@ describe('POST rerun (T-rerun)', () => {
     expect(mockRunScrapeStage).not.toHaveBeenCalled();
     expect(mockRunJudgePass).not.toHaveBeenCalled();
     expect(mockRunAssembleStage).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST set_auto_run — autopilot kill-switch / arm
+// ---------------------------------------------------------------------------
+
+describe('POST set_auto_run (autopilot kill-switch)', () => {
+  it('enabled:true → 200, updateRun auto_run=true, records auto_advance ml_event', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ auto_run: true }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_advance', expect.objectContaining({
+      source: 'operator',
+      action: 'set_auto_run',
+      enabled: true,
+    }));
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('enabled:false → 200, updateRun auto_run=false, records auto_advance ml_event, does NOT call resolveGate', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: false });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: false } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({ auto_run: false }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_advance', expect.objectContaining({ enabled: false }));
+    // Kill-switch: resolveGate must NOT be called when disabling
+    expect(mockResolveGate).not.toHaveBeenCalled();
+  });
+
+  it('enabled:true calls resolveGate best-effort and includes gate_outcome in response', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    mockResolveGate.mockResolvedValue({ action: 'noop', reason: 'not a gate stage' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockResolveGate).toHaveBeenCalled();
+    expect((res._body as { gate_outcome: unknown }).gate_outcome).toEqual({ action: 'noop', reason: 'not a gate stage' });
+  });
+
+  it('enabled:true — resolveGate failure is swallowed (best-effort), still returns 200 with the updated run', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true });
+    mockResolveGate.mockRejectedValue(new Error('resolveGate crashed'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('enabled is a non-boolean string → 400, no DB writes', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: 'yes' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('enabled missing → 400, no DB writes', async () => {
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(400);
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('unauthenticated request is rejected — no DB writes', async () => {
+    mockRequireAdmin.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'set_auto_run', enabled: true } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST resume_autopilot — clear pause state and continue
+// ---------------------------------------------------------------------------
+
+describe('POST resume_autopilot', () => {
+  it('→ 200, patches paused_reason=null + auto_paused_at=null + auto_run=true, records auto_resume ml_event', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockUpdateRun).toHaveBeenCalledWith('r1', expect.objectContaining({
+      paused_reason: null,
+      auto_paused_at: null,
+      auto_run: true,
+    }));
+    expect(mockRecordMlEvent).toHaveBeenCalledWith('r1', 'auto_resume', { source: 'operator' });
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('calls resolveGate and includes gate_outcome in response', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    mockResolveGate.mockResolvedValue({ action: 'advanced', to: 'details' });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect(mockResolveGate).toHaveBeenCalled();
+    expect((res._body as { gate_outcome: unknown }).gate_outcome).toEqual({ action: 'advanced', to: 'details' });
+  });
+
+  it('resolveGate failure is swallowed (best-effort), still returns 200 with updated run', async () => {
+    mockUpdateRun.mockResolvedValue({ ...run, auto_run: true, paused_reason: null, auto_paused_at: null });
+    mockResolveGate.mockRejectedValue(new Error('resolveGate crashed'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(200);
+    expect((res._body as { run: unknown }).run).toBeDefined();
+  });
+
+  it('unauthenticated request is rejected — no DB writes', async () => {
+    mockRequireAdmin.mockResolvedValue(null);
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'resume_autopilot' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockRecordMlEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST retry action (T-retry)
+// ---------------------------------------------------------------------------
+
+describe('POST retry (T-retry)', () => {
+  // Claim result for the atomic CAS UPDATE on delivery_runs.
+  // Set via setClaimResult() before each test that reaches the CAS branch.
+  let _claimResult: { data: { id: string } | null; error: { message: string } | null } = {
+    data: null,
+    error: null,
+  };
+
+  /** Control whether the CAS UPDATE wins (claimed) or is rejected (run recently touched). */
+  function setClaimResult(won: boolean, err: { message: string } | null = null) {
+    _claimResult = { data: won ? { id: 'r1' } : null, error: err };
+  }
+
+  beforeEach(() => {
+    _claimResult = { data: null, error: null };
+  });
+
+  /**
+   * Wire up db.from('scenes') to return the given rows / error, and
+   * db.from('delivery_runs') to return the current _claimResult for the CAS UPDATE.
+   * error: null by default (query succeeded). Pass { message } to simulate
+   * a Supabase error — must NOT be treated as zero scenes.
+   */
+  function setScenesResult(scenes: { id: string }[], error: { message: string } | null = null) {
+    mockDbFrom.mockImplementation((table: string) => {
+      if (table === 'scenes') {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockResolvedValue({ data: error ? null : scenes, error }),
+          }),
+        };
+      }
+      if (table === 'delivery_runs') {
+        return {
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              lt: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValue(_claimResult),
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === 'properties') return { select: mockDbSelect };
+      if (table === 'music_tracks') return { insert: mockDbInsert };
+      return { update: mockDbUpdate };
+    });
+  }
+
+  it('retry at generating with ZERO scenes (CAS claim won) → calls continuePipelineAfterPhotoSelection, returns 200 with refreshed run; does NOT call clearRunError', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    const refreshedRun = { ...run, stage: 'generating', refreshed: true };
+    mockGetRun
+      .mockResolvedValueOnce(generatingRun)
+      .mockResolvedValueOnce(refreshedRun);
+    setClaimResult(true);
+    setScenesResult([]);
+    mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledTimes(1);
+    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
+      order_mode: 'operator',
+      delivery_run_id: 'r1',
+    });
+    expect((res._body as { run: unknown }).run).toEqual(refreshedRun);
+    expect(mockClearRunError).not.toHaveBeenCalled();
+    // updateRun must NOT be called — the CAS UPDATE handles the timestamp bump atomically.
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+  });
+
+  it('retry at generating with ZERO scenes and continuePipelineAfterPhotoSelection throws → calls setRunError and returns 500', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setClaimResult(true);
+    setScenesResult([]);
+    mockContinuePipelineAfterPhotoSelection.mockRejectedValue(new Error('director scripting failed'));
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(500);
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('Generation resume failed'));
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('director scripting failed'));
+    expect(mockClearRunError).not.toHaveBeenCalled();
+    expect((res._body as { status: string }).status).toBe('failed');
+  });
+
+  it('P1 #1 — scenes query error → 500, does NOT treat as zero scenes or call continuePipelineAfterPhotoSelection', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([], { message: 'connection timeout' });
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(500);
+    expect((res._body as { error: string }).error).toContain('connection timeout');
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).not.toHaveBeenCalled();
+  });
+
+  it('P1 #2 / CAS claim lost (run recently touched) → clearRunError only, no continue call, no updateRun', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    const clearedRun = { ...run, stage: 'generating', error: null };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setClaimResult(false); // CAS returns null → another actor already holds the claim
+    setScenesResult([]);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockUpdateRun).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
+  it('retry at generating WITH existing scenes → falls through to clearRunError (no continue call)', async () => {
+    const generatingRun = { ...run, stage: 'generating' };
+    const clearedRun = { ...run, stage: 'generating', error: null };
+    mockGetRun.mockResolvedValueOnce(generatingRun);
+    setScenesResult([{ id: 'scene-1' }, { id: 'scene-2' }]);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
+  it('retry at a non-generating stage (voiceover) → clearRunError as before, no continue call', async () => {
+    const voiceoverRun = { ...run, stage: 'voiceover' };
+    const clearedRun = { ...run, stage: 'voiceover', error: null };
+    mockGetRun.mockResolvedValueOnce(voiceoverRun);
+    mockClearRunError.mockResolvedValue(clearedRun);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(200);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).toHaveBeenCalledWith('r1');
+    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
+  });
+
+  it('retry → 404 on unknown run', async () => {
+    mockGetRun.mockResolvedValueOnce(null);
+
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'rX' }, headers: {}, body: { action: 'retry' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+
+    expect(res._status).toBe(404);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockClearRunError).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,8 @@
 
 import { getSupabase } from '../client.js';
 import type { ManualIngestInput } from '../types/operator-studio.js';
+import { isNonProdEnv } from '../env.js';
+import { isOperatorSkuAvailable } from '../providers/atlas.js';
 
 /**
  * Convert a raw Supabase storage path to an absolute public URL.
@@ -64,12 +66,22 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     days_on_market,
     sold_price,
     pipeline_mode,
+    auto_run,
+    video_model_sku: raw_video_model_sku,
     listing_agent: explicit_listing_agent,
     brokerage: explicit_brokerage,
   } = input as ManualIngestWithActor & {
     listing_agent?: string | null;
     brokerage?: string | null;
   };
+
+  // Validate the operator SKU. If provided but not in the available operator set
+  // (stale client, unknown key), coerce to null so ingest falls back to automatic
+  // routing rather than hard-failing. null is always accepted (Automatic).
+  const video_model_sku: string | null =
+    raw_video_model_sku != null && isOperatorSkuAvailable(raw_video_model_sku)
+      ? raw_video_model_sku
+      : null;
 
   if (photo_storage_paths.length < 5) {
     throw new Error('At least 5 photos are required to ingest a property.');
@@ -135,6 +147,8 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       days_on_market: days_on_market ?? null,
       sold_price: sold_price ?? null,
       pipeline_mode: pipeline_mode ?? 'v1.1',
+      is_test: isNonProdEnv(),
+      video_model_sku: video_model_sku ?? null,
     })
     .select()
     .single();
@@ -143,6 +157,44 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
     throw new Error(`property insert failed: ${stringifyDbError(propError)}`);
   }
   const propertyId: string = (property as { id: string }).id;
+
+  // Backfill: attribute the most-recent orphaned pre-fill cost_event to the new
+  // property. When the Drive-pull UI calls scrapeRedfinByAddress BEFORE the
+  // order is submitted, the cost_event is written with property_id = null (no
+  // property row exists yet). Now that we have the UUID, update that row.
+  //
+  // Guard: only the most recent matching row within the last 2 hours to
+  // minimise cross-order mis-attribution on addresses that appear more than
+  // once in a short window.
+  //
+  // Best-effort: a failure must never throw or fail the order.
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data: orphan } = await supabase
+      .from('cost_events')
+      .select('id')
+      .is('property_id', null)
+      .eq('provider', 'apify')
+      .filter('metadata->>address', 'eq', address)
+      .gte('created_at', twoHoursAgo)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (orphan) {
+      const { error: backfillErr } = await supabase
+        .from('cost_events')
+        .update({ property_id: propertyId })
+        .eq('id', (orphan as { id: string }).id);
+      if (backfillErr) {
+        console.error('[ingest] cost_event backfill update failed:', backfillErr.message);
+      }
+    }
+  } catch (err) {
+    console.error(
+      '[ingest] cost_event backfill failed (non-fatal):',
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 
   // 2. Insert photo rows into the shared `photos` table.
   //    file_url must be an absolute public URL so the pipeline analyzer can
@@ -169,6 +221,7 @@ export async function manualIngest(input: ManualIngestWithActor): Promise<string
       client_id: client_id ?? null,
       video_type: (video_type ?? 'just_listed') as 'just_listed' | 'just_pended' | 'just_closed',
       duration_seconds: selected_duration ?? 30,
+      auto_run,
     });
   } catch (err) {
     console.error('[ingest] delivery_run create failed:', err);

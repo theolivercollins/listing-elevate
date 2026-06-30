@@ -1,4 +1,4 @@
--- 088_drive_telegram_intake.sql
+-- 097_drive_telegram_intake.sql
 -- Per docs/specs/drive-telegram-intake-design.md
 --
 -- Changes:

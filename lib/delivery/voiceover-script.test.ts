@@ -22,6 +22,42 @@ describe('buildScriptUserMessage', () => {
     expect(msg).not.toContain('$');
     expect(msg).toContain('Just Listed');
   });
+
+  it('includes the ordered room sequence when provided, in position order', () => {
+    const msg = buildScriptUserMessage({
+      address: '470 Sorrento Ct',
+      videoType: 'just_listed',
+      durationSec: 30,
+      details: { price: 899000 },
+      roomSequence: [
+        { position: 1, room: 'exterior_front' },
+        { position: 2, room: 'kitchen' },
+        { position: 3, room: 'master_bedroom' },
+        { position: 4, room: 'garage' },
+      ],
+    });
+    expect(msg).toContain('Visual order');
+    expect(msg).toContain('1. exterior front');
+    expect(msg).toContain('2. kitchen');
+    expect(msg).toContain('3. master bedroom');
+    expect(msg).toContain('4. garage');
+    // Order in the prompt text matches the supplied position order.
+    expect(msg.indexOf('1. exterior front')).toBeLessThan(msg.indexOf('2. kitchen'));
+    expect(msg.indexOf('2. kitchen')).toBeLessThan(msg.indexOf('3. master bedroom'));
+    expect(msg.indexOf('3. master bedroom')).toBeLessThan(msg.indexOf('4. garage'));
+  });
+
+  it('omits the Visual order block when roomSequence is absent or empty', () => {
+    const noSeq = buildScriptUserMessage({
+      address: 'X St', videoType: 'just_listed', durationSec: 15, details: {},
+    });
+    expect(noSeq).not.toContain('Visual order');
+
+    const emptySeq = buildScriptUserMessage({
+      address: 'X St', videoType: 'just_listed', durationSec: 15, details: {}, roomSequence: [],
+    });
+    expect(emptySeq).not.toContain('Visual order');
+  });
 });
 
 describe('buildShortenUserMessage', () => {

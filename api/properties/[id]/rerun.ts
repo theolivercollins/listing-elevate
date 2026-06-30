@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getSupabase, log, updatePropertyStatus } from '../../../lib/db.js';
+import { verifyAuth } from '../../../lib/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -8,8 +9,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // Auth gate (F3 fix): caller must be authenticated before any read or write.
+    // verifyAuth is used directly (not requireAuth) so we control the 401 path here.
+    const auth = await verifyAuth(req);
+    if (!auth) return res.status(401).json({ error: 'Unauthorized' });
+
     const id = req.query.id as string;
-    await getProperty(id); // verify exists
+
+    // Fetch property for existence check AND ownership gate — single call, reused below.
+    let property;
+    try {
+      property = await getProperty(id);
+    } catch {
+      return res.status(404).json({ error: 'Property not found' });
+    }
+
+    // Owner-or-admin gate: anonymous or third-party callers cannot wipe customer videos.
+    const isOwner = property.submitted_by === auth.user.id;
+    const isAdmin = auth.profile.role === 'admin';
+    if (!isOwner && !isAdmin) return res.status(403).json({ error: 'Forbidden' });
+
+    // ENV write-guard: prevent destructive mutations outside production unless
+    // LE_ALLOW_NONPROD_WRITES is explicitly armed (e.g. in integration tests).
+    // Ref: api/cron/post-subscription-charges.ts:29
+    if (
+      process.env.VERCEL_ENV !== 'production' &&
+      process.env.LE_ALLOW_NONPROD_WRITES !== 'true'
+    ) {
+      return res.status(200).json({ ok: true, skipped: 'non-prod' });
+    }
 
     // Mark the boundary between attempts in the preserved log history.
     // Full run_id versioning will eventually replace this tombstone approach.

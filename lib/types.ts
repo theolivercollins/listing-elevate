@@ -148,6 +148,12 @@ export interface Property {
   stripe_amount_cents: number | null;
   // v1.1 Seedance push-in toggle — added migration 062.
   pipeline_mode: PipelineMode;
+  // Test-data marker (migration adds `is_test boolean default false`).
+  // Set to true on Preview / dev deploys so rows are excluded from live
+  // views + cost reconciliation. Always false on production.
+  is_test: boolean;
+  // Operator-selected video model SKU at inception — added migration 090.
+  video_model_sku: string | null;
 }
 
 export interface UserProfile {
