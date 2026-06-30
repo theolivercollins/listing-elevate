@@ -1,6 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+
   const [analysis, director, qc] = await Promise.all([
     import('../../lib/prompts/photo-analysis.js'),
     import('../../lib/prompts/director.js'),

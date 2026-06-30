@@ -284,8 +284,10 @@ export async function resumeCheckout(propertyId: string): Promise<{ checkoutUrl:
 // Fire-and-forget: triggers the pipeline in a separate 300s function.
 // The rerun reset endpoint deliberately doesn't launch the pipeline itself,
 // so the client kicks it off here once the reset returns.
+// authedFetch attaches the Supabase Bearer token so the now-gated endpoint
+// can verify the caller is the property owner (F2 security fix).
 function triggerPipeline(propertyId: string) {
-  fetch(`/api/pipeline/${propertyId}`, { method: 'POST' }).catch(() => {});
+  authedFetch(`/api/pipeline/${propertyId}`, { method: 'POST' }).catch(() => {});
 }
 
 export async function rerunProperty(id: string): Promise<void> {
