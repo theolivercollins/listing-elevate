@@ -20,10 +20,10 @@ const baseScene = {
 };
 
 describe("selectProviderForScene — v1.1 mode", () => {
-  it("routes unpaired scenes to atlas+seedance-pro-pushin when mode='v1.1'", () => {
+  it("routes unpaired scenes to atlas+seedance-2-0-4k when mode='v1.1' (4K default, 2026-06-30)", () => {
     const decision = selectProviderForScene(baseScene, [], "v1.1");
     expect(decision.provider).toBe("atlas");
-    expect(decision.modelKey).toBe("seedance-pro-pushin");
+    expect(decision.modelKey).toBe("seedance-2-0-4k");
   });
 
   it("seedance Atlas SKU is registered in ATLAS_MODELS", () => {
@@ -31,11 +31,13 @@ describe("selectProviderForScene — v1.1 mode", () => {
     expect(ATLAS_MODELS["seedance-pro-pushin"].endFrameField).toBeNull();
   });
 
-  it("v1.1 decision has an Atlas v1 fallback", () => {
+  it("v1.1 decision has a 3-tier degrade chain: 4K -> 1080p Seedance push-in -> V1 Atlas default", () => {
     const decision = selectProviderForScene(baseScene, [], "v1.1");
     expect(decision.fallback?.provider).toBe("atlas");
-    expect(decision.fallback?.modelKey).toBe(V1_DEFAULT_SKU);
-    expect(decision.fallback?.fallback).toBeUndefined();
+    expect(decision.fallback?.modelKey).toBe("seedance-pro-pushin");
+    expect(decision.fallback?.fallback?.provider).toBe("atlas");
+    expect(decision.fallback?.fallback?.modelKey).toBe(V1_DEFAULT_SKU);
+    expect(decision.fallback?.fallback?.fallback).toBeUndefined();
   });
 
   it("paired scenes ALWAYS route to kling-v3-pro even under v1.1", () => {
