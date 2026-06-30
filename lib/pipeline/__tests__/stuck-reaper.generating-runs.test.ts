@@ -1,41 +1,87 @@
 /**
  * Tests for reapStuckGeneratingDeliveryRuns (lib/pipeline/stuck-reaper.ts).
  *
- * Recovery for a delivery_run pinned at stage='generating' with error=NULL —
- * the post-Checkpoint-A decouple failure modes:
- *   - ZERO scenes for the property → dead → setRunError.
- *   - ALL scenes needs_review with no clip_url → dead → setRunError.
- *   - A healthy in-progress run (scenes pending/generating/qc_pass with task_ids,
- *     or any clip_url present) → LEFT ALONE (no setRunError). This is the
- *     critical no-false-positive guard.
+ * Recovery for a delivery_run pinned at stage='generating' with error=NULL.
+ * Three paths:
+ *
+ *   Path A — ZERO scenes (director/submit never ran — the HTTP hop dropped):
+ *     • Within DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES (45 min from created_at):
+ *       autonomously re-fire continuePipelineAfterPhotoSelection (cap: 1 per tick).
+ *     • Past the window: give up → setRunError + updatePropertyStatus('failed').
+ *
+ *   Path B — ALL scenes needs_review with no clip_url (providers all failed):
+ *     • Only after DELIVERY_GENERATING_STUCK_MINUTES (15 min from updated_at):
+ *       setRunError + updatePropertyStatus('needs_review').
+ *     • Before 15 min: skip (may still be mid-render).
+ *
+ *   Path C — Otherwise (some scene progressing or has a clip):
+ *     • Left alone — no-false-positive guard.
  *
  * Mock strategy mirrors buildGeneratingPropertiesDb in stuck-reaper.test.ts:
  *   1. db.from("delivery_runs").select(...).eq("stage","generating").is("error",null).lt("updated_at",cutoff)
  *   2. per run: db.from("scenes").select("status, clip_url").eq("property_id", pid)
- *   3. setRunError(runId, reason) — dynamically imported from lib/delivery/runs.js, mocked here.
+ *   3. Dynamic imports mocked via vi.mock hoisted to file top.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   reapStuckGeneratingDeliveryRuns,
   DELIVERY_GENERATING_STUCK_MINUTES,
+  DELIVERY_GENERATING_REFIRE_MINUTES,
+  DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES,
 } from "../stuck-reaper.js";
 
-// reapStuckGeneratingDeliveryRuns dynamically imports lib/delivery/runs.js for
-// setRunError. Hoist the mock so it's in place before the reaper imports it.
+// ── Hoisted mocks ─────────────────────────────────────────────────────────────
+// These must be declared before vi.mock calls because vi.mock factory functions
+// run lazily but are hoisted to the top of the file by the test runner.
+
 const mockSetRunError = vi.fn();
+const mockUpdateRun = vi.fn();
+const mockContinuePipeline = vi.fn();
+const mockUpdatePropertyStatus = vi.fn();
+
+// reapStuckGeneratingDeliveryRuns dynamically imports lib/delivery/runs.js and
+// lib/pipeline.js. Hoist the mocks so they are in place before the reaper
+// resolves its dynamic imports.
 vi.mock("../../delivery/runs.js", () => ({
   setRunError: (...a: unknown[]) => mockSetRunError(...a),
+  updateRun: (...a: unknown[]) => mockUpdateRun(...a),
 }));
+
+vi.mock("../../pipeline.js", () => ({
+  continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipeline(...a),
+}));
+
+vi.mock("../../db.js", () => ({
+  updatePropertyStatus: (...a: unknown[]) => mockUpdatePropertyStatus(...a),
+}));
+
+// ── Setup / teardown ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
   mockSetRunError.mockReset();
   mockSetRunError.mockResolvedValue(undefined);
-  // Non-prod write guard: production so the reaper executes.
+  mockUpdateRun.mockReset();
+  mockUpdateRun.mockResolvedValue({});
+  mockContinuePipeline.mockReset();
+  mockContinuePipeline.mockResolvedValue(undefined);
+  mockUpdatePropertyStatus.mockReset();
+  mockUpdatePropertyStatus.mockResolvedValue(undefined);
+  // Non-prod write guard: set production so the reaper executes.
   process.env.VERCEL_ENV = "production";
 });
+
 afterEach(() => {
   delete process.env.VERCEL_ENV;
 });
+
+// ── Mock builder ──────────────────────────────────────────────────────────────
+
+type RunRow = {
+  id: string;
+  property_id: string;
+  updated_at: string;
+  created_at?: string;
+};
 
 /**
  * Builds a Supabase mock for reapStuckGeneratingDeliveryRuns.
@@ -44,14 +90,14 @@ afterEach(() => {
  *     made thenable so `await chain` resolves with scene rows.
  */
 function buildDb(opts: {
-  runRows: Array<{ id: string; property_id: string; updated_at: string }>;
+  runRows: RunRow[];
   sceneRowsByProperty: Record<string, Array<{ status: string; clip_url: string | null }>>;
   runSelectError?: { message: string } | null;
   sceneSelectError?: { message: string } | null;
 }) {
   let fromCallCount = 0;
 
-  const fromSpy = vi.fn().mockImplementation((table: string) => {
+  const fromSpy = vi.fn().mockImplementation((_table: string) => {
     fromCallCount++;
     if (fromCallCount === 1) {
       // delivery_runs select — terminal is .lt()
@@ -64,9 +110,9 @@ function buildDb(opts: {
       });
       return { select: vi.fn().mockReturnValue(chain) };
     }
-    // scenes select — terminal is .eq("property_id", pid). We capture the
-    // property id from that .eq() call to return the right scene set, and make
-    // the chain thenable.
+    // scenes select — terminal is .eq("property_id", pid). Capture the property
+    // id from that .eq() call to return the right scene set, and make the chain
+    // thenable so `await db.from("scenes").select(…).eq(…)` resolves.
     let capturedPid = "";
     const chain: Record<string, unknown> = {};
     chain.eq = vi.fn().mockImplementation((col: string, val: string) => {
@@ -89,19 +135,53 @@ function buildDb(opts: {
   return { from: fromSpy } as unknown as import("@supabase/supabase-js").SupabaseClient;
 }
 
+// ── Shared run-row helpers ────────────────────────────────────────────────────
+
+const NOW = new Date("2026-06-18T12:00:00Z");
+
+/**
+ * A run whose updated_at is DELIVERY_GENERATING_STUCK_MINUTES+5 (20 min) old.
+ * updated_at and created_at are both 20 min ago, placing it within the 45-min
+ * re-fire window (Path A → re-fire, not give-up).
+ */
+function stuckRun(id: string, propertyId: string): RunRow {
+  const ts = new Date(NOW.getTime() - (DELIVERY_GENERATING_STUCK_MINUTES + 5) * 60_000).toISOString();
+  return { id, property_id: propertyId, updated_at: ts, created_at: ts };
+}
+
+/** A run whose created_at is DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES+5 (50 min) old — window exhausted. */
+function exhaustedRun(id: string, propertyId: string): RunRow {
+  const ts = new Date(NOW.getTime() - (DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES + 5) * 60_000).toISOString();
+  return { id, property_id: propertyId, updated_at: ts, created_at: ts };
+}
+
+/** A run that is n minutes old (both updated_at and created_at). */
+function runAgeMin(id: string, propertyId: string, ageMin: number): RunRow {
+  const ts = new Date(NOW.getTime() - ageMin * 60_000).toISOString();
+  return { id, property_id: propertyId, updated_at: ts, created_at: ts };
+}
+
+/** A run where updated_at is updatedAgeMin old but created_at is createdAgeMin old. */
+function runWithAges(
+  id: string,
+  propertyId: string,
+  updatedAgeMin: number,
+  createdAgeMin: number,
+): RunRow {
+  return {
+    id,
+    property_id: propertyId,
+    updated_at: new Date(NOW.getTime() - updatedAgeMin * 60_000).toISOString(),
+    created_at: new Date(NOW.getTime() - createdAgeMin * 60_000).toISOString(),
+  };
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 describe("reapStuckGeneratingDeliveryRuns", () => {
-  const NOW = new Date("2026-06-18T12:00:00Z");
+  // ── Path A: zero-scene runs (re-fire / give-up) ───────────────────────────
 
-  /** A run updated past the stuck threshold (old enough to inspect). */
-  function stuckRun(id: string, propertyId: string): { id: string; property_id: string; updated_at: string } {
-    return {
-      id,
-      property_id: propertyId,
-      updated_at: new Date(NOW.getTime() - (DELIVERY_GENERATING_STUCK_MINUTES + 5) * 60 * 1000).toISOString(),
-    };
-  }
-
-  it("(ii-a) zero-scene generating run → setRunError, reaped", async () => {
+  it("(ii-a) zero-scene run within recovery window (20 min) → re-fires pipeline, reaped, no setRunError", async () => {
     const db = buildDb({
       runRows: [stuckRun("run-zero", "prop-zero")],
       sceneRowsByProperty: { "prop-zero": [] },
@@ -111,14 +191,104 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(1);
     expect(result.ids).toEqual(["run-zero"]);
-    expect(mockSetRunError).toHaveBeenCalledTimes(1);
-    expect(mockSetRunError).toHaveBeenCalledWith(
-      "run-zero",
-      expect.stringMatching(/no scenes were created/i),
+    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
+    expect(mockContinuePipeline).toHaveBeenCalledWith(
+      "prop-zero",
+      expect.objectContaining({ delivery_run_id: "run-zero" }),
     );
+    expect(mockSetRunError).not.toHaveBeenCalled();
   });
 
-  it("(ii-b) all-needs_review-no-clip run → setRunError, reaped", async () => {
+  it("zero-scene run, 6 min old → re-fires once; bumps updated_at before pipeline call; no setRunError", async () => {
+    const callOrder: string[] = [];
+    mockUpdateRun.mockImplementation(async () => { callOrder.push("updateRun"); });
+    mockContinuePipeline.mockImplementation(async () => { callOrder.push("continue"); });
+
+    const db = buildDb({
+      runRows: [runAgeMin("run-6min", "prop-6min", 6)],
+      sceneRowsByProperty: { "prop-6min": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    // Order: updateRun must precede continuePipeline (the overlap-guard relies on it)
+    expect(callOrder).toEqual(["updateRun", "continue"]);
+    expect(mockUpdateRun).toHaveBeenCalledWith("run-6min", expect.any(Object));
+    expect(mockContinuePipeline).toHaveBeenCalledWith(
+      "prop-6min",
+      expect.objectContaining({ delivery_run_id: "run-6min" }),
+    );
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual(["run-6min"]);
+  });
+
+  it("zero-scene run, window exhausted (50 min) → give-up: setRunError 'after auto-retry' + updatePropertyStatus 'failed'; no pipeline call", async () => {
+    const db = buildDb({
+      runRows: [exhaustedRun("run-old", "prop-old")],
+      sceneRowsByProperty: { "prop-old": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual(["run-old"]);
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockSetRunError).toHaveBeenCalledTimes(1);
+    expect(mockSetRunError).toHaveBeenCalledWith(
+      "run-old",
+      expect.stringMatching(/no scenes were created after auto-retry/i),
+    );
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-old", "failed");
+  });
+
+  it("re-fire throws → setRunError 'auto-retry failed', still reaped", async () => {
+    mockContinuePipeline.mockRejectedValueOnce(new Error("director timeout"));
+
+    const db = buildDb({
+      runRows: [runAgeMin("run-throws", "prop-throws", 6)],
+      sceneRowsByProperty: { "prop-throws": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
+    expect(mockSetRunError).toHaveBeenCalledTimes(1);
+    expect(mockSetRunError).toHaveBeenCalledWith(
+      "run-throws",
+      expect.stringMatching(/auto-retry failed.*director timeout/i),
+    );
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual(["run-throws"]);
+  });
+
+  it("two eligible zero-scene runs → only ONE re-fire this tick (cap); second left for next tick", async () => {
+    const db = buildDb({
+      runRows: [
+        runAgeMin("run-a", "prop-a", 6),
+        runAgeMin("run-b", "prop-b", 6),
+      ],
+      sceneRowsByProperty: { "prop-a": [], "prop-b": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    // Only the first run in iteration order is re-fired
+    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
+    expect(mockContinuePipeline).toHaveBeenCalledWith(
+      "prop-a",
+      expect.any(Object),
+    );
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    // Second run is left untouched (no reaped++ for it)
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual(["run-a"]);
+  });
+
+  // ── Path B: all-needs_review-no-clip runs (providers failed) ─────────────
+
+  it("(ii-b) all-needs_review-no-clip run, 20 min old → setRunError + updatePropertyStatus 'needs_review', reaped", async () => {
     const db = buildDb({
       runRows: [stuckRun("run-nr", "prop-nr")],
       sceneRowsByProperty: {
@@ -139,7 +309,52 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
       "run-nr",
       expect.stringMatching(/all scenes need review with no clip/i),
     );
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledTimes(1);
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-nr", "needs_review");
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
   });
+
+  it("all-needs_review-no-clip run, 16 min old → setRunError + updatePropertyStatus 'needs_review'", async () => {
+    const db = buildDb({
+      runRows: [runWithAges("run-pf-16", "prop-pf-16", 16, 16)],
+      sceneRowsByProperty: {
+        "prop-pf-16": [
+          { status: "needs_review", clip_url: null },
+          { status: "needs_review", clip_url: null },
+        ],
+      },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(result.reaped).toBe(1);
+    expect(mockSetRunError).toHaveBeenCalledWith(
+      "run-pf-16",
+      expect.stringMatching(/providers failed/i),
+    );
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-pf-16", "needs_review");
+  });
+
+  it("all-needs_review-no-clip run, 6 min old → no action (too early, may still be mid-render)", async () => {
+    const db = buildDb({
+      runRows: [runAgeMin("run-pf-6", "prop-pf-6", 6)],
+      sceneRowsByProperty: {
+        "prop-pf-6": [
+          { status: "needs_review", clip_url: null },
+          { status: "needs_review", clip_url: null },
+        ],
+      },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+  });
+
+  // ── Path C: healthy / partial runs (no-false-positive guard) ─────────────
 
   it("(ii-c) healthy in-progress run (pending/generating scenes) → LEFT ALONE", async () => {
     const db = buildDb({
@@ -158,9 +373,10 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     expect(result.reaped).toBe(0);
     expect(result.ids).toEqual([]);
     expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
   });
 
-  it("(ii-c2) a needs_review run that has at least one clip_url → LEFT ALONE (partial success)", async () => {
+  it("(ii-c2) run with at least one clip_url present → LEFT ALONE (partial success)", async () => {
     const db = buildDb({
       runRows: [stuckRun("run-partial", "prop-partial")],
       sceneRowsByProperty: {
@@ -175,30 +391,35 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(0);
     expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
   });
 
-  it("non-prod write guard: no env → returns {0,[]} and never writes", async () => {
-    delete process.env.VERCEL_ENV;
+  it("run with a qc_pass scene → LEFT ALONE", async () => {
     const db = buildDb({
-      runRows: [stuckRun("run-guard", "prop-guard")],
-      sceneRowsByProperty: { "prop-guard": [] },
+      runRows: [stuckRun("run-qcp", "prop-qcp")],
+      sceneRowsByProperty: {
+        "prop-qcp": [{ status: "qc_pass", clip_url: "https://cdn.test/ok.mp4" }],
+      },
     });
 
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
 
-    expect(result).toEqual({ reaped: 0, ids: [] });
+    expect(result.reaped).toBe(0);
     expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
   });
 
-  it("mixed batch: dead run annotated, healthy run untouched", async () => {
+  // ── Mixed batch ───────────────────────────────────────────────────────────
+
+  it("mixed batch: window-exhausted dead run annotated, healthy run untouched", async () => {
     const db = buildDb({
       runRows: [
-        stuckRun("run-dead", "prop-dead"),
+        exhaustedRun("run-dead", "prop-dead"),
         stuckRun("run-ok", "prop-ok"),
       ],
       sceneRowsByProperty: {
-        "prop-dead": [],
-        "prop-ok": [{ status: "generating", clip_url: null }],
+        "prop-dead": [],                                        // give-up path
+        "prop-ok": [{ status: "generating", clip_url: null }], // Path C → skip
       },
     });
 
@@ -207,13 +428,60 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     expect(result.reaped).toBe(1);
     expect(result.ids).toEqual(["run-dead"]);
     expect(mockSetRunError).toHaveBeenCalledTimes(1);
-    expect(mockSetRunError).toHaveBeenCalledWith("run-dead", expect.any(String));
+    expect(mockSetRunError).toHaveBeenCalledWith(
+      "run-dead",
+      expect.stringMatching(/after auto-retry/i),
+    );
+    expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-dead", "failed");
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
   });
 
-  it("no stuck runs → {0,[]} without touching setRunError", async () => {
+  // ── Edge cases ────────────────────────────────────────────────────────────
+
+  it("no stuck runs → {0,[]} without any writes", async () => {
     const db = buildDb({ runRows: [], sceneRowsByProperty: {} });
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
     expect(result).toEqual({ reaped: 0, ids: [] });
     expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+  });
+
+  it("non-prod write guard: no VERCEL_ENV → returns {0,[]} and never writes", async () => {
+    delete process.env.VERCEL_ENV;
+    const db = buildDb({
+      runRows: [runAgeMin("run-guard", "prop-guard", 6)],
+      sceneRowsByProperty: { "prop-guard": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(result).toEqual({ reaped: 0, ids: [] });
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+  });
+
+  it("LE_ALLOW_NONPROD_WRITES override → reaper executes even without VERCEL_ENV=production", async () => {
+    delete process.env.VERCEL_ENV;
+    process.env.LE_ALLOW_NONPROD_WRITES = "true";
+
+    const db = buildDb({
+      runRows: [exhaustedRun("run-override", "prop-override")],
+      sceneRowsByProperty: { "prop-override": [] },
+    });
+
+    try {
+      const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+      expect(result.reaped).toBe(1);
+    } finally {
+      delete process.env.LE_ALLOW_NONPROD_WRITES;
+    }
+  });
+
+  it("constants have expected values", () => {
+    expect(DELIVERY_GENERATING_STUCK_MINUTES).toBe(15);
+    expect(DELIVERY_GENERATING_REFIRE_MINUTES).toBe(5);
+    expect(DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES).toBe(45);
   });
 });
