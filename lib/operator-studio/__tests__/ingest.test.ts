@@ -7,6 +7,20 @@ const insertRevisionNote = vi.fn();
 const selectClient = vi.fn();
 const mockCreateRun = vi.fn();
 
+// cost_events backfill mocks — fluent select chain where filter methods return
+// the same chain object; maybeSingle() delegates to the inspectable mock fn.
+const costEventsSelectResult = vi.fn();
+const costEventsUpdateEq = vi.fn();
+const costEventsUpdate = vi.fn();
+// Chain object built at module scope so beforeEach can reset without re-building.
+const _ceChain: Record<string, unknown> = {};
+const _ceChainFn = () => _ceChain;
+(['is', 'eq', 'filter', 'gte', 'order', 'limit'] as const).forEach((m) => {
+  _ceChain[m] = _ceChainFn;
+});
+_ceChain.maybeSingle = () => costEventsSelectResult();
+const costEventsSelect = vi.fn();
+
 vi.mock('../../client', () => ({
   getSupabase: () => ({
     from: (table: string) => {
@@ -18,6 +32,7 @@ vi.mock('../../client', () => ({
       if (table === 'clients') return {
         select: () => ({ eq: () => ({ maybeSingle: selectClient }) }),
       };
+      if (table === 'cost_events') return { select: costEventsSelect, update: costEventsUpdate };
       throw new Error(`unexpected table: ${table}`);
     },
   }),
@@ -49,6 +64,11 @@ beforeEach(() => {
   insertPhotos.mockReset().mockResolvedValue({ data: null, error: null });
   insertRevisionNote.mockReset().mockResolvedValue({ data: null, error: null });
   selectClient.mockReset().mockResolvedValue({ data: { agent_name: 'Jane Agent', name: 'Acme Realty' }, error: null });
+  // cost_events: default "no orphan found" so existing tests are unaffected
+  costEventsSelectResult.mockReset().mockResolvedValue({ data: null, error: null });
+  costEventsUpdateEq.mockReset().mockResolvedValue({ data: null, error: null });
+  costEventsUpdate.mockReset().mockReturnValue({ eq: costEventsUpdateEq });
+  costEventsSelect.mockReset().mockReturnValue(_ceChain);
   mockCreateRun.mockReset().mockResolvedValue({ id: 'run-1' });
 });
 
@@ -159,6 +179,29 @@ describe('manualIngest', () => {
     expect(insertProperty).toHaveBeenCalledWith(expect.objectContaining({
       pipeline_mode: 'v1',
     }));
+  });
+
+  it('backfills the orphaned pre-fill cost_event with the new property_id', async () => {
+    // Simulate an orphaned apify cost_event existing for this address.
+    costEventsSelectResult.mockResolvedValueOnce({ data: { id: 'ce-orphan-1' }, error: null });
+
+    await manualIngest(baseInput);
+
+    // The SELECT was issued to find the orphan.
+    expect(costEventsSelect).toHaveBeenCalledWith('id');
+    // The UPDATE was issued with the correct property_id.
+    expect(costEventsUpdate).toHaveBeenCalledWith({ property_id: 'new-prop-id' });
+    // The WHERE clause targeted the orphan row by id.
+    expect(costEventsUpdateEq).toHaveBeenCalledWith('id', 'ce-orphan-1');
+  });
+
+  it('backfill failure does not throw or fail manualIngest', async () => {
+    // Simulate the SELECT itself blowing up (e.g. network/auth error).
+    costEventsSelectResult.mockRejectedValueOnce(new Error('db timeout'));
+
+    await expect(manualIngest(baseInput)).resolves.toBe('new-prop-id');
+    // UPDATE must not have been called since SELECT threw.
+    expect(costEventsUpdate).not.toHaveBeenCalled();
   });
 
   it('forwards auto_run:true to createRun when set at intake', async () => {

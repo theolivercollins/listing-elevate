@@ -128,7 +128,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let processingCount = 0;
     const affectedProperties = new Set<string>();
 
-    for (const scene of pending) {
+    // Pull-based bounded-concurrency worker pool — mirrors runGenerationSubmit in
+    // lib/pipeline.ts. Up to POLL_CONCURRENCY scenes are polled concurrently;
+    // each worker owns a distinct scene.id so concurrency is safe. Shared counters
+    // (completedCount / failedCount / processingCount) and affectedProperties are
+    // mutated between await points in JS's single-threaded event loop — no races.
+    const POLL_CONCURRENCY = Number(process.env.POLL_CONCURRENCY ?? 6);
+    const processPendingScene = async (scene: NonNullable<typeof pending>[number]) => {
       affectedProperties.add(scene.property_id);
       try {
         // Reconstruct provider instance. Pass empty room type + no preference —
@@ -137,7 +143,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // IVideoProvider matching scene.provider.
         if (!scene.provider) {
           failedCount++;
-          continue;
+          return;
         }
         // Reconstruct provider for cost-accurate polling.
         // For Atlas scenes with a stored SKU, use buildProviderFromDecision so
@@ -155,14 +161,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await log(scene.property_id, 'generation', 'error',
             `Scene ${scene.scene_number}: provider ${scene.provider} no longer available for polling`, undefined, scene.id);
           failedCount++;
-          continue;
+          return;
         }
 
         const status = await provider.checkStatus(scene.provider_task_id as string);
 
         if (status.status === 'processing') {
           processingCount++;
-          continue;
+          return;
         }
 
         if (status.status === 'failed' || !status.videoUrl) {
@@ -198,7 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               `Scene ${scene.scene_number}: failed cost_events insert: ${costMsg}`, undefined, scene.id);
           }
           failedCount++;
-          continue;
+          return;
         }
 
         // Complete — download + host on Bunny Stream. (No speed-ramp; see comment block above.)
@@ -360,7 +366,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             // Scene is back in flight (status:'generating', fresh task_id) and
             // will be re-polled + re-judged next tick. Don't write any QC status.
             completedCount++;
-            continue;
+            return;
           }
 
           // Resubmit failed — fall back to needs_review so the property surfaces
@@ -378,7 +384,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             `Scene ${scene.scene_number}: QC re-render submit failed (${resubmit.error ?? 'unknown'}); marking needs_review`,
             { error: resubmit.error }, scene.id);
           failedCount++;
-          continue;
+          return;
         }
 
         const newStatus =
@@ -435,7 +441,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await log(scene.property_id, 'generation', 'warn',
           `Cron poll failed for scene ${scene.scene_number}: ${msg}`, undefined, scene.id);
       }
-    }
+    };
+
+    const pollQueue = [...pending];
+    const pollWorker = async () => {
+      while (pollQueue.length) {
+        const scene = pollQueue.shift();
+        if (!scene) return;
+        await processPendingScene(scene);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(POLL_CONCURRENCY, pending.length) }, () => pollWorker()));
 
     // Operator delivery: poll pending B-variant renders (no-op when none exist).
     try {

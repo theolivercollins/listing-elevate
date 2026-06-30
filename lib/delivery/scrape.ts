@@ -34,13 +34,33 @@ export async function runScrapeStage(runId: string): Promise<void> {
   if (run.stage === 'intake') await advanceRun(runId, 'scraping');
 
   const { data: prop } = await getSupabase()
-    .from('properties').select('address').eq('id', run.property_id).maybeSingle();
+    .from('properties').select('address, bedrooms, bathrooms, price').eq('id', run.property_id).maybeSingle();
+
+  // Drive-pull skip: when the pre-fill step already populated all three of
+  // beds/baths/price, skip the Apify/Redfin scrape to avoid a double-charge.
+  // Trade-off: mls_description is not fetched on this path; the operator sees
+  // the prefill values immediately. This also applies to any non-Drive order
+  // where an operator manually entered all three fields before submission —
+  // that is intentional and acceptable (same skip condition).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- prop is untyped from the generic SupabaseClient
+  const p = prop as any;
+  if (p?.bedrooms != null && p?.bathrooms != null && p?.price != null) {
+    await setListingDetails(runId, {
+      price: p.price as number,
+      beds: p.bedrooms as number,
+      baths: p.bathrooms as number,
+      sqft: undefined,
+      mls_description: undefined,
+      source: 'prefill',
+    });
+    return;
+  }
 
   // Capture scrape result/error before advancing — write the error AFTER advance
   // so advanceRun's error:null CAS reset doesn't clobber the message.
   let scrapeError: string | null = null;
   try {
-    const result = await scrapeRedfinByAddress(String(prop?.address ?? ''), run.property_id);
+    const result = await scrapeRedfinByAddress(String(p?.address ?? ''), run.property_id);
     await setListingDetails(runId, listingDetailsFromRedfin(result));
     if (!result) scrapeError = 'Redfin scrape returned no listing — enter details manually.';
   } catch (err) {

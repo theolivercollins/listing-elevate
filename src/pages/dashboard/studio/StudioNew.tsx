@@ -11,6 +11,8 @@ import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
+import { DrivePullPanel, type DrivePullResult } from '@/components/studio/DrivePullPanel';
+import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadPhotosToStorage } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
@@ -113,6 +115,9 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 const StudioNew = () => {
   const navigate = useNavigate();
 
+  // ─── Brian gate — Drive Pull panel ───
+  const DRIVE_PULL_CLIENT_ID = import.meta.env.VITE_DRIVE_PULL_CLIENT_ID as string | undefined;
+
   // ─── form state ───
   const [address, setAddress] = useState('');
   const [clientId, setClientId] = useState<string | null>(null);
@@ -126,6 +131,7 @@ const StudioNew = () => {
   const [autoRun, setAutoRun] = useState(false);
   const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [drivePhotos, setDrivePhotos] = useState<{ path: string; url: string }[]>([]);
 
   // ─── template availability ───
   interface ComboKey { video_type: string; duration: number; orientation: string }
@@ -172,13 +178,14 @@ const StudioNew = () => {
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
-  const isValid = address.trim() && files.length >= MIN_PHOTOS && currentComboAvailable;
+  const totalPhotoCount = files.length + drivePhotos.length;
+  const isValid = address.trim() && totalPhotoCount >= MIN_PHOTOS && currentComboAvailable;
 
   // Step indicator — which conceptual step the user is on
   // Step 0: address (required); client is optional, no longer gates step 0
   // Step 1: property details + notes
   // Step 2: photos
-  const currentStep = !address.trim() ? 0 : files.length < MIN_PHOTOS ? 1 : 2;
+  const currentStep = !address.trim() ? 0 : totalPhotoCount < MIN_PHOTOS ? 1 : 2;
   const FORM_STEPS = ['Client & address', 'Details & notes', 'Photos'];
 
   // ─── file handling ───
@@ -234,6 +241,17 @@ const StudioNew = () => {
     [],
   );
 
+  // ─── Drive Pull handler ───
+  const handleDrivePulled = (result: DrivePullResult) => {
+    if (result.address) setAddress(result.address);
+    const m = result.metadata;
+    if (m.bedrooms != null) setBedrooms(String(m.bedrooms));
+    if (m.bathrooms != null) setBathrooms(String(m.bathrooms));
+    if (m.sqft != null) setSquareFootage(String(m.sqft));
+    if (m.price != null) setPrice(String(Math.round(m.price)));
+    setDrivePhotos(result.photos);
+  };
+
   const removeFile = (id: string) => {
     setFiles((prev) => {
       const removed = prev.find((f) => f.id === id);
@@ -281,14 +299,17 @@ const StudioNew = () => {
 
     try {
       const tempId = crypto.randomUUID();
-      const photoPaths = await uploadPhotosToStorage(
-        files.map((f) => f.file),
-        `${tempId}/raw`,
-        (uploaded, total) => setUploadProgress({ uploaded, total }),
-      );
+      let uploadedPaths: string[] = [];
+      if (files.length > 0) {
+        uploadedPaths = await uploadPhotosToStorage(
+          files.map((f) => f.file),
+          `${tempId}/raw`,
+          (uploaded, total) => setUploadProgress({ uploaded, total }),
+        );
 
-      if (photoPaths.length === 0) {
-        throw new Error('All photo uploads failed. Check browser console for details.');
+        if (uploadedPaths.length === 0) {
+          throw new Error('All photo uploads failed. Check browser console for details.');
+        }
       }
 
       setUploadProgress(null);
@@ -303,7 +324,7 @@ const StudioNew = () => {
           bathrooms: bathrooms ? Number(bathrooms) : null,
           square_footage: squareFootage ? Number(squareFootage) : null,
           price: price ? Number(price) : null,
-          photo_storage_paths: photoPaths,
+          photo_storage_paths: [...drivePhotos.map((p) => p.path), ...uploadedPaths],
           director_notes: directorNotes.trim() || null,
           selected_duration: selectedDuration,
           video_type: videoType,
@@ -337,6 +358,7 @@ const StudioNew = () => {
         // Recovery owner: the Property Command Center stepper (Task 13) exposes
         // a retry that re-fires the scrape action, which is resumable from 'intake'.
         .catch((e) => console.warn('[studio] scrape kick failed; stepper retry will recover', e));
+      setDrivePhotos([]);
       navigate(`/dashboard/studio/video/properties/${property_id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submission failed');
@@ -377,6 +399,11 @@ const StudioNew = () => {
                 Leave blank for personal / no-client renders. Brand-kit injection is skipped when there's no client.
               </p>
             </div>
+
+            {/* Drive Pull — gated to Brian's client ID */}
+            {clientId && DRIVE_PULL_CLIENT_ID && clientId === DRIVE_PULL_CLIENT_ID && (
+              <DrivePullPanel onPulled={handleDrivePulled} />
+            )}
 
             {/* Address — Google Places Autocomplete + MLS lookup */}
             <div>
@@ -777,7 +804,7 @@ const StudioNew = () => {
                   <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
                     or click to browse — JPG, PNG, HEIC, WebP
                   </p>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
@@ -792,12 +819,36 @@ const StudioNew = () => {
                     >
                       Import ZIP
                     </button>
+                    {/* Drive upload — only rendered when VITE_GOOGLE_* env vars are set */}
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <DriveUploadButton
+                        onFilesImported={(imported) => {
+                          // Follow the same 60-photo cap pattern as handleBulkInput.
+                          let droppedForCap = 0;
+                          let addedCount = 0;
+                          setFiles((prev) => {
+                            const seen = new Set(prev.map((f) => f.id));
+                            const deduped = imported.filter((f) => !seen.has(f.id));
+                            const remaining = 60 - prev.length;
+                            const toAdd = deduped.slice(0, remaining);
+                            droppedForCap = deduped.length - toAdd.length;
+                            addedCount = toAdd.length;
+                            return [...prev, ...toAdd];
+                          });
+                          if (droppedForCap > 0) {
+                            setSubmitError(
+                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the 60-photo limit.`,
+                            );
+                          }
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Photo count progress */}
-              {files.length > 0 && files.length < MIN_PHOTOS && (
+              {totalPhotoCount > 0 && totalPhotoCount < MIN_PHOTOS && (
                 <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div
                     style={{
@@ -811,7 +862,7 @@ const StudioNew = () => {
                     <div
                       style={{
                         height: '100%',
-                        width: `${(files.length / MIN_PHOTOS) * 100}%`,
+                        width: `${(totalPhotoCount / MIN_PHOTOS) * 100}%`,
                         background: 'var(--le-accent)',
                         borderRadius: 999,
                         transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
@@ -826,11 +877,11 @@ const StudioNew = () => {
                       flexShrink: 0,
                     }}
                   >
-                    {MIN_PHOTOS - files.length} more required
+                    {MIN_PHOTOS - totalPhotoCount} more required
                   </span>
                 </div>
               )}
-              {files.length >= MIN_PHOTOS && (
+              {totalPhotoCount >= MIN_PHOTOS && (
                 <p
                   style={{
                     marginTop: 8,
@@ -839,12 +890,12 @@ const StudioNew = () => {
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {files.length} photo{files.length !== 1 ? 's' : ''} ready
+                  {totalPhotoCount} photo{totalPhotoCount !== 1 ? 's' : ''} ready
                 </p>
               )}
 
               {/* Thumbnails */}
-              {files.length > 0 && (
+              {(files.length > 0 || drivePhotos.length > 0) && (
                 <div
                   className="le-cols-3-lg le-cols-2-sm"
                   style={{
@@ -854,13 +905,70 @@ const StudioNew = () => {
                     gap: 6,
                   }}
                 >
+                  {drivePhotos.map((p, i) => (
+                    <div
+                      key={p.path}
+                      style={{
+                        position: 'relative',
+                        aspectRatio: '1',
+                        borderRadius: 'var(--le-r-md)',
+                        overflow: 'hidden',
+                        background: 'rgba(11,11,16,0.06)',
+                      }}
+                    >
+                      <img
+                        src={p.url}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          left: 4,
+                          fontSize: 9,
+                          fontWeight: 600,
+                          letterSpacing: '0.02em',
+                          background: 'rgba(11,11,16,0.72)',
+                          color: '#fff',
+                          borderRadius: 3,
+                          padding: '1px 5px',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        Drive
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setDrivePhotos((prev) => prev.filter((_, j) => j !== i)); }}
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'rgba(11,11,16,0.65)',
+                          opacity: 0,
+                          transition: 'opacity 0.15s',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: '#fff',
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
+                        aria-label="Remove Drive photo"
+                      >
+                        <X size={14} strokeWidth={2} />
+                      </button>
+                    </div>
+                  ))}
                   {files.map((f) => (
                     <div
                       key={f.id}
                       style={{
                         position: 'relative',
                         aspectRatio: '1',
-                        borderRadius: "var(--le-r-md)",
+                        borderRadius: 'var(--le-r-md)',
                         overflow: 'hidden',
                         background: 'rgba(11,11,16,0.06)',
                       }}
@@ -929,8 +1037,8 @@ const StudioNew = () => {
                 <span style={{ fontSize: 12.5, color: 'var(--le-muted)' }}>
                   {!address.trim()
                     ? 'Address required'
-                    : files.length < MIN_PHOTOS
-                      ? `${MIN_PHOTOS - files.length} more photo${MIN_PHOTOS - files.length !== 1 ? 's' : ''} required`
+                    : totalPhotoCount < MIN_PHOTOS
+                      ? `${MIN_PHOTOS - totalPhotoCount} more photo${MIN_PHOTOS - totalPhotoCount !== 1 ? 's' : ''} required`
                       : !currentComboAvailable
                         ? 'Selected combination not available yet — choose a different type or duration'
                         : ''}

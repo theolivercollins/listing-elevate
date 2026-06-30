@@ -474,10 +474,10 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
   const selected = selection.selected.map((result) => result.original);
   const selectionRank = new Map(selected.map((s, i) => [s.photo.id, i + 1]));
 
-  for (const { photo, analysis, provider } of allResults) {
+  await Promise.all(allResults.map(({ photo, analysis, provider }) => {
     const verdict = selection.verdicts.get(photo.id);
     const isSelected = verdict?.status === "selected";
-    await updatePhotoAnalysis(photo.id, {
+    return updatePhotoAnalysis(photo.id, {
       room_type: analysis.room_type,
       quality_score: analysis.quality_score,
       aesthetic_score: analysis.aesthetic_score,
@@ -499,7 +499,7 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
       },
       analysis_provider: provider,
     });
-  }
+  }));
 
   await getSupabase()
     .from("properties")
@@ -1039,13 +1039,15 @@ async function runScripting(
 
 async function runGenerationSubmit(propertyId: string): Promise<void> {
   await updatePropertyStatus(propertyId, "generating");
-  const allScenes = await getScenesForProperty(propertyId);
+  const [allScenes, property] = await Promise.all([
+    getScenesForProperty(propertyId),
+    getProperty(propertyId),
+  ]);
   const scenes = allScenes.filter((scene) => !scene.provider_task_id && !scene.clip_url);
   const supabase = getSupabase();
 
   // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
   // on legacy properties created before migration 062.
-  const property = await getProperty(propertyId);
   const pipelineMode = property.pipeline_mode ?? "v1";
 
   const GENERATION_CONCURRENCY = parseInt(process.env.GENERATION_CONCURRENCY ?? "4", 10);

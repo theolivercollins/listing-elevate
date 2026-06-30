@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import { Icon } from "@/components/dashboard/icons";
+import { passwordIssue } from "@/lib/passwordUtils";
 
 // ─── Shared field primitives ──────────────────────────────────────────────────
 // Tailwind classes for form elements using the L2 dashboard CSS vars.
@@ -100,8 +101,9 @@ export default function AccountProfile() {
 
   async function handlePasswordChange(e: React.FormEvent) {
     e.preventDefault();
-    if (password.next.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    const pwErr = passwordIssue(password.next);
+    if (pwErr) {
+      toast.error(pwErr);
       passwordRef.current?.focus();
       return;
     }
@@ -259,7 +261,7 @@ export default function AccountProfile() {
           <form onSubmit={handlePasswordChange}>
             <SectionTitle title="Password" />
             <p className={hintCls}>
-              Set a new password. At least 8 characters. You'll stay signed in here, but other devices keep their existing session unless you sign out everywhere below.
+              Set a new password. At least 10 characters, with two or more character types (lowercase, uppercase, number, symbol). You'll stay signed in here, but other devices keep their existing session unless you sign out everywhere below.
             </p>
             <div className="grid grid-cols-2 gap-4 mt-5">
               <div>
@@ -269,11 +271,17 @@ export default function AccountProfile() {
                   ref={passwordRef}
                   type="password"
                   autoComplete="new-password"
+                  minLength={10}
                   className={inputCls}
                   value={password.next}
                   onChange={(e) => setPassword({ ...password, next: e.target.value })}
                   placeholder="••••••••"
                 />
+                {password.next.length > 0 && passwordIssue(password.next) !== null && (
+                  <p className="text-[12px] text-[var(--bad)] mt-1.5 leading-[1.5]">
+                    {passwordIssue(password.next)}
+                  </p>
+                )}
               </div>
               <div>
                 <label className={labelCls} htmlFor="confirm_password">Confirm</label>
@@ -292,8 +300,8 @@ export default function AccountProfile() {
               <button
                 type="submit"
                 className="le-btn-dark text-[12px] py-2 px-5"
-                disabled={savingPassword || !password.next || !password.confirm}
-                style={savingPassword || !password.next || !password.confirm ? { opacity: 0.6 } : undefined}
+                disabled={savingPassword || !!passwordIssue(password.next) || !password.confirm}
+                style={savingPassword || !!passwordIssue(password.next) || !password.confirm ? { opacity: 0.6 } : undefined}
               >
                 {savingPassword ? "Updating..." : "Update password"}
               </button>

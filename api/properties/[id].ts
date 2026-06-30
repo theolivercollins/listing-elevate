@@ -35,9 +35,21 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const photos = await getPhotosForProperty(id);
-    const scenes = await getScenesForProperty(id);
-    const ratings = await getRatingsForProperty(id);
+    // Run all independent reads concurrently after the ownership check.
+    // Cost events contain internal margin data — admins only.
+    const [photos, scenes, ratings, costEvents] = await Promise.all([
+      getPhotosForProperty(id),
+      getScenesForProperty(id),
+      getRatingsForProperty(id),
+      isAdmin
+        ? getSupabase()
+            .from('cost_events')
+            .select('id, scene_id, stage, provider, units_consumed, unit_type, cost_cents, metadata, created_at')
+            .eq('property_id', id)
+            .order('created_at', { ascending: true })
+            .then((r): unknown[] => r.data ?? [])
+        : Promise.resolve<unknown[]>([]),
+    ]);
 
     // Denormalize ratings onto scenes so the frontend has one object per scene.
     const ratingByScene = new Map(ratings.map(r => [r.scene_id, r]));
@@ -45,17 +57,6 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
       ...s,
       rating: ratingByScene.get(s.id) ?? null,
     }));
-
-    // Cost events contain internal margin data — admins only.
-    let costEvents: unknown[] = [];
-    if (isAdmin) {
-      const { data } = await getSupabase()
-        .from('cost_events')
-        .select('id, scene_id, stage, provider, units_consumed, unit_type, cost_cents, metadata, created_at')
-        .eq('property_id', id)
-        .order('created_at', { ascending: true });
-      costEvents = data ?? [];
-    }
 
     return res.status(200).json({
       ...property,
