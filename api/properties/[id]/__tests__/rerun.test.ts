@@ -2,6 +2,10 @@
  * Tests for POST /api/properties/:id/rerun
  *
  * Success criteria:
+ *  - no token → 401 (F3 auth gate)
+ *  - valid token but non-owner non-admin → 403 (F3 ownership gate)
+ *  - owner → performs reset (200)
+ *  - admin (not the owner) → performs reset (200)
  *  - rerun does NOT delete pipeline_logs
  *  - rerun nulls scene_id on pipeline_logs BEFORE deleting scenes
  *  - rerun still deletes scenes (fresh video generation still happens)
@@ -10,6 +14,14 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+
+// ── Auth mock ────────────────────────────────────────────────────────────────
+
+const mockVerifyAuth = vi.fn();
+
+vi.mock('../../../../lib/auth', () => ({
+  verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
+}));
 
 // ── DB mock ──────────────────────────────────────────────────────────────────
 
@@ -26,6 +38,23 @@ vi.mock('../../../../lib/db.js', () => ({
 }));
 
 import handler from '../rerun.js';
+
+// ── Auth fixtures ─────────────────────────────────────────────────────────────
+
+const ownerUserId = 'user-owner-123';
+
+const ownerAuth = {
+  user: { id: ownerUserId, email: 'owner@test.com' },
+  profile: { role: 'user' as const },
+};
+const adminAuth = {
+  user: { id: 'user-admin-789', email: 'admin@test.com' },
+  profile: { role: 'admin' as const },
+};
+const strangerAuth = {
+  user: { id: 'user-other-456', email: 'stranger@test.com' },
+  profile: { role: 'user' as const },
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -109,9 +138,14 @@ function makeReq(id = 'prop-uuid-1'): VercelRequest {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockGetProperty.mockResolvedValue({ id: 'prop-uuid-1' });
+  // Default: authenticated as the property owner so all existing wipe-logic tests pass.
+  mockVerifyAuth.mockResolvedValue(ownerAuth);
+  // Include submitted_by so the ownership gate resolves correctly for ownerAuth.
+  mockGetProperty.mockResolvedValue({ id: 'prop-uuid-1', submitted_by: ownerUserId });
   mockUpdatePropertyStatus.mockResolvedValue(undefined);
   mockLog.mockResolvedValue(undefined);
+  // Arm the env write-guard so the destructive wipe path is reachable in tests.
+  process.env.LE_ALLOW_NONPROD_WRITES = 'true';
 });
 
 describe('POST /api/properties/:id/rerun — log preservation', () => {
@@ -227,5 +261,59 @@ describe('POST /api/properties/:id/rerun — log preservation', () => {
       (c) => c.table === 'scenes' && c.method === 'delete',
     );
     expect(scenesDeleteCalled).toBe(false);
+  });
+});
+
+// ── F3 auth-gate tests ────────────────────────────────────────────────────────
+
+describe('POST /api/properties/:id/rerun — auth gate (F3)', () => {
+  it('returns 401 when no auth token is provided', async () => {
+    mockVerifyAuth.mockResolvedValue(null);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(401);
+    expect((res._body as { error: string }).error).toBe('Unauthorized');
+    // Supabase must never be touched — wipe logic must not run unauthenticated.
+    expect(mockGetSupabase).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when caller is authenticated but is not the owner and not an admin', async () => {
+    mockVerifyAuth.mockResolvedValue(strangerAuth);
+    const { supabase } = makeSupabase();
+    mockGetSupabase.mockReturnValue(supabase);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(403);
+    expect((res._body as { error: string }).error).toBe('Forbidden');
+    // Wipe logic (getSupabase → supabase.from) must not execute for non-owners.
+    expect(mockGetSupabase).not.toHaveBeenCalled();
+  });
+
+  it('allows the property owner to reset (200)', async () => {
+    mockVerifyAuth.mockResolvedValue(ownerAuth);
+    const { supabase } = makeSupabase();
+    mockGetSupabase.mockReturnValue(supabase);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(200);
+    expect((res._body as { status: string }).status).toBe('queued');
+  });
+
+  it('allows an admin (non-owner) to reset (200)', async () => {
+    mockVerifyAuth.mockResolvedValue(adminAuth);
+    const { supabase } = makeSupabase();
+    mockGetSupabase.mockReturnValue(supabase);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    expect(res._status).toBe(200);
+    expect((res._body as { status: string }).status).toBe('queued');
   });
 });
