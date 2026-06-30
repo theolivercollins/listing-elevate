@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail, Lock, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import { X, Mail, Lock, ArrowRight, CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 
 type Mode = "password" | "magic";
+// "form" → credentials step; "mfa" → TOTP challenge step; "sent" → magic link sent
+type Step = "form" | "mfa" | "sent";
 
 export interface LoginDialogProps {
   open: boolean;
@@ -39,11 +42,29 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+const mfaInputStyle: React.CSSProperties = {
+  width: "100%",
+  background: "var(--le-bg)",
+  border: "1px solid var(--le-border-strong)",
+  borderRadius: 4,
+  color: "var(--le-text)",
+  fontFamily: "var(--le-font-sans)",
+  fontSize: 22,
+  letterSpacing: "0.3em",
+  textAlign: "center",
+  height: 56,
+  padding: "0 14px",
+  outline: "none",
+  boxSizing: "border-box",
+};
+
 /**
  * LoginDialog — light modal matching the SaaS surface (2026-06-11).
  *
  * Primary flow: email + password (Supabase signInWithPassword).
  * Secondary flow: one-time magic link (signInWithMagicLink).
+ * MFA flow: TOTP challenge after password sign-in if the user has a
+ * verified factor (aal1 → aal2 elevation).
  *
  * Mounts into document.body via a portal so it can appear over any
  * route and stack cleanly above navs, images, and page content.
@@ -64,20 +85,28 @@ const inputStyle: React.CSSProperties = {
 export function LoginDialog({ open, onClose }: LoginDialogProps) {
   const { signInWithMagicLink, signInWithPassword } = useAuth();
   const [mode, setMode] = useState<Mode>("password");
+  const [step, setStep] = useState<Step>("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  // Store factor + challenge IDs for the MFA step
+  const [mfaFactorId, setMfaFactorId] = useState("");
+  const [mfaChallengeId, setMfaChallengeId] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [sent, setSent] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
+  const mfaRef = useRef<HTMLInputElement>(null);
 
   // Reset transient state when the dialog is re-opened after a close.
   useEffect(() => {
     if (open) {
       setError("");
       setSubmitting(false);
-      setSent(false);
+      setStep("form");
+      setMfaCode("");
+      setMfaFactorId("");
+      setMfaChallengeId("");
     }
   }, [open]);
 
@@ -87,10 +116,11 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   useEffect(() => {
     if (!open) return;
     const t = setTimeout(() => {
-      emailRef.current?.focus();
+      if (step === "form") emailRef.current?.focus();
+      if (step === "mfa") mfaRef.current?.focus();
     }, ENTRY_MS);
     return () => clearTimeout(t);
-  }, [open]);
+  }, [open, step]);
 
   // Lock scroll + escape-to-close when open.
   useEffect(() => {
@@ -114,12 +144,30 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     try {
       if (mode === "password") {
         await signInWithPassword(email, password);
-        // Auth listener fires Navigate in Login.tsx / AuthProvider;
-        // close the dialog optimistically.
+
+        // After successful sign-in, check whether MFA elevation is required.
+        // If the user has a verified TOTP factor, the session is aal1 with
+        // nextLevel=aal2 — we must start the TOTP challenge before closing.
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
+          const { data: factors } = await supabase.auth.mfa.listFactors();
+          const factor = (factors?.totp ?? []).find((f) => f.status === "verified");
+          if (factor) {
+            const { data: ch, error: cErr } = await supabase.auth.mfa.challenge({
+              factorId: factor.id,
+            });
+            if (cErr) throw cErr;
+            setMfaFactorId(factor.id);
+            setMfaChallengeId(ch.id);
+            setStep("mfa");
+            return; // stay in dialog — MFA step now shows
+          }
+        }
+        // No MFA required — close the dialog. Auth state listener handles redirect.
         onClose();
       } else {
         await signInWithMagicLink(email);
-        setSent(true);
+        setStep("sent");
       }
     } catch (err) {
       setError(
@@ -129,6 +177,37 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
           ? "Sign in failed"
           : "Failed to send magic link",
       );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMfaSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (mfaCode.length !== 6) return;
+    setError("");
+    setSubmitting(true);
+    try {
+      const { error: vErr } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: mfaChallengeId,
+        code: mfaCode,
+      });
+      if (vErr) throw vErr;
+      // Verification succeeded — session is now aal2. Close the dialog;
+      // the auth state change will refresh mfaRequired in context.
+      onClose();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Incorrect code";
+      setError(msg.replace("Invalid MFA code", "Incorrect code — try again"));
+      setMfaCode("");
+      // Start a fresh challenge so the next attempt doesn't use an expired one
+      try {
+        const { data: ch } = await supabase.auth.mfa.challenge({ factorId: mfaFactorId });
+        if (ch) setMfaChallengeId(ch.id);
+      } catch {
+        // Challenge refresh failed — next submit will surface the error
+      }
     } finally {
       setSubmitting(false);
     }
@@ -225,9 +304,157 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
               <LELogoMark size={30} variant="dark" />
             </div>
 
-            {/* Sent / form swap — cross-fade so content doesn't pop */}
+            {/* Step swap — cross-fade so content doesn't pop */}
             <AnimatePresence mode="wait" initial={false}>
-              {sent ? (
+              {/* ── MFA challenge step ── */}
+              {step === "mfa" ? (
+                <motion.div
+                  key="mfa"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2, ease: EASE }}
+                >
+                  <div
+                    style={{
+                      width: 44,
+                      height: 44,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "1px solid var(--le-border-strong)",
+                      background: "var(--le-bg-sunken)",
+                      marginBottom: 20,
+                    }}
+                  >
+                    <ShieldCheck
+                      style={{ width: 20, height: 20, color: "var(--le-text)" }}
+                      strokeWidth={1.5}
+                    />
+                  </div>
+                  <h2
+                    id="login-heading"
+                    style={{
+                      fontSize: 24,
+                      fontWeight: 500,
+                      letterSpacing: "-0.02em",
+                      margin: "0 0 10px",
+                      color: "var(--le-text)",
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    Verify your identity
+                  </h2>
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: 13,
+                      color: "var(--le-text-muted)",
+                      lineHeight: 1.55,
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    Enter the 6-digit code from your authenticator app.
+                  </p>
+
+                  <form
+                    onSubmit={handleMfaSubmit}
+                    style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 16 }}
+                  >
+                    <div>
+                      <label
+                        htmlFor="login-mfa-code"
+                        className="le-eyebrow"
+                        style={labelStyle}
+                      >
+                        Authenticator code
+                      </label>
+                      <input
+                        id="login-mfa-code"
+                        ref={mfaRef}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        autoComplete="one-time-code"
+                        placeholder="000000"
+                        value={mfaCode}
+                        onChange={(e) =>
+                          setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                        }
+                        style={mfaInputStyle}
+                      />
+                    </div>
+
+                    {error && (
+                      <div
+                        role="alert"
+                        style={{
+                          border: "1px solid var(--le-danger)",
+                          background: "var(--le-danger-soft)",
+                          padding: 12,
+                          borderRadius: 4,
+                        }}
+                      >
+                        <p
+                          style={{
+                            margin: 0,
+                            fontSize: 12,
+                            color: "var(--le-danger)",
+                            fontFamily: "var(--le-font-sans)",
+                          }}
+                        >
+                          {error}
+                        </p>
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={submitting || mfaCode.length !== 6}
+                      style={{
+                        width: "100%",
+                        marginTop: 4,
+                        background:
+                          submitting || mfaCode.length !== 6
+                            ? "var(--le-bg-sunken)"
+                            : "var(--le-accent)",
+                        color: "var(--le-accent-fg)",
+                        border: "none",
+                        padding: "12px 20px",
+                        fontSize: 14,
+                        fontWeight: 500,
+                        borderRadius: 4,
+                        cursor:
+                          submitting || mfaCode.length !== 6
+                            ? "not-allowed"
+                            : "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        fontFamily: "var(--le-font-sans)",
+                        letterSpacing: "-0.005em",
+                        transition: "background 0.15s ease",
+                      }}
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2
+                            style={{ width: 16, height: 16, animation: "spin 1s linear infinite" }}
+                          />{" "}
+                          Verifying
+                        </>
+                      ) : (
+                        <>
+                          Verify <ArrowRight style={{ width: 16, height: 16 }} />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </motion.div>
+              ) : step === "sent" ? (
+                /* ── Magic link sent step ── */
                 <motion.div
                   key="sent"
                   initial={{ opacity: 0, y: 8 }}
@@ -277,10 +504,21 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     Magic link sent to{" "}
                     <span style={{ fontWeight: 500, color: "var(--le-text)" }}>{email}</span>. Click it to sign in.
                   </p>
+                  <p
+                    style={{
+                      marginTop: 10,
+                      fontSize: 13,
+                      color: "var(--le-text-muted)",
+                      lineHeight: 1.55,
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    If you have 2FA enabled, you'll be prompted for your authenticator code after clicking the link.
+                  </p>
                   <button
                     type="button"
                     onClick={() => {
-                      setSent(false);
+                      setStep("form");
                       setPassword("");
                     }}
                     style={{
@@ -300,6 +538,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   </button>
                 </motion.div>
               ) : (
+                /* ── Credentials form step ── */
                 <motion.div
                   key="form"
                   initial={{ opacity: 0, y: 8 }}
