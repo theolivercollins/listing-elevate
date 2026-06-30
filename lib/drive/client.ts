@@ -207,6 +207,10 @@ export async function listPropertyFolders(
     const params: Record<string, string> = {
       q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
       fields: "nextPageToken,files(id,name)",
+      // Required for files that live in a Shared Drive (e.g. Helgemo Team Drive).
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
@@ -247,6 +251,10 @@ export async function listFinalImages(
       q: `'${finalFolderId}' in parents and mimeType contains 'image/' and trashed=false`,
       // size included so callers can enforce per-file byte caps before downloading.
       fields: "nextPageToken,files(id,name,mimeType,size)",
+      // Required for files that live in a Shared Drive (e.g. Helgemo Team Drive).
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+      corpora: "allDrives",
     };
     if (pageToken) params.pageToken = pageToken;
 
@@ -276,8 +284,9 @@ export async function downloadFile(
 ): Promise<{ bytes: ArrayBuffer; name: string; mimeType: string }> {
   const token = await getAccessToken();
 
-  // Fetch binary content
-  const mediaResp = await fetch(`${DRIVE_BASE}/files/${fileId}?alt=media`, {
+  // Fetch binary content.
+  // supportsAllDrives=true is required for Shared Drive files.
+  const mediaResp = await fetch(`${DRIVE_BASE}/files/${fileId}?alt=media&supportsAllDrives=true`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!mediaResp.ok) {
@@ -286,9 +295,11 @@ export async function downloadFile(
   }
   const bytes = await mediaResp.arrayBuffer();
 
-  // Fetch metadata separately
+  // Fetch metadata separately.
+  // supportsAllDrives=true is required for Shared Drive files.
   const meta = (await driveGet(`/files/${fileId}`, {
     fields: "id,name,mimeType",
+    supportsAllDrives: "true",
   })) as { id: string; name: string; mimeType: string };
 
   return { bytes, name: meta.name, mimeType: meta.mimeType };

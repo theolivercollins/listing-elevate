@@ -438,6 +438,27 @@ describe("listPropertyFolders", () => {
     await listPropertyFolders("specific-parent-id");
     expect(capturedUrls[0]).toContain("specific-parent-id");
   });
+
+  it("sends Shared Drive params on every list request", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("shared-drive-parent");
+    expect(capturedUrls[0]).toContain("supportsAllDrives=true");
+    expect(capturedUrls[0]).toContain("includeItemsFromAllDrives=true");
+    expect(capturedUrls[0]).toContain("corpora=allDrives");
+  });
 });
 
 // ─── 5. findFinalSubfolder ────────────────────────────────────────────────────
@@ -573,6 +594,27 @@ describe("listFinalImages", () => {
     expect(capturedUrls[0]).toContain("size");
   });
 
+  it("sends Shared Drive params on every image list request", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listFinalImages("shared-final-folder");
+    expect(capturedUrls[0]).toContain("supportsAllDrives=true");
+    expect(capturedUrls[0]).toContain("includeItemsFromAllDrives=true");
+    expect(capturedUrls[0]).toContain("corpora=allDrives");
+  });
+
   it("paginates across multiple pages of images", async () => {
     process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
     vi.stubGlobal(
@@ -651,5 +693,35 @@ describe("downloadFile", () => {
     expect(result.name).toBe("front.jpg");
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.bytes.byteLength).toBe(4);
+  });
+
+  it("sends supportsAllDrives=true on both media and metadata requests", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const fakeBytes = new Uint8Array([0xff]).buffer;
+    const capturedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedUrls.push(urlStr);
+        if (urlStr.includes("alt=media")) {
+          return { ok: true, status: 200, arrayBuffer: async () => fakeBytes };
+        }
+        // Metadata fetch
+        return mockJsonResponse({ id: "file-sd", name: "shared.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    await downloadFile("file-sd");
+
+    // Should have two Drive API calls: media download + metadata
+    expect(capturedUrls).toHaveLength(2);
+    const mediaUrl = capturedUrls.find((u) => u.includes("alt=media"))!;
+    const metaUrl = capturedUrls.find((u) => !u.includes("alt=media"))!;
+    expect(mediaUrl).toContain("supportsAllDrives=true");
+    expect(metaUrl).toContain("supportsAllDrives=true");
   });
 });
