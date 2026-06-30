@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getSupabase } from '../../../lib/db.js';
-import { verifyAuth } from '../../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../../lib/auth.js';
 
 /**
  * POST /api/properties/:id/archive
@@ -13,6 +13,10 @@ import { verifyAuth } from '../../../lib/auth.js';
  * Env guard: non-prod writes are skipped unless LE_ALLOW_NONPROD_WRITES=true.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): verifyAuth is called directly here (not via
+  // requireAuth), so set no-store/Vary up front on every response path.
+  setNoStore(res);
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });

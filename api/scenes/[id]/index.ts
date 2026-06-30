@@ -1,8 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getSupabase } from '../../../lib/db.js';
-import { verifyAuth } from '../../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../../lib/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): verifyAuth is called directly here (not via
+  // requireAuth), so set no-store/Vary up front on every response path.
+  setNoStore(res);
+
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method not allowed' });

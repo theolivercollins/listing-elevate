@@ -19,6 +19,7 @@ const mockVerifyAuth = vi.fn();
 
 vi.mock('../../../../lib/auth', () => ({
   verifyAuth: (...args: unknown[]) => mockVerifyAuth(...args),
+  setNoStore: vi.fn(),
 }));
 
 // ── DB mock ───────────────────────────────────────────────────────────────────

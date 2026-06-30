@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 
 // ─── MfaChallengeWall ─────────────────────────────────────────────────────────
@@ -156,7 +157,7 @@ export function RequireAuth() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -179,7 +180,7 @@ export function RequireAdmin() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin h-8 w-8 border-2 border-emerald-500 border-t-transparent rounded-full" />
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
