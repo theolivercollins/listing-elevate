@@ -148,6 +148,8 @@ export interface Property {
   stripe_amount_cents: number | null;
   // v1.1 Seedance push-in toggle — added migration 062.
   pipeline_mode: PipelineMode;
+  // Operator-selected video model SKU at inception — added migration 090.
+  video_model_sku: string | null;
 }
 
 export interface UserProfile {
