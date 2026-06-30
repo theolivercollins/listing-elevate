@@ -313,7 +313,9 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
-      fetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
+      // authedFetch attaches the Supabase Bearer token required by the now-gated
+      // pipeline endpoint (F2 security fix). Fire-and-forget: not awaited.
+      authedFetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
       // Fire scrape action fire-and-forget: fetch the run id from the bundle then kick scrape.
       authedFetch(`/api/admin/studio/properties/${property_id}`)
         .then((r) => r.json())

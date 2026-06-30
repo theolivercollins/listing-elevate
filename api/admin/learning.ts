@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireAdmin } from '../../lib/auth.js';
 import { getSupabase } from '../../lib/db.js';
 
 // Aggregated rating data for the admin Learning dashboard.
@@ -8,7 +9,10 @@ import { getSupabase } from '../../lib/db.js';
 //   - averages by room_type + camera_movement combo
 //   - rating count + average trend over time (last 14 days)
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  const auth = await requireAdmin(req, res);
+  if (!auth) return;
+
   try {
     const supabase = getSupabase();
     const sinceIso = new Date(Date.now() - 30 * 86400000).toISOString();
