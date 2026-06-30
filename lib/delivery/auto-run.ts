@@ -23,6 +23,7 @@ import type { ClaudeUsage } from '../utils/claude-cost.js';
 import { recordCostEvent } from '../db.js';
 import { emitBunnyFinalizeCostEvent } from '../assembly/bunny-finalize-cost.js';
 import { runDeliveryAudio } from './audio.js';
+import { getPhotoSelectionForRun, applyPhotoSelectionForRun } from './photo-selection.js';
 import type { DeliveryRunRow, SceneVariantRow } from '../types/operator-studio.js';
 
 // Re-export so callers (cron sweep, inline kicks) share the same ref.
@@ -40,6 +41,11 @@ export const AUTO_JUDGE_MARGIN = 0.15;
  *  Runs scoring below this are paused for human review before delivery. */
 export const AUTO_DELIVER_THRESHOLD = 0.7;
 
+/** Minimum number of AI-recommended photos required for autopilot to auto-approve
+ *  the photo_selection gate. Below this threshold (roughly half of TARGET_SCENE_COUNT=12)
+ *  the selection is considered thin coverage and a human should verify. */
+export const AUTO_PHOTO_MIN_SELECTED = 6;
+
 /** Haiku-tier model for cheap subjective picks (voice tone, music mood). */
 const PICK_MODEL = 'claude-haiku-4-5';
 
@@ -52,11 +58,12 @@ export type GateOutcome =
 
 // ─── GATE STAGES ─────────────────────────────────────────────────────────────
 
-/** The five stages where a human (or autopilot) makes a decision.
+/** The stages where a human (or autopilot) makes a decision.
  *  Auto-stages (intake/scraping/generating/judging/assembling) advance via
  *  existing cron/poll paths and are never dispatched to resolvers here.
  *  Exported so the cron sweep imports the single source of truth (no drift). */
 export const GATE_STAGES = [
+  'photo_selection',
   'checkpoint_a',
   'details',
   'voiceover',
@@ -161,11 +168,12 @@ export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
     // TypeScript exhaustiveness: the switch covers every GateStage value; if a new
     // gate stage is added to GATE_STAGES without a case, the compiler will error here.
     switch (run.stage satisfies GateStage) {
-      case 'checkpoint_a': return await resolveCheckpointA(run);
-      case 'details':      return await resolveDetails(run);
-      case 'voiceover':    return await resolveVoiceover(run);
-      case 'music':        return await resolveMusic(run);
-      case 'checkpoint_b': return await resolveCheckpointB(run);
+      case 'photo_selection': return await resolvePhotoSelection(run);
+      case 'checkpoint_a':    return await resolveCheckpointA(run);
+      case 'details':         return await resolveDetails(run);
+      case 'voiceover':       return await resolveVoiceover(run);
+      case 'music':           return await resolveMusic(run);
+      case 'checkpoint_b':    return await resolveCheckpointB(run);
     }
   } finally {
     // Always release — a `return` inside the try still runs this.
@@ -442,6 +450,81 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
 }
 
 // ─── PER-GATE RESOLVERS ───────────────────────────────────────────────────────
+
+/**
+ * photo_selection — AI-recommended photo set auto-approval gate.
+ *
+ * The AI selection is persisted upstream (lib/pipeline/selection.ts via
+ * lib/pipeline.ts) before the run reaches this stage; getPhotoSelectionForRun
+ * returns the already-ranked selected_photo_ids.
+ *
+ * If the AI selected ≥ AUTO_PHOTO_MIN_SELECTED photos: accept all of them
+ * (passing ONLY photo_order, no rejections, so the "rejection reason required"
+ * guard in applyPhotoSelectionForRun is never triggered). The RPC
+ * approve_photo_selection sets the selected photos AND advances the run to
+ * 'generating' in a single transaction — do NOT call advanceRun separately.
+ *
+ * After applying, fire the same continue hop the operator route fires after
+ * approve_photo_selection: POST /api/pipeline/continue/[runId] on a fresh
+ * Vercel function to start the heavy post-approval compute (style guide +
+ * director scripting + N provider submits). Fire-and-forget; the
+ * generating-stage reaper (reapStuckGeneratingDeliveryRuns) is the backstop if
+ * the hop fails to land.
+ *
+ * Pause paths:
+ *  - selected_photo_ids.length === 0: no AI photos at all.
+ *  - selected_photo_ids.length < AUTO_PHOTO_MIN_SELECTED: thin coverage.
+ */
+export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOutcome> {
+  const { selected_photo_ids } = await getPhotoSelectionForRun(run.id);
+
+  if (selected_photo_ids.length === 0) {
+    const reason = 'photo_selection: no AI-recommended photos';
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
+  }
+
+  if (selected_photo_ids.length < AUTO_PHOTO_MIN_SELECTED) {
+    const reason = `photo_selection: only ${selected_photo_ids.length} photos selected (min ${AUTO_PHOTO_MIN_SELECTED}) — thin coverage`;
+    await pauseForHuman(run.id, reason);
+    return { action: 'paused', reason };
+  }
+
+  // Accept all AI-recommended photos. Pass ONLY photo_order (no rejected array)
+  // so the removal-rejection-reason guard never fires. The RPC advances the run
+  // to 'generating' — do NOT call advanceRun after this.
+  await applyPhotoSelectionForRun(run.id, { photo_order: selected_photo_ids });
+
+  // Fire the continue hop FIRST — unconditionally, before any await that could
+  // throw. The run is already at 'generating'; if telemetry below throws the
+  // hop has still landed so the pipeline resumes. Same ordering guarantee the
+  // operator route uses. Fire-and-forget; the generating-stage reaper backstops
+  // a hop that fails to land. Uses VERCEL_URL (always set in Vercel runtimes).
+  const host = process.env.VERCEL_URL;
+  if (host) {
+    const continueUrl = `https://${host}/api/pipeline/continue/${encodeURIComponent(run.id)}`;
+    void fetch(continueUrl, { method: 'POST' }).catch((e: unknown) => {
+      console.warn(`[auto-run] photo_selection continue hop failed to dispatch; reaper will recover`, e);
+    });
+  } else {
+    console.warn(`[auto-run] photo_selection: VERCEL_URL unset — continue hop skipped; reaper will recover`);
+  }
+
+  // Telemetry is best-effort: a DB hiccup must not prevent the function from
+  // returning 'advanced' (the hop has already fired above).
+  try {
+    await recordMlEvent(run.id, 'auto_advance', {
+      source: 'auto',
+      gate: 'photo_selection',
+      confidence: 1,
+      selected_count: selected_photo_ids.length,
+    });
+  } catch (e) {
+    console.error(`[auto-run] photo_selection: recordMlEvent failed (non-fatal, hop already fired)`, e);
+  }
+
+  return { action: 'advanced', to: 'generating' };
+}
 
 /**
  * checkpoint_a — Judge-winner confirmation gate.

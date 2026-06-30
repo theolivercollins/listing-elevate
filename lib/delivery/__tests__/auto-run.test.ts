@@ -16,8 +16,10 @@ import {
   canWrite,
   AUTO_JUDGE_MARGIN,
   AUTO_DELIVER_THRESHOLD,
+  AUTO_PHOTO_MIN_SELECTED,
   resolveCheckpointA,
   resolveDetails,
+  resolvePhotoSelection,
   resolveVoiceover,
   resolveMusic,
   resolveCheckpointB,
@@ -105,6 +107,12 @@ vi.mock('../../assembly/bunny-finalize-cost.js', () => ({
   emitBunnyFinalizeCostEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Photo selection — resolvePhotoSelection reads AI-recommended ids and applies them.
+vi.mock('../photo-selection.js', () => ({
+  getPhotoSelectionForRun: vi.fn(),
+  applyPhotoSelectionForRun: vi.fn(),
+}));
+
 const mockAnthropicCreate = vi.hoisted(() => vi.fn());
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
@@ -122,6 +130,7 @@ import { recordCostEvent } from '../../db.js';
 import { pollAssemblyJob, assemblyProviderCostCents } from '../../providers/assembly-router.js';
 import { finalizeAssemblyRender } from '../../assembly/finalize.js';
 import { emitBunnyFinalizeCostEvent } from '../../assembly/bunny-finalize-cost.js';
+import { getPhotoSelectionForRun, applyPhotoSelectionForRun } from '../photo-selection.js';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -221,6 +230,7 @@ afterEach(() => {
     delete savedEnv[key];
   }
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // ─── canWrite() ───────────────────────────────────────────────────────────────
@@ -263,6 +273,11 @@ describe('exported config constants', () => {
     expect(AUTO_DELIVER_THRESHOLD).toBeGreaterThan(0);
     expect(AUTO_DELIVER_THRESHOLD).toBeLessThan(1);
   });
+
+  it('AUTO_PHOTO_MIN_SELECTED is a positive integer', () => {
+    expect(AUTO_PHOTO_MIN_SELECTED).toBeGreaterThan(0);
+    expect(Number.isInteger(AUTO_PHOTO_MIN_SELECTED)).toBe(true);
+  });
 });
 
 // ─── resolveGate — guard branches ────────────────────────────────────────────
@@ -295,8 +310,9 @@ describe('resolveGate — Guard 2: already paused', () => {
 });
 
 describe('resolveGate — Guard 3: non-gate stage', () => {
+  // photo_selection is now a GATE stage — it is intentionally absent from this list.
   it.each([
-    'intake', 'scraping', 'photo_selection', 'generating', 'judging', 'assembling', 'delivered',
+    'intake', 'scraping', 'generating', 'judging', 'assembling', 'delivered',
   ])('returns noop for auto-stage "%s"', async (stage) => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const result = await resolveGate(makeRun({ auto_run: true, paused_reason: null, stage }));
@@ -450,6 +466,116 @@ describe('resolveDetails', () => {
     const result = await resolveDetails(run);
     expect(result.action).toBe('paused');
     expect((result as { action: 'paused'; reason: string }).reason).toMatch(/missing listing field: baths/);
+  });
+});
+
+// ─── resolvePhotoSelection ────────────────────────────────────────────────────
+
+describe('resolvePhotoSelection', () => {
+  /** Set up getSupabase for pauseForHuman calls (delivery_runs update + ml_events insert). */
+  function setupPauseDb() {
+    const db = makeDbChain(null);
+    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
+    (getSupabase as Mock).mockReturnValue(db);
+  }
+
+  it('confident: 12 photos — applies selection, logs auto_advance, triggers continue hop, returns advanced→generating', async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', 'listingelevate.vercel.app');
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Applied with all 12 recommended ids, no rejected array.
+    expect(applyPhotoSelectionForRun).toHaveBeenCalledWith('run-1', { photo_order: ids });
+
+    // auto_advance ml_event logged with correct gate and count.
+    expect(recordMlEvent).toHaveBeenCalledWith('run-1', 'auto_advance', {
+      source: 'auto',
+      gate: 'photo_selection',
+      confidence: 1,
+      selected_count: 12,
+    });
+
+    // Continue hop fired at the correct URL.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://listingelevate.vercel.app/api/pipeline/continue/run-1`,
+      { method: 'POST' },
+    );
+
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+  });
+
+  it('pause: 3 photos (< AUTO_PHOTO_MIN_SELECTED=6) — pauseForHuman called, apply NOT called', async () => {
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ['a', 'b', 'c'], photos: [] });
+    setupPauseDb();
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/only 3 photos selected \(min 6\)/);
+    expect(applyPhotoSelectionForRun).not.toHaveBeenCalled();
+  });
+
+  it('pause: 0 AI-recommended photos — pauseForHuman called with no-photos reason, apply NOT called', async () => {
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: [], photos: [] });
+    setupPauseDb();
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/no AI-recommended photos/);
+    expect(applyPhotoSelectionForRun).not.toHaveBeenCalled();
+  });
+
+  it('continue hop fires even when recordMlEvent rejects (telemetry must not block the hop)', async () => {
+    const ids = Array.from({ length: 9 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    // Telemetry throws — the hop must still have fired before this and advanced returned.
+    (recordMlEvent as Mock).mockRejectedValue(new Error('ml_events insert failed'));
+
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', 'listingelevate.vercel.app');
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Hop fired before telemetry — must be present regardless of recordMlEvent outcome.
+    expect(mockFetch).toHaveBeenCalledWith(
+      `https://listingelevate.vercel.app/api/pipeline/continue/run-1`,
+      { method: 'POST' },
+    );
+    // Returns advanced despite the telemetry error (best-effort).
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+  });
+
+  it('continue hop is skipped gracefully when VERCEL_URL is unset', async () => {
+    const ids = Array.from({ length: 8 }, (_, i) => `photo-${i + 1}`);
+    (getPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids, photos: [] });
+    (applyPhotoSelectionForRun as Mock).mockResolvedValue({ selected_photo_ids: ids });
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+
+    const mockFetch = vi.fn();
+    vi.stubGlobal('fetch', mockFetch);
+    setEnv('VERCEL_URL', undefined);
+
+    const run = makeRun({ stage: 'photo_selection' });
+    const result = await resolvePhotoSelection(run);
+
+    // Still advances — missing host is non-fatal (reaper recovers).
+    expect(result).toEqual({ action: 'advanced', to: 'generating' });
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 });
 
