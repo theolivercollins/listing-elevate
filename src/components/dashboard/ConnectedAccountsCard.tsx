@@ -28,23 +28,22 @@ function providerLabel(provider: string): string {
   return PROVIDER_LABELS[provider] ?? provider;
 }
 
-const LINKABLE_PROVIDERS: { id: "google" | "azure"; label: string }[] = [
+const LINKABLE_PROVIDERS: { id: "google"; label: string }[] = [
   { id: "google", label: "Google" },
-  { id: "azure", label: "Microsoft" },
 ];
 
 /**
  * "Connected accounts" card — lists the Supabase identities linked to this
  * user (email + any linked OAuth providers) and lets them connect/disconnect
- * Google or Microsoft. Supabase refuses server-side to unlink the last
- * identity on an account; the UI mirrors that as a disabled-button guard so
- * it never dangles an offer it can't honor.
+ * Google. Supabase refuses server-side to unlink the last identity on an
+ * account; the UI mirrors that as a disabled-button guard so it never
+ * dangles an offer it can't honor.
  */
 export function ConnectedAccountsCard() {
   const { listIdentities, linkIdentity, unlinkIdentity } = useAuth();
   const [identities, setIdentities] = useState<UserIdentity[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [linkingProvider, setLinkingProvider] = useState<"google" | "azure" | null>(null);
+  const [linkingProvider, setLinkingProvider] = useState<"google" | null>(null);
   const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
 
   async function load() {
@@ -67,7 +66,7 @@ export function ConnectedAccountsCard() {
   // offers to unlink the account's only remaining sign-in method.
   const isLastIdentity = (identities?.length ?? 0) <= 1;
 
-  async function handleConnect(provider: "google" | "azure") {
+  async function handleConnect(provider: "google") {
     setLinkingProvider(provider);
     try {
       await linkIdentity(provider);
@@ -98,7 +97,7 @@ export function ConnectedAccountsCard() {
     <Card padding={24}>
       <SectionTitle title="Connected accounts" />
       <p className={hintCls}>
-        Sign in faster by connecting Google or Microsoft. You can use any connected account to log in.
+        Sign in faster by connecting Google. You can use any connected account to log in.
       </p>
 
       {identities === null && !loadError && (

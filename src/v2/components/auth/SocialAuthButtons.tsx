@@ -2,7 +2,6 @@ import { useState } from "react";
 
 export interface SocialAuthButtonsProps {
   onGoogle: () => void;
-  onMicrosoft: () => void;
   disabled?: boolean;
 }
 
@@ -15,14 +14,13 @@ interface SocialButtonProps {
 }
 
 /**
- * SocialAuthButtons — "Continue with Google" / "Continue with Microsoft"
- * secondary buttons for the login modal, matching LoginDialog's inline-style
- * `--le-*` token pattern (bordered secondary buttons, not the filled accent
- * primary). Brand marks are hand-written inline SVGs — no new dependency.
+ * SocialAuthButtons — "Continue with Google" secondary button for the login
+ * modal, matching LoginDialog's inline-style `--le-*` token pattern (bordered
+ * secondary buttons, not the filled accent primary). Brand marks are
+ * hand-written inline SVGs — no new dependency.
  */
 export function SocialAuthButtons({
   onGoogle,
-  onMicrosoft,
   disabled,
 }: SocialAuthButtonsProps) {
   return (
@@ -33,13 +31,6 @@ export function SocialAuthButtons({
         ariaLabel="Continue with Google"
         label="Continue with Google"
         icon={<GoogleIcon />}
-      />
-      <SocialButton
-        onClick={onMicrosoft}
-        disabled={disabled}
-        ariaLabel="Continue with Microsoft"
-        label="Continue with Microsoft"
-        icon={<MicrosoftIcon />}
       />
     </div>
   );
@@ -129,19 +120,3 @@ function GoogleIcon() {
   );
 }
 
-function MicrosoftIcon() {
-  return (
-    <svg
-      width={18}
-      height={18}
-      viewBox="0 0 21 21"
-      aria-hidden="true"
-      style={{ flexShrink: 0 }}
-    >
-      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
-      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
-      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
-      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
-    </svg>
-  );
-}

@@ -45,8 +45,11 @@ import { describe, it, expect } from "vitest";
 
 /**
  * Allowed `provider` values per the DB CHECK constraint.
- * Source: 085_cost_events_bunny.sql (the latest migration to redefine this
- * constraint as of 2026-06-18).
+ * Source: 102_welcome_emails.sql (the latest migration to redefine this
+ * constraint as of 2026-07-01 — added 'resend' for the welcome-email send,
+ * which is written via a direct cost_events insert in
+ * lib/email/welcome-db.ts, NOT via recordCostEvent, so 'resend' is
+ * intentionally absent from TS_PROVIDERS below).
  */
 const DB_ALLOWED_PROVIDERS = new Set([
   "anthropic",
@@ -65,6 +68,7 @@ const DB_ALLOWED_PROVIDERS = new Set([
   "elevenlabs",
   "bunny",
   "veo",
+  "resend",
 ] as const);
 
 /**

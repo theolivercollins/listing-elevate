@@ -82,6 +82,41 @@ describe("ConnectedAccountsCard", () => {
     await waitFor(() => expect(auth.linkIdentity).toHaveBeenCalledWith("google"));
   });
 
+  it('does not offer a "Connect Microsoft" option (Microsoft OAuth is disabled)', async () => {
+    const identities = [makeIdentity({ identity_id: "i-email", provider: "email" })];
+    mockAuth({ listIdentities: vi.fn(() => Promise.resolve(identities)) });
+
+    render(<ConnectedAccountsCard />);
+
+    await screen.findByRole("button", { name: "Connect Google" });
+    expect(
+      screen.queryByRole("button", { name: /Connect Microsoft/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("an already-linked Microsoft (azure) identity still displays and can still be disconnected", async () => {
+    const identities = [
+      makeIdentity({ identity_id: "i-email", provider: "email" }),
+      makeIdentity({ identity_id: "i-azure", provider: "azure", identity_data: { email: "a@outlook.com" } }),
+    ];
+    const auth = mockAuth({ listIdentities: vi.fn(() => Promise.resolve(identities)) });
+
+    render(<ConnectedAccountsCard />);
+
+    await waitFor(() => expect(screen.getByText("Microsoft")).toBeInTheDocument());
+    expect(screen.getByText("a@outlook.com")).toBeInTheDocument();
+
+    const btn = await screen.findByRole("button", { name: "Disconnect" });
+    expect(btn).not.toBeDisabled();
+    fireEvent.click(btn);
+
+    await waitFor(() =>
+      expect(auth.unlinkIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({ identity_id: "i-azure" }),
+      ),
+    );
+  });
+
   it("Disconnect on a google identity calls unlinkIdentity", async () => {
     const identities = [
       makeIdentity({ identity_id: "i-email", provider: "email" }),

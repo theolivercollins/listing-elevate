@@ -118,7 +118,7 @@ function OrDivider() {
 /**
  * LoginDialog — unified sign-in / sign-up modal on the light SaaS surface.
  *
- * Sign in: social (Google / Microsoft) → magic link (primary, default) or an
+ * Sign in: social (Google) → magic link (primary, default) or an
  * optional password. Sign up: social → name / brokerage / email / password
  * (validated via passwordIssue) → confirmation.
  *
@@ -141,7 +141,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     signInWithMagicLink,
     signInWithPassword,
     signInWithGoogle,
-    signInWithMicrosoft,
     signUp,
   } = useAuth();
 
@@ -233,15 +232,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
       await signInWithGoogle();
     } catch {
       setError("Google sign-in isn't set up yet. Use email below for now.");
-    }
-  }
-
-  async function handleMicrosoft() {
-    setError("");
-    try {
-      await signInWithMicrosoft();
-    } catch {
-      setError("Microsoft sign-in isn't set up yet. Use email below for now.");
     }
   }
 
@@ -586,7 +576,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                     {/* Social providers */}
                     <SocialAuthButtons
                       onGoogle={handleGoogle}
-                      onMicrosoft={handleMicrosoft}
                       disabled={submitting}
                     />
 
