@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { authedFetch } from "@/lib/api";
-import HlsPlayer from '@/components/preview/HlsPlayer';
 import { photoThumb, bunnyPosterUrl } from '@/lib/image-url';
 import {
   Loader2,
@@ -23,6 +22,7 @@ import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls, ResumeGener
 import { PhotoCheckpointA } from '@/components/studio/PhotoCheckpointA';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
+import { FinalVideoPlayer } from '@/components/studio/FinalVideoPlayer';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
 import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
@@ -92,6 +92,21 @@ interface DeliveryRunSummary {
   auto_paused_at: string | null;
 }
 
+/** Single-video-per-orientation descriptor built server-side from a Bunny-
+ *  hosted URL (see api/admin/studio/properties/[id].ts buildFinalVideo). Null
+ *  when the persisted URL isn't Bunny-hosted (provider-URL fallback row) —
+ *  callers fall back to the raw mp4/HLS player in that case. */
+interface FinalVideoEntry {
+  embed_url: string | null;
+  mp4_url: string;
+  hls_url: string | null;
+}
+
+interface FinalVideoBundle {
+  horizontal: FinalVideoEntry | null;
+  vertical: FinalVideoEntry | null;
+}
+
 interface Bundle {
   property: PropertyRow;
   scenes: SceneRow[];
@@ -99,6 +114,7 @@ interface Bundle {
   previews: PropertyPreviewRow[];
   cost: CostBundle;
   delivery_run: DeliveryRunSummary | null;
+  final_video: FinalVideoBundle;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -606,6 +622,12 @@ const PropertyCommandCenter = () => {
   const { property, scenes, revision_notes, previews, cost } = bundle;
   const client = property.client;
   const baseUrl = window.location.origin;
+  // The Checkpoint B card (above, in the delivery stepper) already renders
+  // the single video player for the run while it's under review — the
+  // Output card must not render a second player for the same video (the
+  // founder's "video shows up twice" complaint). Once the run leaves
+  // checkpoint_b (delivered) or there's no active run, Output owns playback.
+  const isReviewingAtCheckpointB = bundle.delivery_run?.stage === 'checkpoint_b';
 
   return (
     <StudioShell>
@@ -767,6 +789,14 @@ const PropertyCommandCenter = () => {
               // Poster falls back to a Bunny-derived frame (and null on legacy
               // rows) so the review gate never shows a blank box while loading.
               hlsUrl={property.horizontal_video_url ? property.horizontal_hls_url : property.vertical_hls_url}
+              // Bunny iframe embed matched to whichever orientation is shown
+              // above — null for provider-URL fallback rows (falls back to
+              // the raw HlsPlayer inside CheckpointB).
+              embedUrl={
+                property.horizontal_video_url
+                  ? bundle.final_video.horizontal?.embed_url ?? null
+                  : bundle.final_video.vertical?.embed_url ?? null
+              }
               posterUrl={
                 (property.horizontal_video_url ? property.horizontal_poster_url : property.vertical_poster_url)
                 ?? bunnyPosterUrl(property.horizontal_video_url ?? property.vertical_video_url)
@@ -858,17 +888,35 @@ const PropertyCommandCenter = () => {
                     <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
                       Horizontal (16:9)
                     </span>
-                    <DownloadButton propertyId={property.id} format="horizontal" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <a
+                        href={property.horizontal_video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="studio-btn-ghost studio-btn-sm"
+                      >
+                        <ExternalLink size={11} strokeWidth={1.6} />
+                        Open
+                      </a>
+                      <DownloadButton propertyId={property.id} format="horizontal" />
+                    </div>
                   </div>
-                  <HlsPlayer
-                    src={property.horizontal_hls_url ?? property.horizontal_video_url}
-                    poster={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url) ?? undefined}
-                    preload="none"
-                    muted
-                    playsInline
-                    className="studio-video"
-                    style={{ maxHeight: 320 }}
-                  />
+                  {isReviewingAtCheckpointB ? (
+                    <div className="studio-kanban-empty" style={{ padding: '20px 16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 12, color: 'var(--le-muted)' }}>
+                        Playing above at Checkpoint B.
+                      </p>
+                    </div>
+                  ) : (
+                    <FinalVideoPlayer
+                      embedUrl={bundle.final_video.horizontal?.embed_url ?? null}
+                      mp4Url={property.horizontal_video_url}
+                      hlsUrl={property.horizontal_hls_url}
+                      posterUrl={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url)}
+                      title={`${property.address} — horizontal video`}
+                      style={{ maxHeight: 320 }}
+                    />
+                  )}
                 </div>
               )}
               {property.vertical_video_url && (
@@ -877,17 +925,36 @@ const PropertyCommandCenter = () => {
                     <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
                       Vertical (9:16)
                     </span>
-                    <DownloadButton propertyId={property.id} format="vertical" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <a
+                        href={property.vertical_video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="studio-btn-ghost studio-btn-sm"
+                      >
+                        <ExternalLink size={11} strokeWidth={1.6} />
+                        Open
+                      </a>
+                      <DownloadButton propertyId={property.id} format="vertical" />
+                    </div>
                   </div>
-                  <HlsPlayer
-                    src={property.vertical_hls_url ?? property.vertical_video_url}
-                    poster={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url) ?? undefined}
-                    preload="none"
-                    muted
-                    playsInline
-                    className="studio-video"
-                    style={{ maxHeight: 320 }}
-                  />
+                  {isReviewingAtCheckpointB ? (
+                    <div className="studio-kanban-empty" style={{ padding: '20px 16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 12, color: 'var(--le-muted)' }}>
+                        Playing above at Checkpoint B.
+                      </p>
+                    </div>
+                  ) : (
+                    <FinalVideoPlayer
+                      embedUrl={bundle.final_video.vertical?.embed_url ?? null}
+                      mp4Url={property.vertical_video_url}
+                      hlsUrl={property.vertical_hls_url}
+                      posterUrl={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url)}
+                      title={`${property.address} — vertical video`}
+                      aspect="9:16"
+                      style={{ maxHeight: 320 }}
+                    />
+                  )}
                 </div>
               )}
             </div>

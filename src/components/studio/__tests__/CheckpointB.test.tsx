@@ -1,14 +1,16 @@
 /**
- * CheckpointB — video-player wiring tests (the studio-perf pass).
+ * CheckpointB — video-player wiring tests.
  *
- * Proves the raw <video src controls> was replaced by HlsPlayer, that the HLS
- * playlist + poster are preferred when present, and that legacy mp4-only rows
- * still play (mp4 src, no poster) — the additive switch never breaks existing
- * rows.
+ * Proves the single-video-player pattern via FinalVideoPlayer: the Bunny
+ * iframe embed takes priority when present (built-in adaptive-quality menu —
+ * the "load full quality" affordance), the raw HlsPlayer fallback now
+ * prefers the progressive mp4 over the HLS playlist (hls.js's zero-config
+ * ABR starts at a low rendition and looks blurry — the mp4 is always sharp),
+ * and legacy mp4-only rows still play.
  *
- * HlsPlayer is mocked to a marker div that echoes the src/poster/preload props
- * it receives; authedFetch is stubbed (the Download button imports it but these
- * tests never click it).
+ * HlsPlayer is mocked to a marker div that echoes the src/poster/preload
+ * props it receives; authedFetch is stubbed (the Download button imports it
+ * but these tests never click it).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -33,7 +35,26 @@ vi.mock('@/components/preview/HlsPlayer', () => ({
 const noop = () => {};
 
 describe('CheckpointB video player', () => {
-  it('renders HlsPlayer with the HLS src + poster when both are present', () => {
+  it('renders the Bunny iframe embed when embedUrl is present, even with mp4/hls also present', () => {
+    render(
+      <CheckpointB
+        runId="run-1"
+        propertyId="prop-1"
+        videoUrl="https://cdn/v.mp4"
+        hlsUrl="https://cdn/v.m3u8"
+        embedUrl="https://iframe.mediadelivery.net/embed/12345/guid-1"
+        posterUrl="https://cdn/poster.jpg"
+        onDelivered={noop}
+      />,
+    );
+    const iframe = screen.getByTitle('Final video review');
+    expect(iframe.tagName).toBe('IFRAME');
+    expect(iframe).toHaveAttribute('src', 'https://iframe.mediadelivery.net/embed/12345/guid-1');
+    // No raw HlsPlayer fallback rendered alongside the embed.
+    expect(screen.queryByTestId('hls-player')).toBeNull();
+  });
+
+  it('falls back to HlsPlayer with the mp4 src preferred over HLS when there is no embedUrl', () => {
     render(
       <CheckpointB
         runId="run-1"
@@ -45,8 +66,9 @@ describe('CheckpointB video player', () => {
       />,
     );
     const player = screen.getByTestId('hls-player');
-    // HLS playlist preferred over the progressive mp4.
-    expect(player).toHaveAttribute('data-src', 'https://cdn/v.m3u8');
+    // mp4 now preferred over the HLS playlist for the fallback path — HLS's
+    // zero-config ABR is the blurry-video regression this fixes.
+    expect(player).toHaveAttribute('data-src', 'https://cdn/v.mp4');
     expect(player).toHaveAttribute('data-poster', 'https://cdn/poster.jpg');
     // A real preload so metadata (duration + first frame) is fetched.
     expect(player).toHaveAttribute('data-preload', 'metadata');

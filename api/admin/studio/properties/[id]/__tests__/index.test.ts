@@ -167,6 +167,91 @@ describe('GET /api/admin/studio/properties/[id]', () => {
     expect((body as unknown as { cost: { delivery: unknown } }).cost.delivery).toBeNull();
   });
 
+  it('returns a final_video entry with a Bunny embed_url when the persisted URL is Bunny-hosted', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    process.env.BUNNY_STREAM_API_KEY = 'fake-key';
+    process.env.BUNNY_STREAM_LIBRARY_ID = '99999';
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = 'vz-01cb8232-b48.b-cdn.net';
+    const guid = 'c2feb4b1-3421-4d34-9d80-31be5b0d9c2e';
+
+    const sampleProperty = {
+      id: 'prop-bunny',
+      address: '9 Bunny Way',
+      status: 'complete',
+      horizontal_video_url: `https://vz-01cb8232-b48.b-cdn.net/${guid}/play_1080p.mp4`,
+      horizontal_hls_url: `https://vz-01cb8232-b48.b-cdn.net/${guid}/playlist.m3u8`,
+      vertical_video_url: null,
+      vertical_hls_url: null,
+      client: null,
+    };
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]));
+
+    const res = makeRes();
+    try {
+      await handler(makeReq({ query: { id: 'prop-bunny' } }), res as unknown as VercelResponse);
+    } finally {
+      delete process.env.BUNNY_STREAM_API_KEY;
+      delete process.env.BUNNY_STREAM_LIBRARY_ID;
+      delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+    }
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      final_video: {
+        horizontal: { embed_url: string | null; mp4_url: string; hls_url: string | null } | null;
+        vertical: unknown;
+      };
+    };
+
+    expect(body.final_video.horizontal).not.toBeNull();
+    expect(body.final_video.horizontal!.mp4_url).toBe(sampleProperty.horizontal_video_url);
+    expect(body.final_video.horizontal!.hls_url).toBe(sampleProperty.horizontal_hls_url);
+    expect(body.final_video.horizontal!.embed_url).toBe(
+      `https://iframe.mediadelivery.net/embed/99999/${guid}`,
+    );
+    expect(body.final_video.vertical).toBeNull();
+  });
+
+  it('returns final_video: null for a non-Bunny (provider fallback) URL', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const sampleProperty = {
+      id: 'prop-fallback',
+      address: '4 Fallback Ln',
+      status: 'complete',
+      horizontal_video_url: 'https://cdn.creatomate.com/renders/abc123.mp4',
+      horizontal_hls_url: null,
+      vertical_video_url: null,
+      vertical_hls_url: null,
+      client: null,
+    };
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]));
+
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'prop-fallback' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as { final_video: { horizontal: unknown; vertical: unknown } };
+    expect(body.final_video.horizontal).toBeNull();
+    expect(body.final_video.vertical).toBeNull();
+  });
+
   it('returns delivery breakdown when active run has tagged cost events', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
 
