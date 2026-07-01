@@ -1,13 +1,22 @@
 /**
- * LoginDialog tests — "Immersive Login 5a" (commit 1755673a).
+ * LoginDialog tests — "Immersive Login 5a" (commit 1755673a + post-review
+ * security/reliability fix wave).
  *
  * One dialog, both flows, driven entirely by `useAuth()`:
  *   sign-in:  email -> choose (password | magic link) -> password | sent
  *   sign-up:  email -> verify (OTP) -> newpw -> welcome -> profile -> role -> source -> done
  *
+ * Post-verify branching is now deterministic: `verifySignupCode` RETURNS the
+ * verified Supabase `User` (id required), and the dialog awaits
+ * `fetchProfileSnapshot(userId)` — a direct, ambient-state-free profile
+ * fetch — branching on ITS `first_name` (existing account -> done; new
+ * signup -> newpw). There is no `profile` prop read and no settle-timer
+ * anymore; the old `profile` mock override is gone in favor of
+ * `fetchProfileSnapshot` overrides.
+ *
  * `useAuth` is mocked as a `vi.fn()` factory so individual tests can
- * reconfigure `profile` / `session` and inspect call args on the auth
- * functions (`sendSignupCode`, `verifySignupCode`, `setPassword`,
+ * reconfigure `session` / `fetchProfileSnapshot` and inspect call args on
+ * the auth functions (`sendSignupCode`, `verifySignupCode`, `setPassword`,
  * `completeOnboarding`, etc).
  *
  * `SocialAuthButtons` is stubbed to a plain button pair — its real GSI
@@ -15,9 +24,9 @@
  *
  * `framer-motion` is stubbed so `AnimatePresence`/`motion.div` don't gate
  * step transitions behind real enter/exit animations — each step's DOM
- * swaps synchronously with React state, and the deliberate `setTimeout`
- * delays baked into the component (advance-after-verify, welcome->profile,
- * done->close) are awaited for real via `waitFor`.
+ * swaps synchronously with React state, and the one remaining deliberate
+ * `setTimeout` delay (welcome->profile, 1.5s) is awaited for real via
+ * `waitFor`/`findBy*`.
  *
  * This file supersedes and consolidates the two pre-rewrite files
  * (`../LoginDialog.test.tsx` and this one), which asserted the old
@@ -88,14 +97,18 @@ vi.mock("framer-motion", async (importOriginal) => {
   };
 });
 
+// Default verified user id threaded through verifySignupCode -> fetchProfileSnapshot.
+const VERIFIED_USER_ID = "user-123";
+
 function makeAuthMock(overrides: Record<string, unknown> = {}) {
   return {
     session: null,
-    profile: null,
     signInWithMagicLink: vi.fn(() => Promise.resolve()),
     signInWithPassword: vi.fn(() => Promise.resolve()),
     sendSignupCode: vi.fn(() => Promise.resolve()),
-    verifySignupCode: vi.fn(() => Promise.resolve()),
+    verifySignupCode: vi.fn(() => Promise.resolve({ id: VERIFIED_USER_ID })),
+    // Default: no existing profile row -> genuinely-new-signup path (newpw).
+    fetchProfileSnapshot: vi.fn(() => Promise.resolve(null)),
     setPassword: vi.fn(() => Promise.resolve()),
     completeOnboarding: vi.fn(() => Promise.resolve()),
     ...overrides,
@@ -132,6 +145,37 @@ async function goToSignupVerify(email = "ada@example.com") {
 function enterCode(digits: string) {
   const first = screen.getByLabelText("Verification code digit 1");
   fireEvent.change(first, { target: { value: digits } });
+}
+
+/** Walks a fresh signup all the way to the "source" step (persona + category
+ * + subcategory already chosen), leaving the Finish-setup click to the caller. */
+async function walkToSourceStep() {
+  await goToSignupVerify("ada@example.com");
+  enterCode("123456");
+  await screen.findByText("Create a password");
+
+  fireEvent.change(screen.getByPlaceholderText("Create a password"), {
+    target: { value: "Password123!" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  // welcome interstitial auto-advances to profile after 1.5s
+  await screen.findByText("Tell us about you", {}, { timeout: 2500 });
+
+  fireEvent.change(screen.getByPlaceholderText("Jordan"), { target: { value: "Ada" } });
+  fireEvent.change(screen.getByPlaceholderText("Rivera"), { target: { value: "Lovelace" } });
+  fireEvent.change(screen.getByPlaceholderText("Compass, Coldwell Banker…"), {
+    target: { value: "Analytical Engines Realty" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  await screen.findByText("What best describes you?");
+  fireEvent.click(screen.getByText("Agent"));
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+  await screen.findByText("How did you hear about us?");
+  fireEvent.click(screen.getByRole("radio", { name: "A search engine" }));
+  fireEvent.click(screen.getByRole("button", { name: "Google" }));
 }
 
 beforeEach(() => {
@@ -247,7 +291,7 @@ describe("LoginDialog — signup: verify (OTP)", () => {
     expect(screen.getAllByLabelText(/Verification code digit/)).toHaveLength(6);
   });
 
-  it("auto-submits once 6 digits are entered and calls verifySignupCode", async () => {
+  it("auto-submits once 6 digits are entered, calls verifySignupCode, and fetches a profile snapshot for the returned user id", async () => {
     const auth = setAuthMock();
     render(<LoginDialog open={true} onClose={vi.fn()} />);
 
@@ -256,6 +300,9 @@ describe("LoginDialog — signup: verify (OTP)", () => {
 
     await waitFor(() =>
       expect(auth.verifySignupCode).toHaveBeenCalledWith("ada@example.com", "123456"),
+    );
+    await waitFor(() =>
+      expect(auth.fetchProfileSnapshot).toHaveBeenCalledWith(VERIFIED_USER_ID),
     );
   });
 
@@ -272,17 +319,18 @@ describe("LoginDialog — signup: verify (OTP)", () => {
       "That code didn't work. Check it and try again.",
     );
     expect(screen.getByLabelText("Verification code digit 1")).toHaveValue("");
+    expect(auth.fetchProfileSnapshot).not.toHaveBeenCalled();
     expect(auth.completeOnboarding).not.toHaveBeenCalled();
   });
 });
 
 describe("LoginDialog — signup: new password gate", () => {
   async function toNewPw() {
-    setAuthMock({ profile: null });
+    setAuthMock(); // default fetchProfileSnapshot resolves null -> newpw path
     render(<LoginDialog open={true} onClose={vi.fn()} />);
     await goToSignupVerify("ada@example.com");
     enterCode("123456");
-    await screen.findByText("Create a password", {}, { timeout: 1500 });
+    await screen.findByText("Create a password");
   }
 
   it("gates Continue behind at least 8 characters", async () => {
@@ -312,11 +360,11 @@ describe("LoginDialog — signup: new password gate", () => {
   });
 
   it("calls setPassword and advances to welcome on Continue", async () => {
-    const auth = setAuthMock({ profile: null });
+    const auth = setAuthMock();
     render(<LoginDialog open={true} onClose={vi.fn()} />);
     await goToSignupVerify("ada@example.com");
     enterCode("123456");
-    await screen.findByText("Create a password", {}, { timeout: 1500 });
+    await screen.findByText("Create a password");
 
     fireEvent.change(screen.getByPlaceholderText("Create a password"), {
       target: { value: "Password123!" },
@@ -332,35 +380,10 @@ describe("LoginDialog — signup: full onboarding click-through", () => {
   it(
     "collects profile/persona/source and calls completeOnboarding, then shows done",
     async () => {
-      const auth = setAuthMock({ profile: null });
+      const auth = setAuthMock();
       render(<LoginDialog open={true} onClose={vi.fn()} />);
 
-      await goToSignupVerify("ada@example.com");
-      enterCode("123456");
-      await screen.findByText("Create a password", {}, { timeout: 1500 });
-
-      fireEvent.change(screen.getByPlaceholderText("Create a password"), {
-        target: { value: "Password123!" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-
-      // welcome interstitial auto-advances to profile after 1.5s
-      await screen.findByText("Tell us about you", {}, { timeout: 2500 });
-
-      fireEvent.change(screen.getByPlaceholderText("Jordan"), { target: { value: "Ada" } });
-      fireEvent.change(screen.getByPlaceholderText("Rivera"), { target: { value: "Lovelace" } });
-      fireEvent.change(screen.getByPlaceholderText("Compass, Coldwell Banker…"), {
-        target: { value: "Analytical Engines Realty" },
-      });
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-
-      await screen.findByText("What best describes you?");
-      fireEvent.click(screen.getByText("Agent"));
-      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-
-      await screen.findByText("How did you hear about us?");
-      fireEvent.click(screen.getByRole("radio", { name: "A search engine" }));
-      fireEvent.click(screen.getByRole("button", { name: "Google" }));
+      await walkToSourceStep();
       fireEvent.click(screen.getByRole("button", { name: "Finish setup" }));
 
       await waitFor(() =>
@@ -377,17 +400,45 @@ describe("LoginDialog — signup: full onboarding click-through", () => {
     },
     8000,
   );
+
+  it(
+    "surfaces the standard error alert when completeOnboarding rejects, re-enabling Finish setup and never reaching done",
+    async () => {
+      const auth = setAuthMock({
+        completeOnboarding: vi.fn(() => Promise.reject(new Error("Couldn't finish setup. Please try again."))),
+      });
+      render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+      await walkToSourceStep();
+      const finishButton = screen.getByRole("button", { name: "Finish setup" });
+      fireEvent.click(finishButton);
+
+      await waitFor(() => expect(auth.completeOnboarding).toHaveBeenCalledTimes(1));
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Couldn't finish setup. Please try again.",
+      );
+
+      // Still on the source step, Finish re-enabled, never reached done.
+      expect(screen.getByRole("button", { name: "Finish setup" })).not.toBeDisabled();
+      expect(screen.queryByText(/You're all set/)).not.toBeInTheDocument();
+      expect(screen.queryByText("You're in")).not.toBeInTheDocument();
+    },
+    8000,
+  );
 });
 
 describe("LoginDialog — existing-account short-circuit", () => {
-  it("skips onboarding and goes straight to done when profile.first_name is already present", async () => {
-    const auth = setAuthMock({ profile: { first_name: "Ada" } });
+  it("skips onboarding and goes straight to done when fetchProfileSnapshot resolves a profile with first_name", async () => {
+    const auth = setAuthMock({
+      fetchProfileSnapshot: vi.fn(() => Promise.resolve({ first_name: "Ada" })),
+    });
     render(<LoginDialog open={true} onClose={vi.fn()} />);
 
     await goToSignupVerify("ada@example.com");
     enterCode("123456");
 
-    expect(await screen.findByText("You're in", {}, { timeout: 1500 })).toBeInTheDocument();
+    expect(await screen.findByText("You're in")).toBeInTheDocument();
+    expect(auth.fetchProfileSnapshot).toHaveBeenCalledWith(VERIFIED_USER_ID);
     expect(screen.queryByText("Create a password")).not.toBeInTheDocument();
     expect(screen.queryByText("Tell us about you")).not.toBeInTheDocument();
     expect(auth.completeOnboarding).not.toHaveBeenCalled();
