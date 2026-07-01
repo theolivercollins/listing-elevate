@@ -5,9 +5,12 @@
  *   1. Animation-stability basics carried over from the 2026-06-11 fix: deferred
  *      focus marker present (no raw autofocus), dialog mount/unmount by `open`,
  *      Escape closes, deferred focus actually lands.
- *   2. Social auth buttons render (Google only — Microsoft/Azure is disabled
- *      pending a future Entra tenant) and delegate to signInWithGoogle from
- *      useAuth.
+ *   2. Social auth (Google, via the GSI ID-token flow — Microsoft/Azure is
+ *      disabled pending a future Entra tenant): `SocialAuthButtons` is mocked
+ *      here to a plain button pair so these tests exercise LoginDialog's OWN
+ *      reaction to the two outcomes it reports (`onGoogleSuccess` /
+ *      `onGoogleError`), not GSI itself — that lives in
+ *      `SocialAuthButtons.test.tsx` and `src/lib/__tests__/googleIdentity.test.ts`.
  *   3. The default sign-in path (magic link) and the password-toggle path.
  *
  * Sign-up / weak-password / OAuth-error-surfacing coverage lives in the sibling
@@ -28,12 +31,43 @@ const authMock = {
   verifyAdminEmailCode: vi.fn(),
   signInWithMagicLink: vi.fn(() => Promise.resolve()),
   signInWithPassword: vi.fn(() => Promise.resolve()),
-  signInWithGoogle: vi.fn(() => Promise.resolve()),
   signUp: vi.fn(() => Promise.resolve()),
 };
 
 vi.mock("@/lib/auth", () => ({
   useAuth: () => authMock,
+}));
+
+// SocialAuthButtons owns the real GSI wiring (script load, nonce, initialize,
+// signInWithIdToken) — covered by its own test file. Here it's stubbed to a
+// plain button pair so LoginDialog's reaction to the two outcomes it reports
+// (onGoogleSuccess / onGoogleError) can be exercised directly.
+vi.mock("@/v2/components/auth/SocialAuthButtons", () => ({
+  SocialAuthButtons: ({
+    onGoogleSuccess,
+    onGoogleError,
+    disabled,
+  }: {
+    onGoogleSuccess: () => void;
+    onGoogleError: (message: string) => void;
+    disabled?: boolean;
+  }) => (
+    <div>
+      <button type="button" disabled={disabled} onClick={onGoogleSuccess}>
+        Continue with Google
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onGoogleError(
+            "Google sign-in isn't available right now. Use email below for now.",
+          )
+        }
+      >
+        simulate-google-error
+      </button>
+    </div>
+  ),
 }));
 
 // Stub framer-motion: keep AnimatePresence transparent, replace motion.div
@@ -77,7 +111,6 @@ describe("LoginDialog — animation stability", () => {
     vi.clearAllMocks();
     authMock.signInWithMagicLink.mockImplementation(() => Promise.resolve());
     authMock.signInWithPassword.mockImplementation(() => Promise.resolve());
-    authMock.signInWithGoogle.mockImplementation(() => Promise.resolve());
     authMock.signUp.mockImplementation(() => Promise.resolve());
   });
 
@@ -121,11 +154,10 @@ describe("LoginDialog — animation stability", () => {
   });
 });
 
-describe("LoginDialog — social auth buttons", () => {
+describe("LoginDialog — social auth (Google)", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
     vi.clearAllMocks();
-    authMock.signInWithGoogle.mockImplementation(() => Promise.resolve());
   });
 
   it("renders 'Continue with Google' and does NOT render a Microsoft button", () => {
@@ -138,10 +170,26 @@ describe("LoginDialog — social auth buttons", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("clicking 'Continue with Google' calls signInWithGoogle", async () => {
-    renderDialog();
+  it("a successful Google sign-in (onGoogleSuccess) closes the dialog", () => {
+    const onClose = vi.fn();
+    renderDialog(true, onClose);
+
     fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
-    await waitFor(() => expect(authMock.signInWithGoogle).toHaveBeenCalledTimes(1));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a Google sign-in error (onGoogleError) surfaces the message and keeps the dialog open", async () => {
+    const onClose = vi.fn();
+    renderDialog(true, onClose);
+
+    fireEvent.click(screen.getByRole("button", { name: "simulate-google-error" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Google sign-in isn't available right now. Use email below for now.",
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
 

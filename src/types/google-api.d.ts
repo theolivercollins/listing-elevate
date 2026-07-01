@@ -1,6 +1,8 @@
 /**
  * Minimal ambient declarations for the Google Identity Services (GIS) OAuth
- * client and the Google Picker API, loaded lazily via <script> tags.
+ * client, the GIS Sign-In (ID-token) client, and the Google Picker API — all
+ * loaded lazily via the same `https://accounts.google.com/gsi/client`
+ * <script> tag (see `@/lib/google-picker`'s `loadScript`/`GIS_URL`).
  *
  * Only the surface we actually use is typed — extend as needed.
  */
@@ -29,6 +31,42 @@ declare namespace google {
         requestAccessToken(): void;
       }
       function initTokenClient(config: TokenClientConfig): TokenClient;
+    }
+
+    // "Sign in with Google" ID-token flow (One Tap / GSI button) — used by
+    // `@/lib/googleIdentity` because the Supabase Google provider is
+    // configured with a Client ID only (no client secret rules out the
+    // OAuth-redirect flow, which needs one to exchange the auth code).
+    namespace id {
+      interface CredentialResponse {
+        /** The signed Google ID token (JWT) — handed to Supabase's
+         *  `signInWithIdToken`, never decoded/trusted client-side. */
+        credential: string;
+      }
+      interface IdConfiguration {
+        client_id: string;
+        /** SHA-256 hex digest of a client-generated random value. Supabase's
+         *  `signInWithIdToken` is given the RAW value separately and hashes
+         *  it itself to compare against the token's `nonce` claim — binding
+         *  the ID token to this exact sign-in attempt. */
+        nonce: string;
+        callback: (response: CredentialResponse) => void;
+        auto_select?: boolean;
+        use_fedcm_for_prompt?: boolean;
+      }
+      interface GsiButtonConfiguration {
+        type?: 'standard' | 'icon';
+        theme?: 'outline' | 'filled_blue' | 'filled_black';
+        size?: 'large' | 'medium' | 'small';
+        text?: 'signin_with' | 'signup_with' | 'continue_with' | 'signin';
+        shape?: 'rectangular' | 'pill' | 'circle' | 'square';
+        logo_alignment?: 'left' | 'center';
+        width?: number;
+      }
+      function initialize(config: IdConfiguration): void;
+      function renderButton(parent: HTMLElement, options: GsiButtonConfiguration): void;
+      function prompt(): void;
+      function cancel(): void;
     }
   }
 

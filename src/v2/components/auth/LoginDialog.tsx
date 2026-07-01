@@ -140,7 +140,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   const {
     signInWithMagicLink,
     signInWithPassword,
-    signInWithGoogle,
     signUp,
   } = useAuth();
 
@@ -226,13 +225,17 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     };
   }, [open, onClose]);
 
-  async function handleGoogle() {
+  // Google sign-in is the GSI ID-token flow (see SocialAuthButtons /
+  // @/lib/googleIdentity) — the credential exchange and its
+  // `supabase.auth.signInWithIdToken` call happen entirely inside that
+  // component; this dialog only reacts to the two outcomes it reports.
+  function handleGoogleSuccess() {
     setError("");
-    try {
-      await signInWithGoogle();
-    } catch {
-      setError("Google sign-in isn't set up yet. Use email below for now.");
-    }
+    onClose();
+  }
+
+  function handleGoogleError(message: string) {
+    setError(message);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -575,7 +578,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   >
                     {/* Social providers */}
                     <SocialAuthButtons
-                      onGoogle={handleGoogle}
+                      onGoogleSuccess={handleGoogleSuccess}
+                      onGoogleError={handleGoogleError}
                       disabled={submitting}
                     />
 
