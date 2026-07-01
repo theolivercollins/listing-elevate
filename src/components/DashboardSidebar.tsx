@@ -4,6 +4,7 @@ import { useAuth, IMPERSONATABLE_ROLES } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { fetchLogs, fetchProperties } from "@/lib/api";
 import { Icon, type IconName } from "@/components/dashboard/icons";
+import { LEGlyphMark } from "@/v2/components/primitives/LEGlyphMark";
 import { Moon, Sun } from "lucide-react";
 
 const COLLAPSED_KEY = "le-dashboard-sidebar-collapsed";
@@ -183,10 +184,12 @@ function UserMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, profile, realRole, isImpersonating, setImpersonatedRole } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const unread = useUnreadCount(isAdmin);
   const isDark = theme === "dark";
+  const [impersonationPending, setImpersonationPending] = useState(false);
+  const [impersonationError, setImpersonationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -211,6 +214,24 @@ function UserMenu({
   const handleNotifications = () => {
     setOpen(false);
     navigate("/dashboard/logs");
+  };
+
+  // "Preview as" — real admins only. Reuses the exact impersonation contract
+  // from useAuth() (src/lib/auth.tsx); no logic duplicated here.
+  const canImpersonate = realRole === "admin";
+  const activeImpersonationValue = profile?.role ?? realRole;
+
+  const handleImpersonationSelect = async (value: "admin" | "user") => {
+    setImpersonationPending(true);
+    setImpersonationError(null);
+    try {
+      await setImpersonatedRole(value === realRole ? null : value);
+      setOpen(false);
+    } catch {
+      setImpersonationError("Couldn't switch preview.");
+    } finally {
+      setImpersonationPending(false);
+    }
   };
 
   const menu = open && (
@@ -268,6 +289,58 @@ function UserMenu({
         {isDark ? <Sun size={14} strokeWidth={1.7} /> : <Moon size={14} strokeWidth={1.7} />}
         <span style={{ flex: 1 }}>{isDark ? "Light mode" : "Dark mode"}</span>
       </button>
+      {canImpersonate && (
+        <>
+          <div style={{ height: 1, background: "var(--line-2)", margin: "4px 6px" }} />
+          <div
+            style={{
+              padding: "6px 12px 2px",
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--muted-2)",
+            }}
+          >
+            Preview as
+          </div>
+          {IMPERSONATABLE_ROLES.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={activeImpersonationValue === r.value}
+              disabled={impersonationPending}
+              onClick={() => handleImpersonationSelect(r.value)}
+              style={{
+                ...menuItemStyle,
+                cursor: impersonationPending ? "default" : "pointer",
+                opacity: impersonationPending ? 0.6 : 1,
+              }}
+            >
+              <Icon name="users" size={14} />
+              <span style={{ flex: 1 }}>{r.label}</span>
+              {activeImpersonationValue === r.value && <Icon name="check" size={14} />}
+            </button>
+          ))}
+          {isImpersonating && (
+            <div
+              style={{
+                padding: "2px 12px 4px",
+                fontSize: 11,
+                color: "var(--warn)",
+              }}
+            >
+              Previewing — select your real role to exit.
+            </div>
+          )}
+          {impersonationError && (
+            <div style={{ padding: "0 12px 4px", fontSize: 11, color: "var(--bad)" }}>
+              {impersonationError}
+            </div>
+          )}
+        </>
+      )}
       <div style={{ height: 1, background: "var(--line-2)", margin: "4px 6px" }} />
       <button
         type="button"
@@ -363,146 +436,47 @@ const menuItemStyle = {
   transition: "background .12s",
 };
 
-/**
- * ImpersonationSwitcher — "Preview as" launcher for real admins.
- *
- * Lets an operator preview the app as another role (UI + server APIs, per
- * the impersonation contract in src/lib/auth.tsx). Only ever rendered when
- * realRole === "admin"; selecting the real role exits preview.
- */
-function ImpersonationSwitcher() {
-  const { profile, realRole, isImpersonating, setImpersonatedRole } = useAuth();
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    window.addEventListener("mousedown", onClick);
-    return () => window.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  if (realRole !== "admin") return null;
-
-  const activeValue = profile?.role ?? realRole;
-  const activeLabel =
-    IMPERSONATABLE_ROLES.find((r) => r.value === activeValue)?.label ?? "Admin";
-
-  const handleSelect = async (value: "admin" | "user") => {
-    setOpen(false);
-    setPending(true);
-    setError(null);
-    try {
-      await setImpersonatedRole(value === realRole ? null : value);
-    } catch {
-      setError("Couldn't switch preview.");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <div className="le-sidebar-section-label">Preview as</div>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        disabled={pending}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          width: "100%",
-          padding: "8px 12px",
-          borderRadius: "var(--le-r-md)",
-          border: "1px solid var(--line)",
-          background: isImpersonating ? "var(--warn-soft)" : "var(--surface-2)",
-          color: "var(--ink)",
-          fontFamily: "inherit",
-          fontSize: 12.5,
-          fontWeight: 500,
-          cursor: pending ? "default" : "pointer",
-          opacity: pending ? 0.6 : 1,
-        }}
-      >
-        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <Icon name="users" size={14} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {activeLabel}
-          </span>
-        </span>
-        <Icon
-          name="chevron-down"
-          size={12}
-          style={{ flexShrink: 0, transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}
-        />
-      </button>
-      {error && (
-        <div style={{ fontSize: 11, color: "var(--bad)", padding: "4px 2px 0" }}>{error}</div>
-      )}
-      {open && (
-        <div
-          role="menu"
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            background: "var(--surface)",
-            borderRadius: "var(--le-r-lg)",
-            boxShadow: "var(--shadow-lg)",
-            border: "1px solid var(--line)",
-            padding: 6,
-            zIndex: 1100,
-          }}
-        >
-          {IMPERSONATABLE_ROLES.map((r) => (
-            <button
-              key={r.value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={activeValue === r.value}
-              onClick={() => handleSelect(r.value)}
-              style={menuItemStyle}
-            >
-              <span style={{ flex: 1 }}>{r.label}</span>
-              {activeValue === r.value && <Icon name="check" size={14} />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
   const { user, profile } = useAuth();
   const location = useLocation();
+  const { theme } = useTheme();
   const isAdmin = profile?.role === "admin";
   const sections = getSections(profile?.role);
   const brandSub = isAdmin ? "Operator studio" : "Client studio";
+  // Same light-bg/dark-bg → dark/light logo rule as the marketing SiteNav.
+  const logoVariant = theme === "dark" ? "light" : "dark";
 
-  const initials = (user?.email ?? "Listing Elevate")
+  const emailInitials = (user?.email ?? "Listing Elevate")
     .split(/[\s@.]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase() ?? "")
     .join("") || "LE";
-  const displayName = user?.email?.split("@")[0]?.replace(/\./g, " ") ?? "Listing Elevate";
+  const emailDisplayName = user?.email?.split("@")[0]?.replace(/\./g, " ") ?? "Listing Elevate";
+  const firstName = profile?.first_name?.trim() || "";
+  const lastName = profile?.last_name?.trim() || "";
+  const fullName = `${firstName} ${lastName}`.trim();
+  const displayName = fullName || firstName || emailDisplayName || "Studio";
+  const initials =
+    firstName || lastName
+      ? `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase() || emailInitials
+      : emailInitials;
   const email = user?.email ?? "studio@listingelevate.com";
 
   return (
     <aside className="le-dash-sidebar">
       <Link to="/dashboard" className="le-sidebar-brand">
-        <span className="le-sidebar-logo">
-          <Icon name="logo" size={28} />
+        <span
+          className="le-sidebar-logo"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Glyph-only mark — the wordmark is rendered separately below as
+              brand-name text. */}
+          <LEGlyphMark size={22} variant={logoVariant} />
         </span>
         {!collapsed && (
           <span className="le-sidebar-brand-text">
@@ -556,7 +530,6 @@ export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSide
       </nav>
 
       <div className="le-sidebar-foot">
-        {!collapsed && <ImpersonationSwitcher />}
         <UserMenu
           collapsed={collapsed}
           initials={initials}

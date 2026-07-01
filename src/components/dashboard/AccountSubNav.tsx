@@ -31,8 +31,8 @@ const STICKY: CSSProperties = {
   zIndex: 18,
   background: "var(--bg)",
   padding: "10px 0 12px",
-  marginTop: -12,
-  marginBottom: 4,
+  marginTop: 0,
+  marginBottom: 20,
 };
 
 const WRAP: CSSProperties = {
