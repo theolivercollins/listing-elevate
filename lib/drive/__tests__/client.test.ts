@@ -15,6 +15,10 @@ import {
   findFinalSubfolder,
   countFinalImages,
   listFinalImages,
+  getStartPageToken,
+  listChanges,
+  watchChanges,
+  stopChannel,
   downloadFile,
   _resetTokenCache,
 } from "../client.js";
@@ -79,19 +83,16 @@ afterEach(() => {
 // ─── 1. DriveUnconfiguredError ────────────────────────────────────────────────
 
 describe("DriveUnconfiguredError", () => {
-  it("is thrown from listPropertyFolders when no auth vars are set", async () => {
-    // afterEach clears all auth env vars; ensure none slip in
+  it("is thrown from listPropertyFolders when GOOGLE_DRIVE_SA_JSON is absent", async () => {
     delete process.env.GOOGLE_DRIVE_SA_JSON;
-    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID;
-    delete process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET;
-    delete process.env.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN;
     await expect(listPropertyFolders("some-parent")).rejects.toBeInstanceOf(DriveUnconfiguredError);
   });
 
-  it("has the right name and message", () => {
+  it("has the right name and message (mentions both config options)", () => {
     const err = new DriveUnconfiguredError();
     expect(err.name).toBe("DriveUnconfiguredError");
     expect(err.message).toContain("GOOGLE_DRIVE_SA_JSON");
+    expect(err.message).toContain("GOOGLE_DRIVE_OAUTH_CLIENT_ID");
   });
 });
 
@@ -664,7 +665,296 @@ describe("countFinalImages", () => {
   });
 });
 
-// ─── 7. downloadFile ──────────────────────────────────────────────────────────
+// ─── 7. listChanges ───────────────────────────────────────────────────────────
+
+describe("listChanges", () => {
+  it("returns changes and newStartPageToken from a single page", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal(
+      "fetch",
+      buildFetchMock([
+        {
+          newStartPageToken: "new-token-123",
+          changes: [
+            {
+              fileId: "file-abc",
+              removed: false,
+              file: { id: "file-abc", name: "photo.jpg", mimeType: "image/jpeg", parents: ["folder-1"], trashed: false },
+            },
+          ],
+        },
+      ]),
+    );
+
+    const result = await listChanges("start-token");
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0].fileId).toBe("file-abc");
+    expect(result.changes[0].removed).toBe(false);
+    expect(result.newStartPageToken).toBe("new-token-123");
+  });
+
+  it("accumulates changes across multiple pages", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal(
+      "fetch",
+      buildFetchMock([
+        {
+          nextPageToken: "page-2",
+          changes: [{ fileId: "file-1", removed: false }],
+        },
+        {
+          newStartPageToken: "final-token",
+          changes: [{ fileId: "file-2", removed: true }],
+        },
+      ]),
+    );
+
+    const result = await listChanges("start-token");
+    expect(result.changes).toHaveLength(2);
+    expect(result.changes[0].fileId).toBe("file-1");
+    expect(result.changes[1].fileId).toBe("file-2");
+    expect(result.newStartPageToken).toBe("final-token");
+  });
+
+  it("parses removed=true correctly", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal(
+      "fetch",
+      buildFetchMock([
+        {
+          newStartPageToken: "tok",
+          changes: [{ fileId: "deleted-file", removed: true }],
+        },
+      ]),
+    );
+
+    const result = await listChanges("start-token");
+    expect(result.changes[0].removed).toBe(true);
+    expect(result.changes[0].file).toBeUndefined();
+  });
+});
+
+// ─── 8. getStartPageToken ─────────────────────────────────────────────────────
+
+describe("getStartPageToken", () => {
+  it("returns the startPageToken string from the Drive response", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal("fetch", buildFetchMock([{ startPageToken: "spt-xyz" }]));
+
+    const token = await getStartPageToken();
+    expect(token).toBe("spt-xyz");
+  });
+});
+
+// ─── 9. watchChanges ──────────────────────────────────────────────────────────
+
+describe("watchChanges", () => {
+  it("returns channelId, resourceId, and expiration from the Drive response", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    vi.stubGlobal(
+      "fetch",
+      buildFetchMock([
+        {
+          id: "channel-id-returned",
+          resourceId: "resource-id-returned",
+          expiration: "1783000000000",
+        },
+      ]),
+    );
+
+    const result = await watchChanges("page-tok", "https://example.com/webhook", "channel-secret");
+    expect(result.channelId).toBe("channel-id-returned");
+    expect(result.resourceId).toBe("resource-id-returned");
+    expect(result.expiration).toBe(1783000000000);
+  });
+});
+
+// ─── 10. stopChannel ──────────────────────────────────────────────────────────
+
+describe("stopChannel", () => {
+  it("POSTs to channels/stop and resolves without error on 204", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        capturedBodies.push(opts?.body as string);
+        return { ok: true, status: 204, json: async () => ({}), text: async () => "" };
+      }),
+    );
+
+    await expect(stopChannel("ch-id", "res-id")).resolves.toBeUndefined();
+    const body = JSON.parse(capturedBodies[0]);
+    expect(body.id).toBe("ch-id");
+    expect(body.resourceId).toBe("res-id");
+  });
+});
+
+// ─── 11. OAuth refresh-token auth ─────────────────────────────────────────────
+
+describe("OAuth refresh-token auth", () => {
+  const oauthEnv = {
+    GOOGLE_DRIVE_OAUTH_CLIENT_ID: "test-client-id",
+    GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: "test-client-secret",
+    GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: "test-refresh-token",
+  } as const;
+
+  it("sends a refresh_token grant with the correct body fields", async () => {
+    Object.assign(process.env, oauthEnv);
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string);
+          return mockJsonResponse({ access_token: "oauth-access-token", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-id");
+
+    expect(capturedBodies).toHaveLength(1);
+    const params = new URLSearchParams(capturedBodies[0]);
+    expect(params.get("grant_type")).toBe("refresh_token");
+    expect(params.get("client_id")).toBe("test-client-id");
+    expect(params.get("client_secret")).toBe("test-client-secret");
+    expect(params.get("refresh_token")).toBe("test-refresh-token");
+    // scope must NOT be sent — was already granted at consent time
+    expect(params.get("scope")).toBeNull();
+  });
+
+  it("uses the OAuth access token as Bearer in Drive API calls", async () => {
+    Object.assign(process.env, oauthEnv);
+    const capturedHeaders: Record<string, string>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "oauth-bearer-token", expires_in: 3600 });
+        }
+        capturedHeaders.push((opts?.headers ?? {}) as Record<string, string>);
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-id");
+
+    expect(capturedHeaders.length).toBeGreaterThan(0);
+    expect(capturedHeaders[0]["Authorization"]).toBe("Bearer oauth-bearer-token");
+  });
+
+  it("caches the OAuth token — no second token fetch within expiry", async () => {
+    Object.assign(process.env, oauthEnv);
+    let tokenCallCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          tokenCallCount++;
+          return mockJsonResponse({ access_token: "oauth-cached", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-1");
+    await listPropertyFolders("parent-2");
+    await listPropertyFolders("parent-3");
+
+    // Token exchange must happen exactly once across all three calls
+    expect(tokenCallCount).toBe(1);
+  });
+
+  it("re-fetches after cache reset — mirrors SA caching behaviour", async () => {
+    Object.assign(process.env, oauthEnv);
+    let tokenCallCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          tokenCallCount++;
+          return mockJsonResponse({ access_token: "oauth-renewed", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-1");
+    _resetTokenCache();
+    await listPropertyFolders("parent-2");
+
+    expect(tokenCallCount).toBe(2);
+  });
+
+  it("prefers OAuth over SA-JWT when both are configured", async () => {
+    Object.assign(process.env, oauthEnv);
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson; // also present — OAuth must win
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          capturedBodies.push(opts?.body as string);
+          return mockJsonResponse({ access_token: "oauth-wins", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-id");
+
+    expect(capturedBodies).toHaveLength(1);
+    const params = new URLSearchParams(capturedBodies[0]);
+    // Must use refresh_token grant, not jwt-bearer
+    expect(params.get("grant_type")).toBe("refresh_token");
+  });
+
+  it("falls back to SA-JWT when only GOOGLE_DRIVE_SA_JSON is set (OAuth vars absent)", async () => {
+    // No OAuth env vars — afterEach guarantees a clean slate, but be explicit.
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    let tokenCallCount = 0;
+    const capturedBodies: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL, opts?: RequestInit) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          tokenCallCount++;
+          capturedBodies.push(opts?.body as string);
+          return mockJsonResponse({ access_token: "sa-fallback-token", expires_in: 3600 });
+        }
+        return mockJsonResponse({ files: [] });
+      }),
+    );
+
+    await listPropertyFolders("parent-id");
+
+    expect(tokenCallCount).toBe(1);
+    // SA JWT-bearer grant uses the jwt-bearer grant_type in the raw string body
+    expect(capturedBodies[0]).toContain("jwt-bearer");
+  });
+
+  it("throws DriveUnconfiguredError when only some OAuth vars are set (incomplete config)", async () => {
+    // Only two of the three — should NOT engage OAuth, and SA is absent too
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = "client-secret";
+    // GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN intentionally absent
+    await expect(listPropertyFolders("parent")).rejects.toBeInstanceOf(DriveUnconfiguredError);
+  });
+});
+
+// ─── 12. downloadFile ─────────────────────────────────────────────────────────
 
 describe("downloadFile", () => {
   it("returns bytes, name, and mimeType for a file", async () => {
@@ -681,6 +971,7 @@ describe("downloadFile", () => {
           return {
             ok: true,
             status: 200,
+            headers: { get: (_name: string) => null },
             arrayBuffer: async () => fakeBytes,
           };
         }
@@ -693,6 +984,59 @@ describe("downloadFile", () => {
     expect(result.name).toBe("front.jpg");
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.bytes.byteLength).toBe(4);
+  });
+
+  it("throws when Content-Length header exceeds MAX_DOWNLOAD_BYTES (25 MB)", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    // 26 MB — one byte over the 25 MB cap
+    const overCapBytes = String(26 * 1024 * 1024);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        if (urlStr.includes("alt=media")) {
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: (name: string) => (name === "content-length" ? overCapBytes : null) },
+            arrayBuffer: async () => new ArrayBuffer(0),
+          };
+        }
+        return mockJsonResponse({ id: "big-file", name: "big.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    await expect(downloadFile("big-file")).rejects.toThrow("exceeds MAX_DOWNLOAD_BYTES");
+  });
+
+  it("proceeds normally when Content-Length header is absent", async () => {
+    process.env.GOOGLE_DRIVE_SA_JSON = fakeSaJson;
+    const fakeBytes = new Uint8Array([9, 8, 7]).buffer;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL) => {
+        const urlStr = url.toString();
+        if (urlStr.includes("oauth2.googleapis.com")) {
+          return mockJsonResponse({ access_token: "tok", expires_in: 3600 });
+        }
+        if (urlStr.includes("alt=media")) {
+          // No Content-Length — chunked/streaming response
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: (_name: string) => null },
+            arrayBuffer: async () => fakeBytes,
+          };
+        }
+        return mockJsonResponse({ id: "file-no-cl", name: "img.jpg", mimeType: "image/jpeg" });
+      }),
+    );
+
+    const result = await downloadFile("file-no-cl");
+    expect(result.bytes.byteLength).toBe(3);
   });
 
   it("sends supportsAllDrives=true on both media and metadata requests", async () => {
@@ -708,7 +1052,7 @@ describe("downloadFile", () => {
         }
         capturedUrls.push(urlStr);
         if (urlStr.includes("alt=media")) {
-          return { ok: true, status: 200, arrayBuffer: async () => fakeBytes };
+          return { ok: true, status: 200, headers: { get: () => null }, arrayBuffer: async () => fakeBytes };
         }
         // Metadata fetch
         return mockJsonResponse({ id: "file-sd", name: "shared.jpg", mimeType: "image/jpeg" });

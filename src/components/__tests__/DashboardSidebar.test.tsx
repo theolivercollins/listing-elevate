@@ -19,6 +19,9 @@ const mockAuthValue = {
   profile: { role: "user" as "admin" | "user", first_name: "Alex" },
   session: {},
   loading: false,
+  adminVerified: true,
+  sendAdminEmailCode: vi.fn(),
+  verifyAdminEmailCode: vi.fn(),
   signOut: vi.fn(),
   refreshProfile: vi.fn(),
 };

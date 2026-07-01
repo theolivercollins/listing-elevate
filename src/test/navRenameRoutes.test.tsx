@@ -20,10 +20,9 @@ const mockAuthValue = {
   profile: { role: "admin" } as { role: string } | null,
   session: null,
   loading: false,
-  mfaRequired: false,
-  mfaVerifiedFactors: [] as unknown[],
-  completeMfaChallenge: vi.fn(),
-  refreshMfaFactors: vi.fn(),
+  adminVerified: true,
+  sendAdminEmailCode: vi.fn(),
+  verifyAdminEmailCode: vi.fn(),
   signInWithMagicLink: vi.fn(),
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
@@ -273,7 +272,7 @@ describe("Nav rename — routes unchanged after label rename", () => {
     vi.clearAllMocks();
     mockAuthValue.user = { id: "admin-user-id" };
     mockAuthValue.profile = { role: "admin" };
-    mockAuthValue.mfaVerifiedFactors = [{ id: "mock-totp-factor", factor_type: "totp", status: "verified" }];
+    mockAuthValue.adminVerified = true;
   });
 
   it("/dashboard/pipeline still renders Pipeline (sidebar label is now 'Orders')", () => {
