@@ -154,6 +154,14 @@ export interface Property {
   is_test: boolean;
   // Operator-selected video model SKU at inception — added migration 090.
   video_model_sku: string | null;
+  // Bunny Stream adaptive HLS playlist + per-encode poster URLs — added
+  // migration 102. Null for legacy mp4-only rows and any render whose Bunny
+  // host failed/was skipped (see lib/assembly/finalize.ts FinalizeResult
+  // hlsUrl/posterUrl — set only on the fully-successful Bunny path).
+  horizontal_hls_url: string | null;
+  horizontal_poster_url: string | null;
+  vertical_hls_url: string | null;
+  vertical_poster_url: string | null;
 }
 
 export interface UserProfile {

@@ -13,8 +13,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { Loader2, ChevronUp, ChevronDown, Save, RefreshCw, ArrowLeftRight, ChevronDown as CaretDown } from 'lucide-react';
+import { Loader2, ChevronUp, ChevronDown, Save, RefreshCw, ArrowLeftRight, ChevronDown as CaretDown, Play } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
+import { bunnyPosterUrl } from '@/lib/image-url';
 import type { SceneVariantRow } from '../../../../lib/types/operator-studio';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -252,12 +253,20 @@ interface DraggableCardProps {
   onRegenerate: (variant: 'A' | 'B', model?: PairedRegenModelKey) => void;
   flipping: boolean;
   regenerating: boolean;
+  /** True when this card's clip is the single active <video> player (see CheckpointAInner). */
+  isActivePlayer: boolean;
+  /** Makes this card the active player, implicitly deactivating any other. */
+  onActivatePlayer: () => void;
 }
 
 function DraggableCard({
   card, index, total, paired, onMoveUp, onMoveDown, onHover, onFlip, onRegenerate, flipping, regenerating,
+  isActivePlayer, onActivatePlayer,
 }: DraggableCardProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // Computed once per render — avoids re-parsing the URL for both the
+  // poster <img> and the active-player's poster attribute below.
+  const poster = bunnyPosterUrl(card.clipUrl);
 
   const [{ isDragging }, drag] = useDrag<DragItem, void, { isDragging: boolean }>({
     type: DRAG_TYPE,
@@ -307,19 +316,88 @@ function DraggableCard({
           </div>
         )}
         {card.clipUrl ? (
-          <video
-            src={card.clipUrl}
-            // autoPlay (muted) is REQUIRED for the clip to paint: a <video>
-            // with no autoPlay and no poster renders a blank frame until the
-            // user interacts — that was the "missing videos" at Checkpoint A.
-            // Mirrors SceneStrip's working pattern.
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-          />
+          isActivePlayer ? (
+            // The single active player for the whole checkpoint (see
+            // CheckpointAInner's activeClipSceneId) — real playback with
+            // native controls, poster-backed so there's never a blank frame
+            // while it buffers. Replaces the old always-autoplay workaround:
+            // a real Bunny-derived poster (or first-frame fallback below)
+            // now covers the "missing videos" problem that comment used to
+            // describe, so autoplay-everywhere is no longer needed for that.
+            <video
+              src={card.clipUrl}
+              controls
+              autoPlay
+              loop
+              playsInline
+              poster={poster ?? undefined}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            />
+          ) : (
+            // Poster tile: a real still frame, never autoplaying. Fixes the
+            // ~16 concurrent video-decoder ceiling (black frames + tab
+            // crashes) — every other card in the grid stays an <img> or a
+            // metadata-only <video>, so at most one decoder is ever active.
+            <button
+              type="button"
+              onClick={onActivatePlayer}
+              aria-label="Play clip"
+              style={{
+                position: 'relative',
+                display: 'block',
+                width: '100%',
+                height: '100%',
+                padding: 0,
+                margin: 0,
+                border: 'none',
+                background: 'transparent',
+                cursor: 'pointer',
+              }}
+            >
+              {poster ? (
+                <img
+                  src={poster}
+                  alt=""
+                  loading="lazy"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              ) : (
+                <video
+                  src={card.clipUrl}
+                  preload="metadata"
+                  muted
+                  playsInline
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                />
+              )}
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: 'var(--le-radius-pill)',
+                    background: 'rgba(11,11,16,0.65)',
+                    backdropFilter: 'blur(4px)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#fff',
+                  }}
+                >
+                  <Play size={13} strokeWidth={2} fill="currentColor" style={{ marginLeft: 1 }} />
+                </span>
+              </span>
+            </button>
+          )
         ) : (
           <div style={{
             width: '100%', height: '100%',
@@ -436,6 +514,10 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
   const [flipping, setFlipping] = useState<Set<string>>(new Set());
   const [regenerating, setRegenerating] = useState<Set<string>>(new Set());
   const [actionError, setActionError] = useState<{ sceneId: string; msg: string } | null>(null);
+  // Perf/stability: at most ONE <video> plays at a time across the checkpoint.
+  // Cards default to a still poster (never autoplay); clicking a card makes
+  // it the sole active player and implicitly deactivates any other.
+  const [activeClipSceneId, setActiveClipSceneId] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -637,6 +719,8 @@ function CheckpointAInner({ runId, onChanged }: CheckpointAProps) {
               onRegenerate={(v, model) => void handleRegenerate(card.sceneId, v, model)}
               flipping={flipping.has(card.sceneId)}
               regenerating={regenerating.has(card.sceneId)}
+              isActivePlayer={activeClipSceneId === card.sceneId}
+              onActivatePlayer={() => setActiveClipSceneId(card.sceneId)}
             />
           ))}
         </div>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { authedFetch } from "@/lib/api";
+import HlsPlayer from '@/components/preview/HlsPlayer';
+import { photoThumb, bunnyPosterUrl } from '@/lib/image-url';
 import {
   Loader2,
   Copy,
@@ -42,6 +44,13 @@ interface PropertyRow {
   status: string;
   horizontal_video_url: string | null;
   vertical_video_url: string | null;
+  // Bunny adaptive HLS playlist + real-frame poster per orientation
+  // (migration 102). Nullable: absent on legacy/pre-migration rows, in which
+  // case players fall back to the progressive *_video_url + a derived poster.
+  horizontal_hls_url: string | null;
+  horizontal_poster_url: string | null;
+  vertical_hls_url: string | null;
+  vertical_poster_url: string | null;
   client_id: string | null;
   client: ClientRow | null;
   bedrooms: number | null;
@@ -95,6 +104,42 @@ interface Bundle {
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const TERMINAL_STATUSES = new Set(['complete', 'failed']);
+
+// ─── Poll cadence ──────────────────────────────────────────────────────────────
+//
+// The 5s tick is only worth its cost while the pipeline is actively doing
+// automated work the operator wants to watch progress on. Once a run parks at
+// an operator gate (needs_review, or a delivery-run checkpoint/details/photo
+// gate) nothing changes server-side until the operator acts — and every
+// action handler in this file already calls fetchBundle() directly, so a
+// slow background tick there is just a stale-data safety net, not the
+// primary refresh path.
+
+const FAST_POLL_MS = 5_000;
+const SLOW_POLL_MS = 30_000;
+
+// delivery_run.stage values (see lib/delivery/state.ts DELIVERY_STAGES) where
+// the server is actively scraping/rendering/judging/etc. The remaining
+// stages — intake, photo_selection, checkpoint_a, details, checkpoint_b,
+// delivered — are pre-flight or operator gates, so they get the slow tick.
+const ACTIVE_DELIVERY_STAGES = new Set<string>([
+  'scraping', 'generating', 'judging', 'assembling', 'voiceover', 'music',
+]);
+
+// property.status values (see StatusPill's map below) for the legacy/fully-
+// autonomous pipeline, used only when there's no delivery_run — the
+// equivalent "server is working" bucket for that vocabulary. needs_review is
+// deliberately excluded: it's the autonomous-pipeline's operator gate.
+const ACTIVE_PROPERTY_STATUSES = new Set<string>([
+  'queued', 'analyzing', 'scripting', 'generating', 'qc', 'assembling', 'ingesting',
+]);
+
+/** True while `data` represents active, unattended pipeline work (fast poll). */
+function isActiveStage(data: Bundle): boolean {
+  const stage = data.delivery_run?.stage;
+  if (stage) return ACTIVE_DELIVERY_STAGES.has(stage);
+  return ACTIVE_PROPERTY_STATUSES.has(data.property.status);
+}
 
 // ─── Status pill ───────────────────────────────────────────────────────────────
 
@@ -304,7 +349,8 @@ const PropertyCommandCenter = () => {
   const [resumePending, setResumePending] = useState(false);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestBundleRef = useRef<Bundle | null>(null);
 
   const fetchBundle = useCallback(async () => {
     try {
@@ -316,9 +362,10 @@ const PropertyCommandCenter = () => {
       const data = (await res.json()) as Bundle;
       setBundle(data);
       setError(null);
-      if (TERMINAL_STATUSES.has(data.property.status) && pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
+      latestBundleRef.current = data;
+      if (TERMINAL_STATUSES.has(data.property.status) && pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load property');
@@ -327,10 +374,84 @@ const PropertyCommandCenter = () => {
     }
   }, [id]);
 
+  // Smart poll scheduler — replaces a fixed 5s setInterval that ran forever on
+  // any non-terminal status (including long operator-review gates like
+  // needs_review/checkpoint_*), doing a full setBundle() re-render of the
+  // whole page every 5s while an operator sat there for minutes.
+  //
+  //   - Paused entirely while the tab is hidden; resumes with one immediate
+  //     fetch (+ the correct cadence for whatever it finds) as soon as the
+  //     tab is shown again.
+  //   - 5s cadence while the pipeline is actively working (see
+  //     isActiveStage: scraping/generating/judging/assembling/voiceover/music,
+  //     or the legacy autonomous-pipeline equivalents).
+  //   - 30s cadence at long-dwell operator gates (needs_review, or a
+  //     delivery-run checkpoint/details/photo-selection/intake/delivered
+  //     stage) — the existing action handlers throughout this file already
+  //     refetch immediately when the operator does something, so this tick
+  //     is only a stale-data safety net there.
+  //   - Stops entirely once the property reaches a terminal status.
   useEffect(() => {
-    fetchBundle();
-    pollRef.current = setInterval(fetchBundle, 5000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    let cancelled = false;
+    // Monotonic token for THIS scheduler's one live chain. Every (re)start —
+    // initial mount, or a tab-show — bumps `generation` and captures it; any
+    // older chain still awaiting a fetch sees its captured token != the live
+    // one and bails (no reschedule, no post-unmount fetch/setState). Combined
+    // with clearTimer() before every setTimeout, this guarantees exactly ONE
+    // self-rescheduling timer, even when a visibilitychange fires while a
+    // fetchBundle() is still in flight (which previously spawned a second,
+    // untracked chain that compounded the poll rate and outlived unmount).
+    let generation = 0;
+
+    const clearTimer = () => {
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+    };
+
+    const scheduleNext = (gen: number) => {
+      if (cancelled || gen !== generation) return;
+      const data = latestBundleRef.current;
+      if (data && TERMINAL_STATUSES.has(data.property.status)) return;
+      if (document.hidden) return; // resumed by the visibilitychange listener below
+      const delay = !data || isActiveStage(data) ? FAST_POLL_MS : SLOW_POLL_MS;
+      clearTimer(); // never stack a second handle onto pollTimeoutRef
+      pollTimeoutRef.current = setTimeout(() => void runCycle(gen), delay);
+    };
+
+    const runCycle = async (gen: number) => {
+      if (cancelled || gen !== generation) return;
+      await fetchBundle();
+      // The fetch may have straddled an unmount or a tab-show that started a
+      // newer chain — re-check before doing anything that touches state/timers.
+      if (cancelled || gen !== generation) return;
+      scheduleNext(gen);
+    };
+
+    const start = () => {
+      clearTimer();
+      generation += 1;
+      void runCycle(generation);
+    };
+
+    start();
+
+    const handleVisibility = () => {
+      clearTimer();
+      if (document.hidden) return; // paused — nothing runs until shown again
+      // Tab just became visible: supersede any in-flight chain (start() bumps
+      // the generation) and run one fresh cycle immediately so the operator
+      // never looks at data that went stale while backgrounded.
+      start();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      clearTimer();
+    };
   }, [fetchBundle]);
 
   const handleSaveNote = async () => {
@@ -642,6 +763,14 @@ const PropertyCommandCenter = () => {
               // vertical-only order (selected_orientation='vertical', no
               // horizontal_video_url) still shows a video at checkpoint B.
               videoUrl={property.horizontal_video_url ?? property.vertical_video_url}
+              // HLS + poster matched to whichever orientation is shown above.
+              // Poster falls back to a Bunny-derived frame (and null on legacy
+              // rows) so the review gate never shows a blank box while loading.
+              hlsUrl={property.horizontal_video_url ? property.horizontal_hls_url : property.vertical_hls_url}
+              posterUrl={
+                (property.horizontal_video_url ? property.horizontal_poster_url : property.vertical_poster_url)
+                ?? bunnyPosterUrl(property.horizontal_video_url ?? property.vertical_video_url)
+              }
               onDelivered={fetchBundle}
             />
           )}
@@ -731,9 +860,10 @@ const PropertyCommandCenter = () => {
                     </span>
                     <DownloadButton propertyId={property.id} format="horizontal" />
                   </div>
-                  <video
-                    src={property.horizontal_video_url}
-                    controls
+                  <HlsPlayer
+                    src={property.horizontal_hls_url ?? property.horizontal_video_url}
+                    poster={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url) ?? undefined}
+                    preload="none"
                     muted
                     playsInline
                     className="studio-video"
@@ -749,9 +879,10 @@ const PropertyCommandCenter = () => {
                     </span>
                     <DownloadButton propertyId={property.id} format="vertical" />
                   </div>
-                  <video
-                    src={property.vertical_video_url}
-                    controls
+                  <HlsPlayer
+                    src={property.vertical_hls_url ?? property.vertical_video_url}
+                    poster={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url) ?? undefined}
+                    preload="none"
                     muted
                     playsInline
                     className="studio-video"
@@ -992,8 +1123,10 @@ const PropertyCommandCenter = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Logo</span>
                 <img
-                  src={client.brand_logo_url}
+                  src={photoThumb(client.brand_logo_url)}
                   alt={`${client.name} logo`}
+                  loading="lazy"
+                  decoding="async"
                   style={{ height: 40, maxWidth: 120, objectFit: 'contain' }}
                 />
               </div>
@@ -1046,8 +1179,10 @@ const PropertyCommandCenter = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {client.agent_headshot_url && (
                       <img
-                        src={client.agent_headshot_url}
+                        src={photoThumb(client.agent_headshot_url)}
                         alt={client.agent_name ?? 'Agent'}
+                        loading="lazy"
+                        decoding="async"
                         style={{
                           width: 32,
                           height: 32,

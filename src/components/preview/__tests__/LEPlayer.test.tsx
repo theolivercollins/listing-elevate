@@ -249,4 +249,32 @@ describe('LEPlayer', () => {
     const time = screen.getByTestId('le-player-time');
     expect(time).toHaveClass('le-player__time');
   });
+
+  // ── HLS wiring (additive; mp4 stays the fallback) ─────────────────────────
+
+  it('prefers hlsSrc over the mp4 src when the browser supports native HLS', () => {
+    // Force native HLS support so supportsNativeHls() → true. On that `direct`
+    // path the HLS URL drives the <video src> attribute, which we can assert
+    // synchronously (no MediaSource needed). happy-dom omits canPlayType, so we
+    // stub it and restore afterward to avoid leaking to other files.
+    const proto = HTMLMediaElement.prototype as unknown as {
+      canPlayType?: (t: string) => string;
+    };
+    const original = proto.canPlayType;
+    proto.canPlayType = () => 'maybe';
+    try {
+      renderPlayer({ src: 'https://cdn/film.mp4', hlsSrc: 'https://cdn/film.m3u8' });
+      // The adaptive HLS playlist wins over the progressive mp4.
+      expect(getVideo().getAttribute('src')).toBe('https://cdn/film.m3u8');
+    } finally {
+      proto.canPlayType = original;
+    }
+  });
+
+  it('falls back to the mp4 src when no hlsSrc is provided (legacy rows unchanged)', () => {
+    renderPlayer({ src: 'https://cdn/legacy.mp4' });
+    // No hlsSrc → the video plays the progressive mp4 via the src attribute,
+    // exactly as before the HLS wiring was added.
+    expect(getVideo().getAttribute('src')).toBe('https://cdn/legacy.mp4');
+  });
 });

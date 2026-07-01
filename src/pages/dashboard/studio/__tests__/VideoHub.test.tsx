@@ -35,10 +35,11 @@ vi.mock('@/lib/api', () => ({
 // ---------------------------------------------------------------------------
 
 vi.mock('@/components/preview/LEPlayer', () => ({
-  default: (props: { src: string; poster?: string; orientation?: string }) => (
+  default: (props: { src: string; hlsSrc?: string; poster?: string; orientation?: string }) => (
     <div
       data-testid="le-player"
       data-src={props.src}
+      data-hls-src={props.hlsSrc ?? ''}
       data-poster={props.poster ?? ''}
       data-orientation={props.orientation ?? 'horizontal'}
     />
@@ -127,7 +128,12 @@ function makeLink(overrides: Partial<HubLink> = {}): HubLink {
 }
 
 type HubBundle = {
-  property: { id: string; address: string | null; videos: { horizontal: string | null; vertical: string | null } };
+  property: {
+    id: string;
+    address: string | null;
+    videos: { horizontal: string | null; vertical: string | null };
+    hls?: { horizontal: string | null; vertical: string | null };
+  };
   client: { id: string; name: string } | null;
   hero_photo_url: string | null;
   links: HubLink[];
@@ -141,6 +147,7 @@ function makeBundle(overrides: Partial<HubBundle> = {}): HubBundle {
       id: 'prop-1',
       address: '123 Ocean Drive, Malibu CA',
       videos: { horizontal: 'https://cdn/h.mp4', vertical: 'https://cdn/v.mp4' },
+      hls: { horizontal: 'https://cdn/h.m3u8', vertical: 'https://cdn/v.m3u8' },
     },
     client: { id: 'c-1', name: 'Brian Vance' },
     hero_photo_url: 'https://cdn/hero.jpg',
@@ -201,6 +208,35 @@ describe('Video hub page', () => {
     expect(player.getAttribute('data-poster')).toBe('https://cdn/hero.jpg');
     // fetched the right endpoint
     expect(authedFetch.mock.calls.some((c) => (c[0] as string) === '/api/admin/studio/videos/prop-1')).toBe(true);
+  });
+
+  it('passes the horizontal hls playlist as hlsSrc on initial mount, and switches to vertical on toggle', async () => {
+    mockHub();
+    renderHub();
+
+    const player = await screen.findByTestId('le-player');
+    expect(player.getAttribute('data-hls-src')).toBe('https://cdn/h.m3u8');
+
+    fireEvent.click(screen.getByRole('button', { name: /vertical/i }));
+    await waitFor(() =>
+      expect(screen.getByTestId('le-player').getAttribute('data-hls-src')).toBe('https://cdn/v.m3u8'),
+    );
+  });
+
+  it('omits hlsSrc when the bundle has no hls field (backward-compat with pre-migration API responses)', async () => {
+    mockHub(makeBundle({
+      property: {
+        id: 'prop-1',
+        address: '123 Ocean Drive, Malibu CA',
+        videos: { horizontal: 'https://cdn/h.mp4', vertical: 'https://cdn/v.mp4' },
+        // hls omitted entirely — mirrors a pre-migration-102 API response.
+      },
+    }));
+    renderHub();
+
+    const player = await screen.findByTestId('le-player');
+    expect(player.getAttribute('data-src')).toBe('https://cdn/h.mp4');
+    expect(player.getAttribute('data-hls-src')).toBe('');
   });
 
   it('shows an orientation switcher only when BOTH renders exist, and switches src', async () => {

@@ -12,6 +12,10 @@ interface PropertyRow {
   address: string | null;
   horizontal_video_url: string | null;
   vertical_video_url: string | null;
+  // Migration-102 columns (Bunny adaptive HLS, additive/nullable). Absent
+  // (undefined) when the fallback select below fires pre-migration.
+  horizontal_hls_url?: string | null;
+  vertical_hls_url?: string | null;
   client: { id: string; name: string } | { id: string; name: string }[] | null;
 }
 
@@ -53,11 +57,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const propertyId = String(req.query.id);
   const db = getSupabase();
 
-  const { data: propData, error: propError } = await db
+  // horizontal_hls_url/vertical_hls_url are migration-102 columns (Bunny adaptive
+  // HLS, additive/nullable). Try the full select first; on 42703 (undefined_column
+  // — migration 102 not yet applied on this env's shared DB) retry with the
+  // pre-102 column list so the hub never 500s mid-rollout. Mirrors the identical
+  // 42703-retry pattern used below for property_previews label/revoked_at/show_branding.
+  let propResult = await db
     .from('properties')
-    .select('id, address, horizontal_video_url, vertical_video_url, client:client_id(id, name)')
+    .select('id, address, horizontal_video_url, vertical_video_url, horizontal_hls_url, vertical_hls_url, client:client_id(id, name)')
     .eq('id', propertyId)
     .maybeSingle();
+  if (propResult.error && (propResult.error as { code?: string }).code === '42703') {
+    propResult = await db
+      .from('properties')
+      .select('id, address, horizontal_video_url, vertical_video_url, client:client_id(id, name)')
+      .eq('id', propertyId)
+      .maybeSingle();
+  }
+  const { data: propData, error: propError } = propResult;
   if (propError) return res.status(500).json({ error: propError.message });
   if (!propData) return res.status(404).json({ error: 'not_found' });
   const property = propData as PropertyRow;
@@ -154,6 +171,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       id: property.id,
       address: property.address,
       videos: { horizontal: property.horizontal_video_url, vertical: property.vertical_video_url },
+      // Bunny adaptive HLS playlists (migration 102) — LEPlayer prefers these
+      // over the mp4 in `videos` when present; null on legacy/fallback renders
+      // or pre-migration (fallback select above omits the columns → undefined ?? null).
+      hls: { horizontal: property.horizontal_hls_url ?? null, vertical: property.vertical_hls_url ?? null },
     },
     client: client ? { id: client.id, name: client.name } : null,
     hero_photo_url,

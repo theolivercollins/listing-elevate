@@ -272,7 +272,15 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
             durationSeconds: hDurationSeconds,
             version: 1,
           });
-          await db.from('properties').update({ horizontal_video_url: hFinalize.url }).eq('id', run.property_id);
+          await db.from('properties').update({
+            horizontal_video_url: hFinalize.url,
+            // Bunny HLS playlist + poster (migration 102). mp4 + hls + poster are
+            // ONE coupled encode: write all three together and CLEAR hls/poster to
+            // null on any fallback (hlsUrl/posterUrl null) so a stale playlist from
+            // a previous successful render can never outlive the mp4 it describes.
+            horizontal_hls_url: hFinalize.hlsUrl ?? null,
+            horizontal_poster_url: hFinalize.posterUrl ?? null,
+          }).eq('id', run.property_id);
           // Clear persisted job token — render is done.
           void db.from('delivery_runs').update({ assembly_h_job: null }).eq('id', run.id);
           // Emit cost rows — same shape the pipeline emits in runAssemblyStep.
@@ -348,7 +356,15 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
               durationSeconds: vDurationSeconds,
               version: 1,
             });
-            await db.from('properties').update({ vertical_video_url: vFinalize.url }).eq('id', run.property_id);
+            await db.from('properties').update({
+              vertical_video_url: vFinalize.url,
+              // Bunny HLS playlist + poster (migration 102). mp4 + hls + poster are
+              // ONE coupled encode: write all three together and CLEAR hls/poster to
+              // null on any fallback (hlsUrl/posterUrl null) so a stale playlist from
+              // a previous successful render can never outlive the mp4 it describes.
+              vertical_hls_url: vFinalize.hlsUrl ?? null,
+              vertical_poster_url: vFinalize.posterUrl ?? null,
+            }).eq('id', run.property_id);
             void db.from('delivery_runs').update({ assembly_v_job: null }).eq('id', run.id);
             // Emit cost rows for the vertical render.
             await emitBunnyFinalizeCostEvent({

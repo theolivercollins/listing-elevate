@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { X, Loader2, Check, AlertCircle, Image } from 'lucide-react';
+import { X, Loader2, Check, AlertCircle, Image, Play } from 'lucide-react';
 import { getRelativeTime } from '@/lib/types';
+import { bunnyPosterUrl } from '@/lib/image-url';
 
 interface SceneRow {
   id: string;
@@ -72,6 +73,10 @@ export function IterateInLabModal({
   const [swappingId, setSwappingId] = useState<string | null>(null);
   const [swapError, setSwapError] = useState<string | null>(null);
   const [swapSuccess, setSwapSuccess] = useState<string | null>(null);
+  // Perf/stability: at most ONE <video> plays at a time across the grid.
+  // Tiles default to a still poster (never autoplay); clicking a tile makes
+  // it the sole active player and implicitly deactivates any other.
+  const [activeIterationId, setActiveIterationId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,6 +223,8 @@ export function IterateInLabModal({
                 const isSwapping = swappingId === iter.id;
                 const isSuccess = swapSuccess === iter.id;
                 const isDimmed = !!swappingId && swappingId !== iter.id;
+                const poster = bunnyPosterUrl(iter.clip_url);
+                const isActive = activeIterationId === iter.id;
                 return (
                   <div
                     key={iter.id}
@@ -240,14 +247,87 @@ export function IterateInLabModal({
                       }}
                     >
                       {iter.clip_url ? (
-                        <video
-                          src={iter.clip_url}
-                          muted
-                          loop
-                          autoPlay
-                          playsInline
-                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                        />
+                        isActive ? (
+                          // The single active player for the whole grid (see
+                          // activeIterationId above) — real playback with
+                          // native controls, poster-backed so there's never
+                          // a blank frame.
+                          <video
+                            src={iter.clip_url}
+                            controls
+                            autoPlay
+                            loop
+                            playsInline
+                            poster={poster ?? undefined}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          />
+                        ) : (
+                          // Poster tile: a real still frame, never
+                          // autoplaying. Fixes the ~16 concurrent
+                          // video-decoder ceiling (black frames + tab
+                          // crashes) — every other tile stays an <img> or a
+                          // metadata-only <video>, so at most one decoder is
+                          // ever active.
+                          <button
+                            type="button"
+                            onClick={() => setActiveIterationId(iter.id)}
+                            aria-label="Play iteration clip"
+                            style={{
+                              position: 'relative',
+                              display: 'block',
+                              width: '100%',
+                              height: '100%',
+                              padding: 0,
+                              margin: 0,
+                              border: 'none',
+                              background: 'transparent',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            {poster ? (
+                              <img
+                                src={poster}
+                                alt=""
+                                loading="lazy"
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              />
+                            ) : (
+                              <video
+                                src={iter.clip_url}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                              />
+                            )}
+                            <span
+                              aria-hidden="true"
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  width: 30,
+                                  height: 30,
+                                  borderRadius: 'var(--le-radius-pill)',
+                                  background: 'rgba(11,11,16,0.65)',
+                                  backdropFilter: 'blur(4px)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: '#fff',
+                                }}
+                              >
+                                <Play size={13} strokeWidth={2} fill="currentColor" style={{ marginLeft: 1 }} />
+                              </span>
+                            </span>
+                          </button>
+                        )
                       ) : (
                         <div
                           style={{

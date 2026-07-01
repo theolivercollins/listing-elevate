@@ -278,6 +278,73 @@ describe('fetchByToken — show_branding via fetchPreviewMeta (P1 regression)', 
   });
 });
 
+// ---------------------------------------------------------------------------
+// fetchByToken — properties hls/poster columns (migration 102)
+//
+// horizontal_hls_url/horizontal_poster_url/vertical_hls_url/vertical_poster_url
+// are additive nullable columns. The properties select tries the full column
+// list first; on 42703 (undefined_column — migration 102 not yet applied on
+// this env's shared DB) it retries with the pre-102 list so the preview link
+// never 404s mid-rollout. Mirrors the show_branding 42703-retry tests above.
+// ---------------------------------------------------------------------------
+
+describe('fetchByToken — properties hls/poster columns (migration 102)', () => {
+  it('passes horizontal_hls_url/horizontal_poster_url/vertical_hls_url/vertical_poster_url through when present', async () => {
+    mockFrom
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { property_id: 'p1', expires_at: null }, error: null }) }) }) }) // 1: pv row
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({
+        data: {
+          id: 'p1', address: '1 Oak', client_id: null,
+          horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null,
+          horizontal_hls_url: 'https://cdn/h.m3u8', horizontal_poster_url: 'https://cdn/h-poster.jpg',
+          vertical_hls_url: null, vertical_poster_url: null,
+        },
+        error: null,
+      }) }) }) }); // 2: property (full select succeeds)
+
+    const r = await fetchByToken('tok');
+    expect(r).not.toBeNull();
+    const prop = r?.property as Record<string, unknown>;
+    expect(prop.horizontal_hls_url).toBe('https://cdn/h.m3u8');
+    expect(prop.horizontal_poster_url).toBe('https://cdn/h-poster.jpg');
+    expect(prop.vertical_hls_url).toBeNull();
+    expect(prop.vertical_poster_url).toBeNull();
+  });
+
+  it('42703 on the properties select (migration 102 not applied) retries WITHOUT hls/poster columns and still resolves the link', async () => {
+    let propertyCallCount = 0;
+    mockFrom
+      .mockReturnValueOnce({ select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { property_id: 'p1', expires_at: null }, error: null }) }) }) }) // 1: pv row
+      .mockImplementationOnce(() => {
+        propertyCallCount++;
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({
+          data: null,
+          error: { code: '42703', message: 'column "horizontal_hls_url" does not exist' },
+        }) }) }) };
+      }) // 2: property full select → 42703
+      .mockImplementationOnce(() => {
+        propertyCallCount++;
+        return { select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({
+          data: { id: 'p1', address: '1 Oak', client_id: null, horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: null, brokerage: null },
+          error: null,
+        }) }) }) };
+      }); // 3: property fallback select → success (pre-102 columns only)
+
+    const r = await fetchByToken('tok');
+
+    expect(propertyCallCount).toBe(2);
+    expect(r).not.toBeNull();
+    const prop = r?.property as Record<string, unknown>;
+    // Pre-existing fields survive the fallback.
+    expect(prop.id).toBe('p1');
+    expect(prop.horizontal_video_url).toBe('https://cdn/h.mp4');
+    // New columns simply absent (undefined) on the fallback shape — never crash,
+    // never 404 the link.
+    expect(prop.horizontal_hls_url).toBeUndefined();
+    expect(prop.horizontal_poster_url).toBeUndefined();
+  });
+});
+
 describe('recordPreviewView', () => {
   it('calls the increment_preview_view RPC', async () => {
     await recordPreviewView('tok');

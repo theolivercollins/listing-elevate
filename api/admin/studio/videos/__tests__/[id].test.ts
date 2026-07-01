@@ -357,3 +357,87 @@ describe('GET /api/admin/studio/videos/[id] — hub bundle', () => {
     expect(res._status).toBe(500);
   });
 });
+
+// ---------------------------------------------------------------------------
+// hls field — migration 102 (Bunny adaptive HLS playlists)
+// ---------------------------------------------------------------------------
+
+describe('GET /api/admin/studio/videos/[id] — hls field (migration 102)', () => {
+  it('returns hls.horizontal/hls.vertical when present on the property row', async () => {
+    mockGetSupabase.mockReturnValue(makeDb({
+      property: { data: { ...property, horizontal_hls_url: 'https://cdn/h.m3u8', vertical_hls_url: 'https://cdn/v.m3u8' }, error: null },
+      previews: { data: [], error: null },
+      events: { data: [], error: null },
+      notes: { data: [], error: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { property: { hls: { horizontal: string | null; vertical: string | null } } };
+    expect(body.property.hls).toEqual({ horizontal: 'https://cdn/h.m3u8', vertical: 'https://cdn/v.m3u8' });
+  });
+
+  it('defaults hls to {horizontal: null, vertical: null} when the columns are absent on the row', async () => {
+    // `property` fixture (module-level, used across this file) has no hls columns.
+    mockGetSupabase.mockReturnValue(makeDb({
+      property: { data: property, error: null },
+      previews: { data: [], error: null },
+      events: { data: [], error: null },
+      notes: { data: [], error: null },
+    }));
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { property: { hls: { horizontal: string | null; vertical: string | null } } };
+    expect(body.property.hls).toEqual({ horizontal: null, vertical: null });
+  });
+
+  // Mirrors the property_previews 42703-retry regression guard above, applied
+  // to the properties select instead: migration 102 not yet applied on this
+  // env's shared DB must never turn into a hub-wide 500.
+  it('properties select 42703 (migration 102 not applied) retries WITHOUT hls columns and still returns 200', async () => {
+    let propertyCallCount = 0;
+    const emptyChain = () => {
+      const result = { data: [], error: null };
+      const chain: Record<string, unknown> = {};
+      const passthrough = () => chain;
+      chain.select = passthrough;
+      chain.eq = passthrough;
+      chain.in = passthrough;
+      chain.order = passthrough;
+      chain.limit = passthrough;
+      chain.maybeSingle = () => Promise.resolve(result);
+      chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+        Promise.resolve(result).then(resolve, reject);
+      return chain;
+    };
+    const db = {
+      from(table: string) {
+        if (table === 'properties') {
+          propertyCallCount += 1;
+          const result = propertyCallCount === 1
+            ? { data: null, error: { code: '42703', message: 'column "horizontal_hls_url" does not exist' } }
+            : { data: property, error: null };
+          const chain: Record<string, unknown> = {};
+          const passthrough = () => chain;
+          chain.select = passthrough;
+          chain.eq = passthrough;
+          chain.maybeSingle = () => Promise.resolve(result);
+          return chain;
+        }
+        return emptyChain();
+      },
+    };
+    mockGetSupabase.mockReturnValue(db);
+
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+
+    // The fallback select fired (two calls to properties).
+    expect(propertyCallCount).toBe(2);
+    expect(res._status).toBe(200);
+    const body = res._body as { property: { id: string; hls: { horizontal: string | null; vertical: string | null } } };
+    expect(body.property.id).toBe('p1');
+    expect(body.property.hls).toEqual({ horizontal: null, vertical: null });
+  });
+});

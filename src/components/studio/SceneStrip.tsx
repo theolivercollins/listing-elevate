@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { FlaskConical, Loader2, AlertTriangle } from 'lucide-react';
+import { FlaskConical, Loader2, AlertTriangle, Play } from 'lucide-react';
+import { bunnyPosterUrl } from '@/lib/image-url';
 import { IterateInLabModal } from './IterateInLabModal';
 
 interface SceneRow {
@@ -64,6 +65,10 @@ function getDegradedSceneMeta(status: string): DegradedSceneMeta {
  */
 export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
   const [activeScene, setActiveScene] = useState<SceneRow | null>(null);
+  // Perf/stability: at most ONE <video> plays at a time across the strip.
+  // Tiles default to a still poster (never autoplay); clicking a tile makes
+  // it the sole active player and implicitly deactivates any other.
+  const [activeClipId, setActiveClipId] = useState<string | null>(null);
 
   if (scenes.length === 0) {
     return (
@@ -81,7 +86,10 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
         className="studio-hscroll"
         style={{ display: 'flex', gap: 12, paddingBottom: 4 }}
       >
-        {scenes.map((scene) => (
+        {scenes.map((scene) => {
+          const poster = bunnyPosterUrl(scene.clip_url);
+          const isActive = activeClipId === scene.id;
+          return (
           <div
             key={scene.id}
             style={{
@@ -103,14 +111,84 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
               }}
             >
               {scene.clip_url ? (
-                <video
-                  src={scene.clip_url}
-                  muted
-                  loop
-                  autoPlay
-                  playsInline
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                />
+                isActive ? (
+                  // The single active player for the whole strip (see
+                  // activeClipId above) — real playback with native
+                  // controls, poster-backed so there's never a blank frame.
+                  <video
+                    src={scene.clip_url}
+                    controls
+                    autoPlay
+                    loop
+                    playsInline
+                    poster={poster ?? undefined}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  />
+                ) : (
+                  // Poster tile: a real still frame, never autoplaying. Fixes
+                  // the ~16 concurrent video-decoder ceiling (black frames +
+                  // tab crashes) — every other tile stays an <img> or a
+                  // metadata-only <video>, so at most one decoder is active.
+                  <button
+                    type="button"
+                    onClick={() => setActiveClipId(scene.id)}
+                    aria-label={`Play scene ${scene.scene_number} clip`}
+                    style={{
+                      position: 'relative',
+                      display: 'block',
+                      width: '100%',
+                      height: '100%',
+                      padding: 0,
+                      margin: 0,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {poster ? (
+                      <img
+                        src={poster}
+                        alt=""
+                        loading="lazy"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    ) : (
+                      <video
+                        src={scene.clip_url}
+                        preload="metadata"
+                        muted
+                        playsInline
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    )}
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 'var(--le-radius-pill)',
+                          background: 'rgba(11,11,16,0.65)',
+                          backdropFilter: 'blur(4px)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: '#fff',
+                        }}
+                      >
+                        <Play size={13} strokeWidth={2} fill="currentColor" style={{ marginLeft: 1 }} />
+                      </span>
+                    </span>
+                  </button>
+                )
               ) : (
                 (() => {
                   const meta = getDegradedSceneMeta(scene.status);
@@ -194,7 +272,8 @@ export function SceneStrip({ scenes, propertyId, onSwapped }: SceneStripProps) {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {activeScene && (
