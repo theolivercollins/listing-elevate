@@ -1,4 +1,4 @@
--- 102_video_hls_poster.sql
+-- 103_video_hls_poster.sql
 -- Adaptive HLS playback + real poster frames for delivered listing videos.
 --
 -- Today properties.horizontal_video_url / vertical_video_url hold Bunny's
@@ -32,7 +32,7 @@
 -- *_video_url; *_hls_url / *_poster_url are the same class of public playback
 -- URL, so no new grant/policy is required.
 --
--- Down-migration (rollback): see 102_video_hls_poster_rollback.sql
+-- Down-migration (rollback): see 103_video_hls_poster_rollback.sql
 --   drops the four columns.
 
 alter table properties add column if not exists horizontal_hls_url    text;

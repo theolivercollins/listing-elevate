@@ -1,5 +1,5 @@
--- 102_video_hls_poster_rollback.sql
--- Down-migration for 102_video_hls_poster.sql
+-- 103_video_hls_poster_rollback.sql
+-- Down-migration for 103_video_hls_poster.sql
 -- Drops the four additive HLS/poster columns from properties. `drop column if
 -- exists` is idempotent; column comments drop with the column. Any values are
 -- discarded (players simply revert to the mp4 + hero-photo fallback), so this is
