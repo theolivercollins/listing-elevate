@@ -59,6 +59,24 @@ export interface DriveFile {
   size?: string;
 }
 
+export interface DriveChange {
+  fileId: string;
+  removed: boolean;
+  file?: {
+    id: string;
+    name: string;
+    mimeType: string;
+    parents?: string[];
+    trashed?: boolean;
+  };
+}
+
+export interface ListChangesResult {
+  changes: DriveChange[];
+  newStartPageToken?: string;
+  nextPageToken?: string;
+}
+
 // ── Module-level token cache ───────────────────────────────────────────────────
 
 let _tokenCache: TokenCache | null = null;
@@ -173,6 +191,9 @@ async function getAccessToken(): Promise<string> {
 
 const DRIVE_BASE = "https://www.googleapis.com/drive/v3";
 
+/** Hard cap on binary downloads — prevents OOM in serverless from oversized Drive files. */
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+
 async function driveGet(path: string, params?: Record<string, string>): Promise<unknown> {
   const token = await getAccessToken();
   const url = new URL(`${DRIVE_BASE}${path}`);
@@ -286,21 +307,141 @@ export async function downloadFile(
 
   // Fetch binary content.
   // supportsAllDrives=true is required for Shared Drive files.
-  const mediaResp = await fetch(`${DRIVE_BASE}/files/${fileId}?alt=media&supportsAllDrives=true`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  const mediaResp = await fetch(
+    `${DRIVE_BASE}/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
   if (!mediaResp.ok) {
     const text = await mediaResp.text();
     throw new Error(`[drive/client] Download ${fileId} failed ${mediaResp.status}: ${text}`);
+  }
+  // Guard against OOM: reject before reading the body if Content-Length exceeds the cap.
+  // (Content-Length may be absent for chunked/media responses; absence is not an error.)
+  const contentLength = mediaResp.headers.get("content-length");
+  if (contentLength !== null && Number(contentLength) > MAX_DOWNLOAD_BYTES) {
+    throw new Error(
+      `Drive file ${fileId} exceeds MAX_DOWNLOAD_BYTES (${MAX_DOWNLOAD_BYTES} bytes)`,
+    );
   }
   const bytes = await mediaResp.arrayBuffer();
 
   // Fetch metadata separately.
   // supportsAllDrives=true is required for Shared Drive files.
-  const meta = (await driveGet(`/files/${fileId}`, {
+  const meta = (await driveGet(`/files/${encodeURIComponent(fileId)}`, {
     fields: "id,name,mimeType",
     supportsAllDrives: "true",
   })) as { id: string; name: string; mimeType: string };
 
   return { bytes, name: meta.name, mimeType: meta.mimeType };
+}
+
+// ── Change feed ────────────────────────────────────────────────────────────────
+
+/** Fetch the current startPageToken for the change feed. */
+export async function getStartPageToken(): Promise<string> {
+  const data = (await driveGet("/changes/startPageToken")) as { startPageToken: string };
+  return data.startPageToken;
+}
+
+/**
+ * List changes since `pageToken`, accumulating all pages within one call.
+ * Returns the accumulated changes plus newStartPageToken for the next poll.
+ */
+export async function listChanges(pageToken: string): Promise<ListChangesResult> {
+  const allChanges: DriveChange[] = [];
+  let currentToken: string | undefined = pageToken;
+  let newStartPageToken: string | undefined;
+  let lastNextPageToken: string | undefined;
+
+  while (currentToken) {
+    const data = (await driveGet("/changes", {
+      pageToken: currentToken,
+      fields:
+        "newStartPageToken,nextPageToken,changes(fileId,removed,file(id,name,mimeType,parents,trashed))",
+    })) as {
+      newStartPageToken?: string;
+      nextPageToken?: string;
+      changes?: DriveChange[];
+    };
+
+    allChanges.push(...(data.changes ?? []));
+    if (data.newStartPageToken) newStartPageToken = data.newStartPageToken;
+    lastNextPageToken = data.nextPageToken;
+    currentToken = data.nextPageToken;
+  }
+
+  return {
+    changes: allChanges,
+    newStartPageToken,
+    nextPageToken: lastNextPageToken,
+  };
+}
+
+/**
+ * Subscribe to Drive push notifications via a webhook channel.
+ * Returns the channelId + resourceId needed to stop the subscription later.
+ */
+export async function watchChanges(
+  pageToken: string,
+  webhookUrl: string,
+  channelToken: string,
+): Promise<{ channelId: string; resourceId: string; expiration: number }> {
+  const token = await getAccessToken();
+  const channelId = crypto.randomUUID();
+
+  const url = new URL(`${DRIVE_BASE}/changes/watch`);
+  url.searchParams.set("pageToken", pageToken);
+
+  const resp = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      id: channelId,
+      type: "web_hook",
+      address: webhookUrl,
+      token: channelToken,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`[drive/client] watchChanges failed ${resp.status}: ${text}`);
+  }
+
+  const data = (await resp.json()) as {
+    id: string;
+    resourceId: string;
+    expiration: string; // Drive returns expiration as a string (ms since epoch)
+  };
+
+  return {
+    channelId: data.id,
+    resourceId: data.resourceId,
+    expiration: Number(data.expiration),
+  };
+}
+
+/**
+ * Stop a Drive push-notification channel.
+ * Drive returns 204 No Content on success.
+ */
+export async function stopChannel(channelId: string, resourceId: string): Promise<void> {
+  const token = await getAccessToken();
+
+  const resp = await fetch("https://www.googleapis.com/drive/v3/channels/stop", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ id: channelId, resourceId }),
+  });
+
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text();
+    throw new Error(`[drive/client] stopChannel failed ${resp.status}: ${text}`);
+  }
 }

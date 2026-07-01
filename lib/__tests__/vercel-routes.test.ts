@@ -101,6 +101,14 @@ const GUARDED_PATHS = [
   'api/admin/studio/drive/folders.ts',
   'api/admin/studio/drive/pull.ts',
 
+  // drive-telegram-intake branch — new endpoints
+  // Webhooks self-authenticate via header secrets; static paths covered by catch-all.
+  'api/drive/webhook.ts',
+  'api/telegram/webhook.ts',
+  'api/cron/drive-settle.ts',
+  'api/cron/drive-intake-poll.ts',
+  'api/cron/drive-channel-renew.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
