@@ -1,7 +1,39 @@
-import { createContext, useContext, useEffect, useReducer, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useReducer, useState, ReactNode } from "react";
 import { supabase, AUTH_CALLBACK_URL } from "./supabase";
 import { migrateLocalPresets } from "./presets";
+import { authedFetch } from "./api";
 import type { User, Session } from "@supabase/supabase-js";
+
+/** Roles an admin may preview as, in the Operator Studio role switcher. */
+export const IMPERSONATABLE_ROLES: { value: "admin" | "user"; label: string }[] = [
+  { value: "admin", label: "Admin" },
+  { value: "user", label: "Agent" },
+];
+
+// sessionStorage keys for the active impersonation session. BOTH are required
+// to rehydrate — a half-present pair is treated as not-impersonating.
+const IMPERSONATE_ROLE_KEY = "le_impersonate_role";
+const IMPERSONATE_TOKEN_KEY = "le_impersonate_token";
+
+interface ImpersonationState {
+  role: "admin" | "user";
+  token: string;
+}
+
+/** Reads a valid impersonation pair from sessionStorage, or null. */
+function readImpersonation(): ImpersonationState | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const role = sessionStorage.getItem(IMPERSONATE_ROLE_KEY);
+  const token = sessionStorage.getItem(IMPERSONATE_TOKEN_KEY);
+  if (!token || (role !== "admin" && role !== "user")) return null;
+  return { role, token };
+}
+
+function clearImpersonationStorage(): void {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(IMPERSONATE_ROLE_KEY);
+  sessionStorage.removeItem(IMPERSONATE_TOKEN_KEY);
+}
 
 export interface UserProfile {
   id: string;
@@ -80,7 +112,28 @@ function sessionProvesEmailPossession(session: Session | null): boolean {
 
 interface AuthContextType {
   user: User | null;
+  /**
+   * EFFECTIVE profile. When an admin is impersonating, `role` is overridden to
+   * the impersonated role so every existing `profile.role` consumer (RequireAdmin,
+   * sidebar getSections, DashboardIndex, TopNav, SiteNav, Index, Login) reflects
+   * the preview automatically — no per-consumer edits. Otherwise === realProfile.
+   */
   profile: UserProfile | null;
+  /** The true, never-overridden profile (the real signed-in identity). */
+  realProfile: UserProfile | null;
+  /** The true role of the signed-in user, or null before load. */
+  realRole: "admin" | "user" | null;
+  /** True when a real admin is actively previewing as a role via a live token. */
+  isImpersonating: boolean;
+  /**
+   * Start, switch, or stop impersonation. No-op unless realRole === 'admin'.
+   * - role != null: awaits POST /api/admin/impersonation {action:'start',role};
+   *   on success stores role+token (sessionStorage + state); on failure THROWS
+   *   and does NOT switch.
+   * - role == null: best-effort POST {action:'stop'}, then ALWAYS clears local
+   *   state + sessionStorage so Exit can never get stuck.
+   */
+  setImpersonatedRole: (role: "admin" | "user" | null) => Promise<void>;
   session: Session | null;
   loading: boolean;
   /**
@@ -103,6 +156,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
+  realProfile: null,
+  realRole: null,
+  isImpersonating: false,
+  setImpersonatedRole: async () => {},
   session: null,
   loading: true,
   adminVerified: false,
@@ -119,16 +176,38 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  // `realProfile` is always the true identity. The EFFECTIVE `profile` exposed
+  // on the context is derived below (role overridden while impersonating).
+  const [realProfile, setRealProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [impersonation, setImpersonation] = useState<ImpersonationState | null>(
+    () => readImpersonation()
+  );
   // isAdminVerified reads sessionStorage (non-reactive), so forceRecheck() bumps
   // a reducer to re-render after a marker write (typed-code verify or amr-mark).
   const [, forceRecheck] = useReducer((x) => x + 1, 0);
 
+  const realRole = realProfile?.role ?? null;
+  // Only honor impersonation locally when the real user is an admin — mirrors
+  // the server, which never escalates a non-admin token.
+  const isImpersonating = impersonation !== null && realRole === "admin";
+  // EFFECTIVE profile — role overridden while an admin previews another role.
+  const profile = useMemo<UserProfile | null>(() => {
+    if (!realProfile) return null;
+    if (isImpersonating && impersonation) {
+      return { ...realProfile, role: impersonation.role };
+    }
+    return realProfile;
+  }, [realProfile, isImpersonating, impersonation]);
+
+  // setProfile shim so existing fetch/refresh code keeps writing the REAL profile.
+  const setProfile = setRealProfile;
+
   // Derived during render (not in an effect) so the first non-loading admin
   // render already reads the correct value — no one-frame flash of admin content.
   // Fail-closed while the profile is unknown: an admin whose profile has not yet
-  // loaded is gated, never briefly granted.
+  // loaded is gated, never briefly granted. Uses the EFFECTIVE profile so a
+  // preview-as-user admin isn't gated, and the wall returns when back as admin.
   const adminVerified =
     !user ? true :
     profile == null ? false :        // profile still loading → gated (fail-closed)
@@ -230,6 +309,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         clearAllAdminVerified();
         forceRecheck();
+        // A sign-out event (e.g. from another tab) must not leave a stale
+        // impersonation pair behind.
+        clearImpersonationStorage();
+        setImpersonation(null);
       }
     });
 
@@ -251,8 +334,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  /**
+   * Start / switch / stop impersonation. Only an admin (realRole === 'admin')
+   * may act; for everyone else this is a no-op. See the AuthContextType doc.
+   */
+  async function setImpersonatedRole(role: "admin" | "user" | null) {
+    if (realRole !== "admin") return;
+
+    if (role === null) {
+      // STOP. Best-effort server revoke, then ALWAYS clear locally so Exit
+      // can't get stuck even if the network call fails.
+      try {
+        await authedFetch("/api/admin/impersonation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop" }),
+        });
+      } catch {
+        // swallow — local clear below is the source of truth for the UI
+      }
+      clearImpersonationStorage();
+      setImpersonation(null);
+      return;
+    }
+
+    // START. Mint a token server-side; only switch on success.
+    const res = await authedFetch("/api/admin/impersonation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start", role }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `Failed to start impersonation (${res.status}): ${text || res.statusText}`
+      );
+    }
+    const data = (await res.json()) as { token: string; role: "admin" | "user" };
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(IMPERSONATE_ROLE_KEY, data.role);
+      sessionStorage.setItem(IMPERSONATE_TOKEN_KEY, data.token);
+    }
+    setImpersonation({ role: data.role, token: data.token });
+  }
+
   async function signOut() {
     const uid = user?.id;
+    // Best-effort revoke of any active impersonation before tearing down auth.
+    if (impersonation) {
+      try {
+        await authedFetch("/api/admin/impersonation", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop" }),
+        });
+      } catch {
+        // ignore — we clear local state regardless
+      }
+    }
+    clearImpersonationStorage();
+    setImpersonation(null);
     await supabase.auth.signOut();
     if (uid) clearAdminVerified(uid);
     setUser(null);
@@ -265,6 +406,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         profile,
+        realProfile,
+        realRole,
+        isImpersonating,
+        setImpersonatedRole,
         session,
         loading,
         adminVerified,
