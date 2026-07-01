@@ -176,8 +176,17 @@ interface AuthContextType {
   ) => Promise<void>;
   /** Sends a 6-digit signup OTP (creates the user if new). Throws on error. */
   sendSignupCode: (email: string) => Promise<void>;
-  /** Verifies the typed signup OTP; a session is established on success. Throws on error. */
-  verifySignupCode: (email: string, code: string) => Promise<void>;
+  /**
+   * Verifies the typed signup OTP; a session is established on success. Returns
+   * the verified `User` (from verifyOtp) so callers have the authoritative user
+   * id to branch on deterministically. Throws on error.
+   */
+  verifySignupCode: (email: string, code: string) => Promise<User>;
+  /**
+   * Read-only, direct fetch of a profile row by user id (no state mutation).
+   * Used post-verify to deterministically decide existing-vs-new account.
+   */
+  fetchProfileSnapshot: (userId: string) => Promise<UserProfile | null>;
   /** Sets the password for the currently-authenticated (just-verified) user. Throws on error. */
   setPassword: (password: string) => Promise<void>;
   /**
@@ -212,7 +221,8 @@ const AuthContext = createContext<AuthContextType>({
   signInWithMicrosoft: async () => {},
   signUp: async () => {},
   sendSignupCode: async () => {},
-  verifySignupCode: async () => {},
+  verifySignupCode: async () => ({} as User),
+  fetchProfileSnapshot: async () => null,
   setPassword: async () => {},
   completeOnboarding: async () => {},
   listIdentities: async () => [],
@@ -305,6 +315,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshProfile() {
     if (user) await fetchProfile(user.id);
+  }
+
+  // Read-only snapshot of a profile row (mirrors fetchProfile's query but never
+  // mutates state). Returns null when no row exists yet — the authoritative
+  // signal that a just-verified account is genuinely new.
+  async function fetchProfileSnapshot(userId: string): Promise<UserProfile | null> {
+    const { data } = await supabase
+      .from("user_profiles")
+      .select()
+      .eq("user_id", userId)
+      .maybeSingle();
+    return (data as UserProfile | null) ?? null;
   }
 
   async function sendAdminEmailCode() {
@@ -437,14 +459,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
-  async function verifySignupCode(email: string, code: string) {
-    const { error } = await supabase.auth.verifyOtp({
+  async function verifySignupCode(email: string, code: string): Promise<User> {
+    const { data, error } = await supabase.auth.verifyOtp({
       email,
       token: code,
       type: "email",
     });
     if (error) throw error;
+    if (!data.user) throw new Error("Verification succeeded but no user was returned.");
     // Session is now live; onAuthStateChange picks it up and fetches the profile.
+    // Returning the verified user lets the caller branch on the authoritative id.
+    return data.user;
   }
 
   async function setPassword(password: string) {
@@ -473,27 +498,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* metadata is non-critical — the profile row below is the source of truth */
     }
 
-    // 2) Profile row. Try the full write (incl. migration-105 columns); if those
-    //    columns don't exist yet on the shared DB, retry with only the columns
-    //    that predate this feature so onboarding still lands the core fields.
+    // 2) Profile row. Upsert (onConflict user_id) rather than update: the row is
+    //    normally created by onAuthStateChange, but upsert closes the silent
+    //    0-row hole where a missing row made a no-op update look like success.
+    //    `role` is intentionally omitted — it is NOT NULL DEFAULT 'user' (migration
+    //    001), so a fresh insert gets the default and an existing admin's role is
+    //    never clobbered. Try the full write (incl. migration-105 columns); if those
+    //    columns don't exist yet on the shared DB, retry with only the pre-existing
+    //    columns. If the RETRY also errors, THROW so the dialog surfaces it.
     const uid = user?.id;
     if (uid) {
       const { error } = await supabase
         .from("user_profiles")
-        .update({
-          first_name: firstName,
-          last_name: lastName,
-          brokerage,
-          persona: details.persona,
-          signup_source: details.signupSource,
-          signup_source_detail: details.signupSourceDetail,
-        })
-        .eq("user_id", uid);
+        .upsert(
+          {
+            user_id: uid,
+            first_name: firstName,
+            last_name: lastName,
+            brokerage,
+            persona: details.persona,
+            signup_source: details.signupSource,
+            signup_source_detail: details.signupSourceDetail,
+          },
+          { onConflict: "user_id" },
+        );
       if (error) {
-        await supabase
+        // persona/source is best-effort until migration 105 lands; core fields
+        // must persist. A retry failure is a real failure — throw it.
+        const { error: retryError } = await supabase
           .from("user_profiles")
-          .update({ first_name: firstName, last_name: lastName, brokerage })
-          .eq("user_id", uid);
+          .upsert(
+            { user_id: uid, first_name: firstName, last_name: lastName, brokerage },
+            { onConflict: "user_id" },
+          );
+        if (retryError) throw retryError;
       }
     }
 
@@ -607,6 +645,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         sendSignupCode,
         verifySignupCode,
+        fetchProfileSnapshot,
         setPassword,
         completeOnboarding,
         listIdentities,

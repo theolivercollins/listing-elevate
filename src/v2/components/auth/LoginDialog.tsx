@@ -248,10 +248,10 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     signInWithPassword,
     sendSignupCode,
     verifySignupCode,
+    fetchProfileSnapshot,
     setPassword: applyPassword,
     completeOnboarding,
     session,
-    profile,
   } = useAuth();
 
   const reduce = useReducedMotion();
@@ -284,17 +284,16 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   const firstNameRef = useRef<HTMLInputElement>(null);
   const codeInputsRef = useRef<(HTMLInputElement | null)[]>([]);
   const prevFocusRef = useRef<Element | null>(null);
-  const profileRef = useRef(profile);
   const advancedRef = useRef(false);
   const doneTimerRef = useRef<number | null>(null);
-  const advanceRef = useRef<() => void>(() => {});
+  const advanceRef = useRef<(userId: string) => void>(() => {});
+  // Whether a session already existed when the verify step was entered. When
+  // true (user was already authed), the session-watch effect must NOT auto-advance
+  // — otherwise an already-signed-in user reaching verify flashes straight through.
+  const sessionAtVerifyEntryRef = useRef(false);
 
   const isSignup = flow === "signup";
   const chk = pwChecks(password);
-
-  useEffect(() => {
-    profileRef.current = profile;
-  }, [profile]);
 
   // Reset all transient state whenever the dialog is (re)opened.
   useEffect(() => {
@@ -315,6 +314,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setLoading(false);
     setError("");
     advancedRef.current = false;
+    sessionAtVerifyEntryRef.current = false;
     if (doneTimerRef.current) {
       clearTimeout(doneTimerRef.current);
       doneTimerRef.current = null;
@@ -439,24 +439,32 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   }
 
   // Post-verify branch (kept in a ref so both the session-watch effect and the
-  // manual OTP submit call the exact same, always-fresh logic — no stale closes).
-  advanceRef.current = () => {
+  // manual OTP submit share one always-fresh implementation — no stale closures).
+  // Deterministic: fetch an authoritative profile snapshot for the just-verified
+  // user id and branch on THAT — never an ambient profile read, never a timer.
+  // A row with a first_name means an existing account (route to done, don't touch
+  // the password); no row / empty first_name means a genuinely new signup → newpw.
+  advanceRef.current = (userId: string) => {
     if (advancedRef.current) return;
     advancedRef.current = true;
     setCodeStage("verified");
-    window.setTimeout(() => {
-      if (profileRef.current?.first_name) {
+    void fetchProfileSnapshot(userId).then((snapshot) => {
+      if (snapshot?.first_name) {
         goDone("You're in", "Taking you to your workspace…");
       } else {
         setStep("newpw");
       }
-    }, 700);
+    });
   };
 
-  // Auto-advance when a session appears on the verify step (e.g. the emailed
-  // link was opened in this same tab).
+  // Auto-advance when a session appears on the verify step (e.g. the emailed link
+  // was opened in this same tab). Only fire on an absent→present transition: if a
+  // session already existed when verify was entered, an already-authed user would
+  // otherwise flash straight through. Branch on the same deterministic snapshot.
   useEffect(() => {
-    if (step === "verify" && session) advanceRef.current();
+    if (step !== "verify" || !session) return;
+    if (sessionAtVerifyEntryRef.current) return;
+    advanceRef.current(session.user.id);
   }, [step, session]);
 
   // Welcome interstitial → profile.
@@ -496,6 +504,9 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     try {
       await sendSignupCode(email.trim());
       advancedRef.current = false;
+      // Record whether a session already existed as we enter verify, so the
+      // session-watch effect only auto-advances on a real absent→present flip.
+      sessionAtVerifyEntryRef.current = !!session;
       setCode(["", "", "", "", "", ""]);
       setCodeStage("idle");
       setStep("verify");
@@ -538,8 +549,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setError("");
     setCodeStage("confirming");
     try {
-      await verifySignupCode(email.trim(), joined);
-      advanceRef.current();
+      const verifiedUser = await verifySignupCode(email.trim(), joined);
+      advanceRef.current(verifiedUser.id);
     } catch (e) {
       setCodeStage("idle");
       setError(errMsg(e, "That code didn't work. Check it and try again."));
@@ -616,6 +627,16 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     }
   }
 
+  // Clear the signup onboarding fields so switching flow / email never carries a
+  // stale name, brokerage, persona, or source into a different account.
+  function resetOnboardingFields() {
+    setFirstName("");
+    setLastName("");
+    setBrokerage("");
+    setPersona(null);
+    setSourceCat(null);
+    setSourceSub(null);
+  }
   function changeEmail() {
     advancedRef.current = false;
     setStep("email");
@@ -623,6 +644,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setLoading(false);
     setCode(["", "", "", "", "", ""]);
     setCodeStage("idle");
+    resetOnboardingFields();
   }
   function useDifferent() {
     changeEmail();
@@ -634,6 +656,9 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setStep("email");
     setPasswordValue("");
     setLoading(false);
+    setCode(["", "", "", "", "", ""]);
+    setCodeStage("idle");
+    resetOnboardingFields();
   }
   function toSignin() {
     advancedRef.current = false;
@@ -641,6 +666,9 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setStep("email");
     setPasswordValue("");
     setLoading(false);
+    setCode(["", "", "", "", "", ""]);
+    setCodeStage("idle");
+    resetOnboardingFields();
   }
 
   // Tab-trap within the card.
