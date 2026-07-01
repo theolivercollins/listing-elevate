@@ -124,6 +124,38 @@ function makeActiveBundle() {
   };
 }
 
+/** Bundle with a client that has a logo but no colors/agent — exercises the
+ *  Brand kit "Not set" placeholder states (spec: brand kit clarity task). */
+function makeBundleWithPartialBrandClient() {
+  const bundle = makeBundle();
+  return {
+    ...bundle,
+    property: {
+      ...bundle.property,
+      client_id: 'client-1',
+      client: {
+        id: 'client-1',
+        name: 'Acme Realty',
+        contact_email: null,
+        phone: null,
+        monthly_rate_cents: null,
+        notes: null,
+        brand_logo_url: 'https://cdn.example.com/logo.png',
+        brand_primary_hex: null,
+        brand_secondary_hex: null,
+        agent_name: null,
+        agent_headshot_url: null,
+        voice_id: null,
+        brokerage: null,
+        realtor_suffix: false,
+        archived_at: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    },
+  };
+}
+
 function makeClientLink() {
   return {
     id: 'pv-client-1',
@@ -156,7 +188,8 @@ function makePublicLink() {
 
 function setupMocks({
   shareLinks = { client: makeClientLink(), public: makePublicLink() },
-} = {}) {
+  bundle = makeBundle(),
+}: { shareLinks?: unknown; bundle?: ReturnType<typeof makeBundle> } = {}) {
   authedFetch.mockImplementation((url: string, init?: RequestInit) => {
     // Bundle fetch (GET /api/admin/studio/properties/:id)
     if (
@@ -166,7 +199,7 @@ function setupMocks({
     ) {
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve(makeBundle()),
+        json: () => Promise.resolve(bundle),
       });
     }
     // Share links fetch (GET /api/admin/studio/properties/:id/preview-links)
@@ -480,5 +513,36 @@ describe('PropertyCommandCenter — poll scheduler (FIX 2: single chain)', () =>
       await vi.advanceTimersByTimeAsync(FAST_POLL_MS * 3);
     });
     expect(bundleGetCount()).toBe(before); // nothing fired after unmount
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Brand kit section clarity — explainer copy + explicit "Not set" placeholders
+// instead of silently omitting missing colors/agent fields.
+// ---------------------------------------------------------------------------
+
+describe('PropertyCommandCenter — Brand kit section clarity', () => {
+  it('renders the explainer line under the Brand kit title', async () => {
+    setupMocks({ bundle: makeBundleWithPartialBrandClient() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(
+      screen.getByText(/logo, colors, and agent card pulled from/i),
+    ).toBeTruthy();
+  });
+
+  it('shows explicit "Not set" placeholders for missing colors and agent instead of omitting them', async () => {
+    setupMocks({ bundle: makeBundleWithPartialBrandClient() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    // brand_logo_url is present, so we hit the full render branch (not the
+    // "incomplete" warning strip) — colors and agent are both missing.
+    const notSet = screen.getAllByText('Not set');
+    // Two color swatches (primary + secondary) + one agent row.
+    expect(notSet.length).toBe(3);
   });
 });

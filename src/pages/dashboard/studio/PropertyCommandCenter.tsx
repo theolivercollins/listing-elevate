@@ -1161,6 +1161,10 @@ const PropertyCommandCenter = () => {
 
         {/* ── Brand kit summary ── */}
         <SectionCard eyebrow="Client" title="Brand kit">
+          <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)', marginBottom: 16 }}>
+            The client's branding applied to this video — logo, colors, and agent card pulled from
+            their client profile.
+          </p>
           {!property.client_id ? (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No client linked.</p>
           ) : !client ? (
@@ -1201,7 +1205,7 @@ const PropertyCommandCenter = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Colors</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {client.brand_primary_hex && (
+                  {client.brand_primary_hex ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       <span
                         style={{
@@ -1218,8 +1222,22 @@ const PropertyCommandCenter = () => {
                         {client.brand_primary_hex}
                       </span>
                     </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: "var(--le-r-sm)",
+                          background: 'var(--le-line-2)',
+                          border: '1px dashed var(--le-line)',
+                          display: 'block',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)' }}>Not set</span>
+                    </div>
                   )}
-                  {client.brand_secondary_hex && (
+                  {client.brand_secondary_hex ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       <span
                         style={{
@@ -1236,13 +1254,27 @@ const PropertyCommandCenter = () => {
                         {client.brand_secondary_hex}
                       </span>
                     </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: "var(--le-r-sm)",
+                          background: 'var(--le-line-2)',
+                          border: '1px dashed var(--le-line)',
+                          display: 'block',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)' }}>Not set</span>
+                    </div>
                   )}
                 </div>
               </div>
 
-              {(client.agent_name || client.agent_headshot_url) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Agent</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Agent</span>
+                {client.agent_name || client.agent_headshot_url ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {client.agent_headshot_url && (
                       <img
@@ -1265,8 +1297,10 @@ const PropertyCommandCenter = () => {
                       </span>
                     )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <span style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>Not set</span>
+                )}
+              </div>
             </div>
           )}
         </SectionCard>
