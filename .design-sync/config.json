@@ -1,0 +1,143 @@
+{
+  "pkg": "reelready",
+  "globalName": "LE",
+  "shape": "package",
+  "projectId": "6ccc645b-aaa3-49bb-9941-a5cfa91f253d",
+  "entry": ".design-sync/entry.tsx",
+  "tsconfig": "tsconfig.app.json",
+  "cssEntry": ".design-sync/.cache/compiled.css",
+  "buildCmd": "npx vite build && mkdir -p .design-sync/.cache && cp dist/assets/index-*.css .design-sync/.cache/compiled.css",
+  "provider": {
+    "component": "DSProvider"
+  },
+  "titleMap": {
+    "Faq": "FAQ",
+    "SonnerToaster": "Sonner Toaster"
+  },
+  "overrides": {
+    "Dialog": {
+      "cardMode": "single",
+      "viewport": "720x480"
+    },
+    "DropdownMenu": {
+      "cardMode": "single",
+      "viewport": "420x360"
+    },
+    "Tooltip": {
+      "cardMode": "single",
+      "viewport": "360x220"
+    },
+    "LoginDialog": {
+      "cardMode": "single",
+      "viewport": "720x520"
+    },
+    "Bars": {
+      "cardMode": "column"
+    },
+    "Icon": {
+      "cardMode": "column"
+    },
+    "KpiCard": {
+      "cardMode": "column"
+    },
+    "PageHeading": {
+      "cardMode": "column"
+    },
+    "Sparkline": {
+      "cardMode": "column"
+    },
+    "LEIcon": {
+      "cardMode": "column"
+    },
+    "SiteNav": {
+      "cardMode": "single",
+      "primaryStory": "Default"
+    },
+    "TopNav": {
+      "cardMode": "single",
+      "primaryStory": "Default"
+    },
+    "Toaster": {
+      "cardMode": "single",
+      "viewport": "420x300"
+    }
+  },
+  "componentSrcMap": {
+    "Button": "src/components/ui/button.tsx",
+    "Dialog": "src/components/ui/dialog.tsx",
+    "DropdownMenu": "src/components/ui/dropdown-menu.tsx",
+    "Input": "src/components/ui/input.tsx",
+    "Label": "src/components/ui/label.tsx",
+    "RadioGroup": "src/components/ui/radio-group.tsx",
+    "Tooltip": "src/components/ui/tooltip.tsx",
+    "Toaster": "src/components/ui/toaster.tsx",
+    "SonnerToaster": "src/components/ui/sonner.tsx",
+    "SiteNav": "src/v2/components/SiteNav.tsx",
+    "LoginDialog": "src/v2/components/auth/LoginDialog.tsx",
+    "Hero": "src/v2/components/landing/Hero.tsx",
+    "Section": "src/v2/components/landing/Section.tsx",
+    "FounderOffer": "src/v2/components/landing/FounderOffer.tsx",
+    "Pricing": "src/v2/components/landing/Pricing.tsx",
+    "SelectedWork": "src/v2/components/landing/SelectedWork.tsx",
+    "FinalCTA": "src/v2/components/landing/FinalCTA.tsx",
+    "Footer": "src/v2/components/landing/Footer.tsx",
+    "MarketComparison": "src/v2/components/landing/MarketComparison.tsx",
+    "Process": "src/v2/components/landing/Process.tsx",
+    "Faq": "src/v2/components/landing/FAQ.tsx",
+    "MarketDomination": "src/v2/components/landing/market/MarketDomination.tsx",
+    "ConsumerDemand": "src/v2/components/landing/market/ConsumerDemand.tsx",
+    "MarketGap": "src/v2/components/landing/market/MarketGap.tsx",
+    "CostComparison": "src/v2/components/landing/market/CostComparison.tsx",
+    "TurnaroundSpeed": "src/v2/components/landing/market/TurnaroundSpeed.tsx",
+    "AccentDot": "src/v2/components/primitives/AccentDot.tsx",
+    "Ambient": "src/v2/components/primitives/Ambient.tsx",
+    "AnimatedCircleCheck": "src/v2/components/primitives/AnimatedIcons.tsx",
+    "AnimatedCircleX": "src/v2/components/primitives/AnimatedIcons.tsx",
+    "LEButton": "src/v2/components/primitives/LEButton.tsx",
+    "LEButtonLink": "src/v2/components/primitives/LEButton.tsx",
+    "LECyclingWord": "src/v2/components/primitives/LECyclingWord.tsx",
+    "LEIcon": "src/v2/components/primitives/LEIcon.tsx",
+    "LELogoMark": "src/v2/components/primitives/LELogoMark.tsx",
+    "Reveal": "src/v2/components/primitives/Reveal.tsx",
+    "SampleBadge": "src/v2/components/primitives/SampleBadge.tsx",
+    "PageHeading": "src/components/dashboard/primitives.tsx",
+    "KpiCard": "src/components/dashboard/primitives.tsx",
+    "Sparkline": "src/components/dashboard/primitives.tsx",
+    "Bars": "src/components/dashboard/primitives.tsx",
+    "Ring": "src/components/dashboard/primitives.tsx",
+    "PropertyThumb": "src/components/dashboard/primitives.tsx",
+    "AIBanner": "src/components/dashboard/primitives.tsx",
+    "MiniStat": "src/components/dashboard/primitives.tsx",
+    "ActivityItem": "src/components/dashboard/primitives.tsx",
+    "HealthCard": "src/components/dashboard/primitives.tsx",
+    "Card": "src/components/dashboard/primitives.tsx",
+    "SectionTitle": "src/components/dashboard/primitives.tsx",
+    "StatusChip": "src/components/dashboard/primitives.tsx",
+    "EmptyState": "src/components/dashboard/primitives.tsx",
+    "Skeleton": "src/components/dashboard/primitives.tsx",
+    "SkeletonRow": "src/components/dashboard/primitives.tsx",
+    "MoneyValue": "src/components/dashboard/primitives.tsx",
+    "Icon": "src/components/dashboard/icons.tsx",
+    "AccountSubNav": "src/components/dashboard/AccountSubNav.tsx",
+    "TopNav": "src/components/TopNav.tsx",
+    "DashboardSidebar": "src/components/DashboardSidebar.tsx",
+    "AddressAutocomplete": "src/components/AddressAutocomplete.tsx",
+    "ThemeToggle": "src/components/brand/ThemeToggle.tsx"
+  },
+  "dtsPropsFor": {
+    "Button": "variant?: \"default\" | \"destructive\" | \"outline\" | \"secondary\" | \"ghost\" | \"link\" | \"accent\";\nsize?: \"default\" | \"sm\" | \"lg\" | \"xl\" | \"icon\";\nasChild?: boolean;\n// + native <button> attributes",
+    "LEButton": "variant?: \"primary\" | \"ghost\";\nsize?: \"sm\" | \"md\" | \"lg\";\nstyle?: React.CSSProperties;\nchildren: React.ReactNode;\n// + native <button> attributes (omits style)",
+    "LEButtonLink": "variant?: \"primary\" | \"ghost\";\nsize?: \"sm\" | \"md\" | \"lg\";\nstyle?: React.CSSProperties;\nto: string;\nchildren: React.ReactNode;",
+    "Input": "// + native <input> attributes (type, value, onChange, placeholder, disabled, etc.)",
+    "Label": "htmlFor?: string;\n// + native <label> attributes",
+    "SampleBadge": "// no public props — fixed presentational sample badge",
+    "LEIcon": "name: \"arrow\" | \"arrowUpRight\" | \"check\" | \"x\" | \"play\" | \"download\" | \"upload\" | \"camera\" | \"image\" | \"orbit\" | \"dollyR\" | \"dollyL\" | \"pan\" | \"pushIn\" | \"parallax\" | \"settings\" | \"menu\" | \"bell\" | \"search\" | \"film\" | \"sun\" | \"moon\" | \"sparkle\" | \"zap\" | \"clock\" | \"dollar\" | \"trash\" | \"more\" | \"bed\" | \"bath\" | \"ruler\" | \"plus\" | \"minus\";\nsize?: number;\ncolor?: string;\nstrokeWidth?: number;",
+    "AccentDot": "animated?: boolean;\nclassName?: string;",
+    "LECyclingWord": "words: string[];\ninterval?: number;",
+    "Reveal": "children: React.ReactNode;\ndelay?: number;\nstyle?: React.CSSProperties;\nclassName?: string;",
+    "Ambient": "dots?: boolean;\nintensity?: \"normal\" | \"softer\";",
+    "LELogoMark": "size?: number;\nvariant?: \"dark\" | \"light\";",
+    "SiteNav": "showSectionLinks?: boolean;\nsolid?: boolean;"
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}

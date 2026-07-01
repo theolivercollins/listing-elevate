@@ -21,3 +21,8 @@ le-1/
 
 # Scratch exports from scripts (e.g. mu-export-templates.ts) — never commit
 tmp/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
