@@ -304,7 +304,7 @@ describe('fetchByToken — properties hls/poster columns (migration 102)', () =>
 
     const r = await fetchByToken('tok');
     expect(r).not.toBeNull();
-    const prop = r?.property as Record<string, unknown>;
+    const prop = r?.property as unknown as Record<string, unknown>;
     expect(prop.horizontal_hls_url).toBe('https://cdn/h.m3u8');
     expect(prop.horizontal_poster_url).toBe('https://cdn/h-poster.jpg');
     expect(prop.vertical_hls_url).toBeNull();
@@ -334,7 +334,7 @@ describe('fetchByToken — properties hls/poster columns (migration 102)', () =>
 
     expect(propertyCallCount).toBe(2);
     expect(r).not.toBeNull();
-    const prop = r?.property as Record<string, unknown>;
+    const prop = r?.property as unknown as Record<string, unknown>;
     // Pre-existing fields survive the fallback.
     expect(prop.id).toBe('p1');
     expect(prop.horizontal_video_url).toBe('https://cdn/h.mp4');
