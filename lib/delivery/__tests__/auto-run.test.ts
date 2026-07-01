@@ -1071,6 +1071,9 @@ describe('resolveAssembling', () => {
     // Single eq-result fn for delivery_runs updates that aren't the lease claim.
     const drUpdateEq = vi.fn().mockResolvedValue({ error: null });
     const propUpdateEq = vi.fn().mockResolvedValue({ error: null });
+    // Named (not inline) so tests can assert on the exact object passed to
+    // properties.update(...) — e.g. hls/poster conditional-spread fields.
+    const propUpdate = vi.fn().mockReturnValue({ eq: propUpdateEq });
     const mlEventsInsert = vi.fn().mockResolvedValue({ error: null });
 
     const db = {
@@ -1082,7 +1085,7 @@ describe('resolveAssembling', () => {
                 maybeSingle: vi.fn().mockResolvedValue({ data: propData, error: null }),
               }),
             }),
-            update: vi.fn().mockReturnValue({ eq: propUpdateEq }),
+            update: propUpdate,
           };
         }
         if (table === 'delivery_runs') {
@@ -1116,7 +1119,7 @@ describe('resolveAssembling', () => {
       }),
     };
 
-    return { db, drUpdateEq, propUpdateEq, mlEventsInsert };
+    return { db, drUpdateEq, propUpdateEq, propUpdate, mlEventsInsert };
   }
 
   it('guard: returns noop when auto_run is false', async () => {
@@ -1268,6 +1271,148 @@ describe('resolveAssembling', () => {
       unitType: 'renders',
       metadata: expect.objectContaining({ reason: 'autopilot_resume', aspect_ratio: '16:9' }),
     }));
+  });
+
+  // ── Bunny HLS + poster persist wiring (migration 102) ─────────────────────
+  //
+  // finalizeAssemblyRender returns hlsUrl/posterUrl only on the fully-successful
+  // Bunny host path (null on every fallback). mp4 + hls + poster are ONE coupled
+  // encode: the autopilot resume path writes all three of an orientation together
+  // and clears hls/poster to null on a fallback, so a stale playlist can never
+  // outlive the mp4 it describes.
+
+  it('Path 2 (hls/poster): writes horizontal_hls_url + horizontal_poster_url when finalize returns them', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-hls', environment: 'v1' as const };
+    const { db, propUpdate } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'horizontal',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: null },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (emitBunnyFinalizeCostEvent as Mock).mockResolvedValue(undefined);
+    (assemblyProviderCostCents as Mock).mockReturnValue(150);
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'complete',
+      videoUrl: 'https://provider.example.com/output.mp4',
+      durationSeconds: 30,
+    });
+    (finalizeAssemblyRender as Mock).mockResolvedValue({
+      url: 'https://bunny.cdn/final-h.mp4',
+      bitrateKbps: 9000,
+      outputBytes: 50_000_000,
+      bunnyWasCalled: true,
+      hlsUrl: 'https://bunny.cdn/final-h.m3u8',
+      posterUrl: 'https://bunny.cdn/final-h-poster.jpg',
+    });
+
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run, 60_000);
+
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
+    expect(propUpdate).toHaveBeenCalledWith({
+      horizontal_video_url: 'https://bunny.cdn/final-h.mp4',
+      horizontal_hls_url: 'https://bunny.cdn/final-h.m3u8',
+      horizontal_poster_url: 'https://bunny.cdn/final-h-poster.jpg',
+    });
+  });
+
+  it('Path 2 (hls/poster): clears horizontal_hls_url/horizontal_poster_url to null when finalize falls back (hlsUrl/posterUrl null)', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const hJob = { jobId: 'job-h-fallback', environment: 'v1' as const };
+    const { db, propUpdate } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'horizontal',
+      },
+      jobRowData: { assembly_h_job: hJob, assembly_v_job: null },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (emitBunnyFinalizeCostEvent as Mock).mockResolvedValue(undefined);
+    (assemblyProviderCostCents as Mock).mockReturnValue(150);
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'complete',
+      videoUrl: 'https://provider.example.com/output.mp4',
+      durationSeconds: 30,
+    });
+    // Fallback path: Bunny unconfigured/download failed — url falls back to the
+    // provider URL, hls/poster stay null.
+    (finalizeAssemblyRender as Mock).mockResolvedValue({
+      url: 'https://provider.example.com/output.mp4',
+      bitrateKbps: null,
+      outputBytes: null,
+      bunnyWasCalled: false,
+      hlsUrl: null,
+      posterUrl: null,
+    });
+
+    const run = makeRun({ stage: 'assembling' });
+    await resolveAssembling(run, 60_000);
+
+    // mp4 + hls + poster are ONE coupled encode: this fallback re-render writes a
+    // new mp4 with no HLS, so hls/poster are CLEARED to null in the same update —
+    // never omitted. Omitting them would let a stale *_hls_url from a previous
+    // successful render survive, and the player would serve the OLD video.
+    expect(propUpdate).toHaveBeenCalledWith({
+      horizontal_video_url: 'https://provider.example.com/output.mp4',
+      horizontal_hls_url: null,
+      horizontal_poster_url: null,
+    });
+  });
+
+  it('Path 2 (hls/poster): writes vertical_hls_url + vertical_poster_url when finalize returns them (vertical-only run)', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+
+    const vJob = { jobId: 'job-v-hls', environment: 'v1' as const };
+    const { db, propUpdate } = makeAssemblingDb({
+      claimRows: [{ id: 'run-1' }],
+      propData: {
+        horizontal_video_url: null,
+        vertical_video_url: null,
+        selected_orientation: 'vertical',
+      },
+      jobRowData: { assembly_h_job: null, assembly_v_job: vJob },
+    });
+    (getSupabase as Mock).mockReturnValue(db);
+    (advanceRun as Mock).mockResolvedValue({});
+    (recordCostEvent as Mock).mockResolvedValue(undefined);
+    (emitBunnyFinalizeCostEvent as Mock).mockResolvedValue(undefined);
+    (assemblyProviderCostCents as Mock).mockReturnValue(150);
+    (pollAssemblyJob as Mock).mockResolvedValue({
+      status: 'complete',
+      videoUrl: 'https://provider.example.com/v-output.mp4',
+      durationSeconds: 30,
+    });
+    (finalizeAssemblyRender as Mock).mockResolvedValue({
+      url: 'https://bunny.cdn/final-v.mp4',
+      bitrateKbps: 5200,
+      outputBytes: 30_000_000,
+      bunnyWasCalled: true,
+      hlsUrl: 'https://bunny.cdn/final-v.m3u8',
+      posterUrl: 'https://bunny.cdn/final-v-poster.jpg',
+    });
+
+    const run = makeRun({ stage: 'assembling' });
+    const result = await resolveAssembling(run, 60_000);
+
+    expect(result).toEqual({ action: 'advanced', to: 'checkpoint_b' });
+    expect(propUpdate).toHaveBeenCalledWith({
+      vertical_video_url: 'https://bunny.cdn/final-v.mp4',
+      vertical_hls_url: 'https://bunny.cdn/final-v.m3u8',
+      vertical_poster_url: 'https://bunny.cdn/final-v-poster.jpg',
+    });
   });
 
   it('Path 2: provider returns no durationSeconds → cost row has nonzero costCents + duration_source:fallback', async () => {

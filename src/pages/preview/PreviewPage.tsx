@@ -112,6 +112,10 @@ type PreviewData = {
   /** Back-compat single-video field. */
   video_url: string | null;
   videos: { horizontal: string | null; vertical: string | null };
+  // Bunny adaptive HLS playlists (migration 102). Always normalized to a
+  // {horizontal,vertical} shape below (null slots when the API omits the
+  // field pre-migration or a render fell back to mp4-only).
+  hls: { horizontal: string | null; vertical: string | null };
   thumbnail_url: string | null;
   brand: Brand | null;
   kind: 'client' | 'public';
@@ -214,6 +218,7 @@ export default function PreviewPage() {
         address_parts: d.address_parts ?? deriveAddressParts(d.address),
         video_url: d.video_url ?? null,
         videos: d.videos ?? { horizontal: d.video_url ?? null, vertical: null },
+        hls: d.hls ?? { horizontal: null, vertical: null },
         thumbnail_url: d.thumbnail_url ?? null,
         brand: d.brand ?? null,
         kind: d.kind ?? 'client',
@@ -268,7 +273,7 @@ export default function PreviewPage() {
   if (notFound) return <NotFoundScreen />;
   if (!data) return <LoadingScreen />;
 
-  const { address_parts, videos, thumbnail_url, brand, kind, capabilities, show_branding } = data;
+  const { address_parts, videos, hls, thumbnail_url, brand, kind, capabilities, show_branding } = data;
 
   const hasHorizontal = Boolean(videos.horizontal);
   const hasVertical = Boolean(videos.vertical);
@@ -283,6 +288,14 @@ export default function PreviewPage() {
       ? videos.vertical!
       : hasHorizontal
       ? videos.horizontal!
+      : null;
+  // Mirrors activeVideoUrl's orientation selection — null when absent (legacy
+  // mp4-only render or pre-migration API response); LEPlayer falls back to `src`.
+  const activeHlsUrl =
+    activeOrientation === 'vertical' && hasVertical
+      ? hls.vertical
+      : hasHorizontal
+      ? hls.horizontal
       : null;
 
   // Download URL hits the T3 download route
@@ -392,6 +405,7 @@ export default function PreviewPage() {
                   <LEPlayer
                     key={activeVideoUrl}
                     src={activeVideoUrl}
+                    hlsSrc={activeHlsUrl ?? undefined}
                     poster={thumbnail_url ?? undefined}
                     orientation={beaconOrientation}
                     onView={() => emit('view')}

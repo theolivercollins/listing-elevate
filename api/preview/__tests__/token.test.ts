@@ -407,6 +407,42 @@ describe('GET superset payload — new fields (spec §2)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// hls field — migration 102 (Bunny adaptive HLS playlists)
+// ---------------------------------------------------------------------------
+
+describe('GET /api/preview/[token] — hls field (migration 102)', () => {
+  it('includes hls.horizontal/hls.vertical when fetchByToken returns the columns', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    // makeFullResult's default `property` shape doesn't include the migration-102
+    // columns — build the full result then extend `property` with them directly.
+    const base = makeFullResult({ horizontal_video_url: 'https://cdn/h.mp4', vertical_video_url: 'https://cdn/v.mp4' });
+    mockFetchByToken.mockResolvedValue({
+      ...base,
+      property: {
+        ...base.property,
+        horizontal_hls_url: 'https://cdn/h.m3u8',
+        vertical_hls_url: 'https://cdn/v.m3u8',
+      },
+    });
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { hls: { horizontal: string | null; vertical: string | null } };
+    expect(body.hls).toEqual({ horizontal: 'https://cdn/h.m3u8', vertical: 'https://cdn/v.m3u8' });
+  });
+
+  it('defaults hls to {horizontal: null, vertical: null} when the columns are absent (pre-migration fallback)', async () => {
+    mockIsWellFormedToken.mockReturnValue(true);
+    mockFetchByToken.mockResolvedValue(makeFullResult());
+    const res = makeRes();
+    await handler(makeReq(), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+    const body = res._body as { hls: { horizontal: string | null; vertical: string | null } };
+    expect(body.hls).toEqual({ horizontal: null, vertical: null });
+  });
+});
+
 describe('address_parts parsing', () => {
   it('splits at first comma: street is before, locality is after without leading space', async () => {
     mockIsWellFormedToken.mockReturnValue(true);

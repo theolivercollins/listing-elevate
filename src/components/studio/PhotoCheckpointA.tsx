@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, Loader2, RefreshCw } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
+import { photoThumb } from '@/lib/image-url';
 
 type PhotoCandidate = {
   id: string;
@@ -54,6 +55,12 @@ const REJECT_CATEGORIES = [
   { value: 'other', label: 'Other' },
 ] as const;
 
+// The replacement pool can hold every candidate photo for a property (up to
+// ~300). Rendering them all at once mounts hundreds of <img> tags on load.
+// Reveal them in batches instead — client-side windowing over the already
+// -fetched `photos` array, no extra network calls.
+const PHOTO_POOL_PAGE_SIZE = 40;
+
 function defaultAcceptedCategory(room: string | null): string {
   if (room === 'exterior_front' || room === 'exterior_back' || room === 'aerial') return 'hero_exterior';
   if (room === 'kitchen' || room === 'living_room' || room === 'master_bedroom' || room === 'bathroom') return 'primary_room';
@@ -88,6 +95,7 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
   const [rejectedReasons, setRejectedReasons] = useState<Record<string, string>>({});
   const [acceptedCategories, setAcceptedCategories] = useState<Record<string, string>>({});
   const [rejectedCategories, setRejectedCategories] = useState<Record<string, string>>({});
+  const [poolVisibleCount, setPoolVisibleCount] = useState(PHOTO_POOL_PAGE_SIZE);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -112,6 +120,7 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
       ));
       setRejectedCategories({});
       setReplacingId(null);
+      setPoolVisibleCount(PHOTO_POOL_PAGE_SIZE);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load photos');
@@ -127,6 +136,8 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
   const photoById = useMemo(() => new Map(photos.map((p) => [p.id, p])), [photos]);
   const selectedPhotos = selectedIds.map((id) => photoById.get(id)).filter(Boolean) as PhotoCandidate[];
   const availablePhotos = photos.filter((p) => !selectedIds.includes(p.id));
+  const visiblePoolPhotos = availablePhotos.slice(0, poolVisibleCount);
+  const remainingPoolCount = availablePhotos.length - visiblePoolPhotos.length;
   const removedSelectedPhotos = photos.filter((p) => p.selected && !selectedIds.includes(p.id));
   const hasRequiredRejectionReasons = removedSelectedPhotos.every((p) => (
     Boolean(rejectedReasons[p.id]?.trim()) && Boolean(rejectedCategories[p.id] ?? defaultRejectedCategory(p.room_type))
@@ -260,8 +271,10 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
                 }}
               >
                 <img
-                  src={photo.file_url}
+                  src={photoThumb(photo.file_url)}
                   alt={roomLabel(photo.room_type)}
+                  loading="lazy"
+                  decoding="async"
                   style={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', background: 'var(--le-surface-2)' }}
                 />
                 <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -377,7 +390,7 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
           </span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(136px, 1fr))', gap: 10 }}>
-          {availablePhotos.map((photo) => (
+          {visiblePoolPhotos.map((photo) => (
             <button
               key={photo.id}
               type="button"
@@ -394,7 +407,13 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
                 cursor: replacingId ? 'pointer' : 'default',
               }}
             >
-              <img src={photo.file_url} alt={roomLabel(photo.room_type)} style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' }} />
+              <img
+                src={photoThumb(photo.file_url)}
+                alt={roomLabel(photo.room_type)}
+                loading="lazy"
+                decoding="async"
+                style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', display: 'block' }}
+              />
               <span style={{ display: 'block', padding: '7px 8px', fontSize: 11.5, color: 'var(--le-ink)', textTransform: 'capitalize' }}>
                 {roomLabel(photo.room_type)} · {scoreLabel(photo.aesthetic_score)}
               </span>
@@ -406,6 +425,16 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
             </button>
           ))}
         </div>
+        {remainingPoolCount > 0 && (
+          <button
+            type="button"
+            className="studio-btn-ghost"
+            style={{ marginTop: 10, width: '100%', justifyContent: 'center', fontSize: 12 }}
+            onClick={() => setPoolVisibleCount((prev) => prev + PHOTO_POOL_PAGE_SIZE)}
+          >
+            Show more photos ({remainingPoolCount} remaining)
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1862,6 +1862,13 @@ async function runAssemblyStep(
 
   let horizontalUrl: string | null = null;
   let verticalUrl: string | null = null;
+  // Bunny HLS playlist + poster URLs (migration 102) — set alongside
+  // horizontalUrl/verticalUrl below only on the fully-successful Bunny host
+  // path (finalizeAssemblyRender leaves them null on every fallback).
+  let horizontalHlsUrl: string | null = null;
+  let horizontalPosterUrl: string | null = null;
+  let verticalHlsUrl: string | null = null;
+  let verticalPosterUrl: string | null = null;
   let assemblyErrored = false;
 
   // Use the assembly router to select the best provider.
@@ -2153,6 +2160,8 @@ async function runAssemblyStep(
           version: 1,
         });
         horizontalUrl = hFinalize.url;
+        horizontalHlsUrl = hFinalize.hlsUrl;
+        horizontalPosterUrl = hFinalize.posterUrl;
         // Render complete — clear persisted job token (no longer needed for resume).
         if (runId) {
           void getSupabase().from("delivery_runs").update({ assembly_h_job: null }).eq("id", runId);
@@ -2255,6 +2264,8 @@ async function runAssemblyStep(
           version: 1,
         });
         verticalUrl = vFinalize.url;
+        verticalHlsUrl = vFinalize.hlsUrl;
+        verticalPosterUrl = vFinalize.posterUrl;
         // Render complete — clear persisted V job token.
         if (runId) {
           void getSupabase().from("delivery_runs").update({ assembly_v_job: null }).eq("id", runId);
@@ -2358,8 +2369,27 @@ async function runAssemblyStep(
   await updatePropertyStatus(propertyId, "complete", {
     thumbnail_url: thumbnailUrl,
     processing_time_ms: totalProcessingMs,
-    ...(horizontalUrl ? { horizontal_video_url: horizontalUrl } : {}),
-    ...(verticalUrl ? { vertical_video_url: verticalUrl } : {}),
+    // mp4 + HLS + poster describe ONE encode and MUST move together. Whenever an
+    // orientation's mp4 is (re)written we also write its hls/poster — as null when
+    // this render produced none (any fallback). Writing hls/poster on a separate
+    // "only if truthy" condition would let a STALE *_hls_url from a previous
+    // successful render survive a success→fallback re-render, so the player would
+    // serve the OLD video. An un-rendered orientation (falsy url) is left
+    // entirely untouched.
+    ...(horizontalUrl
+      ? {
+          horizontal_video_url: horizontalUrl,
+          horizontal_hls_url: horizontalHlsUrl ?? null,
+          horizontal_poster_url: horizontalPosterUrl ?? null,
+        }
+      : {}),
+    ...(verticalUrl
+      ? {
+          vertical_video_url: verticalUrl,
+          vertical_hls_url: verticalHlsUrl ?? null,
+          vertical_poster_url: verticalPosterUrl ?? null,
+        }
+      : {}),
   });
 
   // A single-orientation order intentionally produces just one URL, so the

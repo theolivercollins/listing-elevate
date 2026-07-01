@@ -10,6 +10,7 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { UploadDropzone } from '@/components/studio/share/UploadDropzone';
 import { getRelativeTime } from '@/lib/types';
 import { authedFetch } from '@/lib/api';
+import { photoThumb } from '@/lib/image-url';
 import {
   fetchFolders, createFolder, renameFolder, reorderFolder, deleteFolder,
   videoLibraryAction, type VideoFolder,
@@ -284,7 +285,7 @@ function VideoCard({
         {/* Poster */}
         <div className="le-video-card-poster">
           {item.hero_photo_url ? (
-            <img src={item.hero_photo_url} alt="" loading="lazy" />
+            <img src={photoThumb(item.hero_photo_url)} alt="" loading="lazy" decoding="async" />
           ) : (
             <div className="le-video-card-poster-empty" aria-hidden="true">
               <Film size={26} strokeWidth={1.4} />

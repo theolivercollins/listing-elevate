@@ -7,20 +7,28 @@ import {
 } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authedFetch, lookupMls } from "@/lib/api";
-import { Loader2, Image, X, ArrowRight, Search } from 'lucide-react';
+import { Loader2, Image, Upload, X, ArrowRight, Search } from 'lucide-react';
 import { StudioNav } from '@/components/studio/StudioNav';
 import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
-import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
+import {
+  DriveUploadButton,
+  isDriveUploadConfigured,
+  type DriveStatus,
+} from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
 import { uploadSinglePhoto } from '@/lib/photo-upload';
-import { extractImageFiles } from '@/lib/studio/extract-photos';
+import { photoThumb } from '@/lib/image-url';
 import { digitsOnly, formatNumber } from '@/lib/format';
 import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
 import { getLatestDraft, saveDraft, deleteDraft, isDraftMeaningful, type Draft } from '@/lib/studio/draft';
 
 const MIN_PHOTOS = 5;
 const MAX_PHOTOS = 300;
+// Static per session (env vars never change at runtime) — computed once so
+// the photo-import row's grid can collapse to a single "Upload photos"
+// column when Drive isn't configured, without re-checking on every render.
+const DRIVE_UPLOAD_CONFIGURED = isDriveUploadConfigured();
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
@@ -208,14 +216,12 @@ const StudioNew = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  // Inline error shown right under the photo import buttons — separate from
-  // submitError (bottom-of-form) so a failed folder/zip/Drive import is never
-  // silent. Clears on the next successful import.
-  const [importError, setImportError] = useState<string | null>(null);
+  // Shared status line below the photo-import button row — Drive's
+  // progress/error text lands here (via onStatusChange) so it never pops its
+  // own message under just that button and skews the row.
+  const [driveStatus, setDriveStatus] = useState<DriveStatus>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
-  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
   // Counted the instant a photo is added (matches the pre-eager-upload feel)
@@ -299,55 +305,9 @@ const StudioNew = () => {
         uploadState: 'uploading',
       }));
       setFiles((prev) => [...prev, ...mapped]);
-      if (toAdd.length > 0) setImportError(null);
       mapped.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
     },
     [files.length, uploadFileEntry],
-  );
-
-  /** Handle a zip file or folder selection via extractImageFiles, then merge into files state. */
-  const handleBulkInput = useCallback(
-    async (input: File | FileList) => {
-      try {
-        const extracted = await extractImageFiles(input);
-        if (extracted.length === 0) {
-          // Goal: a failed folder/zip import is never silent.
-          setImportError('No images found in that folder/zip.');
-          return;
-        }
-        // Use functional updater to read current length at the time of commit
-        let droppedForCap = 0;
-        let addedEntries: UploadedFile[] = [];
-        setFiles((prev) => {
-          const remaining = MAX_PHOTOS - prev.length;
-          const toAdd = extracted.slice(0, remaining);
-          droppedForCap = extracted.length - toAdd.length;
-          addedEntries = toAdd.map((f) => ({
-            id: crypto.randomUUID(),
-            file: f,
-            fileName: f.name,
-            localPreview: URL.createObjectURL(f),
-            uploadState: 'uploading' as const,
-          }));
-          return [...prev, ...addedEntries];
-        });
-        setImportError(null); // successful import — clear any prior inline error
-        addedEntries.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
-        // Don't silently truncate — tell the operator what got dropped at the photo cap.
-        if (droppedForCap > 0) {
-          setSubmitError(
-            `Imported ${addedEntries.length} photo${addedEntries.length === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
-          );
-        }
-      } catch (err) {
-        console.error('[studio import]', err);
-        const message =
-          err instanceof Error ? `Bulk import failed: ${err.message}` : 'Bulk import failed';
-        setSubmitError(message);
-        setImportError(message);
-      }
-    },
-    [uploadFileEntry],
   );
 
   const removeFile = (id: string) => {
@@ -1084,30 +1044,13 @@ const StudioNew = () => {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept=".jpg,.jpeg,.png,.heic,.webp"
-                  style={{ display: 'none' }}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    e.target.files && handleFiles(e.target.files)
-                  }
-                />
-                <input
-                  ref={folderInputRef}
-                  type="file"
-                  {...({ webkitdirectory: '', directory: '' } as React.HTMLAttributes<HTMLInputElement>)}
-                  style={{ display: 'none' }}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) =>
-                    e.target.files && handleBulkInput(e.target.files)
-                  }
-                />
-                <input
-                  ref={zipInputRef}
-                  type="file"
-                  accept=".zip,application/zip,application/x-zip-compressed"
+                  accept="image/*"
                   style={{ display: 'none' }}
                   onChange={(e: ChangeEvent<HTMLInputElement>) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleBulkInput(f);
-                    // Reset so the same zip can be re-selected if needed
+                    if (e.target.files) handleFiles(e.target.files);
+                    // Reset so re-selecting the same photo(s) still fires a
+                    // change event — otherwise the browser sees an unchanged
+                    // value and silently does nothing on the next pick.
                     e.target.value = '';
                   }}
                 />
@@ -1119,66 +1062,102 @@ const StudioNew = () => {
                   <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)' }}>
                     or click to browse — JPG, PNG, HEIC, WebP
                   </p>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); folderInputRef.current?.click(); }}
-                      className="studio-btn-ghost studio-btn-sm"
-                    >
-                      Import folder
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); zipInputRef.current?.click(); }}
-                      className="studio-btn-ghost studio-btn-sm"
-                    >
-                      Import ZIP
-                    </button>
-                    {/* Drive upload — only rendered when VITE_GOOGLE_* env vars are set */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <DriveUploadButton
-                        onFilesImported={(imported) => {
-                          // Follow the same MAX_PHOTOS cap pattern as handleBulkInput.
-                          let droppedForCap = 0;
-                          let addedEntries: UploadedFile[] = [];
-                          setFiles((prev) => {
-                            const seen = new Set(prev.map((f) => f.id));
-                            const deduped = imported.filter((f) => !seen.has(f.id));
-                            const remaining = MAX_PHOTOS - prev.length;
-                            const toAdd = deduped.slice(0, remaining);
-                            droppedForCap = deduped.length - toAdd.length;
-                            addedEntries = toAdd.map((f) => ({
-                              id: f.id,
-                              file: f.file,
-                              fileName: f.file.name,
-                              localPreview: f.preview,
-                              uploadState: 'uploading' as const,
-                            }));
-                            return [...prev, ...addedEntries];
-                          });
-                          if (addedEntries.length > 0) setImportError(null);
-                          addedEntries.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
-                          if (droppedForCap > 0) {
-                            setSubmitError(
-                              `Imported ${addedEntries.length} photo${addedEntries.length === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
-                            );
-                          }
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {/* Inline import error — near the buttons, not only at the bottom of the form */}
-                  {importError && (
-                    <p
-                      onClick={(e) => e.stopPropagation()}
-                      role="alert"
-                      style={{ marginTop: 4, fontSize: 11.5, color: 'var(--le-bad)' }}
-                    >
-                      {importError}
-                    </p>
-                  )}
                 </div>
               </div>
+
+              {/* Import row — even 2-column grid so "Upload photos" and
+                  "Upload from Drive" always match widths (collapses to a
+                  single full-width column when Drive isn't configured). */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: DRIVE_UPLOAD_CONFIGURED ? '1fr 1fr' : '1fr',
+                  gap: 8,
+                  marginTop: 12,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="studio-btn-ghost"
+                  style={{ justifyContent: 'center', width: '100%' }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      width: 16,
+                      height: 16,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Upload size={14} strokeWidth={1.8} />
+                  </span>
+                  Upload photos
+                </button>
+                {DRIVE_UPLOAD_CONFIGURED && (
+                  <DriveUploadButton
+                    onStatusChange={setDriveStatus}
+                    onFilesImported={(imported) => {
+                      // Follow the same MAX_PHOTOS cap pattern as the manual upload path.
+                      let droppedForCap = 0;
+                      let addedEntries: UploadedFile[] = [];
+                      let discardedPreviews: string[] = [];
+                      setFiles((prev) => {
+                        const seen = new Set(prev.map((f) => f.id));
+                        const deduped = imported.filter((f) => !seen.has(f.id));
+                        const remaining = MAX_PHOTOS - prev.length;
+                        const toAdd = deduped.slice(0, remaining);
+                        droppedForCap = deduped.length - toAdd.length;
+                        addedEntries = toAdd.map((f) => ({
+                          id: f.id,
+                          file: f.file,
+                          fileName: f.file.name,
+                          localPreview: f.preview,
+                          uploadState: 'uploading' as const,
+                        }));
+                        // Any imported preview that never made it into state —
+                        // dropped as an already-present duplicate (dedup) or
+                        // over the MAX_PHOTOS cap — owns an objectURL that would
+                        // otherwise leak, so collect them for revocation below.
+                        const keptIds = new Set(toAdd.map((f) => f.id));
+                        discardedPreviews = imported
+                          .filter((f) => !keptIds.has(f.id))
+                          .map((f) => f.preview);
+                        return [...prev, ...addedEntries];
+                      });
+                      discardedPreviews.forEach((preview) => URL.revokeObjectURL(preview));
+                      addedEntries.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
+                      if (droppedForCap > 0) {
+                        setSubmitError(
+                          `Imported ${addedEntries.length} photo${addedEntries.length === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
+                        );
+                      }
+                    }}
+                  />
+                )}
+              </div>
+
+              {/* Shared status line — the ONE place Drive progress/error text
+                  renders, below the whole button group, so it never pops its
+                  own message under just that button and skews the row. */}
+              {driveStatus && driveStatus.kind === 'error' && (
+                <p
+                  role="alert"
+                  style={{ marginTop: 8, fontSize: 11.5, textAlign: 'center', color: 'var(--le-bad)' }}
+                >
+                  {driveStatus.text}
+                </p>
+              )}
+              {driveStatus && driveStatus.kind === 'progress' && (
+                <p
+                  aria-live="polite"
+                  style={{ marginTop: 8, fontSize: 11.5, textAlign: 'center', color: 'var(--le-muted)' }}
+                >
+                  {driveStatus.text}
+                </p>
+              )}
 
               {/* Photo count progress */}
               {totalPhotoCount > 0 && totalPhotoCount < MIN_PHOTOS && (
@@ -1255,7 +1234,11 @@ const StudioNew = () => {
                 >
                   {files.map((f) => {
                     const broken = brokenPhotoIds.has(f.id);
-                    const imgSrc = !broken ? (f.publicUrl ?? f.localPreview) : undefined;
+                    const rawSrc = !broken ? (f.publicUrl ?? f.localPreview) : undefined;
+                    // photoThumb() is a safe passthrough for blob:/data: URLs
+                    // (local previews mid-upload) and non-Supabase URLs, so
+                    // it's always safe to wrap unconditionally here.
+                    const imgSrc = rawSrc ? photoThumb(rawSrc) : undefined;
                     const failed = f.uploadState === 'error' || broken;
                     return (
                       <div
@@ -1272,6 +1255,8 @@ const StudioNew = () => {
                           <img
                             src={imgSrc}
                             alt=""
+                            loading="lazy"
+                            decoding="async"
                             style={{
                               width: '100%',
                               height: '100%',

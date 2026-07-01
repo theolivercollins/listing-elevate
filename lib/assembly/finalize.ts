@@ -30,7 +30,7 @@
  *   revert to the raw provider URL (pre-finalize behavior).
  */
 
-import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url, bunnyThumbnailUrl } from "../providers/bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,6 +85,27 @@ export interface FinalizeResult {
    * download failure, or Bunny unconfigured.
    */
   bunnyWasCalled: boolean;
+  /**
+   * Bunny HLS playlist URL (adaptive streaming) — set ONLY on the fully
+   * successful host path (Bunny hosted AND the mp4 HEAD check passed). Null on
+   * every fallback path (kill switch, env guard, download failure, Bunny
+   * unconfigured/host error, or HEAD-check failure where the orphaned Bunny
+   * object is deleted). Persisted into properties.horizontal_hls_url /
+   * vertical_hls_url. Players prefer this over `url` (the progressive mp4) when
+   * present; `url` remains the fetchable mp4 fallback for legacy/non-HLS rows.
+   */
+  hlsUrl: string | null;
+  /**
+   * Bunny per-encode poster/thumbnail URL (thumbnail.jpg) — set on the same
+   * fully-successful path as hlsUrl; null on every fallback path. Persisted into
+   * properties.horizontal_poster_url / vertical_poster_url. Players use it as
+   * the <video> poster so a real frame shows instantly instead of a blank box;
+   * consumers fall back to a hero photo when null. NOT HEAD-validated (a missing
+   * poster is cosmetic — it degrades to the hero-photo/blank fallback, never
+   * blocks playback), unlike the mp4 url which is validated because it is the
+   * load-bearing fallback source.
+   */
+  posterUrl: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +168,7 @@ export async function finalizeAssemblyRender(
 
   // ── Kill switch ───────────────────────────────────────────────────────────
   if ((process.env.LE_ASSEMBLY_FINALIZE ?? "").toLowerCase() === "off") {
-    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false };
+    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false, hlsUrl: null, posterUrl: null };
   }
 
   const orientation = aspectRatio === "16:9" ? "horizontal" : "vertical";
@@ -164,7 +185,7 @@ export async function finalizeAssemblyRender(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[assembly-finalize] download failed — keeping provider URL", { msg, providerUrl });
-    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false };
+    return { url: providerUrl, bitrateKbps: null, outputBytes: null, bunnyWasCalled: false, hlsUrl: null, posterUrl: null };
   }
 
   const outputBytes = videoBytes.byteLength;
@@ -199,7 +220,7 @@ export async function finalizeAssemblyRender(
     // Non-prod without the override flag — skip the Bunny host; return provider
     // URL. Bitrate is still computed above so dev environments can observe it
     // in logs without writing to the shared Bunny library.
-    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false, hlsUrl: null, posterUrl: null };
   }
 
   // ── Host on Bunny Stream ──────────────────────────────────────────────────
@@ -210,7 +231,7 @@ export async function finalizeAssemblyRender(
       propertyId,
       bunnyTitle,
     });
-    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false, hlsUrl: null, posterUrl: null };
   }
 
   try {
@@ -229,9 +250,38 @@ export async function finalizeAssemblyRender(
       // Clean up the orphaned Bunny object — upload succeeded but the rendition
       // URL is inaccessible or 403. Best-effort: a delete failure is non-fatal.
       deleteBunnyVideo(hosted.guid).catch(() => {});
-      return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true };
+      // Orphan deleted — the HLS playlist + poster would 404, so never persist
+      // them. url falls back to the provider mp4; hls/poster stay null (legacy
+      // mp4-only shape).
+      return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: true, hlsUrl: null, posterUrl: null };
     }
-    return { url: hosted.mp4Url, bitrateKbps, outputBytes, bunnyWasCalled: true };
+    // Fully successful host: capture Bunny's adaptive HLS playlist + per-encode
+    // poster alongside the validated mp4. mp4Url stays the fallback `url`;
+    // hlsUrl/posterUrl are the additive fast-path the players prefer.
+    //
+    // Derive the poster in its OWN guard: bunnyThumbnailUrl calls cfg() and,
+    // while it won't realistically throw here (the host + HEAD checks above
+    // already succeeded), a throw must NEVER fall through to the catch below and
+    // discard an already-validated mp4. A poster-derivation failure degrades to
+    // "no poster", never a lost or stale video.
+    let posterUrl: string | null = null;
+    try {
+      posterUrl = bunnyThumbnailUrl(hosted.guid);
+    } catch (posterErr) {
+      const pMsg = posterErr instanceof Error ? posterErr.message : String(posterErr);
+      console.warn(
+        "[assembly-finalize] poster derivation failed — keeping hosted mp4 without a poster",
+        { msg: pMsg, propertyId, bunnyTitle },
+      );
+    }
+    return {
+      url: hosted.mp4Url,
+      bitrateKbps,
+      outputBytes,
+      bunnyWasCalled: true,
+      hlsUrl: hosted.hlsUrl,
+      posterUrl,
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[assembly-finalize] bunny host failed — keeping provider URL", {
@@ -239,6 +289,6 @@ export async function finalizeAssemblyRender(
       propertyId,
       bunnyTitle,
     });
-    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false };
+    return { url: providerUrl, bitrateKbps, outputBytes, bunnyWasCalled: false, hlsUrl: null, posterUrl: null };
   }
 }

@@ -62,11 +62,35 @@ let _tokenCache: CachedToken | null = null;
 let _tokenClient: google.accounts.oauth2.TokenClient | null = null;
 
 /**
+ * Sentinel resolved by requestDriveAccessToken() when the user cancels the
+ * OAuth flow (closes the popup, or denies as it's closing) rather than a
+ * genuine failure. Distinct from any real access token so callers can
+ * `===`-check it — see CANCEL_ERROR_TYPES below for the exact GIS `type`
+ * strings this covers. A cancel is normal, expected user behavior, so it
+ * resolves instead of rejecting — the caller should treat it as "closed the
+ * picker, do nothing" rather than show a red error.
+ */
+export const DRIVE_AUTH_CANCELLED = Symbol('drive-auth-cancelled');
+
+/** Either a real Drive access token, or the cancel sentinel above. */
+export type DriveAuthResult = string | typeof DRIVE_AUTH_CANCELLED;
+
+/**
+ * GIS `type` strings (from error_callback) that mean "the operator backed
+ * out" rather than a genuine OAuth failure: closing the popup themselves
+ * (`popup_closed`, `popup_closed_by_user`) or denying consent as the popup
+ * goes away (`access_denied`). Strict equality only — no substring/fuzzy
+ * matching — so a real OAuth error (bad client id, redirect mismatch, etc.)
+ * always still rejects and surfaces to the operator.
+ */
+const CANCEL_ERROR_TYPES = new Set(['popup_closed', 'popup_closed_by_user', 'access_denied']);
+
+/**
  * GIS bakes the callback into the client at construction time, so the one
  * reused client's fixed callback delegates to whichever promise is currently
  * in flight via these refs.
  */
-let _pendingResolve: ((token: string) => void) | null = null;
+let _pendingResolve: ((token: DriveAuthResult) => void) | null = null;
 let _pendingReject: ((err: Error) => void) | null = null;
 
 /**
@@ -106,12 +130,21 @@ function getOrCreateTokenClient(clientId: string): google.accounts.oauth2.TokenC
       }
     },
     error_callback: (err) => {
+      const resolve = _pendingResolve;
       const reject = _pendingReject;
       _pendingResolve = null;
       _pendingReject = null;
       // GIS SDK types only declare `message`, but at runtime the object
       // also exposes `type` (e.g. "popup_closed") which is more actionable.
       const gisErr = err as unknown as { type?: string; message?: string };
+      if (gisErr.type && CANCEL_ERROR_TYPES.has(gisErr.type)) {
+        // The operator closed the picker — expected, not a failure. Resolve
+        // to the sentinel so the UI never renders a red "popup_closed"
+        // message (previously: always rejected, wrapping the raw GIS type
+        // string as the Error message shown to the operator).
+        resolve?.(DRIVE_AUTH_CANCELLED);
+        return;
+      }
       reject?.(new Error(gisErr.type ?? gisErr.message ?? 'oauth_error'));
     },
   });
@@ -119,7 +152,8 @@ function getOrCreateTokenClient(clientId: string): google.accounts.oauth2.TokenC
 }
 
 /**
- * Resolves with a Drive read-only access token.
+ * Resolves with a Drive read-only access token, or the DRIVE_AUTH_CANCELLED
+ * sentinel if the operator cancels the OAuth flow (closes the popup).
  *
  * A cached token is returned immediately — no popup, no GIS round-trip — as
  * long as it's more than 60s from expiry. Otherwise this initiates a Google
@@ -127,16 +161,21 @@ function getOrCreateTokenClient(clientId: string): google.accounts.oauth2.TokenC
  * client (built once, lazily) configured with `prompt: ''` so the refresh
  * reuses the existing grant silently rather than re-prompting for consent.
  *
- * Rejects if the user closes the popup or an error occurs.
+ * Only rejects for a genuine OAuth error — a user cancel never throws (see
+ * CANCEL_ERROR_TYPES above).
  */
-export function requestDriveAccessToken({ clientId }: { clientId: string }): Promise<string> {
+export function requestDriveAccessToken({
+  clientId,
+}: {
+  clientId: string;
+}): Promise<DriveAuthResult> {
   if (_tokenCache && Date.now() < _tokenCache.expiresAt - 60_000) {
     return Promise.resolve(_tokenCache.token);
   }
 
   return loadScript(GIS_URL).then(
     () =>
-      new Promise<string>((resolve, reject) => {
+      new Promise<DriveAuthResult>((resolve, reject) => {
         _pendingResolve = resolve;
         _pendingReject = reject;
         const client = getOrCreateTokenClient(clientId);

@@ -186,6 +186,24 @@ export async function resolveHeroPhotoUrl(
   }
 }
 
+/** The property columns fetchByToken selects and returns. `horizontal_hls_url`
+ * and the other three migration-102 columns are optional: the pre-102 fallback
+ * select (see below) omits them, and finalize/pipeline may leave them null. */
+interface PreviewProperty {
+  id: string;
+  address: string;
+  horizontal_video_url: string | null;
+  vertical_video_url: string | null;
+  client_id: string | null;
+  brokerage: string | null;
+  // Migration-102 (Bunny adaptive HLS + poster). Absent on the pre-102 fallback
+  // select; null on legacy/fallback renders.
+  horizontal_hls_url?: string | null;
+  horizontal_poster_url?: string | null;
+  vertical_hls_url?: string | null;
+  vertical_poster_url?: string | null;
+}
+
 export async function fetchByToken(token: string) {
   const db = getSupabase();
   const { data: pv } = await db.from('property_previews').select('*').eq('token', token).maybeSingle();
@@ -196,11 +214,34 @@ export async function fetchByToken(token: string) {
   // rows have no such property → undefined → treated as not revoked).
   const revokedAt = (pv as { revoked_at?: string | null }).revoked_at ?? null;
   const expired = baseExpired || revokedAt != null;
-  const { data: property } = await db
+  // horizontal_hls_url/horizontal_poster_url/vertical_hls_url/vertical_poster_url
+  // are migration-102 columns (Bunny adaptive HLS + poster, additive/nullable).
+  // Try the full select first; on 42703 (undefined_column — migration 102 not yet
+  // applied on this env's shared DB) retry with the pre-102 column list so the
+  // preview endpoint never 404s mid-rollout. Mirrors fetchPreviewMeta's identical
+  // 42703-retry pattern for the migration-087 show_branding column below.
+  const fullSelect = await db
     .from('properties')
-    .select('id, address, horizontal_video_url, vertical_video_url, client_id, brokerage')
+    .select('id, address, horizontal_video_url, vertical_video_url, horizontal_hls_url, horizontal_poster_url, vertical_hls_url, vertical_poster_url, client_id, brokerage')
     .eq('id', pv.property_id)
     .maybeSingle();
+  // Explicit shape (was Record<string, any>): the full-select and fallback-select
+  // column lists differ only in the migration-102 hls/poster columns, so those
+  // four are optional here — the pre-102 fallback branch omits them. `address` is
+  // typed `string` (not `string | null`) to match the caller contract: callers
+  // pass `property.address` straight into parseAddressParts(address: string)
+  // without a null guard. Narrowing off `any` catches future `property.*` typos.
+  // The untyped Supabase client returns `data` as `any`, so both branches assign
+  // cleanly.
+  let property: PreviewProperty | null = fullSelect.data;
+  if (fullSelect.error && (fullSelect.error as { code?: string }).code === '42703') {
+    const fallback = await db
+      .from('properties')
+      .select('id, address, horizontal_video_url, vertical_video_url, client_id, brokerage')
+      .eq('id', pv.property_id)
+      .maybeSingle();
+    property = fallback.data;
+  }
   if (!property) return null;
   let client = null;
   if (property.client_id) {

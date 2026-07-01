@@ -9,15 +9,23 @@ const mockOpenPicker = vi.fn();
 const mockExpandFoldersToImages = vi.fn();
 const mockDownloadDriveFile = vi.fn();
 
-vi.mock('@/lib/google-picker', () => ({
-  requestDriveAccessToken: (...args: unknown[]) => mockRequestDriveAccessToken(...args),
-  openPicker: (...args: unknown[]) => mockOpenPicker(...args),
-  expandFoldersToImages: (...args: unknown[]) => mockExpandFoldersToImages(...args),
-  downloadDriveFile: (...args: unknown[]) => mockDownloadDriveFile(...args),
-}));
+vi.mock('@/lib/google-picker', async (importOriginal) => {
+  // Spread the real module first so DRIVE_AUTH_CANCELLED stays the exact
+  // same symbol reference the component imports — a re-declared mock value
+  // would never `===`-match it.
+  const actual = await importOriginal<typeof import('@/lib/google-picker')>();
+  return {
+    ...actual,
+    requestDriveAccessToken: (...args: unknown[]) => mockRequestDriveAccessToken(...args),
+    openPicker: (...args: unknown[]) => mockOpenPicker(...args),
+    expandFoldersToImages: (...args: unknown[]) => mockExpandFoldersToImages(...args),
+    downloadDriveFile: (...args: unknown[]) => mockDownloadDriveFile(...args),
+  };
+});
 
 // Import AFTER vi.mock so it receives the mocked module.
-import { DriveUploadButton } from '../DriveUploadButton';
+import { DRIVE_AUTH_CANCELLED } from '@/lib/google-picker';
+import { DriveUploadButton, isDriveUploadConfigured } from '../DriveUploadButton';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -120,17 +128,40 @@ describe('DriveUploadButton', () => {
     expect(onFilesImported).not.toHaveBeenCalled();
   });
 
+  // ── Cancel sentinel (closed OAuth popup) ─────────────────────────────────────
+
+  it('does not import files or report an error when the OAuth popup is closed (cancel sentinel)', async () => {
+    stubEnvs();
+    mockRequestDriveAccessToken.mockResolvedValue(DRIVE_AUTH_CANCELLED);
+
+    const onFilesImported = vi.fn();
+    const onStatusChange = vi.fn();
+    render(
+      <DriveUploadButton onFilesImported={onFilesImported} onStatusChange={onStatusChange} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
+
+    await waitFor(() => expect(mockRequestDriveAccessToken).toHaveBeenCalledTimes(1));
+    expect(mockOpenPicker).not.toHaveBeenCalled(); // never reached step 2
+    expect(onFilesImported).not.toHaveBeenCalled();
+    // The cancel is silent — no error status is ever reported.
+    expect(onStatusChange.mock.calls.some(([status]) => status?.kind === 'error')).toBe(false);
+  });
+
   // ── Error handling ───────────────────────────────────────────────────────────
 
-  it('shows an inline error message when requestDriveAccessToken rejects', async () => {
+  it('reports an error via onStatusChange when requestDriveAccessToken rejects with a genuine error', async () => {
     stubEnvs();
     mockRequestDriveAccessToken.mockRejectedValue(new Error('Popup blocked'));
 
-    render(<DriveUploadButton onFilesImported={vi.fn()} />);
+    const onStatusChange = vi.fn();
+    render(<DriveUploadButton onFilesImported={vi.fn()} onStatusChange={onStatusChange} />);
     fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
 
-    await screen.findByRole('alert');
-    expect(screen.getByRole('alert')).toHaveTextContent('Popup blocked');
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenCalledWith({ kind: 'error', text: 'Popup blocked' }),
+    );
   });
 
   // ── Partial-success downloads (Promise.allSettled) ───────────────────────────
@@ -158,7 +189,8 @@ describe('DriveUploadButton', () => {
     URL.createObjectURL = vi.fn(() => 'blob:preview');
 
     const onFilesImported = vi.fn();
-    render(<DriveUploadButton onFilesImported={onFilesImported} />);
+    const onStatusChange = vi.fn();
+    render(<DriveUploadButton onFilesImported={onFilesImported} onStatusChange={onStatusChange} />);
     fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
 
     await waitFor(() => expect(onFilesImported).toHaveBeenCalledTimes(1));
@@ -167,12 +199,14 @@ describe('DriveUploadButton', () => {
     expect(imported).toHaveLength(1);
     expect(imported[0].id).toBe('file-1');
 
-    // Non-fatal progress notice should appear (not an alert).
+    // Non-fatal progress notice reported to the parent (not an error).
     await waitFor(() => {
-      expect(screen.getByText(/imported 1 photo.*1 failed/i)).toBeInTheDocument();
+      expect(onStatusChange).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'progress', text: expect.stringMatching(/imported 1 photo.*1 failed/i) }),
+      );
     });
-    // Hard error alert must NOT appear.
-    expect(screen.queryByRole('alert')).toBeNull();
+    // Hard error must NOT be reported.
+    expect(onStatusChange.mock.calls.some(([status]) => status?.kind === 'error')).toBe(false);
 
     URL.createObjectURL = origCreateObjectURL;
   });
@@ -190,11 +224,15 @@ describe('DriveUploadButton', () => {
     mockDownloadDriveFile.mockRejectedValue(new Error('403 Forbidden'));
 
     const onFilesImported = vi.fn();
-    render(<DriveUploadButton onFilesImported={onFilesImported} />);
+    const onStatusChange = vi.fn();
+    render(<DriveUploadButton onFilesImported={onFilesImported} onStatusChange={onStatusChange} />);
     fireEvent.click(screen.getByRole('button', { name: /upload photos from google drive/i }));
 
-    await screen.findByRole('alert');
-    expect(screen.getByRole('alert')).toHaveTextContent(/failed/i);
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'error', text: expect.stringMatching(/failed/i) }),
+      ),
+    );
     expect(onFilesImported).not.toHaveBeenCalled();
   });
 
@@ -231,6 +269,21 @@ describe('DriveUploadButton', () => {
     expect(imported).toHaveLength(1);
 
     URL.createObjectURL = origCreateObjectURL;
+  });
+});
+
+describe('isDriveUploadConfigured', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns false when either required env var is absent', () => {
+    expect(isDriveUploadConfigured()).toBe(false);
+  });
+
+  it('returns true when both required env vars are set', () => {
+    stubEnvs();
+    expect(isDriveUploadConfigured()).toBe(true);
   });
 });
 

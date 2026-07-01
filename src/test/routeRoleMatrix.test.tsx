@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // ── Mock the auth module ────────────────────────────────────────────────────
@@ -270,6 +270,12 @@ function getTestIds(container: HTMLElement) {
   );
 }
 
+// AppRoutes lazy-loads every dashboard/studio/blog/email page (feat/studio-perf),
+// so the mocked page module resolves asynchronously behind a Suspense boundary
+// even though `vi.mock` intercepts it. Assertions that depend on a specific
+// page having mounted must `waitFor` that resolution instead of reading the
+// DOM synchronously right after `render()`.
+
 describe("Route × Role Matrix", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -299,45 +305,51 @@ describe("Route × Role Matrix", () => {
       mockAuthValue.loading = false;
     });
 
-    it("/dashboard renders AgentHome (not Overview)", () => {
+    it("/dashboard renders AgentHome (not Overview)", async () => {
       const { container } = renderAt("/dashboard");
-      const ids = getTestIds(container);
-      expect(ids).toContain("agent-home");
-      expect(ids).not.toContain("page-overview");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("agent-home");
+      });
+      expect(getTestIds(container)).not.toContain("page-overview");
     });
 
-    it("/dashboard/account/profile renders without redirect loop", () => {
+    it("/dashboard/account/profile renders without redirect loop", async () => {
       const { container } = renderAt("/dashboard/account/profile");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-profile");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-profile");
+      });
     });
 
-    it("/dashboard/account/billing renders", () => {
+    it("/dashboard/account/billing renders", async () => {
       const { container } = renderAt("/dashboard/account/billing");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-billing");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-billing");
+      });
     });
 
-    it("/dashboard/pipeline redirects to /dashboard (not /account loop)", () => {
+    it("/dashboard/pipeline redirects to /dashboard (not /account loop)", async () => {
       const { container } = renderAt("/dashboard/pipeline");
-      const ids = getTestIds(container);
       // Should show AgentHome (because we redirected to /dashboard)
-      expect(ids).toContain("agent-home");
-      expect(ids).not.toContain("page-pipeline");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("agent-home");
+      });
+      expect(getTestIds(container)).not.toContain("page-pipeline");
     });
 
-    it("/dashboard/finances redirects to /dashboard", () => {
+    it("/dashboard/finances redirects to /dashboard", async () => {
       const { container } = renderAt("/dashboard/finances");
-      const ids = getTestIds(container);
-      expect(ids).toContain("agent-home");
-      expect(ids).not.toContain("page-finances");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("agent-home");
+      });
+      expect(getTestIds(container)).not.toContain("page-finances");
     });
 
-    it("/dashboard/users redirects to /dashboard", () => {
+    it("/dashboard/users redirects to /dashboard", async () => {
       const { container } = renderAt("/dashboard/users");
-      const ids = getTestIds(container);
-      expect(ids).toContain("agent-home");
-      expect(ids).not.toContain("page-users");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("agent-home");
+      });
+      expect(getTestIds(container)).not.toContain("page-users");
     });
   });
 
@@ -349,35 +361,40 @@ describe("Route × Role Matrix", () => {
       mockAuthValue.adminVerified = true;
     });
 
-    it("/dashboard renders Overview (operator landing)", () => {
+    it("/dashboard renders Overview (operator landing)", async () => {
       const { container } = renderAt("/dashboard");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-overview");
-      expect(ids).not.toContain("agent-home");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-overview");
+      });
+      expect(getTestIds(container)).not.toContain("agent-home");
     });
 
-    it("/dashboard/pipeline renders", () => {
+    it("/dashboard/pipeline renders", async () => {
       const { container } = renderAt("/dashboard/pipeline");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-pipeline");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-pipeline");
+      });
     });
 
-    it("/dashboard/finances renders", () => {
+    it("/dashboard/finances renders", async () => {
       const { container } = renderAt("/dashboard/finances");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-finances");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-finances");
+      });
     });
 
-    it("/dashboard/users renders", () => {
+    it("/dashboard/users renders", async () => {
       const { container } = renderAt("/dashboard/users");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-users");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-users");
+      });
     });
 
-    it("/dashboard/account/profile renders", () => {
+    it("/dashboard/account/profile renders", async () => {
       const { container } = renderAt("/dashboard/account/profile");
-      const ids = getTestIds(container);
-      expect(ids).toContain("page-profile");
+      await waitFor(() => {
+        expect(getTestIds(container)).toContain("page-profile");
+      });
     });
   });
 });
