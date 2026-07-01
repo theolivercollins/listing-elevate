@@ -34,14 +34,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { continuePipelineAfterPhotoSelection } = await import('../../../lib/pipeline.js');
+    // Serialize with the operator Resume/Retry actions and the stuck-reaper's
+    // zero-scene re-fire under the SHARED per-run resolve lease so a duplicate
+    // hop (or a hop racing a manual Resume) can never both pass runScripting's
+    // 0-scene guard and double-submit scenes = duplicate paid provider jobs.
     // Runs to completion under this function's own 300s budget. On any thrown
     // error we surface it via setRunError below so the run never sits at
     // stage='generating' with error=NULL.
-    await continuePipelineAfterPhotoSelection(run.property_id, {
-      order_mode: 'operator',
-      delivery_run_id: runId,
-    });
+    const { resumeGeneratingUnderLease } = await import('../../../lib/delivery/resume-generation.js');
+    const outcome = await resumeGeneratingUnderLease(runId, run.property_id);
+    if (!outcome.ran) {
+      // The run is already being (re)fired by a concurrent actor (a manual
+      // Resume, the stuck-reaper, or a duplicate hop). Do NOT double-fire and do
+      // NOT error the run — the in-flight resume owns the lifecycle.
+      console.warn(`[pipeline/continue] resume lease held for run ${runId}; another actor is already (re)firing — no-op`);
+      return res.status(200).json({ status: 'in_progress', runId });
+    }
     return res.status(200).json({ status: 'complete', runId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

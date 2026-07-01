@@ -13,6 +13,9 @@
  *     • Only after DELIVERY_GENERATING_STUCK_MINUTES (15 min from updated_at):
  *       setRunError + updatePropertyStatus('needs_review').
  *     • Before 15 min: skip (may still be mid-render).
+ *     • If the run's error is already RESUME_BALANCE_ERROR (set at submit time
+ *       by resumeRunErrorAction in ../pipeline.ts on an Atlas 402): skip —
+ *       never overwrite the actionable balance message with the generic one.
  *
  *   Path C — Otherwise (some scene progressing or has a clip):
  *     • Left alone — no-false-positive guard.
@@ -29,26 +32,29 @@ import {
   DELIVERY_GENERATING_REFIRE_MINUTES,
   DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES,
 } from "../stuck-reaper.js";
+// Real (unmocked) import — a pure string constant, no side effects on load.
+// Keeps the "already-actionable" test below in sync with the real message
+// instead of duplicating the literal string.
+import { RESUME_BALANCE_ERROR } from "../../pipeline.js";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 // These must be declared before vi.mock calls because vi.mock factory functions
 // run lazily but are hoisted to the top of the file by the test runner.
 
 const mockSetRunError = vi.fn();
-const mockUpdateRun = vi.fn();
-const mockContinuePipeline = vi.fn();
+const mockResumeGeneratingUnderLease = vi.fn();
 const mockUpdatePropertyStatus = vi.fn();
 
-// reapStuckGeneratingDeliveryRuns dynamically imports lib/delivery/runs.js and
-// lib/pipeline.js. Hoist the mocks so they are in place before the reaper
-// resolves its dynamic imports.
+// reapStuckGeneratingDeliveryRuns dynamically imports lib/delivery/runs.js and,
+// for the Path A zero-scene re-fire, lib/delivery/resume-generation.js (the
+// shared per-run resolve-lease mutex). Hoist the mocks so they are in place
+// before the reaper resolves its dynamic imports.
 vi.mock("../../delivery/runs.js", () => ({
   setRunError: (...a: unknown[]) => mockSetRunError(...a),
-  updateRun: (...a: unknown[]) => mockUpdateRun(...a),
 }));
 
-vi.mock("../../pipeline.js", () => ({
-  continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipeline(...a),
+vi.mock("../../delivery/resume-generation.js", () => ({
+  resumeGeneratingUnderLease: (...a: unknown[]) => mockResumeGeneratingUnderLease(...a),
 }));
 
 vi.mock("../../db.js", () => ({
@@ -60,10 +66,9 @@ vi.mock("../../db.js", () => ({
 beforeEach(() => {
   mockSetRunError.mockReset();
   mockSetRunError.mockResolvedValue(undefined);
-  mockUpdateRun.mockReset();
-  mockUpdateRun.mockResolvedValue({});
-  mockContinuePipeline.mockReset();
-  mockContinuePipeline.mockResolvedValue(undefined);
+  mockResumeGeneratingUnderLease.mockReset();
+  // Default: the resolve lease is free → the re-fire runs, ran:true.
+  mockResumeGeneratingUnderLease.mockResolvedValue({ ran: true, result: undefined });
   mockUpdatePropertyStatus.mockReset();
   mockUpdatePropertyStatus.mockResolvedValue(undefined);
   // Non-prod write guard: set production so the reaper executes.
@@ -81,6 +86,7 @@ type RunRow = {
   property_id: string;
   updated_at: string;
   created_at?: string;
+  error?: string | null;
 };
 
 /**
@@ -181,7 +187,7 @@ function runWithAges(
 describe("reapStuckGeneratingDeliveryRuns", () => {
   // ── Path A: zero-scene runs (re-fire / give-up) ───────────────────────────
 
-  it("(ii-a) zero-scene run within recovery window (20 min) → re-fires pipeline, reaped, no setRunError", async () => {
+  it("(ii-a) zero-scene run within recovery window (20 min) → re-fires under the lease, reaped, no setRunError", async () => {
     const db = buildDb({
       runRows: [stuckRun("run-zero", "prop-zero")],
       sceneRowsByProperty: { "prop-zero": [] },
@@ -191,19 +197,13 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(1);
     expect(result.ids).toEqual(["run-zero"]);
-    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
-    expect(mockContinuePipeline).toHaveBeenCalledWith(
-      "prop-zero",
-      expect.objectContaining({ delivery_run_id: "run-zero" }),
-    );
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
+    // resumeGeneratingUnderLease is keyed (runId, propertyId).
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledWith("run-zero", "prop-zero");
     expect(mockSetRunError).not.toHaveBeenCalled();
   });
 
-  it("zero-scene run, 6 min old → re-fires once; bumps updated_at before pipeline call; no setRunError", async () => {
-    const callOrder: string[] = [];
-    mockUpdateRun.mockImplementation(async () => { callOrder.push("updateRun"); });
-    mockContinuePipeline.mockImplementation(async () => { callOrder.push("continue"); });
-
+  it("zero-scene run, 6 min old → re-fires once through the lease; no setRunError", async () => {
     const db = buildDb({
       runRows: [runAgeMin("run-6min", "prop-6min", 6)],
       sceneRowsByProperty: { "prop-6min": [] },
@@ -211,19 +211,58 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
 
-    // Order: updateRun must precede continuePipeline (the overlap-guard relies on it)
-    expect(callOrder).toEqual(["updateRun", "continue"]);
-    expect(mockUpdateRun).toHaveBeenCalledWith("run-6min", expect.any(Object));
-    expect(mockContinuePipeline).toHaveBeenCalledWith(
-      "prop-6min",
-      expect.objectContaining({ delivery_run_id: "run-6min" }),
-    );
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledWith("run-6min", "prop-6min");
     expect(mockSetRunError).not.toHaveBeenCalled();
     expect(result.reaped).toBe(1);
     expect(result.ids).toEqual(["run-6min"]);
   });
 
-  it("zero-scene run, window exhausted (50 min) → give-up: setRunError 'after auto-retry' + updatePropertyStatus 'failed'; no pipeline call", async () => {
+  it("zero-scene run, lease HELD by a concurrent resolver → skip cleanly: no setRunError, NOT reaped", async () => {
+    // Another actor (a manual Resume or a prior tick still running the director)
+    // holds the per-run lease → resumeGeneratingUnderLease reports ran:false.
+    mockResumeGeneratingUnderLease.mockResolvedValueOnce({ ran: false });
+
+    const db = buildDb({
+      runRows: [runAgeMin("run-held", "prop-held", 6)],
+      sceneRowsByProperty: { "prop-held": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
+    // No error stamped, no property status change — pure skip, retries next tick.
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
+  });
+
+  it("lease held on run A does NOT consume the tick's re-fire cap → run B still re-fires", async () => {
+    // run-a's lease is held (skip), run-b's is free (re-fire). Because the skip
+    // doesn't burn the 1-per-tick cap, run-b is still re-fired this tick.
+    mockResumeGeneratingUnderLease
+      .mockResolvedValueOnce({ ran: false })              // run-a: lease held
+      .mockResolvedValueOnce({ ran: true, result: undefined }); // run-b: fired
+
+    const db = buildDb({
+      runRows: [
+        runAgeMin("run-a", "prop-a", 6),
+        runAgeMin("run-b", "prop-b", 6),
+      ],
+      sceneRowsByProperty: { "prop-a": [], "prop-b": [] },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(mockResumeGeneratingUnderLease).toHaveBeenNthCalledWith(1, "run-a", "prop-a");
+    expect(mockResumeGeneratingUnderLease).toHaveBeenNthCalledWith(2, "run-b", "prop-b");
+    expect(result.reaped).toBe(1);
+    expect(result.ids).toEqual(["run-b"]);
+    expect(mockSetRunError).not.toHaveBeenCalled();
+  });
+
+  it("zero-scene run, window exhausted (50 min) → give-up: setRunError 'after auto-retry' + updatePropertyStatus 'failed'; no re-fire", async () => {
     const db = buildDb({
       runRows: [exhaustedRun("run-old", "prop-old")],
       sceneRowsByProperty: { "prop-old": [] },
@@ -233,7 +272,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(1);
     expect(result.ids).toEqual(["run-old"]);
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockSetRunError).toHaveBeenCalledTimes(1);
     expect(mockSetRunError).toHaveBeenCalledWith(
       "run-old",
@@ -244,7 +283,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
   });
 
   it("re-fire throws → setRunError 'auto-retry failed', still reaped", async () => {
-    mockContinuePipeline.mockRejectedValueOnce(new Error("director timeout"));
+    mockResumeGeneratingUnderLease.mockRejectedValueOnce(new Error("director timeout"));
 
     const db = buildDb({
       runRows: [runAgeMin("run-throws", "prop-throws", 6)],
@@ -253,7 +292,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
 
-    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
     expect(mockSetRunError).toHaveBeenCalledTimes(1);
     expect(mockSetRunError).toHaveBeenCalledWith(
       "run-throws",
@@ -275,11 +314,8 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
 
     // Only the first run in iteration order is re-fired
-    expect(mockContinuePipeline).toHaveBeenCalledTimes(1);
-    expect(mockContinuePipeline).toHaveBeenCalledWith(
-      "prop-a",
-      expect.any(Object),
-    );
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledWith("run-a", "prop-a");
     expect(mockSetRunError).not.toHaveBeenCalled();
     // Second run is left untouched (no reaped++ for it)
     expect(result.reaped).toBe(1);
@@ -311,7 +347,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     );
     expect(mockUpdatePropertyStatus).toHaveBeenCalledTimes(1);
     expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-nr", "needs_review");
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
   });
 
   it("all-needs_review-no-clip run, 16 min old → setRunError + updatePropertyStatus 'needs_review'", async () => {
@@ -333,6 +369,31 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
       expect.stringMatching(/providers failed/i),
     );
     expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-pf-16", "needs_review");
+  });
+
+  it("all-needs_review-no-clip run, 20 min old, error already RESUME_BALANCE_ERROR → Path B does NOT overwrite it; actionable message survives", async () => {
+    // A submit pass already set the more-actionable balance error (Atlas 402)
+    // on this run. Path B must leave it in place instead of clobbering it with
+    // the generic "providers failed" message 15 min later.
+    const db = buildDb({
+      runRows: [{ ...stuckRun("run-balance", "prop-balance"), error: RESUME_BALANCE_ERROR }],
+      sceneRowsByProperty: {
+        "prop-balance": [
+          { status: "needs_review", clip_url: null },
+          { status: "needs_review", clip_url: null },
+        ],
+      },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
+    // Not counted as reaped this tick — a clean skip, same shape as the
+    // lease-held skip in Path A.
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
   });
 
   it("all-needs_review-no-clip run, 6 min old → no action (too early, may still be mid-render)", async () => {
@@ -373,7 +434,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     expect(result.reaped).toBe(0);
     expect(result.ids).toEqual([]);
     expect(mockSetRunError).not.toHaveBeenCalled();
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
   });
 
   it("(ii-c2) run with at least one clip_url present → LEFT ALONE (partial success)", async () => {
@@ -391,7 +452,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(0);
     expect(mockSetRunError).not.toHaveBeenCalled();
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
   });
 
   it("run with a qc_pass scene → LEFT ALONE", async () => {
@@ -406,7 +467,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result.reaped).toBe(0);
     expect(mockSetRunError).not.toHaveBeenCalled();
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
   });
 
   // ── Mixed batch ───────────────────────────────────────────────────────────
@@ -433,7 +494,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
       expect.stringMatching(/after auto-retry/i),
     );
     expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-dead", "failed");
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
   });
 
   // ── Edge cases ────────────────────────────────────────────────────────────
@@ -443,7 +504,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
     const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
     expect(result).toEqual({ reaped: 0, ids: [] });
     expect(mockSetRunError).not.toHaveBeenCalled();
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
   });
 
@@ -458,7 +519,7 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
 
     expect(result).toEqual({ reaped: 0, ids: [] });
     expect(mockSetRunError).not.toHaveBeenCalled();
-    expect(mockContinuePipeline).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
   });
 

@@ -4,9 +4,10 @@ import { Menu } from "lucide-react";
 import "@/v2/styles/v2.css";
 import { DashboardSidebar, useDashboardSidebar } from "@/components/DashboardSidebar";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
-import { Icon } from "@/components/dashboard/icons";
+import { LEGlyphMark } from "@/v2/components/primitives/LEGlyphMark";
 import { useMediaQuery } from "@/hooks/use-mobile";
 import { useAuth } from "@/lib/auth";
+import { useTheme } from "@/lib/theme";
 
 function useAuthGuard() {
   return useAuth();
@@ -17,6 +18,9 @@ const Dashboard = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useMediaQuery("(max-width: 1024px)");
   const location = useLocation();
+  const { theme } = useTheme();
+  // Same light-bg/dark-bg → dark/light logo rule as the sidebar brand mark.
+  const logoVariant = theme === "dark" ? "light" : "dark";
   useAuthGuard();
 
   // Close the mobile drawer whenever the route changes.
@@ -62,7 +66,15 @@ const Dashboard = () => {
             <Menu size={20} strokeWidth={1.8} />
           </button>
           <Link to="/dashboard" className="le-dash-mobilebar-brand">
-            <Icon name="logo" size={22} />
+            <span
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <LEGlyphMark size={18} variant={logoVariant} />
+            </span>
             Listing Elevate
           </Link>
         </div>

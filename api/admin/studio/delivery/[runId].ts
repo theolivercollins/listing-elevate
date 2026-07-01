@@ -172,39 +172,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (sceneErr) return res.status(500).json({ error: sceneErr.message });
             const sceneCount = (scenes ?? []).length;
             if (sceneCount === 0) {
-              // Atomic CAS claim: only the first concurrent caller wins the UPDATE.
-              // .lt('updated_at', cutoff) ensures the row is only stamped (and the
-              // claim granted) when the run hasn't been touched within the debounce
-              // window — mirrors the advanceRun / revertRun pattern in lib/delivery/runs.ts.
-              // Threshold: DELIVERY_GENERATING_REFIRE_MINUTES from lib/pipeline/stuck-reaper.ts.
-              const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
-              const cutoff = new Date(Date.now() - DELIVERY_GENERATING_REFIRE_MINUTES * 60_000).toISOString();
-              const { data: claimed, error: claimErr } = await db.from('delivery_runs')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', runId)
-                .lt('updated_at', cutoff)
-                .select('id')
-                .maybeSingle();
-              if (claimErr) return res.status(500).json({ error: claimErr.message });
-              if (!claimed) {
-                // Recently touched: another actor/click is already in flight.
-                // Do not double-fire — just clear the error and return.
-                const cleared = await clearRunError(runId);
-                return res.status(200).json({ run: cleared });
-              }
-              // We won the claim → safe to fire exactly once.
-              // Mirror api/pipeline/continue/[runId].ts: setRunError on throw so
-              // failures stay visible in the operator UI.
+              // Serialize with every other generating-stage (re)fire (rerun /
+              // stuck-reaper / continue hop) under the SHARED per-run resolve
+              // lease so two callers can never both pass runScripting's 0-scene
+              // guard and double-submit scenes = duplicate paid provider jobs.
+              // If the lease is already held, mirror the rerun contract: 409.
+              // On throw, setRunError so the failure stays visible in the UI.
+              let leaseOutcome: { ran: boolean };
               try {
-                const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
-                await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
-                const refreshed = await getRun(runId);
-                return res.status(200).json({ run: refreshed });
+                const { resumeGeneratingUnderLease } = await import('../../../../lib/delivery/resume-generation.js');
+                leaseOutcome = await resumeGeneratingUnderLease(runId, run.property_id);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 await setRunError(runId, `Generation resume failed: ${msg}`);
                 return res.status(500).json({ status: 'failed', runId, error: msg });
               }
+              if (!leaseOutcome.ran) {
+                // Another resume is already in flight — don't double-fire.
+                return res.status(409).json({
+                  error: 'resume_already_in_progress',
+                  message: 'A resume is already in progress — give it a moment, then refresh.',
+                });
+              }
+              const refreshed = await getRun(runId);
+              return res.status(200).json({ run: refreshed });
             }
             // generating stage but scenes already exist → don't duplicate;
             // fall through to clear-error.
@@ -582,17 +573,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(200).json({ run: updated });
             }
             case 'generating': {
-              const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+              // Concurrency guard: two rapid "Resume generation" clicks (or a
+              // click racing the autopilot sweep / stuck-reaper / continue hop)
+              // must NOT both run continuePipeline and double-submit scenes =
+              // duplicate paid provider jobs. ALL four generating-stage (re)fire
+              // sites funnel through resumeGeneratingUnderLease, which serializes
+              // them on the per-run resolve lease (delivery_runs.resolving_at CAS).
+              // If the lease is already held, no-op with a friendly 409.
+              let leaseOutcome: { ran: boolean };
               try {
-                await continuePipelineAfterPhotoSelection(rerunRun.property_id, {
-                  order_mode: 'operator',
-                  delivery_run_id: runId,
+                const { resumeGeneratingUnderLease } = await import('../../../../lib/delivery/resume-generation.js');
+                leaseOutcome = await resumeGeneratingUnderLease(runId, rerunRun.property_id, {
                   rerun_stage: 'generating',
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 await setRunError(runId, `Generation resume failed: ${msg}`);
                 return res.status(502).json({ error: 'generation_resume_failed', message: msg });
+              }
+              if (!leaseOutcome.ran) {
+                // Another resume is already in flight — don't double-fire.
+                return res.status(409).json({
+                  error: 'resume_already_in_progress',
+                  message: 'A resume is already in progress — give it a moment, then refresh.',
+                });
               }
               const updated = await getRun(runId);
               return res.status(200).json({ run: updated });

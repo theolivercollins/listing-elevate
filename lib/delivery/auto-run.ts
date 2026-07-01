@@ -12,6 +12,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabase } from '../client.js';
 import { advanceRun as _advanceRun, getVariantsForRun, updateRun, recordMlEvent } from './runs.js';
+import { claimResolveLease, releaseResolveLease } from './resolve-lease.js';
 import { generateDeliveryScript } from './voiceover-script.js';
 import { scoreTotal } from './judge.js';
 import type { VariantScores } from './judge.js';
@@ -94,41 +95,11 @@ export function canWrite(): boolean {
 // cron sweeps, or a sweep racing the inline kick) can both pass all four guards
 // and both pay ElevenLabs/Haiku/Creatomate. The lease serializes them: exactly
 // one resolver claims delivery_runs.resolving_at and proceeds; the other no-ops.
-
-/** Lease TTL — a crashed/Vercel-killed resolver's stale lease is reclaimable
- *  after this window so a run is never permanently wedged. */
-const RESOLVE_LEASE_TTL_MS = 10 * 60 * 1000;
-
-/** CAS-claim the per-run resolve lease. Returns true iff this caller won it.
- *  Mirrors: UPDATE delivery_runs SET resolving_at = now()
- *           WHERE id = :id AND (resolving_at IS NULL OR resolving_at < now() - interval '10 minutes'). */
-async function claimResolveLease(runId: string): Promise<boolean> {
-  const db = getSupabase();
-  const staleBefore = new Date(Date.now() - RESOLVE_LEASE_TTL_MS).toISOString();
-  const { data, error } = await db
-    .from('delivery_runs')
-    .update({ resolving_at: new Date().toISOString() })
-    .eq('id', runId)
-    .or(`resolving_at.is.null,resolving_at.lt.${staleBefore}`)
-    .select('id');
-  if (error) throw new Error(`claimResolveLease: ${error.message}`);
-  return Array.isArray(data) && data.length === 1;
-}
-
-/** Release the per-run resolve lease. Best-effort: a failure here must not mask
- *  the resolver's own outcome (the 10-minute TTL is the backstop). */
-async function releaseResolveLease(runId: string): Promise<void> {
-  try {
-    const db = getSupabase();
-    const { error } = await db
-      .from('delivery_runs')
-      .update({ resolving_at: null })
-      .eq('id', runId);
-    if (error) console.error(`[auto-run] releaseResolveLease failed for ${runId}:`, error.message);
-  } catch (e) {
-    console.error(`[auto-run] releaseResolveLease threw for ${runId}:`, e);
-  }
-}
+//
+// claimResolveLease / releaseResolveLease now live in the shared
+// ./resolve-lease.js module so the operator "Resume generation" rerun action
+// reuses the SAME CAS (see api/admin/studio/delivery/[runId].ts via
+// withResolveLease). Behavior here is unchanged.
 
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 

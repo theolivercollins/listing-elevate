@@ -135,6 +135,108 @@ export function resolveRoutingPreference(
   return scene.provider_preference ?? null;
 }
 
+// ─── GENERATION SUBMIT — SHARED CONTRACT ───────────────────────
+//
+// Pure helpers extracted from runGenerationSubmit / continuePipelineAfterPhoto-
+// Selection so the resume/idempotency + operator-messaging contract has one
+// authoritative implementation that is unit-testable without mocking Supabase.
+
+/** Operator-actionable error set on a delivery_run when generation could not
+ *  submit because the video provider account has no balance (Atlas HTTP 402).
+ *  Set at SUBMIT time so the operator sees it immediately (not only after the
+ *  stuck-reaper). The Resume button stays enabled at stage='generating'. */
+export const RESUME_BALANCE_ERROR =
+  'Video provider account out of balance — add funds, then Resume.';
+
+/** Operator-actionable error set on a delivery_run when a submit pass PARTIALLY
+ *  succeeded for a non-balance reason: some scenes submitted, others failed at
+ *  submit (now needs_review with no provider_task_id). Without this the run would
+ *  stall silently — poll-scenes can't assemble (dead scenes) and the reaper's
+ *  Path C skips it (some scenes are progressing). Resume is idempotent and
+ *  re-submits only the still-unsubmitted scenes, so the operator just re-Resumes. */
+export const RESUME_PARTIAL_FAILURE_ERROR =
+  'Some scenes failed to submit — Resume to retry the remaining scenes.';
+
+/** Outcome counts of one generation-submit pass. */
+export interface SubmitResult {
+  /** Scenes this pass tried to submit (those lacking task_id AND clip_url). */
+  attempted: number;
+  /** Scenes that submitted successfully THIS pass. */
+  submittedThisRound: number;
+  /** All scenes on the property now carrying a provider_task_id (re-queried). */
+  totalSubmitted: number;
+  /** Scenes now at needs_review with no provider_task_id (re-queried). */
+  failedAtSubmit: number;
+  /** True iff any this-pass failure was an Atlas insufficient-balance (402). */
+  insufficientBalance: boolean;
+}
+
+/**
+ * The scenes a (re)submit pass should act on: ONLY those lacking BOTH a
+ * provider_task_id AND a clip_url. Already-submitted (task_id set) and
+ * already-collected (clip_url set) scenes are left untouched — the core
+ * idempotency guarantee that makes "Resume generation" safe to click twice.
+ */
+export function scenesNeedingSubmit<
+  T extends { provider_task_id?: string | null; clip_url?: string | null },
+>(scenes: T[]): T[] {
+  return scenes.filter((s) => !s.provider_task_id && !s.clip_url);
+}
+
+/**
+ * Terminal generation-submit log. NEVER claims "all scenes submitted" when 0
+ * were — reflects the real counts and names the balance cause when applicable.
+ */
+export function submitCompletionLog(
+  r: SubmitResult,
+): { level: 'info' | 'warn'; message: string } {
+  const balanceNote = r.insufficientBalance
+    ? ' — video provider account out of balance; add funds, then Resume'
+    : '';
+  if (r.submittedThisRound > 0 || r.totalSubmitted > 0) {
+    // Progress was made — but if some scenes died at submit this is only a
+    // PARTIAL success. Do NOT log the fully-reassuring "cron will collect +
+    // assemble" line; warn and name the failure count (and balance cause).
+    if (r.failedAtSubmit > 0) {
+      return {
+        level: 'warn',
+        message: `${r.totalSubmitted} scene(s) submitted, but ${r.failedAtSubmit} failed at submit${balanceNote}. Cron will NOT assemble until the failed scenes are resubmitted.`,
+      };
+    }
+    return {
+      level: 'info',
+      message: `${r.totalSubmitted} scene(s) submitted to providers. Cron will collect clips + assemble.`,
+    };
+  }
+  return {
+    level: 'warn',
+    message: `No scenes submitted (${r.failedAtSubmit} failed at submit)${balanceNote}. Cron will NOT assemble until scenes are resubmitted.`,
+  };
+}
+
+/**
+ * What to do to delivery_run.error after a submit pass. Evaluated so a PARTIAL
+ * drain (some scenes submit, the rest fail) is never silently cleared:
+ *  - provider account out of balance with ANY attempt → SET RESUME_BALANCE_ERROR
+ *    (checked FIRST so a partial balance drain — 5 submit, 7 × 402 — surfaces,
+ *    not clears);
+ *  - some submitted but others died at submit for a non-balance reason → SET
+ *    RESUME_PARTIAL_FAILURE_ERROR (the dead scenes won't self-heal — no reaper
+ *    re-submits needs_review scenes — so the operator must re-Resume);
+ *  - real progress this pass AND nothing left dead at submit → CLEAR any stale
+ *    stall error;
+ *  - otherwise leave it (an all-fail non-balance pass self-heals via the poll
+ *    cron / reaper Path B).
+ */
+export function resumeRunErrorAction(
+  r: SubmitResult,
+): { type: 'clear' } | { type: 'set'; message: string } | { type: 'none' } {
+  if (r.insufficientBalance && r.attempted > 0) return { type: 'set', message: RESUME_BALANCE_ERROR };
+  if (r.submittedThisRound > 0 && r.failedAtSubmit > 0) return { type: 'set', message: RESUME_PARTIAL_FAILURE_ERROR };
+  if (r.submittedThisRound > 0 && r.failedAtSubmit === 0) return { type: 'clear' };
+  return { type: 'none' };
+}
+
 // ─── CLIP URL PROXY ────────────────────────────────────────────
 
 /**
@@ -314,9 +416,26 @@ export async function continuePipelineAfterPhotoSelection(
   // in ~60s instead of hitting the 300s maxDuration with half the
   // scenes never submitted. See poll-scenes.ts finalize block — when
   // all scenes have settled it calls runAssembly(propertyId).
-  await runGenerationSubmit(propertyId);
-  await log(propertyId, "generation", "info",
-    "All scenes submitted to providers. Cron will collect clips + assemble.", logContext);
+  const submitResult = await runGenerationSubmit(propertyId);
+
+  // Terminal log reflects REAL counts — never claims "all submitted" when 0 were.
+  const completion = submitCompletionLog(submitResult);
+  await log(propertyId, "generation", completion.level, completion.message, logContext);
+
+  // For operator / checkpoint-A runs, surface a resume-actionable state on the
+  // delivery_run at SUBMIT time (not only after the reaper): clear a stale stall
+  // error once generation makes real progress, or set the balance-specific
+  // error immediately when nothing submitted because Atlas is out of balance.
+  if (deliveryRunId) {
+    const errorAction = resumeRunErrorAction(submitResult);
+    if (errorAction.type === "set") {
+      const { setRunError } = await import("./delivery/runs.js");
+      await setRunError(deliveryRunId, errorAction.message);
+    } else if (errorAction.type === "clear") {
+      const { clearRunError } = await import("./delivery/runs.js");
+      await clearRunError(deliveryRunId);
+    }
+  }
 }
 
 // ─── STAGE 2: ANALYZE ──────────────────────────────────────────
@@ -1067,13 +1186,18 @@ async function runScripting(
 // Splitting submit from collect makes the main function exit in
 // ~30-60s regardless of clip count.
 
-async function runGenerationSubmit(propertyId: string): Promise<void> {
+/** Per-scene submit outcome, collected so the caller can classify the pass
+ *  (how many submitted, and whether any failure was an Atlas 402). */
+type SubmitOutcome = { ok: true } | { ok: false; insufficientBalance: boolean };
+
+async function runGenerationSubmit(propertyId: string): Promise<SubmitResult> {
   await updatePropertyStatus(propertyId, "generating");
   const [allScenes, property] = await Promise.all([
     getScenesForProperty(propertyId),
     getProperty(propertyId),
   ]);
-  const scenes = allScenes.filter((scene) => !scene.provider_task_id && !scene.clip_url);
+  // Idempotent: only scenes lacking BOTH a task_id and a clip_url are (re)submitted.
+  const scenes = scenesNeedingSubmit(allScenes);
   const supabase = getSupabase();
 
   // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
@@ -1084,7 +1208,10 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
   await log(propertyId, "generation", "info",
     `Submitting ${scenes.length}/${allScenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel${pipelineMode === "v1.1" ? " (mode=v1.1 seedance push-in)" : ""}`);
 
-  const submitScene = async (scene: typeof scenes[number]) => {
+  const submitScene = async (scene: typeof scenes[number]): Promise<SubmitOutcome> => {
+    // Tracks whether this scene's failure was an Atlas 402 (insufficient
+    // balance) so the caller can surface a specific, operator-actionable error.
+    let insufficientBalance = false;
     // Get the source photo once. Providers share the same source image,
     // so a failover retry doesn't need to refetch.
     let photo: { file_url: string; room_type: string } | null;
@@ -1101,7 +1228,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
       await updateSceneStatus(scene.id, "needs_review");
       await log(propertyId, "generation", "error",
         `Scene ${scene.scene_number}: photo lookup failed: ${msg}`, undefined, scene.id);
-      return;
+      return { ok: false, insufficientBalance: false };
     }
 
     // C.2: Do NOT base64-encode the photo here. Providers that accept URLs
@@ -1189,7 +1316,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         await log(propertyId, "generation", "info",
           `Scene ${scene.scene_number}: submitted to ${provider.name}${modelNote}${attempt > 0 ? ` (failover ${attempt})` : ""}`,
           { jobId: genJob.jobId, attempt: attempt + 1, modelKey: decision.modelKey }, scene.id);
-        return;
+        return { ok: true };
       } catch (err) {
         // Atlas 402 insufficient-balance: permanent billing failure.
         // Do NOT failover to another provider — that would silently degrade
@@ -1204,6 +1331,9 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
             `[atlas] insufficient balance — scene ${scene.scene_number} NOT submitted; operator action required: ${err.message}`,
             { kind: "permanent" }, scene.id);
           lastError = { message: err.message, kind: "permanent", provider: provider.name };
+          // Remember the billing cause so the caller can set a specific,
+          // operator-actionable "out of balance — Resume" error at submit time.
+          insufficientBalance = true;
           break;
         }
         const classified = classifyProviderError(err);
@@ -1231,22 +1361,29 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
     await log(propertyId, "generation", "error",
       `Scene ${scene.scene_number}: submit failed after ${excluded.length + 1} attempts: ${lastError?.message ?? "unknown"}`,
       { lastError }, scene.id);
+    return { ok: false, insufficientBalance };
   };
 
   // Pull-based worker pool so we don't burst past Kling's 5-concurrent
   // task limit on the provider side. Each worker does ONE submit and
   // moves on — no polling.
   const queue = [...scenes];
+  const outcomes: SubmitOutcome[] = [];
   const worker = async () => {
     while (queue.length > 0) {
       const next = queue.shift();
       if (!next) return;
-      await submitScene(next);
+      outcomes.push(await submitScene(next));
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(GENERATION_CONCURRENCY, scenes.length) }, () => worker()),
   );
+
+  const submittedThisRound = outcomes.filter((o) => o.ok).length;
+  // Explicit discriminant equality (o.ok === false) so TS narrows to the
+  // failure member before reading insufficientBalance.
+  const anyInsufficientBalance = outcomes.some((o) => o.ok === false && o.insufficientBalance);
 
   // Operator delivery A/B (spec 2026-06-09): when a delivery run exists,
   // submit a second independent render per scene for pairwise judging.
@@ -1273,10 +1410,18 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
   }
 
   const submittedScenes = await getScenesForProperty(propertyId);
-  const submitted = submittedScenes.filter(s => s.provider_task_id).length;
-  const failed = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
+  const totalSubmitted = submittedScenes.filter(s => s.provider_task_id).length;
+  const failedAtSubmit = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
   await log(propertyId, "generation", "info",
-    `Submission complete: ${submitted}/${scenes.length} submitted, ${failed} failed at submit`);
+    `Submission complete: ${totalSubmitted}/${scenes.length} submitted, ${failedAtSubmit} failed at submit`);
+
+  return {
+    attempted: scenes.length,
+    submittedThisRound,
+    totalSubmitted,
+    failedAtSubmit,
+    insufficientBalance: anyInsufficientBalance,
+  };
 }
 
 /**

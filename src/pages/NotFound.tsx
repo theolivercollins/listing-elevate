@@ -2,13 +2,16 @@ import { useLocation, Link } from "react-router-dom";
 import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/lib/theme";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
 const NotFound = () => {
   const location = useLocation();
+  const { theme } = useTheme();
+  const logoVariant = theme === "dark" ? "light" : "dark";
 
   useEffect(() => {
     console.error("404 Error: route not found", location.pathname);
@@ -17,7 +20,9 @@ const NotFound = () => {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <div className="px-8 py-10 md:px-12">
-        <Wordmark size="md" />
+        <Link to="/" className="inline-flex" aria-label="Listing Elevate — go home">
+          <LELogoMark size={44} variant={logoVariant} />
+        </Link>
       </div>
       <div className="flex flex-1 flex-col items-start justify-center px-8 md:px-12">
         <motion.div

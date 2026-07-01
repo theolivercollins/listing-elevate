@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { supabase, AUTH_CALLBACK_URL } from "@/lib/supabase";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import heroVideo from "@/assets/hero-video-loop.mp4.asset.json";
 import heroBg from "@/assets/hero-bg.jpg";
 import interior1 from "@/assets/interior-1.jpg";
@@ -652,7 +652,7 @@ const Index = () => {
         <div className="mx-auto max-w-[1440px]">
           <div className="grid gap-16 md:grid-cols-[2fr_1fr_1fr_1fr]">
             <div>
-              <Wordmark size="lg" />
+              <LELogoMark size={44} variant="dark" />
               <p className="mt-6 max-w-sm text-sm leading-relaxed text-muted-foreground">
                 Cinematic real-estate video, automated. Every listing, in motion — delivered in 72 hours.
               </p>
