@@ -32,6 +32,7 @@ import { sendMessage, escapeMarkdown } from "../telegram/client.js";
 import { getSupabase } from "../db.js";
 import { getRun } from "../delivery/runs.js";
 import type { Property } from "../types.js";
+import { errMsg } from "../utils/err-msg.js";
 
 // ── reconcileWatchedFolder ────────────────────────────────────────────────────
 
@@ -80,7 +81,7 @@ export async function reconcileWatchedFolder(): Promise<{ seen: number }> {
     } catch (err) {
       console.error(
         `[drive/detect] reconcile error for folder ${folder.id} (${folder.name}):`,
-        err instanceof Error ? err.message : String(err),
+        errMsg(err),
       );
     }
   }
@@ -122,7 +123,7 @@ export async function settleAndPrompt(
     } catch (err) {
       console.error(
         `[drive/detect] settleAndPrompt error for intake ${row.id} (${row.address}):`,
-        err instanceof Error ? err.message : String(err),
+        errMsg(err),
       );
     }
   }
@@ -180,7 +181,7 @@ export async function renewChannelIfNeeded(): Promise<{ renewed: boolean }> {
       // Non-fatal — old channel may already be expired
       console.warn(
         "[drive/detect] stopChannel failed (may be already expired):",
-        err instanceof Error ? err.message : String(err),
+        errMsg(err),
       );
     }
   }
@@ -384,7 +385,7 @@ export async function pollResults(): Promise<{ notified: number }> {
     } catch (err) {
       console.error(
         `[drive/detect] pollResults error for intake ${row.id} (${row.address}):`,
-        err instanceof Error ? err.message : String(err),
+        errMsg(err),
       );
     }
   }

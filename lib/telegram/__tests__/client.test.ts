@@ -159,6 +159,19 @@ describe("sendMessage", () => {
     expect(body.parse_mode).toBe("HTML");
   });
 
+  it("omits parse_mode entirely when parseMode is 'none' (plain text — Telegram never parses entities)", async () => {
+    const { sendMessage } = await import("../client.js");
+    // A naked, unbalanced '[' would crash Telegram's Markdown entity parser
+    // under the default parse_mode — this is exactly the 2026-07-02
+    // incident (a raw error string containing "[object Object]" broke
+    // handleApprove's editMessageText call). parseMode:'none' must send it
+    // with no parse_mode key at all, so Telegram treats it as inert plain text.
+    await sendMessage("Failed: [object Object]", { parseMode: "none" });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string);
+    expect(body.parse_mode).toBeUndefined();
+    expect(body.text).toBe("Failed: [object Object]");
+  });
+
   it("throws an error including the Telegram description when ok:false", async () => {
     vi.stubGlobal("fetch", mockFetchTelegramError("chat not found"));
     const { sendMessage } = await import("../client.js");
@@ -202,6 +215,14 @@ describe("editMessageText", () => {
     expect(body.reply_markup).toEqual({
       inline_keyboard: [[{ text: "Ok", callback_data: "ok" }]],
     });
+  });
+
+  it("omits parse_mode entirely when parseMode is 'none' (plain text)", async () => {
+    const { editMessageText } = await import("../client.js");
+    await editMessageText(5, "Failed: [object Object]", { parseMode: "none" });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1].body as string);
+    expect(body.parse_mode).toBeUndefined();
+    expect(body.text).toBe("Failed: [object Object]");
   });
 });
 

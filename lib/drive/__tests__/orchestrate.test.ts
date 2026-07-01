@@ -74,6 +74,17 @@ vi.mock("../../delivery/scrape.js", () => ({
   runScrapeStage: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../telegram/client.js", async (importOriginal) => {
+  // Pass escapeMarkdown through from the real module (pure utility) so
+  // orchestrate.ts's actual escaping behaviour is exercised; only sendMessage
+  // (the network-calling part) is mocked.
+  const actual = await importOriginal<typeof import("../../telegram/client.js")>();
+  return {
+    ...actual,
+    sendMessage: vi.fn().mockResolvedValue({ messageId: 1 }),
+  };
+});
+
 // ── Imports (after vi.mock) ───────────────────────────────────────────────────
 
 import { getIntake, setStatus, setPropertyId, setDeliveryRunId, appendFeedback, claimForApproval, claimForRegenerate } from "../intake-db.js";
@@ -84,6 +95,7 @@ import { uploadPhotosToStorage, getStoragePublicUrl } from "../../../src/lib/pho
 import { runPipeline } from "../../pipeline.js";
 import { createRun, getRun, revertRun, setListingDetails } from "../../delivery/runs.js";
 import { runScrapeStage } from "../../delivery/scrape.js";
+import { sendMessage } from "../../telegram/client.js";
 import { approveIntake, regenerateIntake } from "../orchestrate.js";
 import type { DriveIntake } from "../intake-db.js";
 
@@ -120,7 +132,8 @@ const CREATED_PROPERTY = {
   id: "prop-new",
   address: "123 Main St, Austin, TX",
   status: "queued",
-  selected_package: "JUST_LISTED",
+  // Lowercase — matches properties_selected_package_check (migration 054).
+  selected_package: "just_listed",
   selected_duration: 30,
   selected_orientation: "horizontal",
 };
@@ -348,7 +361,12 @@ describe("approveIntake", () => {
     expect(setStatus).toHaveBeenCalledTimes(1);
     expect(setStatus).toHaveBeenCalledWith("intake-1", "generating");
 
-    // createProperty called with queued status and correct defaults
+    // createProperty called with queued status and correct defaults.
+    // selected_package MUST be lowercase 'just_listed': properties_selected_
+    // package_check (supabase/migrations/054_properties_order_form.sql) only
+    // allows 'just_listed' | 'just_pended' | 'just_closed' | 'life_cycle' —
+    // an uppercase value here 23514s on every real approval (2026-07-02
+    // incident root cause).
     expect(createProperty).toHaveBeenCalledWith(
       expect.objectContaining({
         address: "123 Main St, Austin, TX",
@@ -356,7 +374,7 @@ describe("approveIntake", () => {
         bedrooms: 4,
         bathrooms: 3,
         listing_agent: "Jane Doe",
-        selected_package: "JUST_LISTED",
+        selected_package: "just_listed",
         selected_duration: 30,
         selected_orientation: "horizontal",
         submitted_by: "drive-intake",
@@ -519,6 +537,47 @@ describe("approveIntake", () => {
 
     const statusCalls = vi.mocked(setStatus).mock.calls;
     expect(statusCalls[statusCalls.length - 1][1]).toBe("error");
+  });
+
+  // ── 2026-07-02 live incident: Supabase-shaped (non-Error) thrown object ────
+
+  it("produces a readable reason/feedback_notes/Telegram message (no '[object Object]') when createProperty throws a Supabase-shaped plain object", async () => {
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    // Real shape of a thrown/returned PostgrestError — a plain object, NOT an
+    // Error instance (e.g. exactly what `if (error) throw error;` throws
+    // elsewhere in this file, or what a CHECK-constraint violation like
+    // properties_selected_package_check produces). Before the errMsg fix,
+    // `err instanceof Error ? err.message : String(err)` rendered this as
+    // the literal string "[object Object]" everywhere it landed.
+    const supabaseError = {
+      code: "23514",
+      details: null,
+      hint: null,
+      message: 'new row for relation "properties" violates check constraint "properties_selected_package_check"',
+    };
+    vi.mocked(createProperty).mockRejectedValue(supabaseError);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("error");
+    expect(result.reason).not.toContain("[object Object]");
+    expect(result.reason).toContain("violates check constraint");
+
+    // feedback_notes (persisted via setStatus's patch arg) must carry the
+    // same readable text, not the literal "[object Object]".
+    const statusCalls = vi.mocked(setStatus).mock.calls;
+    const lastStatusCall = statusCalls[statusCalls.length - 1];
+    expect(lastStatusCall[1]).toBe("error");
+    const patch = lastStatusCall[2] as { feedback_notes?: string };
+    expect(patch.feedback_notes).not.toContain("[object Object]");
+    expect(patch.feedback_notes).toContain("violates check constraint");
+
+    // The operator-facing Telegram ⚠️ notification must also be readable.
+    expect(sendMessage).toHaveBeenCalled();
+    const sentText = vi.mocked(sendMessage).mock.calls[0][0];
+    expect(sentText).not.toContain("[object Object]");
+    expect(sentText).toContain("violates check constraint");
   });
 
   // ── Feedback notes propagation ────────────────────────────────────────────
@@ -851,6 +910,42 @@ describe("regenerateIntake", () => {
 
     expect(result.status).toBe("generating");
     expect(appendFeedback).not.toHaveBeenCalled();
+  });
+
+  it("produces a readable reason/feedback_notes/Telegram message (no '[object Object]') when appendFeedback throws a Supabase-shaped plain object", async () => {
+    const intakeWithProp: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
+    const supabaseError = {
+      code: "57014",
+      details: null,
+      hint: null,
+      message: "canceling statement due to statement timeout",
+    };
+    vi.mocked(appendFeedback).mockRejectedValue(supabaseError);
+
+    const result = await regenerateIntake("intake-1", "notes");
+
+    expect(result.status).toBe("error");
+    expect(result.reason).not.toContain("[object Object]");
+    expect(result.reason).toContain("canceling statement due to statement timeout");
+
+    expect(setStatus).toHaveBeenCalledWith("intake-1", "error", {
+      feedback_notes: expect.stringContaining("canceling statement due to statement timeout"),
+    });
+    const feedbackCall = vi.mocked(setStatus).mock.calls.find(
+      (call) => call[1] === "error",
+    );
+    const patch = feedbackCall?.[2] as { feedback_notes?: string } | undefined;
+    expect(patch?.feedback_notes).not.toContain("[object Object]");
+
+    expect(sendMessage).toHaveBeenCalled();
+    const sentText = vi.mocked(sendMessage).mock.calls[0][0];
+    expect(sentText).not.toContain("[object Object]");
+    expect(sentText).toContain("canceling statement due to statement timeout");
   });
 
   it("returns error when property update throws", async () => {

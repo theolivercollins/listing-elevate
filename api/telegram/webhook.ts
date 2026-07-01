@@ -69,6 +69,7 @@ import {
   handleRefineMessage,
   handleRefineCallback,
 } from "../../lib/telegram/refine-conversation.js";
+import { errMsg } from "../../lib/utils/err-msg.js";
 
 export const maxDuration = 280;
 
@@ -167,7 +168,17 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
     } else if (r.status === "skipped") {
       await sendMessage(`⚠️ Skipped (non-prod environment)`);
     } else {
-      await sendMessage(`⚠️ Failed: ${r.reason ?? "unknown error"}`);
+      // Pure error-reporting text (r.reason is caller-controlled — e.g. a
+      // Supabase error's .message, which may itself contain Markdown special
+      // characters). Sent with parse_mode omitted entirely: this message
+      // mixes no bold/italic formatting, so plain text is strictly safer
+      // than Markdown+escape here — Telegram never attempts to parse
+      // entities in it, so a stray unescaped "[" (or any future error text
+      // shape) can never trigger the "can't parse entities" crash that hit
+      // this exact path live on 2026-07-02.
+      await sendMessage(`⚠️ Failed: ${r.reason ?? "unknown error"}`, {
+        parseMode: "none",
+      });
     }
     return;
   }
@@ -183,9 +194,12 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
       `⚠️ Skipped (non-prod environment)`,
     );
   } else {
+    // See the plain-text rationale above — same failure message, edited in
+    // place instead of sent fresh.
     await editMessageText(
       telegram_message_id,
       `⚠️ Failed: ${r.reason ?? "unknown error"}`,
+      { parseMode: "none" },
     );
   }
 }
@@ -315,8 +329,7 @@ export default async function handler(
       await handleRefineMessage(update.message.text);
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[telegram/webhook] Handler error:", msg, err);
+    console.error("[telegram/webhook] Handler error:", errMsg(err), err);
   }
 
   return res.status(200).json({ ok: true });
