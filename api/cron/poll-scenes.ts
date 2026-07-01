@@ -1,21 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { reapStuckScenes, reapStuckDeliveryRuns, reapStuckGeneratingProperties, reapStuckGeneratingDeliveryRuns } from '../../lib/pipeline/stuck-reaper.js';
+import { passingThreshold } from '../../lib/pipeline/assembly-guards.js';
 
 export const maxDuration = 300;
 
-/**
- * passingThreshold — minimum number of qc_pass scenes required for a property
- * to proceed to assembly (rather than being flagged needs_review).
- *
- * Uses ceil(totalScenes * 0.8) so short videos (e.g. 4-scene 15s clips) are
- * not wrongly penalised by a hardcoded scene count that was tuned for longer
- * videos. Examples: 4 scenes → 4, 5 scenes → 4, 6 scenes → 5, 8 scenes → 7.
- *
- * Pure; no I/O.
- */
-export function passingThreshold(totalScenes: number): number {
-  return Math.ceil(totalScenes * 0.8);
-}
+// passingThreshold (ceil(totalScenes * 0.8) — minimum qc_pass scenes required
+// to proceed to assembly) now lives in lib/pipeline/assembly-guards.ts so
+// lib/pipeline.ts (rerunAssembly's completeness guard) can share the exact
+// same math instead of drifting a second copy. Re-exported here so this
+// file's own usage below and the existing
+// `import { passingThreshold } from '../poll-scenes.js'` in
+// api/cron/__tests__/corrective-suffix.test.ts keep working unchanged.
+export { passingThreshold };
 
 /**
  * buildCorrectiveSuffix — turn a judge's hallucination_flags into corrective

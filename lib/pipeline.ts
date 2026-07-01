@@ -17,6 +17,7 @@ import {
   log,
 } from "./db.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
+import { passingThreshold } from "./pipeline/assembly-guards.js";
 import type { Photo, RoomType, DepthRating, VideoProvider, CameraMovement, PipelineMode } from "./types.js";
 import {
   PHOTO_ANALYSIS_SYSTEM,
@@ -2431,11 +2432,27 @@ export async function runAssembly(propertyId: string): Promise<void> {
 /**
  * Re-run ONLY the assembly stage for a property whose clips are already
  * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
- * or when no completed scenes exist.
+ * or when the scene set backing this render is incomplete.
+ *
+ * Completeness guard (strengthened after the 2026-07-01 incident — delivery
+ * run 4b15ef63 assembled a 30s video from only 3 of 7 scenes and marked the
+ * property complete, because the old guard here only checked
+ * `completedScenes.length === 0`):
+ *   - `opts.runId` given AND that delivery run has a non-empty `scene_order`
+ *     (the operator/autopilot checkpoint-A curated order) → EVERY scene id in
+ *     that order must be `qc_pass` with a `clip_url`. Partial coverage throws.
+ *   - Otherwise (no run, or a run with no curated order yet — the legacy /
+ *     customer-flow / clip-swap path) → require
+ *     `completedScenes.length >= passingThreshold(totalScenes)` (the same
+ *     ceil(80%) floor the poll-scenes cron QC gate uses — see
+ *     lib/pipeline/assembly-guards.ts) instead of the old bare `> 0`.
+ * `opts.allowPartial` opts out of both strengthened checks (falls back to the
+ * original `completedScenes.length === 0` floor) for an explicit manual
+ * operator override; no caller passes it today — default is strict.
  */
 export async function rerunAssembly(
   propertyId: string,
-  opts?: { timeoutMs?: number; runId?: string },
+  opts?: { timeoutMs?: number; runId?: string; allowPartial?: boolean },
 ): Promise<void> {
   const { data: property } = await getSupabase()
     .from("properties")
@@ -2454,18 +2471,55 @@ export async function rerunAssembly(
     );
   }
 
-  // Verify at least one completed (qc_pass) scene with a clip URL exists.
   const scenes = await getScenesForProperty(propertyId);
   const completedScenes = scenes.filter(
     (s) => s.status === "qc_pass" && s.clip_url,
   );
-  if (completedScenes.length === 0) {
-    throw new Error("No completed scenes — nothing to assemble");
+
+  if (opts?.allowPartial) {
+    if (completedScenes.length === 0) {
+      throw new Error("No completed scenes — nothing to assemble");
+    }
+  } else {
+    let sceneOrder: string[] | null = null;
+    if (opts?.runId) {
+      const { data: run } = await getSupabase()
+        .from("delivery_runs")
+        .select("scene_order")
+        .eq("id", opts.runId)
+        .maybeSingle();
+      sceneOrder = (run as { scene_order: string[] | null } | null)?.scene_order ?? null;
+    }
+
+    if (sceneOrder && sceneOrder.length > 0) {
+      const sceneById = new Map(scenes.map((s) => [s.id, s]));
+      const missing = sceneOrder.filter((id) => {
+        const s = sceneById.get(id);
+        return !s || s.status !== "qc_pass" || !s.clip_url;
+      });
+      if (missing.length > 0) {
+        throw new Error(
+          `Cannot assemble: ${missing.length} of ${sceneOrder.length} scenes in the delivery run's ` +
+            `scene_order are not qc_pass with a clip (scene ids ${missing.join(", ")})`,
+        );
+      }
+    } else if (completedScenes.length === 0) {
+      throw new Error("No completed scenes — nothing to assemble");
+    } else if (completedScenes.length < passingThreshold(scenes.length)) {
+      throw new Error(
+        `Insufficient completed scenes: ${completedScenes.length} of ${scenes.length} ` +
+          `(need at least ${passingThreshold(scenes.length)}) — nothing to assemble`,
+      );
+    }
   }
 
   await updatePropertyStatus(propertyId, "assembling");
   await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
-  await runAssemblyStep(propertyId, { reason: "manual_rerun", ...opts });
+  await runAssemblyStep(propertyId, {
+    reason: "manual_rerun",
+    timeoutMs: opts?.timeoutMs,
+    runId: opts?.runId,
+  });
 }
 
 function formatPrice(price: number): string {

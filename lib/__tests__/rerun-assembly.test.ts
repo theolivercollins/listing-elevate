@@ -296,6 +296,136 @@ describe("rerunAssembly", () => {
     expect(db.updatePropertyStatus).not.toHaveBeenCalled();
   });
 
+  // ── Strengthened completeness guard (2026-07-01 incident — delivery run
+  //    4b15ef63 assembled a 30s video from only 3 of 7 scenes and marked the
+  //    property complete, because this guard only checked
+  //    `completedScenes.length === 0`). Two independent floors now apply:
+  //      (a) no runId (legacy / clip-swap path) → completedScenes.length
+  //          must clear passingThreshold(totalScenes) = ceil(total * 0.8).
+  //      (b) runId given AND that run has a non-empty scene_order → EVERY
+  //          scene id in the order must be qc_pass with a clip_url.
+
+  function makeScene(overrides: Partial<typeof QC_SCENE> & { id: string }) {
+    return { ...QC_SCENE, ...overrides };
+  }
+
+  it("legacy path (no runId): regression — 6 of 7 scenes qc_pass still assembles", async () => {
+    const scenes = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      n === 7
+        ? makeScene({ id: `scene-${n}`, scene_number: n, status: "needs_review", clip_url: null })
+        : makeScene({ id: `scene-${n}`, scene_number: n }),
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    await expect(rerunAssembly("prop-1")).resolves.toBeUndefined();
+    expect(db.updatePropertyStatus).toHaveBeenCalledWith("prop-1", "assembling");
+  });
+
+  it("legacy path (no runId): throws when completed scenes fall below the 80% floor (the incident's 3 of 7)", async () => {
+    const scenes = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      n <= 3
+        ? makeScene({ id: `scene-${n}`, scene_number: n })
+        : makeScene({ id: `scene-${n}`, scene_number: n, status: "generating", clip_url: null }),
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    await expect(rerunAssembly("prop-1")).rejects.toThrow(
+      "Insufficient completed scenes: 3 of 7 (need at least 6) — nothing to assemble",
+    );
+    expect(db.updatePropertyStatus).not.toHaveBeenCalled();
+  });
+
+  it("delivery-run path (runId given): throws when a scene in scene_order is not qc_pass with a clip", async () => {
+    const scenes = [
+      makeScene({ id: "scene-1", scene_number: 1 }),
+      makeScene({ id: "scene-2", scene_number: 2, status: "needs_review", clip_url: null }),
+      makeScene({ id: "scene-3", scene_number: 3 }),
+    ];
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") return makeChain({ id: "photo-1", room_type: "living_room" });
+        if (table === "delivery_runs") {
+          return makeChain({ scene_order: ["scene-1", "scene-2", "scene-3"] });
+        }
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    await expect(rerunAssembly("prop-1", { runId: "run-1" })).rejects.toThrow(
+      "Cannot assemble: 1 of 3 scenes in the delivery run's scene_order are not qc_pass with a clip (scene ids scene-2)",
+    );
+    expect(db.updatePropertyStatus).not.toHaveBeenCalled();
+  });
+
+  it("delivery-run path (runId given): assembles when every scene in scene_order is qc_pass with a clip", async () => {
+    const scenes = [
+      makeScene({ id: "scene-1", scene_number: 1 }),
+      makeScene({ id: "scene-2", scene_number: 2 }),
+    ];
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") return makeChain({ id: "photo-1", room_type: "living_room" });
+        if (table === "delivery_runs") return makeChain({ scene_order: ["scene-1", "scene-2"] });
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    await expect(rerunAssembly("prop-1", { runId: "run-1" })).resolves.toBeUndefined();
+    expect(db.updatePropertyStatus).toHaveBeenCalledWith("prop-1", "assembling");
+  });
+
+  it("delivery-run path (runId given, scene_order null/empty): falls back to the passingThreshold floor", async () => {
+    const scenes = [1, 2, 3].map((n) =>
+      n === 3
+        ? makeScene({ id: `scene-${n}`, scene_number: n, status: "generating", clip_url: null })
+        : makeScene({ id: `scene-${n}`, scene_number: n }),
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") return makeChain({ id: "photo-1", room_type: "living_room" });
+        if (table === "delivery_runs") return makeChain({ scene_order: null });
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    // passingThreshold(3) = ceil(3*0.8) = 3; only 2 of 3 are qc_pass → throws.
+    await expect(rerunAssembly("prop-1", { runId: "run-1" })).rejects.toThrow(
+      "Insufficient completed scenes: 2 of 3 (need at least 3) — nothing to assemble",
+    );
+  });
+
+  it("allowPartial:true opts out of the strengthened guard (only the bare >0 floor applies)", async () => {
+    const scenes = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      n === 1
+        ? makeScene({ id: `scene-${n}`, scene_number: n })
+        : makeScene({ id: `scene-${n}`, scene_number: n, status: "generating", clip_url: null }),
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    // Even with a runId + full scene_order that would otherwise fail the
+    // strict per-scene check, allowPartial bypasses it entirely.
+    vi.mocked(db.getSupabase).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "photos") return makeChain({ id: "photo-1", room_type: "living_room" });
+        if (table === "delivery_runs") {
+          return makeChain({ scene_order: scenes.map((s) => s.id) });
+        }
+        return makeChain(PROP_COMPLETE);
+      }),
+    } as never);
+
+    await expect(
+      rerunAssembly("prop-1", { runId: "run-1", allowPartial: true }),
+    ).resolves.toBeUndefined();
+    expect(db.updatePropertyStatus).toHaveBeenCalledWith("prop-1", "assembling");
+  });
+
   it("sets status to assembling and records cost_events with reason=manual_rerun", async () => {
     await rerunAssembly("prop-1");
 

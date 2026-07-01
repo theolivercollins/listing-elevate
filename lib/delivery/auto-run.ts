@@ -688,11 +688,22 @@ export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOu
 /**
  * checkpoint_a — Judge-winner confirmation gate.
  *
- * For each scene pair, compute margin = abs(scoreA − scoreB) / 20.
- * Degraded pairs (winner_source='default', no real judge scores) are
- * auto-accepted — there's no meaningful choice to re-examine.
- * If ALL real-judged scenes have a margin ≥ AUTO_JUDGE_MARGIN, advance.
- * If any scene's margin is below the threshold, pause.
+ * Generation-completeness gate runs FIRST: a scene that never got a
+ * scene_variants row at all (submission silently dropped) never appears in
+ * `variants`, so the per-pair loop below — which only walks scenes that DO
+ * have a variant row — would never notice it and would silently accept a
+ * partial run. (Incident: delivery run 4b15ef63 — 4 of 7 scenes had
+ * attempt_count=0/provider=null/no clip_url; runJudgePass judged the 3 that
+ * did have variant rows, checkpoint_a auto-accepted, and assembly stitched a
+ * 3-clip video and marked the property complete.) We compare the full scene
+ * set for the property against which scenes have a winning clip and pause
+ * for a human instead of advancing when any are missing.
+ *
+ * Then, for each scene pair that IS present, compute margin =
+ * abs(scoreA − scoreB) / 20. Degraded pairs (winner_source='default', no
+ * real judge scores) are auto-accepted — there's no meaningful choice to
+ * re-examine. If ALL real-judged scenes have a margin ≥ AUTO_JUDGE_MARGIN,
+ * advance. If any scene's margin is below the threshold, pause.
  */
 export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutcome> {
   const variants = await getVariantsForRun(run.id);
@@ -704,6 +715,37 @@ export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutco
     if (v.variant === 'A') entry.a = v;
     else if (v.variant === 'B') entry.b = v;
     byScene.set(v.scene_id, entry);
+  }
+
+  // Generation-completeness gate. Skipped only for the synthetic
+  // zero-variant case (unreachable in prod — runJudgePass never advances a
+  // run to checkpoint_a while `pairs.length === 0`), so there is nothing to
+  // reconcile against and no DB round trip is needed.
+  if (variants.length > 0) {
+    const { data: sceneRows, error: scenesErr } = await getSupabase()
+      .from('scenes')
+      .select('id, scene_number')
+      .eq('property_id', run.property_id);
+    if (scenesErr) {
+      throw new Error(`resolveCheckpointA: scenes lookup failed: ${scenesErr.message}`);
+    }
+
+    const allScenes = (sceneRows ?? []) as Array<{ id: string; scene_number: number }>;
+    const missingSceneNumbers: number[] = [];
+    for (const scene of allScenes) {
+      const entry = byScene.get(scene.id);
+      const winnerRow = entry ? (entry.a?.winner ? entry.a : entry.b?.winner ? entry.b : undefined) : undefined;
+      if (!winnerRow?.clip_url) missingSceneNumbers.push(scene.scene_number);
+    }
+
+    if (missingSceneNumbers.length > 0) {
+      missingSceneNumbers.sort((a, b) => a - b);
+      const reason =
+        `generation incomplete: ${missingSceneNumbers.length} of ${allScenes.length} scenes have no clip ` +
+        `(scenes ${missingSceneNumbers.join(', ')})`;
+      await pauseForHuman(run.id, reason);
+      return { action: 'paused', reason };
+    }
   }
 
   const margins: Array<{ sceneId: string; margin: number }> = [];
