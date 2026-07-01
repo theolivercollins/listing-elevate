@@ -5,22 +5,23 @@
   --le-bg: #ffffff;
   --le-bg-elev: #f7f7f9;
   --le-bg-sunken: #eeeef2;
-  --le-border: rgba(10, 12, 20, 0.07);
-  --le-border-strong: rgba(10, 12, 20, 0.14);
-  --le-text: #07080c;
+  --le-border: rgba(10, 12, 20, 0.08); /* @kind color */
+  --le-border-strong: rgba(10, 12, 20, 0.14); /* @kind color */
+  --le-text: #0c0e16; /* @kind color — primary ink (cool near-black, shifted from #07080c) */
   --le-text-muted: rgba(10, 12, 20, 0.55);
   --le-text-faint: rgba(10, 12, 20, 0.3);
 
-  /* Accent — ink black */
-  --le-accent: #07080c;
-  --le-accent-fg: #ffffff;
+  /* Accent — deep navy brand accent (was ink black #07080c) */
+  --le-accent: #1E4A8C; /* @kind color */
+  --le-accent-fg: #ffffff; /* @kind color */
   --le-accent-soft: #f0f0f3;
-  --le-accent-text: #07080c;
+  --le-accent-text: #1E4A8C; /* @kind color — navy; used for interactive/CTA, NOT body text */
+  --le-ink: #0c0e16; /* @kind color — canonical primary text token */
 
   /* States */
   --le-success: oklch(0.62 0.15 155);
   --le-success-soft: oklch(0.94 0.05 155);
-  --le-warn: oklch(0.72 0.14 75);
+  --le-warn: #b6802c; /* @kind color — canonical warn (unified with studio/dashboard; was oklch(0.72 0.14 75)) */
   --le-warn-soft: oklch(0.95 0.05 75);
   --le-danger: oklch(0.58 0.17 25);
   --le-danger-soft: oklch(0.94 0.05 25);
@@ -66,8 +67,8 @@
   --le-chart-4: #b893ff;
   --le-chart-5: #f08aae;
 
-  /* Brand blue RGB — for rgba color operations in ambient animations + gradients */
-  --le-brand-blue-rgb: 47, 109, 240;
+  /* Brand blue RGB — ambient decorative color, shifted to the navy family (#1E4A8C) for cohesion */
+  --le-brand-blue-rgb: 30, 74, 140; /* @kind color */
 
   /* Nav background — translucent frosted bar; overridden dark below */
   --le-nav-bg: rgba(255, 255, 255, 0.85);
@@ -78,6 +79,121 @@
   --le-surface-card-soft: #fbfcfe;
   --le-card-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 30px rgba(15, 23, 42, 0.05);
   --le-card-radius: 18px;
+
+  /* ─────────────────────────────────────────────────────────────────
+     APPLE-COHESIVE FOUNDATION — folded in from the design system.
+     Light-mode only. New scales (type / spacing / controls / motion) plus
+     canonical radius + semantic-color names. Legacy names above are kept
+     and aliased; nothing here removes an existing token.
+     ───────────────────────────────────────────────────────────────── */
+
+  /* TYPE FACE — canonical sans (aliases the existing --le-font-sans stack) */
+  /* (--le-font-sans / --le-font-display / --le-font-mono defined above; all Inter) */
+
+  /* TYPE RAMP */
+  --le-text-display-size: 48px;        /* @kind font */
+  --le-text-display-line: 52px;        /* @kind font */
+  --le-text-display-weight: 700;       /* @kind font */
+  --le-text-display-tracking: -0.022em; /* @kind font */
+  --le-text-large-title-size: 34px;    /* @kind font */
+  --le-text-large-title-line: 40px;    /* @kind font */
+  --le-text-large-title-weight: 700;   /* @kind font */
+  --le-text-large-title-tracking: -0.021em; /* @kind font */
+  --le-text-title-1-size: 28px;        /* @kind font */
+  --le-text-title-1-line: 34px;        /* @kind font */
+  --le-text-title-1-weight: 600;       /* @kind font */
+  --le-text-title-1-tracking: -0.019em; /* @kind font */
+  --le-text-title-2-size: 22px;        /* @kind font */
+  --le-text-title-2-line: 28px;        /* @kind font */
+  --le-text-title-2-weight: 600;       /* @kind font */
+  --le-text-title-2-tracking: -0.017em; /* @kind font */
+  --le-text-title-3-size: 20px;        /* @kind font */
+  --le-text-title-3-line: 26px;        /* @kind font */
+  --le-text-title-3-weight: 600;       /* @kind font */
+  --le-text-title-3-tracking: -0.014em; /* @kind font */
+  --le-text-headline-size: 17px;       /* @kind font */
+  --le-text-headline-line: 24px;       /* @kind font */
+  --le-text-headline-weight: 600;      /* @kind font */
+  --le-text-headline-tracking: -0.012em; /* @kind font */
+  --le-text-body-size: 16px;           /* @kind font */
+  --le-text-body-line: 24px;           /* @kind font */
+  --le-text-body-weight: 400;          /* @kind font */
+  --le-text-body-tracking: -0.011em;   /* @kind font */
+  --le-text-callout-size: 15px;        /* @kind font */
+  --le-text-callout-line: 22px;        /* @kind font */
+  --le-text-callout-weight: 400;       /* @kind font */
+  --le-text-callout-tracking: -0.006em; /* @kind font */
+  --le-text-subhead-size: 14px;        /* @kind font */
+  --le-text-subhead-line: 20px;        /* @kind font */
+  --le-text-subhead-weight: 500;       /* @kind font */
+  --le-text-subhead-tracking: -0.006em; /* @kind font */
+  --le-text-footnote-size: 13px;       /* @kind font */
+  --le-text-footnote-line: 18px;       /* @kind font */
+  --le-text-footnote-weight: 400;      /* @kind font */
+  --le-text-footnote-tracking: 0em;    /* @kind font */
+  --le-text-caption-size: 12px;        /* @kind font */
+  --le-text-caption-line: 16px;        /* @kind font */
+  --le-text-caption-weight: 600;       /* @kind font */
+  --le-text-caption-tracking: 0.03em;  /* @kind font */
+
+  /* SPACING — 8pt scale */
+  --le-space-1: 4px;   /* @kind spacing */
+  --le-space-2: 8px;   /* @kind spacing */
+  --le-space-3: 12px;  /* @kind spacing */
+  --le-space-4: 16px;  /* @kind spacing */
+  --le-space-5: 20px;  /* @kind spacing */
+  --le-space-6: 24px;  /* @kind spacing */
+  --le-space-8: 32px;  /* @kind spacing */
+  --le-space-10: 40px; /* @kind spacing */
+  --le-space-12: 48px; /* @kind spacing */
+  --le-space-16: 64px; /* @kind spacing */
+  --le-space-20: 80px; /* @kind spacing */
+
+  /* RADIUS — canonical ramp (NEW names). The legacy --le-r-* above keep their
+     original values (sm 6 / md 10 / lg 14 / xl 20 / pill 999) so existing
+     components are NOT resized; this ramp is for new/updated components. */
+  --le-radius-xs: 6px;    /* @kind radius */
+  --le-radius-sm: 10px;   /* @kind radius */
+  --le-radius-md: 14px;   /* @kind radius */
+  --le-radius-lg: 20px;   /* @kind radius */
+  --le-radius-xl: 28px;   /* @kind radius */
+  --le-radius-pill: 999px; /* @kind radius */
+
+  /* CONTROLS / SIZING */
+  --le-control-sm: 28px;    /* @kind spacing */
+  --le-control-md: 36px;    /* @kind spacing */
+  --le-control-lg: 44px;    /* @kind spacing */
+  --le-target-min: 44px;    /* @kind spacing */
+  --le-icon-sm: 16px;       /* @kind spacing */
+  --le-icon-md: 20px;       /* @kind spacing */
+  --le-icon-lg: 24px;       /* @kind spacing */
+  --le-border-hairline: 1px; /* @kind spacing */
+
+  /* ELEVATION — canonical shadows (values already match legacy --le-shadow-* above) */
+  --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05); /* @kind shadow */
+  --le-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04); /* @kind shadow */
+  --le-shadow-lg: 0 12px 40px rgba(20, 18, 15, 0.08), 0 2px 8px rgba(20, 18, 15, 0.04); /* @kind shadow */
+
+  /* COLOR — semantic canonical names (global defaults; scoped surfaces may override).
+     --le-accent / --le-ink defined in the accent block above. --le-warn above. */
+  --le-surface: #ffffff;         /* @kind color */
+  --le-surface-sunken: #f5f5f7;  /* @kind color */
+  --le-text-secondary: #3a3f4c;  /* @kind color */
+  --le-muted: #656b7a;           /* @kind color */
+  --le-faint: #9aa0ad;           /* @kind color */
+  --le-good: #2f8a55;            /* @kind color */
+  --le-bad: #c44a4a;             /* @kind color */
+
+  /* MOTION */
+  --le-duration-instant: 100ms; /* @kind other */
+  --le-duration-fast: 150ms;    /* @kind other */
+  --le-duration-normal: 200ms;  /* @kind other */
+  --le-duration-slow: 300ms;    /* @kind other */
+  --le-duration-slower: 500ms;  /* @kind other */
+  --le-ease-out: cubic-bezier(0.16, 1, 0.30, 1);    /* @kind other */
+  --le-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* @kind other */
+  --le-ease-in: cubic-bezier(0.50, 0, 0.75, 0);     /* @kind other */
+  --le-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* @kind other */
 }
 
 .dark, [data-theme="dark"] {
@@ -356,11 +472,11 @@
   --line:       rgba(12, 14, 22, 0.08);
   --line-2:     rgba(12, 14, 22, 0.045);
 
-  /* Accent — kept at #2a6fdb exactly (from approved design) */
-  --accent:     #2a6fdb;
-  --accent-2:   #1f5ec2;
+  /* Accent — deep navy #1E4A8C (brand accent, unified app-wide; was #2a6fdb) */
+  --accent:     #1E4A8C;
+  --accent-2:   #163a6e;
   --accent-soft:#eaf1fd;
-  --accent-ink: #1b4ea0;
+  --accent-ink: #163a6e;
 
   /* Semantic status colors */
   --good:       #2f8a55;
@@ -369,7 +485,7 @@
   --warn-soft:  #f6efe1;
   --bad:        #c44a4a;
   --bad-soft:   #f8eaea;
-  --info:       #2a6fdb;
+  --info:       #1E4A8C;
   --info-soft:  #eaf1fd;
 
   /* Radius */

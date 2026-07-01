@@ -1,6 +1,6 @@
 /* v2 shell global stylesheet.
    Only imported by /v2 pages — must not leak to legacy pages. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+/* Inter is self-hosted via @font-face in src/index.css (/fonts/InterVariable.woff2). */
 @import "./tokens.css";
 
 /* ------------------------------------------------------------------
