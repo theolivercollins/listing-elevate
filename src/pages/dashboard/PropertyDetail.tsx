@@ -5,6 +5,7 @@ import { Download, RotateCcw, Copy, Check, Loader2, AlertTriangle, Star, ArrowLe
 import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
 import { fetchProperty, fetchLogs, rerunProperty, fetchSystemPrompts, rateScene, resubmitScene } from "@/lib/api";
+import { photoGrid } from "@/lib/image-url";
 import { PageHeading, StatusChip, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
@@ -589,8 +590,10 @@ const PropertyDetail = () => {
       {primaryPhoto && (
         <div style={{ borderRadius: "var(--le-r-lg)", overflow: "hidden", background: "#000" }}>
           <img
-            src={primaryPhoto.file_url}
+            src={photoGrid(primaryPhoto.file_url)}
             alt={primaryPhoto.file_name || property.address}
+            loading="lazy"
+            decoding="async"
             style={{ width: "100%", maxHeight: 280, objectFit: "cover", display: "block", filter: "brightness(0.85) saturate(1.05)" }}
           />
         </div>
