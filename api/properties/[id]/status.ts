@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getScenesForProperty, getSupabase } from '../../../lib/db.js';
-import { verifyAuth } from '../../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../../lib/auth.js';
 
 /**
  * Minimal inline label map for the GET response.
@@ -56,6 +56,12 @@ const ALLOWED_PATCH_STATUSES = new Set([
 const OWNER_PATCH_STATUSES = new Set(['archived']);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): verifyAuth is called directly here (not via
+  // requireAuth), so set no-store/Vary up front on every response path,
+  // including the 405/404 and the unauthenticated public GET branch below —
+  // that branch's body still varies by auth header even when it ignores it.
+  setNoStore(res);
+
   if (req.method === 'PATCH') {
     // Auth gate: caller must have a valid session AND be the property owner or admin.
     // verifyAuth is used directly (not requireAuth) so we can distinguish 401 from 403.

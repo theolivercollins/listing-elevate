@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { Menu } from "lucide-react";
 import "@/v2/styles/v2.css";
 import { DashboardSidebar, useDashboardSidebar } from "@/components/DashboardSidebar";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { Icon } from "@/components/dashboard/icons";
 import { useMediaQuery } from "@/hooks/use-mobile";
 import { useAuth } from "@/lib/auth";
@@ -50,6 +51,7 @@ const Dashboard = () => {
         aria-hidden="true"
       />
       <div className="le-dash-main">
+        <ImpersonationBanner />
         <div className="le-dash-mobilebar">
           <button
             type="button"
