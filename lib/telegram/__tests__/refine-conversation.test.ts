@@ -102,7 +102,13 @@ function makeIntake(overrides: Record<string, unknown> = {}) {
     status: 'generating',
     telegram_message_id: null,
     feedback_notes: null,
-    property_id: 'prop-1',
+    // P1 — most fixtures in this file represent either an ALREADY-approved
+    // row (FIX 3/paused-run/callback/applyPlan tests, where property_id's
+    // value is irrelevant to what's under test) or a never-approved
+    // pre-seeded Drive folder (the create-intent tests) — null is the more
+    // representative default. The one scenario that needs a property-id-
+    // bearing row (P1's regen-card split, below) overrides this explicitly.
+    property_id: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     delivery_run_id: 'run-1',
@@ -285,8 +291,8 @@ describe('handleRefineMessage — create-intent finds the Drive folder and sends
     expect(refineAgentModule.planRefinement).not.toHaveBeenCalled();
   });
 
-  it.each(['detected', 'error', 'awaiting_approval', 'approved'] as const)(
-    'also sends the approval card for a %s match (every pre-ingestion status is startable)',
+  it.each(['detected', 'awaiting_approval', 'approved'] as const)(
+    'also sends the approval card for a %s match with no property_id (every never-approved pre-ingestion status is startable — the error+property_id split is covered separately below)',
     async (status) => {
       const row = makeIntake({ id: 'intake-1', address: 'Kinglet Dr 1418', status, photo_count: 5 });
       vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([row] as never);
@@ -297,6 +303,65 @@ describe('handleRefineMessage — create-intent finds the Drive folder and sends
       expect(telegramClient.sendMessage).toHaveBeenCalledWith('APPROVAL_TEXT:Kinglet Dr 1418:5', expect.anything());
     },
   );
+
+  // ── P1 — an 'error' row's regen-card branch hinges on property_id, split
+  // out from the combined parametrized test above (a bare 'error' status
+  // alone isn't enough to decide approve vs. regen — see handleCreateIntent's
+  // docblock in refine-conversation.ts). ─────────────────────────────────────
+
+  it('an error match with property_id NULL (never actually reached approveIntake) still sends the approval card, same as any other startable status', async () => {
+    const row = makeIntake({ id: 'intake-1', address: 'Kinglet Dr 1418', status: 'error', photo_count: 5, property_id: null });
+    vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([row] as never);
+
+    await handleRefineMessage('make a video for kinglet');
+
+    expect(intakeDb.setStatus).toHaveBeenCalledWith('intake-1', 'awaiting_approval');
+    expect(telegramClient.sendMessage).toHaveBeenCalledWith('APPROVAL_TEXT:Kinglet Dr 1418:5', expect.anything());
+  });
+
+  it('P1: an error match with property_id SET (approveIntake already ran once and set property_id before the step that later failed) sends the REGEN retry card instead of approve — never re-creates the property/pipeline, and never touches status', async () => {
+    const row = makeIntake({ id: 'intake-1', address: 'Kinglet Dr 1418', status: 'error', photo_count: 5, property_id: 'prop-existing' });
+    vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([row] as never);
+
+    await handleRefineMessage('make a video for kinglet');
+
+    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
+      '🏠 *Kinglet Dr 1418* had a previous attempt. Try again?',
+      expect.objectContaining({
+        buttons: [
+          [
+            { text: '🔁 Regenerate', callbackData: 'regen:intake-1' },
+            { text: '❌ Cancel', callbackData: 'skip:intake-1' },
+          ],
+        ],
+      }),
+    );
+    // Never touches status, and never re-sends the approve:<id> card (this
+    // is a DIFFERENT card entirely, built inline, not via the
+    // buildApprovalPromptText/buildApprovalButtons templates).
+    expect(intakeDb.setStatus).not.toHaveBeenCalled();
+    expect(detectModule.buildApprovalPromptText).not.toHaveBeenCalled();
+    expect(detectModule.buildApprovalButtons).not.toHaveBeenCalled();
+  });
+
+  it('a property_id-bearing row whose status is not CAS-claimable by regen (e.g. awaiting_approval — should not normally occur) gets a plain status message, never a button that would just CAS-reject', async () => {
+    const row = makeIntake({
+      id: 'intake-1',
+      address: 'Kinglet Dr 1418',
+      status: 'awaiting_approval',
+      photo_count: 5,
+      property_id: 'prop-existing',
+    });
+    vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([row] as never);
+
+    await handleRefineMessage('make a video for kinglet');
+
+    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
+      "'Kinglet Dr 1418' already has a previous attempt (status: awaiting_approval) — check the Studio.",
+    );
+    expect(intakeDb.setStatus).not.toHaveBeenCalled();
+    expect(detectModule.buildApprovalButtons).not.toHaveBeenCalled();
+  });
 
   it.each(['generating', 'ingesting'] as const)(
     'a %s match: tells the operator it is already in flight, without touching status or sending an approval card',
@@ -339,8 +404,9 @@ describe('handleRefineMessage — create-intent finds the Drive folder and sends
     expect(intakeDb.setStatus).not.toHaveBeenCalled();
   });
 
-  it('no match: a helpful error naming the query, never a silent failure', async () => {
+  it('no match: a helpful error naming the query, never a silent failure (no active refine intake to fall back to)', async () => {
     vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([] as never);
+    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(null);
 
     await handleRefineMessage('make a video for nonexistentia');
 
@@ -452,6 +518,53 @@ describe('handleRefineMessage — create-intent finds the Drive folder and sends
     expect(telegramClient.sendMessage).toHaveBeenCalledWith(
       'No active listing to work on right now — approve one first.',
     );
+  });
+});
+
+// ── P2 — a zero-match create-intent parse falls through to the refine
+// planner when there's an active conversation to fall back to ──────────────
+//
+// parseCreateIntent's connector requirement is deliberately loose (see
+// CREATE_INTENT_RE's docblock) and CAN still spuriously match a genuine
+// refine message whose own tail phrases an edit target with a for/of/on
+// connector — e.g. "make the video for the intro shorter" (a real refine
+// request about the ALREADY-active listing, not a request to start a new
+// one). The old behavior bounced a "couldn't find a Drive folder" error and
+// threw the message away; this fix instead falls through to the normal
+// planner path whenever there's an active refine intake to fall back to.
+
+describe('handleRefineMessage — P2: zero-match create-intent falls through to the refine planner', () => {
+  it('"make the video for the intro shorter" with zero folder matches AND an active refine intake falls through to the planner — no folder-error reply', async () => {
+    vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([] as never);
+    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake() as never);
+    vi.mocked(refineContextModule.buildRefineContext).mockResolvedValue(makeCtx());
+    vi.mocked(refineAgentModule.planRefinement).mockResolvedValue(
+      makePlan({ reply: 'Sure, trimming the intro.' }),
+    );
+
+    await handleRefineMessage('make the video for the intro shorter');
+
+    expect(intakeDb.findIntakesByAddress).toHaveBeenCalledWith('intro shorter');
+    expect(refineAgentModule.planRefinement).toHaveBeenCalledWith(
+      'make the video for the intro shorter',
+      expect.anything(),
+      expect.anything(),
+    );
+    expect(telegramClient.sendMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining("couldn't find a Drive folder"),
+    );
+  });
+
+  it('the SAME message with NO active refine intake to fall back to gets the honest folder-not-found reply instead', async () => {
+    vi.mocked(intakeDb.findIntakesByAddress).mockResolvedValue([] as never);
+    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(null);
+
+    await handleRefineMessage('make the video for the intro shorter');
+
+    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
+      "I couldn't find a Drive folder matching 'intro shorter'. Folder names look like 'Kinglet Dr 1418'.",
+    );
+    expect(refineAgentModule.planRefinement).not.toHaveBeenCalled();
   });
 });
 

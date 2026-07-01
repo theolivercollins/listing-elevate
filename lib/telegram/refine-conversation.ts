@@ -26,6 +26,24 @@
  * skip: callback handlers in api/telegram/webhook.ts — this feature never
  * touches approveIntake, the planner, or the executor.
  *
+ * P1 (review round 2) — that "resend the approval card" behavior is wrong
+ * for a matched row that already carries a property_id: approveIntake sets
+ * property_id BEFORE the step that can later fail, so an 'error' intake very
+ * often still has one. Re-sending approve:<id> there would rerun
+ * approveIntake -> createProperty AGAIN, double-billing the pipeline and
+ * orphaning the first property (the hazard reapStuckIngesting's docblock in
+ * lib/drive/intake-db.ts documents). handleCreateIntent instead sends a
+ * regen:<id>/skip:<id> retry card for a property-bearing row. See
+ * REGEN_CLAIMABLE_STATUSES and handleCreateIntent's own docblock below.
+ *
+ * P2 (review round 2) — CREATE_INTENT_RE's connector requirement can still
+ * spuriously match a genuine refine message (e.g. "make the video for the
+ * intro shorter" — a request about the ALREADY-active listing, not a new
+ * one). A create-intent parse that resolves to ZERO Drive-folder matches
+ * falls through to the normal refine-planner path below instead of bouncing
+ * a "couldn't find a folder" error — but only when there's an active refine
+ * intake to fall back to. See CREATE_INTENT_RE's docblock + handleRefineMessage.
+ *
  * FIX 3 (Plan B decision 9) — handleRefineMessage itself splits into two
  * flows depending on whether the run is genuinely paused (a real quality/
  * spend gate — never the internal 'refining' apply-lock sentinel below):
@@ -84,6 +102,7 @@ import {
   setLastPausedReason,
   setTelegramMessageId,
   type DriveIntake,
+  type DriveIntakeStatus,
 } from '../drive/intake-db.js';
 import { buildApprovalPromptText, buildApprovalButtons } from '../drive/detect.js';
 import { countFinalImages } from '../drive/client.js';
@@ -316,16 +335,29 @@ export async function applyPlan(
  *
  * Conservative-by-construction: requires an explicit for/of/on connector
  * between the vid/video/reel/clip noun and the target, rather than trying to
- * classify the tail as "a name" vs. "an adjective". Every refine-style
- * message this must NOT match either has no connector at all ("make the
- * video more upbeat" — "video more upbeat" never contains for/of/on, so the
- * whole regex fails to match) or doesn't use this vocabulary in the first
- * place ("make the music happier" — "music" isn't vid/video/reel/clip;
- * "change the pics order" — "change" isn't a create verb). Every POSITIVE
- * case this feature needs to handle already phrases the target with
- * for/of/on ("make a vid FOR kinglet", "generate video OF bordeaux"), so
- * requiring the connector gives up no real coverage — only false positives
- * avoided.
+ * classify the tail as "a name" vs. "an adjective". This filters out most
+ * refine-style phrasing for free: "make the video more upbeat" has no
+ * connector at all ("video more upbeat" never contains for/of/on, so the
+ * whole regex fails to match), and "make the music happier"/"change the pics
+ * order" don't use this vocabulary in the first place ("music" isn't
+ * vid/video/reel/clip; "change" isn't a create verb).
+ *
+ * P2 (review round 2) — this is NOT a complete partition, though: a genuine
+ * refine message CAN still spuriously match when its own tail happens to
+ * phrase an edit target with a for/of/on connector — e.g. "make the video
+ * for the intro shorter" (real intent: shorten the intro scene of the
+ * ALREADY-active listing; this regex still matches it and extracts "the
+ * intro shorter" as if it were a folder-name query). Tightening the regex
+ * further to rule cases like this out would cost real coverage on the
+ * genuine create-intent phrasings this feature exists for ("make a vid FOR
+ * kinglet", "generate video OF bordeaux" both need that same connector), so
+ * the guard against stealing such a message from the refine planner lives at
+ * RUNTIME instead, in handleRefineMessage: a create-intent match that
+ * resolves to ZERO Drive-folder hits AND an active refine intake
+ * (getActiveRefineIntake() non-null) is treated as exactly this
+ * false-positive case and silently falls through to the normal planner path
+ * rather than bouncing a "couldn't find a folder" error. See
+ * handleRefineMessage below.
  */
 const CREATE_INTENT_RE =
   /^(?:make|create|generate|build|do)\s+(?:me\s+)?(?:a\s+|the\s+)?(?:vid|video|reel|clip)\s+(?:for|of|on)\s+(?<target>.+)$/i;
@@ -385,40 +417,76 @@ async function resolveApprovalPhotoCount(intake: DriveIntake): Promise<number> {
 }
 
 /**
+ * P1 (review round 2) — statuses claimForRegenerate (lib/drive/intake-db.ts)
+ * accepts for its atomic CAS claim on a regen:<id> tap. Mirrored here
+ * (intake-db.ts has no reason to export the raw list itself) so
+ * handleCreateIntent only ever offers the 🔁 Regenerate retry card on a
+ * property-bearing row when tapping it would actually win that CAS — never a
+ * button that would just silently CAS-reject.
+ */
+const REGEN_CLAIMABLE_STATUSES: readonly DriveIntakeStatus[] = ['rendered', 'generating', 'error'];
+
+/**
  * Handle a detected create-intent ("make a vid for <query>"): resolve the
- * Drive folder by name and either (re)send the SAME approval card
- * settleAndPrompt would have sent — for every status that hasn't started a
+ * Drive folder by name, then for every status that hasn't started a
  * generation yet ('skipped' | 'detected' | 'error' | 'awaiting_approval' |
  * 'approved'; claimForApproval, lib/drive/intake-db.ts, already treats
  * 'awaiting_approval'/'approved' as equivalent pre-ingestion states, so
  * folding 'approved' into the same bucket here is consistent, not a new
- * distinction invented for this feature) — or tell the operator honestly why
- * nothing new was started (already generating/ingesting, already rendered,
- * no match, or ambiguous). Never touches approveIntake, the planner, or the
- * executor — the approval card this sends is driven through the EXISTING
- * approve:/skip: callback handlers (api/telegram/webhook.ts), unchanged.
+ * distinction invented for this feature):
+ *   - property_id IS NULL — this row never ran through approveIntake yet, so
+ *     (re)send the SAME approval card settleAndPrompt would have sent,
+ *     driven through the EXISTING, unchanged approve:/skip: callback
+ *     handlers (api/telegram/webhook.ts).
+ *   - property_id IS SET (P1, review round 2) — approveIntake already ran
+ *     once for this row. Its Fix 2 (lib/drive/orchestrate.ts) sets
+ *     property_id IMMEDIATELY after createProperty, before any of the later
+ *     steps that can still throw (photo download/upload, delivery-run
+ *     creation) — and the catch block that lands status='error' on failure
+ *     never clears it. Re-sending the approve:<id> card here would re-run
+ *     approveIntake -> createProperty AGAIN: a SECOND property + a SECOND
+ *     paid pipeline, orphaning the first — the exact hazard
+ *     reapStuckIngesting's own docblock documents (lib/drive/intake-db.ts).
+ *     Send the regen:<id>/skip:<id> retry card instead (never approve:<id>)
+ *     — but only when the row's status is one claimForRegenerate will
+ *     actually accept (REGEN_CLAIMABLE_STATUSES above); otherwise this is an
+ *     unexpected state (an 'awaiting_approval'/'skipped'/'detected'/
+ *     'approved' row should never carry a property_id — claimForApproval
+ *     only transitions FROM those statuses, and a completed approveIntake
+ *     always lands on 'generating' or 'error') and the operator is told to
+ *     check the Studio rather than being offered a button that would just
+ *     CAS-reject.
+ * For every other status (already generating/ingesting, already rendered)
+ * tell the operator honestly why nothing new was started instead.
+ *
+ * Returns `false` only when the query matched ZERO Drive folders — the one
+ * outcome handleRefineMessage itself needs to react to (P2, review round 2
+ * — see CREATE_INTENT_RE's docblock for why a zero-match create-intent parse
+ * can legitimately be a genuine refine message in disguise). Every other
+ * outcome (1 match, 2+ matches, or a lookup error) is fully handled here,
+ * including sending any reply, and returns `true`.
  */
-async function handleCreateIntent(query: string): Promise<void> {
+async function handleCreateIntent(query: string): Promise<boolean> {
   let matches: DriveIntake[];
   try {
     matches = await findIntakesByAddress(query);
   } catch (err) {
     console.error(`${LOG_PREFIX} findIntakesByAddress failed for query "${query}":`, err);
     await sendMessage('Something went wrong looking that up — try again in a moment.');
-    return;
+    return true;
   }
 
   if (matches.length === 0) {
-    await sendMessage(
-      `I couldn't find a Drive folder matching '${escapeMarkdown(query)}'. Folder names look like 'Kinglet Dr 1418'.`,
-    );
-    return;
+    // P2 — handleRefineMessage decides whether this is a genuine "no such
+    // folder" error or a refine message that spuriously matched
+    // CREATE_INTENT_RE; never reply from here.
+    return false;
   }
 
   if (matches.length > 1) {
     const list = matches.map((m, i) => `${i + 1}. ${escapeMarkdown(m.address)}`).join('\n');
     await sendMessage(`Found a few matches — which one?\n${list}`);
-    return;
+    return true;
   }
 
   const match = matches[0];
@@ -426,17 +494,50 @@ async function handleCreateIntent(query: string): Promise<void> {
 
   if (match.status === 'generating' || match.status === 'ingesting') {
     await sendMessage(`Already generating a video for ${safeAddress} — I'll ping you when it's ready.`);
-    return;
+    return true;
   }
 
   if (match.status === 'rendered') {
     await sendMessage(
       `'${safeAddress}' already has a video — want changes? Just tell me what to refine. Or say 'regenerate ${safeAddress}' to start over.`,
     );
-    return;
+    return true;
   }
 
-  // Startable: 'skipped' | 'detected' | 'error' | 'awaiting_approval' | 'approved'.
+  // P1 — a property_id already on this row means approveIntake already ran
+  // once for it (see this function's own docblock above for the full
+  // double-create-property hazard this avoids).
+  if (match.property_id != null) {
+    if (REGEN_CLAIMABLE_STATUSES.includes(match.status)) {
+      try {
+        await sendMessage(
+          `🏠 *${safeAddress}* had a previous attempt. Try again?`,
+          {
+            buttons: [[
+              { text: '🔁 Regenerate', callbackData: `regen:${match.id}` },
+              { text: '❌ Cancel', callbackData: `skip:${match.id}` },
+            ]],
+          },
+        );
+      } catch (err) {
+        console.error(
+          `${LOG_PREFIX} handleCreateIntent: sending regen retry card failed for intake ${match.id} (${match.address}):`,
+          err,
+        );
+        await sendMessage("Found it, but hit a snag sending the retry card — I've logged it; try again.");
+      }
+    } else {
+      // Defensive — should not normally occur (see docblock above); never
+      // offer a regen:<id> button claimForRegenerate would just CAS-reject.
+      await sendMessage(
+        `'${safeAddress}' already has a previous attempt (status: ${match.status}) — check the Studio.`,
+      );
+    }
+    return true;
+  }
+
+  // Startable and never-approved: 'skipped' | 'detected' | 'error' |
+  // 'awaiting_approval' | 'approved' with property_id IS NULL.
   try {
     const photoCount = await resolveApprovalPhotoCount(match);
     const { messageId } = await sendMessage(
@@ -452,6 +553,7 @@ async function handleCreateIntent(query: string): Promise<void> {
     );
     await sendMessage("Found it, but hit a snag sending the approval card — I've logged it; try again.");
   }
+  return true;
 }
 
 // ── handleRefineMessage — free-text turn ─────────────────────────────────────
@@ -459,11 +561,28 @@ async function handleCreateIntent(query: string): Promise<void> {
 export async function handleRefineMessage(text: string): Promise<void> {
   const createQuery = parseCreateIntent(text);
   if (createQuery) {
-    await handleCreateIntent(createQuery);
-    return;
+    const matched = await handleCreateIntent(createQuery);
+    if (matched) return;
+    // P2 (review round 2) — createQuery matched CREATE_INTENT_RE but
+    // resolved to ZERO Drive folders. Fall through to the normal
+    // active-intake/planner path below instead of bouncing a "couldn't find
+    // a folder" error — UNLESS there's no active refine conversation to fall
+    // back to either, in which case this really was a "no such folder"
+    // request and the bounce below is correct. See CREATE_INTENT_RE's
+    // docblock for why a zero-match create-intent parse can legitimately be
+    // a genuine refine message in disguise (e.g. "make the video for the
+    // intro shorter").
   }
 
   const intake = await getActiveRefineIntake();
+
+  if (createQuery && !intake) {
+    await sendMessage(
+      `I couldn't find a Drive folder matching '${escapeMarkdown(createQuery)}'. Folder names look like 'Kinglet Dr 1418'.`,
+    );
+    return;
+  }
+
   if (!intake || !intake.delivery_run_id) {
     await sendMessage('No active listing to work on right now — approve one first.');
     return;
