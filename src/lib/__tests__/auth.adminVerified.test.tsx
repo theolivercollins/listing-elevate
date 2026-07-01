@@ -46,6 +46,13 @@ vi.mock("@/lib/supabase", () => ({
         Promise.resolve({ data: { user: { id: "admin-1" } }, error: null }),
       ),
       signOut: vi.fn(() => Promise.resolve({ error: null })),
+      signInWithOAuth: vi.fn(() => Promise.resolve({ error: null })),
+      signUp: vi.fn(() => Promise.resolve({ error: null })),
+      getUserIdentities: vi.fn(() =>
+        Promise.resolve({ data: { identities: [] }, error: null }),
+      ),
+      linkIdentity: vi.fn(() => Promise.resolve({ error: null })),
+      unlinkIdentity: vi.fn(() => Promise.resolve({ error: null })),
     },
     from: vi.fn(() => ({
       select: vi.fn(() => ({
@@ -84,7 +91,15 @@ const MARKER_KEY = "le_admin_verified:admin-1";
 
 // ── Probe: surfaces the provider's adminVerified + actions for assertions ────
 function Probe() {
-  const { adminVerified, profile, verifyAdminEmailCode, signOut } = useAuth();
+  const {
+    adminVerified,
+    profile,
+    verifyAdminEmailCode,
+    signOut,
+    signInWithGoogle,
+    signInWithMicrosoft,
+    signUp,
+  } = useAuth();
   return (
     <div>
       <span data-testid="admin-verified">{String(adminVerified)}</span>
@@ -94,6 +109,24 @@ function Probe() {
       </button>
       <button data-testid="signout" onClick={() => void signOut()}>
         signout
+      </button>
+      <button data-testid="google" onClick={() => void signInWithGoogle().catch(() => {})}>
+        google
+      </button>
+      <button data-testid="microsoft" onClick={() => void signInWithMicrosoft().catch(() => {})}>
+        microsoft
+      </button>
+      <button
+        data-testid="signup"
+        onClick={() =>
+          void signUp("new@example.com", "Password123!", {
+            first_name: "A",
+            last_name: "B",
+            brokerage: "C",
+          }).catch(() => {})
+        }
+      >
+        signup
       </button>
     </div>
   );
@@ -186,5 +219,91 @@ describe("AuthProvider admin-verified marker", () => {
     });
 
     await waitFor(() => expect(sessionStorage.getItem(MARKER_KEY)).toBeNull());
+  });
+});
+
+// ── Social sign-in / sign-up wiring + the 2FA-bypass security regression ────
+//
+// These exercise the new AuthProvider methods added for the login revamp
+// (signInWithGoogle / signInWithMicrosoft / signUp) against the mocked
+// supabase.auth.signInWithOAuth / signUp. The methods don't depend on `user`,
+// so any session that renders the Probe is sufficient to click the buttons.
+describe("AuthProvider — social sign-in, sign-up, and OAuth admin-verification regression", () => {
+  beforeEach(() => {
+    h.state.session = makeSession([{ method: "otp", timestamp: 1 }]);
+  });
+
+  it("A. signInWithGoogle calls supabase.auth.signInWithOAuth with provider=google, the callback redirect, and prompt=select_account", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("admin"));
+
+    fireEvent.click(screen.getByTestId("google"));
+
+    await waitFor(() => expect(supabase.auth.signInWithOAuth).toHaveBeenCalledTimes(1));
+    expect(supabase.auth.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "google",
+        options: expect.objectContaining({
+          redirectTo: "http://localhost/auth/callback",
+          queryParams: expect.objectContaining({ prompt: "select_account" }),
+        }),
+      }),
+    );
+  });
+
+  it("B. signInWithMicrosoft calls supabase.auth.signInWithOAuth with provider=azure, the callback redirect, and the email/openid/profile scopes, and prompt=select_account", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("admin"));
+
+    fireEvent.click(screen.getByTestId("microsoft"));
+
+    await waitFor(() => expect(supabase.auth.signInWithOAuth).toHaveBeenCalledTimes(1));
+    expect(supabase.auth.signInWithOAuth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "azure",
+        options: expect.objectContaining({
+          redirectTo: "http://localhost/auth/callback",
+          scopes: "email openid profile",
+          queryParams: expect.objectContaining({ prompt: "select_account" }),
+        }),
+      }),
+    );
+  });
+
+  it("C. signUp calls supabase.auth.signUp with email, password, meta as options.data, and the callback redirect", async () => {
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("admin"));
+
+    fireEvent.click(screen.getByTestId("signup"));
+
+    await waitFor(() => expect(supabase.auth.signUp).toHaveBeenCalledTimes(1));
+    expect(supabase.auth.signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "new@example.com",
+        password: "Password123!",
+        options: expect.objectContaining({
+          data: { first_name: "A", last_name: "B", brokerage: "C" },
+          emailRedirectTo: "http://localhost/auth/callback",
+        }),
+      }),
+    );
+  });
+
+  it("D. SECURITY REGRESSION — a session whose latest amr method is 'oauth' must NOT be marked admin-verified (OAuth is not auto-verified)", async () => {
+    // Guards the 2FA-bypass fix: sessionProvesEmailPossession only accepts
+    // otp/magiclink/email amr methods. If a future change (e.g. wiring OAuth
+    // sign-in) ever widened that allowlist to include "oauth", an attacker who
+    // completes a Google/Microsoft sign-in — which proves account ownership at
+    // the provider, NOT possession of a code sent to this app — would skip the
+    // admin email-code step-up entirely. This test pins that "oauth" stays
+    // rejected.
+    h.state.session = makeSession([{ method: "oauth", timestamp: 1 }]);
+
+    renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId("role").textContent).toBe("admin"));
+
+    expect(sessionStorage.getItem(MARKER_KEY)).toBeNull();
+    expect(screen.getByTestId("admin-verified").textContent).toBe("false");
   });
 });

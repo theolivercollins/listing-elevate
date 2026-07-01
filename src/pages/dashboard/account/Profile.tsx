@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { PageHeading, Card, SectionTitle } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
+import { ConnectedAccountsCard } from "@/components/dashboard/ConnectedAccountsCard";
 import { Icon } from "@/components/dashboard/icons";
 import { passwordIssue } from "@/lib/passwordUtils";
 
@@ -310,6 +311,9 @@ export default function AccountProfile() {
             </div>
           </form>
         </Card>
+
+        {/* Connected accounts — every role */}
+        <ConnectedAccountsCard />
 
         {isAdmin ? (
           // Owner / admin: security + danger zone instead of brokerage form.

@@ -1,13 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, Mail, Lock, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  X,
+  Mail,
+  Lock,
+  User,
+  Building2,
+  ArrowRight,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
+import { SocialAuthButtons } from "@/v2/components/auth/SocialAuthButtons";
+import { passwordIssue } from "@/lib/passwordUtils";
 
-type Mode = "password" | "magic";
-// "form" → credentials step; "sent" → magic link sent
-type Step = "form" | "sent";
+type AuthMode = "signin" | "signup";
+// "form" → credentials step; "sent" → magic link sent; "confirm" → sign-up confirmation
+type Step = "form" | "sent" | "confirm";
 
 export interface LoginDialogProps {
   open: boolean;
@@ -41,47 +52,154 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+const iconStyle: React.CSSProperties = {
+  position: "absolute",
+  left: 14,
+  top: "50%",
+  transform: "translateY(-50%)",
+  width: 16,
+  height: 16,
+  color: "var(--le-text-faint)",
+  pointerEvents: "none",
+};
+
+// Neutral/secondary text-link (password toggle, sign-in/sign-up switch, "use a
+// different email"). Never the accent — the filled primary is the only accent.
+const switchLinkStyle: React.CSSProperties = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  cursor: "pointer",
+  color: "var(--le-text)",
+  fontWeight: 500,
+  fontSize: 13,
+  textDecoration: "underline",
+  textUnderlineOffset: 4,
+  fontFamily: "var(--le-font-sans)",
+};
+
+type TextFieldProps = {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+} & React.InputHTMLAttributes<HTMLInputElement>;
+
+/** Label + icon-prefixed input, matching the dialog's inline-style token pattern. */
+function TextField({ id, label, icon, ...rest }: TextFieldProps) {
+  return (
+    <div>
+      <label htmlFor={id} className="le-eyebrow" style={labelStyle}>
+        {label}
+      </label>
+      <div style={{ position: "relative" }}>
+        {icon}
+        <input id={id} style={inputStyle} {...rest} />
+      </div>
+    </div>
+  );
+}
+
+/** "or" rule — thin border lines flanking a centered lowercase eyebrow. */
+function OrDivider() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1, height: 1, background: "var(--le-border)" }} />
+      <span
+        className="le-eyebrow"
+        style={{ textTransform: "none", color: "var(--le-text-faint)" }}
+      >
+        or
+      </span>
+      <div style={{ flex: 1, height: 1, background: "var(--le-border)" }} />
+    </div>
+  );
+}
+
 /**
- * LoginDialog — light modal matching the SaaS surface (2026-06-11).
+ * LoginDialog — unified sign-in / sign-up modal on the light SaaS surface.
  *
- * Primary flow: email + password (Supabase signInWithPassword).
- * Secondary flow: one-time magic link (signInWithMagicLink).
+ * Sign in: social (Google / Microsoft) → magic link (primary, default) or an
+ * optional password. Sign up: social → name / brokerage / email / password
+ * (validated via passwordIssue) → confirmation.
  *
- * Mounts into document.body via a portal so it can appear over any
- * route and stack cleanly above navs, images, and page content.
+ * Mounts into document.body via a portal so it can appear over any route and
+ * stack cleanly above navs, images, and page content.
  *
- * Animation fix (2026-06-11): the original `autoFocus` attribute on
- * the email input fired synchronously on mount, triggering the browser's
- * "scroll to focused element" behaviour while the framer-motion y-translate
- * entry animation (ENTRY_MS) was still running. The two transforms fought,
- * producing a visible glitch. The fix:
- *   - `autoFocus` removed from the input; replaced with a deferred
- *     `.focus()` call after the entry animation finishes.
- *   - The password field conditional is wrapped in AnimatePresence +
- *     motion.div so its mount/unmount transitions height smoothly instead
- *     of jumping the card.
- *   - The sent/form swap is wrapped in AnimatePresence mode="wait" so
- *     the two states cross-fade rather than swapping instantly.
+ * Animation notes (2026-06-11): `autoFocus` on the email input fired
+ * synchronously on mount, triggering the browser's "scroll to focused element"
+ * while the framer-motion y-translate entry animation (ENTRY_MS) was still
+ * running — the two transforms fought and produced a visible glitch. The fixes,
+ * preserved here:
+ *   - `autoFocus` removed; a deferred `.focus()` runs after the entry animation.
+ *   - The password field is wrapped in AnimatePresence + motion.div so its
+ *     mount/unmount transitions height smoothly instead of jumping the card.
+ *   - The form/sent/confirm swap uses AnimatePresence mode="wait" so the steps
+ *     cross-fade rather than swapping instantly.
  */
 export function LoginDialog({ open, onClose }: LoginDialogProps) {
-  const { signInWithMagicLink, signInWithPassword } = useAuth();
-  const [mode, setMode] = useState<Mode>("password");
+  const {
+    signInWithMagicLink,
+    signInWithPassword,
+    signInWithGoogle,
+    signInWithMicrosoft,
+    signUp,
+  } = useAuth();
+
+  const [authMode, setAuthMode] = useState<AuthMode>("signin");
+  const [usePassword, setUsePassword] = useState(false);
   const [step, setStep] = useState<Step>("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [brokerage, setBrokerage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const emailRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Element focused before the dialog opened — restored on close so focus
+  // doesn't get dropped back to <body> (standard modal a11y behavior).
+  const prevFocusRef = useRef<Element | null>(null);
 
-  // Reset transient state when the dialog is re-opened after a close.
+  // Reset transient state when the dialog is re-opened after a close. Also
+  // clears every credential/profile field and mode toggle: the dialog stays
+  // mounted across opens (only `open` flips), so without this a value typed
+  // in a previous session (e.g. a password) would silently persist into the
+  // next one.
   useEffect(() => {
     if (open) {
       setError("");
       setSubmitting(false);
       setStep("form");
+      setPassword("");
+      setEmail("");
+      setFirstName("");
+      setLastName("");
+      setBrokerage("");
+      setUsePassword(false);
+      setAuthMode("signin");
     }
   }, [open]);
+
+  // Capture the previously-focused element on open, restore it on close —
+  // standard modal focus-restore behavior.
+  useEffect(() => {
+    if (open) {
+      prevFocusRef.current = document.activeElement;
+    } else if (
+      prevFocusRef.current instanceof HTMLElement &&
+      document.body.contains(prevFocusRef.current)
+    ) {
+      prevFocusRef.current.focus();
+    }
+  }, [open]);
+
+  // Clear stale errors when the user switches sign-in/sign-up or toggles the
+  // password affordance — a message about the old path shouldn't linger.
+  useEffect(() => {
+    setError("");
+  }, [authMode, usePassword]);
 
   // Deferred focus: wait until the entry animation completes before moving
   // focus into the email field. Firing autoFocus synchronously on mount
@@ -109,24 +227,71 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     };
   }, [open, onClose]);
 
+  async function handleGoogle() {
+    setError("");
+    try {
+      await signInWithGoogle();
+    } catch {
+      setError("Google sign-in isn't set up yet. Use email below for now.");
+    }
+  }
+
+  async function handleMicrosoft() {
+    setError("");
+    try {
+      await signInWithMicrosoft();
+    } catch {
+      setError("Microsoft sign-in isn't set up yet. Use email below for now.");
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
+    if (authMode === "signup") {
+      // Validate before touching the network; keep submitting=false on early out.
+      const issue = passwordIssue(password);
+      if (issue) {
+        setError(issue);
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const meta: {
+          first_name?: string;
+          last_name?: string;
+          brokerage?: string;
+        } = {};
+        if (firstName.trim()) meta.first_name = firstName.trim();
+        if (lastName.trim()) meta.last_name = lastName.trim();
+        if (brokerage.trim()) meta.brokerage = brokerage.trim();
+        await signUp(email.trim(), password, meta);
+        setStep("confirm");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to create account");
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
+    // Sign in.
     setSubmitting(true);
     try {
-      if (mode === "password") {
-        await signInWithPassword(email, password);
+      if (usePassword) {
+        await signInWithPassword(email.trim(), password);
         // Auth state listener handles redirect.
         onClose();
       } else {
-        await signInWithMagicLink(email);
+        await signInWithMagicLink(email.trim());
         setStep("sent");
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : mode === "password"
+          : usePassword
           ? "Sign in failed"
           : "Failed to send magic link",
       );
@@ -135,10 +300,63 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     }
   }
 
+  // Tab-trap: keeps focus cycling within the dialog while it's open. Escape
+  // handling stays on the document-level listener above (separate concern) —
+  // this is additive, dialog-scoped keydown for Tab only. Deliberately
+  // attribute-based (`:not([disabled])`, `:not([hidden])`) rather than
+  // offsetParent/layout-based — jsdom has no layout engine, so a
+  // visibility check via offsetParent is always null there and would make
+  // the focusable set always empty, breaking tests.
+  function handleDialogKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab") return;
+    const container = dialogRef.current;
+    if (!container) return;
+    const focusable = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        'a[href]:not([hidden]), button:not([disabled]):not([hidden]), input:not([disabled]):not([hidden]), select:not([disabled]):not([hidden]), textarea:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"]):not([disabled]):not([hidden])',
+      ),
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey) {
+      if (document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
   if (typeof document === "undefined") return null;
 
+  const isSignup = authMode === "signup";
+
   const canSubmit =
-    email.trim().length > 0 && (mode === "magic" || password.length > 0);
+    email.trim().length > 0 &&
+    (!isSignup && !usePassword ? true : password.length > 0);
+
+  // Primary-button copy, per mode/state.
+  const idleLabel = isSignup
+    ? "Create account"
+    : usePassword
+    ? "Sign in"
+    : "Send magic link";
+  const busyLabel = isSignup
+    ? "Creating account"
+    : usePassword
+    ? "Signing in"
+    : "Sending";
+
+  const eyebrow = isSignup ? "— Get started" : "— Sign in";
+  const heading = isSignup ? "Create your account." : "Welcome back.";
+  const subcopy = isSignup
+    ? "Tell us a little about yourself to get started."
+    : usePassword
+    ? "Enter your email and password."
+    : "We'll email you a one-time sign-in link.";
 
   return createPortal(
     <AnimatePresence>
@@ -175,6 +393,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
 
           {/* Dialog card */}
           <motion.div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="login-heading"
@@ -183,10 +402,13 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
             transition={{ duration: ENTRY_MS / 1000, ease: EASE }}
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={handleDialogKeyDown}
             style={{
               position: "relative",
               width: "100%",
               maxWidth: 440,
+              maxHeight: "calc(100vh - 48px)",
+              overflowY: "auto",
               background: "var(--le-bg)",
               border: "1px solid var(--le-border)",
               borderRadius: 16,
@@ -228,10 +450,10 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
 
             {/* Step swap — cross-fade so content doesn't pop */}
             <AnimatePresence mode="wait" initial={false}>
-              {step === "sent" ? (
-                /* ── Magic link sent step ── */
+              {step === "sent" || step === "confirm" ? (
+                /* ── Success step (magic link sent / sign-up confirmation) ── */
                 <motion.div
-                  key="sent"
+                  key={step}
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
@@ -265,7 +487,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       fontFamily: "var(--le-font-sans)",
                     }}
                   >
-                    Check your inbox.
+                    {step === "confirm" ? "Confirm your email." : "Check your inbox."}
                   </h2>
                   <p
                     style={{
@@ -276,8 +498,23 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       fontFamily: "var(--le-font-sans)",
                     }}
                   >
-                    Magic link sent to{" "}
-                    <span style={{ fontWeight: 500, color: "var(--le-text)" }}>{email}</span>. Click it to sign in.
+                    {step === "confirm" ? (
+                      <>
+                        We sent a confirmation link to{" "}
+                        <span style={{ fontWeight: 500, color: "var(--le-text)" }}>
+                          {email}
+                        </span>
+                        . Click it to finish creating your account.
+                      </>
+                    ) : (
+                      <>
+                        Magic link sent to{" "}
+                        <span style={{ fontWeight: 500, color: "var(--le-text)" }}>
+                          {email}
+                        </span>
+                        . Click it to sign in.
+                      </>
+                    )}
                   </p>
                   <button
                     type="button"
@@ -302,7 +539,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   </button>
                 </motion.div>
               ) : (
-                /* ── Credentials form step ── */
+                /* ── Credentials form step (sign in / sign up) ── */
                 <motion.div
                   key="form"
                   initial={{ opacity: 0, y: 8 }}
@@ -310,7 +547,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   exit={{ opacity: 0, y: -8 }}
                   transition={{ duration: 0.2, ease: EASE }}
                 >
-                  <span className="le-eyebrow">— Sign in</span>
+                  <span className="le-eyebrow">{eyebrow}</span>
                   <h2
                     id="login-heading"
                     style={{
@@ -323,7 +560,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       fontFamily: "var(--le-font-sans)",
                     }}
                   >
-                    Welcome back.
+                    {heading}
                   </h2>
                   <p
                     style={{
@@ -334,9 +571,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       fontFamily: "var(--le-font-sans)",
                     }}
                   >
-                    {mode === "password"
-                      ? "Enter your email and password."
-                      : "We'll send a one-time link to your inbox."}
+                    {subcopy}
                   </p>
 
                   <form
@@ -348,87 +583,17 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       gap: 16,
                     }}
                   >
-                    <div>
-                      <label htmlFor="login-email" className="le-eyebrow" style={labelStyle}>
-                        Email
-                      </label>
-                      <div style={{ position: "relative" }}>
-                        <Mail
-                          aria-hidden="true"
-                          style={{
-                            position: "absolute",
-                            left: 14,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            width: 16,
-                            height: 16,
-                            color: "var(--le-text-faint)",
-                            pointerEvents: "none",
-                          }}
-                        />
-                        <input
-                          id="login-email"
-                          ref={emailRef}
-                          type="email"
-                          autoComplete="email"
-                          placeholder="you@brokerage.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          required
-                          // autoFocus intentionally omitted — see deferred focus
-                          // effect above. Firing autoFocus synchronously on mount
-                          // caused the browser to scroll mid-animation, producing
-                          // the visible glitch Oliver reported.
-                          data-autofocus-deferred="true"
-                          style={inputStyle}
-                        />
-                      </div>
-                    </div>
+                    {/* Social providers */}
+                    <SocialAuthButtons
+                      onGoogle={handleGoogle}
+                      onMicrosoft={handleMicrosoft}
+                      disabled={submitting}
+                    />
 
-                    {/* Password field — wrapped in AnimatePresence so the
-                        mount/unmount transitions height instead of jumping */}
-                    <AnimatePresence initial={false}>
-                      {mode === "password" && (
-                        <motion.div
-                          key="password-field"
-                          initial={{ opacity: 0, height: 0 }}
-                          animate={{ opacity: 1, height: "auto" }}
-                          exit={{ opacity: 0, height: 0 }}
-                          transition={{ duration: 0.22, ease: EASE }}
-                          style={{ overflow: "hidden" }}
-                        >
-                          <label htmlFor="login-password" className="le-eyebrow" style={labelStyle}>
-                            Password
-                          </label>
-                          <div style={{ position: "relative" }}>
-                            <Lock
-                              aria-hidden="true"
-                              style={{
-                                position: "absolute",
-                                left: 14,
-                                top: "50%",
-                                transform: "translateY(-50%)",
-                                width: 16,
-                                height: 16,
-                                color: "var(--le-text-faint)",
-                                pointerEvents: "none",
-                              }}
-                            />
-                            <input
-                              id="login-password"
-                              type="password"
-                              autoComplete="current-password"
-                              placeholder="••••••••"
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              required
-                              style={inputStyle}
-                            />
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <OrDivider />
 
+                    {/* Shared error surface — sits above the email field so the
+                        OAuth "use email below" copy reads correctly. */}
                     {error && (
                       <div
                         role="alert"
@@ -452,6 +617,144 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                       </div>
                     )}
 
+                    {isSignup ? (
+                      /* ── Sign-up fields ── */
+                      <>
+                        <div
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: 12,
+                          }}
+                        >
+                          <TextField
+                            id="signup-first-name"
+                            label="First name"
+                            icon={<User aria-hidden="true" style={iconStyle} />}
+                            type="text"
+                            autoComplete="given-name"
+                            placeholder="Jane"
+                            value={firstName}
+                            onChange={(e) => setFirstName(e.target.value)}
+                          />
+                          <TextField
+                            id="signup-last-name"
+                            label="Last name"
+                            icon={<User aria-hidden="true" style={iconStyle} />}
+                            type="text"
+                            autoComplete="family-name"
+                            placeholder="Doe"
+                            value={lastName}
+                            onChange={(e) => setLastName(e.target.value)}
+                          />
+                        </div>
+
+                        <TextField
+                          id="signup-brokerage"
+                          label="Brokerage"
+                          icon={<Building2 aria-hidden="true" style={iconStyle} />}
+                          type="text"
+                          autoComplete="organization"
+                          placeholder="Acme Realty"
+                          value={brokerage}
+                          onChange={(e) => setBrokerage(e.target.value)}
+                        />
+
+                        <TextField
+                          id="signup-email"
+                          label="Email"
+                          icon={<Mail aria-hidden="true" style={iconStyle} />}
+                          type="email"
+                          autoComplete="email"
+                          placeholder="you@brokerage.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                        />
+
+                        <TextField
+                          id="signup-password"
+                          label="Password"
+                          icon={<Lock aria-hidden="true" style={iconStyle} />}
+                          type="password"
+                          autoComplete="new-password"
+                          placeholder="At least 10 characters"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                        />
+                      </>
+                    ) : (
+                      /* ── Sign-in fields ── */
+                      <>
+                        <div>
+                          <label
+                            htmlFor="login-email"
+                            className="le-eyebrow"
+                            style={labelStyle}
+                          >
+                            Email
+                          </label>
+                          <div style={{ position: "relative" }}>
+                            <Mail aria-hidden="true" style={iconStyle} />
+                            <input
+                              id="login-email"
+                              ref={emailRef}
+                              type="email"
+                              autoComplete="email"
+                              placeholder="you@brokerage.com"
+                              value={email}
+                              onChange={(e) => setEmail(e.target.value)}
+                              required
+                              // autoFocus intentionally omitted — see deferred focus
+                              // effect above. Firing autoFocus synchronously on mount
+                              // caused the browser to scroll mid-animation.
+                              data-autofocus-deferred="true"
+                              style={inputStyle}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Password — height-animated so its mount/unmount doesn't
+                            jump the card. No minLength / passwordIssue: legacy
+                            sign-in passwords predate the current policy. */}
+                        <AnimatePresence initial={false}>
+                          {usePassword && (
+                            <motion.div
+                              key="password-field"
+                              initial={{ opacity: 0, height: 0 }}
+                              animate={{ opacity: 1, height: "auto" }}
+                              exit={{ opacity: 0, height: 0 }}
+                              transition={{ duration: 0.22, ease: EASE }}
+                              style={{ overflow: "hidden" }}
+                            >
+                              <label
+                                htmlFor="login-password"
+                                className="le-eyebrow"
+                                style={labelStyle}
+                              >
+                                Password
+                              </label>
+                              <div style={{ position: "relative" }}>
+                                <Lock aria-hidden="true" style={iconStyle} />
+                                <input
+                                  id="login-password"
+                                  type="password"
+                                  autoComplete="current-password"
+                                  placeholder="••••••••"
+                                  value={password}
+                                  onChange={(e) => setPassword(e.target.value)}
+                                  required
+                                  style={inputStyle}
+                                />
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </>
+                    )}
+
+                    {/* Primary submit — the modal's single accent */}
                     <button
                       type="submit"
                       disabled={submitting || !canSubmit}
@@ -488,44 +791,77 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                               animation: "spin 1s linear infinite",
                             }}
                           />{" "}
-                          {mode === "password" ? "Signing in" : "Sending"}
-                        </>
-                      ) : mode === "password" ? (
-                        <>
-                          Sign in <ArrowRight style={{ width: 16, height: 16 }} />
+                          {busyLabel}
                         </>
                       ) : (
                         <>
-                          Send magic link <ArrowRight style={{ width: 16, height: 16 }} />
+                          {idleLabel}{" "}
+                          <ArrowRight style={{ width: 16, height: 16 }} />
                         </>
                       )}
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError("");
-                        setMode(mode === "password" ? "magic" : "password");
-                      }}
-                      style={{
-                        fontSize: 12,
-                        color: "var(--le-text-muted)",
-                        background: "none",
-                        border: "none",
-                        textDecoration: "underline",
-                        textUnderlineOffset: 4,
-                        cursor: "pointer",
-                        padding: 0,
-                        fontFamily: "var(--le-font-sans)",
-                        alignSelf: "center",
-                        marginTop: 4,
-                      }}
-                    >
-                      {mode === "password"
-                        ? "Email me a magic link instead"
-                        : "Sign in with password instead"}
-                    </button>
+                    {/* Password / magic-link toggle — sign-in only */}
+                    {!isSignup && (
+                      <button
+                        type="button"
+                        onClick={() => setUsePassword((v) => !v)}
+                        style={{
+                          fontSize: 12,
+                          color: "var(--le-text-muted)",
+                          background: "none",
+                          border: "none",
+                          textDecoration: "underline",
+                          textUnderlineOffset: 4,
+                          cursor: "pointer",
+                          padding: 0,
+                          fontFamily: "var(--le-font-sans)",
+                          alignSelf: "center",
+                          marginTop: 4,
+                        }}
+                      >
+                        {usePassword
+                          ? "Email me a magic link instead"
+                          : "Use a password instead"}
+                      </button>
+                    )}
                   </form>
+
+                  {/* Sign-in ↔ sign-up switch */}
+                  <p
+                    style={{
+                      marginTop: 24,
+                      marginBottom: 0,
+                      fontSize: 13,
+                      color: "var(--le-text-muted)",
+                      textAlign: "center",
+                      fontFamily: "var(--le-font-sans)",
+                    }}
+                  >
+                    {isSignup ? (
+                      <>
+                        Already have an account?{" "}
+                        <button
+                          type="button"
+                          onClick={() => setAuthMode("signin")}
+                          style={switchLinkStyle}
+                        >
+                          Sign in
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        New to Listing Elevate?{" "}
+                        <button
+                          type="button"
+                          onClick={() => setAuthMode("signup")}
+                          style={switchLinkStyle}
+                        >
+                          Create an account
+                        </button>
+                      </>
+                    )}
+                  </p>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -94,3 +94,27 @@ describe("AccountProfile — idiom sweep (source-level)", () => {
     expect(profileSource).not.toContain("CSSProperties");
   });
 });
+
+describe("AccountProfile — Connected accounts (Wave 2, source-level)", () => {
+  // Behavioral coverage (rows per identity, Connect/Disconnect wiring, the
+  // last-identity lockout guard, link-rejection toast) lives with the
+  // extracted <ConnectedAccountsCard /> component in
+  // src/components/dashboard/__tests__/ConnectedAccountsCard.test.tsx — that
+  // file mocks @/lib/auth and never imports the real supabase-js client, so
+  // it can safely render with RTL. Profile.tsx itself imports the real
+  // "@/lib/supabase" singleton directly and stays source-tested only here to
+  // avoid the happy-dom OOM documented at the top of this file.
+
+  it("imports ConnectedAccountsCard from the dashboard components dir", () => {
+    expect(profileSource).toContain(
+      'import { ConnectedAccountsCard } from "@/components/dashboard/ConnectedAccountsCard"'
+    );
+  });
+
+  it("renders <ConnectedAccountsCard /> in the settings stack, after the Password card", () => {
+    const passwordIdx = profileSource.indexOf('title="Password"');
+    const cardIdx = profileSource.indexOf("<ConnectedAccountsCard");
+    expect(passwordIdx).toBeGreaterThan(-1);
+    expect(cardIdx).toBeGreaterThan(passwordIdx);
+  });
+});
