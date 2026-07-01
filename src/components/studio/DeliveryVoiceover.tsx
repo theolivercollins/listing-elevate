@@ -353,7 +353,7 @@ export function DeliveryVoiceover({
                         style={{
                           fontSize: 10,
                           padding: '2px 6px',
-                          background: 'rgba(42,111,219,0.08)',
+                          background: 'rgba(23,32,51,0.08)',
                           color: 'var(--le-accent)',
                           borderRadius: "var(--le-r-sm)",
                         }}

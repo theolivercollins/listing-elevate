@@ -264,7 +264,7 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
                 key={photo.id}
                 style={{
                   flex: '0 0 184px',
-                  border: replacing ? '1.5px solid var(--le-primary, #3b6fd4)' : '1px solid var(--le-line)',
+                  border: replacing ? '1.5px solid var(--le-accent)' : '1px solid var(--le-line)',
                   borderRadius: 'var(--le-r-sm)',
                   background: 'var(--le-surface)',
                   overflow: 'hidden',
@@ -384,7 +384,7 @@ export function PhotoCheckpointA({ runId, onChanged }: PhotoCheckpointAProps) {
 
       <div style={{ borderTop: '1px solid var(--le-line)', paddingTop: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-          <RefreshCw size={13} strokeWidth={2} style={{ color: replacingId ? 'var(--le-primary, #3b6fd4)' : 'var(--le-muted)' }} />
+          <RefreshCw size={13} strokeWidth={2} style={{ color: replacingId ? 'var(--le-accent)' : 'var(--le-muted)' }} />
           <span style={{ fontSize: 12.5, fontWeight: 650, color: 'var(--le-ink)' }}>
             Replacement pool
           </span>

@@ -52,18 +52,18 @@ export const ORDER_STATUS_MAP: Record<string, OrderStatusEntry> = {
   pending:   { label: "Received",        color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
 
   // ── Crafting scenes (analysis pipeline) ──────────────────────────
-  ingesting: { label: "Crafting scenes", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  analyzing: { label: "Crafting scenes", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  scripting: { label: "Crafting scenes", color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
+  ingesting: { label: "Crafting scenes", color: "var(--accent)", bg: "var(--accent-soft)" },
+  analyzing: { label: "Crafting scenes", color: "var(--accent)", bg: "var(--accent-soft)" },
+  scripting: { label: "Crafting scenes", color: "var(--accent)", bg: "var(--accent-soft)" },
 
   // ── Rendering (video generation) ─────────────────────────────────
-  generating: { label: "Rendering",      color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  retry_1:    { label: "Rendering",      color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  retry_2:    { label: "Rendering",      color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
+  generating: { label: "Rendering",      color: "var(--accent)", bg: "var(--accent-soft)" },
+  retry_1:    { label: "Rendering",      color: "var(--accent)", bg: "var(--accent-soft)" },
+  retry_2:    { label: "Rendering",      color: "var(--accent)", bg: "var(--accent-soft)" },
 
   // ── In review (QC + assembly) ─────────────────────────────────────
-  qc:         { label: "In review",      color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  assembling: { label: "In review",      color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
+  qc:         { label: "In review",      color: "var(--accent)", bg: "var(--accent-soft)" },
+  assembling: { label: "In review",      color: "var(--accent)", bg: "var(--accent-soft)" },
 
   // ── Needs attention (failures + soft reject + hard reject) ───────
   needs_review:   { label: "Needs attention", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },

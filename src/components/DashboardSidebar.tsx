@@ -5,7 +5,6 @@ import { useTheme } from "@/lib/theme";
 import { fetchLogs, fetchProperties } from "@/lib/api";
 import { Icon, type IconName } from "@/components/dashboard/icons";
 import { LEGlyphMark } from "@/v2/components/primitives/LEGlyphMark";
-import { Moon, Sun } from "lucide-react";
 
 const COLLAPSED_KEY = "le-dashboard-sidebar-collapsed";
 
@@ -185,9 +184,7 @@ function UserMenu({
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
   const { signOut, profile, realRole, isImpersonating, setImpersonatedRole } = useAuth();
-  const { theme, toggle: toggleTheme } = useTheme();
   const unread = useUnreadCount(isAdmin);
-  const isDark = theme === "dark";
   const [impersonationPending, setImpersonationPending] = useState(false);
   const [impersonationError, setImpersonationError] = useState<string | null>(null);
 
@@ -278,16 +275,6 @@ function UserMenu({
             {unread}
           </span>
         )}
-      </button>
-      <button
-        type="button"
-        role="menuitemcheckbox"
-        aria-checked={isDark}
-        onClick={toggleTheme}
-        style={menuItemStyle}
-      >
-        {isDark ? <Sun size={14} strokeWidth={1.7} /> : <Moon size={14} strokeWidth={1.7} />}
-        <span style={{ flex: 1 }}>{isDark ? "Light mode" : "Dark mode"}</span>
       </button>
       {canImpersonate && (
         <>
