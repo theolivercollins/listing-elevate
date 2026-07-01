@@ -238,33 +238,50 @@ export async function pollWalkthrough(propertyId: string): Promise<PollWalkthrou
 
   if (result.status === "failed") {
     const errMsg = result.error ?? `Atlas job ${jobId} failed`;
-    const { error: updateErr } = await supabase
-      .from("properties")
-      .update({
-        walkthrough_status: "failed",
-        walkthrough_error: errMsg,
-        walkthrough_updated_at: new Date().toISOString(),
-      })
-      .eq("id", propertyId)
-      .in("walkthrough_status", ["processing", "finalizing"]);
-    if (updateErr) throw updateErr;
+    // Non-prod without the opt-in flag must not mutate the shared DB —
+    // report the failure to the caller without persisting it; a prod poll
+    // (or a later poll with the flag set) will observe the same Atlas
+    // status and persist it then.
+    if (writesAllowed()) {
+      const { error: updateErr } = await supabase
+        .from("properties")
+        .update({
+          walkthrough_status: "failed",
+          walkthrough_error: errMsg,
+          walkthrough_updated_at: new Date().toISOString(),
+        })
+        .eq("id", propertyId)
+        .in("walkthrough_status", ["processing", "finalizing"]);
+      if (updateErr) throw updateErr;
+    }
     return { status: "failed", error: errMsg };
   }
 
   // result.status === "complete"
   if (!result.videoUrl) {
     const errMsg = `Atlas job ${jobId} reported complete but returned no video URL`;
-    const { error: updateErr } = await supabase
-      .from("properties")
-      .update({
-        walkthrough_status: "failed",
-        walkthrough_error: errMsg,
-        walkthrough_updated_at: new Date().toISOString(),
-      })
-      .eq("id", propertyId)
-      .in("walkthrough_status", ["processing", "finalizing"]);
-    if (updateErr) throw updateErr;
+    if (writesAllowed()) {
+      const { error: updateErr } = await supabase
+        .from("properties")
+        .update({
+          walkthrough_status: "failed",
+          walkthrough_error: errMsg,
+          walkthrough_updated_at: new Date().toISOString(),
+        })
+        .eq("id", propertyId)
+        .in("walkthrough_status", ["processing", "finalizing"]);
+      if (updateErr) throw updateErr;
+    }
     return { status: "failed", error: errMsg };
+  }
+
+  // Everything below this point is the paid finalize sequence (CAS claim,
+  // Bunny host, cost insert, final commit) — never run it from a non-prod
+  // caller without the opt-in flag. The Atlas job stays complete-but-
+  // unclaimed on their end; a prod poll (or a later poll with the flag set)
+  // will claim and finalize it. See module docblock's write-guard note.
+  if (!writesAllowed()) {
+    return { status: "processing" };
   }
 
   // Atomic finalize claim: at most one concurrent poll may proceed past this
