@@ -56,7 +56,6 @@ function makeAuthMock(overrides: Record<string, unknown> = {}) {
     signInWithMagicLink: vi.fn(() => Promise.resolve()),
     signInWithPassword: vi.fn(() => Promise.resolve()),
     signInWithGoogle: vi.fn(() => Promise.resolve()),
-    signInWithMicrosoft: vi.fn(() => Promise.resolve()),
     signUp: vi.fn(() => Promise.resolve()),
     ...overrides,
   };

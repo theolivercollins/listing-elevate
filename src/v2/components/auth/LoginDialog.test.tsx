@@ -5,8 +5,9 @@
  *   1. Animation-stability basics carried over from the 2026-06-11 fix: deferred
  *      focus marker present (no raw autofocus), dialog mount/unmount by `open`,
  *      Escape closes, deferred focus actually lands.
- *   2. Social auth buttons render and delegate to signInWithGoogle /
- *      signInWithMicrosoft from useAuth.
+ *   2. Social auth buttons render (Google only — Microsoft/Azure is disabled
+ *      pending a future Entra tenant) and delegate to signInWithGoogle from
+ *      useAuth.
  *   3. The default sign-in path (magic link) and the password-toggle path.
  *
  * Sign-up / weak-password / OAuth-error-surfacing coverage lives in the sibling
@@ -28,7 +29,6 @@ const authMock = {
   signInWithMagicLink: vi.fn(() => Promise.resolve()),
   signInWithPassword: vi.fn(() => Promise.resolve()),
   signInWithGoogle: vi.fn(() => Promise.resolve()),
-  signInWithMicrosoft: vi.fn(() => Promise.resolve()),
   signUp: vi.fn(() => Promise.resolve()),
 };
 
@@ -78,7 +78,6 @@ describe("LoginDialog — animation stability", () => {
     authMock.signInWithMagicLink.mockImplementation(() => Promise.resolve());
     authMock.signInWithPassword.mockImplementation(() => Promise.resolve());
     authMock.signInWithGoogle.mockImplementation(() => Promise.resolve());
-    authMock.signInWithMicrosoft.mockImplementation(() => Promise.resolve());
     authMock.signUp.mockImplementation(() => Promise.resolve());
   });
 
@@ -127,33 +126,22 @@ describe("LoginDialog — social auth buttons", () => {
     document.body.innerHTML = "";
     vi.clearAllMocks();
     authMock.signInWithGoogle.mockImplementation(() => Promise.resolve());
-    authMock.signInWithMicrosoft.mockImplementation(() => Promise.resolve());
   });
 
-  it("renders 'Continue with Google' and 'Continue with Microsoft' buttons", () => {
+  it("renders 'Continue with Google' and does NOT render a Microsoft button", () => {
     renderDialog();
     expect(
       screen.getByRole("button", { name: "Continue with Google" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue with Microsoft" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "Continue with Microsoft" }),
+    ).not.toBeInTheDocument();
   });
 
   it("clicking 'Continue with Google' calls signInWithGoogle", async () => {
     renderDialog();
     fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
     await waitFor(() => expect(authMock.signInWithGoogle).toHaveBeenCalledTimes(1));
-  });
-
-  it("clicking 'Continue with Microsoft' calls signInWithMicrosoft", async () => {
-    renderDialog();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Microsoft" }),
-    );
-    await waitFor(() =>
-      expect(authMock.signInWithMicrosoft).toHaveBeenCalledTimes(1),
-    );
   });
 });
 
