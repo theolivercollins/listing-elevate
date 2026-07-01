@@ -1,20 +1,27 @@
 /**
- * LoginDialog tests (2026-07-01 login revamp) — sign-up flow, weak-password
- * validation, and graceful OAuth-error surfacing.
+ * LoginDialog tests — "Immersive Login 5a" (commit 1755673a).
  *
- * Baseline smoke coverage (open/closed render, escape-to-close, deferred
- * focus) and the social-button / magic-link / password sign-in paths live in
- * the sibling `../LoginDialog.test.tsx` file — kept here to a minimum to
- * avoid duplicating every case in both places.
+ * One dialog, both flows, driven entirely by `useAuth()`:
+ *   sign-in:  email -> choose (password | magic link) -> password | sent
+ *   sign-up:  email -> verify (OTP) -> newpw -> welcome -> profile -> role -> source -> done
  *
- * The mocked `useAuth` is a `vi.fn()` factory (not a plain object literal) so
- * individual tests can reconfigure it via `authLib.useAuth as any`.
+ * `useAuth` is mocked as a `vi.fn()` factory so individual tests can
+ * reconfigure `profile` / `session` and inspect call args on the auth
+ * functions (`sendSignupCode`, `verifySignupCode`, `setPassword`,
+ * `completeOnboarding`, etc).
  *
  * `SocialAuthButtons` is stubbed to a plain button pair — its real GSI
- * wiring (script load, nonce, initialize, signInWithIdToken) is covered by
- * `../SocialAuthButtons.test.tsx` and `src/lib/__tests__/googleIdentity.test.ts`.
- * The stub lets the Google-error test below simulate GSI reporting a
- * failure via `onGoogleError`, independent of the real integration.
+ * wiring is covered by the sibling `SocialAuthButtons.test.tsx`.
+ *
+ * `framer-motion` is stubbed so `AnimatePresence`/`motion.div` don't gate
+ * step transitions behind real enter/exit animations — each step's DOM
+ * swaps synchronously with React state, and the deliberate `setTimeout`
+ * delays baked into the component (advance-after-verify, welcome->profile,
+ * done->close) are awaited for real via `waitFor`.
+ *
+ * This file supersedes and consolidates the two pre-rewrite files
+ * (`../LoginDialog.test.tsx` and this one), which asserted the old
+ * single-form dialog and no longer match the component.
  */
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -52,9 +59,9 @@ vi.mock("@/v2/components/auth/SocialAuthButtons", () => ({
 }));
 
 // Stub framer-motion: keep AnimatePresence transparent, replace motion.div
-// with a plain div so jsdom doesn't error on unknown DOM props and so the
-// form/sent/confirm step swap (AnimatePresence mode="wait") resolves
-// synchronously instead of waiting on a real exit/enter transition.
+// with a plain div so happy-dom doesn't choke on unknown DOM props and so
+// step transitions (AnimatePresence mode="wait") resolve synchronously
+// instead of waiting on a real exit/enter transition.
 vi.mock("framer-motion", async (importOriginal) => {
   const actual = await importOriginal<typeof import("framer-motion")>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,17 +84,20 @@ vi.mock("framer-motion", async (importOriginal) => {
       <>{children}</>
     ),
     motion: { ...actual.motion, div: MotionDiv },
+    useReducedMotion: () => true,
   };
 });
 
 function makeAuthMock(overrides: Record<string, unknown> = {}) {
   return {
-    adminVerified: true,
-    sendAdminEmailCode: vi.fn(),
-    verifyAdminEmailCode: vi.fn(),
+    session: null,
+    profile: null,
     signInWithMagicLink: vi.fn(() => Promise.resolve()),
     signInWithPassword: vi.fn(() => Promise.resolve()),
-    signUp: vi.fn(() => Promise.resolve()),
+    sendSignupCode: vi.fn(() => Promise.resolve()),
+    verifySignupCode: vi.fn(() => Promise.resolve()),
+    setPassword: vi.fn(() => Promise.resolve()),
+    completeOnboarding: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
 }
@@ -96,15 +106,46 @@ vi.mock("@/lib/auth", () => ({
   useAuth: vi.fn(() => makeAuthMock()),
 }));
 
-describe("LoginDialog — baseline render / escape", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (authLib.useAuth as any).mockReturnValue(makeAuthMock());
-  });
+function setAuthMock(overrides: Record<string, unknown> = {}) {
+  const mock = makeAuthMock(overrides);
+  (authLib.useAuth as unknown as ReturnType<typeof vi.fn>).mockReturnValue(mock);
+  return mock;
+}
 
-  it("renders when open is true", () => {
+function enterEmail(value: string) {
+  fireEvent.change(screen.getByPlaceholderText("you@brokerage.com"), {
+    target: { value },
+  });
+}
+
+function clickContinue() {
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+}
+
+async function goToSignupVerify(email = "ada@example.com") {
+  fireEvent.click(screen.getByRole("button", { name: "Create an account" }));
+  enterEmail(email);
+  clickContinue();
+  await screen.findByText("Check your email");
+}
+
+function enterCode(digits: string) {
+  const first = screen.getByLabelText("Verification code digit 1");
+  fireEvent.change(first, { target: { value: digits } });
+}
+
+beforeEach(() => {
+  document.body.innerHTML = "";
+  vi.clearAllMocks();
+  setAuthMock();
+});
+
+describe("LoginDialog — render / escape", () => {
+  it("renders the email step when open", () => {
     render(<LoginDialog open={true} onClose={vi.fn()} />);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Enter your email to continue.")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("you@brokerage.com")).toBeInTheDocument();
   });
 
   it("does not render when open is false", () => {
@@ -112,182 +153,243 @@ describe("LoginDialog — baseline render / escape", () => {
     expect(container.querySelector("[role='dialog']")).not.toBeInTheDocument();
   });
 
-  it("closes dialog on escape key", () => {
-    const mockOnClose = vi.fn();
-    render(<LoginDialog open={true} onClose={mockOnClose} />);
-
-    const dialog = screen.getByRole("dialog");
-    fireEvent.keyDown(dialog, { key: "Escape" });
-
-    expect(mockOnClose).toHaveBeenCalled();
-  });
-
-  it("defers email input focus until after animation (300ms)", async () => {
-    render(<LoginDialog open={true} onClose={vi.fn()} />);
-
-    const input = screen.getByPlaceholderText("you@brokerage.com");
-    expect(document.activeElement).not.toBe(input);
-
-    await waitFor(
-      () => {
-        expect(input).toHaveFocus();
-      },
-      { timeout: 400 },
-    );
+  it("Escape closes the dialog", () => {
+    const onClose = vi.fn();
+    render(<LoginDialog open={true} onClose={onClose} />);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
   });
 });
 
-describe("LoginDialog — sign-up flow", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (authLib.useAuth as any).mockReturnValue(makeAuthMock());
-  });
+describe("LoginDialog — flow toggle", () => {
+  it("toggles from sign-in to sign-up and back", () => {
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+    expect(screen.getByText("Enter your email to continue.")).toBeInTheDocument();
 
-  function switchToSignUp() {
     fireEvent.click(screen.getByRole("button", { name: "Create an account" }));
-  }
+    expect(screen.getByText("We'll just need your email to begin.")).toBeInTheDocument();
 
-  it("switching to sign-up shows the sign-up heading and fields", () => {
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    expect(screen.getByText("Enter your email to continue.")).toBeInTheDocument();
+  });
+});
+
+describe("LoginDialog — email validation", () => {
+  it("disables Continue until the email is a valid address", () => {
     render(<LoginDialog open={true} onClose={vi.fn()} />);
-    switchToSignUp();
+    const input = screen.getByPlaceholderText("you@brokerage.com");
+    const button = screen.getByRole("button", { name: "Continue" });
 
-    expect(
-      screen.getByRole("heading", { name: "Create your account." }),
-    ).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Jane")).toHaveAttribute(
-      "id",
-      "signup-first-name",
-    );
-    expect(screen.getByPlaceholderText("Doe")).toHaveAttribute(
-      "id",
-      "signup-last-name",
-    );
-    expect(screen.getByPlaceholderText("Acme Realty")).toHaveAttribute(
-      "id",
-      "signup-brokerage",
-    );
-    expect(screen.getByPlaceholderText("At least 10 characters")).toHaveAttribute(
-      "id",
-      "signup-password",
-    );
+    expect(button).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "not-an-email" } });
+    expect(button).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "agent@example.com" } });
+    expect(button).not.toBeDisabled();
+  });
+});
+
+describe("LoginDialog — sign-in: choose step", () => {
+  it("shows the choose step after a valid email on the sign-in flow", () => {
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+    enterEmail("agent@example.com");
+    clickContinue();
+    expect(screen.getByText("How would you like to sign in?")).toBeInTheDocument();
   });
 
-  it("switching back via 'Sign in' returns to the sign-in heading", () => {
-    render(<LoginDialog open={true} onClose={vi.fn()} />);
-    switchToSignUp();
+  it("password path: calls signInWithPassword and closes the dialog", async () => {
+    const onClose = vi.fn();
+    const auth = setAuthMock();
+    render(<LoginDialog open={true} onClose={onClose} />);
+
+    enterEmail("agent@example.com");
+    clickContinue();
+    fireEvent.click(screen.getByText("Use my password"));
+    expect(screen.getByText("Enter your password")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Enter your password"), {
+      target: { value: "hunter22" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect(
-      screen.getByRole("heading", { name: "Welcome back." }),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(auth.signInWithPassword).toHaveBeenCalledWith("agent@example.com", "hunter22"),
+    );
+    expect(await screen.findByText("You're in")).toBeInTheDocument();
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
   });
 
-  it("submits a valid sign-up and calls signUp with email, password, and meta", async () => {
-    const authMock = makeAuthMock();
-    (authLib.useAuth as any).mockReturnValue(authMock);
-
+  it("magic-link path: calls signInWithMagicLink and shows the sent step", async () => {
+    const auth = setAuthMock();
     render(<LoginDialog open={true} onClose={vi.fn()} />);
-    switchToSignUp();
 
-    fireEvent.change(screen.getByPlaceholderText("Jane"), {
-      target: { value: "Ada" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Doe"), {
-      target: { value: "Lovelace" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Acme Realty"), {
-      target: { value: "Analytical Engines Realty" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("you@brokerage.com"), {
-      target: { value: "ada@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("At least 10 characters"), {
-      target: { value: "Password123!" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
+    enterEmail("agent@example.com");
+    clickContinue();
+    fireEvent.click(screen.getByText("Email me a magic link"));
 
     await waitFor(() =>
-      expect(authMock.signUp).toHaveBeenCalledWith(
-        "ada@example.com",
-        "Password123!",
-        expect.objectContaining({
-          first_name: "Ada",
-          last_name: "Lovelace",
-          brokerage: "Analytical Engines Realty",
-        }),
-      ),
+      expect(auth.signInWithMagicLink).toHaveBeenCalledWith("agent@example.com"),
     );
-
-    expect(
-      await screen.findByRole("heading", { name: "Confirm your email." }),
-    ).toBeInTheDocument();
-  });
-
-  it("trims leading/trailing whitespace from the email before calling signUp", async () => {
-    const authMock = makeAuthMock();
-    (authLib.useAuth as any).mockReturnValue(authMock);
-
-    render(<LoginDialog open={true} onClose={vi.fn()} />);
-    switchToSignUp();
-
-    fireEvent.change(screen.getByPlaceholderText("you@brokerage.com"), {
-      target: { value: "  ada@example.com  " },
-    });
-    fireEvent.change(screen.getByPlaceholderText("At least 10 characters"), {
-      target: { value: "Password123!" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
-
-    await waitFor(() =>
-      expect(authMock.signUp).toHaveBeenCalledWith(
-        "ada@example.com",
-        "Password123!",
-        expect.any(Object),
-      ),
-    );
-  });
-
-  it("rejects a weak password without calling signUp", async () => {
-    const authMock = makeAuthMock();
-    (authLib.useAuth as any).mockReturnValue(authMock);
-
-    render(<LoginDialog open={true} onClose={vi.fn()} />);
-    switchToSignUp();
-
-    fireEvent.change(screen.getByPlaceholderText("you@brokerage.com"), {
-      target: { value: "ada@example.com" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("At least 10 characters"), {
-      target: { value: "short" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /create account/i }));
-
-    expect(
-      await screen.findByText("Password must be at least 10 characters"),
-    ).toBeInTheDocument();
-    expect(authMock.signUp).not.toHaveBeenCalled();
+    expect(await screen.findByText("Check your inbox")).toBeInTheDocument();
+    expect(screen.getByText(/agent@example\.com/)).toBeInTheDocument();
   });
 });
 
-describe("LoginDialog — Google sign-in error handling", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    (authLib.useAuth as any).mockReturnValue(makeAuthMock());
-  });
-
-  it("shows a friendly message and stays mounted when Google Identity Services reports an error", async () => {
+describe("LoginDialog — signup: verify (OTP)", () => {
+  it("sends the signup code and shows the verify step", async () => {
+    const auth = setAuthMock();
     render(<LoginDialog open={true} onClose={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "simulate-google-error" }));
+    await goToSignupVerify("ada@example.com");
+
+    expect(auth.sendSignupCode).toHaveBeenCalledWith("ada@example.com");
+    expect(screen.getAllByLabelText(/Verification code digit/)).toHaveLength(6);
+  });
+
+  it("auto-submits once 6 digits are entered and calls verifySignupCode", async () => {
+    const auth = setAuthMock();
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+    await goToSignupVerify("ada@example.com");
+    enterCode("123456");
+
+    await waitFor(() =>
+      expect(auth.verifySignupCode).toHaveBeenCalledWith("ada@example.com", "123456"),
+    );
+  });
+
+  it("shows an error and resets the code on a wrong code", async () => {
+    const auth = setAuthMock({
+      verifySignupCode: vi.fn(() => Promise.reject(new Error("That code didn't work. Check it and try again."))),
+    });
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+    await goToSignupVerify("ada@example.com");
+    enterCode("000000");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Google sign-in isn't available right now. Use email below for now.",
+      "That code didn't work. Check it and try again.",
     );
+    expect(screen.getByLabelText("Verification code digit 1")).toHaveValue("");
+    expect(auth.completeOnboarding).not.toHaveBeenCalled();
+  });
+});
 
-    // Dialog must still be mounted — no crash/unmount on a GSI failure.
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+describe("LoginDialog — signup: new password gate", () => {
+  async function toNewPw() {
+    setAuthMock({ profile: null });
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+    await goToSignupVerify("ada@example.com");
+    enterCode("123456");
+    await screen.findByText("Create a password", {}, { timeout: 1500 });
+  }
+
+  it("gates Continue behind at least 8 characters", async () => {
+    await toNewPw();
+    const input = screen.getByPlaceholderText("Create a password");
+    const button = screen.getByRole("button", { name: "Continue" });
+
+    fireEvent.change(input, { target: { value: "short1!" } }); // 7 chars
+    expect(button).toBeDisabled();
+
+    fireEvent.change(input, { target: { value: "short12!" } }); // 8 chars
+    expect(button).not.toBeDisabled();
+  });
+
+  it("reflects password strength in the meter label", async () => {
+    await toNewPw();
+    const input = screen.getByPlaceholderText("Create a password");
+
+    fireEvent.change(input, { target: { value: "lowercase" } }); // length only
+    expect(screen.getByText("Weak")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Password1" } }); // 3/4 criteria
+    expect(screen.getByText("Medium")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Password123!" } }); // all 4 + length>=12
+    expect(screen.getByText("Strong")).toBeInTheDocument();
+  });
+
+  it("calls setPassword and advances to welcome on Continue", async () => {
+    const auth = setAuthMock({ profile: null });
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+    await goToSignupVerify("ada@example.com");
+    enterCode("123456");
+    await screen.findByText("Create a password", {}, { timeout: 1500 });
+
+    fireEvent.change(screen.getByPlaceholderText("Create a password"), {
+      target: { value: "Password123!" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    await waitFor(() => expect(auth.setPassword).toHaveBeenCalledWith("Password123!"));
+    expect(await screen.findByText("Welcome to Listing Elevate")).toBeInTheDocument();
+  });
+});
+
+describe("LoginDialog — signup: full onboarding click-through", () => {
+  it(
+    "collects profile/persona/source and calls completeOnboarding, then shows done",
+    async () => {
+      const auth = setAuthMock({ profile: null });
+      render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+      await goToSignupVerify("ada@example.com");
+      enterCode("123456");
+      await screen.findByText("Create a password", {}, { timeout: 1500 });
+
+      fireEvent.change(screen.getByPlaceholderText("Create a password"), {
+        target: { value: "Password123!" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+      // welcome interstitial auto-advances to profile after 1.5s
+      await screen.findByText("Tell us about you", {}, { timeout: 2500 });
+
+      fireEvent.change(screen.getByPlaceholderText("Jordan"), { target: { value: "Ada" } });
+      fireEvent.change(screen.getByPlaceholderText("Rivera"), { target: { value: "Lovelace" } });
+      fireEvent.change(screen.getByPlaceholderText("Compass, Coldwell Banker…"), {
+        target: { value: "Analytical Engines Realty" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+      await screen.findByText("What best describes you?");
+      fireEvent.click(screen.getByText("Agent"));
+      fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+      await screen.findByText("How did you hear about us?");
+      fireEvent.click(screen.getByRole("radio", { name: "A search engine" }));
+      fireEvent.click(screen.getByRole("button", { name: "Google" }));
+      fireEvent.click(screen.getByRole("button", { name: "Finish setup" }));
+
+      await waitFor(() =>
+        expect(auth.completeOnboarding).toHaveBeenCalledWith({
+          firstName: "Ada",
+          lastName: "Lovelace",
+          brokerage: "Analytical Engines Realty",
+          persona: "agent",
+          signupSource: "search",
+          signupSourceDetail: "Google",
+        }),
+      );
+      expect(await screen.findByText("You're all set, Ada")).toBeInTheDocument();
+    },
+    8000,
+  );
+});
+
+describe("LoginDialog — existing-account short-circuit", () => {
+  it("skips onboarding and goes straight to done when profile.first_name is already present", async () => {
+    const auth = setAuthMock({ profile: { first_name: "Ada" } });
+    render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+    await goToSignupVerify("ada@example.com");
+    enterCode("123456");
+
+    expect(await screen.findByText("You're in", {}, { timeout: 1500 })).toBeInTheDocument();
+    expect(screen.queryByText("Create a password")).not.toBeInTheDocument();
+    expect(screen.queryByText("Tell us about you")).not.toBeInTheDocument();
+    expect(auth.completeOnboarding).not.toHaveBeenCalled();
   });
 });
