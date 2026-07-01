@@ -10,7 +10,10 @@
     { "path": "/api/cron/poll-judge", "schedule": "* * * * *" },
     { "path": "/api/cron/refresh-sku-affinity", "schedule": "0 4 * * *" },
     { "path": "/api/cron/poll-blog-jobs", "schedule": "* * * * *" },
-    { "path": "/api/cron/auto-run-sweep", "schedule": "* * * * *" }
+    { "path": "/api/cron/auto-run-sweep", "schedule": "* * * * *" },
+    { "path": "/api/cron/drive-settle", "schedule": "*/2 * * * *" },
+    { "path": "/api/cron/drive-intake-poll", "schedule": "1-59/2 * * * *" },
+    { "path": "/api/cron/drive-channel-renew", "schedule": "17 3 * * *" }
   ],
   "routes": [
     { "src": "/((?!preview/[^/]+/embed).*)", "headers": { "X-Content-Type-Options": "nosniff", "Referrer-Policy": "strict-origin-when-cross-origin", "X-Frame-Options": "DENY", "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval' https://maps.googleapis.com https://accounts.google.com https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://images.unsplash.com https://placehold.co https://maps.googleapis.com https://maps.gstatic.com https://storage.googleapis.com https://*.b-cdn.net https://*.supabase.co; media-src 'self' https://*.b-cdn.net https://*.backblazeb2.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com https://www.googleapis.com https://video.bunnycdn.com https://*.b-cdn.net https://*.backblazeb2.com; frame-src 'self' https://iframe.mediadelivery.net https://docs.google.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" }, "continue": true },
