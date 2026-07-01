@@ -92,13 +92,17 @@ export class GeminiAnalysisError extends Error {
 // small drift here — the dollar impact per listing is < $0.01. If the
 // rates diverge, add a per-model entry and re-pick in computeGeminiCost.
 
-const GEMINI_PRICING_CENTS_PER_MTOK: Record<string, { input: number; output: number }> = {
+// Exported (additive, 2026-07-02) so lib/walkthrough/spatial.ts's holistic
+// multi-photo vision call — the walkthrough-v2 spatial analyzer — reuses the
+// SAME pricing table + model-fallback constants instead of hand-rolling a
+// second copy. Behavior of this module is unchanged; only visibility widened.
+export const GEMINI_PRICING_CENTS_PER_MTOK: Record<string, { input: number; output: number }> = {
   "gemini-3-flash-preview": { input: 50, output: 300 },
   "gemini-3-flash": { input: 50, output: 300 },
   "gemini-2.5-flash": { input: 50, output: 300 },
 };
 
-function computeGeminiCost(model: string, inputTokens: number, outputTokens: number): number {
+export function computeGeminiCost(model: string, inputTokens: number, outputTokens: number): number {
   const rates =
     GEMINI_PRICING_CENTS_PER_MTOK[model] ??
     GEMINI_PRICING_CENTS_PER_MTOK["gemini-3-flash-preview"];
@@ -113,8 +117,10 @@ function computeGeminiCost(model: string, inputTokens: number, outputTokens: num
 // sees the final model id in GeminiAnalysisResult.model so cost_events
 // can record which one ran.
 
-const PRIMARY_MODEL = "gemini-3-flash-preview";
-const FALLBACK_MODEL = "gemini-2.5-flash";
+// Exported (additive) for the same reason as the pricing table above — the
+// spatial analyzer wants the identical primary/fallback model pair.
+export const PRIMARY_MODEL = "gemini-3-flash-preview";
+export const FALLBACK_MODEL = "gemini-2.5-flash";
 
 // ─── System prompt ──────────────────────────────────────────────────────
 

@@ -32,6 +32,46 @@
  * 56¢ is the 5s baseline, not 12s-actual cost). recordCostEvent's insert
  * error is never swallowed — a cost-write failure must surface, not fail
  * silently (P0 per project convention).
+ *
+ * ── Cinematic walkthrough v2 (2026-07-02) — the 4 defect classes + the law ──
+ *
+ * Three paid Seedance 2.0 reference-to-video test cycles (v1/v2/v3, see
+ * docs/HANDOFF.md 2026-07-01/02 entries and
+ * /Users/oliverhelgemo/.claude/jobs/bcc0c194/tmp/walkthrough-v{1,2,3}-input.json)
+ * proved ONE law: the model is FAITHFUL exactly where a reference photo
+ * covers the camera's view, and FABRICATES everywhere else. That fabrication
+ * shows up as four distinct, empirically observed defect classes:
+ *
+ *   1. Invented doorways/openings — the camera passes through a wall,
+ *      window, or closed door that no reference photo shows as an opening
+ *      (v1's "fake wall-exit").
+ *   2. Off-reference geometry fabrication — furniture, fixtures, or an
+ *      entire room layout invented for a view no photo covers (v3's door
+ *      reveal showed a dining table, kitchen, and stone fireplace that
+ *      exist in zero of the source photos — the living-room reference was
+ *      shot FROM that zone, never INTO it from the entry).
+ *   3. On-image text hallucination — house numbers/signage are a coin flip
+ *      (v1: "6016" for a real "5019"; v3: "5018"). Never trust rendered
+ *      text; avoid photos with prominent legible numbers/signage.
+ *   4. Reverse-traversal/backtrack distortion — smear-morph warping when the
+ *      camera revisits an already-shown space or is asked to cram too many
+ *      transitions into too short a duration (v1's kitchen smear at 5s).
+ *
+ * THE COVERAGE LAW (product decision, Oliver, 2026-07-02): walk a doorway
+ * only if a reference photo visibly covers it — otherwise FADE between
+ * zones. No third option, so the model never gets the chance to invent
+ * geometry. This is exactly what lib/walkthrough/spatial.ts's
+ * analyzeSpatialGraph() + planRoute() implement for the future
+ * multi-segment path (spatial analysis → per-zone segments → crossfades).
+ * This module (generate.ts) still runs the SINGLE-generation mode — the
+ * multi-segment orchestration stays in the probe
+ * (scripts/probe-walkthrough-cinematic.ts) until the segmented look is
+ * approved — but WALKTHROUGH_PROMPT_BASE below is upgraded to the validated
+ * forward-only skeleton (defect classes 1 and 4) and reference photos are
+ * capped tighter (WALKTHROUGH_MAX_REFERENCE_IMAGES) to reduce how much
+ * uncovered fabrication a single render has room to commit (defect class 2).
+ * A future session promotes the segmented engine into this module once v2
+ * is approved on real renders.
  */
 
 import { getSupabase, getSelectedPhotos, getPhotosForProperty, recordCostEvent } from "../db.js";
@@ -42,15 +82,31 @@ import {
   atlasClipCostCents,
 } from "../providers/atlas.js";
 import { hostVideoOnBunny, isBunnyConfigured } from "../providers/bunny-stream.js";
+import { WALKTHROUGH_SKELETON_PROMPT } from "./spatial.js";
 
 const SKU = "seedance-reference-walkthrough" as const;
 
+// Cinematic v2 upgrade (2026-07-02): the validated forward-only skeleton,
+// generalized for an arbitrary photo count/order (single-generation mode has
+// no per-zone segmentation yet — that's spatial.ts's planRoute(), still
+// probe-only). Variable content (the image-order manifest) is appended AFTER
+// this stable block by buildWalkthroughPrompt(), per the project's
+// cache-friendly-prompt-structure convention (stable prefix first, variable
+// content last) — shared verbatim with spatial.ts's per-segment prompts so
+// the two modes never drift apart on the winning language.
 const WALKTHROUGH_PROMPT_BASE =
-  "Using all provided listing photos as references, generate a SINGLE CONTINUOUS first-person walkthrough beginning outside the property and smoothly entering through the front door. Move the camera in ONE uninterrupted continuous path through the entire home, revealing each space in logical order as if filmed on a stabilized gimbal. Preserve exact architecture, room layouts, furniture, decor, colors, materials and lighting from the references. Maintain consistent spatial relationships and realistic room connections. Prioritize accurate continuous navigation over cinematic effects. Bright inviting atmosphere, photorealistic, realistic depth and parallax. Absolutely NO cuts, NO teleporting between rooms, NO shot changes, no floating camera, no people, no text, no added objects, no redesigned spaces, no distortion, no camera shake. One seamless continuous tour from exterior to every major interior space.";
+  `${WALKTHROUGH_SKELETON_PROMPT} Begin outside the property and move forward through the spaces shown in the reference photos, in the order listed below, entering through the front door and continuing into the interior. Prioritize accurate, coverage-true navigation over cinematic flourish.`;
 
 const WALKTHROUGH_DURATION_SECONDS = 15;
 const WALKTHROUGH_RESOLUTION = "1080p" as const;
 const MIN_REFERENCE_IMAGES = 2;
+// Cinematic v2 (2026-07-02): tightened from SEEDANCE_MAX_REFERENCE_IMAGES (9)
+// to 5 — fewer references per single-shot render means fewer forced
+// transitions the model has to invent in the gaps between what's actually
+// photographed (defect class 2: off-reference geometry fabrication). The
+// segmented engine (spatial.ts) is the real fix; this is a blast-radius
+// reduction for the still-live single-generation mode.
+const WALKTHROUGH_MAX_REFERENCE_IMAGES = 5;
 
 export interface SubmitWalkthroughResult {
   status: "processing" | "skipped";
@@ -88,13 +144,16 @@ function isAerialRoom(roomType: string | null): boolean {
 /**
  * Order photos exterior → interior (stable within each group, preserving
  * the incoming order — already rank/aesthetic sorted by getSelectedPhotos),
- * drop aerial shots, and cap to the model's max reference-image count.
+ * drop aerial shots, and cap to WALKTHROUGH_MAX_REFERENCE_IMAGES (5) — a
+ * tighter cap than the model's own max (SEEDANCE_MAX_REFERENCE_IMAGES, 9);
+ * see the cinematic-v2 docblock at the top of this file for why.
  */
 export function orderAndFilterPhotos(photos: Photo[]): Photo[] {
   const usable = photos.filter((p) => !isAerialRoom(p.room_type));
   const exterior = usable.filter((p) => isExteriorRoom(p.room_type));
   const interior = usable.filter((p) => !isExteriorRoom(p.room_type));
-  return [...exterior, ...interior].slice(0, SEEDANCE_MAX_REFERENCE_IMAGES);
+  const cap = Math.min(WALKTHROUGH_MAX_REFERENCE_IMAGES, SEEDANCE_MAX_REFERENCE_IMAGES);
+  return [...exterior, ...interior].slice(0, cap);
 }
 
 function roomLabel(photo: Photo): string {
@@ -108,9 +167,14 @@ export function buildManifest(photos: Photo[]): string {
   return `Image order: ${parts.join(", ")}.`;
 }
 
-/** Full prompt: ordered manifest line first, then the validated base prompt. */
+/**
+ * Full prompt: the stable forward-only skeleton first, the ordered image
+ * manifest last — cache-friendly-prompt-structure convention (stable
+ * prefix, variable content last), and matches spatial.ts's per-segment
+ * prompt shape (WALKTHROUGH_SKELETON_PROMPT + variable content appended).
+ */
 export function buildWalkthroughPrompt(photos: Photo[]): string {
-  return `${buildManifest(photos)}\n\n${WALKTHROUGH_PROMPT_BASE}`;
+  return `${WALKTHROUGH_PROMPT_BASE}\n\n${buildManifest(photos)}`;
 }
 
 /**
