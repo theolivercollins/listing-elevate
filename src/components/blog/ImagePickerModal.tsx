@@ -64,14 +64,14 @@ function ImageTile({
         borderRadius: "var(--le-r-lg)",
         overflow: "hidden",
         background: "rgba(11,11,16,0.06)",
-        border: selected ? "2px solid var(--accent, #1E4A8C)" : "2px solid transparent",
-        boxShadow: selected ? "0 0 0 2px rgba(30,74,140,0.25)" : undefined,
+        border: selected ? "2px solid var(--accent, #172033)" : "2px solid transparent",
+        boxShadow: selected ? "0 0 0 2px rgba(23,32,51,0.25)" : undefined,
         cursor: "pointer",
         padding: 0,
         transition: "border-color .15s, box-shadow .15s, transform .15s",
         willChange: "transform",
       }}
-      onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent, #1E4A8C)"; e.currentTarget.style.outlineOffset = "2px"; }}
+      onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent, #172033)"; e.currentTarget.style.outlineOffset = "2px"; }}
       onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
       onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
       onMouseUp={(e) => { e.currentTarget.style.transform = ""; }}
@@ -132,7 +132,7 @@ function ImageTile({
             width: 22,
             height: 22,
             borderRadius: "50%",
-            background: "var(--accent, #1E4A8C)",
+            background: "var(--accent, #172033)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -197,9 +197,9 @@ function UploadTile({ onUploaded }: { onUploaded: (img: BlogImage) => void }) {
         }}
         onMouseEnter={(e) => {
           if (uploading) return;
-          e.currentTarget.style.background = "rgba(30,74,140,0.06)";
-          e.currentTarget.style.borderColor = "rgba(30,74,140,0.4)";
-          e.currentTarget.style.color = "var(--accent, #1E4A8C)";
+          e.currentTarget.style.background = "rgba(23,32,51,0.06)";
+          e.currentTarget.style.borderColor = "rgba(23,32,51,0.4)";
+          e.currentTarget.style.color = "var(--accent, #172033)";
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = "rgba(11,11,16,0.025)";
@@ -228,9 +228,9 @@ function TagPill({ label, active, onClick }: { label: string; active: boolean; o
       style={{
         padding: "4px 12px",
         borderRadius: "var(--le-r-pill)",
-        border: active ? "1.5px solid var(--accent, #1E4A8C)" : "1.5px solid rgba(11,11,16,0.12)",
-        background: active ? "rgba(30,74,140,0.1)" : "transparent",
-        color: active ? "var(--accent, #1E4A8C)" : "var(--muted, #656b7a)",
+        border: active ? "1.5px solid var(--accent, #172033)" : "1.5px solid rgba(11,11,16,0.12)",
+        background: active ? "rgba(23,32,51,0.1)" : "transparent",
+        color: active ? "var(--accent, #172033)" : "var(--muted, #656b7a)",
         fontSize: 12,
         fontWeight: 500,
         cursor: "pointer",

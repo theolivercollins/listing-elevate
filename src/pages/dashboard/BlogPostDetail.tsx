@@ -343,7 +343,7 @@ export default function BlogPostDetailPage() {
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(30,74,140,0.25)", background: "rgba(30,74,140,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(23,32,51,0.25)", background: "rgba(23,32,51,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           {aiInput ? (
             <>
               <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
@@ -366,7 +366,7 @@ export default function BlogPostDetailPage() {
 
       {/* Publish progress banner */}
       {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(30,74,140,0.25)", background: "rgba(30,74,140,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(23,32,51,0.25)", background: "rgba(23,32,51,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             <span style={{ fontWeight: 600, color: "var(--ink, var(--le-text))" }}>

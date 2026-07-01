@@ -562,8 +562,8 @@ export default function BlogPostChatCompose() {
                       key={card.id}
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
                       style={{
-                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(30,74,140,0.25)",
-                        background: "rgba(30,74,140,0.05)", padding: 14,
+                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(23,32,51,0.25)",
+                        background: "rgba(23,32,51,0.05)", padding: 14,
                       }}
                     >
                       <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink, var(--le-text))" }}>
@@ -906,7 +906,7 @@ function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)] focus-within:!shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(23,32,51,0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
             <button type="button" style={{ width: 34, height: 34, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted, var(--le-muted))" }}>

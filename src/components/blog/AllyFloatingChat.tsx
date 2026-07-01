@@ -597,8 +597,8 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   transition={{ duration: 0.15 }}
                   style={{
                     borderRadius: "var(--le-r-lg)", padding: 12,
-                    border: card.applied ? "1px solid rgba(47,138,85,0.4)" : "1px solid rgba(30,74,140,0.2)",
-                    background: card.applied ? "rgba(47,138,85,0.07)" : "rgba(30,74,140,0.04)",
+                    border: card.applied ? "1px solid rgba(47,138,85,0.4)" : "1px solid rgba(23,32,51,0.2)",
+                    background: card.applied ? "rgba(47,138,85,0.07)" : "rgba(23,32,51,0.04)",
                     fontSize: 12,
                   }}
                 >
@@ -704,7 +704,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)]">
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(23,32,51,0.4)]">
                 <Popover>
                   <PopoverTrigger asChild>
                     <button type="button" style={{ width: 28, height: 28, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted, var(--le-muted))" }}>

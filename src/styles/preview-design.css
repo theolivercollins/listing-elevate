@@ -29,7 +29,7 @@
   --pd-muted-2:    #9aa0aa;
   --pd-line:       rgba(11, 12, 16, 0.07);
   --pd-line-2:     rgba(11, 12, 16, 0.04);
-  --pd-accent:     #1E4A8C; /* @kind color — was #2a6fdb; unified with app-wide navy brand accent */
+  --pd-accent:     #172033; /* @kind color — was #2a6fdb; unified with app-wide navy brand accent */
   --pd-good:       #2f8a55;
 
   /* Radius scale — aliased to canonical foundation tokens (same numeric values;

@@ -12,10 +12,10 @@
   --le-text-faint: rgba(10, 12, 20, 0.3);
 
   /* Accent — deep navy brand accent (was ink black #07080c) */
-  --le-accent: #1E4A8C; /* @kind color */
+  --le-accent: #172033; /* @kind color */
   --le-accent-fg: #ffffff; /* @kind color */
   --le-accent-soft: #f0f0f3;
-  --le-accent-text: #1E4A8C; /* @kind color — navy; used for interactive/CTA, NOT body text */
+  --le-accent-text: #172033; /* @kind color — navy; used for interactive/CTA, NOT body text */
   --le-ink: #0c0e16; /* @kind color — canonical primary text token */
 
   /* States */
@@ -472,11 +472,11 @@
   --line:       rgba(12, 14, 22, 0.08);
   --line-2:     rgba(12, 14, 22, 0.045);
 
-  /* Accent — deep navy #1E4A8C (brand accent, unified app-wide; was #2a6fdb) */
-  --accent:     #1E4A8C;
-  --accent-2:   #163a6e;
+  /* Accent — deep navy #172033 (brand accent, unified app-wide; was #2a6fdb) */
+  --accent:     #172033;
+  --accent-2:   #232e49;
   --accent-soft:#eaf1fd;
-  --accent-ink: #163a6e;
+  --accent-ink: #10182a;
 
   /* Semantic status colors */
   --good:       #2f8a55;
@@ -485,7 +485,7 @@
   --warn-soft:  #f6efe1;
   --bad:        #c44a4a;
   --bad-soft:   #f8eaea;
-  --info:       #1E4A8C;
+  --info:       #172033;
   --info-soft:  #eaf1fd;
 
   /* Radius */

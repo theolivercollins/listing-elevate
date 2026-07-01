@@ -29,7 +29,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 40% 8%;
 
-    --primary: 214 65% 33%;           /* deep navy #1E4A8C — brand accent (was near-black) */
+    --primary: 221 38% 15%;           /* deep navy #172033 — brand accent (was near-black) */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 15% 96%;         /* soft near-white */
@@ -38,7 +38,7 @@
     --muted: 220 15% 96%;
     --muted-foreground: 220 10% 46%;
 
-    --accent: 214 65% 33%;            /* deep navy #1E4A8C — the ONE accent (was electric blue) */
+    --accent: 221 38% 15%;            /* deep navy #172033 — the ONE accent (was electric blue) */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
@@ -82,7 +82,7 @@
     --muted: 222 28% 11%;
     --muted-foreground: 220 12% 64%;
 
-    --accent: 214 65% 33%;            /* deep navy #1E4A8C — unified accent (was electric blue) */
+    --accent: 221 38% 15%;            /* deep navy #172033 — unified accent (was electric blue) */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 58%;
