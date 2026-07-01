@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../drive/intake-db.js', () => ({
   getActiveRefineIntake: vi.fn(),
+  getIntakeByPendingPlanId: vi.fn(),
   getChatMessages: vi.fn(),
   appendChatMessages: vi.fn(),
   stagePlan: vi.fn(),
@@ -398,7 +399,8 @@ describe('handleRefineMessage — FIX 3: non-paused turns accumulate; "go" commi
     expect(refineExecuteModule.executeRefinement).not.toHaveBeenCalled(); // staged, not yet applied
 
     // Turn 4 — tap "Apply": executeRefinement fires exactly ONCE with the COMBINED actions.
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValueOnce(makeIntake({ telegram_message_id: 555 }) as never);
+    // Resolved via the planId (getIntakeByPendingPlanId), not "active" state.
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValueOnce(makeIntake({ telegram_message_id: 555 }) as never);
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue({ actions: combinedActions, summary: 'Switch music to Track 1; Reorder the scenes' });
     vi.mocked(intakeDb.consumePlan).mockResolvedValue(true);
     vi.mocked(refineExecuteModule.executeRefinement).mockResolvedValue(
@@ -564,7 +566,7 @@ describe('handleRefineMessage — M2: concrete before/after echo for inline edit
 
 describe('handleRefineCallback — apply', () => {
   it('consumes the staged plan, kicks the executor, and reports a fast ack (never awaiting the render inline)', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
     const staged = { actions: [{ kind: 'set_music', music_track_id: 'track-1' }] as RefineAction[], summary: 'Switch music.' };
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue(staged);
     vi.mocked(intakeDb.consumePlan).mockResolvedValue(true);
@@ -575,6 +577,7 @@ describe('handleRefineCallback — apply', () => {
 
     await handleRefineCallback('apply:plan-abc');
 
+    expect(intakeDb.getIntakeByPendingPlanId).toHaveBeenCalledWith('plan-abc');
     expect(intakeDb.getPendingPlan).toHaveBeenCalledWith('intake-1', 'plan-abc');
     expect(intakeDb.consumePlan).toHaveBeenCalledWith('intake-1', 'plan-abc');
     expect(telegramClient.editMessageText).toHaveBeenCalledWith(555, expect.stringContaining('Applying'), { buttons: [] });
@@ -591,7 +594,7 @@ describe('handleRefineCallback — apply', () => {
   });
 
   it('single-use: a replayed apply on an already-consumed plan is a safe no-op', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
     const staged = { actions: [{ kind: 'set_music', music_track_id: 'track-1' }] as RefineAction[], summary: 'Switch music.' };
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue(staged);
     vi.mocked(intakeDb.consumePlan).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
@@ -610,18 +613,20 @@ describe('handleRefineCallback — apply', () => {
   });
 
   it('reports "already been applied" when no plan matches the tapped planId at all', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake() as never);
-    vi.mocked(intakeDb.getPendingPlan).mockResolvedValue(null);
+    // Nothing resolves for this planId at the DB level — getPendingPlan is
+    // never even reached (short-circuits on the falsy `active`).
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(null);
 
     await handleRefineCallback('apply:some-old-id');
 
     expect(telegramClient.sendMessage).toHaveBeenCalledWith("That's already been applied.");
+    expect(intakeDb.getPendingPlan).not.toHaveBeenCalled();
     expect(intakeDb.consumePlan).not.toHaveBeenCalled();
     expect(refineExecuteModule.executeRefinement).not.toHaveBeenCalled();
   });
 
   it('drops a stale action against fresh context, tells the user, and only applies the surviving action', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
     const staged = {
       actions: [
         { kind: 'set_music', music_track_id: 'track-GONE' }, // no longer in availableTracks
@@ -645,7 +650,7 @@ describe('handleRefineCallback — apply', () => {
   });
 
   it('reports nothing-to-apply and never calls the executor when every action drops on re-validation', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: 555 }) as never);
     const staged = {
       actions: [{ kind: 'set_music', music_track_id: 'track-GONE' }] as RefineAction[],
       summary: 'Switch music.',
@@ -663,11 +668,68 @@ describe('handleRefineCallback — apply', () => {
   });
 });
 
+// ── FIX 3 — apply/adjust/cancel callbacks bind to the planId, never to
+// "whichever intake is currently active" ────────────────────────────────────
+//
+// Regression coverage for the plan-binding race: getActiveRefineIntake()'s
+// result can change between when a confirm card was sent and when the
+// operator taps a button on it (a newer listing entering the eligible set
+// mid-conversation). The callback handlers must resolve the intake to
+// mutate from the planId embedded in the callback data (via
+// getIntakeByPendingPlanId), never from "active" state — otherwise a tap on
+// an OLD listing's confirm card could silently apply against a DIFFERENT,
+// newer run.
+describe('handleRefineCallback — FIX 3: resolves via planId, not "active" intake', () => {
+  it('applies against the CORRECT (older) intake/run the plan was staged on, even though getActiveRefineIntake now resolves to a DIFFERENT, newer intake', async () => {
+    const correctIntake = makeIntake({
+      id: 'intake-old',
+      delivery_run_id: 'run-old',
+      telegram_message_id: 555,
+      created_at: new Date(Date.now() - 60_000).toISOString(),
+    });
+    const newerIntake = makeIntake({
+      id: 'intake-new',
+      delivery_run_id: 'run-new',
+      created_at: new Date().toISOString(),
+    });
+
+    // A second listing entered the eligible set AFTER this plan was staged —
+    // getActiveRefineIntake (ordered by created_at DESC) now resolves to IT,
+    // not the intake the confirm card was actually built against.
+    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(newerIntake as never);
+    // getIntakeByPendingPlanId still correctly resolves the OLD intake —
+    // it looks up by planId, never by "whichever is active".
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(correctIntake as never);
+
+    const staged = { actions: [{ kind: 'set_music', music_track_id: 'track-1' }] as RefineAction[], summary: 'Switch music.' };
+    vi.mocked(intakeDb.getPendingPlan).mockResolvedValue(staged);
+    vi.mocked(intakeDb.consumePlan).mockResolvedValue(true);
+    vi.mocked(refineContextModule.buildRefineContext).mockResolvedValue(makeCtx({ runId: 'run-old' }));
+    vi.mocked(refineExecuteModule.executeRefinement).mockResolvedValue(
+      makeResult({ steps: [{ action: 'set_music', ok: true }], rerendering: true, summary: '1 of 1 change(s) applied — re-rendered' }),
+    );
+
+    await handleRefineCallback('apply:plan-old');
+
+    expect(intakeDb.getIntakeByPendingPlanId).toHaveBeenCalledWith('plan-old');
+    expect(intakeDb.getPendingPlan).toHaveBeenCalledWith('intake-old', 'plan-old');
+    expect(intakeDb.consumePlan).toHaveBeenCalledWith('intake-old', 'plan-old');
+    expect(refineContextModule.buildRefineContext).toHaveBeenCalledWith('run-old');
+    expect(refineExecuteModule.executeRefinement).toHaveBeenCalledWith('run-old', staged.actions);
+    expect(refineExecuteModule.executeRefinement).not.toHaveBeenCalledWith('run-new', expect.anything());
+
+    await flush();
+    // The intake advanced back to 'generating' is the CORRECT (old) one.
+    expect(intakeDb.setStatus).toHaveBeenCalledWith('intake-old', 'generating');
+    expect(intakeDb.setStatus).not.toHaveBeenCalledWith('intake-new', expect.anything());
+  });
+});
+
 // ── handleRefineCallback — adjust / cancel ──────────────────────────────────
 
 describe('handleRefineCallback — adjust', () => {
   it('clears the pending plan and asks what to change', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake() as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake() as never);
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue({ actions: [], summary: 'x' });
 
     await handleRefineCallback('adjust:plan-abc');
@@ -677,11 +739,12 @@ describe('handleRefineCallback — adjust', () => {
   });
 
   it('does not clear a different, newer plan when the tapped planId no longer matches', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake() as never);
-    vi.mocked(intakeDb.getPendingPlan).mockResolvedValue(null);
+    // Nothing resolves for this planId — getPendingPlan is never reached.
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(null);
 
     await handleRefineCallback('adjust:stale-id');
 
+    expect(intakeDb.getPendingPlan).not.toHaveBeenCalled();
     expect(intakeDb.clearPendingPlan).not.toHaveBeenCalled();
     expect(telegramClient.sendMessage).toHaveBeenCalledWith("That plan isn't pending anymore.");
   });
@@ -689,7 +752,7 @@ describe('handleRefineCallback — adjust', () => {
 
 describe('handleRefineCallback — cancel', () => {
   it('clears the pending plan and strips buttons on the original message', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: 777 }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: 777 }) as never);
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue({ actions: [], summary: 'x' });
 
     await handleRefineCallback('cancel:plan-abc');
@@ -700,7 +763,7 @@ describe('handleRefineCallback — cancel', () => {
   });
 
   it('falls back to a plain sendMessage when there is no message id to edit', async () => {
-    vi.mocked(intakeDb.getActiveRefineIntake).mockResolvedValue(makeIntake({ telegram_message_id: null }) as never);
+    vi.mocked(intakeDb.getIntakeByPendingPlanId).mockResolvedValue(makeIntake({ telegram_message_id: null }) as never);
     vi.mocked(intakeDb.getPendingPlan).mockResolvedValue({ actions: [], summary: 'x' });
 
     await handleRefineCallback('cancel:plan-abc');

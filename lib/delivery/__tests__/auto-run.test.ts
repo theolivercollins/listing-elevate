@@ -1107,10 +1107,13 @@ describe('resolveAssembling', () => {
           return {
             update: vi.fn().mockImplementation((patch: Record<string, unknown>) => {
               // Lease claim: resolving_at is a truthy ISO timestamp.
+              // Chain mirrors the real CAS: .eq().or().is('paused_reason', null).select()
               if (patch.resolving_at) {
                 return {
                   eq: vi.fn().mockReturnValue({
-                    or: vi.fn().mockReturnValue({ select: claimSelect }),
+                    or: vi.fn().mockReturnValue({
+                      is: vi.fn().mockReturnValue({ select: claimSelect }),
+                    }),
                   }),
                 };
               }
@@ -1508,7 +1511,9 @@ describe('resolveAssembling', () => {
                 return {
                   eq: vi.fn().mockReturnValue({
                     or: vi.fn().mockReturnValue({
-                      select: vi.fn().mockResolvedValue({ data: [{ id: 'run-1' }], error: null }),
+                      is: vi.fn().mockReturnValue({
+                        select: vi.fn().mockResolvedValue({ data: [{ id: 'run-1' }], error: null }),
+                      }),
                     }),
                   }),
                 };
@@ -1604,8 +1609,8 @@ describe('resolveGate — resolve lease', () => {
     const releaseEq = vi.fn().mockResolvedValue({ error: null });
     const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
       if (patch && patch.resolving_at) {
-        // claim: .update({resolving_at: now}).eq().or().select()
-        return { eq: vi.fn().mockReturnValue({ or: vi.fn().mockReturnValue({ select: claimSelect }) }) };
+        // claim: .update({resolving_at: now}).eq().or().is('paused_reason', null).select()
+        return { eq: vi.fn().mockReturnValue({ or: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ select: claimSelect }) }) }) };
       }
       // release: .update({resolving_at: null}).eq()
       return { eq: releaseEq };
@@ -1874,26 +1879,67 @@ describe('pauseForHuman', () => {
 
 describe('reclaimStrandedRefiningLocks', () => {
   type ReclaimRow = { id: string; stage: string; auto_run: boolean; paused_reason: string | null; updated_at: string };
+  type UpdateOverride = { data: Array<{ id: string }> | null; error: { message: string } | null };
+  type UpdateCall = { id: string; eqArgs: Array<[string, unknown]>; ltArgs: Array<[string, unknown]> };
 
   /**
-   * Minimal in-memory filter mirroring the real Postgres WHERE clause for this
-   * one query (auto_run=true AND paused_reason='refining' AND updated_at <
-   * staleBefore). Lets tests assert the FULL round trip — a too-fresh row, or
-   * a genuinely human-paused row, is never even returned by the "DB" — rather
-   * than just trusting a hand-fed mock response for the interesting cases.
+   * Fakes BOTH statements reclaimStrandedRefiningLocks issues against
+   * delivery_runs:
+   *   1. The batch SELECT (auto_run=true AND paused_reason='refining' AND
+   *      updated_at < staleBefore) — filtered in-memory against `rows`, same
+   *      as before FIX #2.
+   *   2. FIX #2's per-row CONDITIONAL clear —
+   *      .update({paused_reason:null}).eq('id',id).eq('paused_reason','refining')
+   *      .lt('updated_at',staleBefore).select('id') — by default this ALSO
+   *      re-checks the row's paused_reason in `rows` at clear time (so a row
+   *      already not 'refining' there is correctly excluded, exactly like a
+   *      real Postgres CAS would exclude it). Pass `updateOverrides` (keyed
+   *      by row id) to force a specific clear outcome regardless of `rows` —
+   *      used to simulate the select-then-update race directly.
+   *
+   * Each `.from()` call returns a FRESH object (matching how the real
+   * function calls db.from('delivery_runs') once for the SELECT, then again
+   * for EACH row's own conditional UPDATE) so select-chain and update-chain
+   * mock state never bleed into each other.
    */
-  function makeReclaimDb(rows: ReclaimRow[]) {
-    const chain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      lt: vi.fn().mockImplementation((_col: string, value: string) => {
-        const filtered = rows.filter(
-          r => r.auto_run === true && r.paused_reason === 'refining' && r.updated_at < value,
-        );
-        return Promise.resolve({ data: filtered.map(({ id, stage }) => ({ id, stage })), error: null });
+  function makeReclaimDb(rows: ReclaimRow[], updateOverrides: Record<string, UpdateOverride> = {}) {
+    const updateCalls: UpdateCall[] = [];
+
+    const fromMock = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockImplementation(() => ({
+        eq: vi.fn().mockReturnThis(),
+        lt: vi.fn().mockImplementation((_col: string, value: string) => {
+          const filtered = rows.filter(
+            r => r.auto_run === true && r.paused_reason === 'refining' && r.updated_at < value,
+          );
+          return Promise.resolve({ data: filtered.map(({ id, stage }) => ({ id, stage })), error: null });
+        }),
+      })),
+      update: vi.fn().mockImplementation(() => {
+        const record: UpdateCall = { id: '', eqArgs: [], ltArgs: [] };
+        updateCalls.push(record);
+        const chain: Record<string, unknown> = {
+          eq: vi.fn().mockImplementation((col: string, val: unknown) => {
+            record.eqArgs.push([col, val]);
+            if (col === 'id') record.id = val as string;
+            return chain;
+          }),
+          lt: vi.fn().mockImplementation((col: string, val: unknown) => {
+            record.ltArgs.push([col, val]);
+            return chain;
+          }),
+          select: vi.fn().mockImplementation(() => {
+            if (updateOverrides[record.id]) return Promise.resolve(updateOverrides[record.id]);
+            const row = rows.find(r => r.id === record.id);
+            const stillStranded = Boolean(row && row.paused_reason === 'refining');
+            return Promise.resolve({ data: stillStranded ? [{ id: record.id }] : [], error: null });
+          }),
+        };
+        return chain;
       }),
-    };
-    return { db: { from: vi.fn().mockReturnValue(chain) } };
+    }));
+
+    return { db: { from: fromMock }, getUpdateCalls: () => updateCalls };
   }
 
   it('TTL constant is exactly 10 minutes', () => {
@@ -1935,22 +1981,42 @@ describe('reclaimStrandedRefiningLocks', () => {
   it("reclaims a run stuck at paused_reason='refining' with updated_at 11 minutes ago", async () => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
-    const { db } = makeReclaimDb([
+    const { db, getUpdateCalls } = makeReclaimDb([
       { id: 'run-stale', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
     ]);
     (getSupabase as Mock).mockReturnValue(db);
-    (updateRun as Mock).mockResolvedValue({});
 
     const result = await reclaimStrandedRefiningLocks();
 
     expect(result).toEqual({ reclaimed: 1 });
-    expect(updateRun).toHaveBeenCalledWith('run-stale', { paused_reason: null });
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.id).toBe('run-stale');
+  });
+
+  it("per-row clear is scoped correctly: eq('id',...), eq('paused_reason','refining'), lt('updated_at', staleBefore), select('id')", async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-stale', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    await reclaimStrandedRefiningLocks();
+
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.eqArgs).toContainEqual(['id', 'run-stale']);
+    // The CAS re-asserts BOTH conditions that made the row look stranded at
+    // SELECT time — this is what makes the clear conditional, not unconditional.
+    expect(calls[0]!.eqArgs).toContainEqual(['paused_reason', 'refining']);
+    expect(calls[0]!.ltArgs).toContainEqual(['updated_at', expect.any(String)]);
   });
 
   it('does NOT reclaim the same shape of run at 5 minutes old (still within the TTL)', async () => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const { db } = makeReclaimDb([
+    const { db, getUpdateCalls } = makeReclaimDb([
       { id: 'run-fresh', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: fiveMinAgo },
     ]);
     (getSupabase as Mock).mockReturnValue(db);
@@ -1958,13 +2024,14 @@ describe('reclaimStrandedRefiningLocks', () => {
     const result = await reclaimStrandedRefiningLocks();
 
     expect(result).toEqual({ reclaimed: 0 });
-    expect(updateRun).not.toHaveBeenCalled();
+    // The SELECT itself excludes it — no per-row clear is ever attempted.
+    expect(getUpdateCalls()).toEqual([]);
   });
 
   it('NEVER reclaims a genuinely human-paused run regardless of age', async () => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { db } = makeReclaimDb([
+    const { db, getUpdateCalls } = makeReclaimDb([
       { id: 'run-human', stage: 'details', auto_run: true, paused_reason: 'missing listing field: price', updated_at: oneDayAgo },
     ]);
     (getSupabase as Mock).mockReturnValue(db);
@@ -1972,7 +2039,33 @@ describe('reclaimStrandedRefiningLocks', () => {
     const result = await reclaimStrandedRefiningLocks();
 
     expect(result).toEqual({ reclaimed: 0 });
-    expect(updateRun).not.toHaveBeenCalled();
+    expect(getUpdateCalls()).toEqual([]);
+  });
+
+  // ── FIX #2 — the per-row clear is a CAS, not an unconditional wipe ─────────
+  it("FIX #2: a row whose paused_reason changed to a genuine gate BETWEEN the select and its own clear is NOT cleared (conditional update affects 0 rows)", async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    // At SELECT time the row still matched (paused_reason='refining', stale
+    // enough) — but between that read and THIS row's own per-row clear, a
+    // genuine human gate ('missing listing field: price') landed. Forcing the
+    // conditional update to affect 0 rows is exactly what the real
+    // `.eq('paused_reason','refining')` term in its WHERE would do once the
+    // column no longer holds that value — the unconditional updateRun(...)
+    // this replaced would have wiped the genuine gate; the CAS must not.
+    const { db, getUpdateCalls } = makeReclaimDb(
+      [{ id: 'run-race', stage: 'details', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo }],
+      { 'run-race': { data: [], error: null } },
+    );
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 0 });
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1); // the clear WAS attempted...
+    expect(calls[0]!.id).toBe('run-race');
+    expect(calls[0]!.eqArgs).toContainEqual(['paused_reason', 'refining']); // ...CAS'd, not unconditional
   });
 
   it('reclaims only the stranded rows out of a mixed batch and counts correctly', async () => {
@@ -1980,22 +2073,19 @@ describe('reclaimStrandedRefiningLocks', () => {
     const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
     const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { db } = makeReclaimDb([
+    const { db, getUpdateCalls } = makeReclaimDb([
       { id: 'run-stale-1', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
       { id: 'run-fresh', stage: 'checkpoint_a', auto_run: true, paused_reason: 'refining', updated_at: fiveMinAgo },
       { id: 'run-human', stage: 'details', auto_run: true, paused_reason: 'missing listing field: price', updated_at: oneDayAgo },
       { id: 'run-stale-2', stage: 'music', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
     ]);
     (getSupabase as Mock).mockReturnValue(db);
-    (updateRun as Mock).mockResolvedValue({});
 
     const result = await reclaimStrandedRefiningLocks();
 
     expect(result).toEqual({ reclaimed: 2 });
-    expect(updateRun).toHaveBeenCalledWith('run-stale-1', { paused_reason: null });
-    expect(updateRun).toHaveBeenCalledWith('run-stale-2', { paused_reason: null });
-    expect(updateRun).not.toHaveBeenCalledWith('run-fresh', expect.anything());
-    expect(updateRun).not.toHaveBeenCalledWith('run-human', expect.anything());
+    const ids = getUpdateCalls().map(c => c.id);
+    expect(ids).toEqual(['run-stale-1', 'run-stale-2']);
   });
 
   it('logs the run id + stage for each reclaim', async () => {
@@ -2005,13 +2095,28 @@ describe('reclaimStrandedRefiningLocks', () => {
       { id: 'run-stale', stage: 'checkpoint_b', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
     ]);
     (getSupabase as Mock).mockReturnValue(db);
-    (updateRun as Mock).mockResolvedValue({});
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     await reclaimStrandedRefiningLocks();
 
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('run-stale'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('checkpoint_b'));
+    logSpy.mockRestore();
+  });
+
+  it('logs (does not throw) when a row is selected as stranded but no longer matches at clear time', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db } = makeReclaimDb(
+      [{ id: 'run-race', stage: 'details', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo }],
+      { 'run-race': { data: [], error: null } },
+    );
+    (getSupabase as Mock).mockReturnValue(db);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('run-race'));
     logSpy.mockRestore();
   });
 
@@ -2025,7 +2130,6 @@ describe('reclaimStrandedRefiningLocks', () => {
     (getSupabase as Mock).mockReturnValue({ from: vi.fn().mockReturnValue(chain) });
 
     await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
-    expect(updateRun).not.toHaveBeenCalled();
   });
 
   it('fails open (returns {reclaimed:0}, never throws) when getSupabase itself throws', async () => {
@@ -2037,21 +2141,53 @@ describe('reclaimStrandedRefiningLocks', () => {
     await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
   });
 
-  it('one row failing updateRun does not abort the loop — other rows still reclaimed', async () => {
+  it('fails open (logs, does not abort the loop) when one row\'s conditional clear errors — other rows still reclaimed', async () => {
     setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
     const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
-    const { db } = makeReclaimDb([
-      { id: 'run-fails', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
-      { id: 'run-ok', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
-    ]);
+    const { db, getUpdateCalls } = makeReclaimDb(
+      [
+        { id: 'run-fails', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+        { id: 'run-ok', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+      ],
+      { 'run-fails': { data: null, error: { message: 'DB write failed' } } },
+    );
     (getSupabase as Mock).mockReturnValue(db);
-    (updateRun as Mock)
-      .mockRejectedValueOnce(new Error('DB write failed'))
-      .mockResolvedValueOnce({});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await reclaimStrandedRefiningLocks();
 
     expect(result).toEqual({ reclaimed: 1 });
-    expect(updateRun).toHaveBeenCalledTimes(2);
+    expect(getUpdateCalls().map(c => c.id)).toEqual(['run-fails', 'run-ok']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('run-fails'), 'DB write failed');
+    errSpy.mockRestore();
+  });
+
+  it('one row throwing (unexpected exception, not a returned error) does not abort the loop — other rows still reclaimed', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-throws', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+      { id: 'run-ok', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+    const realFrom = db.from;
+    let call = 0;
+    db.from = vi.fn().mockImplementation((table: string) => {
+      call++;
+      // 1st call = the batch SELECT; 2nd call = run-throws's own UPDATE chain
+      // (thrown instead of returned, e.g. a network exception from the client).
+      if (call === 2) {
+        return { update: vi.fn().mockImplementation(() => { throw new Error('network exception'); }) };
+      }
+      return realFrom(table);
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 1 });
+    expect(getUpdateCalls().map(c => c.id)).toEqual(['run-ok']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('run-throws'), expect.any(Error));
+    errSpy.mockRestore();
   });
 });

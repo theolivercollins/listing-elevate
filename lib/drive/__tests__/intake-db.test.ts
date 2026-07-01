@@ -42,6 +42,7 @@ import {
   consumePlan,
   clearPendingPlan,
   getActiveRefineIntake,
+  getIntakeByPendingPlanId,
   markUpdateProcessed,
   type DriveIntake,
 } from "../intake-db.js";
@@ -887,6 +888,60 @@ describe("stagePlan / getPendingPlan / consumePlan / clearPendingPlan", () => {
       makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(clearPendingPlan("intake-1")).rejects.toThrow("update failed");
+  });
+});
+
+// FIX 3 (plan-binding race): resolves the intake a staged plan is bound to
+// directly from its planId — used by the Telegram apply/adjust/cancel
+// callback handlers instead of getActiveRefineIntake, so a callback always
+// mutates the SAME row its confirm card was built against, even if a newer
+// intake has since become "active" (see lib/telegram/refine-conversation.ts).
+describe("getIntakeByPendingPlanId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the row when a live (unconsumed, unexpired) plan matches the planId", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date().toISOString(),
+      pending_plan_consumed_at: null,
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+
+    const intake = await getIntakeByPendingPlanId("plan-abc");
+
+    expect(intake?.id).toBe("intake-1");
+  });
+
+  it("scopes the query to pending_plan_id=planId, consumed_at IS NULL, and created_at within the 1h TTL", async () => {
+    const client = makeClient([{ data: null, error: null }]);
+    vi.mocked(getSupabase).mockReturnValue(client as unknown as ReturnType<typeof getSupabase>);
+
+    await getIntakeByPendingPlanId("plan-abc");
+
+    expect(client.from).toHaveBeenCalledWith("drive_intake");
+    const chain = client.from.mock.results[0]!.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(chain.eq).toHaveBeenCalledWith("pending_plan_id", "plan-abc");
+    expect(chain.is).toHaveBeenCalledWith("pending_plan_consumed_at", null);
+    expect(chain.gt).toHaveBeenCalledWith("pending_plan_created_at", expect.any(String));
+  });
+
+  it("returns null when nothing matches (wrong planId, already consumed, or expired)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getIntakeByPendingPlanId("no-such-plan")).toBeNull();
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("connection refused") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(getIntakeByPendingPlanId("plan-abc")).rejects.toThrow("connection refused");
   });
 });
 

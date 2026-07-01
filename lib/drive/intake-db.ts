@@ -472,6 +472,40 @@ export async function getPendingPlan(
 }
 
 /**
+ * Resolve the drive_intake row a staged plan is bound to, directly from its
+ * `planId` — the row where pending_plan_id = planId AND it hasn't been
+ * consumed yet AND it was staged within the last hour (mirrors the exact
+ * TTL/consumed-at logic in getPendingPlan above).
+ *
+ * FIX 3 (plan-binding race): handleApplyCallback/handleAdjustCallback/
+ * handleCancelCallback (lib/telegram/refine-conversation.ts) used to resolve
+ * their target intake via getActiveRefineIntake() — "whichever intake is
+ * currently active" — and only THEN look up the plan on it. But the active
+ * intake (ordered by created_at DESC over eligible rows) can change between
+ * when a confirm card was sent and when the operator taps a button on it (a
+ * newer listing entering the eligible set mid-conversation) — so a stale
+ * "active" lookup could apply a plan to the WRONG listing's run. The planId
+ * embedded in the callback data (`apply:<planId>` etc.) is already the
+ * caller's unambiguous proof of which row this callback belongs to; this
+ * function resolves straight from that planId instead of via "active" state.
+ *
+ * Returns null on any mismatch/expiry/absence — same "nothing to apply" /
+ * "not pending" contract every caller of getPendingPlan already handles.
+ */
+export async function getIntakeByPendingPlanId(planId: string): Promise<DriveIntake | null> {
+  const cutoff = new Date(Date.now() - PENDING_PLAN_TTL_MS).toISOString();
+  const { data, error } = await getSupabase()
+    .from("drive_intake")
+    .select()
+    .eq("pending_plan_id", planId)
+    .is("pending_plan_consumed_at", null)
+    .gt("pending_plan_created_at", cutoff)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as DriveIntake | null) ?? null;
+}
+
+/**
  * Atomic CAS claim on the staged plan: sets pending_plan_consumed_at only
  * where pending_plan_id=planId AND consumed_at IS NULL. Returns true iff this
  * caller won the race (exactly one row updated) — single-use, so a replayed

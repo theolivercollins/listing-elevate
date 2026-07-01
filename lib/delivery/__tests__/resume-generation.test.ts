@@ -39,7 +39,7 @@ function makeLeaseDb(maxGrants: number) {
   });
   const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
     if (patch && patch.resolving_at) {
-      return { eq: () => ({ or: () => ({ select: claimSelect }) }) };
+      return { eq: () => ({ or: () => ({ is: () => ({ select: claimSelect }) }) }) };
     }
     return { eq: releaseEq };
   });

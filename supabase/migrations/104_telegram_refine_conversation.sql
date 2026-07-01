@@ -1,4 +1,4 @@
--- 101_telegram_refine_conversation.sql
+-- 104_telegram_refine_conversation.sql
 -- Per docs/specs/2026-07-01-telegram-conversational-refine.md (Plan B, decisions 5 & 10)
 --
 -- Changes:

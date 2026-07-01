@@ -560,11 +560,42 @@ export async function reclaimStrandedRefiningLocks(): Promise<ReclaimOutcome> {
 
     for (const row of rows) {
       try {
-        await updateRun(row.id, { paused_reason: null } as Partial<DeliveryRunRow>);
-        console.log(
-          `[auto-run] reclaimStrandedRefiningLocks: cleared stranded 'refining' lock — run=${row.id} stage=${row.stage} (stale > ${STRANDED_REFINING_LOCK_TTL_MS / 60_000}min)`,
-        );
-        reclaimed++;
+        // Conditional clear, NOT the unconditional updateRun(row.id, {...}) this
+        // replaced: the batch SELECT above and this per-row clear are two
+        // separate round trips, so paused_reason could have changed to a
+        // GENUINE human gate (e.g. 'missing listing field: price') in between
+        // — an unconditional clear would silently wipe that real gate. Re-
+        // asserting `paused_reason = 'refining'` (and the staleness bound) in
+        // the UPDATE's own WHERE makes the clear a CAS: it only ever touches a
+        // row that is STILL stranded at the moment of the write. Uses the
+        // supabase client directly (updateRun has no conditional-WHERE
+        // support) — same client this function's own SELECT above uses.
+        const { data: cleared, error: clearError } = await db
+          .from('delivery_runs')
+          .update({ paused_reason: null })
+          .eq('id', row.id)
+          .eq('paused_reason', 'refining')
+          .lt('updated_at', staleBefore)
+          .select('id');
+
+        if (clearError) {
+          console.error(`[auto-run] reclaimStrandedRefiningLocks: failed to clear run ${row.id}:`, clearError.message);
+          continue;
+        }
+
+        if (Array.isArray(cleared) && cleared.length === 1) {
+          console.log(
+            `[auto-run] reclaimStrandedRefiningLocks: cleared stranded 'refining' lock — run=${row.id} stage=${row.stage} (stale > ${STRANDED_REFINING_LOCK_TTL_MS / 60_000}min)`,
+          );
+          reclaimed++;
+        } else {
+          // 0 rows matched: paused_reason changed (to a genuine gate, or was
+          // already cleared by another actor) between the SELECT and this
+          // write — never a bug, just a race this CAS is here to lose safely.
+          console.log(
+            `[auto-run] reclaimStrandedRefiningLocks: run=${row.id} no longer stranded at clear time (paused_reason changed) — skipped`,
+          );
+        }
       } catch (err) {
         console.error(`[auto-run] reclaimStrandedRefiningLocks: failed to clear run ${row.id}:`, err);
       }

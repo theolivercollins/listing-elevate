@@ -58,6 +58,7 @@
 
 import {
   getActiveRefineIntake,
+  getIntakeByPendingPlanId,
   getChatMessages,
   appendChatMessages,
   stagePlan,
@@ -554,14 +555,26 @@ async function setTelegramMessageIdSafe(intakeId: string, messageId: number): Pr
 
 // ── handleRefineCallback — apply:/adjust:/cancel:<planId> ───────────────────
 
-async function resolveActiveRefine(): Promise<{ intake: DriveIntake; runId: string } | null> {
-  const intake = await getActiveRefineIntake();
+/**
+ * FIX 3 (plan-binding race) — resolve the intake a callback's planId is bound
+ * to directly, via getIntakeByPendingPlanId, rather than via "whichever
+ * intake is currently active" (getActiveRefineIntake). The active intake can
+ * change between when a confirm card was sent and when the operator taps a
+ * button on it (a newer listing entering the eligible set mid-conversation);
+ * the planId embedded in the callback data is already unambiguous proof of
+ * which row this callback targets, so resolve from THAT, never from "active"
+ * state. Only the apply/adjust/cancel callback handlers use this — free-text
+ * turns (handleRefineMessage) have no planId yet and correctly keep using
+ * getActiveRefineIntake().
+ */
+async function resolveIntakeForPlan(planId: string): Promise<{ intake: DriveIntake; runId: string } | null> {
+  const intake = await getIntakeByPendingPlanId(planId);
   if (!intake || !intake.delivery_run_id) return null;
   return { intake, runId: intake.delivery_run_id };
 }
 
 async function handleApplyCallback(planId: string): Promise<void> {
-  const active = await resolveActiveRefine();
+  const active = await resolveIntakeForPlan(planId);
   const staged = active ? await getPendingPlan(active.intake.id, planId) : null;
   const won = active && staged ? await consumePlan(active.intake.id, planId) : false;
 
@@ -612,7 +625,7 @@ async function handleApplyCallback(planId: string): Promise<void> {
 }
 
 async function handleAdjustCallback(planId: string): Promise<void> {
-  const active = await resolveActiveRefine();
+  const active = await resolveIntakeForPlan(planId);
   const staged = active ? await getPendingPlan(active.intake.id, planId) : null;
   if (!active || !staged) {
     await sendMessage("That plan isn't pending anymore.");
@@ -629,7 +642,7 @@ async function handleAdjustCallback(planId: string): Promise<void> {
 }
 
 async function handleCancelCallback(planId: string): Promise<void> {
-  const active = await resolveActiveRefine();
+  const active = await resolveIntakeForPlan(planId);
   const staged = active ? await getPendingPlan(active.intake.id, planId) : null;
   if (!active || !staged) {
     await sendMessage("That plan isn't pending anymore.");
