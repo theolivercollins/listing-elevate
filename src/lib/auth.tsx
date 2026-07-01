@@ -45,6 +45,8 @@ export interface UserProfile {
   email: string | null;
   brokerage: string | null;
   logo_url: string | null;
+  /** Personal profile photo, uploaded to the `user-logos` Storage bucket under `${user_id}/avatar.<ext>`. */
+  avatar_url: string | null;
   colors: { primary: string; secondary: string };
   presets: unknown[];
   created_at: string;

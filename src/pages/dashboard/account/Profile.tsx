@@ -22,6 +22,35 @@ const labelCls = "block text-[12px] font-medium text-[var(--muted)] mb-1.5";
 
 const hintCls = "text-[12px] text-[var(--muted)] mt-1.5 leading-[1.5]";
 
+/** Initials fallback for the avatar preview when no photo is set. */
+function initialsFor(firstName: string | null, lastName: string | null, email: string | null): string {
+  const first = (firstName || "").trim().charAt(0);
+  const last = (lastName || "").trim().charAt(0);
+  const initials = `${first}${last}`.toUpperCase();
+  if (initials) return initials;
+  return (email || "").trim().charAt(0).toUpperCase() || "?";
+}
+
+// Raster-only MIME whitelist for the avatar uploader. Extensions are derived
+// from this map (never from the client-supplied filename) so an SVG — or any
+// other type not in this set — is rejected client-side before it ever reaches
+// Storage. The bucket itself is locked to the same list at the DB level.
+const ALLOWED_AVATAR_TYPES: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+const AVATAR_ACCEPT = Object.keys(ALLOWED_AVATAR_TYPES).join(",");
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+/** Extracts the current avatar's extension from its stored public URL (ignoring the cache-bust query string), so a re-upload with a different type can clean up the old object. */
+function extFromAvatarUrl(url: string): string | null {
+  const path = url.split("?")[0];
+  const match = path.match(/avatar\.([a-z0-9]+)$/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
 // ─── MfaEnrollSection ─────────────────────────────────────────────────────────
 // Self-contained TOTP enrollment/management component rendered inside the
 // admin security card. Reads live factor state from supabase.auth.mfa on mount
@@ -344,6 +373,7 @@ export default function AccountProfile() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [signingOutAll, setSigningOutAll] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const [form, setForm] = useState({
     first_name: "",
@@ -452,6 +482,70 @@ export default function AccountProfile() {
     }
   }
 
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = ALLOWED_AVATAR_TYPES[file.type];
+    if (!ext) {
+      toast.error("Please choose a PNG, JPG, WEBP, or GIF image");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      toast.error("Image must be smaller than 5MB");
+      e.target.value = "";
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      // Path's first segment must equal the user's uid — required by the
+      // existing storage.objects RLS policies on the `user-logos` bucket
+      // (auth.uid()::text = (storage.foldername(name))[1]).
+      const path = `${profile!.user_id}/avatar.${ext}`;
+      // If the previous avatar was a different file type (e.g. png -> jpg),
+      // its object lives at a different path and won't be overwritten by the
+      // upsert below — remove it so we don't leave an orphaned object behind.
+      const prevExt = profile?.avatar_url ? extFromAvatarUrl(profile.avatar_url) : null;
+      if (prevExt && prevExt !== ext) {
+        await supabase.storage.from("user-logos").remove([`${profile!.user_id}/avatar.${prevExt}`]);
+      }
+      const { error: uploadErr } = await supabase.storage
+        .from("user-logos")
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (uploadErr) throw uploadErr;
+      const { data: urlData } = supabase.storage.from("user-logos").getPublicUrl(path);
+      // Cache-bust so the browser doesn't keep showing a stale cached image
+      // after a re-upload to the same path.
+      const bustedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+      const { error: updateErr } = await supabase
+        .from("user_profiles")
+        .update({ avatar_url: bustedUrl, updated_at: new Date().toISOString() })
+        .eq("user_id", profile!.user_id);
+      if (updateErr) throw updateErr;
+      await refreshProfile();
+      toast.success("Profile photo uploaded");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleAvatarRemove() {
+    try {
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({ avatar_url: null, updated_at: new Date().toISOString() })
+        .eq("user_id", profile!.user_id);
+      if (error) throw error;
+      await refreshProfile();
+      toast.success("Profile photo removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove photo");
+    }
+  }
+
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -511,6 +605,55 @@ export default function AccountProfile() {
         <Card padding={24}>
           <form onSubmit={handleSaveIdentity}>
             <SectionTitle title="Personal details" />
+
+            <div className="mt-5">
+              <label className={labelCls}>Profile photo</label>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full shrink-0 overflow-hidden border border-[var(--line)] bg-[var(--surface)] flex items-center justify-center">
+                  {profile?.avatar_url ? (
+                    <img
+                      src={profile.avatar_url}
+                      alt="Profile photo"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-[16px] font-medium text-[var(--muted)]">
+                      {initialsFor(form.first_name, form.last_name, form.email)}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[12px] text-[var(--muted)]">
+                    {uploadingAvatar ? "Uploading..." : "PNG, JPG, WEBP, or GIF · up to 5MB"}
+                  </span>
+                  <div className="flex gap-2">
+                    <label className="cursor-pointer">
+                      <span className="le-btn-ghost text-[12px] py-1.5 px-3 pointer-events-none">
+                        {profile?.avatar_url ? "Replace" : "Upload photo"}
+                      </span>
+                      <input
+                        type="file"
+                        accept={AVATAR_ACCEPT}
+                        className="hidden"
+                        onChange={handleAvatarUpload}
+                        disabled={uploadingAvatar}
+                      />
+                    </label>
+                    {profile?.avatar_url && (
+                      <button
+                        type="button"
+                        className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:rgba(196,74,74,0.25)]"
+                        onClick={handleAvatarRemove}
+                        disabled={uploadingAvatar}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 mt-5">
               <div>
                 <label className={labelCls} htmlFor="first_name">First name</label>
