@@ -27,6 +27,7 @@ import {
   buildOrderedRoomSequence,
   reclaimStrandedRefiningLocks,
   STRANDED_REFINING_LOCK_TTL_MS,
+  composeCheckpointBReason,
 } from '../auto-run.js';
 import type { DeliveryRunRow } from '../../types/operator-studio.js';
 
@@ -1886,6 +1887,41 @@ describe('resolveAssembling — fresh-read guard (P1-1 double-submit fix)', () =
   });
 });
 
+// ─── composeCheckpointBReason (pure) ─────────────────────────────────────────
+
+describe('composeCheckpointBReason', () => {
+  it('real incident: score 0.50, 4 of 7 scenes degraded/missing clips, listing+voiceover+music all present', () => {
+    const reason = composeCheckpointBReason({
+      score: 0.5,
+      threshold: AUTO_DELIVER_THRESHOLD,
+      degradedCount: 4,
+      totalScenes: 7,
+      listingComplete: true,
+      hasVoiceover: true,
+      hasMusic: true,
+    });
+    expect(reason).toBe(
+      'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; ' +
+      'listing details present; voiceover present; music present',
+    );
+  });
+
+  it('generic low-score case: no degraded scenes, all other factors missing — omits the missing-clips clause', () => {
+    const reason = composeCheckpointBReason({
+      score: 0.5,
+      threshold: AUTO_DELIVER_THRESHOLD,
+      degradedCount: 0,
+      totalScenes: 3,
+      listingComplete: false,
+      hasVoiceover: false,
+      hasMusic: false,
+    });
+    expect(reason).toBe(
+      'Final video scored 0.50 (needs 0.70): listing details missing; voiceover missing; music missing',
+    );
+  });
+});
+
 // ─── resolveCheckpointB ───────────────────────────────────────────────────────
 
 describe('resolveCheckpointB', () => {
@@ -1979,7 +2015,56 @@ describe('resolveCheckpointB', () => {
     const run = makeRun({ stage: 'checkpoint_b', listing_details: {} });
     const result = await resolveCheckpointB(run);
     expect(result.action).toBe('paused');
-    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/quality below threshold/);
+    // Reason is now a plain human-readable sentence built from the scoring
+    // factors (score/threshold + 1 of 1 scenes missing clips + all-missing
+    // listing/voiceover/music) — NOT the old "quality below threshold: X < Y" code.
+    const reason = (result as { action: 'paused'; reason: string }).reason;
+    expect(reason).toBe(
+      'Final video scored 0.40 (needs 0.70): 1 of 1 scenes missing clips; ' +
+      'listing details missing; voiceover missing; music missing',
+    );
+  });
+
+  it('composes a human-readable reason naming missing clips + present factors (4/7 degraded, 3/7 confident, all other factors present)', async () => {
+    // 4 degraded scenes + 3 confident scenes (margin ≥ 0.15, capped at +0.2) with
+    // full listing/voiceover/music: 0.5 - 0.4(degraded) + 0.2(confident cap) + 0.1 + 0.1 + 0.1 = 0.6
+    const degraded = [1, 2, 3, 4].map(i => makeVariant({
+      variant: 'A', scene_id: `deg${i}`, winner: true, winner_source: 'default',
+      gemini_scores: { judge_error: 'degraded' },
+    }));
+    const confident = [1, 2, 3].map(i => {
+      const sceneId = `ok${i}`;
+      return [
+        makeVariant({
+          variant: 'A', scene_id: sceneId, winner: true, winner_source: 'gemini',
+          gemini_scores: { motion_quality: 5, artifacts: 5, realism: 5, composition: 5 }, // 20
+        }),
+        makeVariant({
+          variant: 'B', scene_id: sceneId, winner: false,
+          gemini_scores: { motion_quality: 4, artifacts: 4, realism: 3, composition: 3 }, // 14, margin 0.3
+        }),
+      ];
+    }).flat();
+    (getVariantsForRun as Mock).mockResolvedValue([...degraded, ...confident]);
+
+    const db = makeDbChain(null);
+    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const run = makeRun({
+      stage: 'checkpoint_b',
+      listing_details: { price: 500000, beds: 3, baths: 2 },
+      voiceover_audio_url: 'https://cdn.example.com/audio.mp3',
+      music_track_id: 'track-1',
+    });
+    const result = await resolveCheckpointB(run);
+    expect(result.action).toBe('paused');
+    const reason = (result as { action: 'paused'; reason: string }).reason;
+    expect(reason).toBe(
+      'Final video scored 0.60 (needs 0.70): 4 of 7 scenes missing clips; ' +
+      'listing details present; voiceover present; music present',
+    );
   });
 
   it('counts degraded variants as a penalty', async () => {

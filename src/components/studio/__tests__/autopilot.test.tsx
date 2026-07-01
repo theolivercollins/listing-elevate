@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutopilotBadge } from '../AutopilotBadge';
-import { AutopilotPanel } from '../AutopilotPanel';
+import { AutopilotPanel, getPauseGuidance } from '../AutopilotPanel';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -296,5 +296,95 @@ describe('AutopilotPanel', () => {
     expect(
       await screen.findByText('low judge margin on scene abc: 0.080'),
     ).toBeInTheDocument();
+  });
+
+  // ── Task 3 — pause reason clarity + actionable guidance ───────────────────
+
+  it('shows "Autopilot paused — needs your review" title and the reason + guidance line', async () => {
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={true}
+        pausedReason="Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; listing details present; voiceover present; music present"
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(await screen.findByText(/Autopilot paused — needs your review/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; listing details present; voiceover present; music present',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Review the video at Checkpoint B, then resume or take over.'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the missing-scenes guidance line for a "generation incomplete" pause reason', async () => {
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={true}
+        pausedReason="generation incomplete: 2 of 7 scenes have no clip (scenes 3, 5)"
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(
+      await screen.findByText('Generate or fix the missing scenes, then resume autopilot.'),
+    ).toBeInTheDocument();
+  });
+
+  it('renders unrecognized/legacy pause reasons as-is with the generic guidance (no throw)', async () => {
+    render(
+      <AutopilotPanel
+        runId="run-1"
+        autoRun={true}
+        pausedReason="quality below threshold: 0.50 < 0.7"
+        autoPausedAt={null}
+        onAction={onAction}
+      />,
+    );
+
+    expect(await screen.findByText('quality below threshold: 0.50 < 0.7')).toBeInTheDocument();
+    expect(
+      screen.getByText('Review the video at Checkpoint B, then resume or take over.'),
+    ).toBeInTheDocument();
+  });
+});
+
+// ─── getPauseGuidance (pure mapping function) ────────────────────────────────
+
+describe('getPauseGuidance', () => {
+  it('returns empty string for null/undefined reason', () => {
+    expect(getPauseGuidance(null)).toBe('');
+    expect(getPauseGuidance(undefined)).toBe('');
+  });
+
+  it('maps "generation incomplete" reasons to the missing-scenes guidance', () => {
+    expect(getPauseGuidance('generation incomplete: 3 of 7 scenes have no clip (scenes 1, 2, 4)')).toBe(
+      'Generate or fix the missing scenes, then resume autopilot.',
+    );
+  });
+
+  it('maps composed quality-score reasons to the Checkpoint B guidance', () => {
+    expect(
+      getPauseGuidance(
+        'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; listing details present; voiceover present; music present',
+      ),
+    ).toBe('Review the video at Checkpoint B, then resume or take over.');
+  });
+
+  it('falls back to the generic guidance for unrecognized/legacy reason strings without throwing', () => {
+    expect(() => getPauseGuidance('some future reason format nobody has seen yet')).not.toThrow();
+    expect(getPauseGuidance('some future reason format nobody has seen yet')).toBe(
+      'Review the video at Checkpoint B, then resume or take over.',
+    );
+    expect(getPauseGuidance('low judge margin on scene abc: 0.080')).toBe(
+      'Review the video at Checkpoint B, then resume or take over.',
+    );
   });
 });
