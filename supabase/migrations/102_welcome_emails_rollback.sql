@@ -1,0 +1,28 @@
+-- Rollback for 102_welcome_emails.sql
+--
+-- Only drops the welcome_emails table. Deliberately does NOT re-narrow
+-- cost_events_provider_check to remove 'resend'.
+--
+-- Why: cost_events is an append-only cost ledger, and by the time anyone
+-- runs this rollback, real rows with provider='resend' may already exist
+-- (every successful welcome-email send writes one via
+-- recordWelcomeEmailCost). Re-adding the pre-102 CHECK (without 'resend')
+-- would immediately abort with a check-constraint violation (23514) against
+-- those existing rows -- this was the original bug in this file, caught by
+-- security audit before it ever ran. Deleting the offending cost_events
+-- rows first was considered and rejected: a rollback script must never
+-- destroy cost/audit history just to make a constraint change go through.
+--
+-- Instead, 'resend' is treated as a PERMANENT, purely-additive addition to
+-- the provider allow-list -- consistent with every prior provider-widening
+-- migration in this repo (048a/060/085/089), none of which are ever
+-- narrowed back on rollback either. Reverting the welcome-email feature
+-- only needs to remove the feature's own table; leaving one extra allowed
+-- provider string on a CHECK constraint carries no risk.
+--
+-- Run this BEFORE reverting the application code (api/hooks/welcome-email.ts,
+-- lib/email/*) -- once reverted, nothing writes provider='resend' rows or
+-- references welcome_emails anymore, so ordering only matters if this is
+-- applied while the new code is still live.
+
+drop table if exists welcome_emails;

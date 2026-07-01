@@ -109,6 +109,11 @@ const GUARDED_PATHS = [
   'api/cron/drive-intake-poll.ts',
   'api/cron/drive-channel-renew.ts',
 
+  // welcome-email branch (2026-07-01) — Supabase Database Webhook receiver.
+  // Static path, covered by the generic /api/(.*) catch-all; self-authenticates
+  // via x-le-webhook-secret header (see api/hooks/welcome-email.ts).
+  'api/hooks/welcome-email.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
