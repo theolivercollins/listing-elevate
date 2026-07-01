@@ -5,8 +5,8 @@
     "tsconfig.api.json",
     "tsconfig.node.json"
   ],
-  "totalOccurrences": 101,
-  "distinctKeys": 55,
+  "totalOccurrences": 99,
+  "distinctKeys": 54,
   "errors": {
     "api/admin/studio/delivery/[runId].ts\u001fTS2339\u001fProperty 'error' does not exist on type 'Result'.": 1,
     "api/admin/studio/delivery/__tests__/runId.test.ts\u001fTS2339\u001fProperty 'listing_details' does not exist on type '{ id: string; property_id: string; stage: string; }'.": 1,
@@ -36,7 +36,6 @@
     "lib/compass/scrape-listing.ts\u001fTS2353\u001fObject literal may only specify known properties, and 'waitSecs' does not exist in type 'ActorStartOptions'.": 1,
     "lib/delivery/judge.ts\u001fTS2345\u001fArgument of type 'string' is not assignable to parameter of type '\"generating\" | \"assembling\" | \"delivered\" | \"intake\" | \"voiceover\" | \"music\" | \"photo_selection\" | \"scraping\" | \"judging\" | \"checkpoint_a\" | \"details\" | \"checkpoint_b\"'.": 1,
     "lib/delivery/variants.test.ts\u001fTS2345\u001fArgument of type '{ id: string; delivery_run_id: string; scene_id: string; variant: string; provider: string; provider_task_id: string; clip_url: any; cost_cents: any; gemini_scores: any; winner: boolean; winner_source: any; degraded: boolean; error: any; created_at: string; updated_at: string; }' is not assignable to parameter of type 'SceneVariantRow'.": 5,
-    "lib/delivery/variants.test.ts\u001fTS2352\u001fConversion of type '{ name: string; checkStatus: Mock<Procedure>; downloadClip: Mock<Procedure>; }' to type 'IVideoProvider' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.": 2,
     "lib/mls/scrape-realtor.ts\u001fTS1117\u001fAn object literal cannot have multiple properties with the same name.": 1,
     "lib/mls/scrape-realtor.ts\u001fTS2353\u001fObject literal may only specify known properties, and 'waitSecs' does not exist in type 'ActorStartOptions'.": 1,
     "lib/mls/scrape-redfin.ts\u001fTS2353\u001fObject literal may only specify known properties, and 'waitSecs' does not exist in type 'ActorStartOptions'.": 1,

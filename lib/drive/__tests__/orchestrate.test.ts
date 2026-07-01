@@ -30,6 +30,7 @@ vi.mock("../intake-db.js", () => ({
   getIntake: vi.fn(),
   setStatus: vi.fn().mockResolvedValue(undefined),
   setPropertyId: vi.fn().mockResolvedValue(undefined),
+  setDeliveryRunId: vi.fn().mockResolvedValue(undefined),
   appendFeedback: vi.fn().mockResolvedValue(undefined),
   claimForApproval: vi.fn().mockResolvedValue(true),
   claimForRegenerate: vi.fn().mockResolvedValue(true),
@@ -60,14 +61,26 @@ vi.mock("../../pipeline.js", () => ({
   runPipeline: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("../../delivery/runs.js", () => ({
+  createRun: vi.fn(),
+  getRun: vi.fn().mockResolvedValue(null),
+  revertRun: vi.fn(),
+}));
+
+vi.mock("../../delivery/scrape.js", () => ({
+  runScrapeStage: vi.fn().mockResolvedValue(undefined),
+}));
+
 // ── Imports (after vi.mock) ───────────────────────────────────────────────────
 
-import { getIntake, setStatus, setPropertyId, appendFeedback, claimForApproval, claimForRegenerate } from "../intake-db.js";
+import { getIntake, setStatus, setPropertyId, setDeliveryRunId, appendFeedback, claimForApproval, claimForRegenerate } from "../intake-db.js";
 import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from "../../db.js";
 import { lookupMlsByAddress } from "../../mls/lookup.js";
 import { listFinalImages, downloadFile } from "../client.js";
 import { uploadPhotosToStorage, getStoragePublicUrl } from "../../../src/lib/photo-upload.js";
 import { runPipeline } from "../../pipeline.js";
+import { createRun, getRun, revertRun } from "../../delivery/runs.js";
+import { runScrapeStage } from "../../delivery/scrape.js";
 import { approveIntake, regenerateIntake } from "../orchestrate.js";
 import type { DriveIntake } from "../intake-db.js";
 
@@ -107,6 +120,30 @@ const CREATED_PROPERTY = {
   selected_package: "JUST_LISTED",
   selected_duration: 30,
   selected_orientation: "horizontal",
+};
+
+// Default delivery_runs row returned by createRun() on the new delivery-pipeline
+// path. Cast `as never` at call sites, matching CREATED_PROPERTY/MLS_RESULT —
+// only the fields orchestrate.ts actually reads are populated.
+const CREATED_RUN = {
+  id: "run-new",
+  property_id: "prop-new",
+  client_id: null,
+  video_type: "just_listed",
+  duration_seconds: 30,
+  stage: "intake",
+  listing_details: {},
+  scene_order: null,
+  voiceover_script: null,
+  voiceover_voice_id: null,
+  voiceover_audio_url: null,
+  music_track_id: null,
+  error: null,
+  auto_run: true,
+  paused_reason: null,
+  auto_paused_at: null,
+  created_at: "2026-01-01T00:00:00.000Z",
+  updated_at: "2026-01-01T00:00:00.000Z",
 };
 
 // Helper: build a chainable Supabase client mock.
@@ -159,9 +196,16 @@ describe("approveIntake", () => {
     vi.mocked(runPipeline).mockResolvedValue(undefined);
     vi.mocked(uploadPhotosToStorage).mockResolvedValue([]);
     vi.mocked(getStoragePublicUrl).mockImplementation((p: string) => `https://cdn.example.com/${p}`);
+    // Delivery-pipeline defaults (flag defaults unset → new path is exercised
+    // by every pre-existing test below unless a test opts out with
+    // DRIVE_INTAKE_USE_DELIVERY_PIPELINE='false').
+    vi.mocked(createRun).mockResolvedValue(CREATED_RUN as never);
+    vi.mocked(setDeliveryRunId).mockResolvedValue(undefined);
+    vi.mocked(runScrapeStage).mockResolvedValue(undefined);
     // Default write-allowed env
     process.env.VERCEL_ENV = "production";
     delete process.env.LE_ALLOW_NONPROD_WRITES;
+    delete process.env.DRIVE_INTAKE_USE_DELIVERY_PIPELINE;
   });
 
   afterEach(() => {
@@ -388,7 +432,7 @@ describe("approveIntake", () => {
 
   // ── MLS enrichment failure ─────────────────────────────────────────────────
 
-  it("creates property with null fallbacks when MLS lookup throws", async () => {
+  it("creates property with NULL (not 0) fallbacks when MLS lookup throws — P1-2", async () => {
     vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
     vi.mocked(lookupMlsByAddress).mockRejectedValue(new Error("APIFY not configured"));
     vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
@@ -400,12 +444,41 @@ describe("approveIntake", () => {
     const result = await approveIntake("intake-1");
 
     expect(result.status).toBe("generating");
+    // P1-2: seeding 0 made runScrapeStage's prefill-skip guard
+    // (bedrooms != null && bathrooms != null && price != null) take the
+    // prefill branch and never call the real Redfin scrape. null must flow
+    // through so that guard correctly falls through to a real scrape.
     expect(createProperty).toHaveBeenCalledWith(
       expect.objectContaining({
-        price: 0,
-        bedrooms: 0,
-        bathrooms: 0,
+        price: null,
+        bedrooms: null,
+        bathrooms: null,
         listing_agent: "Unknown",
+      }),
+    );
+  });
+
+  it("creates property with a partial MLS hit leaving ONLY the missing fields null (not coerced to 0)", async () => {
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    // Partial hit: price found, bedrooms/bathrooms not returned by MLS.
+    vi.mocked(lookupMlsByAddress).mockResolvedValue({
+      ...MLS_RESULT,
+      bedrooms: null,
+      bathrooms: null,
+    } as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("generating");
+    expect(createProperty).toHaveBeenCalledWith(
+      expect.objectContaining({
+        price: MLS_RESULT.price,
+        bedrooms: null,
+        bathrooms: null,
       }),
     );
   });
@@ -544,6 +617,83 @@ describe("approveIntake", () => {
     expect(result.status).toBe("generating");
     expect(runPipeline).toHaveBeenCalledWith("prop-new");
   });
+
+  // ── Delivery-pipeline routing (DRIVE_INTAKE_USE_DELIVERY_PIPELINE) ────────
+
+  it("new delivery-pipeline path (flag unset — the default): sets order_mode=operator, creates an auto_run delivery run, sets delivery_run_id, fires scrape, and still calls runPipeline", async () => {
+    delete process.env.DRIVE_INTAKE_USE_DELIVERY_PIPELINE;
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
+    vi.mocked(createRun).mockResolvedValue(CREATED_RUN as never);
+
+    // Capture every properties.update({...}) payload so we can assert
+    // order_mode='operator' was set, regardless of how many other update
+    // calls (e.g. photo_count) share the same generic chain.
+    const updateCalls: Record<string, unknown>[] = [];
+    const chain = makeSupabaseChain();
+    chain["update"] = vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+      updateCalls.push(payload);
+      return chain;
+    });
+    vi.mocked(getSupabase).mockReturnValue({
+      from: vi.fn().mockReturnValue(chain),
+    } as unknown as ReturnType<typeof getSupabase>);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("generating");
+    expect(updateCalls.some((c) => c.order_mode === "operator")).toBe(true);
+    expect(createRun).toHaveBeenCalledWith({
+      property_id: "prop-new",
+      client_id: null,
+      video_type: "just_listed",
+      duration_seconds: 30,
+      auto_run: true,
+    });
+    expect(setDeliveryRunId).toHaveBeenCalledWith("intake-1", "run-new");
+    expect(runScrapeStage).toHaveBeenCalledWith("run-new");
+    expect(runPipeline).toHaveBeenCalledWith("prop-new");
+  });
+
+  it("DRIVE_INTAKE_USE_DELIVERY_PIPELINE='false' → legacy customer path unchanged (no delivery run created)", async () => {
+    process.env.DRIVE_INTAKE_USE_DELIVERY_PIPELINE = "false";
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("generating");
+    expect(createRun).not.toHaveBeenCalled();
+    expect(setDeliveryRunId).not.toHaveBeenCalled();
+    expect(runScrapeStage).not.toHaveBeenCalled();
+    expect(runPipeline).toHaveBeenCalledWith("prop-new");
+  });
+
+  it("propagates a createRun failure to the outer catch (error status; property marked failed) on the new path", async () => {
+    delete process.env.DRIVE_INTAKE_USE_DELIVERY_PIPELINE;
+    vi.mocked(getIntake).mockResolvedValue(BASE_INTAKE);
+    vi.mocked(lookupMlsByAddress).mockResolvedValue(MLS_RESULT as never);
+    vi.mocked(createProperty).mockResolvedValue(CREATED_PROPERTY as never);
+    vi.mocked(listFinalImages).mockResolvedValue([]);
+    vi.mocked(uploadPhotosToStorage).mockResolvedValue(["prop-new/raw/img1.jpg"]);
+    vi.mocked(getSupabase).mockReturnValue(makeSimpleSupabase() as unknown as ReturnType<typeof getSupabase>);
+    vi.mocked(createRun).mockRejectedValue(new Error("delivery_runs insert failed"));
+
+    const result = await approveIntake("intake-1");
+
+    expect(result.status).toBe("error");
+    expect(result.reason).toMatch(/delivery_runs insert failed/);
+    expect(updatePropertyStatus).toHaveBeenCalledWith("prop-new", "failed");
+    expect(runPipeline).not.toHaveBeenCalled();
+    expect(runScrapeStage).not.toHaveBeenCalled();
+  });
 });
 
 // ── regenerateIntake ──────────────────────────────────────────────────────────
@@ -559,6 +709,11 @@ describe("regenerateIntake", () => {
     vi.mocked(runPipeline).mockResolvedValue(undefined);
     // Fix 4: claimForRegenerate must succeed by default for happy-path tests.
     vi.mocked(claimForRegenerate).mockResolvedValue(true);
+    // Delivery-run reconciliation defaults — none of the pre-existing fixtures
+    // in this describe block set delivery_run_id, so getRun/createRun/revertRun
+    // are never reached by them; these are just safe fallbacks.
+    vi.mocked(getRun).mockResolvedValue(null);
+    vi.mocked(setDeliveryRunId).mockResolvedValue(undefined);
     process.env.VERCEL_ENV = "production";
     delete process.env.LE_ALLOW_NONPROD_WRITES;
   });
@@ -739,5 +894,142 @@ describe("regenerateIntake", () => {
 
     // Pipeline must NOT have fired.
     expect(runPipeline).not.toHaveBeenCalled();
+  });
+
+  // ── Delivery-run reconciliation (unique-index-safe regenerate) ───────────
+
+  it("delivery_run_id set, run not delivered: reverts the SAME run to 'intake' (no new run created)", async () => {
+    const intakeWithRun: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      delivery_run_id: "run-existing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithRun);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-existing",
+      property_id: "prop-existing",
+      client_id: null,
+      video_type: "just_listed",
+      duration_seconds: 30,
+      stage: "checkpoint_b",
+      auto_run: true,
+    } as never);
+    vi.mocked(revertRun).mockResolvedValue({} as never);
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(getRun).toHaveBeenCalledWith("run-existing");
+    expect(revertRun).toHaveBeenCalledWith("run-existing", "intake");
+    expect(createRun).not.toHaveBeenCalled();
+    expect(setDeliveryRunId).not.toHaveBeenCalled();
+    expect(runPipeline).toHaveBeenCalledWith("prop-existing");
+  });
+
+  it("delivery_run_id set, run already at 'intake': does not call revertRun (nothing to revert)", async () => {
+    const intakeWithRun: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      delivery_run_id: "run-existing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithRun);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-existing",
+      property_id: "prop-existing",
+      stage: "intake",
+    } as never);
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(revertRun).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+  });
+
+  it("delivery_run_id set, run IS 'delivered': creates a fresh run + sets delivery_run_id (revertRun never called)", async () => {
+    const intakeWithRun: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      delivery_run_id: "run-old",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithRun);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-old",
+      property_id: "prop-existing",
+      client_id: "client-1",
+      video_type: "just_listed",
+      duration_seconds: 30,
+      stage: "delivered",
+      auto_run: true,
+    } as never);
+    vi.mocked(createRun).mockResolvedValue({ id: "run-new-2" } as never);
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(createRun).toHaveBeenCalledWith({
+      property_id: "prop-existing",
+      client_id: "client-1",
+      video_type: "just_listed",
+      duration_seconds: 30,
+      auto_run: true,
+    });
+    expect(setDeliveryRunId).toHaveBeenCalledWith("intake-1", "run-new-2");
+    expect(revertRun).not.toHaveBeenCalled();
+  });
+
+  it("no delivery_run_id on the intake (legacy / flag-off): getRun/createRun/revertRun are never touched", async () => {
+    const intakeWithProp: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      // delivery_run_id intentionally absent
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithProp);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(getRun).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(revertRun).not.toHaveBeenCalled();
+    expect(runPipeline).toHaveBeenCalledWith("prop-existing");
+  });
+
+  it("dangling delivery_run_id (getRun returns null): tolerates and still re-fires the property-level pipeline", async () => {
+    const intakeWithRun: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      delivery_run_id: "run-missing",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithRun);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getRun).mockResolvedValue(null);
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(getRun).toHaveBeenCalledWith("run-missing");
+    expect(revertRun).not.toHaveBeenCalled();
+    expect(createRun).not.toHaveBeenCalled();
+    expect(runPipeline).toHaveBeenCalledWith("prop-existing");
   });
 });

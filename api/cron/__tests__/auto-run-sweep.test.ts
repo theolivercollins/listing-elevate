@@ -24,6 +24,7 @@ vi.mock('../../../lib/client.js', () => ({
 vi.mock('../../../lib/delivery/auto-run.js', () => ({
   resolveGate: vi.fn(),
   resolveAssembling: vi.fn(),
+  reclaimStrandedRefiningLocks: vi.fn(),
   // The cron now imports the single source of truth for gate stages.
   GATE_STAGES: ['checkpoint_a', 'details', 'voiceover', 'music', 'checkpoint_b'],
 }));
@@ -33,7 +34,7 @@ vi.mock('../../../lib/delivery/auto-run.js', () => ({
 // ---------------------------------------------------------------------------
 
 import { getSupabase } from '../../../lib/client.js';
-import { resolveGate, resolveAssembling } from '../../../lib/delivery/auto-run.js';
+import { resolveGate, resolveAssembling, reclaimStrandedRefiningLocks } from '../../../lib/delivery/auto-run.js';
 import handler from '../auto-run-sweep.js';
 import type { DeliveryRunRow } from '../../../lib/types/operator-studio.js';
 
@@ -117,6 +118,9 @@ describe('auto-run-sweep cron handler', () => {
     // Default to a configured secret so the (now hard-required) auth guard lets
     // authed functional requests through; the 401 cases tweak this per-test.
     process.env.CRON_SECRET = 'test-secret';
+    // Default the reclaim pass to "nothing stranded" so every pre-existing
+    // test (which doesn't care about it) behaves exactly as before it existed.
+    vi.mocked(reclaimStrandedRefiningLocks).mockResolvedValue({ reclaimed: 0 });
   });
 
   // ── Auth guard ─────────────────────────────────────────────────────────────
@@ -332,5 +336,67 @@ describe('auto-run-sweep cron handler', () => {
     expect(body.leaseError).toBe(1);
     expect(body.noop).toBe(1);
     expect(captured.status).toBe(200);
+  });
+
+  // ── Reclaim pass (FIX B1) — runs before the main pass, count surfaced ──────
+
+  it('calls reclaimStrandedRefiningLocks once per invocation and surfaces its count in the response', async () => {
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase([]) as never);
+    vi.mocked(reclaimStrandedRefiningLocks).mockResolvedValue({ reclaimed: 3 });
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    expect(vi.mocked(reclaimStrandedRefiningLocks)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(reclaimStrandedRefiningLocks)).toHaveBeenCalledWith();
+    const body = captured.body as { reclaimed: number; ok: boolean };
+    expect(body.ok).toBe(true);
+    expect(body.reclaimed).toBe(3);
+  });
+
+  it('reclaimed defaults to 0 when nothing was stranded', async () => {
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase([]) as never);
+    vi.mocked(reclaimStrandedRefiningLocks).mockResolvedValue({ reclaimed: 0 });
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    const body = captured.body as { reclaimed: number };
+    expect(body.reclaimed).toBe(0);
+  });
+
+  it('runs the reclaim pass BEFORE the main delivery_runs query (same-tick pickup)', async () => {
+    const order: string[] = [];
+    vi.mocked(reclaimStrandedRefiningLocks).mockImplementation(async () => {
+      order.push('reclaim');
+      return { reclaimed: 1 };
+    });
+    const inner = makeSupabase([]);
+    vi.mocked(getSupabase).mockImplementation(() => {
+      order.push('main-select');
+      return inner as never;
+    });
+
+    const { res } = makeRes();
+    await handler(makeReq(), res);
+
+    expect(order[0]).toBe('reclaim');
+    expect(order).toContain('main-select');
+  });
+
+  it('does not abort the sweep when reclaimStrandedRefiningLocks rejects — main pass still runs, reclaimed=0', async () => {
+    vi.mocked(reclaimStrandedRefiningLocks).mockRejectedValue(new Error('boom'));
+    const runs = [makeRun('run-1', 'checkpoint_a')];
+    vi.mocked(getSupabase).mockReturnValue(makeSupabase(runs) as never);
+    vi.mocked(resolveGate).mockResolvedValue({ action: 'advanced', to: 'details' });
+
+    const { res, captured } = makeRes();
+    await handler(makeReq(), res);
+
+    expect(captured.status).toBe(200);
+    const body = captured.body as { ok: boolean; advanced: number; reclaimed: number };
+    expect(body.ok).toBe(true);
+    expect(body.advanced).toBe(1);
+    expect(body.reclaimed).toBe(0); // failed reclaim counted as 0, not fatal
   });
 });

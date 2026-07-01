@@ -9,6 +9,17 @@
  * Gate stages: resolveGate() handles checkpoint_a → checkpoint_b.
  * Assembling stage: resolveAssembling() resumes stalled renders without re-spend.
  *
+ * Reclaim pass (runs FIRST, every tick): reclaimStrandedRefiningLocks()
+ * (lib/delivery/auto-run.ts) clears any run wedged at paused_reason='refining'
+ * for more than 10 minutes — the lock a Telegram conversational-refine
+ * executor (lib/telegram/refine-conversation.ts) holds for the duration of a
+ * refine plus its fire-and-forget render. If that executor's Vercel instance
+ * is frozen/killed mid-render, nothing else ever clears the lock (the normal
+ * pass below filters paused_reason IS NULL, so a locked run would otherwise be
+ * invisible to it forever, with no dependency on a new inbound Telegram
+ * message to trigger the executor's own reclaim). Runs before the main SELECT
+ * below so a freshly-reclaimed run is picked up in this SAME tick.
+ *
  * Auth: CRON_SECRET is HARD-REQUIRED here (not best-effort). This route drives
  * autonomous provider spend, so an unauthenticated/misconfigured request must be
  * rejected — never run open. Vercel auto-sends `Authorization: Bearer <CRON_SECRET>`.
@@ -17,14 +28,20 @@
  * Assembling runs are given the remaining budget (fnBudgetMs - elapsed) so the
  * poll timeout fits within the Vercel function window.
  *
- * Write guard: resolveGate()/resolveAssembling() gate via canWrite() (prod or
- * LE_ALLOW_NONPROD_WRITES=true), so this handler can run on all envs for
- * observability — non-prod runs return all noops, never mutate.
+ * Write guard: resolveGate()/resolveAssembling()/reclaimStrandedRefiningLocks()
+ * all gate via canWrite() (prod or LE_ALLOW_NONPROD_WRITES=true), so this
+ * handler can run on all envs for observability — non-prod runs return all
+ * noops, never mutate.
  */
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabase } from '../../lib/client.js';
-import { resolveGate, resolveAssembling, GATE_STAGES } from '../../lib/delivery/auto-run.js';
+import {
+  resolveGate,
+  resolveAssembling,
+  reclaimStrandedRefiningLocks,
+  GATE_STAGES,
+} from '../../lib/delivery/auto-run.js';
 import type { DeliveryRunRow } from '../../lib/types/operator-studio.js';
 
 // Raised from 120 → 280 to accommodate a single 240-s render poll (e.g. 30-s
@@ -53,8 +70,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let paused = 0;
   let noop = 0;
   let leaseError = 0;
+  let reclaimed = 0;
 
   try {
+    // Reclaim pass — BEFORE the main resolution pass below, so a run whose
+    // stranded 'refining' lock we just cleared is visible to THIS tick's
+    // SELECT (no extra tick of latency). Never throws (fail-open internally),
+    // but wrapped defensively anyway: this reaper must never outrank or block
+    // the main resolution pass that follows.
+    try {
+      const reclaimResult = await reclaimStrandedRefiningLocks();
+      reclaimed = reclaimResult.reclaimed;
+    } catch (err) {
+      console.error('[auto-run-sweep] reclaimStrandedRefiningLocks failed:', err);
+    }
+
     const supabase = getSupabase();
 
     // Single query for both gate stages AND assembling runs so we need only one
@@ -123,5 +153,5 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ ok: false, error: msg });
   }
 
-  return res.status(200).json({ ok: true, processed, advanced, paused, noop, leaseError });
+  return res.status(200).json({ ok: true, processed, advanced, paused, noop, leaseError, reclaimed });
 }
