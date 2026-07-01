@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useReducer, useState, Re
 import { supabase, AUTH_CALLBACK_URL } from "./supabase";
 import { migrateLocalPresets } from "./presets";
 import { authedFetch } from "./api";
-import type { User, Session } from "@supabase/supabase-js";
+import type { User, Session, UserIdentity } from "@supabase/supabase-js";
 
 /** Roles an admin may preview as, in the Operator Studio role switcher. */
 export const IMPERSONATABLE_ROLES: { value: "admin" | "user"; label: string }[] = [
@@ -149,6 +149,16 @@ interface AuthContextType {
   verifyAdminEmailCode: (code: string) => Promise<void>;
   signInWithMagicLink: (email: string) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  signInWithMicrosoft: () => Promise<void>;
+  signUp: (
+    email: string,
+    password: string,
+    meta: { first_name?: string; last_name?: string; brokerage?: string }
+  ) => Promise<void>;
+  listIdentities: () => Promise<UserIdentity[]>;
+  linkIdentity: (provider: "google" | "azure") => Promise<void>;
+  unlinkIdentity: (identity: UserIdentity) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -167,6 +177,12 @@ const AuthContext = createContext<AuthContextType>({
   verifyAdminEmailCode: async () => {},
   signInWithMagicLink: async () => {},
   signInWithPassword: async () => {},
+  signInWithGoogle: async () => {},
+  signInWithMicrosoft: async () => {},
+  signUp: async () => {},
+  listIdentities: async () => [],
+  linkIdentity: async () => {},
+  unlinkIdentity: async () => {},
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -227,13 +243,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // First login — create profile with signup metadata if available
       const { data: { user: currentUser } } = await supabase.auth.getUser();
       const meta = currentUser?.user_metadata;
+      let firstName: string | null = meta?.first_name ?? null;
+      let lastName: string | null = meta?.last_name ?? null;
+      if (!firstName) {
+        const fullName = meta?.full_name || meta?.name;
+        if (typeof fullName === "string" && fullName.trim()) {
+          const parts = fullName.trim().split(/\s+/);
+          firstName = parts[0];
+          lastName = parts.slice(1).join(" ") || null;   // mononym → null, never undefined
+        }
+      }
       const { data: newProfile } = await supabase
         .from("user_profiles")
         .insert({
           user_id: userId,
           email: currentUser?.email,
-          first_name: meta?.first_name || null,
-          last_name: meta?.last_name || null,
+          first_name: firstName,
+          last_name: lastName,
           brokerage: meta?.brokerage || null,
         })
         .select()
@@ -334,6 +360,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: AUTH_CALLBACK_URL, queryParams: { prompt: "select_account" } },
+    });
+    if (error) throw error;
+  }
+
+  async function signInWithMicrosoft() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "azure",
+      options: {
+        redirectTo: AUTH_CALLBACK_URL,
+        scopes: "email openid profile",
+        queryParams: { prompt: "select_account" },
+      },
+    });
+    if (error) throw error;
+  }
+
+  async function signUp(
+    email: string,
+    password: string,
+    meta: { first_name?: string; last_name?: string; brokerage?: string }
+  ) {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: meta, emailRedirectTo: AUTH_CALLBACK_URL },
+    });
+    if (error) throw error;
+  }
+
+  async function listIdentities(): Promise<UserIdentity[]> {
+    const { data, error } = await supabase.auth.getUserIdentities();
+    if (error) throw error;
+    return data?.identities ?? [];
+  }
+
+  async function linkIdentity(provider: "google" | "azure") {
+    const { error } = await supabase.auth.linkIdentity({
+      provider,
+      options: { redirectTo: `${window.location.origin}/dashboard/account/profile` },
+    });
+    if (error) throw error;
+  }
+
+  async function unlinkIdentity(identity: UserIdentity) {
+    const { error } = await supabase.auth.unlinkIdentity(identity);
+    if (error) throw error;
+  }
+
   /**
    * Start / switch / stop impersonation. Only an admin (realRole === 'admin')
    * may act; for everyone else this is a no-op. See the AuthContextType doc.
@@ -417,6 +495,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         verifyAdminEmailCode,
         signInWithMagicLink,
         signInWithPassword,
+        signInWithGoogle,
+        signInWithMicrosoft,
+        signUp,
+        listIdentities,
+        linkIdentity,
+        unlinkIdentity,
         signOut,
         refreshProfile,
       }}
