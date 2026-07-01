@@ -1,0 +1,103 @@
+/**
+ * Unit tests for lib/delivery/resolve-lease.ts — the shared per-run resolve
+ * lease (delivery_runs.resolving_at CAS) used both by the autopilot resolver
+ * (lib/delivery/auto-run.ts) and the operator "Resume generation" rerun action
+ * (api/admin/studio/delivery/[runId].ts) to serialize double-spend-risky work.
+ *
+ * The CAS db is faked the same way auto-run.test.ts fakes it:
+ *   claim   → .update({resolving_at: <iso>}).eq().or().select()  → { data }
+ *   release → .update({resolving_at: null}).eq()                 → { error }
+ */
+import { describe, it, expect, vi, type Mock } from 'vitest';
+import { getSupabase } from '../../client.js';
+import { withResolveLease } from '../resolve-lease.js';
+
+vi.mock('../../client.js', () => ({ getSupabase: vi.fn() }));
+
+/** getSupabase mock whose CAS lease-claim grants at most `maxGrants` times.
+ *  Tracks how many times the lease was released. */
+function makeLeaseDb(maxGrants: number) {
+  let grants = 0;
+  let releaseCount = 0;
+  const claimSelect = vi.fn().mockImplementation(() =>
+    Promise.resolve(
+      grants < maxGrants
+        ? ((grants += 1), { data: [{ id: 'run-1' }], error: null })
+        : { data: [], error: null },
+    ),
+  );
+  const releaseEq = vi.fn().mockImplementation(() => {
+    releaseCount += 1;
+    return Promise.resolve({ error: null });
+  });
+  const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
+    if (patch && patch.resolving_at) {
+      // claim: .update({resolving_at: now}).eq().or().select()
+      return { eq: () => ({ or: () => ({ select: claimSelect }) }) };
+    }
+    // release: .update({resolving_at: null}).eq()
+    return { eq: releaseEq };
+  });
+  return {
+    db: { from: vi.fn().mockReturnValue({ update }) },
+    getReleaseCount: () => releaseCount,
+  };
+}
+
+describe('withResolveLease', () => {
+  it('acquires the lease, runs fn, and releases it', async () => {
+    const { db, getReleaseCount } = makeLeaseDb(1);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const fn = vi.fn().mockResolvedValue('did-work');
+    const outcome = await withResolveLease('run-1', fn);
+
+    expect(outcome).toEqual({ ran: true, result: 'did-work' });
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(getReleaseCount()).toBe(1);
+  });
+
+  it('no-ops without running fn when the lease is already held (0 rows claimed)', async () => {
+    const { db, getReleaseCount } = makeLeaseDb(0); // never grants → lost the race
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const fn = vi.fn();
+    const outcome = await withResolveLease('run-1', fn);
+
+    expect(outcome).toEqual({ ran: false });
+    expect(fn).not.toHaveBeenCalled();
+    // Never acquired → must NOT release (would clear the real holder's lease).
+    expect(getReleaseCount()).toBe(0);
+  });
+
+  it('serializes two concurrent resumes: exactly one runs fn, the other no-ops, lease released once', async () => {
+    const { db, getReleaseCount } = makeLeaseDb(1); // only ONE grant available
+    (getSupabase as Mock).mockReturnValue(db);
+
+    let ranCount = 0;
+    const fn = vi.fn().mockImplementation(async () => {
+      await Promise.resolve();
+      ranCount += 1;
+    });
+
+    const [a, b] = await Promise.all([
+      withResolveLease('run-1', fn),
+      withResolveLease('run-1', fn),
+    ]);
+
+    const ranOutcomes = [a, b].filter((o) => o.ran).length;
+    expect(ranOutcomes).toBe(1);
+    expect(ranCount).toBe(1);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(getReleaseCount()).toBe(1); // only the winner releases
+  });
+
+  it('releases the lease even when fn throws, and propagates the error', async () => {
+    const { db, getReleaseCount } = makeLeaseDb(1);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const fn = vi.fn().mockRejectedValue(new Error('boom'));
+    await expect(withResolveLease('run-1', fn)).rejects.toThrow('boom');
+    expect(getReleaseCount()).toBe(1);
+  });
+});

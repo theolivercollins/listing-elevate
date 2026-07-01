@@ -17,7 +17,7 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { AutopilotBadge } from '@/components/studio/AutopilotBadge';
 import { AutopilotPanel } from '@/components/studio/AutopilotPanel';
 import { SceneStrip } from '@/components/studio/SceneStrip';
-import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls } from '@/components/studio/DeliveryStepper';
+import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls, ResumeGenerationControls } from '@/components/studio/DeliveryStepper';
 import { PhotoCheckpointA } from '@/components/studio/PhotoCheckpointA';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
@@ -301,6 +301,8 @@ const PropertyCommandCenter = () => {
   const [advanceError, setAdvanceError] = useState<string | null>(null);
   const [stagePending, setStagePending] = useState(false);
   const [stageError, setStageError] = useState<string | null>(null);
+  const [resumePending, setResumePending] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -450,7 +452,12 @@ const PropertyCommandCenter = () => {
       // a stale stage. 409 = stage-moved conflict; other errors re-sync too
       // in case the server advanced before returning the error.
       await fetchBundle();
-      throw new Error((d as { error?: string }).error ?? `${res.status}`);
+      // Prefer the human-readable `message` (e.g. the 502 generation-resume
+      // detail, or the friendly 409 resume-in-progress copy) over the raw
+      // `error` code so the inline strip reads sensibly, not "generation_
+      // resume_failed" / "resume_already_in_progress".
+      const dd = d as { error?: string; message?: string };
+      throw new Error(dd.message ?? dd.error ?? `${res.status}`);
     }
     await fetchBundle();
   }, [bundle, fetchBundle]);
@@ -573,6 +580,26 @@ const PropertyCommandCenter = () => {
           {/* ─── Checkpoint A: photo selection before paid generation ─── */}
           {bundle.delivery_run.stage === 'photo_selection' && (
             <PhotoCheckpointA runId={bundle.delivery_run.id} onChanged={fetchBundle} />
+          )}
+          {/* ─── Generating: prominent, idempotent Resume affordance (recovers a
+               run stalled with all scenes needs_review + no clip, e.g. Atlas 402) ─── */}
+          {bundle.delivery_run.stage === 'generating' && (
+            <ResumeGenerationControls
+              pending={resumePending}
+              error={resumeError}
+              onResume={async () => {
+                setResumePending(true);
+                setResumeError(null);
+                try {
+                  await deliveryAction({ action: 'rerun' });
+                } catch (err) {
+                  // fetchBundle already re-synced inside deliveryAction; surface error to operator
+                  setResumeError(err instanceof Error ? err.message : 'Resume failed');
+                } finally {
+                  setResumePending(false);
+                }
+              }}
+            />
           )}
           {/* ─── Checkpoint A: clip reorder panel ─── */}
           {bundle.delivery_run.stage === 'checkpoint_a' && (

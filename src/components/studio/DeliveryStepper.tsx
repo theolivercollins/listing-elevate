@@ -205,3 +205,58 @@ export function DeliveryStageControls({
     </div>
   );
 }
+
+// ─── ResumeGenerationControls ─────────────────────────────────────────────────
+
+/**
+ * Prominent recovery affordance shown at stage='generating'. Wired to the
+ * existing `rerun` action, which is idempotent: runScripting skips scene
+ * insertion when scenes already exist, and only scenes still lacking a
+ * provider_task_id AND clip_url are resubmitted — so clicking Resume twice
+ * never duplicates paid provider jobs (the server also lease-guards it).
+ *
+ * Rendered whenever the run is at 'generating', NOT only when an error is set,
+ * so a run stuck with a blank/null error is still operator-recoverable. The
+ * button is disabled (with a spinner) while a resume request is in flight to
+ * prevent an accidental double-fire; a failed request surfaces inline in the
+ * LE --le-bad error style.
+ */
+export interface ResumeGenerationControlsProps {
+  pending: boolean;
+  error: string | null;
+  onResume: () => void;
+}
+
+export function ResumeGenerationControls({ pending, error, onResume }: ResumeGenerationControlsProps) {
+  return (
+    <div className="studio-card" style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ minWidth: 0, flex: '1 1 260px' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--le-ink)', marginBottom: 4 }}>
+            Generation
+          </div>
+          <p style={{ margin: 0, fontSize: 12.5, color: 'var(--le-muted)', lineHeight: 1.5 }}>
+            Scenes are generating — the poll cron collects clips and assembles automatically.
+            If this run looks stuck (no clips after a few minutes, or a provider error above),
+            resume submission. Resuming is safe: it only re-submits scenes that haven&rsquo;t been sent yet.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="studio-cta-primary"
+          style={{ flexShrink: 0 }}
+          disabled={pending}
+          onClick={onResume}
+        >
+          {pending && <Loader2 size={13} className="studio-spinner" />}
+          {pending ? 'Resuming…' : 'Resume generation'}
+        </button>
+      </div>
+      {error && (
+        <span className="studio-error-strip" style={{ fontSize: 12 }}>
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
