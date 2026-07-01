@@ -23,7 +23,7 @@ const eyebrowStyle: React.CSSProperties = {
 const inputStyle: React.CSSProperties = {
   background: "rgba(255,255,255,0.04)",
   border: "1px solid var(--le-border-strong)",
-  borderRadius: 4,
+  borderRadius: "var(--le-r-sm)",
   color: "var(--le-text)",
   fontFamily: "var(--le-font-sans)",
   height: 48,
@@ -143,7 +143,7 @@ export default function Login() {
           >
             Cinema for
             <br />
-            <span style={{ color: "rgba(255,255,255,0.45)" }}>every listing.</span>
+            <span style={{ color: "var(--le-text-faint)" }}>every listing.</span>
           </h1>
           <p
             style={{
@@ -164,7 +164,7 @@ export default function Login() {
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            color: "rgba(255,255,255,0.55)",
+            color: "var(--le-text-muted)",
             textDecoration: "none",
             fontSize: 12,
             fontFamily: "var(--le-font-sans)",
@@ -286,7 +286,7 @@ export default function Login() {
                 style={{
                   marginTop: 24,
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.55)",
+                  color: "var(--le-text-muted)",
                   textDecoration: "underline",
                   textUnderlineOffset: 4,
                   background: "none",
@@ -381,7 +381,7 @@ export default function Login() {
                     border: "1px solid var(--le-danger)",
                     background: "var(--le-danger-soft)",
                     padding: 16,
-                    borderRadius: 4,
+                    borderRadius: "var(--le-r-sm)",
                   }}
                 >
                   <p
@@ -411,7 +411,7 @@ export default function Login() {
                   padding: "14px 24px",
                   fontSize: 14,
                   fontWeight: 500,
-                  borderRadius: 4,
+                  borderRadius: "var(--le-r-sm)",
                   cursor:
                     submitting || !email || (mode === "password" && !password)
                       ? "not-allowed"
@@ -455,7 +455,7 @@ export default function Login() {
                 }}
                 style={{
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.55)",
+                  color: "var(--le-text-muted)",
                   background: "none",
                   border: "none",
                   textDecoration: "underline",
@@ -472,7 +472,7 @@ export default function Login() {
               <p
                 style={{
                   fontSize: 12,
-                  color: "rgba(255,255,255,0.45)",
+                  color: "var(--le-text-faint)",
                   textAlign: "center",
                   marginTop: 8,
                   fontFamily: "var(--le-font-sans)",

@@ -126,7 +126,7 @@ export default function LabListingNew() {
                         borderRadius: "var(--radius-sm)",
                         border: active ? "none" : "1px solid var(--line)",
                         background: active ? "var(--ink)" : "var(--surface)",
-                        color: active ? "#fff" : "var(--ink-2)",
+                        color: active ? "var(--surface)" : "var(--ink-2)",
                         cursor: "pointer",
                         fontFamily: "var(--le-font-sans)",
                         transition: "background .15s, color .15s",
@@ -174,8 +174,8 @@ export default function LabListingNew() {
                 style={{
                   padding: "10px 14px",
                   borderRadius: "var(--radius-sm)",
-                  background: "rgba(196,74,74,0.07)",
-                  border: "1px solid rgba(196,74,74,0.18)",
+                  background: "color-mix(in srgb, var(--bad) 7%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--bad) 18%, transparent)",
                   fontSize: 12.5,
                   color: "var(--bad)",
                 }}

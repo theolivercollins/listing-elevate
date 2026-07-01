@@ -328,7 +328,7 @@ export default function BlogPostDetailPage() {
 
   if (!isCompose && isLoading) return (
     <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-      <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ width: 24, height: 24, borderRadius: "var(--le-r-pill)", border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
 
@@ -343,7 +343,7 @@ export default function BlogPostDetailPage() {
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(30,74,140,0.25)", background: "rgba(30,74,140,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           {aiInput ? (
             <>
               <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
@@ -366,7 +366,7 @@ export default function BlogPostDetailPage() {
 
       {/* Publish progress banner */}
       {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(30,74,140,0.25)", background: "rgba(30,74,140,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             <span style={{ fontWeight: 600, color: "var(--ink)" }}>
@@ -385,7 +385,7 @@ export default function BlogPostDetailPage() {
         </div>
       )}
       {post && post.state === "on_hold" && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
           <Pause style={{ width: 16, height: 16, color: "var(--muted)", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             <span style={{ fontWeight: 600, color: "var(--ink-2)" }}>On hold</span>
@@ -537,7 +537,7 @@ export default function BlogPostDetailPage() {
           <>
             <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => saveEdit.mutate()}>Save changes</button>
             <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => publishIt.mutate()}>Approve &amp; publish</button>
-            <button type="button" style={{ fontSize: 13, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.3)", background: "rgba(196,74,74,0.07)", color: "var(--bad)", cursor: "pointer", fontFamily: "var(--le-font-sans)", fontWeight: 500 }} onClick={() => reject.mutate()}>Reject</button>
+            <button type="button" style={{ fontSize: 13, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid rgba(196,74,74,0.3)", background: "rgba(196,74,74,0.07)", color: "var(--bad)", cursor: "pointer", fontFamily: "var(--le-font-sans)", fontWeight: 500 }} onClick={() => reject.mutate()}>Reject</button>
           </>
         )}
         {mode === "edit-live" && (
@@ -568,7 +568,7 @@ export default function BlogPostDetailPage() {
             onClick={() => sendAsEmail.mutate()}
             disabled={sendAsEmail.isPending || !form.body_html.trim()}
             title="Convert this post to an email draft using Ally"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "transparent", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
           >
             {sendAsEmail.isPending
               ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
@@ -580,7 +580,7 @@ export default function BlogPostDetailPage() {
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
-            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.25)", background: "transparent", color: "var(--bad)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid rgba(196,74,74,0.25)", background: "transparent", color: "var(--bad)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
           >
             <Trash2 style={{ width: 14, height: 14 }} /> Delete
           </button>

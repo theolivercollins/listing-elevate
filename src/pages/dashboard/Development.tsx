@@ -36,7 +36,7 @@ const TEXTAREA_STYLE: React.CSSProperties = {
 // Inline <code> chip — matches the small-chip radius step used across lab pages.
 const CODE_CHIP: React.CSSProperties = {
   fontSize: 11,
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   background: "rgba(11,11,16,0.05)",
   padding: "1px 5px",
   borderRadius: "var(--le-r-sm)",
@@ -156,8 +156,8 @@ const Development = () => {
           style={{
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(196,74,74,0.3)",
-            background: "rgba(196,74,74,0.05)",
+            border: "1px solid color-mix(in srgb, var(--bad) 30%, transparent)",
+            background: "color-mix(in srgb, var(--bad) 5%, transparent)",
             fontSize: 13,
             color: "var(--bad)",
           }}
@@ -293,7 +293,7 @@ const Development = () => {
                   style={{ padding: "12px 14px" }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{p.prompt_name}</span>
+                    <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{p.prompt_name}</span>
                     <span style={{ fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>v{latest?.version ?? "—"}</span>
                   </div>
                   <div style={{ marginTop: 4, fontSize: 11.5, color: "var(--muted)" }}>
@@ -342,14 +342,14 @@ const Development = () => {
                 "orbit (interior) → Kling · orbit (exterior/aerial) → Runway",
                 "dolly_* / parallax / reveal / low_angle_glide → Kling",
               ].map((line) => (
-                <div key={line} style={{ fontFamily: "var(--le-font-mono)", fontSize: 11.5, color: "var(--ink-2)", padding: "4px 0", borderBottom: "1px solid var(--line-2)" }}>{line}</div>
+                <div key={line} style={{ fontFamily: "var(--le-font-sans)", fontSize: 11.5, color: "var(--ink-2)", padding: "4px 0", borderBottom: "1px solid var(--line-2)" }}>{line}</div>
               ))}
             </div>
           </div>
 
           <div className="le-card-flat" style={{ padding: 20 }}>
             <span className="le-d-label">Camera vocabulary (11 active verbs)</span>
-            <div style={{ marginTop: 8, fontFamily: "var(--le-font-mono)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.7 }}>
+            <div style={{ marginTop: 8, fontFamily: "var(--le-font-sans)", fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.7 }}>
               push_in · pull_out · orbit · parallax · dolly_left_to_right · dolly_right_to_left · reveal · drone_push_in · drone_pull_back · top_down · low_angle_glide · feature_closeup
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
@@ -371,7 +371,7 @@ const Development = () => {
                 ["dev_session_notes", "this page"],
               ].map(([table, desc]) => (
                 <div key={table} style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, fontSize: 12, borderBottom: "1px solid var(--line-2)", paddingBottom: 5 }}>
-                  <span style={{ fontFamily: "var(--le-font-mono)", color: "var(--muted)", fontWeight: 500 }}>{table}</span>
+                  <span style={{ fontFamily: "var(--le-font-sans)", color: "var(--muted)", fontWeight: 500 }}>{table}</span>
                   <span style={{ color: "var(--ink-2)" }}>{desc}</span>
                 </div>
               ))}

@@ -83,8 +83,8 @@ function VariantBadge({
           fontWeight: 600,
           padding: '2px 6px',
           borderRadius: "var(--le-r-sm)",
-          background: variant === 'A' ? 'var(--le-ink)' : 'var(--le-primary, #3b6fd4)',
-          color: '#fff',
+          background: variant === 'A' ? 'var(--le-ink)' : 'var(--le-accent)',
+          color: 'var(--le-surface)',
         }}
       >
         {label}
@@ -94,7 +94,7 @@ function VariantBadge({
           fontSize: 10.5,
           padding: '2px 6px',
           borderRadius: "var(--le-r-sm)",
-          background: 'var(--le-surface-2, rgba(0,0,0,.06))',
+          background: 'rgba(11,11,16,0.06)',
           color: 'var(--le-muted)',
         }}
       >
@@ -106,8 +106,8 @@ function VariantBadge({
             fontSize: 10.5,
             padding: '2px 6px',
             borderRadius: "var(--le-r-sm)",
-            background: 'var(--le-warn-bg, rgba(255,160,0,.12))',
-            color: 'var(--le-warn, #b97800)',
+            background: 'rgba(182,128,44,0.12)',
+            color: 'var(--le-warn)',
             fontWeight: 500,
           }}
         >
@@ -167,7 +167,7 @@ function RegenerateMenu({
             background: 'var(--le-surface)',
             border: '1px solid var(--le-line)',
             borderRadius: "var(--le-r-sm)",
-            boxShadow: '0 4px 12px rgba(0,0,0,.12)',
+            boxShadow: 'var(--le-shadow-md)',
             zIndex: 20,
             minWidth: paired ? 168 : 80,
           }}
@@ -195,7 +195,7 @@ function RegenerateMenu({
                         borderRadius: "var(--le-r-sm)",
                         border: active ? '1px solid var(--le-ink)' : '1px solid var(--le-line)',
                         background: active ? 'var(--le-ink)' : 'var(--le-surface)',
-                        color: active ? '#fff' : 'var(--le-muted)',
+                        color: active ? 'var(--le-surface)' : 'var(--le-muted)',
                         cursor: 'pointer',
                       }}
                       onClick={() => setModel(m.key)}
@@ -303,13 +303,13 @@ function DraggableCard({
       }}
     >
       {/* Video / placeholder */}
-      <div style={{ width: 200, height: 112, background: 'var(--le-surface-2, #f0f0f0)', flexShrink: 0, position: 'relative' }}>
+      <div style={{ width: 200, height: 112, background: 'var(--le-bg)', flexShrink: 0, position: 'relative' }}>
         {card.inFlight && (
           <div style={{
             position: 'absolute', inset: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             background: 'rgba(0,0,0,.45)', zIndex: 2,
-            gap: 6, color: '#fff', fontSize: 11.5, fontWeight: 500,
+            gap: 6, color: 'var(--le-surface)', fontSize: 11.5, fontWeight: 500,
           }}>
             <Loader2 size={14} className="studio-spinner" />
             rendering…

@@ -91,8 +91,8 @@ function NewEmailDropdown({
               minWidth: 280,
               background: "var(--surface)",
               borderRadius: "var(--le-r-lg)",
-              boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
-              border: "1px solid rgba(15,24,60,0.06)",
+              boxShadow: "var(--shadow-lg)",
+              border: "1px solid var(--line)",
               overflow: "hidden",
               fontFamily: "var(--le-font-sans)",
             }}
@@ -115,7 +115,7 @@ function NewEmailDropdown({
                 navigate("/dashboard/studio/email/messages/new");
               }}
             />
-            <div style={{ height: 1, background: "rgba(15,24,60,0.05)", margin: "4px 0" }} />
+            <div style={{ height: 1, background: "var(--line-2)", margin: "4px 0" }} />
             <DropItem
               icon="sparkles"
               label="New from blog post"
@@ -156,7 +156,7 @@ function DropItem({
         alignItems: "flex-start",
         gap: 10,
         padding: "10px 14px",
-        background: hovered ? "rgba(15,24,60,0.03)" : "transparent",
+        background: hovered ? "var(--line-2)" : "transparent",
         border: "none",
         cursor: "pointer",
         textAlign: "left",
@@ -170,7 +170,7 @@ function DropItem({
           width: 28,
           height: 28,
           borderRadius: "var(--le-r-sm)",
-          background: "rgba(15,24,60,0.04)",
+          background: "var(--line-2)",
           display: "grid",
           placeItems: "center",
           color: "var(--ink-2)",
@@ -376,7 +376,7 @@ export default function EmailsList() {
                 width: 44,
                 height: 44,
                 borderRadius: "var(--le-r-lg)",
-                background: "rgba(15,24,60,0.04)",
+                background: "var(--line-2)",
                 display: "grid",
                 placeItems: "center",
                 color: "var(--muted)",
@@ -468,10 +468,10 @@ function EmailRow({
         gridTemplateColumns: "2fr 100px 120px 110px 80px 60px",
         gap: 12,
         padding: "12px 14px",
-        borderBottom: "1px solid rgba(15,24,60,0.04)",
+        borderBottom: "1px solid var(--line-2)",
         alignItems: "center",
         cursor: "pointer",
-        background: hovered ? "rgba(15,24,60,0.02)" : "transparent",
+        background: hovered ? "var(--line-2)" : "transparent",
         transition: "background .15s",
       }}
     >
@@ -495,8 +495,8 @@ function EmailRow({
             style={{
               fontSize: 10,
               padding: "2px 6px",
-              borderRadius: 999,
-              background: "rgba(15,24,60,0.05)",
+              borderRadius: "var(--le-r-pill)",
+              background: "var(--line-2)",
               color: "var(--muted)",
               flexShrink: 0,
             }}
@@ -629,8 +629,8 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
               style={{
                 padding: "8px 14px",
                 borderRadius: "var(--le-r-md)",
-                border: "1px solid rgba(15,24,60,0.08)",
-                background: "rgba(255,255,255,0.6)",
+                border: "1px solid var(--line)",
+                background: "var(--surface)",
                 color: "var(--ink-2)",
                 fontSize: 12,
                 fontWeight: 500,

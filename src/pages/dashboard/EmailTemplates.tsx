@@ -6,6 +6,7 @@ import { deleteEmailTemplate, listEmailTemplates } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import { Mail, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeading, EmptyState } from "@/components/dashboard/primitives";
 
 export default function EmailTemplates() {
   const qc = useQueryClient();
@@ -22,26 +23,26 @@ export default function EmailTemplates() {
   });
 
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          Email templates{" "}
-          <span className="ml-2 text-sm font-normal text-muted-foreground">{templates.length}</span>
-        </h1>
-        <Link to="/dashboard/studio/email/templates/new">
-          <Button><Plus className="mr-1 h-4 w-4" /> New template</Button>
-        </Link>
-      </div>
+    <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <PageHeading
+        eyebrow="Content"
+        title="Email templates"
+        sub={`${templates.length} saved ${templates.length === 1 ? "template" : "templates"}`}
+        actions={
+          <Link to="/dashboard/studio/email/templates/new">
+            <Button><Plus className="mr-1 h-4 w-4" /> New template</Button>
+          </Link>
+        }
+      />
 
       {isLoading ? (
         <div className="text-muted-foreground">Loading…</div>
       ) : templates.length === 0 ? (
-        <div className="rounded-md border p-8 text-center text-muted-foreground">
-          No email templates yet.{" "}
-          <Link to="/dashboard/studio/email/templates/new" className="underline">
-            Create one
-          </Link>.
-        </div>
+        <EmptyState
+          message="No email templates yet."
+          icon="delivered"
+          cta={{ label: "Create one", to: "/dashboard/studio/email/templates/new" }}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {templates.map((t) => (

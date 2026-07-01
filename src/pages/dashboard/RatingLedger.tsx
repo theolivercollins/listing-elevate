@@ -13,15 +13,15 @@ const PAGE_SIZE = 50;
 // ─── surface colour map ───────────────────────────────────────────
 const SURFACE_STYLE: Record<LedgerSurface, { label: string; color: string; bg: string }> = {
   legacy_lab:   { label: "Legacy Lab",    color: "var(--muted)",  bg: "rgba(11,11,16,0.05)" },
-  listings_lab: { label: "Listings Lab",  color: "var(--accent)", bg: "rgba(42,111,219,0.10)" },
-  prod:         { label: "Production",    color: "var(--good)",   bg: "rgba(47,138,85,0.10)" },
+  listings_lab: { label: "Listings Lab",  color: "var(--accent)", bg: "var(--accent-soft)" },
+  prod:         { label: "Production",    color: "var(--good)",   bg: "var(--good-soft)" },
 };
 
 // ─── retrieval tone helpers ───────────────────────────────────────
 const RETRIEVAL_STYLE: Record<"ready" | "partial" | "missing", { label: string; color: string; bg: string }> = {
-  ready:   { label: "Ready",   color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
-  partial: { label: "Partial", color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
-  missing: { label: "Missing", color: "var(--bad)",  bg: "rgba(196,74,74,0.10)" },
+  ready:   { label: "Ready",   color: "var(--good)", bg: "var(--good-soft)" },
+  partial: { label: "Partial", color: "var(--warn)", bg: "var(--warn-soft)" },
+  missing: { label: "Missing", color: "var(--bad)",  bg: "var(--bad-soft)" },
 };
 
 // ─── inline star row ─────────────────────────────────────────────
@@ -514,7 +514,7 @@ function LedgerTableRow({ row, isLast }: { row: LedgerRow; isLast: boolean }) {
               background: "rgba(11,11,16,0.05)",
               border: "1px solid var(--line-2)",
               fontSize: 11,
-              fontFamily: "var(--le-font-mono)",
+              fontFamily: "var(--le-font-sans)",
               color: "var(--ink-2)",
               whiteSpace: "nowrap",
               overflow: "hidden",

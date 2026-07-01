@@ -724,12 +724,12 @@ const ClientEdit = () => {
                         let color: string;
                         let label: string;
                         if (inTemplate && filled) {
-                          bg = 'rgba(34,197,94,0.12)';
+                          bg = 'rgba(47,138,85,0.12)';
                           color = 'var(--le-good)';
                           label = src.label;
                         } else if (inTemplate && !filled) {
-                          bg = 'rgba(234,179,8,0.12)';
-                          color = '#b45309';
+                          bg = 'rgba(182,128,44,0.12)';
+                          color = 'var(--le-warn)';
                           label = `${src.label} (empty)`;
                         } else {
                           bg = 'rgba(11,11,16,0.06)';

@@ -145,7 +145,7 @@ function OrderTimeline({ property }: { property: Property }) {
                 borderRadius: "50%",
                 background: dotColor,
                 flexShrink: 0,
-                boxShadow: isActive ? "0 0 0 3px rgba(42,111,219,0.14)" : "none",
+                boxShadow: isActive ? "0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent)" : "none",
               }}
             />
             <span

@@ -42,7 +42,7 @@ const inputStyle: React.CSSProperties = {
   width: "100%",
   background: "var(--le-bg)",
   border: "1px solid var(--le-border-strong)",
-  borderRadius: 4,
+  borderRadius: "var(--le-r-sm)",
   color: "var(--le-text)",
   fontFamily: "var(--le-font-sans)",
   fontSize: 14,
@@ -424,7 +424,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                 height: 32,
                 background: "transparent",
                 border: "1px solid transparent",
-                borderRadius: 4,
+                borderRadius: "var(--le-r-sm)",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -594,7 +594,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                           border: "1px solid var(--le-danger)",
                           background: "var(--le-danger-soft)",
                           padding: 12,
-                          borderRadius: 4,
+                          borderRadius: "var(--le-r-sm)",
                         }}
                       >
                         <p
@@ -763,7 +763,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                         padding: "12px 20px",
                         fontSize: 14,
                         fontWeight: 500,
-                        borderRadius: 4,
+                        borderRadius: "var(--le-r-sm)",
                         cursor:
                           submitting || !canSubmit ? "not-allowed" : "pointer",
                         display: "inline-flex",

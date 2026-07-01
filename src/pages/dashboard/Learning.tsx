@@ -206,7 +206,7 @@ const Learning = () => {
                       <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums", marginBottom: 4 }}>
                         {w.room_type.replace(/_/g, " ")} &middot; {w.camera_movement.replace(/_/g, " ")} &middot; {w.provider ?? "—"}
                       </div>
-                      <p style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{w.prompt}</p>
+                      <p style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{w.prompt}</p>
                       {w.comment && (
                         <p style={{ marginTop: 6, fontSize: 12, fontStyle: "italic", color: "var(--muted)" }}>"{w.comment}"</p>
                       )}
@@ -288,7 +288,7 @@ const Learning = () => {
                       <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums", marginBottom: 4 }}>
                         {l.room_type.replace(/_/g, " ")} &middot; {l.camera_movement.replace(/_/g, " ")} &middot; {l.provider ?? "—"}
                       </div>
-                      <p style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{l.prompt}</p>
+                      <p style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55 }}>{l.prompt}</p>
                       {l.comment && (
                         <p style={{ marginTop: 6, fontSize: 12, fontStyle: "italic", color: "var(--bad)" }}>"{l.comment}"</p>
                       )}
@@ -300,7 +300,7 @@ const Learning = () => {
                               style={{
                                 padding: "2px 7px",
                                 borderRadius: "var(--radius-pill)",
-                                background: "rgba(196,74,74,0.08)",
+                                background: "color-mix(in srgb, var(--bad) 8%, transparent)",
                                 fontSize: 10.5,
                                 color: "var(--bad)",
                               }}
@@ -471,7 +471,7 @@ const Learning = () => {
                               overflow: "auto",
                               padding: 14,
                               fontSize: 11,
-                              fontFamily: "var(--le-font-mono)",
+                              fontFamily: "var(--le-font-sans)",
                               lineHeight: 1.65,
                               whiteSpace: "pre-wrap",
                               color: "var(--ink-2)",

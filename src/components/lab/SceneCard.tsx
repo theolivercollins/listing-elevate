@@ -206,7 +206,7 @@ function IterationExpanded({ listingId, scene, iter, onReload, onRateOptimistic 
             <button type="button" className="le-btn-ghost" style={BTN_SM} onClick={toggleArchived} title={iter.archived ? "Unarchive iteration" : "Archive iteration"}>
               {iter.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
             </button>
-            <button type="button" className="le-btn-ghost" style={{ ...BTN_SM, color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }} onClick={remove} title="Delete iteration">
+            <button type="button" className="le-btn-ghost" style={{ ...BTN_SM, color: "var(--bad)", borderColor: "color-mix(in srgb, var(--bad) 25%, transparent)" }} onClick={remove} title="Delete iteration">
               <Trash2 className="h-3 w-3" />
             </button>
           </div>

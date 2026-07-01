@@ -32,15 +32,7 @@ export default function UploadSuccess() {
           <div className="mx-auto mb-10 flex h-20 w-20 items-center justify-center border border-accent/40 bg-accent/10 text-accent">
             <CheckCircle2 className="h-9 w-9" strokeWidth={1.5} />
           </div>
-          <span
-            style={{
-              fontFamily: "var(--le-font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.22em",
-              textTransform: "uppercase" as const,
-              color: "var(--le-text-muted)",
-            }}
-          >
+          <span className="le-eyebrow">
             — Payment confirmed
           </span>
           <h1

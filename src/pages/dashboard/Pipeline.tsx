@@ -80,8 +80,8 @@ function PipelineCard({ property }: { property: SampleProperty }) {
         <span>{fmtRel(property.created_at)}</span>
       </div>
       {isActive && property.progress < 100 && (
-        <div style={{ marginTop: 10, height: 3, background: "rgba(15,24,60,0.06)", borderRadius: 999, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${property.progress}%`, background: "var(--accent)", borderRadius: 999 }} />
+        <div style={{ marginTop: 10, height: 3, background: "rgba(15,24,60,0.06)", borderRadius: "var(--le-r-pill)", overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${property.progress}%`, background: "var(--accent)", borderRadius: "var(--le-r-pill)" }} />
         </div>
       )}
     </div>
@@ -130,8 +130,8 @@ function ReviewCard({
         <span
           style={{
             position: "absolute", top: 8, left: 8, fontSize: 9.5, fontWeight: 600,
-            padding: "2px 6px", borderRadius: 999, background: "rgba(0,0,0,0.35)",
-            color: "#fff", zIndex: 1, textTransform: "uppercase",
+            padding: "2px 6px", borderRadius: "var(--le-r-pill)", background: "rgba(0,0,0,0.35)",
+            color: "var(--surface)", zIndex: 1, textTransform: "uppercase",
             fontVariantNumeric: "tabular-nums",
           }}
         >
@@ -148,7 +148,7 @@ function ReviewCard({
           <StatusChip status="needs_review" />
           <span
             style={{
-              fontSize: 11, color: "var(--muted)", padding: "2px 8px", borderRadius: 999,
+              fontSize: 11, color: "var(--muted)", padding: "2px 8px", borderRadius: "var(--le-r-pill)",
               background: "rgba(15,24,60,0.05)", fontVariantNumeric: "tabular-nums",
             }}
           >
@@ -509,7 +509,7 @@ const Pipeline = () => {
                   <span
                     style={{
                       fontSize: 11, fontWeight: 600, padding: "2px 7px",
-                      borderRadius: 999, background: "rgba(15,24,60,0.06)", color: "var(--ink-2)",
+                      borderRadius: "var(--le-r-pill)", background: "rgba(15,24,60,0.06)", color: "var(--ink-2)",
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >

@@ -391,7 +391,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             className="le-btn-dark"
             style={{
               position: "fixed", bottom: 20, right: 20, zIndex: 50,
-              padding: "10px 18px", borderRadius: 999,
+              padding: "10px 18px", borderRadius: "var(--le-r-pill)",
               boxShadow: "var(--shadow-lg)", fontSize: 13.5,
             }}
             aria-label="Improve with Ally"
@@ -450,7 +450,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       <span style={{
                         position: "absolute", right: -2, top: -2,
                         display: "inline-flex", height: 14, minWidth: 14, alignItems: "center", justifyContent: "center",
-                        borderRadius: 999, background: "var(--ink)", padding: "0 3px",
+                        borderRadius: "var(--le-r-pill)", background: "var(--ink)", padding: "0 3px",
                         fontSize: 9, fontWeight: 600, color: "#fff",
                       }}>
                         {memories.length}
@@ -567,7 +567,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                         <span>{m.content}</span>
                       )}
                       {m.queued && (
-                        <span style={{ marginLeft: 4, borderRadius: 999, background: "rgba(255,255,255,0.18)", padding: "2px 6px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                        <span style={{ marginLeft: 4, borderRadius: "var(--le-r-pill)", background: "rgba(255,255,255,0.18)", padding: "2px 6px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
                           queued
                         </span>
                       )}
@@ -597,8 +597,8 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   transition={{ duration: 0.15 }}
                   style={{
                     borderRadius: "var(--le-r-lg)", padding: 12,
-                    border: card.applied ? "1px solid rgba(47,138,85,0.4)" : "1px solid rgba(42,111,219,0.2)",
-                    background: card.applied ? "rgba(47,138,85,0.07)" : "rgba(42,111,219,0.04)",
+                    border: card.applied ? "1px solid rgba(47,138,85,0.4)" : "1px solid rgba(30,74,140,0.2)",
+                    background: card.applied ? "rgba(47,138,85,0.07)" : "rgba(30,74,140,0.04)",
                     fontSize: 12,
                   }}
                 >
@@ -659,7 +659,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               ))}
 
               {sources.length > 0 && (
-                <div style={{ borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(11,11,16,0.02)", padding: 10, fontSize: 11 }}>
+                <div style={{ borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.02)", padding: 10, fontSize: 11 }}>
                   <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 4, fontWeight: 500, color: "var(--muted)" }}>
                     <Globe style={{ width: 11, height: 11 }} /> Sources · {sources.length}
                   </div>
@@ -688,7 +688,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               {attachments.length > 0 && (
                 <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {attachments.map((a, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: 999, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "3px 8px", fontSize: 10.5 }}>
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.035)", padding: "3px 8px", fontSize: 10.5 }}>
                       {a.kind === "pdf" ? <FileText style={{ width: 10, height: 10 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 10, height: 10 }} /> : <FileText style={{ width: 10, height: 10 }} />}
                       <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
                       <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
@@ -704,10 +704,10 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)]">
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)]">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <button type="button" style={{ width: 28, height: 28, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+                    <button type="button" style={{ width: 28, height: 28, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
                       <Plus style={{ width: 13, height: 13 }} />
                     </button>
                   </PopoverTrigger>
@@ -770,7 +770,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   onClick={() => send(input)}
                   disabled={!input.trim() && attachments.length === 0}
                   className="le-btn-dark"
-                  style={{ width: 28, height: 28, padding: 0, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: (!input.trim() && attachments.length === 0) ? 0.4 : 1 }}
+                  style={{ width: 28, height: 28, padding: 0, borderRadius: "var(--le-r-pill)", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: (!input.trim() && attachments.length === 0) ? 0.4 : 1 }}
                   title={chat.isPending ? "Queue for next" : "Send"}
                 >
                   <ArrowUp style={{ width: 13, height: 13 }} />
@@ -798,7 +798,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
           {diffCard && (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {diffCard.changesNarrative && (
-                <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.02)", padding: "12px 20px" }}>
+                <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.02)", padding: "12px 20px" }}>
                   <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>What Ally changed</div>
                   <ul style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 13.5, lineHeight: 1.5 }}>
                     {diffCard.changesNarrative
@@ -832,7 +832,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", height: "65vh" }}>
                 <div style={{ display: "flex", minHeight: 0, flexDirection: "column", borderRight: "1px solid var(--line)" }}>
-                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
                     Current draft
                   </div>
                   <HtmlPreview
@@ -841,7 +841,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   />
                 </div>
                 <div style={{ display: "flex", minHeight: 0, flexDirection: "column" }}>
-                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
                     Proposed
                   </div>
                   <HtmlPreview

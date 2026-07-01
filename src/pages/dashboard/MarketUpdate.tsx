@@ -725,7 +725,7 @@ function Delta({ v }: { v: number | null | undefined }) {
 }
 
 function Pill({ tone, children }: { tone: "good" | "bad" | "warn"; children: React.ReactNode }) {
-  const c = tone === "good" ? "var(--good)" : tone === "bad" ? "var(--bad)" : "#b45309";
+  const c = tone === "good" ? "var(--good)" : tone === "bad" ? "var(--bad)" : "var(--warn)";
   return <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: "var(--radius-pill)", background: `color-mix(in srgb, ${c} 14%, transparent)`, color: c }}>{children}</span>;
 }
 

@@ -221,7 +221,7 @@ const Clients = () => {
                       : `linear-gradient(135deg, hsl(${hue},14%,58%), hsl(${hue + 30},14%,44%))`,
                     display: 'grid',
                     placeItems: 'center',
-                    color: '#fff',
+                    color: 'var(--le-surface)',
                     fontSize: 11,
                     fontWeight: 600,
                     flexShrink: 0,
@@ -254,7 +254,7 @@ const Clients = () => {
                         fontWeight: 500,
                         color: 'var(--le-muted)',
                         background: 'rgba(11,11,16,0.05)',
-                        borderRadius: 999,
+                        borderRadius: 'var(--le-r-pill)',
                         padding: '1px 6px',
                         flexShrink: 0,
                       }}

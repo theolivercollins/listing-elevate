@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
-import { PageHeading, Card, KpiCard, StatusChip, MoneyValue, EmptyState } from "@/components/dashboard/primitives";
+import { PageHeading, Card, KpiCard, StatusChip, MoneyValue, EmptyState, SkeletonRow } from "@/components/dashboard/primitives";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
 
@@ -78,8 +78,10 @@ export default function AccountBilling() {
           </div>
 
           {isLoading ? (
-            <div style={{ padding: "40px 14px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Loading...
+            <div style={{ padding: "4px 14px" }}>
+              <SkeletonRow />
+              <SkeletonRow />
+              <SkeletonRow />
             </div>
           ) : !properties?.length ? (
             <div style={{ padding: "24px 14px" }}>

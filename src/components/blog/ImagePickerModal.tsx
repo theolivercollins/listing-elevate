@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/dashboard/primitives";
 import { listImages, uploadImage } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage } from "@/lib/blog/types";
@@ -22,13 +23,11 @@ interface Props {
 // Skeleton tile shown while images load
 function SkeletonTile() {
   return (
-    <div
-      style={{
-        aspectRatio: "4/3",
-        borderRadius: "var(--le-r-lg)",
-        background: "rgba(11,11,16,0.06)",
-        animation: "le-pulse 1.5s ease-in-out infinite",
-      }}
+    <Skeleton
+      width="100%"
+      height="auto"
+      borderRadius="var(--le-r-lg)"
+      style={{ aspectRatio: "4/3" }}
     />
   );
 }
@@ -65,14 +64,14 @@ function ImageTile({
         borderRadius: "var(--le-r-lg)",
         overflow: "hidden",
         background: "rgba(11,11,16,0.06)",
-        border: selected ? "2px solid var(--accent, #2a6fdb)" : "2px solid transparent",
-        boxShadow: selected ? "0 0 0 2px rgba(42,111,219,0.25)" : undefined,
+        border: selected ? "2px solid var(--accent, #1E4A8C)" : "2px solid transparent",
+        boxShadow: selected ? "0 0 0 2px rgba(30,74,140,0.25)" : undefined,
         cursor: "pointer",
         padding: 0,
         transition: "border-color .15s, box-shadow .15s, transform .15s",
         willChange: "transform",
       }}
-      onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent, #2a6fdb)"; e.currentTarget.style.outlineOffset = "2px"; }}
+      onFocus={(e) => { e.currentTarget.style.outline = "2px solid var(--accent, #1E4A8C)"; e.currentTarget.style.outlineOffset = "2px"; }}
       onBlur={(e) => { e.currentTarget.style.outline = "none"; }}
       onMouseDown={(e) => { e.currentTarget.style.transform = "scale(0.97)"; }}
       onMouseUp={(e) => { e.currentTarget.style.transform = ""; }}
@@ -80,14 +79,7 @@ function ImageTile({
     >
       {/* Skeleton shown until image loads */}
       {!loaded && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "rgba(11,11,16,0.06)",
-            animation: "le-pulse 1.5s ease-in-out infinite",
-          }}
-        />
+        <Skeleton width="100%" height="100%" borderRadius={0} style={{ position: "absolute", inset: 0 }} />
       )}
       <img
         src={thumbUrl(img.blob_url, { width: 240, quality: 75, resize: "cover" })}
@@ -140,13 +132,13 @@ function ImageTile({
             width: 22,
             height: 22,
             borderRadius: "50%",
-            background: "var(--accent, #2a6fdb)",
+            background: "var(--accent, #1E4A8C)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Check size={13} color="#fff" strokeWidth={3} />
+          <Check size={13} color="var(--le-accent-fg, #fff)" strokeWidth={3} />
         </div>
       )}
     </button>
@@ -197,7 +189,7 @@ function UploadTile({ onUploaded }: { onUploaded: (img: BlogImage) => void }) {
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
-          color: "var(--muted, #6b6f7a)",
+          color: "var(--muted, #656b7a)",
           cursor: uploading ? "wait" : "pointer",
           transition: "background .15s, border-color .15s",
           fontSize: 12,
@@ -205,14 +197,14 @@ function UploadTile({ onUploaded }: { onUploaded: (img: BlogImage) => void }) {
         }}
         onMouseEnter={(e) => {
           if (uploading) return;
-          e.currentTarget.style.background = "rgba(42,111,219,0.06)";
-          e.currentTarget.style.borderColor = "rgba(42,111,219,0.4)";
-          e.currentTarget.style.color = "var(--accent, #2a6fdb)";
+          e.currentTarget.style.background = "rgba(30,74,140,0.06)";
+          e.currentTarget.style.borderColor = "rgba(30,74,140,0.4)";
+          e.currentTarget.style.color = "var(--accent, #1E4A8C)";
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = "rgba(11,11,16,0.025)";
           e.currentTarget.style.borderColor = "rgba(11,11,16,0.18)";
-          e.currentTarget.style.color = "var(--muted, #6b6f7a)";
+          e.currentTarget.style.color = "var(--muted, #656b7a)";
         }}
         disabled={uploading}
       >
@@ -235,10 +227,10 @@ function TagPill({ label, active, onClick }: { label: string; active: boolean; o
       onClick={onClick}
       style={{
         padding: "4px 12px",
-        borderRadius: 999,
-        border: active ? "1.5px solid var(--accent, #2a6fdb)" : "1.5px solid rgba(11,11,16,0.12)",
-        background: active ? "rgba(42,111,219,0.1)" : "transparent",
-        color: active ? "var(--accent, #2a6fdb)" : "var(--muted, #6b6f7a)",
+        borderRadius: "var(--le-r-pill)",
+        border: active ? "1.5px solid var(--accent, #1E4A8C)" : "1.5px solid rgba(11,11,16,0.12)",
+        background: active ? "rgba(30,74,140,0.1)" : "transparent",
+        color: active ? "var(--accent, #1E4A8C)" : "var(--muted, #656b7a)",
         fontSize: 12,
         fontWeight: 500,
         cursor: "pointer",
@@ -321,17 +313,17 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
         <DialogHeader
           style={{
             padding: "18px 20px 14px",
-            borderBottom: "1px solid var(--line, rgba(11,11,16,0.07))",
+            borderBottom: "1px solid var(--line, rgba(12,14,22,0.08))",
             flexShrink: 0,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <ImageIcon size={16} style={{ color: "var(--muted, #6b6f7a)", flexShrink: 0 }} />
-            <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--ink, #0b0b10)", margin: 0 }}>
+            <ImageIcon size={16} style={{ color: "var(--muted, #656b7a)", flexShrink: 0 }} />
+            <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--ink, #0c0e16)", margin: 0 }}>
               Image library
             </DialogTitle>
             {images.length > 0 && !loading && (
-              <span style={{ fontSize: 12, color: "var(--muted, #6b6f7a)", marginLeft: 4 }}>
+              <span style={{ fontSize: 12, color: "var(--muted, #656b7a)", marginLeft: 4 }}>
                 {images.length} image{images.length !== 1 ? "s" : ""}
               </span>
             )}
@@ -345,7 +337,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            borderBottom: "1px solid var(--line, rgba(11,11,16,0.07))",
+            borderBottom: "1px solid var(--line, rgba(12,14,22,0.08))",
             flexShrink: 0,
             background: "var(--surface, #fff)",
           }}
@@ -359,7 +351,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
                 left: 11,
                 top: "50%",
                 transform: "translateY(-50%)",
-                color: "var(--muted, #6b6f7a)",
+                color: "var(--muted, #656b7a)",
                 pointerEvents: "none",
               }}
             />
@@ -382,7 +374,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  color: "var(--muted, #6b6f7a)",
+                  color: "var(--muted, #656b7a)",
                   padding: 2,
                   display: "flex",
                 }}
@@ -407,7 +399,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
             flex: 1,
             overflowY: "auto",
             padding: "16px 20px 20px",
-            background: "var(--bg, #f3f3f5)",
+            background: "var(--bg, #f4f5f8)",
           }}
         >
           {/* Empty state */}
@@ -419,7 +411,7 @@ export function ImagePickerModal({ open, onClose, onSelect, selectedId }: Props)
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 12,
-                color: "var(--muted, #6b6f7a)",
+                color: "var(--muted, #656b7a)",
                 fontSize: 13,
               }}
             >

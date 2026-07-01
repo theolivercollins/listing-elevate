@@ -382,7 +382,7 @@ export default function BlogPostChatCompose() {
           onClick={() => navigate("/dashboard/studio/blog/posts")}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4,
-            padding: "6px 10px", borderRadius: 999,
+            padding: "6px 10px", borderRadius: "var(--le-r-pill)",
             border: "1px solid var(--line)", background: "transparent",
             color: "var(--muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
             fontFamily: "var(--le-font-sans)",
@@ -450,7 +450,7 @@ export default function BlogPostChatCompose() {
       {/* Body — chat on left, preview-dominant fields on right (Claude-artifact ratio) */}
       <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[2fr_3fr]" : "md:grid-cols-1"} grid-cols-1`}>
         {/* CHAT COLUMN */}
-        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, #f3f3f5)" }}>
+        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, #f4f5f8)" }}>
           <AnimatePresence mode="wait">
             {!hasThread && pendingActions.length === 0 ? (
               <motion.div
@@ -510,7 +510,7 @@ export default function BlogPostChatCompose() {
                                 borderRadius: "18px 18px 6px 18px",
                                 background: "var(--ink)", padding: "10px 14px",
                                 fontSize: 13.5, color: "var(--surface)",
-                                boxShadow: "0 1px 3px rgba(11,11,16,0.12)",
+                                boxShadow: "0 1px 3px rgba(12,14,22,0.12)",
                                 opacity: m.queued ? 0.7 : 1,
                                 outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
                               }
@@ -521,7 +521,7 @@ export default function BlogPostChatCompose() {
                                 fontSize: 13.5, color: m.pending ? "var(--muted)" : "var(--ink)",
                                 fontStyle: m.pending ? "italic" : "normal",
                                 border: "1px solid var(--line)",
-                                boxShadow: "0 1px 2px rgba(11,11,16,0.04)",
+                                boxShadow: "var(--shadow-sm)",
                               }
                         }
                       >
@@ -533,7 +533,7 @@ export default function BlogPostChatCompose() {
                           )}
                           {m.queued && (
                             <span style={{
-                              marginLeft: 6, borderRadius: 999, background: "rgba(255,255,255,0.18)",
+                              marginLeft: 6, borderRadius: "var(--le-r-pill)", background: "rgba(255,255,255,0.18)",
                               padding: "2px 7px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em",
                             }}>
                               queued
@@ -562,8 +562,8 @@ export default function BlogPostChatCompose() {
                       key={card.id}
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
                       style={{
-                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(42,111,219,0.25)",
-                        background: "rgba(42,111,219,0.05)", padding: 14,
+                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(30,74,140,0.25)",
+                        background: "rgba(30,74,140,0.05)", padding: 14,
                       }}
                     >
                       <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink)" }}>
@@ -749,7 +749,7 @@ export default function BlogPostChatCompose() {
 
             {showPreview && (
               <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.025)", padding: "6px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.025)", padding: "6px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
@@ -894,7 +894,7 @@ function Composer({
       {attachments.length > 0 && (
         <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {attachments.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: 999, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "4px 10px", fontSize: 11.5 }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.035)", padding: "4px 10px", fontSize: 11.5 }}>
               {a.kind === "pdf" ? <FileText style={{ width: 11, height: 11 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 11, height: 11 }} /> : <FileText style={{ width: 11, height: 11 }} />}
               <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
               <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
@@ -906,10 +906,10 @@ function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)] focus-within:!shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
-            <button type="button" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+            <button type="button" style={{ width: 34, height: 34, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
               <Plus style={{ width: 15, height: 15 }} />
             </button>
           </PopoverTrigger>
@@ -996,7 +996,7 @@ function Composer({
         <button
           type="button" onClick={onSend} disabled={!canSend}
           className="le-btn-dark"
-          style={{ width: 34, height: 34, padding: 0, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: !canSend ? 0.4 : 1 }}
+          style={{ width: 34, height: 34, padding: 0, borderRadius: "var(--le-r-pill)", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: !canSend ? 0.4 : 1 }}
           title={isPending ? "Queue for next" : "Send"}
         >
           <ArrowUp style={{ width: 15, height: 15 }} />

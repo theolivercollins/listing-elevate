@@ -33,6 +33,8 @@ import {
   Sparkline,
   MoneyValue,
   fmtMoney,
+  Skeleton,
+  SkeletonRow,
 } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
@@ -296,7 +298,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
         style={{
           width: 8,
           height: 8,
-          borderRadius: 999,
+          borderRadius: "var(--le-r-pill)",
           background: color,
           flexShrink: 0,
         }}
@@ -333,7 +335,7 @@ function SubmitBtn({ loading, disabled, children }: { loading: boolean; disabled
         borderRadius: "var(--le-r-sm)",
         border: "none",
         background: disabled || loading ? "rgba(15,24,60,0.08)" : "var(--ink)",
-        color: disabled || loading ? "var(--muted)" : "#fff",
+        color: disabled || loading ? "var(--muted)" : "var(--surface)",
         fontSize: 13,
         fontWeight: 600,
         cursor: disabled || loading ? "not-allowed" : "pointer",
@@ -852,8 +854,23 @@ export default function Finances() {
   // ── Loading / error states ────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="le-fade-up" style={{ padding: "80px 0", display: "flex", justifyContent: "center" }}>
-        <Loader2 className="h-6 w-6 animate-spin" style={{ color: "var(--muted)" }} />
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+              <Skeleton width="70%" height={30} style={{ marginBottom: 10 }} />
+              <Skeleton width="45%" height={12} />
+            </div>
+          ))}
+        </section>
+        <Card>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
@@ -885,7 +902,7 @@ export default function Finances() {
           onClick={handleReconcile}
           style={{
             display: "inline-flex", alignItems: "center", gap: 7,
-            padding: "9px 14px", borderRadius: 999,
+            padding: "9px 14px", borderRadius: "var(--le-r-pill)",
             border: "1px solid var(--line)", background: "var(--surface)",
             fontSize: 12.5, fontWeight: 500, color: "var(--ink-2)", cursor: "pointer",
           }}
@@ -1043,7 +1060,7 @@ export default function Finances() {
           <span className="le-d-label">Cost breakdown</span>
           <div
             style={{
-              display: "inline-flex", padding: 4, borderRadius: 999,
+              display: "inline-flex", padding: 4, borderRadius: "var(--le-r-pill)",
               background: "rgba(15,24,60,0.05)",
             }}
           >
@@ -1052,9 +1069,9 @@ export default function Finances() {
                 key={t}
                 onClick={() => setBreakdownTab(t)}
                 style={{
-                  padding: "8px 16px", borderRadius: 999, border: "none",
+                  padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "none",
                   background: breakdownTab === t ? "var(--ink)" : "transparent",
-                  color: breakdownTab === t ? "#fff" : "var(--muted)",
+                  color: breakdownTab === t ? "var(--surface)" : "var(--muted)",
                   fontSize: 12, fontWeight: 600, cursor: "pointer",
                   textTransform: "capitalize", transition: "background .15s, color .15s",
                 }}
@@ -1102,8 +1119,8 @@ export default function Finances() {
                 <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.month} /></span>
                 <span className="le-tabular" style={{ fontSize: 12, textAlign: "right", color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{r.events.toLocaleString()}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: 999, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent)", borderRadius: 999 }} />
+                  <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: "var(--le-r-pill)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent)", borderRadius: "var(--le-r-pill)" }} />
                   </div>
                   <span className="le-tabular" style={{ fontSize: 11, color: "var(--muted-2)", width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.share}%</span>
                 </div>
@@ -1147,15 +1164,15 @@ export default function Finances() {
                     </div>
                     <span
                       style={{
-                        width: 12, height: 12, borderRadius: 999,
+                        width: 12, height: 12, borderRadius: "var(--le-r-pill)",
                         background: PROVIDER_COLORS[row.provider],
                         flexShrink: 0, marginTop: 2,
                       }}
                     />
                   </div>
-                  <div style={{ marginTop: 14, height: 3, width: "100%", borderRadius: 999, background: "rgba(15,24,60,0.08)" }}>
+                  <div style={{ marginTop: 14, height: 3, width: "100%", borderRadius: "var(--le-r-pill)", background: "rgba(15,24,60,0.08)" }}>
                     <motion.div
-                      style={{ height: "100%", borderRadius: 999, background: PROVIDER_COLORS[row.provider] }}
+                      style={{ height: "100%", borderRadius: "var(--le-r-pill)", background: PROVIDER_COLORS[row.provider] }}
                       initial={{ width: 0 }}
                       animate={{ width: `${usedPct}%` }}
                       transition={{ duration: 1, ease: EASE }}
@@ -1335,7 +1352,7 @@ export default function Finances() {
               display: "inline-flex", alignItems: "center", gap: 7,
               padding: "9px 16px", borderRadius: "var(--le-r-sm)",
               border: "none", background: "var(--ink)",
-              fontSize: 13, fontWeight: 600, color: "#fff", cursor: "pointer",
+              fontSize: 13, fontWeight: 600, color: "var(--surface)", cursor: "pointer",
               flexShrink: 0,
             }}
           >
@@ -1400,10 +1417,10 @@ export default function Finances() {
                   <span style={{
                     display: "inline-flex", alignItems: "center", gap: 5,
                     fontSize: 11, fontWeight: 600, color: statusColor,
-                    background: statusBg, padding: "3px 8px", borderRadius: 999,
+                    background: statusBg, padding: "3px 8px", borderRadius: "var(--le-r-pill)",
                     textTransform: "capitalize", width: "fit-content",
                   }}>
-                    <span style={{ width: 5, height: 5, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
+                    <span style={{ width: 5, height: 5, borderRadius: "var(--le-r-pill)", background: statusColor, flexShrink: 0 }} />
                     {sub.status}
                   </span>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>

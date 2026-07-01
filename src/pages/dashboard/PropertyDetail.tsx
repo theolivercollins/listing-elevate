@@ -6,7 +6,7 @@ import { formatCents, formatDuration } from "@/lib/types";
 import type { Property, Photo, Scene, PipelineLog, CostEvent, SceneRating } from "@/lib/types";
 import { fetchProperty, fetchLogs, rerunProperty, fetchSystemPrompts, rateScene, resubmitScene } from "@/lib/api";
 import { photoGrid } from "@/lib/image-url";
-import { PageHeading, StatusChip, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { PageHeading, StatusChip, Card, SectionTitle, Skeleton, SkeletonRow } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 const FAILURE_TAGS = [
@@ -199,7 +199,7 @@ function RatingWidget({
                           ? "var(--bad)"
                           : "var(--ink)"
                         : "transparent",
-                      color: selected ? "#fff" : "var(--muted)",
+                      color: selected ? "var(--surface)" : "var(--muted)",
                       cursor: "pointer",
                       fontFamily: "var(--le-font-sans)",
                       transition: "background .15s, color .15s",
@@ -461,8 +461,19 @@ const PropertyDetail = () => {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", padding: "80px 0" }}>
-        <Loader2 style={{ width: 20, height: 20, animation: "spin 1s linear infinite", color: "var(--muted)" }} />
+      <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        <div>
+          <Skeleton width={90} height={13} style={{ marginBottom: 11 }} />
+          <Skeleton width="45%" height={38} />
+          <Skeleton width={220} height={16} style={{ marginTop: 13 }} />
+        </div>
+        <Skeleton width="100%" height={220} borderRadius="var(--le-r-lg)" />
+        <Card>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
       </div>
     );
   }
@@ -483,7 +494,7 @@ const PropertyDetail = () => {
               width: 44,
               height: 44,
               borderRadius: "var(--le-r-lg)",
-              background: "rgba(196,74,74,0.10)",
+              background: "var(--bad-soft)",
               display: "grid",
               placeItems: "center",
               color: "var(--bad)",
@@ -891,7 +902,7 @@ const PropertyDetail = () => {
                           padding: "2px 7px",
                           borderRadius: "var(--radius-pill)",
                           background: photo.selected ? "var(--ink)" : "var(--bad)",
-                          color: "#fff",
+                          color: "var(--surface)",
                         }}
                       >
                         {photo.selected ? "Selected" : "Discarded"}
@@ -1029,7 +1040,7 @@ const PropertyDetail = () => {
                               background: "rgba(0,0,0,0.25)",
                             }}
                           >
-                            <Icon name="play" size={14} style={{ color: "#fff" }} />
+                            <Icon name="play" size={14} style={{ color: "var(--surface)" }} />
                           </div>
                         </div>
 
@@ -1101,7 +1112,7 @@ const PropertyDetail = () => {
                             padding: "12px 14px",
                             fontSize: 11,
                             lineHeight: 1.6,
-                            fontFamily: "var(--le-font-mono, monospace)",
+                            fontFamily: "var(--le-font-sans)",
                             color: "var(--ink-2)",
                             background: "rgba(11,11,16,0.025)",
                             border: "1px solid var(--line-2)",
@@ -1190,7 +1201,7 @@ const PropertyDetail = () => {
                       borderBottom: "1px solid var(--line-2)",
                       fontSize: 11,
                       lineHeight: 1.6,
-                      fontFamily: "var(--le-font-mono, monospace)",
+                      fontFamily: "var(--le-font-sans)",
                     }}
                   >
                     <span style={{ color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
@@ -1238,9 +1249,15 @@ const PropertyDetail = () => {
         {activeTab === "prompts" && (
           <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 28 }}>
             {!prompts ? (
-              <div style={{ display: "flex", justifyContent: "center", padding: "32px 0" }}>
-                <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--muted)" }} />
-              </div>
+              <>
+                {[0, 1, 2].map((i) => (
+                  <section key={i}>
+                    <Skeleton width={160} height={16} />
+                    <Skeleton width="70%" height={12.5} style={{ marginTop: 8 }} />
+                    <Skeleton width="100%" height={96} style={{ marginTop: 12 }} borderRadius="var(--le-r-sm)" />
+                  </section>
+                ))}
+              </>
             ) : (
               [
                 { label: "Photo analysis", desc: "Used by Claude Sonnet to score every photo on quality, aesthetics, depth, and room type.", body: prompts.analysis },
@@ -1259,7 +1276,7 @@ const PropertyDetail = () => {
                       padding: "14px 16px",
                       fontSize: 11,
                       lineHeight: 1.6,
-                      fontFamily: "var(--le-font-mono, monospace)",
+                      fontFamily: "var(--le-font-sans)",
                       color: "var(--ink-2)",
                       background: "rgba(11,11,16,0.025)",
                       border: "1px solid var(--line-2)",

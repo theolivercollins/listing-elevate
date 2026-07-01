@@ -23,7 +23,7 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   resize: "vertical" as const,
   minHeight: 80,
   lineHeight: 1.5,
-  fontFamily: "var(--le-font-mono)",
+  fontFamily: "var(--le-font-sans)",
   fontSize: 12,
 };
 
@@ -56,8 +56,8 @@ const PromptLabRecipes = () => {
           style={{
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(196,74,74,0.3)",
-            background: "rgba(196,74,74,0.05)",
+            border: "1px solid color-mix(in srgb, var(--bad) 30%, transparent)",
+            background: "color-mix(in srgb, var(--bad) 5%, transparent)",
             fontSize: 13,
             color: "var(--bad)",
           }}
@@ -209,8 +209,8 @@ function RecipeRow({
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr auto", gap: 16, alignItems: "flex-start" }}>
         {/* Archetype + template */}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: "var(--le-font-mono)", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{recipe.archetype}</div>
-          <p style={{ marginTop: 6, fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, wordBreak: "break-word" }}>
+          <div style={{ fontFamily: "var(--le-font-sans)", fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{recipe.archetype}</div>
+          <p style={{ marginTop: 6, fontFamily: "var(--le-font-sans)", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.55, wordBreak: "break-word" }}>
             {recipe.prompt_template}
           </p>
           <div style={{ marginTop: 6, fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
@@ -228,7 +228,7 @@ function RecipeRow({
               borderRadius: "var(--radius-sm)",
               background: "rgba(11,11,16,0.05)",
               border: "1px solid var(--line-2)",
-              fontFamily: "var(--le-font-mono)",
+              fontFamily: "var(--le-font-sans)",
               fontSize: 10.5,
               color: "var(--ink-2)",
             }}
@@ -246,7 +246,7 @@ function RecipeRow({
               borderRadius: "var(--radius-sm)",
               background: "rgba(11,11,16,0.05)",
               border: "1px solid var(--line-2)",
-              fontFamily: "var(--le-font-mono)",
+              fontFamily: "var(--le-font-sans)",
               fontSize: 10.5,
               color: "var(--ink-2)",
             }}
@@ -260,7 +260,7 @@ function RecipeRow({
                   display: "inline-block",
                   padding: "2px 6px",
                   borderRadius: "var(--radius-sm)",
-                  background: "rgba(42,111,219,0.08)",
+                  background: "color-mix(in srgb, var(--accent) 8%, transparent)",
                   fontSize: 10.5,
                   color: "var(--accent)",
                 }}

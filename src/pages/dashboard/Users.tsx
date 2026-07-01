@@ -26,8 +26,8 @@ interface UserStatusConfig {
 }
 
 const USER_STATUS_MAP: Record<UserStatusValue, UserStatusConfig> = {
-  active:  { label: "Active",  color: "var(--good)",  bg: "rgba(47,138,85,0.10)" },
-  pending: { label: "Pending", color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
+  active:  { label: "Active",  color: "var(--good)",  bg: "var(--good-soft)" },
+  pending: { label: "Pending", color: "var(--warn)",  bg: "var(--warn-soft)" },
   invited: { label: "Invited", color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
 };
 
@@ -366,10 +366,10 @@ export default function Users() {
                   style={{
                     width: 36,
                     height: 36,
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     flexShrink: 0,
                     background: `linear-gradient(135deg, hsl(${u.hue ?? 200}, 12%, 60%), hsl(${(u.hue ?? 200) + 30}, 14%, 42%))`,
-                    color: "#fff",
+                    color: "var(--surface)",
                     fontWeight: 600,
                     fontSize: 12,
                     display: "grid",
@@ -473,7 +473,7 @@ export default function Users() {
                     fontWeight: 500,
                     color: "var(--muted)",
                     padding: "3px 9px",
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     background: "rgba(11,11,16,0.05)",
                     fontVariantNumeric: "tabular-nums",
                     flexShrink: 0,

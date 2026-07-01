@@ -6,7 +6,7 @@ import { deleteImage, listImages, updateImage } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage } from "@/lib/blog/types";
 import { toast } from "sonner";
-import { PageHeading, Card } from "@/components/dashboard/primitives";
+import { PageHeading, Card, Skeleton } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 const VOCAB = ["aerial","exterior","interior","team","area","lifestyle","event","seasonal_spring","seasonal_summer","seasonal_fall","seasonal_winter","data_chart"];
@@ -112,11 +112,10 @@ export default function BlogImageLibrary() {
 
       {/* Grid */}
       {isLoading ? (
-        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-          </svg>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} width="100%" height="auto" borderRadius="var(--radius)" style={{ aspectRatio: "4/3" }} />
+          ))}
         </div>
       ) : images.length === 0 ? (
         <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
@@ -150,7 +149,7 @@ export default function BlogImageLibrary() {
             <DialogHeader><DialogTitle>Edit tags</DialogTitle></DialogHeader>
             <img
               src={thumbUrl(editing.blob_url, { width: 600, quality: 75 })}
-              style={{ width: "100%", borderRadius: "var(--radius-sm)", marginBottom: 8, display: "block" }}
+              style={{ width: "100%", borderRadius: "var(--le-r-md)", marginBottom: 8, display: "block" }}
               alt=""
             />
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>{editing.vision_caption}</div>
@@ -166,7 +165,7 @@ export default function BlogImageLibrary() {
                     }}
                     style={{
                       padding: "5px 12px",
-                      borderRadius: "var(--radius-pill)",
+                      borderRadius: "var(--le-r-pill)",
                       border: on ? "none" : "1px solid var(--line)",
                       background: on ? "var(--ink)" : "var(--surface)",
                       color: on ? "var(--surface)" : "var(--ink-2)",
@@ -217,7 +216,7 @@ function ImageTile({
         overflow: "hidden",
       }}
     >
-      <div style={{ position: "relative", width: "100%", paddingTop: "75%", background: "rgba(11,11,16,0.04)" }}>
+      <div style={{ position: "relative", width: "100%", paddingTop: "75%", background: "rgba(12,14,22,0.04)" }}>
         <img
           src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
           loading="lazy"
@@ -237,7 +236,7 @@ function ImageTile({
               style={{
                 padding: "2px 6px",
                 borderRadius: "var(--radius-pill)",
-                background: "rgba(11,11,16,0.05)",
+                background: "rgba(12,14,22,0.05)",
                 fontSize: 10,
                 color: "var(--muted)",
               }}

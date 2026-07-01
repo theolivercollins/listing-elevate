@@ -137,7 +137,7 @@ function LibraryThumbnail({ item, onClick }: { item: LibraryItem; onClick: () =>
             alignItems: "flex-end",
             padding: "6px 8px",
             gap: 4,
-            color: "#fff",
+            color: "var(--le-accent-fg)",
             fontSize: 10.5,
             fontWeight: 600,
             letterSpacing: "0.02em",
@@ -276,7 +276,7 @@ function SequenceCard({
     borderRadius: "var(--le-r-sm)",
     border: "none",
     background: "rgba(0,0,0,0.55)",
-    color: "#fff",
+    color: "var(--le-accent-fg)",
     cursor: "pointer",
     display: "inline-flex",
     alignItems: "center",
@@ -376,7 +376,7 @@ function SequenceCard({
             height: 22,
             borderRadius: "var(--le-r-sm)",
             background: "rgba(0,0,0,0.65)",
-            color: "#fff",
+            color: "var(--le-accent-fg)",
             fontSize: 11,
             fontWeight: 700,
             display: "flex",
@@ -774,7 +774,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
 
   const segTabBase: CSSProperties = {
     padding: "6px 12px",
-    borderRadius: 999,
+    borderRadius: "var(--le-r-pill)",
     border: "none",
     fontSize: 12,
     fontWeight: 600,
@@ -803,7 +803,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
     fontWeight: 600,
     cursor: "pointer",
     fontFamily: "var(--le-font-sans)",
-    boxShadow: active ? "0 1px 2px rgba(11,11,16,0.08)" : "none",
+    boxShadow: active ? "var(--le-shadow-sm)" : "none",
     transition: "background 0.15s, color 0.15s",
   });
 
@@ -1015,7 +1015,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                     style={{
                       ...segTabBase,
                       background: active ? "var(--ink)" : "transparent",
-                      color: active ? "#fff" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
+                      color: active ? "var(--surface)" : enabled ? "var(--muted)" : "rgba(11,11,16,0.25)",
                       cursor: enabled ? "pointer" : "not-allowed",
                       textTransform: "capitalize",
                     }}
@@ -1341,7 +1341,7 @@ export function DirectorModal({ source, open, onClose }: DirectorModalProps) {
                 color:
                   sequence.length === 0 || status === "assembling"
                     ? "var(--muted)"
-                    : "#fff",
+                    : "var(--surface)",
                 fontFamily: "var(--le-font-sans)",
                 fontSize: 13,
                 fontWeight: 600,

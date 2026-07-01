@@ -58,15 +58,7 @@ export default function UploadCancelled() {
           <div className="mx-auto mb-10 flex h-20 w-20 items-center justify-center border border-destructive/30 bg-destructive/10 text-destructive">
             <AlertCircle className="h-9 w-9" strokeWidth={1.5} />
           </div>
-          <span
-            style={{
-              fontFamily: "var(--le-font-mono)",
-              fontSize: 10,
-              letterSpacing: "0.22em",
-              textTransform: "uppercase" as const,
-              color: "var(--le-text-muted)",
-            }}
-          >
+          <span className="le-eyebrow">
             — Payment cancelled
           </span>
           <h1

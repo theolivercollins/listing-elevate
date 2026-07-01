@@ -325,8 +325,8 @@ export default function BlogTemplateDetail() {
                         key={i}
                         style={{
                           padding: "3px 8px",
-                          borderRadius: "var(--radius-pill)",
-                          background: "rgba(11,11,16,0.05)",
+                          borderRadius: "var(--le-r-pill)",
+                          background: "rgba(12,14,22,0.05)",
                           fontSize: 11.5,
                           color: "var(--ink-2)",
                         }}
@@ -339,7 +339,7 @@ export default function BlogTemplateDetail() {
               )}
               {analyzeResult.notes && (
                 <Field label="Notes">
-                  <pre style={{ whiteSpace: "pre-wrap", background: "rgba(11,11,16,0.03)", borderRadius: "var(--radius-sm)", padding: "12px 14px", fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)", margin: 0, border: "1px solid var(--line-2)" }}>
+                  <pre style={{ whiteSpace: "pre-wrap", background: "rgba(12,14,22,0.03)", borderRadius: "var(--le-r-md)", padding: "12px 14px", fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)", margin: 0, border: "1px solid var(--line-2)" }}>
                     {analyzeResult.notes}
                   </pre>
                 </Field>
