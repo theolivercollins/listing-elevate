@@ -16,7 +16,7 @@
  * - 'failed' shows the error and re-enables the button to retry.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2, Download, Sparkles } from 'lucide-react';
 import { submitWalkthrough, getWalkthroughStatus } from '@/lib/api';
 
@@ -58,6 +58,7 @@ export function WalkthroughPanel({ propertyId }: WalkthroughPanelProps) {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const pollInFlight = useRef(false);
 
   // Restore state on mount — a refresh mid-render should show progress
   // (or the finished video) instead of resetting to idle.
@@ -81,22 +82,29 @@ export function WalkthroughPanel({ propertyId }: WalkthroughPanelProps) {
   // Poll while processing; clears on unmount and on any terminal status.
   useEffect(() => {
     if (status !== 'processing') return;
+    let cancelled = false;
     const startedAt = Date.now();
     setElapsedSec(0);
     const tick = setInterval(() => {
       setElapsedSec(Math.floor((Date.now() - startedAt) / 1000));
     }, 1000);
     const poll = setInterval(async () => {
+      if (pollInFlight.current) return;
+      pollInFlight.current = true;
       try {
         const res = await getWalkthroughStatus(propertyId);
+        if (cancelled) return;
         setStatus(res.status);
         setVideoUrl(res.videoUrl ?? null);
         setJobError(res.error ?? null);
       } catch {
         // Transient network error — keep polling, don't flip to failed.
+      } finally {
+        pollInFlight.current = false;
       }
     }, POLL_INTERVAL_MS);
     return () => {
+      cancelled = true;
       clearInterval(tick);
       clearInterval(poll);
     };
@@ -112,6 +120,8 @@ export function WalkthroughPanel({ propertyId }: WalkthroughPanelProps) {
       if (res.status === 'skipped') {
         setSkippedReason(res.reason ?? 'Walkthrough generation is disabled in this environment.');
       } else {
+        setVideoUrl(null);
+        setJobError(null);
         setStatus('processing');
       }
     } catch (err) {

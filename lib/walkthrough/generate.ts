@@ -126,6 +126,31 @@ export async function submitWalkthrough(propertyId: string): Promise<SubmitWalkt
     };
   }
 
+  // In-flight guard: a submit already processing/finalizing and recently
+  // updated means a paid Atlas job is already running — return it instead of
+  // firing a second render (double-billing). A stale walkthrough_updated_at
+  // (>20min) means the prior job is presumed stuck/abandoned, so we fall
+  // through and allow a fresh submit.
+  const { data: existing, error: existingErr } = await getSupabase()
+    .from("properties")
+    .select("walkthrough_status, walkthrough_job_id, walkthrough_updated_at")
+    .eq("id", propertyId)
+    .single();
+  if (existingErr) throw existingErr;
+
+  const existingStatus = (existing?.walkthrough_status as string | null) ?? null;
+  const existingJobId = (existing?.walkthrough_job_id as string | null) ?? null;
+  const existingUpdatedAt = (existing?.walkthrough_updated_at as string | null) ?? null;
+  const IN_FLIGHT_TTL_MS = 20 * 60 * 1000;
+  if (
+    (existingStatus === "processing" || existingStatus === "finalizing") &&
+    existingJobId &&
+    existingUpdatedAt &&
+    Date.now() - new Date(existingUpdatedAt).getTime() < IN_FLIGHT_TTL_MS
+  ) {
+    return { status: "processing", jobId: existingJobId };
+  }
+
   let photos = await getSelectedPhotos(propertyId);
   if (photos.length < MIN_REFERENCE_IMAGES) {
     photos = await getPhotosForProperty(propertyId);
@@ -156,6 +181,9 @@ export async function submitWalkthrough(propertyId: string): Promise<SubmitWalkt
       walkthrough_job_id: job.jobId,
       walkthrough_status: "processing",
       walkthrough_error: null,
+      // Null out the previous render so a "Regenerate" doesn't show stale
+      // video while the new job is in flight.
+      walkthrough_video_url: null,
       walkthrough_updated_at: new Date().toISOString(),
     })
     .eq("id", propertyId);
@@ -171,6 +199,13 @@ export async function submitWalkthrough(propertyId: string): Promise<SubmitWalkt
  * failed → persist the error. Subsequent calls after finalization read the
  * already-persisted state and make no further provider calls (idempotent,
  * avoids double-billing).
+ *
+ * `walkthrough_status` is a free-text column (no enum, no migration needed
+ * for new values). Possible values: 'processing' | 'finalizing' | 'complete'
+ * | 'failed'. 'finalizing' is a transient, non-terminal claim state: it lets
+ * a compare-and-swap update pick exactly one winner among concurrent polls
+ * to run the paid download+host+cost-record+commit sequence, so treat it as
+ * processing-like everywhere except the claim itself.
  */
 export async function pollWalkthrough(propertyId: string): Promise<PollWalkthroughResult> {
   const supabase = getSupabase();
@@ -210,7 +245,8 @@ export async function pollWalkthrough(propertyId: string): Promise<PollWalkthrou
         walkthrough_error: errMsg,
         walkthrough_updated_at: new Date().toISOString(),
       })
-      .eq("id", propertyId);
+      .eq("id", propertyId)
+      .in("walkthrough_status", ["processing", "finalizing"]);
     if (updateErr) throw updateErr;
     return { status: "failed", error: errMsg };
   }
@@ -225,9 +261,35 @@ export async function pollWalkthrough(propertyId: string): Promise<PollWalkthrou
         walkthrough_error: errMsg,
         walkthrough_updated_at: new Date().toISOString(),
       })
-      .eq("id", propertyId);
+      .eq("id", propertyId)
+      .in("walkthrough_status", ["processing", "finalizing"]);
     if (updateErr) throw updateErr;
     return { status: "failed", error: errMsg };
+  }
+
+  // Atomic finalize claim: at most one concurrent poll may proceed past this
+  // point to run the paid download + Bunny host + cost record + final
+  // commit. The compare-and-swap only succeeds for a caller that observes
+  // status==='processing', or a stale 'finalizing' claim (>3min old — the
+  // previous claimant crashed mid-finalize and never committed). Every other
+  // concurrent poll gets 0 rows back here and reports "processing" instead
+  // of re-running the paid work.
+  const nowIso = new Date().toISOString();
+  const staleIso = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  const { data: claimed, error: claimErr } = await supabase
+    .from("properties")
+    .update({ walkthrough_status: "finalizing", walkthrough_updated_at: nowIso })
+    .eq("id", propertyId)
+    .or(
+      `walkthrough_status.eq.processing,and(walkthrough_status.eq.finalizing,walkthrough_updated_at.lt.${staleIso})`,
+    )
+    .select("id");
+  if (claimErr) throw claimErr;
+  if (!claimed?.length) {
+    // Another poll already owns finalization (or just finished it — a
+    // subsequent poll will observe status==='complete' via the early return
+    // above). Do not race the claimer.
+    return { status: "processing" };
   }
 
   let finalUrl = result.videoUrl;
@@ -250,28 +312,42 @@ export async function pollWalkthrough(propertyId: string): Promise<PollWalkthrou
     }
   }
 
-  // Cost recording is never optional and never silenced — recordCostEvent
-  // throws on insert failure, and that throw is intentionally left to
-  // propagate to the caller (route handler surfaces a 500) rather than
-  // being caught and swallowed here. See module docblock for why we compute
-  // costCents from duration × priceCentsPerSecond instead of trusting
-  // checkStatus()'s fixed-clip costCents for this duration-variable SKU.
-  const costCents = atlasClipCostCents(SKU, WALKTHROUGH_DURATION_SECONDS) || result.costCents || 0;
-  await recordCostEvent({
-    propertyId,
-    stage: "generation",
-    provider: "atlas",
-    costCents,
-    unitsConsumed: result.providerUnits,
-    unitType: result.providerUnitType ?? null,
-    metadata: {
-      sku: SKU,
-      jobId,
-      durationSeconds: WALKTHROUGH_DURATION_SECONDS,
-      resolution: WALKTHROUGH_RESOLUTION,
-      bunnyHosted: finalUrl !== result.videoUrl,
-    },
-  });
+  // Idempotent cost insert, keyed on the Atlas jobId stored in metadata.
+  // Backstop against a crash between the cost insert and the final status
+  // commit below: if a retry re-enters this path (e.g. via a stale
+  // 'finalizing' claim reclaim), we must not double-bill the same render.
+  const { data: existingCostRows, error: costLookupErr } = await supabase
+    .from("cost_events")
+    .select("id")
+    .eq("provider", "atlas")
+    .contains("metadata", { jobId })
+    .limit(1);
+  if (costLookupErr) throw costLookupErr;
+
+  if (!existingCostRows?.length) {
+    // Cost recording is never optional and never silenced — recordCostEvent
+    // throws on insert failure, and that throw is intentionally left to
+    // propagate to the caller (route handler surfaces a 500) rather than
+    // being caught and swallowed here. See module docblock for why we compute
+    // costCents from duration × priceCentsPerSecond instead of trusting
+    // checkStatus()'s fixed-clip costCents for this duration-variable SKU.
+    const costCents = atlasClipCostCents(SKU, WALKTHROUGH_DURATION_SECONDS) || result.costCents || 0;
+    await recordCostEvent({
+      propertyId,
+      stage: "generation",
+      provider: "atlas",
+      costCents,
+      unitsConsumed: result.providerUnits,
+      unitType: result.providerUnitType ?? null,
+      metadata: {
+        sku: SKU,
+        jobId,
+        durationSeconds: WALKTHROUGH_DURATION_SECONDS,
+        resolution: WALKTHROUGH_RESOLUTION,
+        bunnyHosted: finalUrl !== result.videoUrl,
+      },
+    });
+  }
 
   const { error: finalizeErr } = await supabase
     .from("properties")
