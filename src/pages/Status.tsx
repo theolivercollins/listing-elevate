@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Download, Loader2, AlertTriangle, Play } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Download, AlertTriangle, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { motion } from "framer-motion";
 import { fetchPropertyStatus } from "@/lib/api";
 
@@ -74,8 +75,35 @@ const Status = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <div className="border-b border-border">
+          <div className="mx-auto flex max-w-[1200px] items-center justify-between px-8 py-10 md:px-12">
+            <div className="space-y-3">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-8 w-64" />
+            </div>
+          </div>
+        </div>
+        <div className="mx-auto flex w-full max-w-[1200px] flex-1 flex-col gap-16 px-8 py-16 md:px-12 md:py-24">
+          <div className="space-y-4">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-6 w-48" />
+          </div>
+          <div className="grid gap-12 md:grid-cols-[280px_1fr]">
+            <div className="space-y-8">
+              <Skeleton className="h-10 w-20" />
+              <Skeleton className="h-10 w-20" />
+            </div>
+            <div className="space-y-6">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-6">
+                  <Skeleton className="h-6 w-6 shrink-0 rounded-full" />
+                  <Skeleton className="h-4 flex-1 max-w-xs" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

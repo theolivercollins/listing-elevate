@@ -1106,7 +1106,7 @@ function SelectionColumn({
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {i.rank != null && (
-                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 10, fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>#{i.rank}</span>
+                    <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 10, fontVariantNumeric: "tabular-nums", color: "var(--muted)" }}>#{i.rank}</span>
                   )}
                   <span style={{ fontSize: 11, fontWeight: 600, color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {i.room_type ? i.room_type.replace(/_/g, " ") : "?"}
@@ -1246,7 +1246,7 @@ function SessionCard({
 }) {
   const borderColor = organizeMode
     ? selected ? "var(--ink)" : "var(--line)"
-    : session.completed ? "rgba(47,138,85,0.3)" : "var(--line)";
+    : session.completed ? "color-mix(in srgb, var(--good) 30%, transparent)" : "var(--line)";
 
   return (
     <Link
@@ -1295,29 +1295,29 @@ function SessionCard({
         <img src={session.image_url} alt={session.label ?? "session"} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none", display: "block" }} />
         {session.pending_render && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.9)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--warn) 90%, transparent)", padding: "5px 10px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--le-accent-fg)" }}>
               <Loader2 style={{ width: 11, height: 11 }} className="animate-spin" />
               Rendering
             </div>
           </div>
         )}
         {session.archived && (
-          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "rgba(100,100,110,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--muted) 85%, transparent)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--le-accent-fg)" }}>
             Archived
           </div>
         )}
         {!session.archived && session.completed && (
-          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.85)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--good) 85%, transparent)", padding: "3px 8px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--le-accent-fg)" }}>
             Completed
           </div>
         )}
         {!session.completed && !session.pending_render && session.ready_for_approval && (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(42,111,219,0.9)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "color-mix(in srgb, var(--accent) 90%, transparent)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--le-accent-fg)" }}>
             Generation approval needed
           </div>
         )}
         {!session.completed && !session.pending_render && !session.ready_for_approval && session.iteration_needs_attention && (
-          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(30,130,118,0.9)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "#fff" }}>
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(30,130,118,0.9)", padding: "4px 8px", textAlign: "center", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.10em", color: "var(--le-accent-fg)" }}>
             Iteration approval needed
           </div>
         )}
@@ -1592,7 +1592,7 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
               >
                 <ArrowLeft style={{ width: 14, height: 14 }} />
               </button>
-              <span style={{ padding: "0 4px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ padding: "0 4px", fontFamily: "var(--le-font-sans)", fontSize: 10, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 {siblingIndex >= 0 ? siblingIndex + 1 : "?"}/{siblings.length}
               </span>
               <button
@@ -1702,8 +1702,8 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
             gap: 10,
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(196,74,74,0.3)",
-            background: "rgba(196,74,74,0.05)",
+            border: "1px solid color-mix(in srgb, var(--bad) 30%, transparent)",
+            background: "color-mix(in srgb, var(--bad) 5%, transparent)",
             fontSize: 13,
             color: "var(--bad)",
           }}
@@ -1721,8 +1721,8 @@ function SessionDetail({ sessionId, version, onVersionChange }: { sessionId: str
             gap: 10,
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(47,138,85,0.3)",
-            background: "rgba(47,138,85,0.05)",
+            border: "1px solid color-mix(in srgb, var(--good) 30%, transparent)",
+            background: "color-mix(in srgb, var(--good) 5%, transparent)",
             fontSize: 13,
             color: "var(--good)",
           }}
@@ -1897,7 +1897,7 @@ function PromoteRecipeControl({
 
   if (promoted) {
     return (
-      <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.08)", padding: "6px 12px", fontSize: 12, color: "var(--good)" }}>
+      <div style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--good) 8%, transparent)", padding: "6px 12px", fontSize: 12, color: "var(--good)" }}>
         Promoted to recipe library
       </div>
     );
@@ -1934,7 +1934,7 @@ function PromoteRecipeControl({
         <input
           value={archetype}
           onChange={(e) => setArchetype(e.target.value)}
-          style={{ ...INPUT_STYLE, fontFamily: "var(--le-font-mono)", fontSize: 12 }}
+          style={{ ...INPUT_STYLE, fontFamily: "var(--le-font-sans)", fontSize: 12 }}
         />
       </div>
       <div>
@@ -1942,7 +1942,7 @@ function PromoteRecipeControl({
         <textarea
           value={tmpl}
           onChange={(e) => setTmpl(e.target.value)}
-          style={{ ...TEXTAREA_STYLE, minHeight: 60, fontFamily: "var(--le-font-mono)", fontSize: 12 }}
+          style={{ ...TEXTAREA_STYLE, minHeight: 60, fontFamily: "var(--le-font-sans)", fontSize: 12 }}
         />
       </div>
       {err && <div style={{ fontSize: 12, color: "var(--bad)" }}>{err}</div>}
@@ -1978,7 +1978,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
       )}
       {losers.length > 0 && (
         <span
-          style={{ ...chipBase, background: "rgba(196,74,74,0.08)", color: "var(--bad)" }}
+          style={{ ...chipBase, background: "color-mix(in srgb, var(--bad) 8%, transparent)", color: "var(--bad)" }}
           title={losers.map((e) => `${e.rating}★ · ${e.camera_movement} · d=${e.distance.toFixed(3)}\n   ${e.prompt}`).join("\n\n")}
         >
           Avoiding {losers.length} {losers.length === 1 ? "loser" : "losers"}
@@ -1986,7 +1986,7 @@ function RetrievalChips({ metadata }: { metadata: LabIteration["retrieval_metada
       )}
       {recipe && (
         <span
-          style={{ ...chipBase, background: "rgba(47,138,85,0.08)", color: "var(--good)" }}
+          style={{ ...chipBase, background: "color-mix(in srgb, var(--good) 8%, transparent)", color: "var(--good)" }}
           title={`${recipe.prompt_template}\n\ndistance ${recipe.distance.toFixed(3)}`}
         >
           Recipe · {recipe.archetype}
@@ -2065,7 +2065,7 @@ function JudgeChip({
         </span>
         {hasStaleError && (
           <span
-            style={{ borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
+            style={{ borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--warn) 8%, transparent)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
             title={iteration.judge_error ?? "retry error"}
           >
             retry err
@@ -2089,7 +2089,7 @@ function JudgeChip({
               {flags.map((f) => (
                 <span
                   key={f}
-                  style={{ marginRight: 4, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.08)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
+                  style={{ marginRight: 4, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--warn) 8%, transparent)", padding: "2px 6px", fontSize: 10, color: "var(--warn)" }}
                 >
                   {f}
                 </span>
@@ -2488,7 +2488,7 @@ function IterationCard({
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
             <span className="le-d-label">Iteration {iteration.iteration_number}</span>
             {iteration.order_id && (
-              <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 6px", fontFamily: "var(--le-font-mono)", fontSize: 10, letterSpacing: "0.08em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 6px", fontFamily: "var(--le-font-sans)", fontSize: 10, letterSpacing: "0.08em", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
                 {iteration.order_id}
               </span>
             )}
@@ -2535,7 +2535,7 @@ function IterationCard({
               </span>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{director.duration_seconds}s</span>
             </div>
-            <p style={{ marginTop: 8, fontFamily: "var(--le-font-mono)", fontSize: 13, lineHeight: 1.6, color: "var(--ink)" }}>{director.prompt}</p>
+            <p style={{ marginTop: 8, fontFamily: "var(--le-font-sans)", fontSize: 13, lineHeight: 1.6, color: "var(--ink)" }}>{director.prompt}</p>
           </div>
         )}
 
@@ -2558,7 +2558,7 @@ function IterationCard({
 
         {/* Pending render indicator */}
         {!iteration.clip_url && iteration.provider_task_id && !iteration.render_error && (
-          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", background: "rgba(182,128,44,0.07)", padding: "6px 12px", fontSize: 12, color: "var(--warn)" }}>
+          <div style={{ marginTop: 20, display: "inline-flex", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", background: "color-mix(in srgb, var(--warn) 7%, transparent)", padding: "6px 12px", fontSize: 12, color: "var(--warn)" }}>
             <Loader2 style={{ width: 12, height: 12 }} className="animate-spin" />
             Rendering on {iteration.provider}
             {iteration.render_submitted_at && (
@@ -2572,7 +2572,7 @@ function IterationCard({
 
         {/* Render error */}
         {iteration.render_error && !iteration.clip_url && (
-          <div style={{ marginTop: 20, borderRadius: "var(--radius-sm)", background: "rgba(196,74,74,0.06)", border: "1px solid rgba(196,74,74,0.2)", padding: 12, fontSize: 12, color: "var(--bad)" }}>
+          <div style={{ marginTop: 20, borderRadius: "var(--radius-sm)", background: "color-mix(in srgb, var(--bad) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--bad) 20%, transparent)", padding: 12, fontSize: 12, color: "var(--bad)" }}>
             <div style={{ fontWeight: 600 }}>Render failed</div>
             <div style={{ marginTop: 4, opacity: 0.8 }}>{iteration.render_error}</div>
           </div>
@@ -2898,7 +2898,7 @@ function IterationCard({
                       </option>
                     ))}
                   </select>
-                  <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-mono)", fontSize: 10, color: "var(--muted)" }}>
+                  <span style={{ borderRadius: "var(--le-r-sm)", background: "rgba(11,11,16,0.06)", padding: "2px 8px", fontFamily: "var(--le-font-sans)", fontSize: 10, color: "var(--muted)" }}>
                     {isNativeKlingSku(sku as SkuChoice) ? "credits" : `≈ $${(V1_SKU_COST_CENTS[sku as SkuChoice] / 100).toFixed(2)}/5s`}
                   </span>
                 </div>

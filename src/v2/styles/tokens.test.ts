@@ -13,8 +13,9 @@ describe('src/v2/styles/tokens.css', () => {
 
     const rootBlock = rootBlockMatch![1];
 
-    // Check that the token exists with the exact value
-    expect(rootBlock).toContain('--le-brand-blue-rgb: 47, 109, 240;');
+    // Check that the token exists with the exact value.
+    // Shifted to the navy family (#1E4A8C = 30,74,140) for brand cohesion.
+    expect(rootBlock).toContain('--le-brand-blue-rgb: 30, 74, 140;');
   });
 
   it('should not have --le-brand-blue-rgb in the .dark block', () => {

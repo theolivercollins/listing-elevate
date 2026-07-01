@@ -92,7 +92,7 @@ function StarRow({
                 cursor: 'pointer',
                 padding: 2,
                 lineHeight: 0,
-                color: filled ? 'var(--le-primary, #3b6fd4)' : 'var(--le-line)',
+                color: filled ? 'var(--le-accent)' : 'var(--le-line)',
                 transition: 'color 100ms',
               }}
               onClick={() => onChange(star)}

@@ -53,7 +53,7 @@ const GRID = "32px 2fr 1.2fr 1fr 1fr 1fr 1fr 32px";
 
 const tabBtnBase: React.CSSProperties = {
   padding: "8px 14px",
-  borderRadius: 999,
+  borderRadius: "var(--le-r-pill)",
   border: "none",
   fontSize: 12.5,
   fontWeight: 600,
@@ -87,7 +87,7 @@ const selBtn: React.CSSProperties = {
   padding: "7px 12px",
   borderRadius: "var(--le-r-md)",
   background: "rgba(255,255,255,0.1)",
-  color: "#fff",
+  color: "var(--surface)",
   border: "none",
   fontSize: 11.5,
   fontWeight: 500,
@@ -359,7 +359,7 @@ const Properties = () => {
         style={{
           ...tabBtnBase,
           background: active ? "var(--ink)" : "transparent",
-          color: active ? "#fff" : "var(--muted)",
+          color: active ? "var(--surface)" : "var(--muted)",
         }}
       >
         {label}
@@ -368,7 +368,7 @@ const Properties = () => {
             fontVariantNumeric: "tabular-nums",
             fontSize: 10,
             padding: "1px 6px",
-            borderRadius: 999,
+            borderRadius: "var(--le-r-pill)",
             background: active ? "rgba(255,255,255,0.18)" : "rgba(15,24,60,0.05)",
           }}
         >
@@ -563,7 +563,7 @@ const Properties = () => {
             padding: "10px 12px 10px 18px",
             borderRadius: "var(--le-r-xl)",
             background: "var(--ink)",
-            color: "#fff",
+            color: "var(--surface)",
             display: "flex",
             alignItems: "center",
             gap: 14,
@@ -579,7 +579,7 @@ const Properties = () => {
               <span style={{
                 width: 14, height: 14, borderRadius: "50%",
                 border: "2px solid rgba(255,255,255,0.3)",
-                borderTopColor: "#fff",
+                borderTopColor: "var(--surface)",
                 animation: "spin 0.8s linear infinite",
                 flexShrink: 0,
                 display: "inline-block",
@@ -618,7 +618,7 @@ const Properties = () => {
                 style={{
                   padding: "8px 14px",
                   borderRadius: "var(--le-r-md)",
-                  background: "#fff",
+                  background: "var(--surface)",
                   color: "var(--ink)",
                   border: "none",
                   fontSize: 12.5,
@@ -692,7 +692,7 @@ function ConfirmModal({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#fff",
+          background: "var(--surface)",
           borderRadius: "var(--le-r-xl)",
           padding: "28px 32px",
           width: 400,
@@ -733,7 +733,7 @@ function ConfirmModal({
               borderRadius: "var(--le-r-md)",
               border: "none",
               background: isDestructive ? "rgb(239,68,68)" : "var(--ink)",
-              color: "#fff",
+              color: "var(--surface)",
               fontSize: 13,
               fontWeight: 600,
               cursor: "pointer",

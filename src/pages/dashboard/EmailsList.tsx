@@ -63,8 +63,8 @@ function NewEmailDropdown({
           padding: "10px 16px",
           borderRadius: "var(--le-r-lg)",
           border: "none",
-          background: "var(--ink)",
-          color: "var(--surface)",
+          background: "var(--ink, var(--le-text))",
+          color: "var(--surface, var(--le-surface))",
           fontSize: 13,
           fontWeight: 600,
           cursor: "pointer",
@@ -89,10 +89,10 @@ function NewEmailDropdown({
               right: 0,
               zIndex: 50,
               minWidth: 280,
-              background: "var(--surface)",
+              background: "var(--surface, var(--le-surface))",
               borderRadius: "var(--le-r-lg)",
-              boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
-              border: "1px solid rgba(15,24,60,0.06)",
+              boxShadow: "var(--shadow-lg)",
+              border: "1px solid var(--line, var(--le-border))",
               overflow: "hidden",
               fontFamily: "var(--le-font-sans)",
             }}
@@ -115,7 +115,7 @@ function NewEmailDropdown({
                 navigate("/dashboard/studio/email/messages/new");
               }}
             />
-            <div style={{ height: 1, background: "rgba(15,24,60,0.05)", margin: "4px 0" }} />
+            <div style={{ height: 1, background: "var(--line-2, var(--le-border-strong))", margin: "4px 0" }} />
             <DropItem
               icon="sparkles"
               label="New from blog post"
@@ -156,7 +156,7 @@ function DropItem({
         alignItems: "flex-start",
         gap: 10,
         padding: "10px 14px",
-        background: hovered ? "rgba(15,24,60,0.03)" : "transparent",
+        background: hovered ? "var(--line-2, var(--le-border-strong))" : "transparent",
         border: "none",
         cursor: "pointer",
         textAlign: "left",
@@ -170,18 +170,18 @@ function DropItem({
           width: 28,
           height: 28,
           borderRadius: "var(--le-r-sm)",
-          background: "rgba(15,24,60,0.04)",
+          background: "var(--line-2, var(--le-border-strong))",
           display: "grid",
           placeItems: "center",
-          color: "var(--ink-2)",
+          color: "var(--ink-2, var(--le-text-secondary))",
           flexShrink: 0,
         }}
       >
         <Icon name={icon} size={14} strokeWidth={1.6} />
       </div>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{label}</div>
-        {sub && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>{sub}</div>}
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--ink, var(--le-text))" }}>{label}</div>
+        {sub && <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 1 }}>{sub}</div>}
       </div>
     </button>
   );
@@ -289,7 +289,7 @@ export default function EmailsList() {
               minWidth: 240,
             }}
           >
-            <Icon name="search" size={14} style={{ color: "var(--muted)", flexShrink: 0 }} />
+            <Icon name="search" size={14} style={{ color: "var(--muted, var(--le-muted))", flexShrink: 0 }} />
             <input
               placeholder="Search subject…"
               value={q}
@@ -301,7 +301,7 @@ export default function EmailsList() {
                 background: "transparent",
                 fontSize: 12.5,
                 fontFamily: "var(--le-font-sans)",
-                color: "var(--ink)",
+                color: "var(--ink, var(--le-text))",
               }}
             />
             {q && (
@@ -312,7 +312,7 @@ export default function EmailsList() {
                   background: "none",
                   border: "none",
                   cursor: "pointer",
-                  color: "var(--muted)",
+                  color: "var(--muted, var(--le-muted))",
                   lineHeight: 0,
                   padding: 0,
                 }}
@@ -330,7 +330,7 @@ export default function EmailsList() {
             gridTemplateColumns: "2fr 100px 120px 110px 80px 60px",
             gap: 12,
             padding: "8px 14px",
-            borderBottom: "1px solid var(--line)",
+            borderBottom: "1px solid var(--line, var(--le-border))",
             alignItems: "center",
           }}
         >
@@ -344,12 +344,12 @@ export default function EmailsList() {
 
         {/* Body */}
         {isLoading ? (
-          <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+          <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted, var(--le-muted))", fontSize: 13 }}>
             Loading…
           </div>
         ) : isError ? (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 13, color: "var(--bad)" }}>
+            <div style={{ fontSize: 13, color: "var(--bad, var(--le-bad))" }}>
               Failed to load emails: {(error as any)?.message ?? String(error)}
             </div>
             <button
@@ -358,7 +358,7 @@ export default function EmailsList() {
               style={{
                 marginTop: 10,
                 fontSize: 12,
-                color: "var(--muted)",
+                color: "var(--muted, var(--le-muted))",
                 background: "none",
                 border: "none",
                 cursor: "pointer",
@@ -376,19 +376,19 @@ export default function EmailsList() {
                 width: 44,
                 height: 44,
                 borderRadius: "var(--le-r-lg)",
-                background: "rgba(15,24,60,0.04)",
+                background: "var(--line-2, var(--le-border-strong))",
                 display: "grid",
                 placeItems: "center",
-                color: "var(--muted)",
+                color: "var(--muted, var(--le-muted))",
                 margin: "0 auto 14px",
               }}
             >
               <Icon name="delivered" size={20} strokeWidth={1.4} />
             </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", marginBottom: 6 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink, var(--le-text))", marginBottom: 6 }}>
               {activeState === "all" && !q ? "No emails yet" : "No emails match your filters"}
             </div>
-            <div style={{ fontSize: 13, color: "var(--muted)", maxWidth: 360, margin: "0 auto" }}>
+            <div style={{ fontSize: 13, color: "var(--muted, var(--le-muted))", maxWidth: 360, margin: "0 auto" }}>
               {activeState === "all" && !q ? (
                 "Click New email to start composing your first email."
               ) : (
@@ -409,7 +409,7 @@ export default function EmailsList() {
                       background: "none",
                       border: "none",
                       cursor: "pointer",
-                      color: "var(--accent)",
+                      color: "var(--accent, var(--le-accent))",
                       fontSize: 13,
                       fontFamily: "var(--le-font-sans)",
                       textDecoration: "underline",
@@ -468,10 +468,10 @@ function EmailRow({
         gridTemplateColumns: "2fr 100px 120px 110px 80px 60px",
         gap: 12,
         padding: "12px 14px",
-        borderBottom: "1px solid rgba(15,24,60,0.04)",
+        borderBottom: "1px solid var(--line-2, var(--le-border-strong))",
         alignItems: "center",
         cursor: "pointer",
-        background: hovered ? "rgba(15,24,60,0.02)" : "transparent",
+        background: hovered ? "var(--line-2, var(--le-border-strong))" : "transparent",
         transition: "background .15s",
       }}
     >
@@ -481,23 +481,23 @@ function EmailRow({
           style={{
             fontSize: 13,
             fontWeight: 600,
-            color: "var(--ink)",
+            color: "var(--ink, var(--le-text))",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
             minWidth: 0,
           }}
         >
-          {e.subject || <span style={{ color: "var(--muted)", fontStyle: "italic" }}>Untitled</span>}
+          {e.subject || <span style={{ color: "var(--muted, var(--le-muted))", fontStyle: "italic" }}>Untitled</span>}
         </div>
         {e.source_post_id && (
           <span
             style={{
               fontSize: 10,
               padding: "2px 6px",
-              borderRadius: 999,
-              background: "rgba(15,24,60,0.05)",
-              color: "var(--muted)",
+              borderRadius: "var(--le-r-pill)",
+              background: "var(--line-2, var(--le-border-strong))",
+              color: "var(--muted, var(--le-muted))",
               flexShrink: 0,
             }}
           >
@@ -510,17 +510,17 @@ function EmailRow({
       <div><StatePill state={e.state} map={EMAIL_STATE_PILL_MAP} /></div>
 
       {/* Audience */}
-      <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
         {e.audience ?? "—"}
       </div>
 
       {/* Updated */}
-      <div style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap" }}>
+      <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", whiteSpace: "nowrap" }}>
         {new Date(e.updated_at).toLocaleDateString()}
       </div>
 
       {/* Cost */}
-      <div style={{ fontSize: 12, color: "var(--ink-2)", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2, var(--le-text-secondary))", fontVariantNumeric: "tabular-nums", textAlign: "right" }}>
         ${(e.cost_usd_cents / 100).toFixed(2)}
       </div>
 
@@ -537,14 +537,14 @@ function EmailRow({
             background: "none",
             border: "none",
             cursor: "pointer",
-            color: "var(--muted)",
+            color: "var(--muted, var(--le-muted))",
             display: "grid",
             placeItems: "center",
             padding: 4,
             borderRadius: "var(--le-r-sm)",
           }}
-          onMouseEnter={(ev) => (ev.currentTarget.style.color = "var(--bad)")}
-          onMouseLeave={(ev) => (ev.currentTarget.style.color = "var(--muted)")}
+          onMouseEnter={(ev) => (ev.currentTarget.style.color = "var(--bad, var(--le-bad))")}
+          onMouseLeave={(ev) => (ev.currentTarget.style.color = "var(--muted, var(--le-muted))")}
         >
           <Icon name="x" size={14} />
         </button>
@@ -629,9 +629,9 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
               style={{
                 padding: "8px 14px",
                 borderRadius: "var(--le-r-md)",
-                border: "1px solid rgba(15,24,60,0.08)",
-                background: "rgba(255,255,255,0.6)",
-                color: "var(--ink-2)",
+                border: "1px solid var(--line, var(--le-border))",
+                background: "var(--surface, var(--le-surface))",
+                color: "var(--ink-2, var(--le-text-secondary))",
                 fontSize: 12,
                 fontWeight: 500,
                 cursor: "pointer",
@@ -651,8 +651,8 @@ function PostPickerDialog({ open, onClose, onSuccess }: PostPickerProps) {
                 padding: "8px 14px",
                 borderRadius: "var(--le-r-lg)",
                 border: "none",
-                background: "var(--ink)",
-                color: "var(--surface)",
+                background: "var(--ink, var(--le-text))",
+                color: "var(--surface, var(--le-surface))",
                 fontSize: 13,
                 fontWeight: 600,
                 cursor: !selectedPostId || convert.isPending ? "not-allowed" : "pointer",

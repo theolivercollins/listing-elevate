@@ -7,6 +7,7 @@ import { MessageSquare, Trash2, ArrowRight, Sparkles, Search } from "lucide-reac
 import { listPosts } from "@/lib/blog/api-client";
 import { listAllPersisted, clearPersisted, type PersistedChatEntry } from "@/components/blog/ally-storage";
 import { toast } from "sonner";
+import { PageHeading } from "@/components/dashboard/primitives";
 
 /**
  * Browse every Ally conversation you've had, across all posts. Each card
@@ -60,21 +61,19 @@ export default function BlogAllyHistory() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold">
+      <PageHeading
+        title={
+          <span className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5 text-primary" /> Ally history
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Every conversation you've had with Ally, scoped to its post. Jump back to keep working — Ally remembers where you left off.
-          </p>
-        </div>
-        <div className="ml-auto">
+          </span>
+        }
+        sub="Every conversation you've had with Ally, scoped to its post. Jump back to keep working — Ally remembers where you left off."
+        actions={
           <Link to="/dashboard/studio/blog/posts">
             <Button variant="outline" size="sm">All posts</Button>
           </Link>
-        </div>
-      </div>
+        }
+      />
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

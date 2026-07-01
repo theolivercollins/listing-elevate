@@ -20,7 +20,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     >
       <span style={{
         position: "absolute", top: 2, left: value ? 16 : 2,
-        width: 18, height: 18, borderRadius: "var(--le-r-pill)", background: "#fff",
+        width: 18, height: 18, borderRadius: "var(--le-r-pill)", background: "var(--surface)",
         transition: "left .15s",
         boxShadow: "0 1px 2px rgba(11,11,16,0.15)",
       }} />
@@ -338,7 +338,7 @@ const Settings = () => {
             {PROVIDERS.map(p => (
               <div key={p.name} className="le-card-flat" style={{ padding: "12px 14px", borderRadius: "var(--le-r-md)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: 999, flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
+                  <span style={{ width: 7, height: 7, borderRadius: "var(--le-r-pill)", flexShrink: 0, background: p.connected ? "var(--good)" : "var(--muted-2)" }} />
                   <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{p.name}</span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.5, paddingLeft: 15 }}>{p.desc}</div>

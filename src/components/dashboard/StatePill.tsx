@@ -14,18 +14,18 @@ export interface StatePillSpec {
 export type StatePillMap = Record<string, StatePillSpec>;
 
 export const BLOG_STATE_PILL_MAP: StatePillMap = {
-  live:              { label: "Live",        color: "var(--good)",   bg: "rgba(47,138,85,0.10)"  },
-  awaiting_approval: { label: "Draft",       color: "var(--warn)",   bg: "rgba(182,128,44,0.10)" },
+  live:              { label: "Live",        color: "var(--good)",   bg: "var(--good-soft)"      },
+  awaiting_approval: { label: "Draft",       color: "var(--warn)",   bg: "var(--warn-soft)"      },
   on_hold:           { label: "On hold",     color: "var(--muted)",  bg: "rgba(11,11,16,0.06)"   },
-  quarantined:       { label: "Quarantined", color: "var(--bad)",    bg: "rgba(196,74,74,0.10)"  },
+  quarantined:       { label: "Quarantined", color: "var(--bad)",    bg: "var(--bad-soft)"       },
 };
 
 export const EMAIL_STATE_PILL_MAP: StatePillMap = {
-  draft:   { label: "Draft",   color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
+  draft:   { label: "Draft",   color: "var(--warn)",  bg: "var(--warn-soft)"      },
   ready:   { label: "Ready",   color: "var(--ink-2)", bg: "rgba(15,24,60,0.06)"   },
-  sending: { label: "Sending", color: "var(--warn)",  bg: "rgba(182,128,44,0.10)" },
-  sent:    { label: "Sent",    color: "var(--good)",  bg: "rgba(47,138,85,0.10)"  },
-  failed:  { label: "Failed",  color: "var(--bad)",   bg: "rgba(196,74,74,0.10)"  },
+  sending: { label: "Sending", color: "var(--warn)",  bg: "var(--warn-soft)"      },
+  sent:    { label: "Sent",    color: "var(--good)",  bg: "var(--good-soft)"      },
+  failed:  { label: "Failed",  color: "var(--bad)",   bg: "var(--bad-soft)"       },
 };
 
 export function StatePill({ state, map }: { state: string; map: StatePillMap }) {
@@ -37,7 +37,7 @@ export function StatePill({ state, map }: { state: string; map: StatePillMap }) 
         alignItems: "center",
         gap: 5,
         padding: "3px 8px",
-        borderRadius: 999,
+        borderRadius: "var(--radius-pill)",
         fontSize: 11,
         fontWeight: 600,
         letterSpacing: "0.01em",

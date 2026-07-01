@@ -149,7 +149,7 @@ function LoadingScreen() {
   return (
     <div className="preview-scope pd-state-page">
       <div className="pd-state-inner">
-        <Loader2 size={22} className="pd-spinner" style={{ color: '#9aa0aa' }} aria-hidden="true" />
+        <Loader2 size={22} className="pd-spinner" style={{ color: 'var(--pd-muted-2)' }} aria-hidden="true" />
         <p className="pd-state-body">Loading your preview...</p>
       </div>
     </div>
@@ -360,7 +360,7 @@ export default function PreviewPage() {
         <div className="pd-video-card">
           {isVideoRendering ? (
             <div className="pd-video-placeholder" data-testid="preview-rendering">
-              <Loader2 size={20} className="pd-spinner" style={{ color: '#9aa0aa' }} aria-hidden="true" />
+              <Loader2 size={20} className="pd-spinner" style={{ color: 'var(--pd-muted-2)' }} aria-hidden="true" />
               <p className="pd-video-placeholder-label">
                 This listing film is still rendering — check back shortly.
               </p>

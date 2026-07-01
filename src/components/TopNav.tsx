@@ -16,7 +16,6 @@ import {
   User,
 } from "lucide-react";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
-import { ThemeToggle } from "@/components/brand/ThemeToggle";
 import { useTheme } from "@/lib/theme";
 
 /**
@@ -106,7 +105,6 @@ export function TopNav() {
                   </Link>
                 </Button>
               )}
-              <ThemeToggle className="ml-2" />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -147,7 +145,6 @@ export function TopNav() {
             </>
           ) : (
             <>
-              <ThemeToggle />
               <Link
                 to="/?login=1"
                 className="label hidden text-muted-foreground transition-colors hover:text-foreground md:inline"

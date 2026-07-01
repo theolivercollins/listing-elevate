@@ -4,9 +4,8 @@ type Theme = "dark" | "light";
 const STORAGE_KEY = "listing-elevate-theme";
 
 function getInitialTheme(): Theme {
-  if (typeof window === "undefined") return "light";
-  const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") return stored;
+  // Authed app is light-mode only. Always return "light" regardless of any
+  // previously persisted value, so returning dark-mode users load in light.
   return "light";
 }
 

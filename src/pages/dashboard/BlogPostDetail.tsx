@@ -328,7 +328,7 @@ export default function BlogPostDetailPage() {
 
   if (!isCompose && isLoading) return (
     <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-      <div style={{ width: 24, height: 24, borderRadius: 999, border: "2px solid var(--line)", borderTopColor: "var(--ink)", animation: "spin 0.8s linear infinite" }} />
+      <div style={{ width: 24, height: 24, borderRadius: "var(--le-r-pill)", border: "2px solid var(--line, var(--le-border))", borderTopColor: "var(--ink, var(--le-text))", animation: "spin 0.8s linear infinite" }} />
     </div>
   );
 
@@ -343,20 +343,20 @@ export default function BlogPostDetailPage() {
 
       {/* AI generation status banner */}
       {(aiInput || aiResult) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(23,32,51,0.25)", background: "rgba(23,32,51,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
           {aiInput ? (
             <>
-              <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
+              <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
               <span style={{ flex: 1 }}>
-                <span style={{ fontWeight: 600, color: "var(--ink)" }}>AI draft in queue</span>
-                <span style={{ marginLeft: 8, color: "var(--muted)" }}>— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
+                <span style={{ fontWeight: 600, color: "var(--ink, var(--le-text))" }}>AI draft in queue</span>
+                <span style={{ marginLeft: 8, color: "var(--muted, var(--le-muted))" }}>— Claude is generating · {aiElapsedSec}s elapsed · usually 5–15s</span>
               </span>
               <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }} onClick={cancelAIGen}>Cancel</button>
             </>
           ) : aiResult ? (
             <>
-              <Sparkles style={{ width: 16, height: 16, color: "var(--accent)", flexShrink: 0 }} />
-              <span style={{ flex: 1 }}><span style={{ fontWeight: 600, color: "var(--ink)" }}>✨ AI draft ready</span></span>
+              <Sparkles style={{ width: 16, height: 16, color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
+              <span style={{ flex: 1 }}><span style={{ fontWeight: 600, color: "var(--ink, var(--le-text))" }}>✨ AI draft ready</span></span>
               <button type="button" className="le-btn-dark" style={{ fontSize: 12, padding: "5px 12px" }} onClick={() => setAIPreviewOpen(true)}>Preview &amp; Apply</button>
               <button type="button" className="le-btn-ghost" style={{ fontSize: 12, padding: "5px 12px" }} onClick={discardAIResult}>Discard</button>
             </>
@@ -366,30 +366,30 @@ export default function BlogPostDetailPage() {
 
       {/* Publish progress banner */}
       {post && ["publish_due", "publishing", "editing"].includes(post.state as string) && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(42,111,219,0.25)", background: "rgba(42,111,219,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
-          <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent)", flexShrink: 0 }} />
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(23,32,51,0.25)", background: "rgba(23,32,51,0.05)", padding: "12px 16px", fontSize: 13.5 }}>
+          <Loader2 style={{ width: 16, height: 16, animation: "spin 1s linear infinite", color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
-            <span style={{ fontWeight: 600, color: "var(--ink)" }}>
+            <span style={{ fontWeight: 600, color: "var(--ink, var(--le-text))" }}>
               {post.state === "editing" ? "Updating Sierra" : "Publishing to Sierra"}
             </span>
-            <span style={{ marginLeft: 8, color: "var(--muted)" }}>— usually live within 60s · this page refreshes automatically</span>
+            <span style={{ marginLeft: 8, color: "var(--muted, var(--le-muted))" }}>— usually live within 60s · this page refreshes automatically</span>
           </span>
         </div>
       )}
       {post && post.state === "live" && post.external_post_url && (
         <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid rgba(47,138,85,0.3)", background: "rgba(47,138,85,0.06)", padding: "12px 16px", fontSize: 13.5 }}>
-          <span style={{ fontWeight: 600, color: "var(--good)" }}>✓ Live on Sierra</span>
-          <a href={post.external_post_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", textDecoration: "underline" }}>
+          <span style={{ fontWeight: 600, color: "var(--good, var(--le-good))" }}>✓ Live on Sierra</span>
+          <a href={post.external_post_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent, var(--le-accent))", textDecoration: "underline" }}>
             View on Sierra ↗
           </a>
         </div>
       )}
       {post && post.state === "on_hold" && (
-        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
-          <Pause style={{ width: 16, height: 16, color: "var(--muted)", flexShrink: 0 }} />
+        <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, borderRadius: "var(--le-r-lg)", border: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.035)", padding: "12px 16px", fontSize: 13.5 }}>
+          <Pause style={{ width: 16, height: 16, color: "var(--muted, var(--le-muted))", flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
-            <span style={{ fontWeight: 600, color: "var(--ink-2)" }}>On hold</span>
-            <span style={{ marginLeft: 8, color: "var(--muted)" }}>— hidden from the "Live" filter. Sierra-side copy is untouched.</span>
+            <span style={{ fontWeight: 600, color: "var(--ink-2, var(--le-text-secondary))" }}>On hold</span>
+            <span style={{ marginLeft: 8, color: "var(--muted, var(--le-muted))" }}>— hidden from the "Live" filter. Sierra-side copy is untouched.</span>
           </span>
         </div>
       )}
@@ -418,7 +418,7 @@ export default function BlogPostDetailPage() {
                   }
                   e.target.value = "";
                 }}
-                style={{ borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 12px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                style={{ borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "7px 12px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">Start from template…</option>
                 {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -474,12 +474,12 @@ export default function BlogPostDetailPage() {
             )}
           </div>
           <div>
-            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>Author</Label>
+            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2, var(--le-text-secondary))" }}>Author</Label>
             <select
               value={form.author_label ?? ""}
               onChange={e => setForm({ ...form, author_label: e.target.value })}
               disabled={readOnly}
-              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "7px 10px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select author —</option>
               {taxonomy.authors.filter(a => a.label && !a.label.toLowerCase().startsWith("select")).map(a => (
@@ -488,12 +488,12 @@ export default function BlogPostDetailPage() {
             </select>
           </div>
           <div>
-            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>Category</Label>
+            <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2, var(--le-text-secondary))" }}>Category</Label>
             <select
               value={form.category_label ?? ""}
               onChange={e => setForm({ ...form, category_label: e.target.value })}
               disabled={readOnly}
-              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+              style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "7px 10px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
             >
               <option value="">— Select category —</option>
               {taxonomy.categories.filter(c => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map(c => (
@@ -537,7 +537,7 @@ export default function BlogPostDetailPage() {
           <>
             <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => saveEdit.mutate()}>Save changes</button>
             <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "8px 16px" }} onClick={() => publishIt.mutate()}>Approve &amp; publish</button>
-            <button type="button" style={{ fontSize: 13, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.3)", background: "rgba(196,74,74,0.07)", color: "var(--bad)", cursor: "pointer", fontFamily: "var(--le-font-sans)", fontWeight: 500 }} onClick={() => reject.mutate()}>Reject</button>
+            <button type="button" style={{ fontSize: 13, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid rgba(196,74,74,0.3)", background: "rgba(196,74,74,0.07)", color: "var(--bad, var(--le-bad))", cursor: "pointer", fontFamily: "var(--le-font-sans)", fontWeight: 500 }} onClick={() => reject.mutate()}>Reject</button>
           </>
         )}
         {mode === "edit-live" && (
@@ -568,7 +568,7 @@ export default function BlogPostDetailPage() {
             onClick={() => sendAsEmail.mutate()}
             disabled={sendAsEmail.isPending || !form.body_html.trim()}
             title="Convert this post to an email draft using Ally"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid var(--line)", background: "transparent", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: sendAsEmail.isPending ? "wait" : "pointer", fontFamily: "var(--le-font-sans)", opacity: sendAsEmail.isPending || !form.body_html.trim() ? 0.5 : 1 }}
           >
             {sendAsEmail.isPending
               ? <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
@@ -580,7 +580,7 @@ export default function BlogPostDetailPage() {
           <button
             type="button"
             onClick={() => setDeleteOpen(true)}
-            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(196,74,74,0.25)", background: "transparent", color: "var(--bad)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
+            style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "1px solid rgba(196,74,74,0.25)", background: "transparent", color: "var(--bad, var(--le-bad))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "var(--le-font-sans)" }}
           >
             <Trash2 style={{ width: 14, height: 14 }} /> Delete
           </button>
@@ -680,11 +680,11 @@ export default function BlogPostDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">Current</div>
-                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid var(--line)", borderRadius: "var(--le-r-sm)" }} />
+                  <HtmlPreview html={form.body_html || "<p style='color:#9ca3af'>(empty)</p>"} style={{ width: "100%", height: 360, border: "1px solid var(--line, var(--le-border))", borderRadius: "var(--le-r-sm)" }} />
                 </div>
                 <div>
                   <div className="mb-1 text-xs text-muted-foreground">AI-generated</div>
-                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid var(--line)", borderRadius: "var(--le-r-sm)" }} />
+                  <HtmlPreview html={aiResult.body_html} style={{ width: "100%", height: 360, border: "1px solid var(--line, var(--le-border))", borderRadius: "var(--le-r-sm)" }} />
                 </div>
               </div>
               <div className="flex justify-end gap-2">

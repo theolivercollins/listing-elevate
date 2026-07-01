@@ -252,7 +252,7 @@ export function Hero() {
               padding: "8px 14px",
               background: "rgba(255,255,255,0.96)",
               border: "1px solid var(--le-border)",
-              borderRadius: 999,
+              borderRadius: "var(--le-radius-pill)",
               boxShadow: "var(--le-shadow-md)",
               backdropFilter: "blur(8px)",
               WebkitBackdropFilter: "blur(8px)",

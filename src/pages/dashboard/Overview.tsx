@@ -330,13 +330,13 @@ function ProviderHealthRow({ rows }: { rows: ModelHealthRow[] }) {
                 fontSize: 12,
                 fontWeight: 500,
                 padding: "4px 10px",
-                borderRadius: 999,
+                borderRadius: "var(--le-r-pill)",
                 background: isHealthy ? "rgba(47, 138, 85, 0.08)" : "rgba(210, 95, 60, 0.08)",
                 color: statusColor,
                 border: `1px solid ${isHealthy ? "rgba(47, 138, 85, 0.15)" : "rgba(210, 95, 60, 0.15)"}`,
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: 999, background: statusColor, flexShrink: 0 }} />
+              <span style={{ width: 6, height: 6, borderRadius: "var(--le-r-pill)", background: statusColor, flexShrink: 0 }} />
               {r.provider}
               {r.calls_24h > 0 && (
                 <span style={{ opacity: 0.7 }}>
@@ -859,12 +859,12 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     <span>· {p.agent}</span>
                   </div>
                 </div>
-                <div style={{ width: 120, height: 5, background: "rgba(11,11,16,0.08)", borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: 120, height: 5, background: "rgba(11,11,16,0.08)", borderRadius: "var(--le-r-pill)", overflow: "hidden" }}>
                   <div style={{
                     height: "100%",
                     width: `${p.progress}%`,
                     background: "var(--ink)",
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     transition: "width .8s",
                   }} />
                 </div>
@@ -883,7 +883,7 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
             <SectionTitle eyebrow="Activity" title="Last 60 minutes" />
             <span
               className="le-dot-pulse"
-              style={{ width: 7, height: 7, borderRadius: 999, background: "var(--good)", color: "var(--good)", flexShrink: 0 }}
+              style={{ width: 7, height: 7, borderRadius: "var(--le-r-pill)", background: "var(--good)", color: "var(--good)", flexShrink: 0 }}
             />
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
@@ -927,8 +927,8 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                     <span style={{ fontSize: 13, fontWeight: 500, color: "var(--ink)" }}>{p.provider}</span>
                     <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{p.value}%</span>
                   </div>
-                  <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: 999, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: 999, transition: "width .8s" }} />
+                  <div style={{ height: 5, background: "rgba(11,11,16,0.06)", borderRadius: "var(--le-r-pill)", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${p.value}%`, background: "var(--ink)", borderRadius: "var(--le-r-pill)", transition: "width .8s" }} />
                   </div>
                 </div>
               ))
@@ -969,10 +969,10 @@ const Overview = ({ showAIBanner = true }: OverviewProps) => {
                   </span>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <div style={{
-                      width: 30, height: 30, borderRadius: 999,
+                      width: 30, height: 30, borderRadius: "var(--le-r-pill)",
                       background: `linear-gradient(135deg, hsl(${210 + i * 22}, 8%, 56%), hsl(${230 + i * 30}, 8%, 38%))`,
                       display: "grid", placeItems: "center",
-                      color: "#fff", fontWeight: 600, fontSize: 10.5,
+                      color: "var(--surface)", fontWeight: 600, fontSize: 10.5,
                     }}>
                       {a.name.split(" ").map((s) => s[0]).join("")}
                     </div>

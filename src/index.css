@@ -1,4 +1,12 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+/* Inter — self-hosted variable face (replaces the Google Fonts loader).
+   Weight range 400–700 covers UI + display; --le-font-mono stays Inter (no monospace). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/InterVariable.woff2") format("woff2");
+}
 
 @tailwind base;
 @tailwind components;
@@ -21,7 +29,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 40% 8%;
 
-    --primary: 220 40% 8%;            /* near-black — main ink */
+    --primary: 221 38% 15%;           /* deep navy #172033 — brand accent (was near-black) */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 220 15% 96%;         /* soft near-white */
@@ -30,7 +38,7 @@
     --muted: 220 15% 96%;
     --muted-foreground: 220 10% 46%;
 
-    --accent: 220 90% 56%;            /* electric blue — the ONE accent */
+    --accent: 221 38% 15%;            /* deep navy #172033 — the ONE accent (was electric blue) */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
@@ -74,8 +82,8 @@
     --muted: 222 28% 11%;
     --muted-foreground: 220 12% 64%;
 
-    --accent: 217 100% 62%;           /* brighter electric blue for dark mode pop */
-    --accent-foreground: 222 40% 4%;
+    --accent: 221 38% 15%;            /* deep navy #172033 — unified accent (was electric blue) */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 58%;
     --destructive-foreground: 0 0% 100%;

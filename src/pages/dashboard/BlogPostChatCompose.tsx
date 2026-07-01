@@ -373,7 +373,7 @@ export default function BlogPostChatCompose() {
       <div
         style={{
           display: "flex", alignItems: "center", gap: 12,
-          borderBottom: "1px solid var(--line)", background: "var(--surface)",
+          borderBottom: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))",
           padding: "10px 20px", flexShrink: 0,
         }}
       >
@@ -382,29 +382,29 @@ export default function BlogPostChatCompose() {
           onClick={() => navigate("/dashboard/studio/blog/posts")}
           style={{
             display: "inline-flex", alignItems: "center", gap: 4,
-            padding: "6px 10px", borderRadius: 999,
-            border: "1px solid var(--line)", background: "transparent",
-            color: "var(--muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+            padding: "6px 10px", borderRadius: "var(--le-r-pill)",
+            border: "1px solid var(--line, var(--le-border))", background: "transparent",
+            color: "var(--muted, var(--le-muted))", fontSize: 12, fontWeight: 500, cursor: "pointer",
             fontFamily: "var(--le-font-sans)",
           }}
         >
           <ChevronLeft style={{ width: 13, height: 13 }} /> Posts
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <MessageSquare style={{ width: 15, height: 15, color: "var(--accent)" }} />
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+          <MessageSquare style={{ width: 15, height: 15, color: "var(--accent, var(--le-accent))" }} />
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink, var(--le-text))", letterSpacing: "-0.01em" }}>
             New post · Chat with Ally
           </span>
-          <span style={{ fontSize: 12, color: "var(--muted)", display: "none" }} className="md:inline">
+          <span style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", display: "none" }} className="md:inline">
             {selectedTemplate ? <>· template <span style={{ fontWeight: 600 }}>{selectedTemplate.name}</span></>
               : includeRecentPosts ? <>· style-matched to recent posts</>
               : <>· free-form</>}
             {useResearch ? (
-              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)" }}>
+              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent, var(--le-accent))" }}>
                 · <Globe style={{ marginLeft: 2, width: 11, height: 11 }} /> research always-on
               </span>
             ) : (
-              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--muted)" }}>
+              <span style={{ marginLeft: 4, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--muted, var(--le-muted))" }}>
                 · <Globe style={{ marginLeft: 2, width: 11, height: 11 }} /> research: auto
               </span>
             )}
@@ -412,7 +412,7 @@ export default function BlogPostChatCompose() {
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           {totalCostCents > 0 && (
-            <span style={{ fontSize: 11, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 11, color: "var(--muted-2, var(--le-faint))", fontVariantNumeric: "tabular-nums" }}>
               ${(totalCostCents / 100).toFixed(3)}
             </span>
           )}
@@ -450,7 +450,7 @@ export default function BlogPostChatCompose() {
       {/* Body — chat on left, preview-dominant fields on right (Claude-artifact ratio) */}
       <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[2fr_3fr]" : "md:grid-cols-1"} grid-cols-1`}>
         {/* CHAT COLUMN */}
-        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, #f3f3f5)" }}>
+        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, var(--le-surface-sunken))" }}>
           <AnimatePresence mode="wait">
             {!hasThread && pendingActions.length === 0 ? (
               <motion.div
@@ -464,7 +464,7 @@ export default function BlogPostChatCompose() {
                 <h2 style={{
                   marginBottom: 32, textAlign: "center",
                   fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600,
-                  letterSpacing: "-0.025em", color: "var(--ink)", lineHeight: 1.1,
+                  letterSpacing: "-0.025em", color: "var(--ink, var(--le-text))", lineHeight: 1.1,
                 }}>
                   Ready when you are.
                 </h2>
@@ -508,20 +508,20 @@ export default function BlogPostChatCompose() {
                             ? {
                                 marginLeft: "auto", maxWidth: "88%", whiteSpace: "pre-wrap",
                                 borderRadius: "18px 18px 6px 18px",
-                                background: "var(--ink)", padding: "10px 14px",
-                                fontSize: 13.5, color: "var(--surface)",
-                                boxShadow: "0 1px 3px rgba(11,11,16,0.12)",
+                                background: "var(--ink, var(--le-text))", padding: "10px 14px",
+                                fontSize: 13.5, color: "var(--surface, var(--le-surface))",
+                                boxShadow: "0 1px 3px rgba(12,14,22,0.12)",
                                 opacity: m.queued ? 0.7 : 1,
                                 outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
                               }
                             : {
                                 maxWidth: "88%", whiteSpace: "pre-wrap",
                                 borderRadius: "18px 18px 18px 6px",
-                                background: "var(--surface)", padding: "10px 14px",
-                                fontSize: 13.5, color: m.pending ? "var(--muted)" : "var(--ink)",
+                                background: "var(--surface, var(--le-surface))", padding: "10px 14px",
+                                fontSize: 13.5, color: m.pending ? "var(--muted, var(--le-muted))" : "var(--ink, var(--le-text))",
                                 fontStyle: m.pending ? "italic" : "normal",
-                                border: "1px solid var(--line)",
-                                boxShadow: "0 1px 2px rgba(11,11,16,0.04)",
+                                border: "1px solid var(--line, var(--le-border))",
+                                boxShadow: "var(--shadow-sm)",
                               }
                         }
                       >
@@ -533,7 +533,7 @@ export default function BlogPostChatCompose() {
                           )}
                           {m.queued && (
                             <span style={{
-                              marginLeft: 6, borderRadius: 999, background: "rgba(255,255,255,0.18)",
+                              marginLeft: 6, borderRadius: "var(--le-r-pill)", background: "rgba(255,255,255,0.18)",
                               padding: "2px 7px", fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em",
                             }}>
                               queued
@@ -549,7 +549,7 @@ export default function BlogPostChatCompose() {
                           onClick={enableResearchAndRetry}
                           disabled={chat.isPending}
                           className="le-btn-ghost"
-                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--accent)" }}
+                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--accent, var(--le-accent))" }}
                         >
                           <Globe style={{ width: 12, height: 12 }} /> Search the web &amp; retry
                         </motion.button>
@@ -562,15 +562,15 @@ export default function BlogPostChatCompose() {
                       key={card.id}
                       initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.18 }}
                       style={{
-                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(42,111,219,0.25)",
-                        background: "rgba(42,111,219,0.05)", padding: 14,
+                        maxWidth: "88%", borderRadius: "var(--le-r-xl)", border: "1px solid rgba(23,32,51,0.25)",
+                        background: "rgba(23,32,51,0.05)", padding: 14,
                       }}
                     >
-                      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink)" }}>
+                      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink, var(--le-text))" }}>
                         {card.kind === "publish" ? "Publish this post to Sierra?" : "Save this as a draft?"}
                       </div>
-                      <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-                        <div><span style={{ fontWeight: 600, color: "var(--ink-2)" }}>{card.snapshot.title || "Untitled"}</span></div>
+                      <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted, var(--le-muted))", display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div><span style={{ fontWeight: 600, color: "var(--ink-2, var(--le-text-secondary))" }}>{card.snapshot.title || "Untitled"}</span></div>
                         {card.snapshot.author_label && <div>by {card.snapshot.author_label}</div>}
                         {card.snapshot.category_label && <div>in {card.snapshot.category_label}</div>}
                       </div>
@@ -593,7 +593,7 @@ export default function BlogPostChatCompose() {
 
                 </div>
 
-                <div style={{ borderTop: "1px solid var(--line)", background: "rgba(255,255,255,0.95)", padding: "12px 20px 16px", backdropFilter: "blur(8px)" }}>
+                <div style={{ borderTop: "1px solid var(--line, var(--le-border))", background: "rgba(255,255,255,0.95)", padding: "12px 20px 16px", backdropFilter: "blur(8px)" }}>
                   <Composer
                     input={input} onInputChange={setInput}
                     onSend={() => send(input)} canSend={canSend} isPending={chat.isPending}
@@ -623,13 +623,13 @@ export default function BlogPostChatCompose() {
         {showFields && (
           <motion.div
             initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }}
-            style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--line)", background: "var(--surface)" }}
+            style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))" }}
             className="min-h-0"
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "var(--surface)", padding: "10px 16px" }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "10px 16px" }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>
                 Post details
-                <span style={{ marginLeft: 8, color: "var(--muted)", fontWeight: 500 }}>{filledFieldsCount}/8 filled</span>
+                <span style={{ marginLeft: 8, color: "var(--muted, var(--le-muted))", fontWeight: 500 }}>{filledFieldsCount}/8 filled</span>
               </div>
               <button type="button" className="le-btn-ghost" style={{ fontSize: 11.5, padding: "5px 10px" }} onClick={() => setShowPreview((v) => !v)}>
                 {showPreview ? "Hide preview" : "Show preview"}
@@ -675,7 +675,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.author_label}
                     onChange={(e) => setForm({ ...form, author_label: e.target.value })}
-                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "7px 10px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.authors.filter((a) => a.label && !a.label.toLowerCase().startsWith("select")).map((a) => (
@@ -687,7 +687,7 @@ export default function BlogPostChatCompose() {
                   <select
                     value={form.category_label}
                     onChange={(e) => setForm({ ...form, category_label: e.target.value })}
-                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "7px 10px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                    style={{ display: "block", width: "100%", borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "7px 10px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
                   >
                     <option value="">—</option>
                     {taxonomy.categories.filter((c) => c.label && !c.label.toLowerCase().startsWith("choose") && !c.label.startsWith("---")).map((c) => (
@@ -722,19 +722,19 @@ export default function BlogPostChatCompose() {
 
               {sources.length > 0 && (
                 <div>
-                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 500, color: "var(--muted, var(--le-muted))" }}>
                     <Globe style={{ width: 12, height: 12 }} /> Research sources
                     <span style={{ fontWeight: 400 }}>· {sources.length}</span>
                   </div>
-                  <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 10px", fontSize: 12 }}>
+                  <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 10px", fontSize: 12 }}>
                     {sources.map((s, i) => (
                       <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                        <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
+                        <span style={{ color: "var(--muted-2, var(--le-faint))" }}>[{i + 1}]</span>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: "var(--accent)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                          style={{ color: "var(--accent, var(--le-accent))", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                           title={s.url}
                         >
                           {s.title}
@@ -748,8 +748,8 @@ export default function BlogPostChatCompose() {
             </div>
 
             {showPreview && (
-              <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "rgba(11,11,16,0.025)", padding: "6px 12px" }}>
+              <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.025)", padding: "6px 12px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <button
                       type="button"
@@ -757,8 +757,8 @@ export default function BlogPostChatCompose() {
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                        background: previewMode === "rendered" ? "var(--surface)" : "transparent",
-                        color: previewMode === "rendered" ? "var(--ink)" : "var(--muted)",
+                        background: previewMode === "rendered" ? "var(--surface, var(--le-surface))" : "transparent",
+                        color: previewMode === "rendered" ? "var(--ink, var(--le-text))" : "var(--muted, var(--le-muted))",
                         boxShadow: previewMode === "rendered" ? "var(--shadow-sm)" : "none",
                       }}
                       title="Rendered preview"
@@ -771,8 +771,8 @@ export default function BlogPostChatCompose() {
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                        background: previewMode === "source" ? "var(--surface)" : "transparent",
-                        color: previewMode === "source" ? "var(--ink)" : "var(--muted)",
+                        background: previewMode === "source" ? "var(--surface, var(--le-surface))" : "transparent",
+                        color: previewMode === "source" ? "var(--ink, var(--le-text))" : "var(--muted, var(--le-muted))",
                         boxShadow: previewMode === "source" ? "var(--shadow-sm)" : "none",
                       }}
                       title="HTML source"
@@ -781,7 +781,7 @@ export default function BlogPostChatCompose() {
                     </button>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
+                    <span style={{ fontSize: 11, color: "var(--muted, var(--le-muted))" }}>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
                     <button
                       type="button"
                       onClick={openPreviewInNewTab}
@@ -789,7 +789,7 @@ export default function BlogPostChatCompose() {
                       style={{
                         display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                         padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                        background: "transparent", color: "var(--muted)",
+                        background: "transparent", color: "var(--muted, var(--le-muted))",
                         opacity: !form.body_html ? 0.4 : 1,
                       }}
                       title="Open in new tab"
@@ -843,11 +843,11 @@ function Field({
   return (
     <div>
       <div style={{ marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>{label}</Label>
+        <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2, var(--le-text-secondary))" }}>{label}</Label>
         {filled && (
           <motion.span
             initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.15 }}
-            style={{ fontSize: 10, color: "var(--good)", fontWeight: 500 }}
+            style={{ fontSize: 10, color: "var(--good, var(--le-good))", fontWeight: 500 }}
           >
             ✓ filled
           </motion.span>
@@ -894,11 +894,11 @@ function Composer({
       {attachments.length > 0 && (
         <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {attachments.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: 999, border: "1px solid var(--line)", background: "rgba(11,11,16,0.035)", padding: "4px 10px", fontSize: 11.5 }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.035)", padding: "4px 10px", fontSize: 11.5 }}>
               {a.kind === "pdf" ? <FileText style={{ width: 11, height: 11 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 11, height: 11 }} /> : <FileText style={{ width: 11, height: 11 }} />}
               <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
-              <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
-              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }} aria-label="Remove">
+              <span style={{ color: "var(--muted, var(--le-muted))" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))" }} aria-label="Remove">
                 <X style={{ width: 11, height: 11 }} />
               </button>
             </div>
@@ -906,43 +906,43 @@ function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(42,111,219,0.4)] focus-within:!shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(23,32,51,0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
-            <button type="button" style={{ width: 34, height: 34, borderRadius: 999, border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+            <button type="button" style={{ width: 34, height: 34, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted, var(--le-muted))" }}>
               <Plus style={{ width: 15, height: 15 }} />
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 p-2">
             <button
               type="button" onClick={onFilePick}
-              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)" }}
+              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink, var(--le-text))" }}
               className="hover:bg-muted"
             >
               <Paperclip style={{ width: 15, height: 15 }} />
               <div style={{ flex: 1 }}>
                 <div>Attach file</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 2 }}>PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
               </div>
             </button>
-            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line, var(--le-border))" }} />
             <div style={{ padding: "6px 8px" }}>
-              <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+              <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted, var(--le-muted))" }}>
                 <LayoutTemplate style={{ width: 13, height: 13 }} /> Template
               </div>
               <select
                 value={templateId}
                 onChange={(e) => onTemplateChange(e.target.value)}
-                style={{ display: "block", width: "100%", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", fontSize: 13, color: "var(--ink)", fontFamily: "var(--le-font-sans)" }}
+                style={{ display: "block", width: "100%", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "6px 8px", fontSize: 13, color: "var(--ink, var(--le-text))", fontFamily: "var(--le-font-sans)" }}
               >
                 <option value="">— None —</option>
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
-              <div style={{ marginTop: 5, fontSize: 11, color: "var(--muted-2)" }}>AI fills the template's sections.</div>
+              <div style={{ marginTop: 5, fontSize: 11, color: "var(--muted-2, var(--le-faint))" }}>AI fills the template's sections.</div>
             </div>
-            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line, var(--le-border))" }} />
             <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
@@ -950,11 +950,11 @@ function Composer({
                 onChange={(e) => onIncludeRecentPostsChange(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+              <div style={{ flex: 1, fontSize: 13, color: "var(--ink, var(--le-text))" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Wand2 style={{ width: 13, height: 13 }} /> Match recent posts
                 </div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 3 }}>
                   Style + depth of your last 5 published posts.
                 </div>
               </div>
@@ -966,11 +966,11 @@ function Composer({
                 onChange={(e) => onUseResearchChange(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+              <div style={{ flex: 1, fontSize: 13, color: "var(--ink, var(--le-text))" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Globe style={{ width: 13, height: 13 }} /> Always research
                 </div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 3 }}>
                   Off: Ally only searches when your request needs fresh data (current rates, market stats, recent news). On: Gemini grounding every turn.
                 </div>
               </div>
@@ -996,14 +996,14 @@ function Composer({
         <button
           type="button" onClick={onSend} disabled={!canSend}
           className="le-btn-dark"
-          style={{ width: 34, height: 34, padding: 0, borderRadius: 999, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: !canSend ? 0.4 : 1 }}
+          style={{ width: 34, height: 34, padding: 0, borderRadius: "var(--le-r-pill)", flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", opacity: !canSend ? 0.4 : 1 }}
           title={isPending ? "Queue for next" : "Send"}
         >
           <ArrowUp style={{ width: 15, height: 15 }} />
         </button>
       </div>
 
-      <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11, color: "var(--muted-2)" }}>
+      <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11, color: "var(--muted-2, var(--le-faint))" }}>
         Enter to send · Shift+Enter for a new line · Say "publish it" or "save as draft" to ship.
       </div>
     </div>

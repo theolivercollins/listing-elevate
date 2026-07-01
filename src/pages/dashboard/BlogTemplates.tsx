@@ -5,7 +5,7 @@ import { deleteTemplate, listTemplates } from "@/lib/blog/api-client";
 import { HtmlPreview } from "@/components/blog/HtmlPreview";
 import type { BlogTemplate } from "@/lib/blog/types";
 import { toast } from "sonner";
-import { PageHeading, Card } from "@/components/dashboard/primitives";
+import { PageHeading, Card, Skeleton } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 export default function BlogTemplates() {
@@ -39,11 +39,10 @@ export default function BlogTemplates() {
       />
 
       {isLoading ? (
-        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-          </svg>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} width="100%" height={260} borderRadius="var(--radius)" />
+          ))}
         </div>
       ) : templates.length === 0 ? (
         <Card padding={48}>

@@ -160,13 +160,13 @@ export default function TurnaroundSpeed() {
       <div className="flex gap-2 mb-4 lg:hidden">
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase font-semibold"
-          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}`, borderRadius: 999 }}
+          style={{ color: WHITE, background: "var(--le-bg-sunken)", border: `1px solid ${LINE}`, borderRadius: "var(--le-radius-pill)" }}
         >
           Listing Elevate · 30 min
         </div>
         <div
           className="flex-1 py-2 px-3 text-center text-[10px] tracking-[0.15em] uppercase"
-          style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
+          style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: "var(--le-radius-pill)" }}
         >
           Traditional · ~1 week
         </div>
@@ -186,7 +186,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}
+              style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: "var(--le-radius-pill)" }}
             >
               Listing Elevate
             </span>
@@ -199,7 +199,7 @@ export default function TurnaroundSpeed() {
             </span>
             <span
               className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-              style={{ color: WHITE, background: "var(--le-bg-sunken)", borderRadius: 999 }}
+              style={{ color: WHITE, background: "var(--le-bg-sunken)", borderRadius: "var(--le-radius-pill)" }}
             >
               Listing Elevate
             </span>
@@ -241,7 +241,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[10px] tracking-[0.15em] uppercase px-2 py-1"
-                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: "var(--le-radius-pill)" }}
               >
                 Traditional
               </span>
@@ -254,7 +254,7 @@ export default function TurnaroundSpeed() {
               </span>
               <span
                 className="text-[9px] tracking-[0.12em] uppercase px-2 py-0.5"
-                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}
+                style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: "var(--le-radius-pill)" }}
               >
                 Traditional
               </span>

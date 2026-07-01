@@ -5,7 +5,6 @@ import { LEIcon } from "@/v2/components/primitives/LEIcon";
 import { LEButtonLink } from "@/v2/components/primitives/LEButton";
 import { useAuth } from "@/lib/auth";
 import { useLoginDialog } from "@/v2/components/auth/LoginDialogContext";
-import { useTheme } from "@/lib/theme";
 
 export interface SiteNavProps {
   /**
@@ -17,8 +16,7 @@ export interface SiteNavProps {
    * When true, render with a fully opaque `var(--le-bg)` surface — used on
    * app pages (/account, /upload) where the nav must sit on the page
    * background without bleed-through. Default false renders the translucent
-   * frosted bar (`var(--le-nav-bg)` + backdrop-blur), which is white/0.85 in
-   * light mode and near-black/0.7 in dark mode.
+   * frosted bar (`var(--le-nav-bg)` + backdrop-blur), which is white/0.85.
    */
   solid?: boolean;
 }
@@ -35,17 +33,15 @@ const navLinkStyle = {
  * as a light translucent bar (white/0.85 + backdrop blur) with a 1px
  * bottom border — clean SaaS product nav. Left: logo mark linking home.
  * Center: optional section anchors. Right: sign-in affordances (or
- * account/dashboard/sign-out when authenticated) plus a theme-toggle
- * sun/moon button wired to the global ThemeProvider.
+ * account/dashboard/sign-out when authenticated).
  *
  * When `solid` is true, renders against an opaque `var(--le-bg)` surface
- * with a 1px bottom border and theme-reactive text colors — used on app
- * pages where the nav needs a fully opaque backdrop.
+ * with a 1px bottom border — used on app pages where the nav needs a
+ * fully opaque backdrop.
  */
 export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps) {
   const { user, profile, signOut } = useAuth();
   const { openLogin } = useLoginDialog();
-  const { theme, toggle } = useTheme();
   const navigate = useNavigate();
 
   const isAdmin = profile?.role === "admin";
@@ -60,8 +56,6 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
   const textSoft = "var(--le-text-muted)";
   const textDim = "var(--le-text-faint)";
   const textBody = "var(--le-text-muted)";
-  const iconBorder = "1px solid var(--le-border-strong)";
-  const iconColor = "var(--le-text)";
 
   // Shared base — both modes are translucent white bars on a light surface.
   const navBase: CSSProperties = {
@@ -85,14 +79,6 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
     ? { ...navBase, background: "var(--le-bg)" }
     : { ...navBase, background: "var(--le-nav-bg)" };
 
-  // In default (translucent) mode the bar colour follows the theme, so the
-  // logo must invert with it: light/white logo on the dark bar, dark-ink logo
-  // on the light bar. Solid mode always sits on --le-bg, same rule applies.
-  const logoVariant = theme === "dark" ? "light" : "dark";
-
-  const toggleIconName = theme === "dark" ? "sun" : "moon";
-  const toggleAriaLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
-
   return (
     <nav style={navStyle}>
       <Link
@@ -103,7 +89,9 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
           textDecoration: "none",
         }}
       >
-        <LELogoMark size={38} variant={logoVariant} />
+        {/* Light mode only — the bar always sits on a light surface, so the
+            logo always renders in its dark-ink variant. */}
+        <LELogoMark size={38} variant="dark" />
       </Link>
 
       {showSectionLinks ? (
@@ -137,26 +125,6 @@ export function SiteNav({ showSectionLinks = true, solid = false }: SiteNavProps
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <button
-          type="button"
-          aria-label={toggleAriaLabel}
-          onClick={toggle}
-          style={{
-            width: 34,
-            height: 34,
-            border: iconBorder,
-            borderRadius: 6,
-            background: "transparent",
-            color: iconColor,
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-          }}
-        >
-          <LEIcon name={toggleIconName} size={14} color={iconColor} />
-        </button>
-
         {user ? (
           <>
             <Link

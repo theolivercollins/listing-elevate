@@ -12,7 +12,7 @@ const SIZE_STYLE: Record<Size, CSSProperties> = {
 
 function base(variant: Variant): CSSProperties {
   return {
-    borderRadius: 999,
+    borderRadius: "var(--le-radius-pill)",
     fontWeight: 500,
     letterSpacing: "-0.005em",
     fontFamily: "var(--le-font-sans)",

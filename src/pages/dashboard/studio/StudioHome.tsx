@@ -266,7 +266,7 @@ const StudioHome = () => {
                         color: 'var(--le-muted-2)',
                         fontVariantNumeric: 'tabular-nums',
                         background: 'rgba(11,11,16,0.05)',
-                        borderRadius: 999,
+                        borderRadius: 'var(--le-r-pill)',
                         padding: '1px 7px',
                         minWidth: 20,
                         textAlign: 'center',

@@ -27,10 +27,10 @@ const COLS: string[] = [
 // Cell state → visual colors using design token vars
 const STATE_BG: Record<string, string> = {
   untested: "var(--line-2)",
-  weak:     "rgba(196,74,74,0.15)",
-  okay:     "rgba(182,128,44,0.15)",
-  strong:   "rgba(47,138,85,0.15)",
-  golden:   "rgba(182,128,44,0.55)",
+  weak:     "color-mix(in srgb, var(--bad) 15%, transparent)",
+  okay:     "color-mix(in srgb, var(--warn) 15%, transparent)",
+  strong:   "color-mix(in srgb, var(--good) 15%, transparent)",
+  golden:   "color-mix(in srgb, var(--warn) 55%, transparent)",
 };
 const STATE_TEXT: Record<string, string> = {
   untested: "var(--muted)",
@@ -144,8 +144,8 @@ export default function KnowledgeMap() {
           style={{
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            background: "rgba(196,74,74,0.06)",
-            border: "1px solid rgba(196,74,74,0.20)",
+            background: "color-mix(in srgb, var(--bad) 6%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--bad) 20%, transparent)",
             color: "var(--bad)",
             fontSize: 13,
           }}
@@ -164,7 +164,7 @@ export default function KnowledgeMap() {
               alignItems: "center",
               gap: 6,
               padding: "4px 10px",
-              borderRadius: 999,
+              borderRadius: "var(--radius-pill)",
               fontSize: 11.5,
               fontWeight: 500,
               background: STATE_BG[s],
@@ -176,7 +176,7 @@ export default function KnowledgeMap() {
                 display: "inline-block",
                 width: 6,
                 height: 6,
-                borderRadius: 999,
+                borderRadius: "var(--radius-pill)",
                 background: "currentColor",
               }}
             />

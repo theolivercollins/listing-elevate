@@ -84,7 +84,7 @@ export function KpiCard({ label, value, sub, delta, deltaPositiveIsGood = true }
           <span
             className="le-kpi-delta"
             style={{
-              background: good ? "rgba(47, 138, 85, 0.10)" : "rgba(196, 74, 74, 0.10)",
+              background: good ? "var(--good-soft)" : "var(--bad-soft)",
               color: good ? "var(--good)" : "var(--bad)",
             }}
           >
@@ -148,7 +148,7 @@ export function Sparkline({ data, color = "var(--ink)", height = 60, fill = true
           <path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
           {showDots &&
             points.map((p, i) => (
-              <circle key={i} cx={p[0]} cy={p[1]} r={i === points.length - 1 ? 4 : 0} fill="#fff" stroke={color} strokeWidth="2" />
+              <circle key={i} cx={p[0]} cy={p[1]} r={i === points.length - 1 ? 4 : 0} fill="var(--surface)" stroke={color} strokeWidth="2" />
             ))}
         </svg>
       )}

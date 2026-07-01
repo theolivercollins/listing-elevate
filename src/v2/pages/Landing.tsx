@@ -12,11 +12,8 @@ import { Footer } from "@/v2/components/landing/Footer";
 /**
  * Landing — composes the light SaaS surface top-to-bottom.
  *
- * The landing defaults to light mode and follows the global theme toggle:
- * when the user switches themes, ThemeProvider adds/removes `.dark` on
- * <html>, and all `--le-*` tokens re-resolve automatically. There is no
- * `[data-theme="light"]` rule in tokens.css, so a `data-theme="light"`
- * attribute on this element would be inert — it is intentionally omitted.
+ * Light mode only — there is no theme toggle on marketing surfaces, and
+ * the `--le-*` tokens always resolve to their light-mode values.
  *
  * Section order:
  *   1. Hero (contains Nav)

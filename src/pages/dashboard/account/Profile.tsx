@@ -335,7 +335,7 @@ export default function AccountProfile() {
                     {profile?.avatar_url && (
                       <button
                         type="button"
-                        className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:rgba(196,74,74,0.25)]"
+                        className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:color-mix(in_srgb,_var(--bad)_25%,_transparent)]"
                         onClick={handleAvatarRemove}
                         disabled={uploadingAvatar}
                       >
@@ -475,7 +475,7 @@ export default function AccountProfile() {
                 <div className="text-[13.5px] font-medium text-[var(--ink)]">Two-factor authentication</div>
                 <div className="text-[12px] text-[var(--muted)] mt-1.5 leading-[1.5]">Admin sign-in is protected by a one-time code emailed to you. There's nothing to set up.</div>
               </div>
-              <span className="text-[11px] font-semibold tracking-[0.02em] py-1 px-2.5 rounded-full bg-[rgba(47,138,85,0.10)] text-[var(--good)] uppercase">Enabled</span>
+              <span className="text-[11px] font-semibold tracking-[0.02em] py-1 px-2.5 rounded-full bg-[var(--good-soft)] text-[var(--good)] uppercase">Enabled</span>
             </div>
 
             <div className="grid grid-cols-[1fr_auto] gap-4 items-center pt-5 mt-1 border-t border-[var(--line-2)]">
@@ -491,8 +491,8 @@ export default function AccountProfile() {
                 onClick={handleSignOutAll}
                 disabled={signingOutAll}
                 style={signingOutAll
-                  ? { opacity: 0.6, color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }
-                  : { color: "var(--bad)", borderColor: "rgba(196,74,74,0.25)" }}
+                  ? { opacity: 0.6, color: "var(--bad)", borderColor: "color-mix(in srgb, var(--bad) 25%, transparent)" }
+                  : { color: "var(--bad)", borderColor: "color-mix(in srgb, var(--bad) 25%, transparent)" }}
               >
                 <Icon name="external" size={13} />
                 {signingOutAll ? "Signing out..." : "Sign out everywhere"}
@@ -506,7 +506,7 @@ export default function AccountProfile() {
                   You have admin access to every workspace surface, including the danger-zone settings.
                 </div>
               </div>
-              <span className="text-[11px] font-semibold tracking-[0.02em] py-1 px-2.5 rounded-full bg-[rgba(47,138,85,0.10)] text-[var(--good)] uppercase">
+              <span className="text-[11px] font-semibold tracking-[0.02em] py-1 px-2.5 rounded-full bg-[var(--good-soft)] text-[var(--good)] uppercase">
                 Admin
               </span>
             </div>
@@ -541,7 +541,7 @@ export default function AccountProfile() {
                         />
                         <button
                           type="button"
-                          className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:rgba(196,74,74,0.25)]"
+                          className="le-btn-ghost text-[12px] py-1.5 px-3 [color:var(--bad)] [border-color:color-mix(in_srgb,_var(--bad)_25%,_transparent)]"
                           onClick={handleLogoRemove}
                         >
                           Remove
@@ -576,7 +576,7 @@ export default function AccountProfile() {
                         {key === "primary" ? "Primary color" : "Secondary color"}
                       </label>
                       <div className="flex gap-2 items-center">
-                        <label className="w-[38px] h-[38px] rounded-[10px] shrink-0 border border-[var(--line)] cursor-pointer relative overflow-hidden"
+                        <label className="w-[38px] h-[38px] rounded-[var(--le-r-md)] shrink-0 border border-[var(--line)] cursor-pointer relative overflow-hidden"
                           style={{ background: brand.colors[key] }}>
                           <input
                             type="color"

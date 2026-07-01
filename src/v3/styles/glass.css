@@ -14,7 +14,7 @@
   --line: rgba(11, 11, 16, 0.07);
   --line-2: rgba(11, 11, 16, 0.04);
   --surface: #ffffff;
-  --accent: #2a6fdb;
+  --accent: #172033; /* was #2a6fdb; unified with app-wide navy brand accent */
   --good: #2f8a55;
   --warn: #b6802c;
   --bad: #c44a4a;

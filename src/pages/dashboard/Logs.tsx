@@ -66,7 +66,7 @@ function fromLive(l: PipelineLog & { properties?: { address: string } }): LogRow
 // ─── level colour map ─────────────────────────────────────────────
 const LEVEL_COLOR: Record<string, string> = {
   info: "var(--muted)",
-  warn: "oklch(0.62 0.16 50)",
+  warn: "var(--warn)",
   error: "var(--bad)",
   debug: "var(--muted-2)",
 };

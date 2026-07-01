@@ -36,7 +36,7 @@ export default function CostComparison() {
             <span className="text-[10px] tracking-[0.2em] uppercase" style={{ color: DIM }}>
               Cost per listing
             </span>
-            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}>
+            <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: "var(--le-radius-pill)" }}>
               Listing Elevate
             </span>
           </div>

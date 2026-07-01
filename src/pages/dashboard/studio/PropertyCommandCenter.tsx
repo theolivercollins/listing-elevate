@@ -947,7 +947,7 @@ const PropertyCommandCenter = () => {
                         fontSize: 11,
                         fontWeight: 600,
                         padding: note.source === 'client_preview' ? '2px 7px' : '0',
-                        borderRadius: 999,
+                        borderRadius: 'var(--le-r-pill)',
                         background:
                           note.source === 'client_preview'
                             ? 'rgba(182,128,44,0.10)'

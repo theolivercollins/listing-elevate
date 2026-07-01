@@ -27,9 +27,9 @@ const INPUT_STYLE: React.CSSProperties = {
 
 // ─── proposal status colour map ───────────────────────────────────
 const PROPOSAL_STATUS_STYLE: Record<string, { color: string; bg: string }> = {
-  applied:  { color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
+  applied:  { color: "var(--good)", bg: "color-mix(in srgb, var(--good) 10%, transparent)" },
   rejected: { color: "var(--muted)", bg: "rgba(11,11,16,0.05)" },
-  pending:  { color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
+  pending:  { color: "var(--warn)", bg: "color-mix(in srgb, var(--warn) 10%, transparent)" },
 };
 
 const PromptProposals = () => {
@@ -136,8 +136,8 @@ const PromptProposals = () => {
             gap: 10,
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            border: "1px solid rgba(196,74,74,0.3)",
-            background: "rgba(196,74,74,0.05)",
+            border: "1px solid color-mix(in srgb, var(--bad) 30%, transparent)",
+            background: "color-mix(in srgb, var(--bad) 5%, transparent)",
             fontSize: 13,
             color: "var(--bad)",
           }}
@@ -177,7 +177,7 @@ const PromptProposals = () => {
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{o.prompt_name}</span>
+                    <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{o.prompt_name}</span>
                     <span
                       style={{
                         display: "inline-flex",
@@ -186,7 +186,7 @@ const PromptProposals = () => {
                         borderRadius: "var(--radius-pill)",
                         fontSize: 10.5,
                         fontWeight: 500,
-                        background: o.ready_for_promotion ? "rgba(47,138,85,0.10)" : "rgba(11,11,16,0.05)",
+                        background: o.ready_for_promotion ? "color-mix(in srgb, var(--good) 10%, transparent)" : "rgba(11,11,16,0.05)",
                         color: o.ready_for_promotion ? "var(--good)" : "var(--muted)",
                       }}
                     >
@@ -286,7 +286,7 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginBottom: proposal.rationale ? 10 : 0 }}>
-            <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{proposal.prompt_name}</span>
+            <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, fontWeight: 500, color: "var(--ink)" }}>{proposal.prompt_name}</span>
             <span
               style={{
                 display: "inline-flex",
@@ -381,7 +381,7 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
                   overflow: "auto",
                   padding: 14,
                   fontSize: 11,
-                  fontFamily: "var(--le-font-mono)",
+                  fontFamily: "var(--le-font-sans)",
                   lineHeight: 1.65,
                   whiteSpace: "pre-wrap",
                   color: "var(--ink-2)",
@@ -402,7 +402,7 @@ function ProposalCard({ proposal, onReview }: { proposal: LabProposal; onReview:
                     style={{ padding: 14 }}
                   >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontFamily: "var(--le-font-mono)", fontSize: 12, color: "var(--ink-2)" }}>
+                      <span style={{ fontFamily: "var(--le-font-sans)", fontSize: 12, color: "var(--ink-2)" }}>
                         {b.bucket.room} / {b.bucket.camera_movement} / {b.bucket.provider}
                       </span>
                       <span style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>

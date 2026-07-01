@@ -97,8 +97,8 @@ export default function KnowledgeMapCell() {
           style={{
             padding: "10px 14px",
             borderRadius: "var(--radius-sm)",
-            background: "rgba(196,74,74,0.06)",
-            border: "1px solid rgba(196,74,74,0.20)",
+            background: "color-mix(in srgb, var(--bad) 6%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--bad) 20%, transparent)",
             color: "var(--bad)",
             fontSize: 13,
           }}
@@ -327,7 +327,7 @@ export default function KnowledgeMapCell() {
                               key={t}
                               style={{
                                 padding: "1px 6px",
-                                borderRadius: 999,
+                                borderRadius: "var(--radius-pill)",
                                 fontSize: 10,
                                 border: "1px solid var(--line)",
                                 color: t.startsWith("fail:") ? "var(--bad)" : "var(--muted)",

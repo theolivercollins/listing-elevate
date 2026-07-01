@@ -71,7 +71,7 @@ export function Pricing() {
                     display: "inline-flex",
                     alignItems: "center",
                     padding: "3px 10px",
-                    borderRadius: 999,
+                    borderRadius: "var(--le-radius-pill)",
                     background: "var(--le-accent)",
                     color: "var(--le-accent-fg)",
                     fontSize: 10,

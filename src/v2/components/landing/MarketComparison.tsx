@@ -61,7 +61,7 @@ function PillLabel({ label, dotColor }: { label: string; dotColor: string }) {
           alignItems: "center",
           gap: 8,
           padding: "6px 14px",
-          borderRadius: 999,
+          borderRadius: "var(--le-radius-pill)",
           background: "var(--le-bg-elev)",
           border: "1px solid var(--le-border)",
           fontSize: 11,
@@ -77,7 +77,7 @@ function PillLabel({ label, dotColor }: { label: string; dotColor: string }) {
           style={{
             width: 6,
             height: 6,
-            borderRadius: 999,
+            borderRadius: "var(--le-radius-pill)",
             background: dotColor,
             flexShrink: 0,
           }}

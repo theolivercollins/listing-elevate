@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Loader2, AlertTriangle, RefreshCw, ChevronDown, ExternalLink } from "lucide-react";
+import { AlertTriangle, RefreshCw, ChevronDown, ExternalLink } from "lucide-react";
 import {
   fetchSystemStatus,
   fetchSkuAffinity,
@@ -12,7 +12,7 @@ import {
   type SkuAffinityResponse,
 } from "@/lib/systemStatusApi";
 import { fetchModelHealth, type ModelHealthResponse } from "@/lib/api";
-import { PageHeading, KpiCard, Card, SectionTitle } from "@/components/dashboard/primitives";
+import { PageHeading, KpiCard, Card, SectionTitle, Skeleton, SkeletonRow } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 // Auto-refresh every 30s while the tab is visible. Cheap — one endpoint.
@@ -110,9 +110,24 @@ export default function SystemStatus() {
 
       {tab === "health" ? (
         loading && !status ? (
-          <div style={{ padding: "80px 0", textAlign: "center" }}>
-            <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
-          </div>
+          <>
+            <Card padding={20}>
+              <Skeleton width="45%" height={18} />
+            </Card>
+            <section style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="le-kpi-card">
+                  <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+                  <Skeleton width="70%" height={30} />
+                </div>
+              ))}
+            </section>
+            <Card>
+              <SkeletonRow />
+              <SkeletonRow />
+              <SkeletonRow />
+            </Card>
+          </>
         ) : status ? (
           <>
             {/* Hero health card */}
@@ -124,7 +139,7 @@ export default function SystemStatus() {
                     display: "inline-block",
                     width: 10,
                     height: 10,
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     background: hasDegraded ? "var(--warn)" : "var(--good)",
                     flexShrink: 0,
                   }}
@@ -373,8 +388,8 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
   if (!affinity) return null;
 
   const confStyle: Record<string, { color: string; bg: string }> = {
-    high_empirical: { color: "var(--good)", bg: "rgba(47,138,85,0.10)" },
-    medium_empirical: { color: "var(--warn)", bg: "rgba(182,128,44,0.10)" },
+    high_empirical: { color: "var(--good)", bg: "var(--good-soft)" },
+    medium_empirical: { color: "var(--warn)", bg: "var(--warn-soft)" },
   };
 
   return (
@@ -421,7 +436,7 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                   <span
                     style={{
                       padding: "2px 8px",
-                      borderRadius: 999,
+                      borderRadius: "var(--le-r-pill)",
                       fontSize: 10.5,
                       fontWeight: 600,
                       background: cs.bg,
@@ -440,9 +455,9 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                     <span
                       style={{
                         padding: "2px 8px",
-                        borderRadius: 999,
+                        borderRadius: "var(--le-r-pill)",
                         fontSize: 11,
-                        background: "rgba(47,138,85,0.10)",
+                        background: "var(--good-soft)",
                         color: "var(--good)",
                       }}
                     >
@@ -453,9 +468,9 @@ function AffinitySection({ affinity }: { affinity: SkuAffinityResponse | null })
                     <span
                       style={{
                         padding: "2px 8px",
-                        borderRadius: 999,
+                        borderRadius: "var(--le-r-pill)",
                         fontSize: 11,
-                        background: "rgba(182,128,44,0.10)",
+                        background: "var(--warn-soft)",
                         color: "var(--warn)",
                       }}
                     >
@@ -675,10 +690,10 @@ function KillSwitchSection({ flags, onReload }: { flags: SystemStatusFlag[]; onR
             <span
               style={{
                 padding: "2px 8px",
-                borderRadius: 999,
+                borderRadius: "var(--le-r-pill)",
                 fontSize: 10.5,
                 fontWeight: 600,
-                background: f.value ? "rgba(182,128,44,0.12)" : "rgba(47,138,85,0.10)",
+                background: f.value ? "rgba(182,128,44,0.12)" : "var(--good-soft)",
                 color: f.value ? "var(--warn)" : "var(--good)",
               }}
             >
@@ -829,7 +844,7 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
                         key={t}
                         style={{
                           padding: "1px 6px",
-                          borderRadius: 999,
+                          borderRadius: "var(--le-r-pill)",
                           fontSize: 10.5,
                           background: "rgba(11,11,16,0.05)",
                           color: "var(--muted)",
@@ -866,9 +881,21 @@ function FeedbackLogSection({ rows }: { rows: SystemStatusFeedbackRow[] }) {
 function ModelsView({ data, loading }: { data: ModelHealthResponse | null; loading: boolean }) {
   if (loading && !data) {
     return (
-      <div style={{ padding: "80px 0", textAlign: "center" }}>
-        <Loader2 style={{ width: 20, height: 20, color: "var(--muted)" }} className="animate-spin mx-auto" />
-      </div>
+      <>
+        <section style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="le-kpi-card">
+              <Skeleton width="55%" height={13} style={{ marginBottom: 14 }} />
+              <Skeleton width="70%" height={30} />
+            </div>
+          ))}
+        </section>
+        <Card>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </Card>
+      </>
     );
   }
 
@@ -982,7 +1009,7 @@ function ModelsView({ data, loading }: { data: ModelHealthResponse | null; loadi
                     display: "inline-block",
                     width: 6,
                     height: 6,
-                    borderRadius: 999,
+                    borderRadius: "var(--le-r-pill)",
                     background: dotColor,
                     flexShrink: 0,
                   }}

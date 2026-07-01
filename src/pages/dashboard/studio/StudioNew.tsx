@@ -1167,7 +1167,7 @@ const StudioNew = () => {
                       flex: 1,
                       height: 2,
                       background: 'var(--le-line)',
-                      borderRadius: 999,
+                      borderRadius: 'var(--le-r-pill)',
                       overflow: 'hidden',
                     }}
                   >
@@ -1176,7 +1176,7 @@ const StudioNew = () => {
                         height: '100%',
                         width: `${(totalPhotoCount / MIN_PHOTOS) * 100}%`,
                         background: 'var(--le-accent)',
-                        borderRadius: 999,
+                        borderRadius: 'var(--le-r-pill)',
                         transition: 'width 0.3s cubic-bezier(.2,.8,.2,1)',
                       }}
                     />
@@ -1292,7 +1292,7 @@ const StudioNew = () => {
                               justifyContent: 'center',
                             }}
                           >
-                            <Loader2 size={16} className="studio-spinner" style={{ color: '#fff' }} />
+                            <Loader2 size={16} className="studio-spinner" style={{ color: 'var(--le-surface)' }} />
                           </div>
                         )}
 
@@ -1307,7 +1307,7 @@ const StudioNew = () => {
                               justifyContent: 'center',
                               gap: 4,
                               background: 'rgba(196,60,60,0.72)',
-                              color: '#fff',
+                              color: 'var(--le-surface)',
                               fontSize: 9.5,
                               fontWeight: 600,
                               textAlign: 'center',
@@ -1326,8 +1326,8 @@ const StudioNew = () => {
                                   style={{
                                     background: 'rgba(255,255,255,0.25)',
                                     border: 'none',
-                                    borderRadius: 4,
-                                    color: '#fff',
+                                    borderRadius: 'var(--le-r-sm)',
+                                    color: 'var(--le-surface)',
                                     fontSize: 9.5,
                                     fontWeight: 600,
                                     padding: '3px 6px',
@@ -1343,8 +1343,8 @@ const StudioNew = () => {
                                 style={{
                                   background: 'rgba(255,255,255,0.25)',
                                   border: 'none',
-                                  borderRadius: 4,
-                                  color: '#fff',
+                                  borderRadius: 'var(--le-r-sm)',
+                                  color: 'var(--le-surface)',
                                   fontSize: 9.5,
                                   fontWeight: 600,
                                   padding: '3px 6px',
@@ -1370,7 +1370,7 @@ const StudioNew = () => {
                               transition: 'opacity 0.15s',
                               border: 'none',
                               cursor: 'pointer',
-                              color: '#fff',
+                              color: 'var(--le-surface)',
                             }}
                             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
                             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}

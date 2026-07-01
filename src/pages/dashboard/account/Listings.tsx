@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import { Link } from "react-router-dom";
-import { PageHeading, Card, StatusChip, EmptyState } from "@/components/dashboard/primitives";
+import { PageHeading, Card, StatusChip, EmptyState, SkeletonRow } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { AccountSubNav } from "@/components/dashboard/AccountSubNav";
 import "@/v2/styles/v2.css";
@@ -62,8 +62,10 @@ export default function AccountListings() {
           </div>
 
           {isLoading ? (
-            <div style={{ padding: "40px 14px", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-              Loading...
+            <div style={{ padding: "4px 14px" }}>
+              <SkeletonRow />
+              <SkeletonRow />
+              <SkeletonRow />
             </div>
           ) : !properties?.length ? (
             <div style={{ padding: "24px 14px" }}>

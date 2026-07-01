@@ -6,7 +6,7 @@ import { deleteImage, listImages, updateImage } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogImage } from "@/lib/blog/types";
 import { toast } from "sonner";
-import { PageHeading, Card } from "@/components/dashboard/primitives";
+import { PageHeading, Card, Skeleton } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 
 const VOCAB = ["aerial","exterior","interior","team","area","lifestyle","event","seasonal_spring","seasonal_summer","seasonal_fall","seasonal_winter","data_chart"];
@@ -15,11 +15,11 @@ const VOCAB = ["aerial","exterior","interior","team","area","lifestyle","event",
 const INPUT_STYLE: React.CSSProperties = {
   padding: "9px 14px",
   borderRadius: "var(--le-r-lg)",
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
+  border: "1px solid var(--line, var(--le-border))",
+  background: "var(--surface, var(--le-surface))",
   fontSize: 13,
   fontFamily: "var(--le-font-sans)",
-  color: "var(--ink)",
+  color: "var(--ink, var(--le-text))",
   outline: "none",
   width: 220,
 };
@@ -95,14 +95,14 @@ export default function BlogImageLibrary() {
       </Card>
 
       {/* Upload drop zone (always visible below filter) */}
-      <Card padding={0} style={{ border: "2px dashed var(--line-2)" }}>
+      <Card padding={0} style={{ border: "2px dashed var(--line-2, var(--le-border-strong))" }}>
         <div style={{ padding: "64px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-          <Icon name="upload" size={24} style={{ color: "var(--muted-2)" }} />
-          <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
+          <Icon name="upload" size={24} style={{ color: "var(--muted-2, var(--le-faint))" }} />
+          <div style={{ fontSize: 13, color: "var(--muted, var(--le-muted))", textAlign: "center" }}>
             Drop images here or{" "}
             <button
               onClick={() => setUploadOpen(true)}
-              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 13, fontFamily: "var(--le-font-sans)", padding: 0, fontWeight: 500 }}
+              style={{ background: "none", border: "none", color: "var(--accent, var(--le-accent))", cursor: "pointer", fontSize: 13, fontFamily: "var(--le-font-sans)", padding: 0, fontWeight: 500 }}
             >
               browse to upload
             </button>
@@ -112,14 +112,13 @@ export default function BlogImageLibrary() {
 
       {/* Grid */}
       {isLoading ? (
-        <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-          <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
-            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-          </svg>
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} width="100%" height="auto" borderRadius="var(--radius)" style={{ aspectRatio: "4/3" }} />
+          ))}
         </div>
       ) : images.length === 0 ? (
-        <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
+        <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted, var(--le-muted))" }}>
           No images match this filter.
         </div>
       ) : (
@@ -150,10 +149,10 @@ export default function BlogImageLibrary() {
             <DialogHeader><DialogTitle>Edit tags</DialogTitle></DialogHeader>
             <img
               src={thumbUrl(editing.blob_url, { width: 600, quality: 75 })}
-              style={{ width: "100%", borderRadius: "var(--radius-sm)", marginBottom: 8, display: "block" }}
+              style={{ width: "100%", borderRadius: "var(--le-r-md)", marginBottom: 8, display: "block" }}
               alt=""
             />
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>{editing.vision_caption}</div>
+            <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", marginBottom: 12 }}>{editing.vision_caption}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
               {VOCAB.map(t => {
                 const on = editing.vision_tags.includes(t);
@@ -166,10 +165,10 @@ export default function BlogImageLibrary() {
                     }}
                     style={{
                       padding: "5px 12px",
-                      borderRadius: "var(--radius-pill)",
-                      border: on ? "none" : "1px solid var(--line)",
-                      background: on ? "var(--ink)" : "var(--surface)",
-                      color: on ? "var(--surface)" : "var(--ink-2)",
+                      borderRadius: "var(--le-r-pill)",
+                      border: on ? "none" : "1px solid var(--line, var(--le-border))",
+                      background: on ? "var(--ink, var(--le-text))" : "var(--surface, var(--le-surface))",
+                      color: on ? "var(--surface, var(--le-surface))" : "var(--ink-2, var(--le-text-secondary))",
                       fontSize: 12,
                       fontWeight: 500,
                       cursor: "pointer",
@@ -209,7 +208,7 @@ function ImageTile({
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       style={{
-        background: "var(--surface)",
+        background: "var(--surface, var(--le-surface))",
         borderRadius: "var(--radius)",
         boxShadow: hov ? "var(--shadow-md)" : "var(--shadow-sm)",
         transform: hov ? "translateY(-1px)" : "translateY(0)",
@@ -217,7 +216,7 @@ function ImageTile({
         overflow: "hidden",
       }}
     >
-      <div style={{ position: "relative", width: "100%", paddingTop: "75%", background: "rgba(11,11,16,0.04)" }}>
+      <div style={{ position: "relative", width: "100%", paddingTop: "75%", background: "rgba(12,14,22,0.04)" }}>
         <img
           src={thumbUrl(img.blob_url, { width: 400, quality: 70 })}
           loading="lazy"
@@ -227,7 +226,7 @@ function ImageTile({
         />
       </div>
       <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-        <div style={{ fontSize: 11.5, color: "var(--ink-2)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+        <div style={{ fontSize: 11.5, color: "var(--ink-2, var(--le-text-secondary))", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
           {img.vision_caption ?? "—"}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -237,9 +236,9 @@ function ImageTile({
               style={{
                 padding: "2px 6px",
                 borderRadius: "var(--radius-pill)",
-                background: "rgba(11,11,16,0.05)",
+                background: "rgba(12,14,22,0.05)",
                 fontSize: 10,
-                color: "var(--muted)",
+                color: "var(--muted, var(--le-muted))",
               }}
             >
               {t}
@@ -249,14 +248,14 @@ function ImageTile({
         <div style={{ display: "flex", gap: 6, paddingTop: 2 }}>
           <button
             onClick={onEdit}
-            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "transparent", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "transparent", cursor: "pointer", fontSize: 11.5, color: "var(--ink-2, var(--le-text-secondary))", fontFamily: "var(--le-font-sans)" }}
           >
             <Icon name="sliders" size={11} />
             Tags
           </button>
           <button
             onClick={onDelete}
-            style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "transparent", cursor: "pointer", color: "var(--bad)", fontFamily: "var(--le-font-sans)" }}
+            style={{ display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "transparent", cursor: "pointer", color: "var(--bad, var(--le-bad))", fontFamily: "var(--le-font-sans)" }}
           >
             <Icon name="x" size={12} />
           </button>

@@ -65,8 +65,8 @@ export default function LabListings() {
           style={{
             padding: "12px 16px",
             borderRadius: "var(--radius-sm)",
-            background: "rgba(196,74,74,0.07)",
-            border: "1px solid rgba(196,74,74,0.18)",
+            background: "color-mix(in srgb, var(--bad) 7%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--bad) 18%, transparent)",
             fontSize: 13,
             color: "var(--bad)",
           }}

@@ -39,12 +39,12 @@ const WRAP: CSSProperties = {
   display: "inline-flex",
   padding: 4,
   background: "var(--line-2)",
-  borderRadius: 999,
+  borderRadius: "var(--radius-pill)",
 };
 
 const ITEM_BASE: CSSProperties = {
-  padding: "7px 14px",
-  borderRadius: 999,
+  padding: "8px 14px",
+  borderRadius: "var(--radius-pill)",
   fontSize: 12.5,
   fontWeight: 500,
   cursor: "pointer",

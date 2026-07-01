@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listPosts, listTemplates } from "@/lib/blog/api-client";
 import { thumbUrl } from "@/lib/blog/image-url";
 import type { BlogPostState } from "@/lib/blog/types";
-import { PageHeading, KpiCard, Card } from "@/components/dashboard/primitives";
+import { PageHeading, KpiCard, Card, SkeletonRow } from "@/components/dashboard/primitives";
 import { Icon } from "@/components/dashboard/icons";
 import { ListTabs } from "@/components/dashboard/ListTabs";
 import { StatePill, BLOG_STATE_PILL_MAP } from "@/components/dashboard/StatePill";
@@ -28,7 +28,7 @@ const ghostBtn: React.CSSProperties = {
   gap: 6,
   padding: "9px 13px",
   borderRadius: "var(--le-r-md)",
-  border: "1px solid rgba(15,24,60,0.08)",
+  border: "1px solid rgba(12,14,22,0.08)",
   background: "rgba(255,255,255,0.6)",
   color: "var(--ink-2)",
   fontSize: 12,
@@ -89,8 +89,8 @@ function NewPostDropdown({
               minWidth: 260,
               background: "var(--surface)",
               borderRadius: "var(--le-r-lg)",
-              boxShadow: "0 20px 60px -16px rgba(11,18,32,0.22)",
-              border: "1px solid rgba(15,24,60,0.06)",
+              boxShadow: "var(--le-shadow-lg)",
+              border: "1px solid rgba(12,14,22,0.06)",
               overflow: "hidden",
               fontFamily: "var(--le-font-sans)",
             }}
@@ -115,7 +115,7 @@ function NewPostDropdown({
             />
 
             {/* separator */}
-            <div style={{ height: 1, background: "rgba(15,24,60,0.05)", margin: "4px 0" }} />
+            <div style={{ height: 1, background: "rgba(12,14,22,0.05)", margin: "4px 0" }} />
 
             {templates.length > 0 ? (
               <>
@@ -198,7 +198,7 @@ function DropItem({
         alignItems: "flex-start",
         gap: 10,
         padding: "10px 14px",
-        background: hovered ? "rgba(15,24,60,0.03)" : "transparent",
+        background: hovered ? "rgba(12,14,22,0.03)" : "transparent",
         border: "none",
         cursor: "pointer",
         textAlign: "left",
@@ -212,7 +212,7 @@ function DropItem({
           width: 28,
           height: 28,
           borderRadius: "var(--le-r-sm)",
-          background: "rgba(15,24,60,0.04)",
+          background: "rgba(12,14,22,0.04)",
           display: "grid",
           placeItems: "center",
           color: "var(--ink-2)",
@@ -384,8 +384,10 @@ export default function BlogPostsList() {
 
         {/* Body */}
         {isLoading ? (
-          <div style={{ padding: "48px 0", textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-            Loading…
+          <div>
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonRow key={i} />
+            ))}
           </div>
         ) : isError ? (
           <div style={{ padding: "48px 0", textAlign: "center" }}>
@@ -416,7 +418,7 @@ export default function BlogPostsList() {
                 width: 44,
                 height: 44,
                 borderRadius: "var(--le-r-lg)",
-                background: "rgba(15,24,60,0.04)",
+                background: "rgba(12,14,22,0.04)",
                 display: "grid",
                 placeItems: "center",
                 color: "var(--muted)",
@@ -505,10 +507,10 @@ function PostRow({
         gridTemplateColumns: "2fr 100px 72px 120px 100px 70px 60px",
         gap: 12,
         padding: "12px 14px",
-        borderBottom: "1px solid rgba(15,24,60,0.04)",
+        borderBottom: "1px solid rgba(12,14,22,0.04)",
         alignItems: "center",
         cursor: "pointer",
-        background: hovered ? "rgba(15,24,60,0.02)" : "transparent",
+        background: hovered ? "rgba(12,14,22,0.02)" : "transparent",
         transition: "background .15s",
       }}
     >
