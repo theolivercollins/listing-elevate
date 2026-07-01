@@ -474,8 +474,129 @@ function buildFadeTransitions(segmentCount: number): WalkthroughTransition[] {
   }));
 }
 
-function pickStartRoom(rooms: SpatialGraphNode[]): SpatialGraphNode | undefined {
-  return rooms.find((r) => /exterior|front/i.test(r.roomType)) ?? rooms[0];
+// ─── Room classification + dedup (2026-07-02 dry-run fixes) ────────────
+//
+// A real dry run against property a30212b2 exposed three flaws in the
+// original single-DFS planner: (1) two photos of the same physical room
+// (e.g. two exterior_front shots) were treated as two different rooms and
+// could both land in the plan; (2) the DFS always started at the
+// exterior/front room and so walked outward-to-outward instead of
+// interior-to-outdoor; (3) segment order was raw DFS-backtrack order, so an
+// aerial hero shot or a second exterior shot could land mid-tour instead of
+// bookending it. The helpers below implement the fix; planRoute()'s
+// docblock has the full rule ladder.
+
+function normalizeRoomType(roomType: string): string {
+  return (roomType || "other").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+/** Aerial rooms are hero/closer-only — never a mid-segment chain member (and
+ *  omitted entirely if they're not the hero shot). */
+function isAerialRoomType(rt: string): boolean {
+  return /aerial/.test(rt);
+}
+
+/** The single opener room type — always its own opening segment, never
+ *  chained with anything else, regardless of edge evidence. Deliberately
+ *  narrower than "exterior" alone so back_exterior/waterfront (real outdoor
+ *  amenity rooms) don't get misclassified as the opener. */
+function isExteriorFrontRoomType(rt: string): boolean {
+  return rt === "exterior_front" || (/exterior/.test(rt) && /front/.test(rt));
+}
+
+function isLanaiRoomType(rt: string): boolean {
+  return /lanai/.test(rt);
+}
+
+/** Pool, waterfront, or any other (non-front) exterior variant — e.g.
+ *  back_exterior. Callers must check isExteriorFrontRoomType/isAerialRoomType
+ *  first; this is intentionally broad ("exterior") once those are ruled out. */
+function isOutdoorAmenityRoomType(rt: string): boolean {
+  return /pool|waterfront|exterior/.test(rt);
+}
+
+/** Orientation score for interior->outdoor chain ordering: interior spaces
+ *  (kitchen/bedroom/bathroom/living/etc — anything not exterior/pool/lanai/
+ *  aerial/waterfront) score 0, the semi-outdoor lanai scores 1, and pool/
+ *  back-exterior/waterfront amenities score 2. Only meaningful for rooms
+ *  already outside the exterior-front/aerial categories (those are pulled
+ *  out of the chain graph entirely before this is ever consulted). */
+function orientationScore(rt: string): 0 | 1 | 2 {
+  if (isLanaiRoomType(rt)) return 1;
+  if (isOutdoorAmenityRoomType(rt)) return 2;
+  return 0;
+}
+
+/**
+ * Fix 1 (room dedup): photos sharing the same normalized room_type (e.g. two
+ * exterior_front shots, two pool shots) represent ONE physical room. Merges
+ * every such group into a single node — keyed on the FIRST occurrence's
+ * position for determinism — picking the group member with the most edge
+ * evidence (highest degree across ALL edges, not just covered ones) as the
+ * representative photo, falling back to the first member on a tie. Edges are
+ * remapped onto the surviving representative ids; a merge that turns an edge
+ * into a self-loop (both endpoints collapsed onto the same room) is dropped,
+ * and duplicate edges between the same pair of rooms collapse to whichever
+ * copy has the higher confidence.
+ */
+function dedupeRoomsByType(graph: SpatialGraph): { rooms: SpatialGraphNode[]; edges: SpatialGraphEdge[]; heroShot: string | null } {
+  const groupOrder: string[] = [];
+  const groups = new Map<string, SpatialGraphNode[]>();
+  for (const r of graph.rooms) {
+    const key = normalizeRoomType(r.roomType);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+      groupOrder.push(key);
+    }
+    groups.get(key)!.push(r);
+  }
+
+  // Any-confidence degree count, used only to pick the best representative
+  // photo per duplicate group — deliberately not gated by MIN_EDGE_CONFIDENCE
+  // since a sub-threshold edge is still evidence the photo shows a doorway.
+  const degreeById = new Map<string, number>();
+  for (const e of graph.edges) {
+    degreeById.set(e.from, (degreeById.get(e.from) ?? 0) + 1);
+    degreeById.set(e.to, (degreeById.get(e.to) ?? 0) + 1);
+  }
+
+  const idMap = new Map<string, string>(); // original photoId -> canonical (representative) photoId
+  const dedupedRooms: SpatialGraphNode[] = [];
+  for (const key of groupOrder) {
+    const members = groups.get(key)!;
+    let winner = members[0];
+    let winnerDegree = degreeById.get(winner.photoId) ?? 0;
+    for (const m of members.slice(1)) {
+      const d = degreeById.get(m.photoId) ?? 0;
+      if (d > winnerDegree) {
+        winner = m;
+        winnerDegree = d;
+      }
+    }
+    for (const m of members) idMap.set(m.photoId, winner.photoId);
+    dedupedRooms.push(winner);
+  }
+
+  const bestEdgeByPair = new Map<string, SpatialGraphEdge>();
+  for (const e of graph.edges) {
+    const from = idMap.get(e.from) ?? e.from;
+    const to = idMap.get(e.to) ?? e.to;
+    if (from === to) continue; // merge collapsed both endpoints onto the same room -- drop the now-self-loop edge
+    const pairKey = [from, to].sort().join("::");
+    const remapped: SpatialGraphEdge = {
+      ...e,
+      from,
+      to,
+      evidencePhotoId: idMap.get(e.evidencePhotoId) ?? e.evidencePhotoId,
+    };
+    const existing = bestEdgeByPair.get(pairKey);
+    if (!existing || remapped.confidence > existing.confidence) {
+      bestEdgeByPair.set(pairKey, remapped);
+    }
+  }
+
+  const heroShot = graph.heroShot ? (idMap.get(graph.heroShot) ?? graph.heroShot) : null;
+  return { rooms: dedupedRooms, edges: [...bestEdgeByPair.values()], heroShot };
 }
 
 function buildAdjacency(
@@ -499,74 +620,130 @@ function buildAdjacency(
 }
 
 /**
- * Moves heroShot to the end of the final segment when it's part of the
- * connected traversal (i.e. reachable — present in `visited`). Mutates
- * idSegments in place. No-op if heroShot is unset, not reachable, or
- * already the last photo of the last segment.
+ * Fix 3(d) (hero closer): the hero shot always gets its own dedicated
+ * closing beat, appended as the LAST segment — never folded into the tail
+ * of whatever chain segment happens to end the tour. No-op if heroShot is
+ * unset, unknown, or already the sole trailing element of the last segment.
+ * Otherwise: if the hero room is currently a member of some chain segment,
+ * it's spliced out of there (dropping the segment entirely if that empties
+ * it) before the new closing segment is appended — so it never appears
+ * twice. Aerial/exterior-front hero rooms, which never entered idSegments
+ * in the first place (they're excluded from the chain graph), just get
+ * appended fresh. Mutates idSegments in place.
  */
-function applyHeroShotEnding(idSegments: string[][], heroShot: string | null, visited: Set<string>): void {
-  if (!heroShot || idSegments.length === 0 || !visited.has(heroShot)) return;
-  const last = idSegments[idSegments.length - 1];
-  if (last[last.length - 1] === heroShot) return;
+function applyHeroShotClosing(
+  idSegments: string[][],
+  heroShot: string | null,
+  roomById: Map<string, SpatialGraphNode>,
+): void {
+  if (!heroShot || !roomById.has(heroShot)) return;
 
-  let segIdx = -1;
-  let idx = -1;
+  if (idSegments.length > 0) {
+    const last = idSegments[idSegments.length - 1];
+    if (last[last.length - 1] === heroShot) return; // already the closing beat
+  }
+
   for (let s = 0; s < idSegments.length; s++) {
-    const i = idSegments[s].indexOf(heroShot);
-    if (i !== -1) {
-      segIdx = s;
-      idx = i;
+    const idx = idSegments[s].indexOf(heroShot);
+    if (idx !== -1) {
+      idSegments[s].splice(idx, 1);
+      if (idSegments[s].length === 0) idSegments.splice(s, 1);
       break;
     }
   }
-  if (segIdx === -1) return; // not part of any segment — shouldn't happen given visited.has(heroShot)
 
-  idSegments[segIdx].splice(idx, 1);
-  if (idSegments[segIdx].length === 0) {
-    idSegments.splice(segIdx, 1);
-  }
-  idSegments[idSegments.length - 1].push(heroShot);
+  idSegments.push([heroShot]);
 }
 
 /**
- * Deterministic route planner — the "hard rule" ladder made concrete:
+ * Fix 2 + dead-end handling for the interior/amenity "chain graph" (rooms
+ * with the exterior-front opener and any aerial rooms already excluded — see
+ * planRoute). Splits `rooms` into connected components over `edges`
+ * (>= MIN_EDGE_CONFIDENCE only), and for each component:
  *
- *   1. No usable (>= MIN_EDGE_CONFIDENCE) edges anywhere → every room is its
- *      own segment, every transition a crossfade (no-edges fallback).
- *   2. Otherwise, forward-only DFS from the exterior/front room (falls back
- *      to rooms[0]) across covered edges only, never revisiting a room.
- *      Disconnected rooms (unreachable from the start) are appended after,
- *      each starting its own segment.
- *   3. Chunk the traversal order into segments: a room stays in the CURRENT
- *      segment only while a covered edge directly connects it to the
- *      previous room AND the segment hasn't hit maxSpacesPerSegment;
- *      otherwise a new segment starts. This is what turns a DFS backtrack
- *      (a "physical jump" back through an already-shown room to reach a
- *      sibling branch) into a crossfade instead of an impossible camera
- *      move, and is also what turns a genuine dead-end (e.g. a kitchen with
- *      no onward covered edge) into its own short segment.
- *   4. If heroShot is set and reachable, it's moved to the end of the final
- *      segment so the tour always closes on the cinematic shot.
+ *   - No-edges component (or entirely edgeless graph): every room is its own
+ *     segment (unchanged no-edges fallback).
+ *   - Otherwise: picks a deterministic start room — lowest orientationScore
+ *     (most interior) first, then lowest degree (prefer an actual leaf/dead
+ *     end over a branching hub) as a tiebreak, then first-seen order as the
+ *     final tiebreak — then walks a forward-only DFS (highest-confidence
+ *     neighbor first) from there, chunking the resulting order into segments
+ *     exactly as before: a room stays in the current segment only while a
+ *     covered edge directly connects it to the previous room in the FINAL
+ *     order AND the segment hasn't hit maxSpaces; otherwise a new segment
+ *     starts. This is what turns a DFS backtrack (or a genuine dead end —
+ *     e.g. a room whose only covered edge leads to an already-full segment)
+ *     into a crossfade instead of an impossible camera move.
+ *
+ * Picking the lowest-degree, most-interior room as the start is what
+ * reorients a linear chain from "outdoor-in" to "interior-out": in a
+ * kitchen<->living<->lanai<->pool<->back_ext<->waterfront chain, the kitchen
+ * (score 0, degree 1 — an actual leaf) wins the start over living (score 0,
+ * degree 2), so the DFS walks kitchen->living->lanai->pool->back_ext->
+ * waterfront instead of starting from whichever room happened to be listed
+ * first in the graph.
  */
-export function planRoute(
-  graph: SpatialGraph,
-  opts?: { maxSpacesPerSegment?: number },
-): WalkthroughPlan {
-  const maxSpaces = Math.max(1, opts?.maxSpacesPerSegment ?? DEFAULT_MAX_SPACES_PER_SEGMENT);
-  const rooms = graph.rooms;
-  if (rooms.length === 0) {
-    return { segments: [], transitions: [] };
-  }
+function planChainSegments(
+  rooms: SpatialGraphNode[],
+  edges: SpatialGraphEdge[],
+  maxSpaces: number,
+): string[][] {
+  if (rooms.length === 0) return [];
 
+  const roomIndex = new Map(rooms.map((r, i) => [r.photoId, i]));
   const roomById = new Map(rooms.map((r) => [r.photoId, r]));
-  const { adjacency, covered } = buildAdjacency(rooms, graph.edges);
-
-  let idSegments: string[][];
+  const { adjacency, covered } = buildAdjacency(rooms, edges);
 
   if (covered.length === 0) {
-    // No-edges fallback: every room its own segment, all fades.
-    idSegments = rooms.map((r) => [r.photoId]);
-  } else {
+    return rooms.map((r) => [r.photoId]);
+  }
+
+  // Connected components over the covered adjacency, discovered in the
+  // rooms' original (dedup-stable) order for determinism.
+  const globalVisited = new Set<string>();
+  const components: string[][] = [];
+  for (const r of rooms) {
+    if (globalVisited.has(r.photoId)) continue;
+    const stack = [r.photoId];
+    globalVisited.add(r.photoId);
+    const comp: string[] = [];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      comp.push(id);
+      for (const n of adjacency.get(id) ?? []) {
+        if (!globalVisited.has(n.to)) {
+          globalVisited.add(n.to);
+          stack.push(n.to);
+        }
+      }
+    }
+    components.push(comp);
+  }
+
+  const hasEdge = (a: string, b: string) => (adjacency.get(a) ?? []).some((n) => n.to === b);
+  const allSegments: string[][] = [];
+
+  for (const comp of components) {
+    let start = comp[0];
+    let startScore = orientationScore(normalizeRoomType(roomById.get(start)!.roomType));
+    let startDegree = (adjacency.get(start) ?? []).length;
+    let startIdx = roomIndex.get(start)!;
+    for (const id of comp.slice(1)) {
+      const score = orientationScore(normalizeRoomType(roomById.get(id)!.roomType));
+      const degree = (adjacency.get(id) ?? []).length;
+      const idx = roomIndex.get(id)!;
+      const better =
+        score < startScore ||
+        (score === startScore && degree < startDegree) ||
+        (score === startScore && degree === startDegree && idx < startIdx);
+      if (better) {
+        start = id;
+        startScore = score;
+        startDegree = degree;
+        startIdx = idx;
+      }
+    }
+
     const visited = new Set<string>();
     const order: string[] = [];
     const dfs = (id: string) => {
@@ -577,17 +754,9 @@ export function planRoute(
         if (!visited.has(n.to)) dfs(n.to);
       }
     };
-    const start = pickStartRoom(rooms);
-    if (start) dfs(start.photoId);
-    // Rooms disconnected from the start (or from every covered edge) still
-    // need a segment — append them in the graph's original room order.
-    for (const r of rooms) {
-      if (!visited.has(r.photoId)) dfs(r.photoId);
-    }
+    dfs(start);
+    for (const id of comp) if (!visited.has(id)) dfs(id); // defensive: shouldn't fire, comp came from the same graph
 
-    const hasEdge = (a: string, b: string) => (adjacency.get(a) ?? []).some((n) => n.to === b);
-
-    idSegments = [];
     let current: string[] = [];
     for (const id of order) {
       if (current.length === 0) {
@@ -598,17 +767,107 @@ export function planRoute(
       if (current.length < maxSpaces && hasEdge(prev, id)) {
         current.push(id);
       } else {
-        idSegments.push(current);
+        allSegments.push(current);
         current = [id];
       }
     }
-    if (current.length > 0) {
-      idSegments.push(current);
-    }
-
-    applyHeroShotEnding(idSegments, graph.heroShot, visited);
+    if (current.length > 0) allSegments.push(current);
   }
 
-  const segments = idSegments.map((ids) => buildSegment(ids.map((id) => roomById.get(id)!), graph.edges));
+  return allSegments;
+}
+
+/**
+ * Deterministic route planner — the "hard rule" ladder made concrete. Fixed
+ * 2026-07-02 after a real dry run (property a30212b2) exposed three flaws:
+ * duplicate exterior/pool photos both landing in the plan, chains walking
+ * outdoor-to-outdoor instead of interior-to-outdoor, and cinematic ordering
+ * (opener / hero closer) being at the mercy of raw DFS-backtrack order. See
+ * dedupeRoomsByType / planChainSegments / applyHeroShotClosing above for the
+ * mechanics; here's the assembly:
+ *
+ *   1. Dedup rooms by normalized room_type (fix 1) — two photos of the same
+ *      physical room (e.g. two exterior_front shots) collapse to one node,
+ *      keeping whichever photo has the most edge evidence as the
+ *      representative. Edges are remapped onto survivors; self-loops created
+ *      by the merge are dropped, duplicate edges between the same pair keep
+ *      the higher-confidence copy.
+ *   2. Split the deduped rooms into three groups: the exterior-front opener
+ *      room(s) (always their own single-room opening segment, never chained
+ *      with anything, edges into/out of them are ignored for chaining
+ *      purposes), aerial room(s) (never a mid-segment member — hero/closer
+ *      only, omitted entirely if not the hero shot), and everything else
+ *      (the "chain graph": interior + amenity rooms available for
+ *      connected, forward-only traversal).
+ *   3. planChainSegments() walks the chain graph: no usable
+ *      (>= MIN_EDGE_CONFIDENCE) edges anywhere → every chain room is its own
+ *      segment (no-edges fallback). Otherwise, per connected component, a
+ *      forward-only DFS starts at the most-interior, lowest-degree room
+ *      (fix 2 — orients kitchen/living/bedroom-style rooms first, pool/
+ *      back-exterior/waterfront-style amenities last) and chunks the
+ *      traversal into segments exactly as before: a room stays in the
+ *      current segment only while a covered edge directly connects it to
+ *      the previous room AND the segment hasn't hit maxSpacesPerSegment;
+ *      otherwise a new segment starts (this is what turns a DFS backtrack,
+ *      or a genuine dead end, into a crossfade instead of an impossible
+ *      camera move).
+ *   4. Cinematic segment order (fix 3): opener segment(s) first, then the
+ *      resulting chain segments that contain at least one interior room
+ *      ("interior->outdoor" chains) sorted longest/most-covered first, then
+ *      the remaining chain segments that are entirely outdoor/amenity rooms
+ *      (also longest first), then the hero shot as a dedicated closing
+ *      segment appended last (applyHeroShotClosing) — pulled out of wherever
+ *      it currently sits if it's mid-chain, or appended fresh if it was an
+ *      aerial/opener room that was never part of the chain graph at all.
+ */
+export function planRoute(
+  graph: SpatialGraph,
+  opts?: { maxSpacesPerSegment?: number },
+): WalkthroughPlan {
+  const maxSpaces = Math.max(1, opts?.maxSpacesPerSegment ?? DEFAULT_MAX_SPACES_PER_SEGMENT);
+  if (graph.rooms.length === 0) {
+    return { segments: [], transitions: [] };
+  }
+
+  const deduped = dedupeRoomsByType(graph);
+  const roomById = new Map(deduped.rooms.map((r) => [r.photoId, r]));
+
+  const openerRooms = deduped.rooms.filter((r) => isExteriorFrontRoomType(normalizeRoomType(r.roomType)));
+  const aerialRooms = deduped.rooms.filter((r) => isAerialRoomType(normalizeRoomType(r.roomType)));
+  const excludedIds = new Set([...openerRooms, ...aerialRooms].map((r) => r.photoId));
+  const chainRooms = deduped.rooms.filter((r) => !excludedIds.has(r.photoId));
+  const chainEdges = deduped.edges.filter((e) => !excludedIds.has(e.from) && !excludedIds.has(e.to));
+
+  const chainIdSegments = planChainSegments(chainRooms, chainEdges, maxSpaces);
+
+  // Fix 3: interior-anchored chains (contain >= 1 interior room) come before
+  // purely-outdoor/amenity chains, each bucket sorted longest/most-covered
+  // first.
+  const interiorAnchored: string[][] = [];
+  const outdoorOnly: string[][] = [];
+  for (const seg of chainIdSegments) {
+    const hasInterior = seg.some(
+      (id) => orientationScore(normalizeRoomType(roomById.get(id)!.roomType)) === 0,
+    );
+    (hasInterior ? interiorAnchored : outdoorOnly).push(seg);
+  }
+  interiorAnchored.sort((a, b) => b.length - a.length);
+  outdoorOnly.sort((a, b) => b.length - a.length);
+
+  const idSegments: string[][] = [
+    ...openerRooms.map((r) => [r.photoId]),
+    ...interiorAnchored,
+    ...outdoorOnly,
+  ];
+
+  applyHeroShotClosing(idSegments, deduped.heroShot, roomById);
+
+  if (idSegments.length === 0) {
+    // e.g. an all-aerial property with no heroShot set — nothing left to
+    // show once aerial-only rooms are excluded from the chain graph.
+    return { segments: [], transitions: [] };
+  }
+
+  const segments = idSegments.map((ids) => buildSegment(ids.map((id) => roomById.get(id)!), deduped.edges));
   return { segments, transitions: buildFadeTransitions(segments.length) };
 }

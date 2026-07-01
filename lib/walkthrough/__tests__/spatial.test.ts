@@ -31,7 +31,7 @@ function graph(rooms: SpatialGraphNode[], edges: SpatialGraphEdge[], heroShot: s
 }
 
 describe("planRoute", () => {
-  it("covered-path traversal: walks a linear chain forward-only along evidenced doorways", () => {
+  it("opener extraction + covered-path traversal: the exterior_front room becomes its own opener segment, ahead of the forward-only interior chain", () => {
     const g = graph(
       [room("ext", "Front Exterior", "exterior_front"), room("living", "Living Room"), room("kitchen", "Kitchen")],
       [edge("ext", "living", 0.9), edge("living", "kitchen", 0.75)],
@@ -39,29 +39,33 @@ describe("planRoute", () => {
 
     const plan = planRoute(g);
 
-    expect(plan.segments).toHaveLength(1);
-    expect(plan.segments[0].photoIds).toEqual(["ext", "living", "kitchen"]);
-    expect(plan.transitions).toEqual([]);
+    // The exterior_front room is always its own opening segment (fix 3) —
+    // never chained with the interior rooms even though an edge exists.
+    expect(plan.segments.map((s) => s.photoIds)).toEqual([["ext"], ["living", "kitchen"]]);
+    expect(plan.transitions).toEqual([{ afterSegmentIndex: 0, type: "crossfade" }]);
     // Stable skeleton first, variable manifest/path last (cache-friendly ordering).
     expect(plan.segments[0].prompt.startsWith(WALKTHROUGH_SKELETON_PROMPT)).toBe(true);
     expect(plan.segments[0].prompt).toContain("Front Exterior");
-    expect(plan.segments[0].prompt).toContain("Kitchen");
-    expect(plan.segments[0].prompt).toContain("doorway");
-    // 3 spaces * 3.5s/space = 10.5 -> rounds to 11.
-    expect(plan.segments[0].durationSec).toBe(11);
+    expect(plan.segments[1].prompt).toContain("Kitchen");
+    expect(plan.segments[1].prompt).toContain("doorway");
+    // Opener: 1 space -> 4s (MIN_SEGMENT_DURATION_SEC floor). Interior chain: 2 spaces * 3.5s/space = 7s.
+    expect(plan.segments[0].durationSec).toBe(4);
+    expect(plan.segments[1].durationSec).toBe(7);
   });
 
   it("dead-end handling: a room with no onward covered edge becomes its own trailing segment", () => {
     const g = graph(
       [
         room("ext", "Front Exterior", "exterior_front"),
-        room("living", "Living Room"),
-        room("kitchen", "Kitchen"),
+        room("office", "Office"), // most-interior leaf -> wins the chain start (score 0, degree 1)
+        room("living", "Living Room"), // interior hub (score 0, degree 3)
+        room("kitchen", "Kitchen"), // true dead end — reached only via backtrack, after the pool branch
         room("lanai", "Lanai"),
         room("pool", "Pool"),
       ],
       [
-        edge("ext", "living", 0.9),
+        edge("ext", "office", 0.95), // ignored for chaining — ext is always its own opener, edges or not
+        edge("office", "living", 0.9),
         edge("living", "kitchen", 0.65), // dead end — kitchen has no onward covered edge
         edge("living", "lanai", 0.85),
         edge("lanai", "pool", 0.9),
@@ -70,20 +74,25 @@ describe("planRoute", () => {
 
     const plan = planRoute(g);
 
-    // Forward-only DFS (highest-confidence neighbor first) fills a 4-space
-    // segment with ext->living->lanai->pool before the kitchen branch is
-    // ever reached, so kitchen — the true dead end — lands in its own
-    // trailing segment exactly as the design intends.
+    // ext opens on its own; office (the lowest-degree interior room) starts
+    // the chain; forward-only DFS (highest-confidence neighbor first) fills
+    // the 4-space cap with office->living->lanai->pool before the kitchen
+    // branch is ever reached, so kitchen — the true dead end — lands in its
+    // own trailing segment exactly as the design intends.
     expect(plan.segments.map((s) => s.photoIds)).toEqual([
-      ["ext", "living", "lanai", "pool"],
+      ["ext"],
+      ["office", "living", "lanai", "pool"],
       ["kitchen"],
     ]);
-    expect(plan.transitions).toEqual([{ afterSegmentIndex: 0, type: "crossfade" }]);
+    expect(plan.transitions).toEqual([
+      { afterSegmentIndex: 0, type: "crossfade" },
+      { afterSegmentIndex: 1, type: "crossfade" },
+    ]);
     // Single-room segments hold rather than attempt an impossible transition.
-    expect(plan.segments[1].prompt).toContain("hold on Kitchen");
+    expect(plan.segments[2].prompt).toContain("hold on Kitchen");
   });
 
-  it("max-spaces split: a long connected chain splits at the configured cap, fading between chunks", () => {
+  it("max-spaces split: a long connected interior chain splits at the configured cap, fading between chunks", () => {
     const ids = ["a", "b", "c", "d", "e", "f"];
     const rooms = ids.map((id, i) => (i === 0 ? room(id, "A", "exterior_front") : room(id, id.toUpperCase())));
     const edges: SpatialGraphEdge[] = [];
@@ -92,14 +101,20 @@ describe("planRoute", () => {
 
     const plan = planRoute(g, { maxSpacesPerSegment: 3 });
 
+    // "a" is the exterior_front opener, extracted from the chain; the
+    // remaining b..f interior chain splits at the 3-space cap.
     expect(plan.segments.map((s) => s.photoIds)).toEqual([
-      ["a", "b", "c"],
-      ["d", "e", "f"],
+      ["a"],
+      ["b", "c", "d"],
+      ["e", "f"],
     ]);
-    expect(plan.transitions).toEqual([{ afterSegmentIndex: 0, type: "crossfade" }]);
+    expect(plan.transitions).toEqual([
+      { afterSegmentIndex: 0, type: "crossfade" },
+      { afterSegmentIndex: 1, type: "crossfade" },
+    ]);
   });
 
-  it("hero-shot ending: reorders the reachable heroShot to the end of the final segment", () => {
+  it("hero-shot ending: a mid-chain heroShot is pulled out into its own dedicated closing segment", () => {
     const ids = ["a", "b", "c", "d"];
     const rooms = ids.map((id, i) => (i === 0 ? room(id, "A", "exterior_front") : room(id, id.toUpperCase())));
     const edges: SpatialGraphEdge[] = [];
@@ -108,12 +123,16 @@ describe("planRoute", () => {
 
     const plan = planRoute(g);
 
-    expect(plan.segments).toHaveLength(1);
-    const photoIds = plan.segments[0].photoIds;
-    expect(photoIds[photoIds.length - 1]).toBe("b");
-    expect(photoIds).toEqual(["a", "c", "d", "b"]);
-    // heroShot appears exactly once — moved, not duplicated.
-    expect(photoIds.filter((id) => id === "b")).toHaveLength(1);
+    // "a" opens; "b" (the lowest-degree interior room, a leaf off the b-c-d
+    // chain once "a" is extracted) starts the chain but is immediately
+    // pulled back out into its own dedicated closing segment (fix 3d) since
+    // it's the hero shot.
+    expect(plan.segments.map((s) => s.photoIds)).toEqual([["a"], ["c", "d"], ["b"]]);
+    const allIds = plan.segments.flatMap((s) => s.photoIds);
+    // heroShot appears exactly once across the whole plan — moved, not duplicated.
+    expect(allIds.filter((id) => id === "b")).toHaveLength(1);
+    expect(plan.segments[plan.segments.length - 1].photoIds).toEqual(["b"]);
+    expect(plan.segments[plan.segments.length - 1].durationSec).toBe(4);
   });
 
   it("no-edges fallback: with zero usable edges, every room is its own segment and every join is a fade", () => {
@@ -147,5 +166,59 @@ describe("planRoute", () => {
     const plan = planRoute(graph([], []));
     expect(plan.segments).toEqual([]);
     expect(plan.transitions).toEqual([]);
+  });
+
+  it("real dry-run reproduction (property a30212b2): dedups duplicate exterior/pool photos, orients the chain interior->outdoor, and closes on the aerial hero shot", () => {
+    // Verbatim shape of the 2026-07-02 dry run: 10 photos including two
+    // exterior_front and two pool duplicates, an aerial hero shot, and the
+    // 5 edges Gemini actually reported. Bad output before the fix: [FrontExt]
+    // [Pool->Lanai->Living->Kitchen] [BackExt->Waterfront] [FrontExt AGAIN]
+    // [Pool->Aerial]. Ideal output: [FrontExt] [Kitchen->Living->Lanai->Pool]
+    // [BackExt->Waterfront] [Aerial], crossfades throughout.
+    const g = graph(
+      [
+        room("ext1", "Front Exterior A", "exterior_front"),
+        room("ext2", "Front Exterior B", "exterior_front"), // duplicate — same room, drops entirely
+        room("pool1", "Pool A", "pool"), // has edge evidence -> wins as the pool's representative photo
+        room("pool2", "Pool B", "pool"), // duplicate, no edges -> drops entirely
+        room("aerial", "Aerial", "aerial"),
+        room("lanai", "Lanai", "lanai"),
+        room("backext", "Back Exterior", "back_exterior"),
+        room("waterfront", "Waterfront", "waterfront"),
+        room("living", "Living Room", "living_room"),
+        room("kitchen", "Kitchen", "kitchen"),
+      ],
+      [
+        edge("living", "lanai", 1.0, "doorway"),
+        edge("lanai", "pool1", 1.0, "opening"),
+        edge("living", "kitchen", 0.9, "opening"),
+        edge("backext", "waterfront", 0.9, "sightline"),
+        edge("pool1", "backext", 0.8, "doorway"),
+      ],
+      "aerial",
+    );
+
+    const plan = planRoute(g);
+
+    expect(plan.segments.map((s) => s.photoIds)).toEqual([
+      ["ext1"], // opener — first-listed duplicate wins (no edge evidence to break the tie)
+      ["kitchen", "living", "lanai", "pool1"], // interior->outdoor chain, most-covered first
+      ["backext", "waterfront"], // remaining, purely-outdoor chain
+      ["aerial"], // hero closer, always last
+    ]);
+    expect(plan.transitions).toEqual([
+      { afterSegmentIndex: 0, type: "crossfade" },
+      { afterSegmentIndex: 1, type: "crossfade" },
+      { afterSegmentIndex: 2, type: "crossfade" },
+    ]);
+    expect(plan.segments.map((s) => s.durationSec)).toEqual([4, 14, 7, 4]);
+
+    // Every ROOM appears at most once across the whole plan — no duplicate
+    // exterior/pool beats, and the dropped duplicates (ext2, pool2) never
+    // appear anywhere.
+    const allIds = plan.segments.flatMap((s) => s.photoIds);
+    expect(new Set(allIds).size).toBe(allIds.length);
+    expect(allIds).not.toContain("ext2");
+    expect(allIds).not.toContain("pool2");
   });
 });
