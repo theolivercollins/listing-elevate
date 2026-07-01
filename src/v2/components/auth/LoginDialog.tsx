@@ -448,13 +448,25 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     if (advancedRef.current) return;
     advancedRef.current = true;
     setCodeStage("verified");
-    void fetchProfileSnapshot(userId).then((snapshot) => {
-      if (snapshot?.first_name) {
-        goDone("You're in", "Taking you to your workspace…");
-      } else {
-        setStep("newpw");
-      }
-    });
+    void fetchProfileSnapshot(userId)
+      .then((snapshot) => {
+        if (snapshot?.first_name) {
+          goDone("You're in", "Taking you to your workspace…");
+        } else {
+          setStep("newpw");
+        }
+      })
+      .catch((e) => {
+        // A failed lookup must NEVER silently fall through to newpw/done — that
+        // would risk misclassifying an existing account as new. Surface the
+        // error on the verify step and reset the double-fire guard so either
+        // path (manual re-submit or the session-watch effect) can retry.
+        advancedRef.current = false;
+        setCodeStage("idle");
+        setError(errMsg(e, "Couldn't confirm your account. Please try again."));
+        setCode(["", "", "", "", "", ""]);
+        codeInputsRef.current[0]?.focus();
+      });
   };
 
   // Auto-advance when a session appears on the verify step (e.g. the emailed link

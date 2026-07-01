@@ -126,6 +126,17 @@ function sessionProvesEmailPossession(session: Session | null): boolean {
   return ["otp", "magiclink", "email"].includes(latest?.method ?? "");
 }
 
+// True only for a missing-column error (migration-105 columns not yet applied
+// on the shared DB): Postgres undefined_column (42703) or PostgREST's schema
+// cache miss (PGRST204). Falls back to a message check naming the specific
+// migration-105 columns as belt-and-braces. Any other error (RLS, network,
+// etc.) must NOT be treated as "retry with fewer columns" — it should surface.
+function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  return /persona|signup_source/.test(error.message ?? "");
+}
+
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface AuthContextType {
@@ -319,13 +330,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Read-only snapshot of a profile row (mirrors fetchProfile's query but never
   // mutates state). Returns null when no row exists yet — the authoritative
-  // signal that a just-verified account is genuinely new.
+  // signal that a just-verified account is genuinely new. THROWS on a real
+  // fetch error (network/RLS) — a failed lookup must never be silently treated
+  // as "no row" (that would misclassify an existing user as new and route to
+  // password-overwrite). `.maybeSingle()` returns data:null, error:null for the
+  // legitimate no-row case, which is the only case that resolves to null.
   async function fetchProfileSnapshot(userId: string): Promise<UserProfile | null> {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("user_profiles")
       .select()
       .eq("user_id", userId)
       .maybeSingle();
+    if (error) throw error;
     return (data as UserProfile | null) ?? null;
   }
 
@@ -504,35 +520,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     //    `role` is intentionally omitted — it is NOT NULL DEFAULT 'user' (migration
     //    001), so a fresh insert gets the default and an existing admin's role is
     //    never clobbered. Try the full write (incl. migration-105 columns); if those
-    //    columns don't exist yet on the shared DB, retry with only the pre-existing
-    //    columns. If the RETRY also errors, THROW so the dialog surfaces it.
+    //    columns don't exist yet on the shared DB (missing-column error only),
+    //    retry with only the pre-existing columns. Any other error (RLS, network,
+    //    etc.) rethrows immediately rather than being masked by the fallback.
     const uid = user?.id;
-    if (uid) {
-      const { error } = await supabase
+    if (!uid) throw new Error("No signed-in user");
+
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert(
+        {
+          user_id: uid,
+          first_name: firstName,
+          last_name: lastName,
+          brokerage,
+          persona: details.persona,
+          signup_source: details.signupSource,
+          signup_source_detail: details.signupSourceDetail,
+        },
+        { onConflict: "user_id" },
+      );
+    if (error) {
+      if (!isMissingColumnError(error)) throw error;
+      // persona/source is best-effort until migration 105 lands; core fields
+      // must persist. A retry failure is a real failure — throw it.
+      const { error: retryError } = await supabase
         .from("user_profiles")
         .upsert(
-          {
-            user_id: uid,
-            first_name: firstName,
-            last_name: lastName,
-            brokerage,
-            persona: details.persona,
-            signup_source: details.signupSource,
-            signup_source_detail: details.signupSourceDetail,
-          },
+          { user_id: uid, first_name: firstName, last_name: lastName, brokerage },
           { onConflict: "user_id" },
         );
-      if (error) {
-        // persona/source is best-effort until migration 105 lands; core fields
-        // must persist. A retry failure is a real failure — throw it.
-        const { error: retryError } = await supabase
-          .from("user_profiles")
-          .upsert(
-            { user_id: uid, first_name: firstName, last_name: lastName, brokerage },
-            { onConflict: "user_id" },
-          );
-        if (retryError) throw retryError;
-      }
+      if (retryError) throw retryError;
     }
 
     await refreshProfile();
