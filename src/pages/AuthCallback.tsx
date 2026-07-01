@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth";
 import { motion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
-import { Wordmark } from "@/components/brand/Wordmark";
+import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -41,7 +41,7 @@ export default function AuthCallback() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-between bg-background px-8 py-12 text-foreground">
-      <Wordmark size="md" />
+      <LELogoMark size={40} variant="dark" />
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
