@@ -34,12 +34,24 @@ See also:
   table of file → Supabase slot → Go-template vars, the `subjects.json`
   manifest, the deploy path, and the caveats below.
 
-## What's next
+## Deployed — LIVE (2026-07-02)
 
-**Remaining manual step: the deploy needs a Supabase personal access token**
-(`SUPABASE_ACCESS_TOKEN`, `sbp_...`, from
-https://supabase.com/dashboard/account/tokens — not the service_role key).
-Once available:
+All six templates + subjects were pushed to the hosted (shared dev/staging/prod)
+Supabase project `vrhmaeywqsohlztoouxu` via the Management API (`deploy` → HTTP 200).
+`verify` confirmed SMTP is healthy: `smtp.resend.com`, sender
+`noreply@updates.recasi.com`, sender name `Listing Elevate`,
+`external_email_enabled: true`, `mailer_autoconfirm: false`. A live `test-send`
+magic-link to `oliver@recasi.com` returned HTTP 200 and the GoTrue auth logs show
+the `/otp` request with `error: null` (no SMTP/send failure) — end-to-end delivery
+proven. Fresh `sbp_` personal token was stored in `~/credentials-general.md`.
+
+Because Supabase is shared across envs, these templates are live for prod auth
+emails immediately (independent of this branch merging — the repo copy is the
+source of truth / re-deploy path).
+
+## Reproduce the deploy
+
+Token lives in `~/credentials-general.md` (Supabase access token, personal):
 
 ```bash
 SUPABASE_ACCESS_TOKEN=sbp_xxx pnpm exec tsx scripts/supabase-auth-emails.ts deploy
