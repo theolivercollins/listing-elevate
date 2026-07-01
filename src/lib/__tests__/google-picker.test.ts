@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   _resetDriveToken,
   downloadDriveFile,
+  DRIVE_AUTH_CANCELLED,
   expandFoldersToImages,
   requestDriveAccessToken,
 } from '../google-picker';
@@ -148,18 +149,43 @@ describe('requestDriveAccessToken', () => {
     expect(initTokenClientMock).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects with the GIS error_callback type when the popup is closed', async () => {
+  // ── Cancel vs. genuine error (strict type-match) ─────────────────────────────
+  //
+  // A closed popup is normal, expected operator behavior — never a failure —
+  // so it must RESOLVE to the DRIVE_AUTH_CANCELLED sentinel, not reject. Only
+  // an exact match against CANCEL_ERROR_TYPES counts; anything else still
+  // rejects so a genuine OAuth error (bad client id, redirect mismatch, etc.)
+  // keeps surfacing to the operator.
+
+  it.each(['popup_closed', 'popup_closed_by_user', 'access_denied'])(
+    'resolves to DRIVE_AUTH_CANCELLED (never rejects) when the GIS error type is "%s"',
+    async (cancelType) => {
+      requestAccessTokenMock.mockImplementation(() => {
+        const config = capturedConfig!;
+        (
+          config as unknown as { error_callback: (err: { type: string }) => void }
+        ).error_callback?.({ type: cancelType });
+      });
+
+      const promise = requestDriveAccessToken({ clientId: 'client-1' });
+      flushGisScriptLoad();
+
+      await expect(promise).resolves.toBe(DRIVE_AUTH_CANCELLED);
+    },
+  );
+
+  it('still rejects for a genuine (non-cancel) GIS error type', async () => {
     requestAccessTokenMock.mockImplementation(() => {
       const config = capturedConfig!;
       (config as unknown as { error_callback: (err: { type: string }) => void }).error_callback?.({
-        type: 'popup_closed',
+        type: 'popup_failed_to_open',
       });
     });
 
     const promise = requestDriveAccessToken({ clientId: 'client-1' });
     flushGisScriptLoad();
 
-    await expect(promise).rejects.toThrow('popup_closed');
+    await expect(promise).rejects.toThrow('popup_failed_to_open');
   });
 });
 

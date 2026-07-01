@@ -58,6 +58,7 @@ vi.mock('@/components/studio/ClientPicker', () => ({
 }));
 vi.mock('@/components/studio/DriveUploadButton', () => ({
   DriveUploadButton: () => <div data-testid="drive-upload-button" />,
+  isDriveUploadConfigured: () => true,
 }));
 vi.mock('@/components/AddressAutocomplete', () => ({
   AddressAutocomplete: ({
