@@ -1,0 +1,43 @@
+# supabase/config.toml
+#
+# This file documents the auth email templates used by the shared Listing
+# Elevate Supabase project (ref vrhmaeywqsohlztoouxu, "listingelevate") for
+# LOCAL DEV + DRIFT TRACKING. It intentionally contains only the auth email
+# template config — nothing else in this repo runs `supabase start` locally
+# against a linked project.
+#
+# The hosted project is shared across all three LE environments (main /
+# staging / dev — see project CLAUDE.md branch model) and is NOT managed by
+# `supabase db push` or `supabase config push` from CI. Deploying template
+# changes to the hosted project is done via the Management API using
+# `scripts/supabase-auth-emails.ts deploy` (see that file's header comment
+# for usage), not the Supabase CLI.
+#
+# `content_path` values are relative to this file's directory (`supabase/`),
+# per https://supabase.com/docs/guides/local-development/customizing-email-templates.
+
+project_id = "vrhmaeywqsohlztoouxu"
+
+[auth.email.template.confirmation]
+subject = "Confirm your Listing Elevate email"
+content_path = "./templates/confirmation.html"
+
+[auth.email.template.invite]
+subject = "You're invited to Listing Elevate"
+content_path = "./templates/invite.html"
+
+[auth.email.template.magic_link]
+subject = "Your Listing Elevate sign-in link"
+content_path = "./templates/magic-link.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your new email address"
+content_path = "./templates/email-change.html"
+
+[auth.email.template.recovery]
+subject = "Reset your Listing Elevate password"
+content_path = "./templates/recovery.html"
+
+[auth.email.template.reauthentication]
+subject = "Your Listing Elevate verification code"
+content_path = "./templates/reauthentication.html"

@@ -1,0 +1,8 @@
+{
+  "mailer_subjects_confirmation": "Confirm your Listing Elevate email",
+  "mailer_subjects_invite": "You're invited to Listing Elevate",
+  "mailer_subjects_magic_link": "Your Listing Elevate sign-in link",
+  "mailer_subjects_email_change": "Confirm your new email address",
+  "mailer_subjects_recovery": "Reset your Listing Elevate password",
+  "mailer_subjects_reauthentication": "Your Listing Elevate verification code"
+}
