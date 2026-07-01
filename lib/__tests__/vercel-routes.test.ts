@@ -109,6 +109,11 @@ const GUARDED_PATHS = [
   'api/cron/drive-intake-poll.ts',
   'api/cron/drive-channel-renew.ts',
 
+  // studio-resume-drafts branch — New Order autosave draft endpoints
+  'api/admin/studio/drafts/index.ts',
+  'api/admin/studio/drafts/[id].ts',
+  'api/cron/studio-draft-cleanup.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -233,6 +238,22 @@ describe('vercel.json route coverage', () => {
     expect(embedIdx).toBeGreaterThanOrEqual(0);
     expect(bareIdx).toBeGreaterThanOrEqual(0);
     expect(embedIdx).toBeLessThan(bareIdx);
+  });
+
+  it('drafts/[id] entry precedes the bare drafts entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const draftsWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/drafts\/\(\[\^\/\]\+\)/.test(r.src),
+    );
+    const draftsBase = routes.findIndex((r) =>
+      /\/admin\/studio\/drafts$/.test(r.src),
+    );
+
+    expect(draftsWithId).toBeGreaterThanOrEqual(0);
+    expect(draftsBase).toBeGreaterThanOrEqual(0);
+    expect(draftsWithId).toBeLessThan(draftsBase);
   });
 
   it('pipeline/continue/[runId] entry precedes the bare pipeline/[propertyId] entry', () => {

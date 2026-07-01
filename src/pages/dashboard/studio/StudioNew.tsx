@@ -13,10 +13,11 @@ import { StudioShell } from '@/components/studio/StudioShell';
 import { ClientPicker } from '@/components/studio/ClientPicker';
 import { DriveUploadButton } from '@/components/studio/DriveUploadButton';
 import { AddressAutocomplete } from '@/components/AddressAutocomplete';
-import { uploadPhotosToStorage } from '@/lib/photo-upload';
+import { uploadSinglePhoto } from '@/lib/photo-upload';
 import { extractImageFiles } from '@/lib/studio/extract-photos';
 import { digitsOnly, formatNumber } from '@/lib/format';
 import { OPERATOR_VIDEO_SKUS } from '@/lib/labModels';
+import { getLatestDraft, saveDraft, deleteDraft, isDraftMeaningful, type Draft } from '@/lib/studio/draft';
 
 const MIN_PHOTOS = 5;
 const MAX_PHOTOS = 300;
@@ -90,9 +91,18 @@ function StepIndicator({ steps, currentStep }: { steps: string[]; currentStep: n
 }
 
 interface UploadedFile {
-  file: File;
-  preview: string;
   id: string;
+  /** Present for freshly-added local files; absent for a photo restored from a draft. */
+  file?: File;
+  /** Original filename — set for both fresh and restored entries. */
+  fileName: string;
+  /** Local objectURL — only set for freshly-added files, revoked on remove/replace. */
+  localPreview?: string;
+  /** Bucket-relative Storage path, set once the eager upload succeeds. */
+  storagePath?: string;
+  /** Absolute public URL, set once the eager upload succeeds (or hydrated from a restored draft). */
+  publicUrl?: string;
+  uploadState: 'uploading' | 'done' | 'error';
 }
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
@@ -128,6 +138,37 @@ const StudioNew = () => {
   const [autoRun, setAutoRun] = useState(false);
   const [videoModelSku, setVideoModelSku] = useState<string | null>(null);
   const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  // ─── autosave draft state ───
+  // draftId is the Storage folder prefix for eagerly-uploaded photos
+  // (property-photos/{draftId}/raw/...) — minted on first photo add, or
+  // adopted from a resumed draft's own id. It never needs to be reactive
+  // (nothing renders it), so a ref is enough.
+  const draftIdRef = useRef<string | null>(null);
+  // The server-assigned id of the admin's single draft ROW, once known — set
+  // after the first successful autosave, or immediately on Resume. Mirrored in
+  // a ref so submit-time cleanup reads the live value, never a stale closure or
+  // a null state that lost to an in-flight autosave (fix: reliable submit
+  // cleanup). NOTE: this is the row id, distinct from draftIdRef (the Storage
+  // folder prefix) — for a NEW draft the two differ (random prefix vs
+  // server-assigned row id); only a resumed draft shares them.
+  const [savedDraftId, setSavedDraftId] = useState<string | null>(null);
+  const savedDraftIdRef = useRef<string | null>(null);
+  // True from the instant submit begins. A ref (not just `submitting` state) so
+  // the debounced autosave sees it synchronously and can (a) refuse to start a
+  // new save and (b) self-delete a late save that lands after submit's cleanup.
+  const submittingRef = useRef(false);
+  // Autosave sequencing: abort the previous in-flight PUT before starting a new
+  // one, and drop any resolve whose token is no longer current — so a slow older
+  // save can't clobber a newer one.
+  const saveAbortRef = useRef<AbortController | null>(null);
+  const saveSeqRef = useRef(0);
+  const [pendingDraft, setPendingDraft] = useState<Draft | null>(null);
+  const [showResumeBanner, setShowResumeBanner] = useState(false);
+  // Photo ids whose restored publicUrl 404'd/failed to load — tracked so the
+  // thumbnail can offer "remove" instead of a broken <img>, and so submit
+  // never sends a path for a photo that no longer exists in Storage.
+  const [brokenPhotoIds, setBrokenPhotoIds] = useState<Set<string>>(new Set());
 
   // ─── template availability ───
   interface ComboKey { video_type: string; duration: number; orientation: string }
@@ -166,7 +207,6 @@ const StudioNew = () => {
   // ─── submit state ───
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState<{ uploaded: number; total: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   // Inline error shown right under the photo import buttons — separate from
   // submitError (bottom-of-form) so a failed folder/zip/Drive import is never
@@ -178,8 +218,23 @@ const StudioNew = () => {
   const zipInputRef = useRef<HTMLInputElement>(null);
 
   const currentComboAvailable = isComboAvailable(videoType, selectedDuration);
-  const totalPhotoCount = files.length;
-  const isValid = address.trim() && totalPhotoCount >= MIN_PHOTOS && currentComboAvailable;
+  // Counted the instant a photo is added (matches the pre-eager-upload feel)
+  // — only excludes photos that are definitively unusable: a failed fresh
+  // upload, or a restored photo whose remote object no longer loads.
+  const totalPhotoCount = files.filter(
+    (f) => f.uploadState !== 'error' && !brokenPhotoIds.has(f.id),
+  ).length;
+  const uploadingCount = files.filter((f) => f.uploadState === 'uploading').length;
+  // usableFiles are the ones submit can actually send — already uploaded,
+  // with a real storagePath, and not flagged broken.
+  const usableFiles = files.filter(
+    (f) => f.uploadState === 'done' && f.storagePath && !brokenPhotoIds.has(f.id),
+  );
+  const isValid =
+    !!address.trim() &&
+    totalPhotoCount >= MIN_PHOTOS &&
+    currentComboAvailable &&
+    uploadingCount === 0;
 
   // Step indicator — which conceptual step the user is on
   // Step 0: address (required); client is optional, no longer gates step 0
@@ -187,6 +242,46 @@ const StudioNew = () => {
   // Step 2: photos
   const currentStep = !address.trim() ? 0 : totalPhotoCount < MIN_PHOTOS ? 1 : 2;
   const FORM_STEPS = ['Client & address', 'Details & notes', 'Photos'];
+
+  // ─── eager per-photo upload (autosave draft) ───
+
+  /** Mint the Storage folder prefix lazily, on first photo add (its only caller). */
+  const ensureDraftId = (): string => {
+    if (!draftIdRef.current) draftIdRef.current = crypto.randomUUID();
+    return draftIdRef.current;
+  };
+
+  /** Upload one file to Storage and flip its entry to done/error in place. */
+  const uploadFileEntry = useCallback((id: string, file: File) => {
+    const folder = `${ensureDraftId()}/raw`;
+    setFiles((prev) =>
+      prev.map((f) => (f.id === id ? { ...f, uploadState: 'uploading' as const } : f)),
+    );
+    uploadSinglePhoto(file, folder)
+      .then(({ storagePath, publicUrl }) => {
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (f.id !== id) return f;
+            // The thumbnail now renders publicUrl, so the local objectURL
+            // preview is dead weight — revoke it to avoid a blob-URL leak.
+            if (f.localPreview) URL.revokeObjectURL(f.localPreview);
+            return {
+              ...f,
+              storagePath,
+              publicUrl,
+              uploadState: 'done' as const,
+              localPreview: undefined,
+            };
+          }),
+        );
+      })
+      .catch((err) => {
+        console.error('[studio] photo upload failed:', err);
+        setFiles((prev) =>
+          prev.map((f) => (f.id === id ? { ...f, uploadState: 'error' as const } : f)),
+        );
+      });
+  }, []);
 
   // ─── file handling ───
   const handleFiles = useCallback(
@@ -196,15 +291,18 @@ const StudioNew = () => {
       );
       const remaining = MAX_PHOTOS - files.length;
       const toAdd = accepted.slice(0, remaining);
-      const mapped = toAdd.map((f) => ({
-        file: f,
-        preview: URL.createObjectURL(f),
+      const mapped: UploadedFile[] = toAdd.map((f) => ({
         id: crypto.randomUUID(),
+        file: f,
+        fileName: f.name,
+        localPreview: URL.createObjectURL(f),
+        uploadState: 'uploading',
       }));
       setFiles((prev) => [...prev, ...mapped]);
       if (toAdd.length > 0) setImportError(null);
+      mapped.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
     },
-    [files.length],
+    [files.length, uploadFileEntry],
   );
 
   /** Handle a zip file or folder selection via extractImageFiles, then merge into files state. */
@@ -219,24 +317,26 @@ const StudioNew = () => {
         }
         // Use functional updater to read current length at the time of commit
         let droppedForCap = 0;
-        let addedCount = 0;
+        let addedEntries: UploadedFile[] = [];
         setFiles((prev) => {
           const remaining = MAX_PHOTOS - prev.length;
           const toAdd = extracted.slice(0, remaining);
           droppedForCap = extracted.length - toAdd.length;
-          addedCount = toAdd.length;
-          const mapped = toAdd.map((f) => ({
-            file: f,
-            preview: URL.createObjectURL(f),
+          addedEntries = toAdd.map((f) => ({
             id: crypto.randomUUID(),
+            file: f,
+            fileName: f.name,
+            localPreview: URL.createObjectURL(f),
+            uploadState: 'uploading' as const,
           }));
-          return [...prev, ...mapped];
+          return [...prev, ...addedEntries];
         });
         setImportError(null); // successful import — clear any prior inline error
+        addedEntries.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
         // Don't silently truncate — tell the operator what got dropped at the photo cap.
         if (droppedForCap > 0) {
           setSubmitError(
-            `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
+            `Imported ${addedEntries.length} photo${addedEntries.length === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
           );
         }
       } catch (err) {
@@ -247,16 +347,180 @@ const StudioNew = () => {
         setImportError(message);
       }
     },
-    [],
+    [uploadFileEntry],
   );
 
   const removeFile = (id: string) => {
     setFiles((prev) => {
       const removed = prev.find((f) => f.id === id);
-      if (removed) URL.revokeObjectURL(removed.preview);
+      if (removed?.localPreview) URL.revokeObjectURL(removed.localPreview);
+      // We deliberately do NOT delete the Storage object here. The anon client
+      // has no DELETE policy on property-photos (INSERT/SELECT only), so a
+      // client-side delete always 403s silently. Dropping the photo from
+      // photo_paths is enough: the now-orphaned object is reclaimed server-side
+      // (service-role) when the draft is discarded (?purge=1) or by the 14-day
+      // studio-draft-cleanup cron — both of which skip any object still
+      // referenced by a live property's photos.file_url.
       return prev.filter((f) => f.id !== id);
     });
+    setBrokenPhotoIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
   };
+
+  // Keep a live handle on `files` for the unmount-only cleanup below (a cleanup
+  // that closed over `files` directly would either capture a stale array or
+  // re-run on every change).
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  // Revoke any outstanding objectURL previews on unmount (memory-leak guard) —
+  // covers photos still uploading when the operator navigates away.
+  useEffect(() => {
+    return () => {
+      for (const f of filesRef.current) {
+        if (f.localPreview) URL.revokeObjectURL(f.localPreview);
+      }
+    };
+  }, []);
+
+  // ─── restore: check for an existing draft once, on mount ───
+  useEffect(() => {
+    getLatestDraft()
+      .then((draft) => {
+        if (!draft) return;
+        if (!isDraftMeaningful(draft)) return; // an empty/stale row is never worth a banner
+        setPendingDraft(draft);
+        setShowResumeBanner(true);
+      })
+      .catch(() => {
+        // Best-effort — a failed restore-check is invisible; the operator
+        // just starts a fresh order, same as before this feature existed.
+      });
+  }, []);
+
+  const handleResumeDraft = () => {
+    if (!pendingDraft) return;
+    const d = pendingDraft;
+    draftIdRef.current = d.id;
+    savedDraftIdRef.current = d.id;
+    setSavedDraftId(d.id);
+    setClientId(d.client_id ?? null);
+    setAddress(d.address ?? '');
+    setBedrooms(d.bedrooms != null ? String(d.bedrooms) : '');
+    setBathrooms(d.bathrooms != null ? String(d.bathrooms) : '');
+    setSquareFootage(d.square_footage != null ? String(d.square_footage) : '');
+    setPrice(d.price != null ? String(d.price) : '');
+    setDirectorNotes(d.director_notes ?? '');
+    if (d.selected_duration === 15 || d.selected_duration === 30 || d.selected_duration === 60) {
+      setSelectedDuration(d.selected_duration);
+    }
+    if (
+      d.video_type === 'just_listed' ||
+      d.video_type === 'just_pended' ||
+      d.video_type === 'just_closed'
+    ) {
+      setVideoType(d.video_type);
+    }
+    setAutoRun(!!d.auto_run);
+    setVideoModelSku(d.video_model_sku ?? null);
+    setFiles(
+      (d.photo_paths ?? []).map((p) => ({
+        id: crypto.randomUUID(),
+        fileName: p.name,
+        storagePath: p.path,
+        publicUrl: p.url,
+        uploadState: 'done' as const,
+      })),
+    );
+    setShowResumeBanner(false);
+    setPendingDraft(null);
+  };
+
+  const handleDiscardDraft = () => {
+    // Discard reclaims storage too (purge=1) — the operator is throwing this
+    // WIP away, so its uploaded objects should go with it (server-side skips
+    // any object still referenced by a live property).
+    if (pendingDraft) deleteDraft(pendingDraft.id, { purge: true }).catch(() => {});
+    setShowResumeBanner(false);
+    setPendingDraft(null);
+  };
+
+  // ─── autosave: debounce a save of the current form snapshot ───
+  useEffect(() => {
+    if (submitting) return; // don't race the ingest POST with a redundant PUT
+
+    const photoPaths = files
+      .filter((f) => f.uploadState === 'done' && f.storagePath && f.publicUrl)
+      .map((f) => ({ path: f.storagePath!, url: f.publicUrl!, name: f.fileName }));
+
+    const snapshot = {
+      client_id: clientId,
+      address: address.trim() || null,
+      bedrooms: bedrooms ? Number(bedrooms) : null,
+      bathrooms: bathrooms ? Number(bathrooms) : null,
+      square_footage: squareFootage ? Number(squareFootage) : null,
+      price: price ? Number(price) : null,
+      director_notes: directorNotes.trim() || null,
+      selected_duration: selectedDuration,
+      video_type: videoType,
+      video_model_sku: videoModelSku,
+      auto_run: autoRun,
+      photo_paths: photoPaths,
+    };
+
+    if (!isDraftMeaningful(snapshot)) return; // never autosave a blank form
+
+    const handle = setTimeout(() => {
+      // Submit may have begun during the debounce window — never create or
+      // rewrite the row once it has (it's about to be, or already, deleted).
+      if (submittingRef.current) return;
+      // Supersede any older in-flight autosave so a slow older PUT can't clobber
+      // this newer one.
+      saveAbortRef.current?.abort();
+      const controller = new AbortController();
+      saveAbortRef.current = controller;
+      const seq = ++saveSeqRef.current;
+      saveDraft(snapshot, controller.signal)
+        .then((saved) => {
+          if (seq !== saveSeqRef.current) return; // a newer save superseded this one
+          if (!saved) return;
+          savedDraftIdRef.current = saved.id;
+          if (submittingRef.current) {
+            // A late autosave landed AFTER submit ran its cleanup — delete the
+            // row it just (re)wrote so an already-sent order never resurfaces as
+            // a resumable draft (which would create a duplicate property).
+            deleteDraft(saved.id).catch(() => {});
+            return;
+          }
+          setSavedDraftId(saved.id);
+        })
+        .catch(() => {
+          // Best-effort — a dropped/aborted autosave tick is invisible to the
+          // operator; the next tick (or the next photo finishing upload)
+          // retries automatically.
+        });
+    }, 800);
+
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    address,
+    clientId,
+    bedrooms,
+    bathrooms,
+    squareFootage,
+    price,
+    directorNotes,
+    selectedDuration,
+    videoType,
+    autoRun,
+    videoModelSku,
+    files,
+    submitting,
+  ]);
 
   // ─── MLS lookup by address (Apify/Redfin chain) ───
   const handleMlsLookup = async () => {
@@ -291,26 +555,20 @@ const StudioNew = () => {
     e.preventDefault();
     if (!isValid) return;
 
+    // Synchronously freeze autosave: from here, any pending debounce refuses to
+    // run and any in-flight save self-deletes on resolve (see the autosave
+    // effect). Set before the first await so no tick can slip through.
+    submittingRef.current = true;
     setSubmitting(true);
     setSubmitError(null);
-    setUploadProgress(null);
 
     try {
-      const tempId = crypto.randomUUID();
-      let uploadedPaths: string[] = [];
-      if (files.length > 0) {
-        uploadedPaths = await uploadPhotosToStorage(
-          files.map((f) => f.file),
-          `${tempId}/raw`,
-          (uploaded, total) => setUploadProgress({ uploaded, total }),
-        );
-
-        if (uploadedPaths.length === 0) {
-          throw new Error('All photo uploads failed. Check browser console for details.');
-        }
+      // Photos already uploaded eagerly as they were added — no re-upload
+      // here, just reuse the storage paths that finished successfully.
+      const uploadedPaths = usableFiles.map((f) => f.storagePath!);
+      if (uploadedPaths.length === 0) {
+        throw new Error('No photos finished uploading. Check your connection and try again.');
       }
-
-      setUploadProgress(null);
 
       const res = await authedFetch('/api/admin/studio/ingest', {
         method: 'POST',
@@ -337,6 +595,25 @@ const StudioNew = () => {
       }
 
       const { property_id } = await res.json();
+
+      // The draft has fulfilled its purpose — remove it so a later visit to
+      // New Order doesn't offer to "resume" an order that's already been
+      // sent. Read the ROW ID from the ref (never the possibly-stale
+      // `savedDraftId` state / a defeated closure) and AWAIT the delete
+      // BEFORE navigating — submittingRef is already true (set at the top of
+      // this handler), so the autosave effect can't re-create/rewrite the row
+      // out from under this delete. Still best-effort: a failed delete just
+      // leaves a stale row for the cleanup cron to sweep in 14 days: it must
+      // never block navigation to the new property.
+      const doneDraftId = savedDraftIdRef.current;
+      if (doneDraftId) {
+        try {
+          await deleteDraft(doneDraftId);
+        } catch {
+          // best-effort; cron sweeps in 14 days
+        }
+      }
+
       // authedFetch attaches the Supabase Bearer token required by the now-gated
       // pipeline endpoint (F2 security fix). Fire-and-forget: not awaited.
       authedFetch(`/api/pipeline/${property_id}`, { method: 'POST' }).catch(() => {});
@@ -377,6 +654,52 @@ const StudioNew = () => {
 
       {/* ─── StudioNav ─── */}
       <StudioNav />
+
+      {/* ─── Resume-draft banner ─── */}
+      {showResumeBanner && pendingDraft && (
+        <div
+          className="studio-card"
+          style={{
+            maxWidth: 680,
+            padding: '16px 20px',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, fontSize: 13.5, fontWeight: 600, color: 'var(--le-ink)' }}>
+              Resume your unsaved order?
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--le-muted)' }}>
+              {pendingDraft.address?.trim() || 'An in-progress order'}
+              {pendingDraft.photo_paths.length > 0
+                ? ` — ${pendingDraft.photo_paths.length} photo${pendingDraft.photo_paths.length === 1 ? '' : 's'} saved`
+                : ''}
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <button
+              type="button"
+              className="studio-btn-ghost studio-btn-sm"
+              onClick={handleDiscardDraft}
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              className="studio-cta-primary"
+              style={{ padding: '8px 14px' }}
+              onClick={handleResumeDraft}
+            >
+              Resume
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Form ─── */}
       <form
@@ -817,20 +1140,27 @@ const StudioNew = () => {
                         onFilesImported={(imported) => {
                           // Follow the same MAX_PHOTOS cap pattern as handleBulkInput.
                           let droppedForCap = 0;
-                          let addedCount = 0;
+                          let addedEntries: UploadedFile[] = [];
                           setFiles((prev) => {
                             const seen = new Set(prev.map((f) => f.id));
                             const deduped = imported.filter((f) => !seen.has(f.id));
                             const remaining = MAX_PHOTOS - prev.length;
                             const toAdd = deduped.slice(0, remaining);
                             droppedForCap = deduped.length - toAdd.length;
-                            addedCount = toAdd.length;
-                            return [...prev, ...toAdd];
+                            addedEntries = toAdd.map((f) => ({
+                              id: f.id,
+                              file: f.file,
+                              fileName: f.file.name,
+                              localPreview: f.preview,
+                              uploadState: 'uploading' as const,
+                            }));
+                            return [...prev, ...addedEntries];
                           });
-                          if (addedCount > 0) setImportError(null);
+                          if (addedEntries.length > 0) setImportError(null);
+                          addedEntries.forEach((entry) => uploadFileEntry(entry.id, entry.file!));
                           if (droppedForCap > 0) {
                             setSubmitError(
-                              `Imported ${addedCount} photo${addedCount === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
+                              `Imported ${addedEntries.length} photo${addedEntries.length === 1 ? '' : 's'}; dropped ${droppedForCap} over the ${MAX_PHOTOS}-photo limit.`,
                             );
                           }
                         }}
@@ -896,6 +1226,21 @@ const StudioNew = () => {
                   {totalPhotoCount} photo{totalPhotoCount !== 1 ? 's' : ''} ready
                 </p>
               )}
+              {uploadingCount > 0 && (
+                <p
+                  style={{
+                    marginTop: 6,
+                    fontSize: 12,
+                    color: 'var(--le-muted)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <Loader2 size={11} className="studio-spinner" />
+                  Uploading {uploadingCount} photo{uploadingCount === 1 ? '' : 's'}…
+                </p>
+              )}
 
               {/* Thumbnails */}
               {files.length > 0 && (
@@ -908,46 +1253,150 @@ const StudioNew = () => {
                     gap: 6,
                   }}
                 >
-                  {files.map((f) => (
-                    <div
-                      key={f.id}
-                      style={{
-                        position: 'relative',
-                        aspectRatio: '1',
-                        borderRadius: 'var(--le-r-md)',
-                        overflow: 'hidden',
-                        background: 'rgba(11,11,16,0.06)',
-                      }}
-                    >
-                      <img
-                        src={f.preview}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      />
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
+                  {files.map((f) => {
+                    const broken = brokenPhotoIds.has(f.id);
+                    const imgSrc = !broken ? (f.publicUrl ?? f.localPreview) : undefined;
+                    const failed = f.uploadState === 'error' || broken;
+                    return (
+                      <div
+                        key={f.id}
                         style={{
-                          position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          background: 'rgba(11,11,16,0.65)',
-                          opacity: 0,
-                          transition: 'opacity 0.15s',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: '#fff',
+                          position: 'relative',
+                          aspectRatio: '1',
+                          borderRadius: 'var(--le-r-md)',
+                          overflow: 'hidden',
+                          background: 'rgba(11,11,16,0.06)',
                         }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
-                        aria-label="Remove photo"
                       >
-                        <X size={14} strokeWidth={2} />
-                      </button>
-                    </div>
-                  ))}
+                        {imgSrc ? (
+                          <img
+                            src={imgSrc}
+                            alt=""
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              display: 'block',
+                              opacity: f.uploadState === 'uploading' ? 0.55 : 1,
+                            }}
+                            onError={() =>
+                              setBrokenPhotoIds((prev) => new Set(prev).add(f.id))
+                            }
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Image size={18} strokeWidth={1.4} style={{ color: 'var(--le-muted)' }} />
+                          </div>
+                        )}
+
+                        {f.uploadState === 'uploading' && (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Loader2 size={16} className="studio-spinner" style={{ color: '#fff' }} />
+                          </div>
+                        )}
+
+                        {failed ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 4,
+                              background: 'rgba(196,60,60,0.72)',
+                              color: '#fff',
+                              fontSize: 9.5,
+                              fontWeight: 600,
+                              textAlign: 'center',
+                              padding: 4,
+                            }}
+                          >
+                            <span>{broken ? 'Photo unavailable' : 'Upload failed'}</span>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {!broken && f.file && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    uploadFileEntry(f.id, f.file!);
+                                  }}
+                                  style={{
+                                    background: 'rgba(255,255,255,0.25)',
+                                    border: 'none',
+                                    borderRadius: 4,
+                                    color: '#fff',
+                                    fontSize: 9.5,
+                                    fontWeight: 600,
+                                    padding: '3px 6px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  Retry
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
+                                style={{
+                                  background: 'rgba(255,255,255,0.25)',
+                                  border: 'none',
+                                  borderRadius: 4,
+                                  color: '#fff',
+                                  fontSize: 9.5,
+                                  fontWeight: 600,
+                                  padding: '3px 6px',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeFile(f.id); }}
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: 'rgba(11,11,16,0.65)',
+                              opacity: 0,
+                              transition: 'opacity 0.15s',
+                              border: 'none',
+                              cursor: 'pointer',
+                              color: '#fff',
+                            }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.opacity = '1'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.opacity = '0'; }}
+                            aria-label="Remove photo"
+                          >
+                            <X size={14} strokeWidth={2} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -985,9 +1434,11 @@ const StudioNew = () => {
                     ? 'Address required'
                     : totalPhotoCount < MIN_PHOTOS
                       ? `${MIN_PHOTOS - totalPhotoCount} more photo${MIN_PHOTOS - totalPhotoCount !== 1 ? 's' : ''} required`
-                      : !currentComboAvailable
-                        ? 'Selected combination not available yet — choose a different type or duration'
-                        : ''}
+                      : uploadingCount > 0
+                        ? `Finishing ${uploadingCount} photo upload${uploadingCount === 1 ? '' : 's'}…`
+                        : !currentComboAvailable
+                          ? 'Selected combination not available yet — choose a different type or duration'
+                          : ''}
                 </span>
               )}
               <button
@@ -998,9 +1449,7 @@ const StudioNew = () => {
                 {submitting ? (
                   <>
                     <Loader2 size={13} className="studio-spinner" />
-                    {uploadProgress
-                      ? `Uploading ${uploadProgress.uploaded} / ${uploadProgress.total}…`
-                      : 'Ingesting…'}
+                    Ingesting…
                   </>
                 ) : (
                   <>
