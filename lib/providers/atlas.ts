@@ -265,6 +265,38 @@ export const ATLAS_MODELS: Record<string, AtlasModelDescriptor> = {
     priceCentsPerSecond: 9.6,    // $0.096/s (live Atlas catalog 2026-06-10) — verify against invoice
     priceCentsPerClip: 48,       // 9.6 × 5
   },
+  // Multi-reference walkthrough mode (added 2026-07-01) — Bytedance Seedance 2.0
+  // "reference-to-video" model. Distinct from every SKU above: instead of a
+  // single `image` (+ optional `last_image` end-frame), it takes an ARRAY of
+  // up to 9 reference images (`reference_images`) and composes a single
+  // continuous camera path across all of them in one render. Used for the
+  // "one continuous walkthrough from N listing photos" probe, NOT for the
+  // per-scene push-in/pair pipeline — this SKU is intentionally excluded from
+  // both V1_ATLAS_SKUS and V1_1_LAB_SKUS below; it is reached only via the
+  // dedicated `generateReferenceClip()` method / scripts/probe-walkthrough.ts
+  // until (if ever) it's promoted into the scene-render router.
+  //
+  // endFrameField is null — this model has no start/end-frame concept, it
+  // consumes the whole reference array at once.
+  // Pricing not yet published separately by Atlas for this slug; provisionally
+  // mirrored from the base Seedance 2.0 full-model rate (bytedance/seedance-2.0/
+  // image-to-video, $0.112/s verified 2026-06-26) until the reference-to-video
+  // line item is confirmed against the live catalog or an invoice. Cost-tracking-
+  // first-class: NEVER zero this field — update
+  // SEEDANCE_REFERENCE_PRICE_CENTS_PER_SECOND the moment the real rate is known.
+  "seedance-reference-walkthrough": {
+    slug: process.env.SEEDANCE_REFERENCE_ATLAS_SLUG ?? "bytedance/seedance-2.0/reference-to-video",
+    endFrameField: null,          // no end-frame concept — consumes reference_images[] instead
+    allowedDurations: "continuous",  // schema: 4-15s (or -1 for auto, not modeled — clampDuration snaps to durationRange)
+    durationRange: { min: 4, max: 15 },
+    resolution: (process.env.SEEDANCE_REFERENCE_RESOLUTION as AtlasResolution | undefined) ?? "1080p",
+    supportedResolutions: ["4k", "1440p-SR", "1080p-SR", "1080p", "720p-SR", "720p", "480p"],
+    generateAudio: false,         // no model-generated music/audio — assembly adds curated audio
+    // forceSourceAspectRatio intentionally UNSET — multi-reference composition
+    // draws its own camera path across all references; do not force-crop them.
+    priceCentsPerSecond: Number(process.env.SEEDANCE_REFERENCE_PRICE_CENTS_PER_SECOND) || 11.2,
+    priceCentsPerClip: Math.round((Number(process.env.SEEDANCE_REFERENCE_PRICE_CENTS_PER_SECOND) || 11.2) * 5),
+  },
 };
 
 // ─── V1 ATLAS SKU ALLOW-LIST ─────────────────────────────────────────────────
@@ -392,7 +424,10 @@ export class AtlasInsufficientBalanceError extends Error {
 
 export interface AtlasSubmitBody {
   model: string;
-  image: string;
+  /** Single source image. Required for every existing (single-image) SKU.
+   *  Omitted entirely for the multi-reference `reference-to-video` SKU,
+   *  which sends `reference_images` instead — see that field below. */
+  image?: string;
   prompt: string;
   duration: number;
   aspect_ratio?: string;
@@ -403,6 +438,12 @@ export interface AtlasSubmitBody {
    *  this frame. Only sent for descriptors with endFrameField "last_image"
    *  (the opt-in `seedance-pair` SKU). Kling SKUs use `end_image` instead. */
   last_image?: string;
+  /** Ordered array of reference image URLs for Bytedance Seedance 2.0
+   *  "reference-to-video" (multi-reference walkthrough). Max 9 images per
+   *  the live Atlas/model schema. Only sent for the
+   *  `seedance-reference-walkthrough` SKU — every other descriptor keeps
+   *  using the single `image` field above. */
+  reference_images?: string[];
   /** Forwarded to the underlying Replicate model when set. Seedance 2.0
    *  honors '480p' | '720p' | '720p-SR' | '1080p' | '1080p-SR' | '1440p-SR'
    *  (the -SR tiers run the FlashVSR super-resolution pass). Kling variants
@@ -413,6 +454,10 @@ export interface AtlasSubmitBody {
    *  Ignored by other models. */
   generate_audio?: boolean;
 }
+
+/** Max reference images accepted by Bytedance Seedance 2.0
+ *  "reference-to-video" (bytedance/seedance-2.0/reference-to-video). */
+export const SEEDANCE_MAX_REFERENCE_IMAGES = 9;
 
 // Kling v3-pro introduces noticeable camera shake/vibration on push-ins
 // and orbits that v2 did not. This negative-prompt string is applied to
@@ -459,6 +504,57 @@ export function buildAtlasRequestBody(
   // Forward generate_audio when the descriptor opts in (Seedance 2.0 only —
   // kills its default music track). Atlas passes through to Replicate's
   // Seedance input schema. Other models ignore the field.
+  if (model.generateAudio !== undefined) {
+    body.generate_audio = model.generateAudio;
+  }
+  return body;
+}
+
+/** Params for the multi-reference walkthrough path. Deliberately a SEPARATE
+ *  type from `GenerateClipParams` (which is single-image, `sourceImageUrl`)
+ *  so the existing single-image call sites and validation are untouched. */
+export interface GenerateReferenceClipParams {
+  /** Ordered reference image URLs — walkthrough order (exterior first, then
+   *  interior rooms in the order they should appear). 2-9 entries; Atlas/the
+   *  model schema caps at SEEDANCE_MAX_REFERENCE_IMAGES (9). */
+  referenceImageUrls: string[];
+  prompt: string;
+  durationSeconds: number;
+  /** Optional per-render resolution override; falls back to the descriptor's
+   *  default `resolution` (same precedence as GenerateClipParams.resolution). */
+  resolution?: AtlasResolution;
+}
+
+// Sibling pure builder to buildAtlasRequestBody — same conventions, but for
+// the `reference_images` array path instead of a single `image`. Kept
+// separate (rather than branching inside buildAtlasRequestBody) so the
+// well-exercised single-image path can't regress from this addition.
+export function buildAtlasReferenceRequestBody(
+  params: GenerateReferenceClipParams,
+  model: AtlasModelDescriptor,
+): AtlasSubmitBody {
+  if (!params.referenceImageUrls || params.referenceImageUrls.length < 2) {
+    throw new Error("Atlas reference-to-video requires at least 2 reference_images.");
+  }
+  if (params.referenceImageUrls.length > SEEDANCE_MAX_REFERENCE_IMAGES) {
+    throw new Error(
+      `Atlas reference-to-video accepts at most ${SEEDANCE_MAX_REFERENCE_IMAGES} reference_images, got ${params.referenceImageUrls.length}.`
+    );
+  }
+  const duration = clampDuration(params.durationSeconds, model);
+  const body: AtlasSubmitBody = {
+    model: model.slug,
+    reference_images: params.referenceImageUrls,
+    prompt: params.prompt,
+    duration,
+    negative_prompt: ATLAS_DEFAULT_NEGATIVE_PROMPT,
+  };
+  // Same resolution precedence as buildAtlasRequestBody: explicit per-render
+  // override wins, else the descriptor's default.
+  const effectiveResolution = params.resolution ?? model.resolution;
+  if (effectiveResolution) {
+    body.resolution = effectiveResolution as AtlasResolution;
+  }
   if (model.generateAudio !== undefined) {
     body.generate_audio = model.generateAudio;
   }
@@ -600,6 +696,44 @@ export class AtlasProvider implements IVideoProvider {
     }
     const jobId = parseAtlasSubmitResponse(parsed);
     return { jobId, estimatedSeconds: 90 };
+  }
+
+  /**
+   * Sibling to `generateClip()` for the multi-reference walkthrough SKU
+   * (`seedance-reference-walkthrough` / bytedance/seedance-2.0/reference-to-video).
+   * Takes an ORDERED ARRAY of reference image URLs instead of a single
+   * `sourceImageUrl`. Deliberately does NOT reuse `generateClip()`'s body —
+   * that method assumes single-image params (GenerateClipParams) and applies
+   * `forceSourceAspectRatio` cropping that this model does not want (it draws
+   * its own camera path across the raw references). Shares the HTTP
+   * transport (ENDPOINT, authHeaders, 402 handling, response parsing) so
+   * behavior stays consistent with the rest of the class.
+   */
+  async generateReferenceClip(
+    params: GenerateReferenceClipParams,
+    modelOverride?: string,
+  ): Promise<GenerationJob> {
+    const modelForCall = this.resolveModel(modelOverride);
+    // Same cost-attribution fix as generateClip(): keep this.model in sync
+    // with the SKU that actually renders so checkStatus()'s
+    // priceCentsPerClip reflects the right rate.
+    this.model = modelForCall;
+    const body = buildAtlasReferenceRequestBody(params, modelForCall);
+    const res = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: this.authHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (res.status === 402) {
+      const detail = await res.text().catch(() => "");
+      throw new AtlasInsufficientBalanceError(detail.slice(0, 200) || res.statusText);
+    }
+    const parsed = (await res.json()) as AtlasSubmitResponse;
+    if (!res.ok) {
+      throw new Error(`Atlas API error: HTTP ${res.status} ${res.statusText} — ${JSON.stringify(parsed).slice(0, 200)}`);
+    }
+    const jobId = parseAtlasSubmitResponse(parsed);
+    return { jobId, estimatedSeconds: 120 };
   }
 
   async checkStatus(jobId: string): Promise<GenerationResult> {

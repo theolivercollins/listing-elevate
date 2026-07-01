@@ -508,3 +508,27 @@ export async function updatePropertyPipelineMode(
     body: JSON.stringify({ pipeline_mode }),
   });
 }
+
+// ─── Walkthrough mode (beta): single continuous AI walkthrough render ────
+export interface WalkthroughSubmitResponse {
+  status: 'processing' | 'skipped';
+  jobId?: string;
+  /** Present when status is 'skipped' — e.g. writes disabled on non-prod. */
+  reason?: string;
+}
+
+export interface WalkthroughStatusResponse {
+  status: 'idle' | 'processing' | 'complete' | 'failed';
+  videoUrl?: string;
+  error?: string;
+}
+
+/** Kicks off a walkthrough render for the given property. */
+export async function submitWalkthrough(propertyId: string): Promise<WalkthroughSubmitResponse> {
+  return apiFetch(`/api/admin/studio/walkthrough/${propertyId}`, { method: 'POST' });
+}
+
+/** Reads the current walkthrough render status for the given property. */
+export async function getWalkthroughStatus(propertyId: string): Promise<WalkthroughStatusResponse> {
+  return apiFetch(`/api/admin/studio/walkthrough/${propertyId}`);
+}

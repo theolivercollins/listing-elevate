@@ -24,6 +24,7 @@ import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
 import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
+import { WalkthroughPanel } from '@/components/studio/WalkthroughPanel';
 import { isDeliveryStage } from '../../../../lib/delivery/state';
 import { getRelativeTime, formatCents } from '@/lib/types';
 import type {
@@ -782,6 +783,9 @@ const PropertyCommandCenter = () => {
             </div>
           )}
         </SectionCard>
+
+        {/* ── Walkthrough (beta) — additive, self-contained, opt-in ── */}
+        <WalkthroughPanel propertyId={property.id} />
 
         {/* ── Scenes ── */}
         <SectionCard eyebrow="Pipeline" title={`Scenes (${scenes.length})`}>

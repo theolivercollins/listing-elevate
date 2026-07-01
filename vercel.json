@@ -70,6 +70,7 @@
     { "src": "/api/admin/studio/properties/([^/]+)/download", "dest": "/api/admin/studio/properties/[id]/download?id=$1" },
     { "src": "/api/admin/studio/properties/([^/]+)", "dest": "/api/admin/studio/properties/[id]?id=$1" },
     { "src": "/api/admin/studio/delivery/([^/]+)", "dest": "/api/admin/studio/delivery/[runId]?runId=$1" },
+    { "src": "/api/admin/studio/walkthrough/([^/]+)", "dest": "/api/admin/studio/walkthrough/[propertyId]?propertyId=$1" },
     { "src": "/api/admin/studio/clients/([^/]+)", "dest": "/api/admin/studio/clients/[id]?id=$1" },
     { "src": "/api/admin/studio/creatives/renders", "dest": "/api/admin/studio/creatives/renders" },
     { "src": "/api/admin/studio/creatives/upload-url", "dest": "/api/admin/studio/creatives/upload-url" },

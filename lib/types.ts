@@ -89,7 +89,11 @@ export type SceneStatus =
 
 export type VideoProvider = "runway" | "kling" | "higgsfield" | "atlas" | "veo";
 
-export type PipelineMode = "v1" | "v1.1";
+// "walkthrough" (migration 103) — opt-in single-continuous-video mode via
+// Bytedance Seedance 2.0 reference-to-video (lib/walkthrough/generate.ts).
+// Bypasses the per-scene v1/v1.1 pipeline entirely; tracked via the
+// walkthrough_* columns on Property below instead of scenes rows.
+export type PipelineMode = "v1" | "v1.1" | "walkthrough";
 
 export type LogStage =
   | "intake"
@@ -154,6 +158,14 @@ export interface Property {
   is_test: boolean;
   // Operator-selected video model SKU at inception — added migration 090.
   video_model_sku: string | null;
+  // Walkthrough mode async job state — added migration 103. Optional/nullable
+  // because they only populate when pipeline_mode='walkthrough' and a job has
+  // been submitted; ordinary v1/v1.1 properties never write these.
+  walkthrough_status?: "processing" | "complete" | "failed" | null;
+  walkthrough_video_url?: string | null;
+  walkthrough_job_id?: string | null;
+  walkthrough_error?: string | null;
+  walkthrough_updated_at?: string | null;
 }
 
 export interface UserProfile {

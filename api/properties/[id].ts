@@ -3,7 +3,7 @@ import { getProperty, getPhotosForProperty, getScenesForProperty, getSupabase, g
 import { verifyAuth, setNoStore } from '../../lib/auth.js';
 import type { PipelineMode } from '../../lib/types.js';
 
-const VALID_PIPELINE_MODES: PipelineMode[] = ['v1', 'v1.1'];
+const VALID_PIPELINE_MODES: PipelineMode[] = ['v1', 'v1.1', 'walkthrough'];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Cache-safety (§8): this endpoint calls verifyAuth directly (not via

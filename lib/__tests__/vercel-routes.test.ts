@@ -119,6 +119,10 @@ const GUARDED_PATHS = [
   'api/admin/studio/drafts/[id].ts',
   'api/cron/studio-draft-cleanup.ts',
 
+  // walkthrough-mode branch (2026-07-01) — async submit/poll endpoint for the
+  // opt-in single-continuous-video pipeline mode.
+  'api/admin/studio/walkthrough/[propertyId].ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
