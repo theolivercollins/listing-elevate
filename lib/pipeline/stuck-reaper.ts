@@ -707,9 +707,12 @@ export async function reapStuckGeneratingDeliveryRuns(
     const refireCutoff = cutoffIso(now, DELIVERY_GENERATING_REFIRE_MINUTES);
 
     // Include created_at so we can compute the recovery-window age for Path A.
+    // Include error too — Path B checks it before overwriting (see below) so a
+    // fresher RESUME_BALANCE_ERROR set concurrently by a submit pass is never
+    // clobbered by this tick's generic annotation.
     const { data: candidates, error: selErr } = await db
       .from("delivery_runs")
-      .select("id, property_id, updated_at, created_at")
+      .select("id, property_id, updated_at, created_at, error")
       .eq("stage", "generating")
       .is("error", null)
       .lt("updated_at", refireCutoff);
@@ -724,6 +727,7 @@ export async function reapStuckGeneratingDeliveryRuns(
       property_id: string;
       updated_at: string;
       created_at: string;
+      error?: string | null;
     }>;
     if (rows.length === 0) return { reaped: 0, ids: [] };
 
@@ -853,6 +857,20 @@ export async function reapStuckGeneratingDeliveryRuns(
 
           if (ageFromUpdatedMin < DELIVERY_GENERATING_STUCK_MINUTES) {
             continue; // Too early — may still be rendering.
+          }
+
+          // Never clobber a more-actionable error already on the run: if a
+          // submit pass concurrently set RESUME_BALANCE_ERROR (Atlas 402 — see
+          // resumeRunErrorAction in ../pipeline.js), leave it in place. Stage
+          // stays 'generating' and Resume stays available; the operator would
+          // otherwise lose the "add funds, then Resume" guidance the moment
+          // this tick's generic message overwrote it.
+          const { RESUME_BALANCE_ERROR } = await import("../pipeline.js");
+          if (row.error === RESUME_BALANCE_ERROR) {
+            console.warn(
+              `[stuck-reaper] delivery_run ${row.id} already carries RESUME_BALANCE_ERROR — leaving actionable message in place`,
+            );
+            continue;
           }
 
           const { updatePropertyStatus } = await import("../db.js");

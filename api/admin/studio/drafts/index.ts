@@ -5,7 +5,7 @@ import { getLatestDraft, upsertDraft } from '../../../../lib/studio/drafts.js';
 /**
  * GET /api/admin/studio/drafts
  *   Returns { draft: StudioDraftRow | null } — the calling admin's own
- *   in-progress New Order draft (there is at most one; migration 099
+ *   in-progress New Order draft (there is at most one; migration 101
  *   enforces unique(submitted_by)). Always allowed, including on non-prod
  *   deploys without the write opt-in, so the resume-banner check never
  *   breaks on preview.

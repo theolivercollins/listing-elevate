@@ -2,7 +2,7 @@
  * Client helpers for the Studio New Order autosave/resume feature.
  *
  * Thin wrappers over `authedFetch`, mirroring src/lib/studio/library-api.ts.
- * The server enforces "one draft per admin" (migration 099, unique on
+ * The server enforces "one draft per admin" (migration 101, unique on
  * submitted_by) — getLatestDraft() always resolves that single row, or null.
  */
 

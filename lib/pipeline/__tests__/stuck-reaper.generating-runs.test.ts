@@ -13,6 +13,9 @@
  *     • Only after DELIVERY_GENERATING_STUCK_MINUTES (15 min from updated_at):
  *       setRunError + updatePropertyStatus('needs_review').
  *     • Before 15 min: skip (may still be mid-render).
+ *     • If the run's error is already RESUME_BALANCE_ERROR (set at submit time
+ *       by resumeRunErrorAction in ../pipeline.ts on an Atlas 402): skip —
+ *       never overwrite the actionable balance message with the generic one.
  *
  *   Path C — Otherwise (some scene progressing or has a clip):
  *     • Left alone — no-false-positive guard.
@@ -29,6 +32,10 @@ import {
   DELIVERY_GENERATING_REFIRE_MINUTES,
   DELIVERY_GENERATING_REFIRE_WINDOW_MINUTES,
 } from "../stuck-reaper.js";
+// Real (unmocked) import — a pure string constant, no side effects on load.
+// Keeps the "already-actionable" test below in sync with the real message
+// instead of duplicating the literal string.
+import { RESUME_BALANCE_ERROR } from "../../pipeline.js";
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 // These must be declared before vi.mock calls because vi.mock factory functions
@@ -79,6 +86,7 @@ type RunRow = {
   property_id: string;
   updated_at: string;
   created_at?: string;
+  error?: string | null;
 };
 
 /**
@@ -361,6 +369,31 @@ describe("reapStuckGeneratingDeliveryRuns", () => {
       expect.stringMatching(/providers failed/i),
     );
     expect(mockUpdatePropertyStatus).toHaveBeenCalledWith("prop-pf-16", "needs_review");
+  });
+
+  it("all-needs_review-no-clip run, 20 min old, error already RESUME_BALANCE_ERROR → Path B does NOT overwrite it; actionable message survives", async () => {
+    // A submit pass already set the more-actionable balance error (Atlas 402)
+    // on this run. Path B must leave it in place instead of clobbering it with
+    // the generic "providers failed" message 15 min later.
+    const db = buildDb({
+      runRows: [{ ...stuckRun("run-balance", "prop-balance"), error: RESUME_BALANCE_ERROR }],
+      sceneRowsByProperty: {
+        "prop-balance": [
+          { status: "needs_review", clip_url: null },
+          { status: "needs_review", clip_url: null },
+        ],
+      },
+    });
+
+    const result = await reapStuckGeneratingDeliveryRuns(db, NOW);
+
+    expect(mockSetRunError).not.toHaveBeenCalled();
+    expect(mockUpdatePropertyStatus).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
+    // Not counted as reaped this tick — a clean skip, same shape as the
+    // lease-held skip in Path A.
+    expect(result.reaped).toBe(0);
+    expect(result.ids).toEqual([]);
   });
 
   it("all-needs_review-no-clip run, 6 min old → no action (too early, may still be mid-render)", async () => {

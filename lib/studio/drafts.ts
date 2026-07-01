@@ -1,7 +1,7 @@
 // lib/studio/drafts.ts
 //
 // Server-side data layer for the Studio New Order autosave/resume feature
-// (migration 099). One row per admin — unique on submitted_by — so every
+// (migration 101). One row per admin — unique on submitted_by — so every
 // save is an upsert, never a plain insert; an admin can never accumulate
 // more than one in-progress draft.
 
@@ -57,7 +57,7 @@ export type StudioDraftInput = Partial<{
 
 /**
  * Returns the newest draft for this admin (there is at most one — unique on
- * submitted_by, migration 099), or null when they have none.
+ * submitted_by, migration 101), or null when they have none.
  */
 export async function getLatestDraft(submittedBy: string): Promise<StudioDraftRow | null> {
   const { data, error } = await getSupabase()
