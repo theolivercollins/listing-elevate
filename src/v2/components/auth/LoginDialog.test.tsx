@@ -21,6 +21,9 @@ import { LoginDialog } from "./LoginDialog";
 // Stub the auth hook — we only need the shape, not real Supabase calls.
 vi.mock("@/lib/auth", () => ({
   useAuth: () => ({
+    adminVerified: true,
+    sendAdminEmailCode: vi.fn(),
+    verifyAdminEmailCode: vi.fn(),
     signInWithMagicLink: vi.fn(),
     signInWithPassword: vi.fn(),
   }),

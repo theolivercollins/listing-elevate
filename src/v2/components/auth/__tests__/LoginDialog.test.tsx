@@ -5,6 +5,9 @@ import * as authLib from "@/lib/auth";
 
 vi.mock("@/lib/auth", () => ({
   useAuth: vi.fn(() => ({
+    adminVerified: true,
+    sendAdminEmailCode: vi.fn(),
+    verifyAdminEmailCode: vi.fn(),
     signInWithPassword: vi.fn(),
     signInWithMagicLink: vi.fn(),
   })),
