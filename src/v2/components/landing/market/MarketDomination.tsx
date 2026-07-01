@@ -77,7 +77,7 @@ export default function MarketDomination() {
           <div className="grid grid-cols-2 gap-6">
             {/* With Listing Elevate */}
             <div>
-              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: 999 }}>
+              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: WHITE, border: `1px solid ${LINE}`, background: "var(--le-bg-sunken)", borderRadius: "var(--le-radius-pill)" }}>
                 With Listing Elevate
               </span>
               <div className="space-y-4">
@@ -114,7 +114,7 @@ export default function MarketDomination() {
 
             {/* Without */}
             <div>
-              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: 999 }}>
+              <span className="text-[10px] tracking-[0.15em] uppercase px-2 py-1 inline-block mb-5" style={{ color: DIMMER, border: `1px solid ${LINE}`, borderRadius: "var(--le-radius-pill)" }}>
                 Without
               </span>
               <div className="space-y-4">

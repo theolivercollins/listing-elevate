@@ -265,7 +265,7 @@ function UserMenu({
               minWidth: 18,
               padding: "0 6px",
               height: 18,
-              borderRadius: 999,
+              borderRadius: "var(--radius-pill)",
               background: "var(--warn)",
               color: "var(--surface)",
               fontSize: 10.5,

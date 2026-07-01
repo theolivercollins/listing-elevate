@@ -118,7 +118,7 @@ export function SavingsReveal({
           color: "rgba(255,255,255,0.7)",
           border: "1px solid rgba(255,255,255,0.18)",
           padding: "8px 14px",
-          borderRadius: 999,
+          borderRadius: "var(--le-radius-pill)",
           display: "inline-flex",
           alignItems: "center",
           gap: 8,

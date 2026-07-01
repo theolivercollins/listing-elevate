@@ -22,22 +22,22 @@
   --le-muted-2:    #9aa0aa;
   --le-line:       rgba(11, 11, 16, 0.07);
   --le-line-2:     rgba(11, 11, 16, 0.04);
-  --le-accent:     #2a6fdb;
+  --le-accent:     #1E4A8C; /* @kind color — was #2a6fdb; unified with app-wide navy brand accent */
   --le-good:       #2f8a55;
   --le-warn:       #b6802c;
   --le-bad:        #c44a4a;
 
   /* Radius tokens — aliased to the canonical scale (docs/design/DESIGN-GUIDE.md).
      Do NOT diverge from the v2 scale: sm 6 / md 10 / lg 14 / xl 20 / pill 999. */
-  --le-radius:      14px; /* = --le-r-lg */
-  --le-radius-sm:   10px; /* = --le-r-md */
-  --le-radius-pill: 999px;
+  --le-radius:      var(--le-r-lg);   /* = 14px */
+  --le-radius-sm:   var(--le-r-md);   /* = 10px */
+  --le-radius-pill: var(--le-r-pill); /* = 999px */
 
-  /* Shadow tokens — identical to v2 tokens.css so cards sit at the same depth
-     everywhere (was a darker rgba(11,11,16) variant; see DESIGN-GUIDE.md). */
-  --le-shadow-sm: 0 1px 2px rgba(20, 18, 15, 0.05);
-  --le-shadow-md: 0 2px 6px rgba(20, 18, 15, 0.06), 0 8px 24px rgba(20, 18, 15, 0.04);
-  --le-shadow-lg: 0 12px 40px rgba(20, 18, 15, 0.08), 0 2px 8px rgba(20, 18, 15, 0.04);
+  /* Shadow tokens — intentionally NOT redeclared here: this scope uses the
+     SAME custom-property names as the global v2 tokens.css scale, so it
+     simply inherits --le-shadow-sm/md/lg from :root (values were already
+     identical; see DESIGN-GUIDE.md). Redeclaring as var(--le-shadow-*) here
+     would be a self-reference (invalid CSS) since the names collide. */
 
   /* Typography base */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -380,7 +380,7 @@
 .studio-scope .studio-status-pill.scripting,
 .studio-scope .studio-status-pill.qc,
 .studio-scope .studio-status-pill.ingesting,
-.studio-scope .studio-status-pill.assembling { background: rgba(42,111,219,0.08); color: var(--le-accent); }
+.studio-scope .studio-status-pill.assembling { background: rgba(30,74,140,0.08); color: var(--le-accent); }
 
 /* ─── Label / eyebrow utility ────────────────────────────────────── */
 .studio-scope .studio-label {
@@ -940,7 +940,7 @@
   font-variant-numeric: tabular-nums;
 }
 .studio-scope .le-video-hosted-badge {
-  background: rgba(42,111,219,0.86);
+  background: rgba(30,74,140,0.86);
 }
 .studio-scope .le-video-approved-badge {
   position: absolute;
@@ -957,7 +957,7 @@
   padding: 3px 8px;
 }
 .studio-scope .le-video-share-badge {
-  background: rgba(42,111,219,0.92);
+  background: rgba(30,74,140,0.92);
 }
 
 /* Meta */
@@ -1488,7 +1488,7 @@
   border-radius: var(--le-r-pill);
 }
 .studio-scope .le-hub-kind-client {
-  background: rgba(42, 111, 219, 0.10);
+  background: rgba(30, 74, 140, 0.10);
   color: var(--le-accent);
 }
 .studio-scope .le-hub-kind-public {
