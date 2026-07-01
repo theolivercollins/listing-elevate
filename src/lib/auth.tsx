@@ -53,6 +53,22 @@ export interface UserProfile {
   updated_at: string;
   voice_clone_status?: "none" | "requested" | "enrolling" | "ready" | "failed" | null;
   elevenlabs_voice_id?: string | null;
+  /** Persona self-selected during onboarding (migration 105). Nullable / additive. */
+  persona?: "agent" | "team_leader" | "broker" | "marketing" | null;
+  /** Acquisition source category, e.g. "search" (migration 105). */
+  signup_source?: string | null;
+  /** Acquisition source sub-choice, e.g. "Google" (migration 105). */
+  signup_source_detail?: string | null;
+}
+
+/** Onboarding details captured by the signup flow's profile/role/source steps. */
+export interface OnboardingDetails {
+  firstName: string;
+  lastName: string;
+  brokerage: string;
+  persona: "agent" | "team_leader" | "broker" | "marketing";
+  signupSource: string;
+  signupSourceDetail: string | null;
 }
 
 // ─── Admin-verified session marker ───────────────────────────────────────────
@@ -158,6 +174,19 @@ interface AuthContextType {
     password: string,
     meta: { first_name?: string; last_name?: string; brokerage?: string }
   ) => Promise<void>;
+  /** Sends a 6-digit signup OTP (creates the user if new). Throws on error. */
+  sendSignupCode: (email: string) => Promise<void>;
+  /** Verifies the typed signup OTP; a session is established on success. Throws on error. */
+  verifySignupCode: (email: string, code: string) => Promise<void>;
+  /** Sets the password for the currently-authenticated (just-verified) user. Throws on error. */
+  setPassword: (password: string) => Promise<void>;
+  /**
+   * Persists onboarding details: writes auth metadata (best-effort) and the
+   * `user_profiles` row. If the migration-105 columns are absent, retries with
+   * only the pre-existing columns so onboarding never hard-fails. Refreshes
+   * the local profile at the end.
+   */
+  completeOnboarding: (details: OnboardingDetails) => Promise<void>;
   listIdentities: () => Promise<UserIdentity[]>;
   linkIdentity: (provider: "google" | "azure") => Promise<void>;
   unlinkIdentity: (identity: UserIdentity) => Promise<void>;
@@ -182,6 +211,10 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => {},
   signInWithMicrosoft: async () => {},
   signUp: async () => {},
+  sendSignupCode: async () => {},
+  verifySignupCode: async () => {},
+  setPassword: async () => {},
+  completeOnboarding: async () => {},
   listIdentities: async () => [],
   linkIdentity: async () => {},
   unlinkIdentity: async () => {},
@@ -395,6 +428,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  // ── Immersive signup: OTP → password → onboarding ──────────────────────────
+  async function sendSignupCode(email: string) {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true, emailRedirectTo: AUTH_CALLBACK_URL },
+    });
+    if (error) throw error;
+  }
+
+  async function verifySignupCode(email: string, code: string) {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: "email",
+    });
+    if (error) throw error;
+    // Session is now live; onAuthStateChange picks it up and fetches the profile.
+  }
+
+  async function setPassword(password: string) {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  }
+
+  async function completeOnboarding(details: OnboardingDetails) {
+    const firstName = details.firstName.trim();
+    const lastName = details.lastName.trim();
+    const brokerage = details.brokerage.trim();
+
+    // 1) Auth metadata — best-effort, never blocks the flow.
+    try {
+      await supabase.auth.updateUser({
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          brokerage,
+          persona: details.persona,
+          signup_source: details.signupSource,
+          signup_source_detail: details.signupSourceDetail,
+        },
+      });
+    } catch {
+      /* metadata is non-critical — the profile row below is the source of truth */
+    }
+
+    // 2) Profile row. Try the full write (incl. migration-105 columns); if those
+    //    columns don't exist yet on the shared DB, retry with only the columns
+    //    that predate this feature so onboarding still lands the core fields.
+    const uid = user?.id;
+    if (uid) {
+      const { error } = await supabase
+        .from("user_profiles")
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          brokerage,
+          persona: details.persona,
+          signup_source: details.signupSource,
+          signup_source_detail: details.signupSourceDetail,
+        })
+        .eq("user_id", uid);
+      if (error) {
+        await supabase
+          .from("user_profiles")
+          .update({ first_name: firstName, last_name: lastName, brokerage })
+          .eq("user_id", uid);
+      }
+    }
+
+    await refreshProfile();
+  }
+
   async function listIdentities(): Promise<UserIdentity[]> {
     const { data, error } = await supabase.auth.getUserIdentities();
     if (error) throw error;
@@ -500,6 +605,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         signInWithMicrosoft,
         signUp,
+        sendSignupCode,
+        verifySignupCode,
+        setPassword,
+        completeOnboarding,
         listIdentities,
         linkIdentity,
         unlinkIdentity,
