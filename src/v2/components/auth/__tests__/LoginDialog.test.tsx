@@ -8,9 +8,13 @@
  * avoid duplicating every case in both places.
  *
  * The mocked `useAuth` is a `vi.fn()` factory (not a plain object literal) so
- * individual tests can reconfigure it via `authLib.useAuth as any` — needed
- * for the OAuth-error test, which must make `signInWithGoogle` reject only
- * for that one case.
+ * individual tests can reconfigure it via `authLib.useAuth as any`.
+ *
+ * `SocialAuthButtons` is stubbed to a plain button pair — its real GSI
+ * wiring (script load, nonce, initialize, signInWithIdToken) is covered by
+ * `../SocialAuthButtons.test.tsx` and `src/lib/__tests__/googleIdentity.test.ts`.
+ * The stub lets the Google-error test below simulate GSI reporting a
+ * failure via `onGoogleError`, independent of the real integration.
  */
 
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
@@ -18,6 +22,34 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as React from "react";
 import { LoginDialog } from "../LoginDialog";
 import * as authLib from "@/lib/auth";
+
+vi.mock("@/v2/components/auth/SocialAuthButtons", () => ({
+  SocialAuthButtons: ({
+    onGoogleSuccess,
+    onGoogleError,
+    disabled,
+  }: {
+    onGoogleSuccess: () => void;
+    onGoogleError: (message: string) => void;
+    disabled?: boolean;
+  }) => (
+    <div>
+      <button type="button" disabled={disabled} onClick={onGoogleSuccess}>
+        Continue with Google
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          onGoogleError(
+            "Google sign-in isn't available right now. Use email below for now.",
+          )
+        }
+      >
+        simulate-google-error
+      </button>
+    </div>
+  ),
+}));
 
 // Stub framer-motion: keep AnimatePresence transparent, replace motion.div
 // with a plain div so jsdom doesn't error on unknown DOM props and so the
@@ -55,7 +87,6 @@ function makeAuthMock(overrides: Record<string, unknown> = {}) {
     verifyAdminEmailCode: vi.fn(),
     signInWithMagicLink: vi.fn(() => Promise.resolve()),
     signInWithPassword: vi.fn(() => Promise.resolve()),
-    signInWithGoogle: vi.fn(() => Promise.resolve()),
     signUp: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
@@ -241,30 +272,22 @@ describe("LoginDialog — sign-up flow", () => {
   });
 });
 
-describe("LoginDialog — OAuth error handling", () => {
+describe("LoginDialog — Google sign-in error handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (authLib.useAuth as any).mockReturnValue(makeAuthMock());
   });
 
-  it("shows a friendly message and stays mounted when signInWithGoogle rejects", async () => {
-    const authMock = makeAuthMock({
-      signInWithGoogle: vi.fn(() => Promise.reject(new Error("provider not configured"))),
-    });
-    (authLib.useAuth as any).mockReturnValue(authMock);
-
+  it("shows a friendly message and stays mounted when Google Identity Services reports an error", async () => {
     render(<LoginDialog open={true} onClose={vi.fn()} />);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Continue with Google" }),
+    fireEvent.click(screen.getByRole("button", { name: "simulate-google-error" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Google sign-in isn't available right now. Use email below for now.",
     );
 
-    expect(
-      await screen.findByRole("alert"),
-    ).toHaveTextContent(
-      "Google sign-in isn't set up yet. Use email below for now.",
-    );
-
-    // Dialog must still be mounted — no crash/unmount on OAuth failure.
+    // Dialog must still be mounted — no crash/unmount on a GSI failure.
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 });
