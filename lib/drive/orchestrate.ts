@@ -26,7 +26,7 @@ import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from 
 import { listFinalImages, downloadFile } from "./client.js";
 import { uploadPhotosToStorage, getStoragePublicUrl } from "../../src/lib/photo-upload.js";
 import { runPipeline } from "../pipeline.js";
-import { createRun, getRun, revertRun } from "../delivery/runs.js";
+import { createRun, getRun, revertRun, setListingDetails } from "../delivery/runs.js";
 import { runScrapeStage } from "../delivery/scrape.js";
 import type { DeliveryVideoType } from "../types/operator-studio.js";
 
@@ -471,6 +471,32 @@ export async function regenerateIntake(
             auto_run: run.auto_run,
           });
           await setDeliveryRunId(intakeId, freshRun.id);
+
+          // Carry the delivered run's listing_details forward onto the fresh
+          // run. Without this, the fresh run starts at listing_details='{}'
+          // (migration 080 column default) and the auto-run 'details' gate
+          // (lib/delivery/auto-run.ts resolveDetails — requires price/beds/
+          // baths all present) pauses it unnecessarily, making the
+          // conversational agent ask for info this property already had.
+          // `run` here IS the prior/delivered run fetched above — no extra
+          // getRun call needed. setListingDetails is the same setter
+          // lib/delivery/scrape.ts's runScrapeStage uses (whole-column
+          // REPLACE). A delivered run should always carry real details (that
+          // gate is what let it reach 'delivered'); fall back to firing the
+          // scrape stage — fire-and-forget, exactly like approveIntake's 7.5
+          // — only in the defensive case where it somehow doesn't.
+          const priorDetails = run.listing_details;
+          if (priorDetails && Object.keys(priorDetails).length > 0) {
+            await setListingDetails(freshRun.id, priorDetails);
+          } else {
+            runScrapeStage(freshRun.id).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(
+                `[drive/orchestrate] runScrapeStage error on regen (fresh run) for ${freshRun.id}:`,
+                msg,
+              );
+            });
+          }
         } else if (run.stage !== "intake") {
           await revertRun(run.id, "intake");
         }

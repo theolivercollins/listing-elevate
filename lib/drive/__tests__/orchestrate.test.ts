@@ -20,6 +20,8 @@
  *   - Batch download: images capped at 80 with warn; batching works
  *   - regenerateIntake happy path + sets status 'generating'
  *   - regenerateIntake skips appendFeedback when notes is empty
+ *   - regenerateIntake on a delivered run carries listing_details forward
+ *     onto the fresh run (or falls back to runScrapeStage when absent)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -65,6 +67,7 @@ vi.mock("../../delivery/runs.js", () => ({
   createRun: vi.fn(),
   getRun: vi.fn().mockResolvedValue(null),
   revertRun: vi.fn(),
+  setListingDetails: vi.fn(),
 }));
 
 vi.mock("../../delivery/scrape.js", () => ({
@@ -79,7 +82,7 @@ import { lookupMlsByAddress } from "../../mls/lookup.js";
 import { listFinalImages, downloadFile } from "../client.js";
 import { uploadPhotosToStorage, getStoragePublicUrl } from "../../../src/lib/photo-upload.js";
 import { runPipeline } from "../../pipeline.js";
-import { createRun, getRun, revertRun } from "../../delivery/runs.js";
+import { createRun, getRun, revertRun, setListingDetails } from "../../delivery/runs.js";
 import { runScrapeStage } from "../../delivery/scrape.js";
 import { approveIntake, regenerateIntake } from "../orchestrate.js";
 import type { DriveIntake } from "../intake-db.js";
@@ -973,6 +976,7 @@ describe("regenerateIntake", () => {
       duration_seconds: 30,
       stage: "delivered",
       auto_run: true,
+      listing_details: { price: 550000, beds: 4, baths: 3, source: "scraped" },
     } as never);
     vi.mocked(createRun).mockResolvedValue({ id: "run-new-2" } as never);
 
@@ -988,6 +992,48 @@ describe("regenerateIntake", () => {
     });
     expect(setDeliveryRunId).toHaveBeenCalledWith("intake-1", "run-new-2");
     expect(revertRun).not.toHaveBeenCalled();
+
+    // Carries the delivered run's listing_details onto the fresh run so the
+    // details gate doesn't stall re-asking for price/beds/baths we already had.
+    expect(setListingDetails).toHaveBeenCalledWith("run-new-2", {
+      price: 550000,
+      beds: 4,
+      baths: 3,
+      source: "scraped",
+    });
+    expect(runScrapeStage).not.toHaveBeenCalled();
+  });
+
+  it("delivery_run_id set, run IS 'delivered' with NO listing_details: falls back to firing runScrapeStage on the fresh run (setListingDetails not called)", async () => {
+    const intakeWithRun: DriveIntake = {
+      ...BASE_INTAKE,
+      status: "rendered",
+      property_id: "prop-existing",
+      delivery_run_id: "run-old",
+    };
+    vi.mocked(getIntake).mockResolvedValue(intakeWithRun);
+    vi.mocked(getSupabase).mockReturnValue(
+      makeRegenSupabase(null) as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-old",
+      property_id: "prop-existing",
+      client_id: "client-1",
+      video_type: "just_listed",
+      duration_seconds: 30,
+      stage: "delivered",
+      auto_run: true,
+      listing_details: {},
+    } as never);
+    vi.mocked(createRun).mockResolvedValue({ id: "run-new-3" } as never);
+    vi.mocked(runScrapeStage).mockResolvedValue(undefined);
+
+    const result = await regenerateIntake("intake-1", "");
+
+    expect(result.status).toBe("generating");
+    expect(setDeliveryRunId).toHaveBeenCalledWith("intake-1", "run-new-3");
+    expect(setListingDetails).not.toHaveBeenCalled();
+    expect(runScrapeStage).toHaveBeenCalledWith("run-new-3");
   });
 
   it("no delivery_run_id on the intake (legacy / flag-off): getRun/createRun/revertRun are never touched", async () => {
