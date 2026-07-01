@@ -208,9 +208,9 @@ const INPUT_STYLE: React.CSSProperties = {
   width: "100%",
   padding: "9px 12px",
   borderRadius: "var(--le-r-sm)",
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
-  color: "var(--ink)",
+  border: "1px solid var(--line, var(--le-border))",
+  background: "var(--surface, var(--le-surface))",
+  color: "var(--ink, var(--le-text))",
   fontSize: 13,
   fontFamily: "inherit",
   outline: "none",
@@ -233,7 +233,7 @@ const LABEL_STYLE: React.CSSProperties = {
   display: "block",
   fontSize: 11,
   fontWeight: 600,
-  color: "var(--muted)",
+  color: "var(--muted, var(--le-muted))",
   textTransform: "uppercase",
   letterSpacing: "0.07em",
   marginBottom: 6,
@@ -248,8 +248,8 @@ function NativeInput(props: React.InputHTMLAttributes<HTMLInputElement> & { styl
   return (
     <input
       style={{ ...INPUT_STYLE, ...style }}
-      onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--accent)"; }}
-      onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--line)"; }}
+      onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--accent, var(--le-accent))"; }}
+      onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--line, var(--le-border))"; }}
       {...rest}
     />
   );
@@ -260,8 +260,8 @@ function NativeSelect(props: React.SelectHTMLAttributes<HTMLSelectElement> & { s
   return (
     <select
       style={{ ...SELECT_STYLE, ...style }}
-      onFocus={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--accent)"; }}
-      onBlur={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--line)"; }}
+      onFocus={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--accent, var(--le-accent))"; }}
+      onBlur={(e) => { (e.target as HTMLSelectElement).style.borderColor = "var(--line, var(--le-border))"; }}
       {...rest}
     />
   );
@@ -275,7 +275,7 @@ function MoneyInput({ value, onChange, placeholder = "0.00", required }: {
 }) {
   return (
     <div style={{ position: "relative" }}>
-      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted)", pointerEvents: "none" }}>$</span>
+      <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", fontSize: 13, color: "var(--muted, var(--le-muted))", pointerEvents: "none" }}>$</span>
       <NativeInput
         type="text"
         inputMode="decimal"
@@ -303,7 +303,7 @@ function LegendDot({ color, label }: { color: string; label: string }) {
           flexShrink: 0,
         }}
       />
-      <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", fontWeight: 500 }}>{label}</span>
     </div>
   );
 }
@@ -316,8 +316,8 @@ type BreakdownTab = (typeof BREAKDOWN_TABS)[number];
 // ─── Card style (matches old Finances ledger sections) ────────────────────────
 
 const CARD_STYLE: React.CSSProperties = {
-  background: "var(--surface)",
-  border: "1px solid var(--line)",
+  background: "var(--surface, var(--le-surface))",
+  border: "1px solid var(--line, var(--le-border))",
   borderRadius: "var(--le-r-xl)",
   boxShadow: "var(--shadow-sm, 0 1px 4px rgba(11,11,16,0.06))",
 };
@@ -334,8 +334,8 @@ function SubmitBtn({ loading, disabled, children }: { loading: boolean; disabled
         padding: "10px 16px",
         borderRadius: "var(--le-r-sm)",
         border: "none",
-        background: disabled || loading ? "rgba(15,24,60,0.08)" : "var(--ink)",
-        color: disabled || loading ? "var(--muted)" : "var(--surface)",
+        background: disabled || loading ? "rgba(15,24,60,0.08)" : "var(--ink, var(--le-text))",
+        color: disabled || loading ? "var(--muted, var(--le-muted))" : "var(--surface, var(--le-surface))",
         fontSize: 13,
         fontWeight: 600,
         cursor: disabled || loading ? "not-allowed" : "pointer",
@@ -379,8 +379,8 @@ function DegradedBadge({
         marginBottom: 12,
       }}
     >
-      <Icon name="alert" size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />
-      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warn)" }}>
+      <Icon name="alert" size={13} style={{ color: "var(--warn, var(--le-warn))", flexShrink: 0 }} />
+      <span style={{ fontSize: 12, fontWeight: 500, color: "var(--warn, var(--le-warn))" }}>
         Cost data unavailable
       </span>
       <button
@@ -390,7 +390,7 @@ function DegradedBadge({
         style={{
           fontSize: 11.5,
           fontWeight: 600,
-          color: "var(--warn)",
+          color: "var(--warn, var(--le-warn))",
           background: "none",
           border: "1px solid rgba(217, 119, 6, 0.35)",
           borderRadius: "var(--le-r-sm)",
@@ -877,23 +877,23 @@ export default function Finances() {
 
   if (error) {
     return (
-      <div className="le-fade-up p-10" style={{ ...CARD_STYLE, border: "1px solid var(--bad)", background: "rgba(196,74,74,0.06)" }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--bad)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <div className="le-fade-up p-10" style={{ ...CARD_STYLE, border: "1px solid var(--bad, var(--le-bad))", background: "rgba(196,74,74,0.06)" }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--bad, var(--le-bad))", textTransform: "uppercase", letterSpacing: "0.08em" }}>
           — Error
         </span>
-        <p className="mt-3 text-sm" style={{ color: "var(--muted)" }}>{error}</p>
+        <p className="mt-3 text-sm" style={{ color: "var(--muted, var(--le-muted))" }}>{error}</p>
       </div>
     );
   }
 
-  const netColor = netCents >= 0 ? "var(--good)" : "var(--bad)";
+  const netColor = netCents >= 0 ? "var(--good, var(--le-good))" : "var(--bad, var(--le-bad))";
 
   return (
     <div className="le-fade-up" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
       {/* ── Actions row ──────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, alignItems: "center" }}>
-        <p style={{ flex: 1, fontSize: 12, color: "var(--muted)", display: "flex", alignItems: "center", gap: 6 }}>
+        <p style={{ flex: 1, fontSize: 12, color: "var(--muted, var(--le-muted))", display: "flex", alignItems: "center", gap: 6 }}>
           <Info style={{ width: 13, height: 13 }} strokeWidth={2} />
           Claude usage runs on a Pro subscription — excluded from dollar totals; units still tracked.
         </p>
@@ -903,8 +903,8 @@ export default function Finances() {
           style={{
             display: "inline-flex", alignItems: "center", gap: 7,
             padding: "9px 14px", borderRadius: "var(--le-r-pill)",
-            border: "1px solid var(--line)", background: "var(--surface)",
-            fontSize: 12.5, fontWeight: 500, color: "var(--ink-2)", cursor: "pointer",
+            border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))",
+            fontSize: 12.5, fontWeight: 500, color: "var(--ink-2, var(--le-text-secondary))", cursor: "pointer",
           }}
         >
           <Icon name="upload" size={14} />
@@ -975,7 +975,7 @@ export default function Finances() {
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <span className="le-d-label">Cashflow · 30 days</span>
-            <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+            <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink, var(--le-text))", fontVariantNumeric: "tabular-nums" }}>
               <span style={{ color: netColor }}>
                 {netCents >= 0 ? "+" : "−"}<MoneyValue cents={Math.abs(netCents)} /> net
               </span>
@@ -983,7 +983,7 @@ export default function Finances() {
           </div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
             <LegendDot color="oklch(0.7 0.14 168)" label="Revenue" />
-            <LegendDot color="var(--accent)" label="Spend" />
+            <LegendDot color="var(--accent, var(--le-accent))" label="Spend" />
           </div>
         </div>
         <div style={{ height: 240 }}>
@@ -995,28 +995,28 @@ export default function Finances() {
                   <stop offset="100%" stopColor="oklch(0.7 0.14 168)" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="spendArea" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
-                  <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                  <stop offset="0%" stopColor="var(--accent, var(--le-accent))" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="var(--accent, var(--le-accent))" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="0" stroke="rgba(15,24,60,0.06)" vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={{ fontSize: 10, fill: "var(--muted)" }}
+                tick={{ fontSize: 10, fill: "var(--muted, var(--le-muted))" }}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(v) => v.slice(5)}
               />
               <YAxis
-                tick={{ fontSize: 10, fill: "var(--muted)" }}
+                tick={{ fontSize: 10, fill: "var(--muted, var(--le-muted))" }}
                 tickLine={false}
                 axisLine={false}
                 tickFormatter={(v) => `$${(v / 100).toFixed(0)}`}
               />
               <Tooltip
                 contentStyle={{
-                  background: "var(--surface)",
-                  border: "1px solid var(--line)",
+                  background: "var(--surface, var(--le-surface))",
+                  border: "1px solid var(--line, var(--le-border))",
                   borderRadius: "var(--le-r-sm)",
                   fontSize: 11,
                   padding: 10,
@@ -1024,7 +1024,7 @@ export default function Finances() {
                 formatter={(v: number, name: string) => [fmtMoney(v), name]}
               />
               <Area type="monotone" dataKey="revenue" stroke="oklch(0.7 0.14 168)" strokeWidth={1.5} fill="url(#revArea)" />
-              <Area type="monotone" dataKey="spend" stroke="var(--accent)" strokeWidth={1.5} fill="url(#spendArea)" />
+              <Area type="monotone" dataKey="spend" stroke="var(--accent, var(--le-accent))" strokeWidth={1.5} fill="url(#spendArea)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1035,21 +1035,21 @@ export default function Finances() {
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 20 }}>
           <div>
             <span className="le-d-label">API spend over time</span>
-            <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+            <h3 style={{ margin: "4px 0 0", fontSize: 20, fontWeight: 600, letterSpacing: "-0.02em", color: "var(--ink, var(--le-text))", fontVariantNumeric: "tabular-nums" }}>
               <MoneyValue cents={totalSpend14} /> · last 14 days
             </h3>
           </div>
           <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-            <LegendDot color="var(--accent)" label="API spend (cost_events)" />
+            <LegendDot color="var(--accent, var(--le-accent))" label="API spend (cost_events)" />
           </div>
         </div>
         <div style={{ marginTop: 8 }}>
           {costSeries.length === 0 || !hasAnySpend ? (
-            <div style={{ height: 180, display: "grid", placeItems: "center", fontSize: 13, color: "var(--muted)" }}>
+            <div style={{ height: 180, display: "grid", placeItems: "center", fontSize: 13, color: "var(--muted, var(--le-muted))" }}>
               No cost events recorded in the last 14 days.
             </div>
           ) : (
-            <Sparkline data={costSeries} color="var(--accent)" height={180} showDots />
+            <Sparkline data={costSeries} color="var(--accent, var(--le-accent))" height={180} showDots />
           )}
         </div>
       </Card>
@@ -1070,8 +1070,8 @@ export default function Finances() {
                 onClick={() => setBreakdownTab(t)}
                 style={{
                   padding: "8px 16px", borderRadius: "var(--le-r-pill)", border: "none",
-                  background: breakdownTab === t ? "var(--ink)" : "transparent",
-                  color: breakdownTab === t ? "var(--surface)" : "var(--muted)",
+                  background: breakdownTab === t ? "var(--ink, var(--le-text))" : "transparent",
+                  color: breakdownTab === t ? "var(--surface, var(--le-surface))" : "var(--muted, var(--le-muted))",
                   fontSize: 12, fontWeight: 600, cursor: "pointer",
                   textTransform: "capitalize", transition: "background .15s, color .15s",
                 }}
@@ -1089,7 +1089,7 @@ export default function Finances() {
             onRetry={retryCostBreakdown}
           />
         ) : breakdownRows.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted, var(--le-muted))", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
             No cost events in the last 30 days.
           </div>
         ) : (
@@ -1103,7 +1103,7 @@ export default function Finances() {
                 { label: "Events", align: "right" },
                 { label: "Share", align: "left" },
               ].map(({ label, align }) => (
-                <span key={label} className="le-d-label" style={{ textAlign: align as "left" | "right", fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>
+                <span key={label} className="le-d-label" style={{ textAlign: align as "left" | "right", fontSize: 12, color: "var(--muted, var(--le-muted))", fontWeight: 500 }}>
                   {label}
                 </span>
               ))}
@@ -1113,16 +1113,16 @@ export default function Finances() {
                 key={r.name}
                 style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1.2fr", gap: 16, padding: "14px 14px", borderBottom: "1px solid rgba(15,24,60,0.04)", alignItems: "center" }}
               >
-                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{r.name}</span>
-                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.today} /></span>
-                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.week} /></span>
-                <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.month} /></span>
-                <span className="le-tabular" style={{ fontSize: 12, textAlign: "right", color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>{r.events.toLocaleString()}</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>{r.name}</span>
+                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.today} /></span>
+                <span className="le-tabular" style={{ fontSize: 12.5, textAlign: "right", color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.week} /></span>
+                <span className="le-tabular" style={{ fontSize: 14, fontWeight: 600, textAlign: "right", color: "var(--ink, var(--le-text))", fontVariantNumeric: "tabular-nums" }}><MoneyValue cents={r.month} /></span>
+                <span className="le-tabular" style={{ fontSize: 12, textAlign: "right", color: "var(--muted-2, var(--le-faint))", fontVariantNumeric: "tabular-nums" }}>{r.events.toLocaleString()}</span>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ flex: 1, height: 5, background: "rgba(15,24,60,0.06)", borderRadius: "var(--le-r-pill)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent)", borderRadius: "var(--le-r-pill)" }} />
+                    <div style={{ height: "100%", width: `${r.share}%`, background: "var(--accent, var(--le-accent))", borderRadius: "var(--le-r-pill)" }} />
                   </div>
-                  <span className="le-tabular" style={{ fontSize: 11, color: "var(--muted-2)", width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.share}%</span>
+                  <span className="le-tabular" style={{ fontSize: 11, color: "var(--muted-2, var(--le-faint))", width: 28, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.share}%</span>
                 </div>
               </div>
             ))}
@@ -1141,7 +1141,7 @@ export default function Finances() {
                 row.purchasedCents > 0
                   ? Math.min(100, (row.spentCents / row.purchasedCents) * 100)
                   : 0;
-              const balanceColor = balanceCents < 0 ? "var(--bad)" : "var(--ink)";
+              const balanceColor = balanceCents < 0 ? "var(--bad, var(--le-bad))" : "var(--ink, var(--le-text))";
               return (
                 <div
                   key={row.provider}
@@ -1149,18 +1149,18 @@ export default function Finances() {
                     borderRadius: "var(--le-r-lg)",
                     padding: 18,
                     background: "rgba(15,24,60,0.03)",
-                    border: "1px solid var(--line)",
+                    border: "1px solid var(--line, var(--le-border))",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                     <div>
-                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted, var(--le-muted))", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                         {row.label}
                       </span>
                       <div style={{ marginTop: 10, fontSize: 22, fontWeight: 700, color: balanceColor, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em" }}>
                         {balanceCents < 0 ? "−" : ""}<MoneyValue cents={Math.abs(balanceCents)} />
                       </div>
-                      <p style={{ marginTop: 2, fontSize: 11, color: "var(--muted)" }}>remaining</p>
+                      <p style={{ marginTop: 2, fontSize: 11, color: "var(--muted, var(--le-muted))" }}>remaining</p>
                     </div>
                     <span
                       style={{
@@ -1178,12 +1178,12 @@ export default function Finances() {
                       transition={{ duration: 1, ease: EASE }}
                     />
                   </div>
-                  <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                  <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}>
                     <span><MoneyValue cents={row.spentCents} /> spent</span>
                     <span><MoneyValue cents={row.purchasedCents} /> bought</span>
                   </div>
                   {row.purchasedUnits > 0 && (
-                    <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted)", opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
+                    <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--muted, var(--le-muted))", opacity: 0.6, fontVariantNumeric: "tabular-nums" }}>
                       <span>{Math.round(row.spentUnits).toLocaleString()} units used</span>
                       <span>{Math.round(row.purchasedUnits).toLocaleString()} units bought</span>
                     </div>
@@ -1335,12 +1335,12 @@ export default function Finances() {
             <span className="le-d-label">Recurring subscriptions</span>
             <div style={{ display: "flex", alignItems: "baseline", gap: 20, marginTop: 8 }}>
               <div>
-                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.025em", color: "var(--ink, var(--le-text))", fontVariantNumeric: "tabular-nums" }}>
                   <MoneyValue cents={estimatedMonthlyCents} />
                 </span>
-                <span style={{ fontSize: 13, color: "var(--muted)", marginLeft: 6 }}>/ mo estimated</span>
+                <span style={{ fontSize: 13, color: "var(--muted, var(--le-muted))", marginLeft: 6 }}>/ mo estimated</span>
               </div>
-              <div style={{ fontSize: 12, color: "var(--muted)" }}>
+              <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))" }}>
                 {activeSubs.length} active · {subscriptions.filter((s) => s.status === "paused").length} paused
               </div>
             </div>
@@ -1351,8 +1351,8 @@ export default function Finances() {
             style={{
               display: "inline-flex", alignItems: "center", gap: 7,
               padding: "9px 16px", borderRadius: "var(--le-r-sm)",
-              border: "none", background: "var(--ink)",
-              fontSize: 13, fontWeight: 600, color: "var(--surface)", cursor: "pointer",
+              border: "none", background: "var(--ink, var(--le-text))",
+              fontSize: 13, fontWeight: 600, color: "var(--surface, var(--le-surface))", cursor: "pointer",
               flexShrink: 0,
             }}
           >
@@ -1363,18 +1363,18 @@ export default function Finances() {
 
         {/* Subscriptions table */}
         {subscriptions.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted, var(--le-muted))", border: "1px dashed rgba(15,24,60,0.12)", borderRadius: "var(--le-r-lg)" }}>
             No subscriptions yet. Add your first recurring charge above.
           </div>
         ) : (
-          <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line)" }}>
+          <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line, var(--le-border))" }}>
             {/* Column headers */}
-            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr 80px", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 1fr 1fr 1fr 80px", gap: 12, padding: "10px 0", borderBottom: "1px solid var(--line, var(--le-border))" }}>
               {["Provider", "Amount", "Frequency", "Next charge", "Status", ""].map((c, i) => (
                 <span
                   key={`${c}-${i}`}
                   className="le-d-label"
-                  style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, textAlign: i === 5 ? "right" : "left" }}
+                  style={{ fontSize: 11, color: "var(--muted, var(--le-muted))", fontWeight: 600, textAlign: i === 5 ? "right" : "left" }}
                 >
                   {c}
                 </span>
@@ -1385,7 +1385,7 @@ export default function Finances() {
               const isCancelled = sub.status === "cancelled";
               const isPaused = sub.status === "paused";
               const providerLabel = ALL_PROVIDER_LABELS[sub.provider as AllProvider] || sub.provider;
-              const statusColor = isCancelled ? "var(--bad)" : isPaused ? "var(--warn)" : "var(--good)";
+              const statusColor = isCancelled ? "var(--bad, var(--le-bad))" : isPaused ? "var(--warn, var(--le-warn))" : "var(--good, var(--le-good))";
               const statusBg = isCancelled ? "rgba(196,74,74,0.08)" : isPaused ? "rgba(182,128,44,0.08)" : "rgba(47,138,85,0.08)";
               return (
                 <div
@@ -1400,18 +1400,18 @@ export default function Finances() {
                   onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
                 >
                   <div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{providerLabel}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>{providerLabel}</span>
                     {sub.note && (
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.note}</div>
+                      <div style={{ fontSize: 11, color: "var(--muted, var(--le-muted))", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.note}</div>
                     )}
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink, var(--le-text))", fontVariantNumeric: "tabular-nums" }}>
                     <MoneyValue cents={sub.amount_cents} />
                   </span>
-                  <span style={{ fontSize: 12, color: "var(--muted)", textTransform: "capitalize" }}>
+                  <span style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", textTransform: "capitalize" }}>
                     {sub.billing_period}
                   </span>
-                  <span style={{ fontSize: 12, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 12, color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}>
                     {new Date(sub.next_charge_at).toLocaleDateString()}
                   </span>
                   <span style={{
@@ -1429,7 +1429,7 @@ export default function Finances() {
                         type="button"
                         title={isPaused ? "Resume" : "Pause"}
                         onClick={() => handleToggleSubPause(sub)}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex", alignItems: "center" }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted, var(--le-muted))", padding: 4, display: "flex", alignItems: "center" }}
                       >
                         <RefreshCw style={{ width: 13, height: 13 }} strokeWidth={1.5} />
                       </button>
@@ -1438,7 +1438,7 @@ export default function Finances() {
                       type="button"
                       title="Edit"
                       onClick={() => setEditSubscription(sub)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex", alignItems: "center" }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted, var(--le-muted))", padding: 4, display: "flex", alignItems: "center" }}
                     >
                       <Pencil style={{ width: 13, height: 13 }} strokeWidth={1.5} />
                     </button>
@@ -1447,7 +1447,7 @@ export default function Finances() {
                         type="button"
                         title="Cancel"
                         onClick={() => handleCancelSub(sub)}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bad)", padding: 4, display: "flex", alignItems: "center" }}
+                        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bad, var(--le-bad))", padding: 4, display: "flex", alignItems: "center" }}
                       >
                         <X style={{ width: 13, height: 13 }} strokeWidth={1.5} />
                       </button>
@@ -1466,11 +1466,11 @@ export default function Finances() {
         rows={purchases.map((p) => ({
           id: p.id,
           cols: [
-            { value: PROVIDERS.find((x) => x.id === p.provider)?.label || p.provider, weight: 600, color: "var(--ink)" },
-            { value: p.units ? `${p.units} ${p.unit_type || ""}` : "—", mono: true, color: "var(--muted)" },
-            { value: p.note || "—", color: "var(--muted)", truncate: true },
-            { value: new Date(p.purchased_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtMoney(p.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
+            { value: PROVIDERS.find((x) => x.id === p.provider)?.label || p.provider, weight: 600, color: "var(--ink, var(--le-text))" },
+            { value: p.units ? `${p.units} ${p.unit_type || ""}` : "—", mono: true, color: "var(--muted, var(--le-muted))" },
+            { value: p.note || "—", color: "var(--muted, var(--le-muted))", truncate: true },
+            { value: new Date(p.purchased_at).toLocaleDateString(), mono: true, color: "var(--muted, var(--le-muted))" },
+            { value: fmtMoney(p.amount_cents), mono: true, color: "var(--ink, var(--le-text))", align: "right", weight: 600 },
           ],
         }))}
         columns={["Provider", "Units", "Note", "Date", "Amount"]}
@@ -1483,11 +1483,11 @@ export default function Finances() {
         rows={expenses.map((e) => ({
           id: e.id,
           cols: [
-            { value: e.category, weight: 600, color: "var(--ink)" },
-            { value: e.description || "—", color: "var(--muted)", truncate: true },
+            { value: e.category, weight: 600, color: "var(--ink, var(--le-text))" },
+            { value: e.description || "—", color: "var(--muted, var(--le-muted))", truncate: true },
             { value: "", color: "" },
-            { value: new Date(e.incurred_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtMoney(e.amount_cents), mono: true, color: "var(--ink)", align: "right", weight: 600 },
+            { value: new Date(e.incurred_at).toLocaleDateString(), mono: true, color: "var(--muted, var(--le-muted))" },
+            { value: fmtMoney(e.amount_cents), mono: true, color: "var(--ink, var(--le-text))", align: "right", weight: 600 },
           ],
         }))}
         columns={["Category", "Description", "", "Date", "Amount"]}
@@ -1500,11 +1500,11 @@ export default function Finances() {
         rows={revenues.map((r) => ({
           id: r.id,
           cols: [
-            { value: r.source, weight: 600, color: "var(--ink)" },
-            { value: r.note || "—", color: "var(--muted)", truncate: true },
+            { value: r.source, weight: 600, color: "var(--ink, var(--le-text))" },
+            { value: r.note || "—", color: "var(--muted, var(--le-muted))", truncate: true },
             { value: "", color: "" },
-            { value: new Date(r.received_at).toLocaleDateString(), mono: true, color: "var(--muted)" },
-            { value: fmtMoney(r.amount_cents), mono: true, color: "var(--good)", align: "right", weight: 600 },
+            { value: new Date(r.received_at).toLocaleDateString(), mono: true, color: "var(--muted, var(--le-muted))" },
+            { value: fmtMoney(r.amount_cents), mono: true, color: "var(--good, var(--le-good))", align: "right", weight: 600 },
           ],
         }))}
         columns={["Source", "Note", "", "Date", "Amount"]}
@@ -1563,7 +1563,7 @@ export default function Finances() {
               <button
                 type="button"
                 onClick={() => setShowAddSub(false)}
-                style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
+                style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}
               >
                 Cancel
               </button>
@@ -1607,20 +1607,20 @@ function LedgerTable({
         <div>
           <span className="le-d-label">{title}</span>
         </div>
-        <span style={{ fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+        <span style={{ fontSize: 11, color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}>
           {rows.length} entries
         </span>
       </div>
 
-      <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line)" }}>
+      <div className="le-table-scroll is-wide" style={{ borderTop: "1px solid var(--line, var(--le-border))" }}>
         {/* Column headers */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 1fr 1fr 1fr 56px", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr 1fr 1fr 1fr 56px", gap: 16, padding: "10px 0", borderBottom: "1px solid var(--line, var(--le-border))" }}>
           {columns.map((c, i) => (
             <span
               key={`${c}-${i}`}
               className="le-d-label"
               style={{
-                fontSize: 11, color: "var(--muted)", fontWeight: 600,
+                fontSize: 11, color: "var(--muted, var(--le-muted))", fontWeight: 600,
                 textAlign: i === columns.length - 1 ? "right" : "left",
               }}
             >
@@ -1631,7 +1631,7 @@ function LedgerTable({
         </div>
 
         {rows.length === 0 ? (
-          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
+          <div style={{ padding: "48px 0", textAlign: "center", fontSize: 13, color: "var(--muted, var(--le-muted))" }}>
             No entries yet
           </div>
         ) : (
@@ -1649,7 +1649,7 @@ function LedgerTable({
                   style={{
                     fontSize: c.mono ? 12 : 13,
                     fontWeight: c.weight ?? 400,
-                    color: c.color || "var(--ink)",
+                    color: c.color || "var(--ink, var(--le-text))",
                     textAlign: c.align || "left",
                     fontVariantNumeric: c.mono ? "tabular-nums" : undefined,
                     overflow: c.truncate ? "hidden" : undefined,
@@ -1665,7 +1665,7 @@ function LedgerTable({
                   type="button"
                   onClick={() => onEdit(row.id)}
                   aria-label="Edit"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: 4, display: "flex", alignItems: "center" }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted, var(--le-muted))", padding: 4, display: "flex", alignItems: "center" }}
                 >
                   <Pencil style={{ width: 13, height: 13 }} strokeWidth={1.5} />
                 </button>
@@ -1673,7 +1673,7 @@ function LedgerTable({
                   type="button"
                   onClick={() => onDelete(row.id)}
                   aria-label="Delete"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bad)", padding: 4, display: "flex", alignItems: "center" }}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--bad, var(--le-bad))", padding: 4, display: "flex", alignItems: "center" }}
                 >
                   <Trash2 style={{ width: 13, height: 13 }} strokeWidth={1.5} />
                 </button>
@@ -1749,7 +1749,7 @@ function EditPurchaseDialog({ purchase, onClose, onSave }: { purchase: TokenPurc
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1798,7 +1798,7 @@ function EditExpenseDialog({ expense, onClose, onSave }: { expense: Expense | nu
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1847,7 +1847,7 @@ function EditRevenueDialog({ revenue, onClose, onSave }: { revenue: RevenueEntry
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>
@@ -1940,7 +1940,7 @@ function EditSubscriptionDialog({ subscription, onClose, onSave }: { subscriptio
             </div>
           </div>
           <DialogFooter>
-            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" onClick={onClose} disabled={saving} style={{ padding: "9px 16px", borderRadius: "var(--le-r-sm)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", color: "var(--ink, var(--le-text))", fontSize: 13, fontWeight: 500, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
             <SubmitBtn loading={saving}>Save</SubmitBtn>
           </DialogFooter>
         </form>

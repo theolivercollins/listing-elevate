@@ -15,11 +15,11 @@ const INPUT_STYLE: React.CSSProperties = {
   width: "100%",
   padding: "9px 14px",
   borderRadius: "var(--le-r-lg)",
-  border: "1px solid var(--line)",
-  background: "var(--surface)",
+  border: "1px solid var(--line, var(--le-border))",
+  background: "var(--surface, var(--le-surface))",
   fontSize: 13,
   fontFamily: "var(--le-font-sans)",
-  color: "var(--ink)",
+  color: "var(--ink, var(--le-text))",
   outline: "none",
   boxSizing: "border-box",
 };
@@ -41,7 +41,7 @@ const FIELD_LABEL: React.CSSProperties = {
   display: "block",
   fontSize: 11.5,
   fontWeight: 500,
-  color: "var(--muted)",
+  color: "var(--muted, var(--le-muted))",
   marginBottom: 6,
 };
 
@@ -134,7 +134,7 @@ export default function BlogTemplateDetail() {
   if (!isNew && isLoading) {
     return (
       <div style={{ padding: "64px 0", display: "flex", justifyContent: "center" }}>
-        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
+        <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke="var(--muted, var(--le-muted))" strokeWidth={2} strokeLinecap="round" style={{ animation: "spin 1s linear infinite" }}>
           <path d="M21 12a9 9 0 1 1-6.22-8.56" />
         </svg>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -198,8 +198,8 @@ export default function BlogTemplateDetail() {
       <Card padding={20}>
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.015em", marginBottom: 4 }}>Default fields</div>
-            <div style={{ fontSize: 12, color: "var(--muted)" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--ink, var(--le-text))", letterSpacing: "-0.015em", marginBottom: 4 }}>Default fields</div>
+            <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))" }}>
               When this template is selected on a new post, these values pre-fill the sidebar.
             </div>
           </div>
@@ -250,9 +250,9 @@ export default function BlogTemplateDetail() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "12px 16px",
-          borderBottom: "1px solid var(--line)",
+          borderBottom: "1px solid var(--line, var(--le-border))",
         }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>Body HTML</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink, var(--le-text))", letterSpacing: "-0.01em" }}>Body HTML</span>
           <div style={{ display: "flex", gap: 8 }}>
             <button
               className="le-btn-ghost"
@@ -328,7 +328,7 @@ export default function BlogTemplateDetail() {
                           borderRadius: "var(--le-r-pill)",
                           background: "rgba(12,14,22,0.05)",
                           fontSize: 11.5,
-                          color: "var(--ink-2)",
+                          color: "var(--ink-2, var(--le-text-secondary))",
                         }}
                       >
                         {s}
@@ -339,12 +339,12 @@ export default function BlogTemplateDetail() {
               )}
               {analyzeResult.notes && (
                 <Field label="Notes">
-                  <pre style={{ whiteSpace: "pre-wrap", background: "rgba(12,14,22,0.03)", borderRadius: "var(--le-r-md)", padding: "12px 14px", fontSize: 12, color: "var(--ink-2)", fontFamily: "var(--le-font-sans)", margin: 0, border: "1px solid var(--line-2)" }}>
+                  <pre style={{ whiteSpace: "pre-wrap", background: "rgba(12,14,22,0.03)", borderRadius: "var(--le-r-md)", padding: "12px 14px", fontSize: 12, color: "var(--ink-2, var(--le-text-secondary))", fontFamily: "var(--le-font-sans)", margin: 0, border: "1px solid var(--line-2, var(--le-border-strong))" }}>
                     {analyzeResult.notes}
                   </pre>
                 </Field>
               )}
-              <div style={{ fontSize: 11.5, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+              <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", fontVariantNumeric: "tabular-nums" }}>
                 Cost: ${(analyzeResult.cost_cents / 100).toFixed(2)} · Model: {analyzeResult.model}
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>

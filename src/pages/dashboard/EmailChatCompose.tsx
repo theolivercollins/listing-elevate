@@ -300,7 +300,7 @@ export default function EmailChatCompose() {
       <div
         style={{
           display: "flex", alignItems: "center", gap: 12,
-          borderBottom: "1px solid var(--line)", background: "var(--surface)",
+          borderBottom: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))",
           padding: "10px 20px", flexShrink: 0,
         }}
       >
@@ -310,27 +310,27 @@ export default function EmailChatCompose() {
           style={{
             display: "inline-flex", alignItems: "center", gap: 4,
             padding: "6px 10px", borderRadius: "var(--le-r-pill)",
-            border: "1px solid var(--line)", background: "transparent",
-            color: "var(--muted)", fontSize: 12, fontWeight: 500, cursor: "pointer",
+            border: "1px solid var(--line, var(--le-border))", background: "transparent",
+            color: "var(--muted, var(--le-muted))", fontSize: 12, fontWeight: 500, cursor: "pointer",
             fontFamily: "var(--le-font-sans)",
           }}
         >
           <ChevronLeft style={{ width: 13, height: 13 }} /> Emails
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <MessageSquare style={{ width: 15, height: 15, color: "var(--accent)" }} />
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+          <MessageSquare style={{ width: 15, height: 15, color: "var(--accent, var(--le-accent))" }} />
+          <span style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink, var(--le-text))", letterSpacing: "-0.01em" }}>
             New email · Chat with Ally
           </span>
           {useResearch && (
-            <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent)" }}>
+            <span style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3, color: "var(--accent, var(--le-accent))" }}>
               · <Globe style={{ marginLeft: 2, width: 11, height: 11 }} /> research always-on
             </span>
           )}
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           {totalCostCents > 0 && (
-            <span style={{ fontSize: 11, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums" }}>
+            <span style={{ fontSize: 11, color: "var(--muted-2, var(--le-faint))", fontVariantNumeric: "tabular-nums" }}>
               ${(totalCostCents / 100).toFixed(3)}
             </span>
           )}
@@ -368,7 +368,7 @@ export default function EmailChatCompose() {
       {/* Body */}
       <div className={`grid min-h-0 flex-1 ${showFields ? "md:grid-cols-[2fr_3fr]" : "md:grid-cols-1"} grid-cols-1`}>
         {/* Chat column */}
-        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, #f3f3f5)" }}>
+        <div className="relative flex min-h-0 flex-col" style={{ background: "var(--bg, var(--le-surface-sunken))" }}>
           <AnimatePresence mode="wait">
             {!hasThread && pendingActions.length === 0 ? (
               <motion.div
@@ -380,7 +380,7 @@ export default function EmailChatCompose() {
                 <h2 style={{
                   marginBottom: 32, textAlign: "center",
                   fontSize: "clamp(1.5rem, 3vw, 2rem)", fontWeight: 600,
-                  letterSpacing: "-0.025em", color: "var(--ink)", lineHeight: 1.1,
+                  letterSpacing: "-0.025em", color: "var(--ink, var(--le-text))", lineHeight: 1.1,
                 }}>
                   Ready when you are.
                 </h2>
@@ -422,8 +422,8 @@ export default function EmailChatCompose() {
                             ? {
                                 marginLeft: "auto", maxWidth: "88%", whiteSpace: "pre-wrap",
                                 borderRadius: "var(--radius) var(--radius) var(--le-r-sm) var(--radius)",
-                                background: "var(--ink)", padding: "10px 14px",
-                                fontSize: 13.5, color: "var(--surface)",
+                                background: "var(--ink, var(--le-text))", padding: "10px 14px",
+                                fontSize: 13.5, color: "var(--surface, var(--le-surface))",
                                 boxShadow: "var(--shadow-sm)",
                                 opacity: m.queued ? 0.7 : 1,
                                 outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
@@ -431,10 +431,10 @@ export default function EmailChatCompose() {
                             : {
                                 maxWidth: "88%", whiteSpace: "pre-wrap",
                                 borderRadius: "var(--radius) var(--radius) var(--radius) var(--le-r-sm)",
-                                background: "var(--surface)", padding: "10px 14px",
-                                fontSize: 13.5, color: m.pending ? "var(--muted)" : "var(--ink)",
+                                background: "var(--surface, var(--le-surface))", padding: "10px 14px",
+                                fontSize: 13.5, color: m.pending ? "var(--muted, var(--le-muted))" : "var(--ink, var(--le-text))",
                                 fontStyle: m.pending ? "italic" : "normal",
-                                border: "1px solid var(--line)",
+                                border: "1px solid var(--line, var(--le-border))",
                                 boxShadow: "var(--shadow-sm)",
                               }
                         }
@@ -461,7 +461,7 @@ export default function EmailChatCompose() {
                           onClick={enableResearchAndRetry}
                           disabled={chat.isPending}
                           className="le-btn-ghost"
-                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--accent)" }}
+                          style={{ fontSize: 12, padding: "6px 12px", color: "var(--accent, var(--le-accent))" }}
                         >
                           <Globe style={{ width: 12, height: 12 }} /> Search the web &amp; retry
                         </motion.button>
@@ -478,11 +478,11 @@ export default function EmailChatCompose() {
                         background: "rgba(var(--le-brand-blue-rgb),0.05)", padding: 14,
                       }}
                     >
-                      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink)" }}>
+                      <div style={{ marginBottom: 8, fontWeight: 600, fontSize: 13.5, color: "var(--ink, var(--le-text))" }}>
                         {card.kind === "send" ? "Send this email?" : card.kind === "test_send" ? "Send a test email?" : "Save this as a draft?"}
                       </div>
-                      <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-                        {card.snapshot.subject && <div><span style={{ fontWeight: 600, color: "var(--ink-2)" }}>{card.snapshot.subject}</span></div>}
+                      <div style={{ marginBottom: 12, fontSize: 12, color: "var(--muted, var(--le-muted))", display: "flex", flexDirection: "column", gap: 2 }}>
+                        {card.snapshot.subject && <div><span style={{ fontWeight: 600, color: "var(--ink-2, var(--le-text-secondary))" }}>{card.snapshot.subject}</span></div>}
                         {card.snapshot.audience && <div>Audience: {card.snapshot.audience}</div>}
                         {card.snapshot.from_email && <div>From: {card.snapshot.from_email}</div>}
                       </div>
@@ -504,7 +504,7 @@ export default function EmailChatCompose() {
                   ))}
                 </div>
 
-                <div style={{ borderTop: "1px solid var(--line)", background: "rgba(255,255,255,0.95)", padding: "12px 20px 16px", backdropFilter: "blur(8px)" }}>
+                <div style={{ borderTop: "1px solid var(--line, var(--le-border))", background: "rgba(255,255,255,0.95)", padding: "12px 20px 16px", backdropFilter: "blur(8px)" }}>
                   <Composer
                     input={input} onInputChange={setInput}
                     onSend={() => send(input)} canSend={canSend} isPending={chat.isPending}
@@ -531,13 +531,13 @@ export default function EmailChatCompose() {
         {showFields && (
           <motion.div
             initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.25 }}
-            style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--line)", background: "var(--surface)" }}
+            style={{ display: "flex", flexDirection: "column", borderLeft: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))" }}
             className="min-h-0"
           >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "var(--surface)", padding: "10px 16px" }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "10px 16px" }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>
                 Email details
-                <span style={{ marginLeft: 8, color: "var(--muted)", fontWeight: 500 }}>{filledFieldsCount}/6 filled</span>
+                <span style={{ marginLeft: 8, color: "var(--muted, var(--le-muted))", fontWeight: 500 }}>{filledFieldsCount}/6 filled</span>
               </div>
               <button type="button" className="le-btn-ghost" style={{ fontSize: 11.5, padding: "5px 10px" }} onClick={() => setShowPreview((v) => !v)}>
                 {showPreview ? "Hide preview" : "Show preview"}
@@ -587,19 +587,19 @@ export default function EmailChatCompose() {
 
                 {sources.length > 0 && (
                   <div>
-                    <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>
+                    <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 500, color: "var(--muted, var(--le-muted))" }}>
                       <Globe style={{ width: 12, height: 12 }} /> Research sources
                       <span style={{ fontWeight: 400 }}>· {sources.length}</span>
                     </div>
-                    <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: "var(--le-r-md)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 10px", fontSize: 12 }}>
+                    <ol style={{ display: "flex", flexDirection: "column", gap: 4, borderRadius: "var(--le-r-md)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 10px", fontSize: 12 }}>
                       {sources.map((s, i) => (
                         <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                          <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
+                          <span style={{ color: "var(--muted-2, var(--le-faint))" }}>[{i + 1}]</span>
                           <a
                             href={s.url}
                             target="_blank"
                             rel="noreferrer"
-                            style={{ color: "var(--accent)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                            style={{ color: "var(--accent, var(--le-accent))", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                             title={s.url}
                           >
                             {s.title}
@@ -612,8 +612,8 @@ export default function EmailChatCompose() {
               </div>
 
               {showPreview && (
-                <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line)", background: "var(--surface)" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line)", background: "var(--line-2)", padding: "6px 12px" }}>
+                <div className="relative flex min-h-0 flex-col" style={{ borderTop: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--line, var(--le-border))", background: "var(--line-2, var(--le-border-strong))", padding: "6px 12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <button
                         type="button"
@@ -621,8 +621,8 @@ export default function EmailChatCompose() {
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                           padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                          background: previewMode === "rendered" ? "var(--surface)" : "transparent",
-                          color: previewMode === "rendered" ? "var(--ink)" : "var(--muted)",
+                          background: previewMode === "rendered" ? "var(--surface, var(--le-surface))" : "transparent",
+                          color: previewMode === "rendered" ? "var(--ink, var(--le-text))" : "var(--muted, var(--le-muted))",
                           boxShadow: previewMode === "rendered" ? "var(--shadow-sm)" : "none",
                         }}
                         title="Rendered preview"
@@ -635,8 +635,8 @@ export default function EmailChatCompose() {
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                           padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                          background: previewMode === "source" ? "var(--surface)" : "transparent",
-                          color: previewMode === "source" ? "var(--ink)" : "var(--muted)",
+                          background: previewMode === "source" ? "var(--surface, var(--le-surface))" : "transparent",
+                          color: previewMode === "source" ? "var(--ink, var(--le-text))" : "var(--muted, var(--le-muted))",
                           boxShadow: previewMode === "source" ? "var(--shadow-sm)" : "none",
                         }}
                         title="HTML source"
@@ -645,7 +645,7 @@ export default function EmailChatCompose() {
                       </button>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: "var(--muted)" }}>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
+                      <span style={{ fontSize: 11, color: "var(--muted, var(--le-muted))" }}>{form.body_html ? `${form.body_html.length.toLocaleString()} chars` : "empty"}</span>
                       <button
                         type="button"
                         onClick={openPreviewInNewTab}
@@ -653,7 +653,7 @@ export default function EmailChatCompose() {
                         style={{
                           display: "inline-flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-sm)",
                           padding: "4px 8px", fontSize: 11, fontWeight: 500, border: "none", cursor: "pointer",
-                          background: "transparent", color: "var(--muted)",
+                          background: "transparent", color: "var(--muted, var(--le-muted))",
                           opacity: !form.body_html ? 0.4 : 1,
                         }}
                         title="Open in new tab"
@@ -693,11 +693,11 @@ function Field({ label, filled, children }: { label: string; filled?: boolean; c
   return (
     <div>
       <div style={{ marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2)" }}>{label}</Label>
+        <Label style={{ fontSize: 12, fontWeight: 500, color: "var(--ink-2, var(--le-text-secondary))" }}>{label}</Label>
         {filled && (
           <motion.span
             initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.15 }}
-            style={{ fontSize: 10, color: "var(--good)", fontWeight: 500 }}
+            style={{ fontSize: 10, color: "var(--good, var(--le-good))", fontWeight: 500 }}
           >
             ✓ filled
           </motion.span>
@@ -733,11 +733,11 @@ function Composer({
       {attachments.length > 0 && (
         <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {attachments.map((a, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "var(--line-2)", padding: "4px 10px", fontSize: 11.5 }}>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "var(--line-2, var(--le-border-strong))", padding: "4px 10px", fontSize: 11.5 }}>
               {a.kind === "pdf" ? <FileText style={{ width: 11, height: 11 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 11, height: 11 }} /> : <FileText style={{ width: 11, height: 11 }} />}
               <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
-              <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
-              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }} aria-label="Remove">
+              <span style={{ color: "var(--muted, var(--le-muted))" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+              <button onClick={() => onRemoveAttachment(i)} style={{ marginLeft: 2, borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))" }} aria-label="Remove">
                 <X style={{ width: 11, height: 11 }} />
               </button>
             </div>
@@ -745,26 +745,26 @@ function Composer({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(var(--le-brand-blue-rgb),0.4)] focus-within:!shadow-md">
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "8px 12px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s, box-shadow .2s" }} className="focus-within:!border-[rgba(var(--le-brand-blue-rgb),0.4)] focus-within:!shadow-md">
         <Popover>
           <PopoverTrigger asChild>
-            <button type="button" style={{ width: 34, height: 34, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+            <button type="button" style={{ width: 34, height: 34, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted, var(--le-muted))" }}>
               <Plus style={{ width: 15, height: 15 }} />
             </button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 p-2">
             <button
               type="button" onClick={onFilePick}
-              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)" }}
+              style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink, var(--le-text))" }}
               className="hover:bg-muted"
             >
               <Paperclip style={{ width: 15, height: 15 }} />
               <div style={{ flex: 1 }}>
                 <div>Attach file</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 2 }}>PDF, image, CSV, .txt · up to 5 · 3 MB each</div>
               </div>
             </button>
-            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+            <div style={{ margin: "6px 0", borderTop: "1px solid var(--line, var(--le-border))" }} />
             <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px" }} className="hover:bg-muted">
               <input
                 type="checkbox"
@@ -772,11 +772,11 @@ function Composer({
                 onChange={(e) => onUseResearchChange(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+              <div style={{ flex: 1, fontSize: 13, color: "var(--ink, var(--le-text))" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <Globe style={{ width: 13, height: 13 }} /> Always research
                 </div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 3 }}>
                   Off: Ally searches when needed. On: Gemini grounding every turn.
                 </div>
               </div>
@@ -809,7 +809,7 @@ function Composer({
         </button>
       </div>
 
-      <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11, color: "var(--muted-2)" }}>
+      <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11, color: "var(--muted-2, var(--le-faint))" }}>
         Enter to send · Shift+Enter for a new line · Say "save as draft" or "mark ready" to ship.
       </div>
     </div>

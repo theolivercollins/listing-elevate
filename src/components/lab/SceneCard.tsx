@@ -61,7 +61,7 @@ function Stars({ value, onChange, disabled }: { value: number | null; onChange: 
           onClick={() => onChange(n)}
           className="p-0.5 disabled:opacity-50"
         >
-          <Star className={`h-4 w-4 ${value !== null && n <= value ? "fill-[var(--ink)] text-[var(--ink)]" : "text-[var(--muted-2)] hover:text-[var(--ink)]"}`} />
+          <Star className={`h-4 w-4 ${value !== null && n <= value ? "fill-[var(--ink, var(--le-text))] text-[var(--ink, var(--le-text))]" : "text-[var(--muted-2, var(--le-faint))] hover:text-[var(--ink, var(--le-text))]"}`} />
         </button>
       ))}
     </div>
@@ -160,13 +160,13 @@ function IterationExpanded({ listingId, scene, iter, onReload, onRateOptimistic 
         <video controls src={iter.clip_url} className="mt-2 aspect-video w-full bg-black" preload="metadata" />
       )}
       {iter.render_error && (
-        <p className="mt-2 text-[11px] text-[var(--bad)]">Error: {iter.render_error}</p>
+        <p className="mt-2 text-[11px] text-[var(--bad, var(--le-bad))]">Error: {iter.render_error}</p>
       )}
 
       <div className="mt-2 flex items-center justify-between">
         <Stars value={iter.rating} onChange={handleRate} disabled={!iter.clip_url} />
         {iter.rating_reasons && iter.rating_reasons.length > 0 && (
-          <button type="button" onClick={() => setRatingModalValue(iter.rating!)} className="text-[10px] text-[var(--muted)] underline-offset-2 hover:underline">
+          <button type="button" onClick={() => setRatingModalValue(iter.rating!)} className="text-[10px] text-[var(--muted, var(--le-muted))] underline-offset-2 hover:underline">
             edit reasons
           </button>
         )}
@@ -206,17 +206,17 @@ function IterationExpanded({ listingId, scene, iter, onReload, onRateOptimistic 
             <button type="button" className="le-btn-ghost" style={BTN_SM} onClick={toggleArchived} title={iter.archived ? "Unarchive iteration" : "Archive iteration"}>
               {iter.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
             </button>
-            <button type="button" className="le-btn-ghost" style={{ ...BTN_SM, color: "var(--bad)", borderColor: "color-mix(in srgb, var(--bad) 25%, transparent)" }} onClick={remove} title="Delete iteration">
+            <button type="button" className="le-btn-ghost" style={{ ...BTN_SM, color: "var(--bad, var(--le-bad))", borderColor: "color-mix(in srgb, var(--bad, var(--le-bad)) 25%, transparent)" }} onClick={remove} title="Delete iteration">
               <Trash2 className="h-3 w-3" />
             </button>
           </div>
 
           {promptOpen && (
-            <pre className="mt-2 whitespace-pre-wrap rounded border border-[var(--line)] bg-[var(--bg)] p-2 font-sans text-[11px] text-[var(--ink)]">{iter.director_prompt}</pre>
+            <pre className="mt-2 whitespace-pre-wrap rounded border border-[var(--line, var(--le-border))] bg-[var(--bg, var(--le-surface-sunken))] p-2 font-sans text-[11px] text-[var(--ink, var(--le-text))]">{iter.director_prompt}</pre>
           )}
 
           <div className="mt-3">
-            <span className="label text-[var(--muted)]">Comment</span>
+            <span className="label text-[var(--muted, var(--le-muted))]">Comment</span>
             <Textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
@@ -240,11 +240,11 @@ function IterationCollapsed({ iter, expanded, onToggle }: {
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center gap-2 border-b border-[var(--line)] px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-[var(--line-2)]"
+      className="flex w-full items-center gap-2 border-b border-[var(--line, var(--le-border))] px-2 py-1.5 text-left text-xs last:border-b-0 hover:bg-[var(--line-2, var(--le-border-strong))]"
     >
-      {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-[var(--muted)]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[var(--muted)]" />}
-      <span className="font-sans text-[var(--muted)]">#{iter.iteration_number}</span>
-      <span className="border border-[var(--line)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--muted)]">{iter.model_used}</span>
+      {expanded ? <ChevronDown className="h-3 w-3 shrink-0 text-[var(--muted, var(--le-muted))]" /> : <ChevronRight className="h-3 w-3 shrink-0 text-[var(--muted, var(--le-muted))]" />}
+      <span className="font-sans text-[var(--muted, var(--le-muted))]">#{iter.iteration_number}</span>
+      <span className="border border-[var(--line, var(--le-border))] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--muted, var(--le-muted))]">{iter.model_used}</span>
       <span className={`border px-1.5 py-0.5 text-[9px] uppercase tracking-wider ${
         iter.status === "rendered" || iter.status === "rated" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700" :
         iter.status === "failed" ? "border-red-400/40 bg-red-400/10 text-red-700" :
@@ -255,13 +255,13 @@ function IterationCollapsed({ iter, expanded, onToggle }: {
       <span className="flex-1" />
       {iter.rating !== null ? (
         <span className="inline-flex items-center gap-0.5 text-[11px]">
-          {iter.rating}<Star className="h-2.5 w-2.5 fill-[var(--ink)]" />
+          {iter.rating}<Star className="h-2.5 w-2.5 fill-[var(--ink, var(--le-text))]" />
         </span>
       ) : (
-        <span className="text-[11px] text-[var(--muted)]">unrated</span>
+        <span className="text-[11px] text-[var(--muted, var(--le-muted))]">unrated</span>
       )}
       {iter.archived && (
-        <span className="border border-[var(--line)] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--muted)]">archived</span>
+        <span className="border border-[var(--line, var(--le-border))] px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-[var(--muted, var(--le-muted))]">archived</span>
       )}
     </button>
   );
@@ -282,7 +282,7 @@ function IterationSection({ listingId, scene, iter, defaultExpanded, onReload, o
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   return (
-    <div className={`border ${iter.archived ? "border-dashed border-[var(--line)] bg-[var(--line-2)]" : "border-[var(--line)]"}`}>
+    <div className={`border ${iter.archived ? "border-dashed border-[var(--line, var(--le-border))] bg-[var(--line-2, var(--le-border-strong))]" : "border-[var(--line, var(--le-border))]"}`}>
       <IterationCollapsed iter={iter} expanded={expanded} onToggle={() => setExpanded((e) => !e)} />
       {expanded && (
         <div className="p-3 pt-0">
@@ -320,7 +320,7 @@ function RefinementNotesPanel({ listingId, scene, onReload }: {
       <button
         type="button"
         onClick={() => setEditing(true)}
-        className="text-[11px] text-[var(--muted)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
+        className="text-[11px] text-[var(--muted, var(--le-muted))] underline-offset-2 hover:text-[var(--ink, var(--le-text))] hover:underline"
       >
         + Add instructions for future renders
       </button>
@@ -347,7 +347,7 @@ function RefinementNotesPanel({ listingId, scene, onReload }: {
           </div>
         </div>
       ) : (
-        <pre className="mt-1 whitespace-pre-wrap font-sans text-xs text-[var(--ink)]">{notes}</pre>
+        <pre className="mt-1 whitespace-pre-wrap font-sans text-xs text-[var(--ink, var(--le-text))]">{notes}</pre>
       )}
     </div>
   );
@@ -411,18 +411,18 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
   }
 
   return (
-    <div data-scene-id={scene.id} className={`border p-5 ${scene.archived ? "border-dashed border-[var(--line)] bg-[var(--line-2)]" : "border-[var(--line)] bg-[var(--surface)]"}`}>
+    <div data-scene-id={scene.id} className={`border p-5 ${scene.archived ? "border-dashed border-[var(--line, var(--le-border))] bg-[var(--line-2, var(--le-border-strong))]" : "border-[var(--line, var(--le-border))] bg-[var(--surface, var(--le-surface))]"}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <span className="label text-[var(--muted)]">Scene {scene.scene_number}</span>
+          <span className="label text-[var(--muted, var(--le-muted))]">Scene {scene.scene_number}</span>
           <div className="mt-1 flex flex-wrap gap-2">
-            <span className="border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted)]">{scene.room_type}</span>
-            <span className="border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted)]">{scene.camera_movement}</span>
+            <span className="border border-[var(--line, var(--le-border))] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted, var(--le-muted))]">{scene.room_type}</span>
+            <span className="border border-[var(--line, var(--le-border))] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted, var(--le-muted))]">{scene.camera_movement}</span>
             {endPhoto && (
               <span className="border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-700">paired</span>
             )}
             {scene.archived && (
-              <span className="border border-[var(--line)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted)]">archived</span>
+              <span className="border border-[var(--line, var(--le-border))] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--muted, var(--le-muted))]">archived</span>
             )}
           </div>
         </div>
@@ -444,12 +444,12 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
             className={`border px-2 py-1 uppercase tracking-wider ${
               scene.use_end_frame
                 ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
-                : "border-[var(--line)] bg-[var(--bg)] text-[var(--muted)]"
+                : "border-[var(--line, var(--le-border))] bg-[var(--bg, var(--le-surface-sunken))] text-[var(--muted, var(--le-muted))]"
             }`}
           >
             End frame: {scene.use_end_frame ? "on" : "off"}
           </button>
-          <span className="text-[var(--muted)]">
+          <span className="text-[var(--muted, var(--le-muted))]">
             {scene.use_end_frame
               ? "Clip will interpolate start → end."
               : "Clip renders from the start frame only (better for push-ins, closeups, top-downs)."}
@@ -458,7 +458,7 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
       </div>
 
       <div className="mt-4">
-        <span className="label text-[var(--muted)]">Director prompt</span>
+        <span className="label text-[var(--muted, var(--le-muted))]">Director prompt</span>
         {editing ? (
           <div className="mt-2 space-y-2">
             <Textarea value={promptDraft} onChange={(e) => setPromptDraft(e.target.value)} className="text-sm" />
@@ -484,12 +484,12 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
       <div className="mt-5 space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="label text-[var(--muted)]">Iterations ({orderedIters.length}{archivedCount > 0 ? ` / ${iterations.length}` : ""})</span>
+            <span className="label text-[var(--muted, var(--le-muted))]">Iterations ({orderedIters.length}{archivedCount > 0 ? ` / ${iterations.length}` : ""})</span>
             {archivedCount > 0 && (
               <button
                 type="button"
                 onClick={() => setShowArchivedIters((s) => !s)}
-                className="text-[11px] text-[var(--muted)] underline-offset-2 hover:text-[var(--ink)] hover:underline"
+                className="text-[11px] text-[var(--muted, var(--le-muted))] underline-offset-2 hover:text-[var(--ink, var(--le-text))] hover:underline"
               >
                 {showArchivedIters ? `Hide archived (${archivedCount})` : `Show archived (${archivedCount})`}
               </button>
@@ -563,7 +563,7 @@ export function SceneCard({ listingId, scene, iterations, photos, defaultModel, 
         )}
 
         {orderedIters.length === 0 && (
-          <p className="text-xs text-[var(--muted)]">No iterations yet. Click Render to generate the first clip.</p>
+          <p className="text-xs text-[var(--muted, var(--le-muted))]">No iterations yet. Click Render to generate the first clip.</p>
         )}
 
         {orderedIters.map((iter, i) => (

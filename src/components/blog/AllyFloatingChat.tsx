@@ -420,19 +420,19 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               borderRadius: "var(--le-r-xl)",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--line)", background: "rgba(255,255,255,0.97)", padding: "10px 12px", backdropFilter: "blur(8px)" }}>
-              <Sparkles style={{ width: 15, height: 15, color: "var(--accent)", flexShrink: 0 }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid var(--line, var(--le-border))", background: "rgba(255,255,255,0.97)", padding: "10px 12px", backdropFilter: "blur(8px)" }}>
+              <Sparkles style={{ width: 15, height: 15, color: "var(--accent, var(--le-accent))", flexShrink: 0 }} />
               <div style={{ flex: 1, lineHeight: 1.3 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink)" }}>Improve with Ally</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>Improve with Ally</div>
+                <div style={{ fontSize: 11, color: "var(--muted, var(--le-muted))", display: "flex", alignItems: "center", gap: 4 }}>
                   {contextLabel ?? "Suggestions apply to this post"}
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: useResearch ? "var(--accent)" : "var(--muted)" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: useResearch ? "var(--accent, var(--le-accent))" : "var(--muted, var(--le-muted))" }}>
                     · <Globe style={{ marginLeft: 2, width: 10, height: 10 }} /> {useResearch ? "research always-on" : "research: auto"}
                   </span>
                 </div>
               </div>
               {totalCostCents > 0 && (
-                <span style={{ fontSize: 10, color: "var(--muted-2)", fontVariantNumeric: "tabular-nums", display: "none" }} className="sm:inline">
+                <span style={{ fontSize: 10, color: "var(--muted-2, var(--le-faint))", fontVariantNumeric: "tabular-nums", display: "none" }} className="sm:inline">
                   ${(totalCostCents / 100).toFixed(3)}
                 </span>
               )}
@@ -440,7 +440,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    style={{ position: "relative", borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
+                    style={{ position: "relative", borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))" }}
                     className="hover:bg-muted hover:!text-foreground"
                     aria-label="Ally's memory"
                     title={memories.length ? `Ally remembers ${memories.length} note${memories.length === 1 ? "" : "s"}` : "Ally's memory"}
@@ -450,7 +450,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       <span style={{
                         position: "absolute", right: -2, top: -2,
                         display: "inline-flex", height: 14, minWidth: 14, alignItems: "center", justifyContent: "center",
-                        borderRadius: "var(--le-r-pill)", background: "var(--ink)", padding: "0 3px",
+                        borderRadius: "var(--le-r-pill)", background: "var(--ink, var(--le-text))", padding: "0 3px",
                         fontSize: 9, fontWeight: 600, color: "#fff",
                       }}>
                         {memories.length}
@@ -459,11 +459,11 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" className="w-80 p-2">
-                  <div style={{ marginBottom: 8, padding: "0 4px", fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>
+                  <div style={{ marginBottom: 8, padding: "0 4px", fontSize: 12, fontWeight: 500, color: "var(--muted, var(--le-muted))" }}>
                     Ally remembers ({memories.length})
                   </div>
                   {memories.length === 0 ? (
-                    <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--muted)" }}>
+                    <div style={{ padding: "10px 8px", fontSize: 12, color: "var(--muted, var(--le-muted))" }}>
                       Tell Ally to remember something — e.g. "from now on use Brian as the default author" — and it'll show up here.
                     </div>
                   ) : (
@@ -475,8 +475,8 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                             type="button"
                             onClick={() => delMemory.mutate(m.id)}
                             disabled={delMemory.isPending}
-                            style={{ borderRadius: "var(--le-r-sm)", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", opacity: 0 }}
-                            className="group-hover:!opacity-100 hover:!bg-[rgba(196,74,74,0.1)] hover:!text-[var(--bad)]"
+                            style={{ borderRadius: "var(--le-r-sm)", padding: 4, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))", opacity: 0 }}
+                            className="group-hover:!opacity-100 hover:!bg-[rgba(196,74,74,0.1)] hover:!text-[var(--bad, var(--le-bad))]"
                             aria-label="Forget this"
                             title="Forget this"
                           >
@@ -492,7 +492,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                 <button
                   type="button"
                   onClick={resetChat}
-                  style={{ borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
+                  style={{ borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))" }}
                   className="hover:bg-muted"
                   aria-label="Reset conversation"
                   title="Reset this conversation"
@@ -503,7 +503,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                style={{ borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--ink)" }}
+                style={{ borderRadius: "var(--le-r-sm)", padding: 5, border: "none", background: "transparent", cursor: "pointer", color: "var(--ink, var(--le-text))" }}
                 className="hover:bg-muted"
                 aria-label="Close"
               >
@@ -514,7 +514,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             <div ref={scrollerRef} className="flex-1 overflow-y-auto" style={{ padding: "12px", display: "flex", flexDirection: "column", gap: 10 }}>
               {empty && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                  <div style={{ fontSize: 12, color: "var(--muted, var(--le-muted))" }}>
                     Ask Ally to tweak this post. I'll propose changes; you Apply what you like.
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -544,18 +544,18 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                         ? {
                             marginLeft: "auto", maxWidth: "88%", whiteSpace: "pre-wrap",
                             borderRadius: "16px 16px 4px 16px",
-                            background: "var(--ink)", padding: "8px 12px",
-                            fontSize: 12.5, color: "var(--surface)",
+                            background: "var(--ink, var(--le-text))", padding: "8px 12px",
+                            fontSize: 12.5, color: "var(--surface, var(--le-surface))",
                             opacity: m.queued ? 0.7 : 1,
                             outline: m.queued ? "1px solid rgba(255,255,255,0.2)" : "none",
                           }
                         : {
                             maxWidth: "88%", whiteSpace: "pre-wrap",
                             borderRadius: "16px 16px 16px 4px",
-                            background: "var(--surface)", padding: "8px 12px",
-                            fontSize: 12.5, color: m.pending ? "var(--muted)" : "var(--ink)",
+                            background: "var(--surface, var(--le-surface))", padding: "8px 12px",
+                            fontSize: 12.5, color: m.pending ? "var(--muted, var(--le-muted))" : "var(--ink, var(--le-text))",
                             fontStyle: m.pending ? "italic" : "normal",
-                            border: "1px solid var(--line)",
+                            border: "1px solid var(--line, var(--le-border))",
                             boxShadow: "var(--shadow-sm)",
                           }
                     }
@@ -581,7 +581,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       onClick={enableResearchAndRetry}
                       disabled={chat.isPending}
                       className="le-btn-ghost"
-                      style={{ fontSize: 11.5, padding: "5px 10px", color: "var(--accent)", opacity: chat.isPending ? 0.5 : 1 }}
+                      style={{ fontSize: 11.5, padding: "5px 10px", color: "var(--accent, var(--le-accent))", opacity: chat.isPending ? 0.5 : 1 }}
                     >
                       <Globe style={{ width: 11, height: 11 }} /> Search the web &amp; retry
                     </motion.button>
@@ -602,7 +602,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                     fontSize: 12,
                   }}
                 >
-                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontWeight: 600, color: card.applied ? "var(--good)" : "var(--ink)" }}>
+                  <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, fontWeight: 600, color: card.applied ? "var(--good, var(--le-good))" : "var(--ink, var(--le-text))" }}>
                     {card.applied ? (
                       <>
                         <Check style={{ width: 13, height: 13 }} />
@@ -610,13 +610,13 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       </>
                     ) : (
                       <>
-                        <Wand2 style={{ width: 13, height: 13, color: "var(--accent)" }} />
+                        <Wand2 style={{ width: 13, height: 13, color: "var(--accent, var(--le-accent))" }} />
                         Proposed changes — {card.changedSummary}
                       </>
                     )}
                   </div>
                   {card.changesNarrative && (
-                    <ul style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 2, fontSize: 11, lineHeight: 1.4, color: "var(--ink-2)" }}>
+                    <ul style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 2, fontSize: 11, lineHeight: 1.4, color: "var(--ink-2, var(--le-text-secondary))" }}>
                       {card.changesNarrative
                         .split("\n")
                         .map((line) => line.replace(/^[-*•]\s*/, "").trim())
@@ -624,7 +624,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                         .slice(0, 8)
                         .map((bullet, i) => (
                           <li key={i} style={{ display: "flex", gap: 6 }}>
-                            <span style={{ color: "var(--muted)" }}>•</span>
+                            <span style={{ color: "var(--muted, var(--le-muted))" }}>•</span>
                             <span>{bullet}</span>
                           </li>
                         ))}
@@ -659,19 +659,19 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
               ))}
 
               {sources.length > 0 && (
-                <div style={{ borderRadius: "var(--le-r-lg)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.02)", padding: 10, fontSize: 11 }}>
-                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 4, fontWeight: 500, color: "var(--muted)" }}>
+                <div style={{ borderRadius: "var(--le-r-lg)", border: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.02)", padding: 10, fontSize: 11 }}>
+                  <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 4, fontWeight: 500, color: "var(--muted, var(--le-muted))" }}>
                     <Globe style={{ width: 11, height: 11 }} /> Sources · {sources.length}
                   </div>
                   <ol style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                     {sources.slice(0, 5).map((s, i) => (
                       <li key={s.url} style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
-                        <span style={{ color: "var(--muted-2)" }}>[{i + 1}]</span>
+                        <span style={{ color: "var(--muted-2, var(--le-faint))" }}>[{i + 1}]</span>
                         <a
                           href={s.url}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ color: "var(--accent)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+                          style={{ color: "var(--accent, var(--le-accent))", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}
                           title={s.url}
                         >
                           {s.title}
@@ -684,18 +684,18 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
             </div>
 
             {/* Composer */}
-            <div style={{ borderTop: "1px solid var(--line)", background: "rgba(255,255,255,0.97)", padding: "8px 12px 10px", backdropFilter: "blur(8px)" }}>
+            <div style={{ borderTop: "1px solid var(--line, var(--le-border))", background: "rgba(255,255,255,0.97)", padding: "8px 12px 10px", backdropFilter: "blur(8px)" }}>
               {attachments.length > 0 && (
                 <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {attachments.map((a, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "rgba(12,14,22,0.035)", padding: "3px 8px", fontSize: 10.5 }}>
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.035)", padding: "3px 8px", fontSize: 10.5 }}>
                       {a.kind === "pdf" ? <FileText style={{ width: 10, height: 10 }} /> : a.kind === "image" ? <ImageIcon style={{ width: 10, height: 10 }} /> : <FileText style={{ width: 10, height: 10 }} />}
                       <span style={{ maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.filename}</span>
-                      <span style={{ color: "var(--muted)" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
+                      <span style={{ color: "var(--muted, var(--le-muted))" }}>{formatBytes(a.kind === "text" ? a.data.length : (a.data.length * 3) / 4)}</span>
                       <button
                         type="button"
                         onClick={() => setAttachments((p) => p.filter((_, idx) => idx !== i))}
-                        style={{ borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)" }}
+                        style={{ borderRadius: "var(--le-r-sm)", padding: 2, border: "none", background: "transparent", cursor: "pointer", color: "var(--muted, var(--le-muted))" }}
                         aria-label="Remove attachment"
                       >
                         <X style={{ width: 10, height: 10 }} />
@@ -704,10 +704,10 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   ))}
                 </div>
               )}
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line)", background: "var(--surface)", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)]">
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, borderRadius: "var(--le-r-xl)", border: "1px solid var(--line, var(--le-border))", background: "var(--surface, var(--le-surface))", padding: "6px 8px", boxShadow: "var(--shadow-sm)", transition: "border-color .2s" }} className="focus-within:!border-[rgba(30,74,140,0.4)]">
                 <Popover>
                   <PopoverTrigger asChild>
-                    <button type="button" style={{ width: 28, height: 28, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line)", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted)" }}>
+                    <button type="button" style={{ width: 28, height: 28, borderRadius: "var(--le-r-pill)", border: "1px solid var(--line, var(--le-border))", background: "transparent", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, color: "var(--muted, var(--le-muted))" }}>
                       <Plus style={{ width: 13, height: 13 }} />
                     </button>
                   </PopoverTrigger>
@@ -716,18 +716,18 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       disabled={attachments.length >= MAX_ATTACHMENTS}
-                      style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink)", opacity: attachments.length >= MAX_ATTACHMENTS ? 0.5 : 1 }}
+                      style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px", textAlign: "left", border: "none", background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--ink, var(--le-text))", opacity: attachments.length >= MAX_ATTACHMENTS ? 0.5 : 1 }}
                       className="hover:bg-muted"
                     >
                       <Paperclip style={{ width: 14, height: 14 }} />
                       <div style={{ flex: 1 }}>
                         <div>Attach file</div>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 2 }}>
                           PDF, image, CSV, .txt · up to {MAX_ATTACHMENTS} · 3 MB each · one-shot per turn
                         </div>
                       </div>
                     </button>
-                    <div style={{ margin: "6px 0", borderTop: "1px solid var(--line)" }} />
+                    <div style={{ margin: "6px 0", borderTop: "1px solid var(--line, var(--le-border))" }} />
                     <label style={{ display: "flex", cursor: "pointer", alignItems: "flex-start", gap: 8, borderRadius: "var(--le-r-sm)", padding: "8px 8px" }} className="hover:bg-muted">
                       <input
                         type="checkbox"
@@ -735,11 +735,11 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                         onChange={(e) => setUseResearch(e.target.checked)}
                         style={{ marginTop: 2 }}
                       />
-                      <div style={{ flex: 1, fontSize: 13, color: "var(--ink)" }}>
+                      <div style={{ flex: 1, fontSize: 13, color: "var(--ink, var(--le-text))" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                           <Globe style={{ width: 13, height: 13 }} /> Always research
                         </div>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                        <div style={{ fontSize: 11.5, color: "var(--muted, var(--le-muted))", marginTop: 3 }}>
                           Off: Ally auto-detects when fresh data is needed. On: Gemini every turn.
                         </div>
                       </div>
@@ -776,7 +776,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   <ArrowUp style={{ width: 13, height: 13 }} />
                 </button>
               </div>
-              <div style={{ marginTop: 5, paddingLeft: 4, fontSize: 10, color: "var(--muted-2)" }}>
+              <div style={{ marginTop: 5, paddingLeft: 4, fontSize: 10, color: "var(--muted-2, var(--le-faint))" }}>
                 Enter to send · changes are advisory — click Save above to persist.
               </div>
             </div>
@@ -785,11 +785,11 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
       </AnimatePresence>
       <Dialog open={!!diffCard} onOpenChange={(v) => { if (!v) setDiffCard(null); }}>
         <DialogContent className="max-w-6xl gap-0 p-0">
-          <DialogHeader style={{ borderBottom: "1px solid var(--line)", padding: "12px 20px" }}>
-            <DialogTitle style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: "var(--ink)" }}>
-              <Eye style={{ width: 15, height: 15, color: "var(--accent)" }} /> See the change
+          <DialogHeader style={{ borderBottom: "1px solid var(--line, var(--le-border))", padding: "12px 20px" }}>
+            <DialogTitle style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, color: "var(--ink, var(--le-text))" }}>
+              <Eye style={{ width: 15, height: 15, color: "var(--accent, var(--le-accent))" }} /> See the change
               {diffCard && (
-                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted)" }}>
+                <span style={{ fontSize: 12, fontWeight: 400, color: "var(--muted, var(--le-muted))" }}>
                   · {diffCard.changedSummary}
                 </span>
               )}
@@ -798,8 +798,8 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
           {diffCard && (
             <div style={{ display: "flex", flexDirection: "column" }}>
               {diffCard.changesNarrative && (
-                <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.02)", padding: "12px 20px" }}>
-                  <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 500, color: "var(--muted)" }}>What Ally changed</div>
+                <div style={{ borderBottom: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.02)", padding: "12px 20px" }}>
+                  <div style={{ marginBottom: 8, fontSize: 12, fontWeight: 500, color: "var(--muted, var(--le-muted))" }}>What Ally changed</div>
                   <ul style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 13.5, lineHeight: 1.5 }}>
                     {diffCard.changesNarrative
                       .split("\n")
@@ -807,32 +807,32 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                       .filter(Boolean)
                       .map((bullet, i) => (
                         <li key={i} style={{ display: "flex", gap: 8 }}>
-                          <span style={{ color: "var(--muted)" }}>•</span>
-                          <span style={{ color: "var(--ink)" }}>{bullet}</span>
+                          <span style={{ color: "var(--muted, var(--le-muted))" }}>•</span>
+                          <span style={{ color: "var(--ink, var(--le-text))" }}>{bullet}</span>
                         </li>
                       ))}
                   </ul>
                 </div>
               )}
               {(diffCard.beforeTitle !== diffCard.afterTitle) && (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid var(--line)", fontSize: 13.5 }}>
-                  <div style={{ borderRight: "1px solid var(--line)", padding: "12px 20px" }}>
-                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Title — current</div>
-                    <div style={{ borderRadius: "var(--le-r-sm)", background: "rgba(196,74,74,0.08)", padding: "6px 10px", color: "var(--bad)" }}>
-                      {diffCard.beforeTitle || <em style={{ color: "var(--muted)" }}>(empty)</em>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid var(--line, var(--le-border))", fontSize: 13.5 }}>
+                  <div style={{ borderRight: "1px solid var(--line, var(--le-border))", padding: "12px 20px" }}>
+                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted, var(--le-muted))" }}>Title — current</div>
+                    <div style={{ borderRadius: "var(--le-r-sm)", background: "rgba(196,74,74,0.08)", padding: "6px 10px", color: "var(--bad, var(--le-bad))" }}>
+                      {diffCard.beforeTitle || <em style={{ color: "var(--muted, var(--le-muted))" }}>(empty)</em>}
                     </div>
                   </div>
                   <div style={{ padding: "12px 20px" }}>
-                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>Title — proposed</div>
-                    <div style={{ borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.08)", padding: "6px 10px", color: "var(--good)" }}>
+                    <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted, var(--le-muted))" }}>Title — proposed</div>
+                    <div style={{ borderRadius: "var(--le-r-sm)", background: "rgba(47,138,85,0.08)", padding: "6px 10px", color: "var(--good, var(--le-good))" }}>
                       {diffCard.afterTitle}
                     </div>
                   </div>
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", height: "65vh" }}>
-                <div style={{ display: "flex", minHeight: 0, flexDirection: "column", borderRight: "1px solid var(--line)" }}>
-                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+                <div style={{ display: "flex", minHeight: 0, flexDirection: "column", borderRight: "1px solid var(--line, var(--le-border))" }}>
+                  <div style={{ borderBottom: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted, var(--le-muted))" }}>
                     Current draft
                   </div>
                   <HtmlPreview
@@ -841,7 +841,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   />
                 </div>
                 <div style={{ display: "flex", minHeight: 0, flexDirection: "column" }}>
-                  <div style={{ borderBottom: "1px solid var(--line)", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted)" }}>
+                  <div style={{ borderBottom: "1px solid var(--line, var(--le-border))", background: "rgba(12,14,22,0.03)", padding: "6px 12px", fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--muted, var(--le-muted))" }}>
                     Proposed
                   </div>
                   <HtmlPreview
@@ -850,7 +850,7 @@ export function AllyFloatingChat({ postId, currentBodyHtml, current, onApply, co
                   />
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line)", padding: "12px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, borderTop: "1px solid var(--line, var(--le-border))", padding: "12px 20px" }}>
                 <button type="button" className="le-btn-ghost" style={{ fontSize: 13, padding: "7px 14px" }} onClick={() => setDiffCard(null)}>Close</button>
                 {!diffCard.applied && (
                   <button type="button" className="le-btn-dark" style={{ fontSize: 13, padding: "7px 14px" }} onClick={() => { applyProposal(diffCard); setDiffCard(null); }}>
