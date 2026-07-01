@@ -300,8 +300,11 @@ describe("rerunAssembly", () => {
   //    4b15ef63 assembled a 30s video from only 3 of 7 scenes and marked the
   //    property complete, because this guard only checked
   //    `completedScenes.length === 0`). Two independent floors now apply:
-  //      (a) no runId (legacy / clip-swap path) → completedScenes.length
-  //          must clear passingThreshold(totalScenes) = ceil(total * 0.8).
+  //      (a) no runId (legacy / clip-swap path) → the qc_pass count
+  //          (clip-agnostic, mirroring the poll-scenes admitting gate — a
+  //          skipped scene is qc_pass with clip_url=null) must clear
+  //          passingThreshold(totalScenes) = ceil(total * 0.8), AND at least
+  //          one clip-bearing scene must exist.
   //      (b) runId given AND that run has a non-empty scene_order → EVERY
   //          scene id in the order must be qc_pass with a clip_url.
 
@@ -319,6 +322,36 @@ describe("rerunAssembly", () => {
 
     await expect(rerunAssembly("prop-1")).resolves.toBeUndefined();
     expect(db.updatePropertyStatus).toHaveBeenCalledWith("prop-1", "assembling");
+  });
+
+  it("legacy path (no runId): operator-skipped scenes (qc_pass, clip_url=null) count toward the 80% floor — clip-swap re-assembly with 2 of 7 skipped still assembles", async () => {
+    // api/scenes/[id]/skip.ts marks a skipped scene status:'qc_pass' with
+    // clip_url:null. The threshold comparison must mirror the poll-scenes
+    // admitting gate (clip-agnostic qc_pass count) — otherwise >20% skipped
+    // scenes would reject a legitimate clip-swap rerun. Here: 5 clip-bearing
+    // + 2 skipped = 7 qc_pass ≥ passingThreshold(7)=6, even though only 5
+    // scenes carry clips.
+    const scenes = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      n >= 6
+        ? makeScene({ id: `scene-${n}`, scene_number: n, clip_url: null }) // skipped: qc_pass, no clip
+        : makeScene({ id: `scene-${n}`, scene_number: n }),
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    await expect(rerunAssembly("prop-1")).resolves.toBeUndefined();
+    expect(db.updatePropertyStatus).toHaveBeenCalledWith("prop-1", "assembling");
+  });
+
+  it("legacy path (no runId): still throws when ALL qc_pass scenes are skipped (zero clips — nothing to assemble)", async () => {
+    const scenes = [1, 2, 3].map((n) =>
+      makeScene({ id: `scene-${n}`, scene_number: n, clip_url: null }), // all skipped
+    );
+    vi.mocked(db.getScenesForProperty).mockResolvedValue(scenes as never);
+
+    await expect(rerunAssembly("prop-1")).rejects.toThrow(
+      "No completed scenes — nothing to assemble",
+    );
+    expect(db.updatePropertyStatus).not.toHaveBeenCalled();
   });
 
   it("legacy path (no runId): throws when completed scenes fall below the 80% floor (the incident's 3 of 7)", async () => {

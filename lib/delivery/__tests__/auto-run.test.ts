@@ -361,12 +361,15 @@ describe('resolveGate — Guard 4: write guard', () => {
 describe('resolveCheckpointA', () => {
   /**
    * Configure getSupabase for the generation-completeness gate's
-   * `.from('scenes').select('id, scene_number').eq('property_id', ...)`
+   * `.from('scenes').select('id, scene_number, status, clip_url').eq(...)`
    * lookup, plus the update/insert chain pauseForHuman needs when a test
-   * expects a pause. Returns the db mock so a test can further customize it.
+   * expects a pause. Rows may omit status/clip_url (≠ operator-skipped);
+   * pass status:'qc_pass' + clip_url:null to model a scene skipped via
+   * api/scenes/[id]/skip.ts. Returns the db mock so a test can further
+   * customize it.
    */
   function mockSceneRows(
-    rows: Array<{ id: string; scene_number: number }>,
+    rows: Array<{ id: string; scene_number: number; status?: string; clip_url?: string | null }>,
     scenesError: { message: string } | null = null,
   ) {
     const scenesEqMock = vi.fn().mockResolvedValue({ data: scenesError ? null : rows, error: scenesError });
@@ -549,6 +552,56 @@ describe('resolveCheckpointA', () => {
       'resolveCheckpointA: scenes lookup failed: connection reset',
     );
     expect(advanceRun).not.toHaveBeenCalled();
+  });
+
+  it('operator-skipped scenes (qc_pass, clip_url=null) do NOT trip the generation-incomplete pause', async () => {
+    // api/scenes/[id]/skip.ts marks a skipped scene status:'qc_pass' with
+    // clip_url:null — a deliberate human exclusion, not a generation failure.
+    // sc1 and sc2 have winning clips; sc3 was skipped by the operator.
+    const v1 = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/1a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    const v2 = makeVariant({
+      variant: 'A', scene_id: 'sc2', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/2a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1, v2]);
+    mockSceneRows([
+      { id: 'sc1', scene_number: 1, status: 'qc_pass', clip_url: 'https://example.com/1.mp4' },
+      { id: 'sc2', scene_number: 2, status: 'qc_pass', clip_url: 'https://example.com/2.mp4' },
+      { id: 'sc3', scene_number: 3, status: 'qc_pass', clip_url: null }, // operator-skipped
+    ]);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result).toEqual({ action: 'advanced', to: 'details' });
+  });
+
+  it('skipped scenes are excluded from BOTH sides of the incomplete count (reason reflects only real gaps)', async () => {
+    // sc1 has a clip, sc2 genuinely failed generation, sc3 was skipped.
+    // The pause reason must count 1 of 2 (skipped sc3 excluded entirely),
+    // naming only scene 2.
+    const v1 = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/1a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1]);
+    mockSceneRows([
+      { id: 'sc1', scene_number: 1, status: 'qc_pass', clip_url: 'https://example.com/1.mp4' },
+      { id: 'sc2', scene_number: 2, status: 'pending', clip_url: null }, // never generated
+      { id: 'sc3', scene_number: 3, status: 'qc_pass', clip_url: null }, // operator-skipped
+    ]);
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toBe(
+      'generation incomplete: 1 of 2 scenes have no clip (scenes 2)',
+    );
   });
 });
 

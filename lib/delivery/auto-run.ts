@@ -695,9 +695,11 @@ export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOu
  * partial run. (Incident: delivery run 4b15ef63 — 4 of 7 scenes had
  * attempt_count=0/provider=null/no clip_url; runJudgePass judged the 3 that
  * did have variant rows, checkpoint_a auto-accepted, and assembly stitched a
- * 3-clip video and marked the property complete.) We compare the full scene
- * set for the property against which scenes have a winning clip and pause
- * for a human instead of advancing when any are missing.
+ * 3-clip video and marked the property complete.) We compare the property's
+ * scene set — minus operator-skipped scenes (status 'qc_pass' with null
+ * clip_url, per api/scenes/[id]/skip.ts), which are deliberate human
+ * exclusions — against which scenes have a winning clip, and pause for a
+ * human instead of advancing when any are missing.
  *
  * Then, for each scene pair that IS present, compute margin =
  * abs(scoreA − scoreB) / 20. Degraded pairs (winner_source='default', no
@@ -724,13 +726,20 @@ export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutco
   if (variants.length > 0) {
     const { data: sceneRows, error: scenesErr } = await getSupabase()
       .from('scenes')
-      .select('id, scene_number')
+      .select('id, scene_number, status, clip_url')
       .eq('property_id', run.property_id);
     if (scenesErr) {
       throw new Error(`resolveCheckpointA: scenes lookup failed: ${scenesErr.message}`);
     }
 
-    const allScenes = (sceneRows ?? []) as Array<{ id: string; scene_number: number }>;
+    // Operator-skipped scenes (api/scenes/[id]/skip.ts marks them
+    // status:'qc_pass' with clip_url:null) are a deliberate human exclusion,
+    // not a generation failure — drop them from BOTH sides of the count so a
+    // skipped scene can never trip the generation-incomplete pause.
+    const allScenes = ((sceneRows ?? []) as Array<{
+      id: string; scene_number: number; status: string | null; clip_url: string | null;
+    }>).filter((s) => !(s.status === 'qc_pass' && !s.clip_url));
+
     const missingSceneNumbers: number[] = [];
     for (const scene of allScenes) {
       const entry = byScene.get(scene.id);

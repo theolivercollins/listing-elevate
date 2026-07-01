@@ -2442,10 +2442,13 @@ export async function runAssembly(propertyId: string): Promise<void> {
  *     (the operator/autopilot checkpoint-A curated order) → EVERY scene id in
  *     that order must be `qc_pass` with a `clip_url`. Partial coverage throws.
  *   - Otherwise (no run, or a run with no curated order yet — the legacy /
- *     customer-flow / clip-swap path) → require
- *     `completedScenes.length >= passingThreshold(totalScenes)` (the same
- *     ceil(80%) floor the poll-scenes cron QC gate uses — see
- *     lib/pipeline/assembly-guards.ts) instead of the old bare `> 0`.
+ *     customer-flow / clip-swap path) → require the clip-AGNOSTIC qc_pass
+ *     count to clear `passingThreshold(totalScenes)` (the same ceil(80%)
+ *     floor — and the same clip-agnostic counting — the poll-scenes cron QC
+ *     gate uses; see lib/pipeline/assembly-guards.ts), plus at least one
+ *     clip-bearing scene. Clip-agnostic matters: an operator-skipped scene
+ *     (api/scenes/[id]/skip.ts) is `qc_pass` with `clip_url:null` and must
+ *     satisfy the floor, not erode it.
  * `opts.allowPartial` opts out of both strengthened checks (falls back to the
  * original `completedScenes.length === 0` floor) for an explicit manual
  * operator override; no caller passes it today — default is strict.
@@ -2505,11 +2508,21 @@ export async function rerunAssembly(
       }
     } else if (completedScenes.length === 0) {
       throw new Error("No completed scenes — nothing to assemble");
-    } else if (completedScenes.length < passingThreshold(scenes.length)) {
-      throw new Error(
-        `Insufficient completed scenes: ${completedScenes.length} of ${scenes.length} ` +
-          `(need at least ${passingThreshold(scenes.length)}) — nothing to assemble`,
-      );
+    } else {
+      // Clip-AGNOSTIC threshold count, mirroring the poll-scenes admitting
+      // gate (`passed = scenes.filter(s => s.status === 'qc_pass').length`).
+      // Operator-skipped scenes are qc_pass with clip_url=null
+      // (api/scenes/[id]/skip.ts) — they must count toward the floor, or a
+      // legitimate clip-swap re-assembly gets rejected once >20% of scenes
+      // are deliberately skipped. The clip-bearing `completedScenes` check
+      // above still guarantees there is something to actually stitch.
+      const qcPassCount = scenes.filter((s) => s.status === "qc_pass").length;
+      if (qcPassCount < passingThreshold(scenes.length)) {
+        throw new Error(
+          `Insufficient completed scenes: ${qcPassCount} of ${scenes.length} ` +
+            `(need at least ${passingThreshold(scenes.length)}) — nothing to assemble`,
+        );
+      }
     }
   }
 
