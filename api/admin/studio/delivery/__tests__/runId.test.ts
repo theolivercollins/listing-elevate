@@ -29,6 +29,7 @@ const mockRunJudgePass = vi.fn();
 const mockGetPhotoSelectionForRun = vi.fn();
 const mockApplyPhotoSelectionForRun = vi.fn();
 const mockContinuePipelineAfterPhotoSelection = vi.fn();
+const mockResumeGeneratingUnderLease = vi.fn();
 
 vi.mock('../../../../../lib/auth', () => ({ requireAdmin: (...a: unknown[]) => mockRequireAdmin(...a) }));
 vi.mock('../../../../../lib/delivery/runs', () => ({
@@ -58,8 +59,10 @@ vi.mock('../../../../../lib/delivery/photo-selection', () => ({
 vi.mock('../../../../../lib/pipeline', () => ({
   continuePipelineAfterPhotoSelection: (...a: unknown[]) => mockContinuePipelineAfterPhotoSelection(...a),
 }));
-vi.mock('../../../../../lib/pipeline/stuck-reaper', () => ({
-  DELIVERY_GENERATING_REFIRE_MINUTES: 5,
+// The rerun + retry generating-stage (re)fires both funnel through the shared
+// resumeGeneratingUnderLease mutex (lib/delivery/resume-generation.ts).
+vi.mock('../../../../../lib/delivery/resume-generation', () => ({
+  resumeGeneratingUnderLease: (...a: unknown[]) => mockResumeGeneratingUnderLease(...a),
 }));
 vi.mock('../../../../../lib/delivery/details', () => ({
   validateListingDetails: (...a: unknown[]) => mockValidateListingDetails(...a),
@@ -177,6 +180,8 @@ beforeEach(() => {
   mockGetPhotoSelectionForRun.mockResolvedValue({ photos: [], selected_photo_ids: [] });
   mockApplyPhotoSelectionForRun.mockResolvedValue({ selected_photo_ids: ['photo-2', 'photo-1'] });
   mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+  // Default: the resolve lease is free → the generation (re)fire runs, ran:true.
+  mockResumeGeneratingUnderLease.mockResolvedValue({ ran: true, result: undefined });
   mockResolveGate.mockResolvedValue({ action: 'noop', reason: 'auto_run off' });
 });
 
@@ -1737,7 +1742,7 @@ describe('POST rerun (T-rerun)', () => {
     expect((res._body as { error: string }).error).toMatch(/nothing to re-run/i);
   });
 
-  it('rerun at generating resumes the idempotent generation pipeline', async () => {
+  it('rerun at generating resumes generation through the shared lease helper', async () => {
     mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
     const res = makeRes();
     await handler(
@@ -1745,11 +1750,42 @@ describe('POST rerun (T-rerun)', () => {
       res as unknown as VercelResponse,
     );
     expect(res._status).toBe(200);
-    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
-      order_mode: 'operator',
-      delivery_run_id: 'r1',
+    // The (re)fire goes through resumeGeneratingUnderLease (the per-run resolve
+    // lease mutex), keyed by run id + property id, with the rerun_stage marker.
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledWith('r1', 'p1', {
       rerun_stage: 'generating',
     });
+  });
+
+  it('rerun at generating is lease-guarded: a concurrent resume no-ops with 409 and does NOT re-fire the pipeline', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
+    // Lease already held by a concurrent actor → resumeGeneratingUnderLease
+    // reports ran:false and never invokes the wrapped continuePipeline.
+    mockResumeGeneratingUnderLease.mockResolvedValueOnce({ ran: false });
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(409);
+    expect((res._body as { error?: string }).error).toBe('resume_already_in_progress');
+    // Friendly message accompanies the code for the inline UI strip (N2).
+    expect((res._body as { message?: string }).message).toMatch(/in progress/i);
+    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+  });
+
+  it('rerun at generating: a thrown resume → setRunError + 502 with the detail message', async () => {
+    mockGetRun.mockResolvedValue({ ...run, stage: 'generating' });
+    mockResumeGeneratingUnderLease.mockRejectedValueOnce(new Error('director scripting failed'));
+    const res = makeRes();
+    await handler(
+      { method: 'POST', query: { runId: 'r1' }, headers: {}, body: { action: 'rerun' } } as unknown as VercelRequest,
+      res as unknown as VercelResponse,
+    );
+    expect(res._status).toBe(502);
+    expect((res._body as { error?: string }).error).toBe('generation_resume_failed');
+    expect((res._body as { message?: string }).message).toContain('director scripting failed');
+    expect(mockSetRunError).toHaveBeenCalledWith('r1', expect.stringContaining('director scripting failed'));
   });
 
   it('rerun → 404 on unknown run', async () => {
@@ -1924,27 +1960,12 @@ describe('POST resume_autopilot', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST retry (T-retry)', () => {
-  // Claim result for the atomic CAS UPDATE on delivery_runs.
-  // Set via setClaimResult() before each test that reaches the CAS branch.
-  let _claimResult: { data: { id: string } | null; error: { message: string } | null } = {
-    data: null,
-    error: null,
-  };
-
-  /** Control whether the CAS UPDATE wins (claimed) or is rejected (run recently touched). */
-  function setClaimResult(won: boolean, err: { message: string } | null = null) {
-    _claimResult = { data: won ? { id: 'r1' } : null, error: err };
-  }
-
-  beforeEach(() => {
-    _claimResult = { data: null, error: null };
-  });
-
   /**
-   * Wire up db.from('scenes') to return the given rows / error, and
-   * db.from('delivery_runs') to return the current _claimResult for the CAS UPDATE.
-   * error: null by default (query succeeded). Pass { message } to simulate
-   * a Supabase error — must NOT be treated as zero scenes.
+   * Wire up db.from('scenes') to return the given rows / error. The 0-scene
+   * (re)fire now goes through the shared resumeGeneratingUnderLease mutex, so no
+   * delivery_runs CAS is involved here anymore. error: null by default (query
+   * succeeded). Pass { message } to simulate a Supabase error — must NOT be
+   * treated as zero scenes.
    */
   function setScenesResult(scenes: { id: string }[], error: { message: string } | null = null) {
     mockDbFrom.mockImplementation((table: string) => {
@@ -1955,34 +1976,20 @@ describe('POST retry (T-retry)', () => {
           }),
         };
       }
-      if (table === 'delivery_runs') {
-        return {
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              lt: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValue(_claimResult),
-                }),
-              }),
-            }),
-          }),
-        };
-      }
       if (table === 'properties') return { select: mockDbSelect };
       if (table === 'music_tracks') return { insert: mockDbInsert };
       return { update: mockDbUpdate };
     });
   }
 
-  it('retry at generating with ZERO scenes (CAS claim won) → calls continuePipelineAfterPhotoSelection, returns 200 with refreshed run; does NOT call clearRunError', async () => {
+  it('retry at generating with ZERO scenes (lease free) → resumes via resumeGeneratingUnderLease, returns 200 with refreshed run; does NOT clearRunError', async () => {
     const generatingRun = { ...run, stage: 'generating' };
     const refreshedRun = { ...run, stage: 'generating', refreshed: true };
     mockGetRun
       .mockResolvedValueOnce(generatingRun)
       .mockResolvedValueOnce(refreshedRun);
-    setClaimResult(true);
     setScenesResult([]);
-    mockContinuePipelineAfterPhotoSelection.mockResolvedValue(undefined);
+    mockResumeGeneratingUnderLease.mockResolvedValue({ ran: true, result: undefined });
 
     const res = makeRes();
     await handler(
@@ -1991,23 +1998,19 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(200);
-    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledTimes(1);
-    expect(mockContinuePipelineAfterPhotoSelection).toHaveBeenCalledWith('p1', {
-      order_mode: 'operator',
-      delivery_run_id: 'r1',
-    });
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledTimes(1);
+    expect(mockResumeGeneratingUnderLease).toHaveBeenCalledWith('r1', 'p1');
     expect((res._body as { run: unknown }).run).toEqual(refreshedRun);
     expect(mockClearRunError).not.toHaveBeenCalled();
-    // updateRun must NOT be called — the CAS UPDATE handles the timestamp bump atomically.
+    // updateRun must NOT be called — the lease handles serialization; no manual bump.
     expect(mockUpdateRun).not.toHaveBeenCalled();
   });
 
-  it('retry at generating with ZERO scenes and continuePipelineAfterPhotoSelection throws → calls setRunError and returns 500', async () => {
+  it('retry at generating with ZERO scenes and the resume throws → calls setRunError and returns 500', async () => {
     const generatingRun = { ...run, stage: 'generating' };
     mockGetRun.mockResolvedValueOnce(generatingRun);
-    setClaimResult(true);
     setScenesResult([]);
-    mockContinuePipelineAfterPhotoSelection.mockRejectedValue(new Error('director scripting failed'));
+    mockResumeGeneratingUnderLease.mockRejectedValue(new Error('director scripting failed'));
 
     const res = makeRes();
     await handler(
@@ -2022,7 +2025,7 @@ describe('POST retry (T-retry)', () => {
     expect((res._body as { status: string }).status).toBe('failed');
   });
 
-  it('P1 #1 — scenes query error → 500, does NOT treat as zero scenes or call continuePipelineAfterPhotoSelection', async () => {
+  it('P1 #1 — scenes query error → 500, does NOT treat as zero scenes or fire the resume', async () => {
     const generatingRun = { ...run, stage: 'generating' };
     mockGetRun.mockResolvedValueOnce(generatingRun);
     setScenesResult([], { message: 'connection timeout' });
@@ -2035,17 +2038,16 @@ describe('POST retry (T-retry)', () => {
 
     expect(res._status).toBe(500);
     expect((res._body as { error: string }).error).toContain('connection timeout');
-    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockClearRunError).not.toHaveBeenCalled();
   });
 
-  it('P1 #2 / CAS claim lost (run recently touched) → clearRunError only, no continue call, no updateRun', async () => {
+  it('retry ZERO scenes, lease HELD by a concurrent resume → 409 resume_already_in_progress, no clearRunError', async () => {
     const generatingRun = { ...run, stage: 'generating' };
-    const clearedRun = { ...run, stage: 'generating', error: null };
     mockGetRun.mockResolvedValueOnce(generatingRun);
-    setClaimResult(false); // CAS returns null → another actor already holds the claim
     setScenesResult([]);
-    mockClearRunError.mockResolvedValue(clearedRun);
+    // Another actor already holds the lease → ran:false, nothing re-fired.
+    mockResumeGeneratingUnderLease.mockResolvedValueOnce({ ran: false });
 
     const res = makeRes();
     await handler(
@@ -2053,11 +2055,11 @@ describe('POST retry (T-retry)', () => {
       res as unknown as VercelResponse,
     );
 
-    expect(res._status).toBe(200);
-    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(res._status).toBe(409);
+    expect((res._body as { error?: string }).error).toBe('resume_already_in_progress');
+    expect((res._body as { message?: string }).message).toMatch(/in progress/i);
+    expect(mockClearRunError).not.toHaveBeenCalled();
     expect(mockUpdateRun).not.toHaveBeenCalled();
-    expect(mockClearRunError).toHaveBeenCalledWith('r1');
-    expect((res._body as { run: unknown }).run).toEqual(clearedRun);
   });
 
   it('retry at generating WITH existing scenes → falls through to clearRunError (no continue call)', async () => {
@@ -2074,12 +2076,12 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(200);
-    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockClearRunError).toHaveBeenCalledWith('r1');
     expect((res._body as { run: unknown }).run).toEqual(clearedRun);
   });
 
-  it('retry at a non-generating stage (voiceover) → clearRunError as before, no continue call', async () => {
+  it('retry at a non-generating stage (voiceover) → clearRunError as before, no resume', async () => {
     const voiceoverRun = { ...run, stage: 'voiceover' };
     const clearedRun = { ...run, stage: 'voiceover', error: null };
     mockGetRun.mockResolvedValueOnce(voiceoverRun);
@@ -2092,7 +2094,7 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(200);
-    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockClearRunError).toHaveBeenCalledWith('r1');
     expect((res._body as { run: unknown }).run).toEqual(clearedRun);
   });
@@ -2107,7 +2109,7 @@ describe('POST retry (T-retry)', () => {
     );
 
     expect(res._status).toBe(404);
-    expect(mockContinuePipelineAfterPhotoSelection).not.toHaveBeenCalled();
+    expect(mockResumeGeneratingUnderLease).not.toHaveBeenCalled();
     expect(mockClearRunError).not.toHaveBeenCalled();
   });
 });

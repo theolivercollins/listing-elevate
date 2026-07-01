@@ -729,7 +729,7 @@ export async function reapStuckGeneratingDeliveryRuns(
 
     // Dynamic-import so tests can mock independently of the static module graph.
     // The JS module system caches these after the first call.
-    const { setRunError, updateRun } = await import("../delivery/runs.js");
+    const { setRunError } = await import("../delivery/runs.js");
 
     let reaped = 0;
     const ids: string[] = [];
@@ -781,24 +781,18 @@ export async function reapStuckGeneratingDeliveryRuns(
               continue;
             }
 
-            // Bump updated_at BEFORE the awaited pipeline call so the next
-            // overlapping cron tick sees a recent updated_at and skips this row,
-            // preventing a double re-fire while the director (~70s) is still running.
-            // updateRun always sets updated_at to the real current time regardless
-            // of what's in the patch; the explicit field documents the intent.
-            await updateRun(row.id, { updated_at: now.toISOString() });
-
+            // Re-fire through the SHARED per-run resolve lease (via
+            // resumeGeneratingUnderLease) — the same mutex the operator Resume /
+            // Retry actions and the continue hop use. The lease is held for the
+            // ~70s the director runs, so a concurrent cron tick or a manual
+            // Resume can never double-submit scenes (= duplicate paid jobs); this
+            // replaces the old updated_at pre-bump as the overlap guard.
+            let outcome: { ran: boolean };
             try {
-              const { continuePipelineAfterPhotoSelection } = await import(
-                "../pipeline.js"
+              const { resumeGeneratingUnderLease } = await import(
+                "../delivery/resume-generation.js"
               );
-              await continuePipelineAfterPhotoSelection(row.property_id, {
-                order_mode: "operator",
-                delivery_run_id: row.id,
-              });
-              console.warn(
-                `[stuck-reaper] delivery_run ${row.id} auto-re-fired continuePipelineAfterPhotoSelection (age ${ageFromCreatedMin.toFixed(1)}min)`,
-              );
+              outcome = await resumeGeneratingUnderLease(row.id, row.property_id);
             } catch (e) {
               await setRunError(
                 row.id,
@@ -807,8 +801,25 @@ export async function reapStuckGeneratingDeliveryRuns(
               console.warn(
                 `[stuck-reaper] delivery_run ${row.id} re-fire threw — error stamped`,
               );
+              refiresThisTick++;
+              reaped++;
+              ids.push(row.id);
+              continue;
             }
 
+            if (!outcome.ran) {
+              // Lease held by a concurrent resolver (a manual Resume or another
+              // tick already re-firing this run) — skip this tick cleanly: no
+              // error, no state change. The next cron tick (1 min later) retries.
+              console.warn(
+                `[stuck-reaper] delivery_run ${row.id} resume lease held by a concurrent actor — skipping this tick`,
+              );
+              continue;
+            }
+
+            console.warn(
+              `[stuck-reaper] delivery_run ${row.id} auto-re-fired continuePipelineAfterPhotoSelection (age ${ageFromCreatedMin.toFixed(1)}min)`,
+            );
             refiresThisTick++;
             reaped++;
             ids.push(row.id);
@@ -825,8 +836,16 @@ export async function reapStuckGeneratingDeliveryRuns(
           }
 
           // ── Path B: all scenes bounced to needs_review with no clip (providers
-          // all permanent-failed). NOT re-fireable — re-running would insert
-          // duplicate scenes on top of the existing ones.
+          // all permanent-failed, e.g. Atlas 402 insufficient balance). This IS
+          // recoverable via the operator 'rerun' action (continuePipelineAfter-
+          // PhotoSelection): runScripting's existing-scenes guard prevents
+          // duplicate scene rows, and runGenerationSubmit re-submits ONLY scenes
+          // still lacking a provider_task_id AND clip_url. We only ANNOTATE here
+          // (no paid re-fire from the reaper); the operator's Resume button
+          // re-drives generation once the underlying cause (e.g. balance) is fixed.
+          // NOTE: the balance case now sets a specific run error at submit time
+          // (RESUME_BALANCE_ERROR), so this null-error Path B mainly fires when
+          // that submit-time annotation didn't land.
           // Wait until DELIVERY_GENERATING_STUCK_MINUTES (15) from updated_at —
           // at 5–14 min the scenes may still be mid-render.
           const ageFromUpdatedMin =
