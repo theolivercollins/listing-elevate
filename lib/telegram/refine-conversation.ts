@@ -13,6 +13,19 @@
  *   handleRefineMessage(text)   — a plain-text Telegram message
  *   handleRefineCallback(data)  — an apply:/adjust:/cancel:<planId> tap
  *
+ * CREATE-INTENT — handleRefineMessage's FIRST check, before any active-intake
+ * resolution: a message like "make a vid for kinglet" names a listing to
+ * START (not refine an already-active one), and the target folder is very
+ * often sitting in drive_intake with status='skipped' (137 pre-existing Drive
+ * folders were deliberately pre-seeded skipped so activation didn't spam 137
+ * approval prompts) — a status getActiveRefineIntake never looks at. See
+ * parseCreateIntent/handleCreateIntent below: a cheap deterministic (no LLM
+ * call) matcher finds the folder by name and (re)sends the SAME approval
+ * card settleAndPrompt uses (lib/drive/detect.ts's buildApprovalPromptText/
+ * buildApprovalButtons), driven through the EXISTING, unchanged approve:/
+ * skip: callback handlers in api/telegram/webhook.ts — this feature never
+ * touches approveIntake, the planner, or the executor.
+ *
  * FIX 3 (Plan B decision 9) — handleRefineMessage itself splits into two
  * flows depending on whether the run is genuinely paused (a real quality/
  * spend gate — never the internal 'refining' apply-lock sentinel below):
@@ -59,6 +72,7 @@
 import {
   getActiveRefineIntake,
   getIntakeByPendingPlanId,
+  findIntakesByAddress,
   getChatMessages,
   appendChatMessages,
   stagePlan,
@@ -71,6 +85,8 @@ import {
   setTelegramMessageId,
   type DriveIntake,
 } from '../drive/intake-db.js';
+import { buildApprovalPromptText, buildApprovalButtons } from '../drive/detect.js';
+import { countFinalImages } from '../drive/client.js';
 import { getSupabase } from '../client.js';
 import { getRun } from '../delivery/runs.js';
 import { buildRefineContext, validateRefineActions } from './refine-context.js';
@@ -290,9 +306,163 @@ export async function applyPlan(
   return summary;
 }
 
+// ── create-intent — "make a vid for <name>" finds + resends the approval card ──
+
+/**
+ * Verb/noun/connector pattern for a create-video request. Anchored at the
+ * START of the (trimmed) message — never matches a create-verb appearing
+ * mid-sentence ("bump the price... and make it 4 beds" must never trigger
+ * this).
+ *
+ * Conservative-by-construction: requires an explicit for/of/on connector
+ * between the vid/video/reel/clip noun and the target, rather than trying to
+ * classify the tail as "a name" vs. "an adjective". Every refine-style
+ * message this must NOT match either has no connector at all ("make the
+ * video more upbeat" — "video more upbeat" never contains for/of/on, so the
+ * whole regex fails to match) or doesn't use this vocabulary in the first
+ * place ("make the music happier" — "music" isn't vid/video/reel/clip;
+ * "change the pics order" — "change" isn't a create verb). Every POSITIVE
+ * case this feature needs to handle already phrases the target with
+ * for/of/on ("make a vid FOR kinglet", "generate video OF bordeaux"), so
+ * requiring the connector gives up no real coverage — only false positives
+ * avoided.
+ */
+const CREATE_INTENT_RE =
+  /^(?:make|create|generate|build|do)\s+(?:me\s+)?(?:a\s+|the\s+)?(?:vid|video|reel|clip)\s+(?:for|of|on)\s+(?<target>.+)$/i;
+
+/** Conversational filler stripped from the extracted target — never part of
+ *  a listing's actual name ("the kinglet HOUSE" -> "kinglet"). */
+const CREATE_INTENT_FILLER_WORDS = new Set(['the', 'house', 'listing', 'property']);
+
+function stripFillerWords(raw: string): string {
+  return raw
+    .replace(/[.,!?;:"'`]+/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !CREATE_INTENT_FILLER_WORDS.has(w.toLowerCase()))
+    .join(' ')
+    .trim();
+}
+
+/**
+ * Cheap, deterministic (no LLM call) detector for a create-video request.
+ * Run BEFORE active-intake resolution in handleRefineMessage so it can find
+ * a Drive folder even when there is no active refine conversation yet — the
+ * exact bug this feature fixes (an operator asking to create a video for a
+ * listing that was never approved got "No active listing" instead of a
+ * matching approval card).
+ *
+ * See CREATE_INTENT_RE's docblock for the conservative-match rationale.
+ * Returns the extracted target with common filler words ("the", "house",
+ * "listing", "property") and punctuation stripped, or null when the message
+ * doesn't match at all, or the target is empty after stripping (e.g. "make a
+ * video for the listing" alone names nothing specific).
+ */
+export function parseCreateIntent(text: string): string | null {
+  const match = CREATE_INTENT_RE.exec(text.trim());
+  const target = match?.groups?.target;
+  if (!target) return null;
+  const cleaned = stripFillerWords(target);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/**
+ * Resolve the photo count to show on a (re)sent approval card. Pre-seeded
+ * rows (see the CREATE-INTENT file-header note on the 137 bulk-inserted
+ * 'skipped' folders) were never counted and sit at photo_count=0, which
+ * would misleadingly read as "empty folder" rather than "never counted".
+ * Live-count via Drive when there's a final_folder_id to count; a Drive
+ * hiccup here must never block the approval card itself from going out, so
+ * any failure falls back to the stored (possibly 0) count.
+ */
+async function resolveApprovalPhotoCount(intake: DriveIntake): Promise<number> {
+  if (intake.photo_count > 0 || !intake.final_folder_id) return intake.photo_count;
+  try {
+    return await countFinalImages(intake.final_folder_id);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} countFinalImages failed for intake ${intake.id} (${intake.address}):`, err);
+    return intake.photo_count;
+  }
+}
+
+/**
+ * Handle a detected create-intent ("make a vid for <query>"): resolve the
+ * Drive folder by name and either (re)send the SAME approval card
+ * settleAndPrompt would have sent — for every status that hasn't started a
+ * generation yet ('skipped' | 'detected' | 'error' | 'awaiting_approval' |
+ * 'approved'; claimForApproval, lib/drive/intake-db.ts, already treats
+ * 'awaiting_approval'/'approved' as equivalent pre-ingestion states, so
+ * folding 'approved' into the same bucket here is consistent, not a new
+ * distinction invented for this feature) — or tell the operator honestly why
+ * nothing new was started (already generating/ingesting, already rendered,
+ * no match, or ambiguous). Never touches approveIntake, the planner, or the
+ * executor — the approval card this sends is driven through the EXISTING
+ * approve:/skip: callback handlers (api/telegram/webhook.ts), unchanged.
+ */
+async function handleCreateIntent(query: string): Promise<void> {
+  let matches: DriveIntake[];
+  try {
+    matches = await findIntakesByAddress(query);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} findIntakesByAddress failed for query "${query}":`, err);
+    await sendMessage('Something went wrong looking that up — try again in a moment.');
+    return;
+  }
+
+  if (matches.length === 0) {
+    await sendMessage(
+      `I couldn't find a Drive folder matching '${escapeMarkdown(query)}'. Folder names look like 'Kinglet Dr 1418'.`,
+    );
+    return;
+  }
+
+  if (matches.length > 1) {
+    const list = matches.map((m, i) => `${i + 1}. ${escapeMarkdown(m.address)}`).join('\n');
+    await sendMessage(`Found a few matches — which one?\n${list}`);
+    return;
+  }
+
+  const match = matches[0];
+  const safeAddress = escapeMarkdown(match.address);
+
+  if (match.status === 'generating' || match.status === 'ingesting') {
+    await sendMessage(`Already generating a video for ${safeAddress} — I'll ping you when it's ready.`);
+    return;
+  }
+
+  if (match.status === 'rendered') {
+    await sendMessage(
+      `'${safeAddress}' already has a video — want changes? Just tell me what to refine. Or say 'regenerate ${safeAddress}' to start over.`,
+    );
+    return;
+  }
+
+  // Startable: 'skipped' | 'detected' | 'error' | 'awaiting_approval' | 'approved'.
+  try {
+    const photoCount = await resolveApprovalPhotoCount(match);
+    const { messageId } = await sendMessage(
+      buildApprovalPromptText(match.address, photoCount),
+      { buttons: buildApprovalButtons(match.id) },
+    );
+    await setTelegramMessageIdSafe(match.id, messageId);
+    await setStatus(match.id, 'awaiting_approval');
+  } catch (err) {
+    console.error(
+      `${LOG_PREFIX} handleCreateIntent: sending approval card failed for intake ${match.id} (${match.address}):`,
+      err,
+    );
+    await sendMessage("Found it, but hit a snag sending the approval card — I've logged it; try again.");
+  }
+}
+
 // ── handleRefineMessage — free-text turn ─────────────────────────────────────
 
 export async function handleRefineMessage(text: string): Promise<void> {
+  const createQuery = parseCreateIntent(text);
+  if (createQuery) {
+    await handleCreateIntent(createQuery);
+    return;
+  }
+
   const intake = await getActiveRefineIntake();
   if (!intake || !intake.delivery_run_id) {
     await sendMessage('No active listing to work on right now — approve one first.');
