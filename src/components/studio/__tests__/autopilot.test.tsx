@@ -317,8 +317,10 @@ describe('AutopilotPanel', () => {
         'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; listing details present; voiceover present; music present',
       ),
     ).toBeInTheDocument();
+    // The reason names missing clips → the actionable next step is fixing the
+    // scenes, NOT reviewing at Checkpoint B (the real production incident).
     expect(
-      screen.getByText('Review the video at Checkpoint B, then resume or take over.'),
+      screen.getByText('Generate or fix the missing scenes, then resume autopilot.'),
     ).toBeInTheDocument();
   });
 
@@ -370,10 +372,19 @@ describe('getPauseGuidance', () => {
     );
   });
 
-  it('maps composed quality-score reasons to the Checkpoint B guidance', () => {
+  it('maps composed quality-score reasons WITH a missing-clips clause to the missing-scenes guidance (real incident)', () => {
     expect(
       getPauseGuidance(
         'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; listing details present; voiceover present; music present',
+      ),
+    ).toBe('Generate or fix the missing scenes, then resume autopilot.');
+  });
+
+  it('maps composed quality-score reasons WITHOUT a missing-clips clause to the Checkpoint B guidance', () => {
+    // degradedCount 0 → composeCheckpointBReason omits the missing-clips clause
+    expect(
+      getPauseGuidance(
+        'Final video scored 0.50 (needs 0.70): listing details missing; voiceover missing; music missing',
       ),
     ).toBe('Review the video at Checkpoint B, then resume or take over.');
   });

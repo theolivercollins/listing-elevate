@@ -114,20 +114,25 @@ function describeEvent(pl: MlEventPayload, eventType: string): string {
 
 /**
  * Maps a `paused_reason` string to one actionable next-step sentence for the
- * founder. Two recognized shapes today (both written by lib/delivery/auto-run.ts):
+ * founder. Recognized shapes today (all written by lib/delivery/auto-run.ts):
  *   - resolveCheckpointA: "generation incomplete: N of M scenes have no clip (scenes ...)"
- *   - resolveCheckpointB: "Final video scored X (needs Y): ..." (and its sibling
- *     run-error / empty-run variants, which also read as quality/delivery issues)
+ *     → missing-scenes guidance
+ *   - resolveCheckpointB with degraded scenes: "Final video scored X (needs Y):
+ *     N of M scenes missing clips; ..." → missing-scenes guidance too (the fix
+ *     is the scenes, not a Checkpoint B review)
+ *   - resolveCheckpointB without a missing-clips clause (low score from missing
+ *     listing details / voiceover / music) and its run-error / empty-run
+ *     siblings → generic Checkpoint B guidance
  *
  * Anything else — including legacy `paused_reason` values already sitting in
  * prod rows from before this format existed (e.g. old "quality below threshold:
  * X < Y" or "low judge margin on scene ...") — falls through to the generic
  * Checkpoint B guidance. This function never throws on unrecognized input; it
- * only ever does a case-insensitive substring match.
+ * only ever does case-insensitive substring matches.
  */
 export function getPauseGuidance(reason: string | null | undefined): string {
   if (!reason) return '';
-  if (/generation incomplete/i.test(reason)) {
+  if (/generation incomplete/i.test(reason) || /scenes missing clips/i.test(reason)) {
     return 'Generate or fix the missing scenes, then resume autopilot.';
   }
   return 'Review the video at Checkpoint B, then resume or take over.';
