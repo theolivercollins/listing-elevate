@@ -546,3 +546,64 @@ describe('PropertyCommandCenter — Brand kit section clarity', () => {
     expect(notSet.length).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cost section — Task 5: explain re-renders and $0 events (founder doubted
+// accuracy; totals ARE accurate, the confusion was invisible QC re-renders
+// and unexplained $0 rows). Real prod shape for 326f005e: 7 Atlas events
+// totaling $3.92, 4 re-renders but only 1 tagged qc_rerender_discarded.
+// ---------------------------------------------------------------------------
+
+function makeBundleWithCostDetail() {
+  const bundle = makeBundle();
+  return {
+    ...bundle,
+    cost: {
+      total_cents: 392,
+      by_provider: { kling: 392, anthropic: 0 },
+      by_provider_detail: {
+        kling: { cost_cents: 392, event_count: 7, rerender_count: 1, rerender_cents: 56 },
+        anthropic: { cost_cents: 0, event_count: 1, rerender_count: 0, rerender_cents: 0 },
+      },
+      delivery: null,
+    },
+  };
+}
+
+describe('PropertyCommandCenter — Cost section re-render + $0 event clarity', () => {
+  it('shows per-provider event counts and the discarded-QC-re-render sub-line', async () => {
+    setupMocks({ bundle: makeBundleWithCostDetail() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    // kling: 7 events, 1 discarded re-render worth $0.56
+    expect(screen.getByText(/7 events/i)).toBeTruthy();
+    expect(screen.getByText(/1 discarded QC re-render/i)).toBeTruthy();
+    expect(screen.getByText(/-\$0\.56 of this total/i)).toBeTruthy();
+
+    // anthropic: 1 event, $0 — no re-render sub-line should render for it.
+    expect(screen.getByText(/^1 event$/i)).toBeTruthy();
+  });
+
+  it('renders the footer note explaining $0 events are still logged', async () => {
+    setupMocks({ bundle: makeBundleWithCostDetail() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(
+      screen.getByText(/every provider call is logged, including \$0 events/i),
+    ).toBeTruthy();
+  });
+
+  it('omits the re-render sub-line and footer note when there are no cost events', async () => {
+    setupMocks({ bundle: makeBundle() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(screen.getByText('No cost events yet.')).toBeTruthy();
+    expect(screen.queryByText(/every provider call is logged/i)).toBeNull();
+  });
+});

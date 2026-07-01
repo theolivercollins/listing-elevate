@@ -67,9 +67,18 @@ interface SceneRow {
   status: string;
 }
 
+interface ProviderCostDetail {
+  cost_cents: number;
+  event_count: number;
+  rerender_count: number;
+  rerender_cents: number;
+}
+
 interface CostBundle {
   total_cents: number;
   by_provider: Record<string, number>;
+  // Optional: older cached bundles / tests may omit this additive field.
+  by_provider_detail?: Record<string, ProviderCostDetail>;
   delivery: { total_cents: number; by_stage: Record<string, number> } | null;
 }
 
@@ -1353,36 +1362,63 @@ const PropertyCommandCenter = () => {
               <tbody>
                 {Object.entries(cost.by_provider)
                   .sort(([, a], [, b]) => b - a)
-                  .map(([provider, cents]) => (
-                    <tr key={provider} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
-                      <td
-                        style={{
-                          padding: '10px 0',
-                          fontSize: 13,
-                          color: 'var(--le-ink-2)',
-                          textTransform: 'capitalize',
-                        }}
-                      >
-                        {provider}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 0',
-                          textAlign: 'right',
-                          fontSize: 13,
-                          color: 'var(--le-ink)',
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {formatCents(cents)}
-                      </td>
-                    </tr>
-                  ))}
+                  .map(([provider, cents]) => {
+                    const detail = cost.by_provider_detail?.[provider];
+                    return (
+                      <tr key={provider} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                        <td style={{ padding: '10px 0' }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--le-ink-2)',
+                              textTransform: 'capitalize',
+                            }}
+                          >
+                            {provider}
+                          </div>
+                          {detail && (
+                            <div style={{ fontSize: 11, color: 'var(--le-muted-2)', marginTop: 2 }}>
+                              {detail.event_count} {detail.event_count === 1 ? 'event' : 'events'}
+                              {detail.rerender_count > 0 && (
+                                <>
+                                  {' — includes '}
+                                  {detail.rerender_count}
+                                  {' discarded QC re-render'}
+                                  {detail.rerender_count === 1 ? '' : 's'}
+                                  {' (-'}
+                                  {formatCents(detail.rerender_cents)}
+                                  {' of this total)'}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: '10px 0',
+                            textAlign: 'right',
+                            fontSize: 13,
+                            color: 'var(--le-ink)',
+                            fontVariantNumeric: 'tabular-nums',
+                            verticalAlign: 'top',
+                          }}
+                        >
+                          {formatCents(cents)}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
             </div>
           ) : (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
+          )}
+
+          {Object.keys(cost.by_provider).length > 0 && (
+            <p style={{ fontSize: 11, color: 'var(--le-muted-2)', marginTop: 10 }}>
+              Every provider call is logged, including $0 events.
+            </p>
           )}
 
           {/* ── Delivery run sub-block ── */}

@@ -9,6 +9,15 @@ interface FinalVideoEntry {
   hls_url: string | null;
 }
 
+/** Additive per-provider cost detail — see costByProviderDetail below for the
+ * rerender_count/rerender_cents semantics (tagged-only, never inferred). */
+interface ProviderCostDetail {
+  cost_cents: number;
+  event_count: number;
+  rerender_count: number;
+  rerender_cents: number;
+}
+
 /**
  * Build the single-source-of-truth final-video descriptor for one
  * orientation. Returns null when the persisted URL isn't a Bunny-hosted
@@ -58,16 +67,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   const costByProvider: Record<string, number> = {};
+  // Per-provider detail additive to costByProvider: event_count is every
+  // cost_events row (including $0 rows) so the UI can prove "every call is
+  // logged"; rerender_count/rerender_cents cover ONLY events explicitly
+  // tagged metadata.render_outcome === 'qc_rerender_discarded' — most
+  // re-render events in prod are untagged, so this is never inferred from
+  // event volume alone (see docs/HANDOFF.md 2026-07-01 42703 note).
+  const costByProviderDetail: Record<string, ProviderCostDetail> = {};
   let costTotal = 0;
   const deliveryByStage: Record<string, number> = {};
   let deliveryTotal = 0;
   const activeRunId = (dRes.data as { id: string } | null)?.id ?? null;
-  for (const r of (cRes.data ?? []) as Array<{ stage: string; provider: string; cost_cents: number; metadata: { delivery_run_id?: string } | null }>) {
-    costByProvider[r.provider] = (costByProvider[r.provider] ?? 0) + (r.cost_cents ?? 0);
-    costTotal += r.cost_cents ?? 0;
+  for (const r of (cRes.data ?? []) as Array<{ stage: string; provider: string; cost_cents: number; metadata: { delivery_run_id?: string; render_outcome?: string } | null }>) {
+    const centsForRow = r.cost_cents ?? 0;
+    costByProvider[r.provider] = (costByProvider[r.provider] ?? 0) + centsForRow;
+    costTotal += centsForRow;
+
+    const detail = costByProviderDetail[r.provider] ?? (costByProviderDetail[r.provider] = {
+      cost_cents: 0,
+      event_count: 0,
+      rerender_count: 0,
+      rerender_cents: 0,
+    });
+    detail.cost_cents += centsForRow;
+    detail.event_count += 1;
+    if (r.metadata?.render_outcome === 'qc_rerender_discarded') {
+      detail.rerender_count += 1;
+      detail.rerender_cents += centsForRow;
+    }
+
     if (activeRunId && r.metadata?.delivery_run_id === activeRunId) {
-      deliveryByStage[r.stage] = (deliveryByStage[r.stage] ?? 0) + (r.cost_cents ?? 0);
-      deliveryTotal += r.cost_cents ?? 0;
+      deliveryByStage[r.stage] = (deliveryByStage[r.stage] ?? 0) + centsForRow;
+      deliveryTotal += centsForRow;
     }
   }
 
@@ -79,6 +110,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     cost: {
       total_cents: costTotal,
       by_provider: costByProvider,
+      by_provider_detail: costByProviderDetail,
       delivery: activeRunId ? { total_cents: deliveryTotal, by_stage: deliveryByStage } : null,
     },
     delivery_run: dRes.data ?? null,
