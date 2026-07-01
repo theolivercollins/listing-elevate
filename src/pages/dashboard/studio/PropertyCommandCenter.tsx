@@ -123,7 +123,10 @@ interface Bundle {
   previews: PropertyPreviewRow[];
   cost: CostBundle;
   delivery_run: DeliveryRunSummary | null;
-  final_video: FinalVideoBundle;
+  /** Optional for deploy-skew safety: an older API deployment (or a cached
+   *  response) may not include final_video yet — dereference with `?.` so a
+   *  stale bundle degrades to the raw mp4/HLS fallback instead of crashing. */
+  final_video?: FinalVideoBundle;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -803,8 +806,8 @@ const PropertyCommandCenter = () => {
               // the raw HlsPlayer inside CheckpointB).
               embedUrl={
                 property.horizontal_video_url
-                  ? bundle.final_video.horizontal?.embed_url ?? null
-                  : bundle.final_video.vertical?.embed_url ?? null
+                  ? bundle.final_video?.horizontal?.embed_url ?? null
+                  : bundle.final_video?.vertical?.embed_url ?? null
               }
               posterUrl={
                 (property.horizontal_video_url ? property.horizontal_poster_url : property.vertical_poster_url)
@@ -918,7 +921,7 @@ const PropertyCommandCenter = () => {
                     </div>
                   ) : (
                     <FinalVideoPlayer
-                      embedUrl={bundle.final_video.horizontal?.embed_url ?? null}
+                      embedUrl={bundle.final_video?.horizontal?.embed_url ?? null}
                       mp4Url={property.horizontal_video_url}
                       hlsUrl={property.horizontal_hls_url}
                       posterUrl={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url)}
@@ -955,7 +958,7 @@ const PropertyCommandCenter = () => {
                     </div>
                   ) : (
                     <FinalVideoPlayer
-                      embedUrl={bundle.final_video.vertical?.embed_url ?? null}
+                      embedUrl={bundle.final_video?.vertical?.embed_url ?? null}
                       mp4Url={property.vertical_video_url}
                       hlsUrl={property.vertical_hls_url}
                       posterUrl={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url)}
