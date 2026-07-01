@@ -28,6 +28,11 @@ vi.mock("../../drive/intake-db.js", () => ({
   setTelegramMessageId: vi.fn(),
   getWatchState: vi.fn(),
   upsertWatchState: vi.fn(),
+  setLastPausedReason: vi.fn(),
+}));
+
+vi.mock("../../delivery/runs.js", () => ({
+  getRun: vi.fn(),
 }));
 
 vi.mock("../../telegram/client.js", async (importOriginal) => {
@@ -62,10 +67,12 @@ import {
   setTelegramMessageId,
   getWatchState,
   upsertWatchState,
+  setLastPausedReason,
   type DriveIntake,
 } from "../../drive/intake-db.js";
 import { sendMessage } from "../../telegram/client.js";
 import { getSupabase } from "../../db.js";
+import { getRun } from "../../delivery/runs.js";
 import {
   reconcileWatchedFolder,
   settleAndPrompt,
@@ -398,7 +405,7 @@ describe("pollResults", () => {
       },
       error: null,
     });
-    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as any);
+    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as unknown as ReturnType<typeof getSupabase>);
     vi.mocked(sendMessage).mockResolvedValue({ messageId: 500 });
     vi.mocked(setStatus).mockResolvedValue(undefined);
 
@@ -429,7 +436,7 @@ describe("pollResults", () => {
       },
       error: null,
     });
-    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as any);
+    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as unknown as ReturnType<typeof getSupabase>);
     vi.mocked(sendMessage).mockResolvedValue({ messageId: 501 });
     vi.mocked(setStatus).mockResolvedValue(undefined);
 
@@ -464,7 +471,7 @@ describe("pollResults", () => {
       data: { id: "prop-4", address: "Some St", status: "generating", horizontal_video_url: null },
       error: null,
     });
-    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as any);
+    vi.mocked(getSupabase).mockReturnValue({ from: () => mockChain } as unknown as ReturnType<typeof getSupabase>);
 
     const result = await pollResults();
 
@@ -483,8 +490,8 @@ describe("pollResults", () => {
       error: null,
     });
     vi.mocked(getSupabase)
-      .mockReturnValueOnce({ from: () => errorChain } as any)
-      .mockReturnValueOnce({ from: () => goodChain } as any);
+      .mockReturnValueOnce({ from: () => errorChain } as unknown as ReturnType<typeof getSupabase>)
+      .mockReturnValueOnce({ from: () => goodChain } as unknown as ReturnType<typeof getSupabase>);
     vi.mocked(sendMessage).mockResolvedValue({ messageId: 600 });
     vi.mocked(setStatus).mockResolvedValue(undefined);
 
@@ -492,5 +499,297 @@ describe("pollResults", () => {
 
     expect(result).toEqual({ notified: 1 });
     expect(setStatus).toHaveBeenCalledWith("i6", "rendered");
+  });
+
+  // ── Delivery-run path (intake.delivery_run_id set) ─────────────────────────
+
+  it("delivery-run path: sends ready notification + sets status rendered when the run is delivered", async () => {
+    const row = makeIntakeRow({
+      id: "i7",
+      address: "9 Birch Ln",
+      status: "generating",
+      property_id: "prop-7",
+      delivery_run_id: "run-7",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-7",
+      stage: "delivered",
+      paused_reason: null,
+      error: null,
+    } as never);
+    const mockChain = makeSupabaseChain({
+      data: { horizontal_video_url: "https://cdn.example.com/9birch.mp4" },
+      error: null,
+    });
+    vi.mocked(getSupabase).mockReturnValue(
+      { from: () => mockChain } as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(sendMessage).mockResolvedValue({ messageId: 700 });
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 1 });
+    expect(getRun).toHaveBeenCalledWith("run-7");
+    expect(sendMessage).toHaveBeenCalledWith(
+      "✅ *9 Birch Ln* is ready: https://cdn.example.com/9birch.mp4",
+      { buttons: [[{ text: "🔁 Regenerate", callbackData: "regen:i7" }]] },
+    );
+    expect(setStatus).toHaveBeenCalledWith("i7", "rendered");
+  });
+
+  it("delivery-run path: notifies once on a new pause, then does not re-notify on the same reason", async () => {
+    const row1 = makeIntakeRow({
+      id: "i8",
+      address: "10 Cedar Ct",
+      status: "generating",
+      property_id: "prop-8",
+      delivery_run_id: "run-8",
+      last_paused_reason: null,
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row1]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-8",
+      stage: "details",
+      paused_reason: "missing listing field: price",
+      error: null,
+    } as never);
+    vi.mocked(sendMessage).mockResolvedValue({ messageId: 800 });
+    vi.mocked(setLastPausedReason).mockResolvedValue(undefined);
+
+    const result1 = await pollResults();
+
+    expect(result1).toEqual({ notified: 1 });
+    expect(sendMessage).toHaveBeenCalledWith(
+      "⏸️ *10 Cedar Ct*: paused for review — I couldn't find the price. Reply and I'll handle it.",
+    );
+    expect(setLastPausedReason).toHaveBeenCalledWith("i8", "missing listing field: price");
+
+    // Second poll: last_paused_reason on the row now matches the run's
+    // paused_reason — must NOT re-notify.
+    vi.mocked(sendMessage).mockClear();
+    vi.mocked(setLastPausedReason).mockClear();
+    const row2 = makeIntakeRow({
+      ...row1,
+      last_paused_reason: "missing listing field: price",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row2]);
+
+    const result2 = await pollResults();
+
+    expect(result2).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(setLastPausedReason).not.toHaveBeenCalled();
+  });
+
+  it("delivery-run path: clears last_paused_reason when the run resumes (paused_reason back to null)", async () => {
+    const row = makeIntakeRow({
+      id: "i9",
+      address: "11 Maple Dr",
+      status: "generating",
+      property_id: "prop-9",
+      delivery_run_id: "run-9",
+      last_paused_reason: "low judge margin on scene abc: 0.050",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-9",
+      stage: "voiceover",
+      paused_reason: null,
+      error: null,
+    } as never);
+    vi.mocked(setLastPausedReason).mockResolvedValue(undefined);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(setLastPausedReason).toHaveBeenCalledWith("i9", null);
+  });
+
+  it("delivery-run path: existing failure notification when run.error is set", async () => {
+    const row = makeIntakeRow({
+      id: "i10",
+      address: "12 Spruce Way",
+      status: "generating",
+      property_id: "prop-10",
+      delivery_run_id: "run-10",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-10",
+      stage: "assembling",
+      paused_reason: null,
+      error: "assembly failed: provider timeout",
+    } as never);
+    vi.mocked(sendMessage).mockResolvedValue({ messageId: 900 });
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 1 });
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining("⚠️ *12 Spruce Way* failed"),
+    );
+    expect(setStatus).toHaveBeenCalledWith("i10", "error");
+  });
+
+  // ── C2 — the internal 'refining' sentinel must be ignored entirely ───────
+
+  it("C2: ignores paused_reason === 'refining' — no pause notification, no last_paused_reason write, no status change", async () => {
+    const row = makeIntakeRow({
+      id: "i14",
+      address: "16 Aspen Ct",
+      status: "generating",
+      property_id: "prop-14",
+      delivery_run_id: "run-14",
+      last_paused_reason: null,
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-14",
+      stage: "music",
+      paused_reason: "refining",
+      error: null,
+    } as never);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(setLastPausedReason).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
+  });
+
+  it("C2: still ignores 'refining' even when a DIFFERENT genuine reason was previously recorded (does not clear it as 'resumed')", async () => {
+    const row = makeIntakeRow({
+      id: "i15",
+      address: "17 Birch Way",
+      status: "generating",
+      property_id: "prop-15",
+      delivery_run_id: "run-15",
+      last_paused_reason: "missing listing field: price",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-15",
+      stage: "details",
+      paused_reason: "refining",
+      error: null,
+    } as never);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    // Must NOT interpret the internal lock as "resumed" and clear the
+    // genuine prior reason — that write belongs to a future poll once the
+    // refine executor actually releases the lock.
+    expect(setLastPausedReason).not.toHaveBeenCalled();
+  });
+
+  // ── pollResults order nit — run.error checked before the resumed-clear ───
+
+  it("nit: notifies immediately when a run resumes AND errors within the same poll interval (error checked before the resumed-clear)", async () => {
+    const row = makeIntakeRow({
+      id: "i16",
+      address: "18 Cypress Ln",
+      status: "generating",
+      property_id: "prop-16",
+      delivery_run_id: "run-16",
+      last_paused_reason: "low judge margin on scene abc: 0.050",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-16",
+      stage: "assembling",
+      paused_reason: null,
+      error: "assembly failed: provider timeout",
+    } as never);
+    vi.mocked(sendMessage).mockResolvedValue({ messageId: 901 });
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+
+    const result = await pollResults();
+
+    // Must notify THIS tick, not defer to a "resumed" clear first.
+    expect(result).toEqual({ notified: 1 });
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining("⚠️ *18 Cypress Ln* failed"),
+    );
+    expect(setStatus).toHaveBeenCalledWith("i16", "error");
+    // The stale last_paused_reason is not what this poll is about — the
+    // failure notification path owns this tick, not the resumed-clear path.
+    expect(setLastPausedReason).not.toHaveBeenCalled();
+  });
+
+  it("delivery-run path: still in-flight (no stage/pause/error change) does nothing", async () => {
+    const row = makeIntakeRow({
+      id: "i12",
+      address: "14 Poplar St",
+      status: "generating",
+      property_id: "prop-12",
+      delivery_run_id: "run-12",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue({
+      id: "run-12",
+      stage: "generating",
+      paused_reason: null,
+      error: null,
+    } as never);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(setStatus).not.toHaveBeenCalled();
+    expect(setLastPausedReason).not.toHaveBeenCalled();
+  });
+
+  it("delivery-run path: dangling delivery_run_id (getRun returns null) is skipped, not thrown", async () => {
+    const row = makeIntakeRow({
+      id: "i13",
+      address: "15 Willow Ave",
+      status: "generating",
+      property_id: "prop-13",
+      delivery_run_id: "run-missing",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    vi.mocked(getRun).mockResolvedValue(null);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 0 });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it("legacy path: rows with no delivery_run_id never call getRun and still use properties.status", async () => {
+    const row = makeIntakeRow({
+      id: "i11",
+      property_id: "prop-11",
+      status: "generating",
+      address: "13 Elm Ct",
+    });
+    vi.mocked(getByStatus).mockResolvedValue([row]);
+    const mockChain = makeSupabaseChain({
+      data: { id: "prop-11", address: "13 Elm Ct", status: "complete", horizontal_video_url: "https://cdn/x.mp4" },
+      error: null,
+    });
+    vi.mocked(getSupabase).mockReturnValue(
+      { from: () => mockChain } as unknown as ReturnType<typeof getSupabase>,
+    );
+    vi.mocked(sendMessage).mockResolvedValue({ messageId: 1000 });
+    vi.mocked(setStatus).mockResolvedValue(undefined);
+
+    const result = await pollResults();
+
+    expect(result).toEqual({ notified: 1 });
+    expect(getRun).not.toHaveBeenCalled();
+    expect(setStatus).toHaveBeenCalledWith("i11", "rendered");
   });
 });

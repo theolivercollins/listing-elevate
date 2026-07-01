@@ -5,12 +5,12 @@
  * (api/admin/studio/delivery/[runId].ts) to serialize double-spend-risky work.
  *
  * The CAS db is faked the same way auto-run.test.ts fakes it:
- *   claim   → .update({resolving_at: <iso>}).eq().or().select()  → { data }
+ *   claim   → .update({resolving_at: <iso>}).eq().or().is().select()  → { data }
  *   release → .update({resolving_at: null}).eq()                 → { error }
  */
 import { describe, it, expect, vi, type Mock } from 'vitest';
 import { getSupabase } from '../../client.js';
-import { withResolveLease } from '../resolve-lease.js';
+import { claimResolveLease, withResolveLease } from '../resolve-lease.js';
 
 vi.mock('../../client.js', () => ({ getSupabase: vi.fn() }));
 
@@ -32,8 +32,8 @@ function makeLeaseDb(maxGrants: number) {
   });
   const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
     if (patch && patch.resolving_at) {
-      // claim: .update({resolving_at: now}).eq().or().select()
-      return { eq: () => ({ or: () => ({ select: claimSelect }) }) };
+      // claim: .update({resolving_at: now}).eq().or().is('paused_reason', null).select()
+      return { eq: () => ({ or: () => ({ is: () => ({ select: claimSelect }) }) }) };
     }
     // release: .update({resolving_at: null}).eq()
     return { eq: releaseEq };
@@ -99,5 +99,51 @@ describe('withResolveLease', () => {
     const fn = vi.fn().mockRejectedValue(new Error('boom'));
     await expect(withResolveLease('run-1', fn)).rejects.toThrow('boom');
     expect(getReleaseCount()).toBe(1);
+  });
+});
+
+// ── FIX #1: paused_reason IS NULL folded into the CAS ────────────────────────
+// Closes the residual double-submit race that auto-run.ts's isPausedFresh only
+// NARROWED: a Telegram refine executor CAS-sets paused_reason='refining' to lock
+// a run; if that flip lands between isPausedFresh's read and the claim, the
+// resolver could still win the lease and double-spend. Folding `paused_reason IS
+// NULL` into the SAME row-level UPDATE makes the DB the arbiter.
+describe("claimResolveLease — paused_reason IS NULL is part of the CAS", () => {
+  /** CAS db that faithfully models the row-level WHERE: the claim SELECT returns
+   *  the row ONLY when the configured paused_reason is null (lease assumed free).
+   *  Records the exact args passed to .is(...) so the test asserts the new
+   *  `paused_reason IS NULL` term is actually present in the UPDATE. */
+  function makeCasDb(pausedReason: string | null) {
+    const isSpy = vi.fn();
+    const select = vi.fn().mockImplementation(() =>
+      Promise.resolve({ data: pausedReason == null ? [{ id: 'run-1' }] : [], error: null }),
+    );
+    isSpy.mockReturnValue({ select });
+    const update = vi.fn().mockReturnValue({
+      eq: () => ({ or: () => ({ is: isSpy }) }),
+    });
+    return { db: { from: vi.fn().mockReturnValue({ update }) }, isSpy };
+  }
+
+  it("claims a run whose paused_reason IS NULL, and the CAS carries .is('paused_reason', null)", async () => {
+    const { db, isSpy } = makeCasDb(null);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const won = await claimResolveLease('run-1');
+
+    expect(won).toBe(true);
+    expect(isSpy).toHaveBeenCalledWith('paused_reason', null);
+  });
+
+  it("REJECTS a run a refine executor just locked (paused_reason='refining') — 0 rows, no double-submit", async () => {
+    const { db, isSpy } = makeCasDb('refining');
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const won = await claimResolveLease('run-1');
+
+    // The `paused_reason IS NULL` term excludes the locked row → CAS matches 0
+    // rows → this caller does NOT win the lease and must not proceed to spend.
+    expect(won).toBe(false);
+    expect(isSpy).toHaveBeenCalledWith('paused_reason', null);
   });
 });

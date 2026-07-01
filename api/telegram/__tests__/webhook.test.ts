@@ -18,8 +18,7 @@ vi.mock("../../../lib/drive/orchestrate.js", () => ({
 vi.mock("../../../lib/drive/intake-db.js", () => ({
   getIntake: vi.fn(),
   setStatus: vi.fn(),
-  appendFeedback: vi.fn(),
-  getByStatus: vi.fn(),
+  markUpdateProcessed: vi.fn(),
 }));
 
 vi.mock("../../../lib/telegram/client.js", async (importOriginal) => {
@@ -34,11 +33,17 @@ vi.mock("../../../lib/telegram/client.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../../../lib/telegram/refine-conversation.js", () => ({
+  handleRefineMessage: vi.fn(),
+  handleRefineCallback: vi.fn(),
+}));
+
 // Import after mocks are in place.
 import handler from "../webhook.js";
 import * as orchestrate from "../../../lib/drive/orchestrate.js";
 import * as intakeDb from "../../../lib/drive/intake-db.js";
 import * as telegramClient from "../../../lib/telegram/client.js";
+import * as refineConversation from "../../../lib/telegram/refine-conversation.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -85,13 +90,18 @@ function makeRes() {
   };
 }
 
+/** Monotonic counter so each fixture gets a distinct update_id by default
+ *  (mirrors real Telegram updates) without every call site having to pass one. */
+let nextUpdateId = 1;
+
 /**
  * Make an update that carries a callback_query.
  * Uses `from.id` (the clicker's user id) for the owner gate — not
  * `message.chat.id`, which is the chat the button lives in.
  */
-function callbackUpdate(data: string, fromId = OWNER_CHAT_ID) {
+function callbackUpdate(data: string, fromId = OWNER_CHAT_ID, updateId = nextUpdateId++) {
   return {
+    update_id: updateId,
     callback_query: {
       id: "cb-query-id",
       from: { id: Number(fromId) },
@@ -107,8 +117,9 @@ function callbackUpdate(data: string, fromId = OWNER_CHAT_ID) {
  * the user's id and the chat id are equal.  Pass a different value to
  * simulate a group-chat member.
  */
-function messageUpdate(text: string, chatId = OWNER_CHAT_ID, fromId = chatId) {
+function messageUpdate(text: string, chatId = OWNER_CHAT_ID, fromId = chatId, updateId = nextUpdateId++) {
   return {
+    update_id: updateId,
     message: {
       chat: { id: Number(chatId) },
       from: { id: Number(fromId) },
@@ -151,6 +162,10 @@ beforeEach(() => {
   process.env.DRIVE_INTAKE_ENABLED = "true";
   process.env.TELEGRAM_WEBHOOK_SECRET = WEBHOOK_SECRET;
   process.env.TELEGRAM_OWNER_CHAT_ID = OWNER_CHAT_ID;
+
+  // Idempotency defaults — every update_id claims successfully (this
+  // request's insert "wins") unless a test says otherwise.
+  vi.mocked(intakeDb.markUpdateProcessed).mockResolvedValue(true);
 });
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -232,8 +247,7 @@ describe("api/telegram/webhook — auth", () => {
     // Owner gate fires before any dispatch — none of these should be touched.
     expect(orchestrate.approveIntake).not.toHaveBeenCalled();
     expect(orchestrate.regenerateIntake).not.toHaveBeenCalled();
-    expect(intakeDb.appendFeedback).not.toHaveBeenCalled();
-    expect(intakeDb.getByStatus).not.toHaveBeenCalled();
+    expect(refineConversation.handleRefineMessage).not.toHaveBeenCalled();
   });
 });
 
@@ -356,74 +370,160 @@ describe("api/telegram/webhook — regen callback", () => {
 });
 
 describe("api/telegram/webhook — free-text message", () => {
-  it("appends feedback when an awaiting_approval row exists", async () => {
-    const intake = fakeIntake({
-      id: "intake-4",
-      status: "awaiting_approval",
-      created_at: new Date().toISOString(),
-    });
-    vi.mocked(intakeDb.getByStatus).mockImplementation(async (status) => {
-      if (status === "awaiting_approval") return [intake] as never;
-      return [];
-    });
-    vi.mocked(intakeDb.appendFeedback).mockResolvedValue(undefined);
+  it("routes free text to the conversational refine agent", async () => {
+    vi.mocked(refineConversation.handleRefineMessage).mockResolvedValue(undefined);
 
-    const req = makeReq({ body: messageUpdate("Move the camera left") });
+    const req = makeReq({ body: messageUpdate("swap the music for something upbeat") });
     const res = makeRes();
     await handler(req, res);
 
-    expect(intakeDb.appendFeedback).toHaveBeenCalledWith(
-      "intake-4",
-      "Move the camera left",
-    );
-    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Noted"),
-    );
-    expect(orchestrate.regenerateIntake).not.toHaveBeenCalled();
-    expect(res._calls[0].status).toBe(200);
-  });
-
-  it("calls regenerateIntake when only rendered rows exist", async () => {
-    const intake = fakeIntake({
-      id: "intake-5",
-      status: "rendered",
-      created_at: new Date().toISOString(),
-    });
-    vi.mocked(intakeDb.getByStatus).mockImplementation(async (status) => {
-      if (status === "awaiting_approval") return [];
-      if (status === "rendered") return [intake] as never;
-      return [];
-    });
-    vi.mocked(orchestrate.regenerateIntake).mockResolvedValue({
-      status: "generating",
-      propertyId: "prop-5",
-    });
-
-    const req = makeReq({ body: messageUpdate("Add more energy") });
-    const res = makeRes();
-    await handler(req, res);
-
-    expect(intakeDb.appendFeedback).not.toHaveBeenCalled();
-    expect(orchestrate.regenerateIntake).toHaveBeenCalledWith(
-      "intake-5",
-      "Add more energy",
-    );
-    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
-      expect.stringContaining("Regenerating"),
+    expect(refineConversation.handleRefineMessage).toHaveBeenCalledWith(
+      "swap the music for something upbeat",
     );
     expect(res._calls[0].status).toBe(200);
   });
 
-  it("sends 'No pending property' when no awaiting or rendered rows", async () => {
-    vi.mocked(intakeDb.getByStatus).mockResolvedValue([]);
+  it("still returns 200 and logs (never 500s) when handleRefineMessage throws", async () => {
+    vi.mocked(refineConversation.handleRefineMessage).mockRejectedValue(new Error("boom"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const req = makeReq({ body: messageUpdate("hello") });
     const res = makeRes();
     await handler(req, res);
 
-    expect(telegramClient.sendMessage).toHaveBeenCalledWith(
-      "No pending property to apply that to.",
+    expect(res._calls[0].status).toBe(200);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+describe("api/telegram/webhook — refine-plan confirm callbacks (apply/adjust/cancel)", () => {
+  it("acks the callback and routes an apply:<planId> tap to handleRefineCallback", async () => {
+    const req = makeReq({ body: callbackUpdate("apply:plan-abc") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(telegramClient.answerCallback).toHaveBeenCalledWith("cb-query-id");
+    expect(refineConversation.handleRefineCallback).toHaveBeenCalledWith("apply:plan-abc");
+    expect(res._calls[0].status).toBe(200);
+  });
+
+  it("routes an adjust:<planId> tap to handleRefineCallback", async () => {
+    const req = makeReq({ body: callbackUpdate("adjust:plan-abc") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(refineConversation.handleRefineCallback).toHaveBeenCalledWith("adjust:plan-abc");
+  });
+
+  it("routes a cancel:<planId> tap to handleRefineCallback", async () => {
+    const req = makeReq({ body: callbackUpdate("cancel:plan-abc") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(refineConversation.handleRefineCallback).toHaveBeenCalledWith("cancel:plan-abc");
+  });
+});
+
+describe("api/telegram/webhook — update_id idempotency (C1: atomic claim)", () => {
+  it("skips dispatch entirely and returns 200 no-op when markUpdateProcessed reports the update_id already claimed (conflict, not an error)", async () => {
+    // A 23505 unique-violation resolves `false` from markUpdateProcessed —
+    // no separate "check" call exists anymore; the insert itself IS the gate.
+    vi.mocked(intakeDb.markUpdateProcessed).mockResolvedValue(false);
+
+    const req = makeReq({ body: callbackUpdate("approve:intake-1", OWNER_CHAT_ID, 555) });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(intakeDb.markUpdateProcessed).toHaveBeenCalledWith(555);
+    expect(orchestrate.approveIntake).not.toHaveBeenCalled();
+    expect(res._calls[0].status).toBe(200);
+  });
+
+  it("claims a new update_id (markUpdateProcessed resolves true) and proceeds to dispatch", async () => {
+    vi.mocked(intakeDb.markUpdateProcessed).mockResolvedValue(true);
+    const intake = fakeIntake({ id: "intake-1", telegram_message_id: 42 });
+    vi.mocked(intakeDb.getIntake).mockResolvedValue(intake as never);
+    vi.mocked(orchestrate.approveIntake).mockResolvedValue({ status: "generating", propertyId: "prop-1" });
+
+    const req = makeReq({ body: callbackUpdate("approve:intake-1", OWNER_CHAT_ID, 556) });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(intakeDb.markUpdateProcessed).toHaveBeenCalledWith(556);
+    expect(orchestrate.approveIntake).toHaveBeenCalledWith("intake-1");
+  });
+
+  it("two concurrent deliveries of the SAME update_id: only the caller whose claim resolves true dispatches (closes the C1 TOCTOU gap)", async () => {
+    // First call's insert lands (true); the concurrent retry's insert hits
+    // the same primary key and gets the conflict (false) — no separate
+    // "is it processed yet" read exists for a window to open in between.
+    vi.mocked(intakeDb.markUpdateProcessed).mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    vi.mocked(orchestrate.approveIntake).mockResolvedValue({ status: "generating", propertyId: "prop-1" });
+    vi.mocked(intakeDb.getIntake).mockResolvedValue(fakeIntake({ id: "intake-1" }) as never);
+
+    const reqA = makeReq({ body: callbackUpdate("approve:intake-1", OWNER_CHAT_ID, 600) });
+    const reqB = makeReq({ body: callbackUpdate("approve:intake-1", OWNER_CHAT_ID, 600) });
+    await Promise.all([handler(reqA, makeRes()), handler(reqB, makeRes())]);
+
+    expect(orchestrate.approveIntake).toHaveBeenCalledTimes(1);
+  });
+
+  it("still dispatches (fails open) when the idempotency ledger itself errors, logging loudly", async () => {
+    vi.mocked(intakeDb.markUpdateProcessed).mockRejectedValue(new Error("ledger unavailable"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(refineConversation.handleRefineMessage).mockResolvedValue(undefined);
+
+    const req = makeReq({ body: messageUpdate("hello", OWNER_CHAT_ID, OWNER_CHAT_ID, 557) });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(refineConversation.handleRefineMessage).toHaveBeenCalledWith("hello");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "[telegram/webhook] idempotency check failed:",
+      expect.any(Error),
     );
     expect(res._calls[0].status).toBe(200);
+    consoleErrorSpy.mockRestore();
+  });
+
+  it("does not run the idempotency gate at all when update_id is absent (tolerates a malformed/legacy payload)", async () => {
+    const req = makeReq({ body: { message: { chat: { id: Number(OWNER_CHAT_ID) }, from: { id: Number(OWNER_CHAT_ID) }, text: "hi" } } });
+    const res = makeRes();
+    vi.mocked(refineConversation.handleRefineMessage).mockResolvedValue(undefined);
+
+    await handler(req, res);
+
+    expect(intakeDb.markUpdateProcessed).not.toHaveBeenCalled();
+    expect(refineConversation.handleRefineMessage).toHaveBeenCalledWith("hi");
+  });
+});
+
+describe("api/telegram/webhook — L1: constant-time secret compare", () => {
+  it("rejects a same-length but different secret (exercises the actual timingSafeEqual byte comparison, not just the length guard)", async () => {
+    // Same length as WEBHOOK_SECRET ("test-secret", 11 chars).
+    const sameLengthWrong = "wrong-value";
+    expect(sameLengthWrong.length).toBe(WEBHOOK_SECRET.length);
+
+    const req = makeReq({ headers: { "x-telegram-bot-api-secret-token": sameLengthWrong } });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._calls[0].status).toBe(401);
+  });
+
+  it("accepts the exact matching secret (constant-time compare does not itself break the happy path)", async () => {
+    const req = makeReq({ body: callbackUpdate("approve:intake-1") });
+    const res = makeRes();
+    await handler(req, res);
+
+    expect(res._calls[0].status).toBe(200);
+  });
+
+  it("rejects a shorter secret without throwing (length-mismatch guard precedes crypto.timingSafeEqual, which throws on unequal lengths)", async () => {
+    const req = makeReq({ headers: { "x-telegram-bot-api-secret-token": "short" } });
+    const res = makeRes();
+    await expect(handler(req, res)).resolves.toBeDefined();
+    expect(res._calls[0].status).toBe(401);
   });
 });

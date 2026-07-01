@@ -58,8 +58,15 @@ export function buildScriptUserMessage(input: {
    * data isn't available yet — the prompt falls back to whole-listing framing.
    */
   roomSequence?: Array<{ position: number; room: string }>;
+  /**
+   * Free-text steering from an operator/conversational request (e.g. "make it
+   * punchier", "mention the new roof"). Optional — omit for the default
+   * generation. Added for the Telegram refine agent's generate_script action;
+   * existing callers that don't pass this see byte-identical output.
+   */
+  guidanceNote?: string;
 }): string {
-  const { address, videoType, durationSec, details, roomSequence } = input;
+  const { address, videoType, durationSec, details, roomSequence, guidanceNote } = input;
   const facts: string[] = [];
   if (details.price) facts.push(`Price: $${details.price.toLocaleString('en-US')}`);
   if (details.beds) facts.push(`${details.beds} bedrooms`);
@@ -82,6 +89,7 @@ export function buildScriptUserMessage(input: {
       ? `MLS description:\n${details.mls_description}`
       : 'No MLS description available — write from the facts.',
     roomOrderBlock,
+    guidanceNote ? `\nAdditional guidance from the operator: ${guidanceNote}` : '',
     `\nWrite a ${durationSec} seconds voiceover script.`,
   ]
     .filter(Boolean)
@@ -105,6 +113,8 @@ export interface GenerateDeliveryScriptResult {
  * @param input.roomSequence - ordered rooms as the finalized cut shows them (scene_order +
  *                             room_type); omit when not available — falls back to
  *                             whole-listing narration instead of crashing.
+ * @param input.guidanceNote - optional operator/conversational steering (Telegram refine's
+ *                             generate_script action); omit for the default generation.
  */
 export async function generateDeliveryScript(input: {
   runId: string;
@@ -114,6 +124,7 @@ export async function generateDeliveryScript(input: {
   durationSec: number;
   details: ListingDetails;
   roomSequence?: Array<{ position: number; room: string }>;
+  guidanceNote?: string;
 }): Promise<GenerateDeliveryScriptResult> {
   const wordBudget = WORD_BUDGET[input.durationSec] ?? 75;
   const client = new Anthropic();
@@ -155,6 +166,7 @@ export async function generateDeliveryScript(input: {
       // Observability: was this script grounded in the actual visual order,
       // or did it fall back to whole-listing narration (no scene_order yet)?
       room_sequence_length: input.roomSequence?.length ?? 0,
+      has_guidance_note: Boolean(input.guidanceNote),
       input_tokens: response.usage.input_tokens,
       output_tokens: response.usage.output_tokens,
     },

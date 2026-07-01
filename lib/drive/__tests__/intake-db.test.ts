@@ -27,14 +27,26 @@ import {
   setStatus,
   setTelegramMessageId,
   setPropertyId,
+  setDeliveryRunId,
+  setLastPausedReason,
   appendFeedback,
   claimForApproval,
   reapStuckIngesting,
   claimForRegenerate,
   getWatchState,
   upsertWatchState,
+  appendChatMessages,
+  getChatMessages,
+  stagePlan,
+  getPendingPlan,
+  consumePlan,
+  clearPendingPlan,
+  getActiveRefineIntake,
+  getIntakeByPendingPlanId,
+  markUpdateProcessed,
   type DriveIntake,
 } from "../intake-db.js";
+import type { RefineAction } from "../../telegram/refine-types.js";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -63,6 +75,7 @@ function makeChain(result: DbResult) {
     "gte",
     "in",
     "is",
+    "not",
     "order",
     "limit",
     "range",
@@ -636,5 +649,395 @@ describe("setTelegramMessageId / setPropertyId", () => {
       makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
     );
     await expect(setPropertyId("intake-1", "prop-uuid")).resolves.toBeUndefined();
+  });
+});
+
+// ── setDeliveryRunId / setLastPausedReason ───────────────────────────────────
+
+describe("setDeliveryRunId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("resolves without error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(setDeliveryRunId("intake-1", "run-uuid")).resolves.toBeUndefined();
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(setDeliveryRunId("intake-1", "run-uuid")).rejects.toThrow("update failed");
+  });
+});
+
+describe("setLastPausedReason", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("resolves without error when setting a reason", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(
+      setLastPausedReason("intake-1", "missing listing field: price"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("resolves without error when clearing (reason: null)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(setLastPausedReason("intake-1", null)).resolves.toBeUndefined();
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(setLastPausedReason("intake-1", "some reason")).rejects.toThrow("update failed");
+  });
+});
+
+// ── Telegram conversational-refine state ─────────────────────────────────────
+
+describe("appendChatMessages / getChatMessages", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("appends to existing history", async () => {
+    const existing: DriveIntake = { ...BASE_ROW, chat_messages: [{ role: "user", content: "hi" }] };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([
+        { data: existing, error: null }, // getIntake
+        { data: null, error: null }, // update
+      ]) as unknown as ReturnType<typeof getSupabase>,
+    );
+
+    await appendChatMessages("intake-1", [{ role: "assistant", content: "hello back" }]);
+    expect(getSupabase).toHaveBeenCalledTimes(2);
+  });
+
+  it("caps history to the last 20 entries", async () => {
+    const long = Array.from({ length: 19 }, (_, i) => ({ role: "user" as const, content: `msg-${i}` }));
+    const existing: DriveIntake = { ...BASE_ROW, chat_messages: long };
+    const client: Record<string, unknown>[] = [];
+    let capturedPatch: Record<string, unknown> | undefined;
+    vi.mocked(getSupabase).mockImplementation(() => {
+      const call = client.length;
+      client.push({});
+      if (call === 0) {
+        return { from: () => makeChain({ data: existing, error: null }) } as unknown as ReturnType<typeof getSupabase>;
+      }
+      return {
+        from: () => ({
+          update: (patch: Record<string, unknown>) => {
+            capturedPatch = patch;
+            return { eq: () => Promise.resolve({ error: null }) };
+          },
+        }),
+      } as unknown as ReturnType<typeof getSupabase>;
+    });
+
+    await appendChatMessages("intake-1", [
+      { role: "assistant", content: "reply-1" },
+      { role: "user", content: "reply-2" },
+    ]);
+
+    expect((capturedPatch?.chat_messages as unknown[]).length).toBe(20);
+    expect((capturedPatch?.chat_messages as Array<{ content: string }>).at(-1)?.content).toBe("reply-2");
+  });
+
+  it("getChatMessages returns [] when the intake has no history yet", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: BASE_ROW, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getChatMessages("intake-1")).toEqual([]);
+  });
+
+  it("getChatMessages returns [] when the intake itself is missing", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getChatMessages("missing")).toEqual([]);
+  });
+});
+
+describe("stagePlan / getPendingPlan / consumePlan / clearPendingPlan", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const actions: RefineAction[] = [{ kind: "set_voice", voice_id: "voice-1" }];
+
+  it("stagePlan writes the plan and returns a fresh planId", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    const planId = await stagePlan("intake-1", { actions, summary: "Switch voice." });
+    expect(typeof planId).toBe("string");
+    expect(planId.length).toBeGreaterThan(0);
+  });
+
+  it("stagePlan throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(stagePlan("intake-1", { actions, summary: "x" })).rejects.toThrow("update failed");
+  });
+
+  it("getPendingPlan returns the plan when the id matches, unconsumed, and fresh", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan: { actions, summary: "Switch voice." },
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date().toISOString(),
+      pending_plan_consumed_at: null,
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    const staged = await getPendingPlan("intake-1", "plan-abc");
+    expect(staged).toEqual({ actions, summary: "Switch voice." });
+  });
+
+  it("getPendingPlan returns null when the planId does not match", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan: { actions, summary: "x" },
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date().toISOString(),
+      pending_plan_consumed_at: null,
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getPendingPlan("intake-1", "wrong-id")).toBeNull();
+  });
+
+  it("getPendingPlan returns null once consumed", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan: { actions, summary: "x" },
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date().toISOString(),
+      pending_plan_consumed_at: new Date().toISOString(),
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getPendingPlan("intake-1", "plan-abc")).toBeNull();
+  });
+
+  it("getPendingPlan returns null once older than the 1h staleness window", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan: { actions, summary: "x" },
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date(Date.now() - 61 * 60 * 1000).toISOString(),
+      pending_plan_consumed_at: null,
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getPendingPlan("intake-1", "plan-abc")).toBeNull();
+  });
+
+  it("getPendingPlan returns null when the intake does not exist", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getPendingPlan("missing", "plan-abc")).toBeNull();
+  });
+
+  it("consumePlan returns true when exactly one row is CAS-updated (this caller won)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [{ id: "intake-1" }], error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await consumePlan("intake-1", "plan-abc")).toBe(true);
+  });
+
+  it("consumePlan returns false when no row matches (already consumed / wrong id)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await consumePlan("intake-1", "plan-abc")).toBe(false);
+  });
+
+  it("consumePlan throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(consumePlan("intake-1", "plan-abc")).rejects.toThrow("DB error");
+  });
+
+  it("clearPendingPlan resolves without error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(clearPendingPlan("intake-1")).resolves.toBeUndefined();
+  });
+
+  it("clearPendingPlan throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("update failed") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(clearPendingPlan("intake-1")).rejects.toThrow("update failed");
+  });
+});
+
+// FIX 3 (plan-binding race): resolves the intake a staged plan is bound to
+// directly from its planId — used by the Telegram apply/adjust/cancel
+// callback handlers instead of getActiveRefineIntake, so a callback always
+// mutates the SAME row its confirm card was built against, even if a newer
+// intake has since become "active" (see lib/telegram/refine-conversation.ts).
+describe("getIntakeByPendingPlanId", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the row when a live (unconsumed, unexpired) plan matches the planId", async () => {
+    const row: DriveIntake = {
+      ...BASE_ROW,
+      pending_plan_id: "plan-abc",
+      pending_plan_created_at: new Date().toISOString(),
+      pending_plan_consumed_at: null,
+    };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+
+    const intake = await getIntakeByPendingPlanId("plan-abc");
+
+    expect(intake?.id).toBe("intake-1");
+  });
+
+  it("scopes the query to pending_plan_id=planId, consumed_at IS NULL, and created_at within the 1h TTL", async () => {
+    const client = makeClient([{ data: null, error: null }]);
+    vi.mocked(getSupabase).mockReturnValue(client as unknown as ReturnType<typeof getSupabase>);
+
+    await getIntakeByPendingPlanId("plan-abc");
+
+    expect(client.from).toHaveBeenCalledWith("drive_intake");
+    const chain = client.from.mock.results[0]!.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(chain.eq).toHaveBeenCalledWith("pending_plan_id", "plan-abc");
+    expect(chain.is).toHaveBeenCalledWith("pending_plan_consumed_at", null);
+    expect(chain.gt).toHaveBeenCalledWith("pending_plan_created_at", expect.any(String));
+  });
+
+  it("returns null when nothing matches (wrong planId, already consumed, or expired)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getIntakeByPendingPlanId("no-such-plan")).toBeNull();
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("connection refused") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(getIntakeByPendingPlanId("plan-abc")).rejects.toThrow("connection refused");
+  });
+});
+
+describe("getActiveRefineIntake", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns the most-recently-created eligible intake", async () => {
+    const row: DriveIntake = { ...BASE_ROW, delivery_run_id: "run-1", status: "generating" };
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: row, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    const result = await getActiveRefineIntake();
+    expect(result?.id).toBe(BASE_ROW.id);
+  });
+
+  it("FIX 2: orders by created_at (stable — never reorders once a row is created), never updated_at", async () => {
+    const row: DriveIntake = { ...BASE_ROW, delivery_run_id: "run-1", status: "generating" };
+    const client = makeClient([{ data: row, error: null }]);
+    vi.mocked(getSupabase).mockReturnValue(client as unknown as ReturnType<typeof getSupabase>);
+
+    await getActiveRefineIntake();
+
+    // makeClient hands back a fresh chain per .from() call — capture the one
+    // this call actually used to inspect exactly what .order() was called with.
+    const chain = client.from.mock.results[0]!.value as { order: ReturnType<typeof vi.fn> };
+    expect(chain.order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(chain.order).not.toHaveBeenCalledWith("updated_at", expect.anything());
+  });
+
+  it("returns null when no intake is routed through the delivery pipeline / in an eligible status", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await getActiveRefineIntake()).toBeNull();
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(getActiveRefineIntake()).rejects.toThrow("DB error");
+  });
+});
+
+// ── Telegram webhook idempotency (C1 — atomic claim) ─────────────────────────
+
+describe("markUpdateProcessed — atomic claim", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("resolves true on a clean insert (this caller claimed it — should dispatch)", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [{ update_id: 42 }], error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(markUpdateProcessed(42)).resolves.toBe(true);
+  });
+
+  it("resolves false on a unique-violation (23505) — another caller already claimed it; a safe no-op, not a failure", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: { code: "23505", message: "duplicate key" } }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(markUpdateProcessed(42)).resolves.toBe(false);
+  });
+
+  it("rethrows any other (genuinely unexpected) DB error — never silently treated as claimed or not-claimed", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: { code: "42703", message: "column missing" } }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(markUpdateProcessed(42)).rejects.toMatchObject({ code: "42703" });
+  });
+
+  it("double-claim: two concurrent calls for the SAME update_id resolve exactly one true and one false", async () => {
+    // Simulates the real Postgres race: the first insert to physically land
+    // succeeds; every other concurrent insert for the same primary key gets
+    // 23505 back, deterministically — this is the actual mechanism (not a
+    // simulation of luck) that closes the C1 TOCTOU gap.
+    let landed = false;
+    vi.mocked(getSupabase).mockImplementation(() => ({
+      from: () => ({
+        insert: () => ({
+          select: () =>
+            Promise.resolve(
+              landed
+                ? { data: null, error: { code: "23505", message: "duplicate key" } }
+                : ((landed = true), { data: [{ update_id: 99 }], error: null }),
+            ),
+        }),
+      }),
+    }) as unknown as ReturnType<typeof getSupabase>);
+
+    const [first, second] = await Promise.all([markUpdateProcessed(99), markUpdateProcessed(99)]);
+
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect([first, second].filter((v) => v === false)).toHaveLength(1);
   });
 });

@@ -36,7 +36,22 @@ export const RESOLVE_LEASE_TTL_MS = 10 * 60 * 1000;
 
 /** CAS-claim the per-run resolve lease. Returns true iff this caller won it.
  *  Mirrors: UPDATE delivery_runs SET resolving_at = now()
- *           WHERE id = :id AND (resolving_at IS NULL OR resolving_at < now() - interval '10 minutes'). */
+ *           WHERE id = :id AND (resolving_at IS NULL OR resolving_at < now() - interval '10 minutes')
+ *                 AND paused_reason IS NULL.
+ *
+ *  The `paused_reason IS NULL` term folds the refine-lock check INTO the same
+ *  atomic CAS as the lease claim, fully closing the residual double-submit race
+ *  that auto-run.ts's isPausedFresh early-out only NARROWED: a Telegram refine
+ *  executor CAS-sets delivery_runs.paused_reason='refining' to lock a run for a
+ *  refine, so if that flip lands in the instant between isPausedFresh's fresh
+ *  read and this claim, the resolver could still win the lease and double-spend.
+ *  Making `paused_reason IS NULL` part of THIS row-level UPDATE means a run a
+ *  refine executor just locked can never have its resolve-lease claimed — the
+ *  DB, not a read-then-act pair, is the arbiter. Consistent with existing
+ *  autopilot behavior: api/cron/auto-run-sweep.ts already only SELECTs
+ *  paused_reason IS NULL runs, and the resume-generation path only fires on a
+ *  stalled generating run (paused_reason NULL); folding it into the CAS just
+ *  makes that invariant race-tight for every lease consumer. */
 export async function claimResolveLease(runId: string): Promise<boolean> {
   const db = getSupabase();
   const staleBefore = new Date(Date.now() - RESOLVE_LEASE_TTL_MS).toISOString();
@@ -45,6 +60,7 @@ export async function claimResolveLease(runId: string): Promise<boolean> {
     .update({ resolving_at: new Date().toISOString() })
     .eq('id', runId)
     .or(`resolving_at.is.null,resolving_at.lt.${staleBefore}`)
+    .is('paused_reason', null)
     .select('id');
   if (error) throw new Error(`claimResolveLease: ${error.message}`);
   return Array.isArray(data) && data.length === 1;

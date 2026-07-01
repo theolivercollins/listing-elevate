@@ -15,6 +15,7 @@ import {
   getIntake,
   setStatus,
   setPropertyId,
+  setDeliveryRunId,
   appendFeedback,
   claimForApproval,
   claimForRegenerate,
@@ -25,6 +26,9 @@ import { createProperty, getSupabase, updatePropertyStatus, insertPhotos } from 
 import { listFinalImages, downloadFile } from "./client.js";
 import { uploadPhotosToStorage, getStoragePublicUrl } from "../../src/lib/photo-upload.js";
 import { runPipeline } from "../pipeline.js";
+import { createRun, getRun, revertRun, setListingDetails } from "../delivery/runs.js";
+import { runScrapeStage } from "../delivery/scrape.js";
+import type { DeliveryVideoType } from "../types/operator-studio.js";
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
 // Match the only live production templates (JUST_LISTED 15/30 horizontal).
@@ -33,6 +37,13 @@ import { runPipeline } from "../pipeline.js";
 const DEFAULT_PACKAGE = "JUST_LISTED";
 const DEFAULT_DURATION = 30;
 const DEFAULT_ORIENTATION = "horizontal";
+
+/**
+ * video_type for the operator delivery_runs row created on the new
+ * delivery-pipeline path — Drive intakes always map to the "just listed"
+ * default (delivery_runs.video_type CHECK constraint: migration 080).
+ */
+const DELIVERY_VIDEO_TYPE: DeliveryVideoType = "just_listed";
 
 // ── Caps ──────────────────────────────────────────────────────────────────────
 
@@ -50,6 +61,16 @@ function isWriteAllowed(): boolean {
   );
 }
 
+/**
+ * Routing flag for the Operator Studio delivery pipeline (delivery_runs +
+ * auto_run) vs. the legacy, lighter customer pipeline. Unset or 'true' → new
+ * delivery path (the default going forward); explicit 'false' → the old
+ * customer-only path, byte-for-byte unchanged, for a safe rollback.
+ */
+function isDeliveryPipelineEnabled(): boolean {
+  return process.env.DRIVE_INTAKE_USE_DELIVERY_PIPELINE !== "false";
+}
+
 // ── Result types ──────────────────────────────────────────────────────────────
 
 export interface ApproveResult {
@@ -65,6 +86,36 @@ export interface RegenerateResult {
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * P1-2: createProperty's own TS param type (lib/db.ts — out of scope for this
+ * task's file list) still declares price/bedrooms/bathrooms as non-null
+ * `number`, but the underlying `properties` table already tolerates null on
+ * these same columns. Strongest evidence: lib/types/operator-studio.ts's
+ * ManualIngestInput (bedrooms/bathrooms/price: number | null) is the typed
+ * input to lib/operator-studio/ingest.ts's manualIngest(), which writes
+ * those exact values straight into a raw `properties` insert — no NOT NULL
+ * violation. Same pattern in api/admin/studio/drive/pull.ts and
+ * src/pages/dashboard/studio/StudioNew.tsx. All three bypass createProperty's
+ * typed signature entirely via a direct `supabase.from('properties').insert`.
+ * That's a pre-existing type/reality mismatch in lib/db.ts (not verified
+ * against the live schema directly in this pass — no DB/MCP access in this
+ * dispatch — but corroborated by three independent in-repo call sites), not
+ * something this fix should paper over by seeding a fake 0. Rather than
+ * widen a shared exported signature outside this task's touched files,
+ * structurally check the real (nullable-MLS) shape here and cast down to
+ * createProperty's declared parameter type at this one call site.
+ */
+type CreatePropertyInput = Parameters<typeof createProperty>[0];
+function propertyInputWithNullableMls(
+  input: Omit<CreatePropertyInput, "price" | "bedrooms" | "bathrooms"> & {
+    price: number | null;
+    bedrooms: number | null;
+    bathrooms: number | null;
+  },
+): CreatePropertyInput {
+  return input as CreatePropertyInput;
+}
 
 /**
  * Download Drive images in batches of DOWNLOAD_CONCURRENCY to avoid OOM on
@@ -152,11 +203,22 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
     // 5. Create property with status='queued' so runPipeline can claim it.
     //    Mirrors the owner-bypass path in api/properties/index.ts which sets
     //    status='queued' and immediately fires runPipeline.
-    const property = await createProperty({
+    //
+    //    P1-2: seed NULL (not 0) for a field MLS didn't return. Seeding 0 made
+    //    runScrapeStage's prefill-skip guard (lib/delivery/scrape.ts: bedrooms
+    //    != null && bathrooms != null && price != null) take the prefill
+    //    branch and NEVER call the real Redfin scrape — enrichment was
+    //    unreachable and every MLS-miss listing paused at the details gate
+    //    with 0/0/0 forever. Seeding null lets that guard correctly fall
+    //    through to the real scrape on a miss (or leave the details gate
+    //    genuinely empty for the operator to fill in conversationally if
+    //    Redfin also misses); a real MLS hit still populates real numbers
+    //    and passes the gate exactly as before.
+    const property = await createProperty(propertyInputWithNullableMls({
       address: intake.address,
-      price: mlsPrice ?? 0,
-      bedrooms: mlsBedrooms ?? 0,
-      bathrooms: mlsBathrooms ?? 0,
+      price: mlsPrice,
+      bedrooms: mlsBedrooms,
+      bathrooms: mlsBathrooms,
       listing_agent: mlsAgent ?? "Unknown",
       selected_package: DEFAULT_PACKAGE,
       selected_duration: DEFAULT_DURATION,
@@ -165,7 +227,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       add_custom_request: !!intake.feedback_notes,
       custom_request_text: intake.feedback_notes ?? null,
       status: "queued",
-    });
+    }));
 
     propertyId = property.id;
 
@@ -225,7 +287,41 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
       throw new Error("Ingest produced 0 photos — pipeline not started");
     }
 
+    // 6.5 Route through the Operator Studio delivery pipeline (delivery_runs +
+    // auto_run) instead of the lighter customer pipeline, so this render lands
+    // on the full refine-able surface. Gated by DRIVE_INTAKE_USE_DELIVERY_PIPELINE
+    // for a clean rollback (see isDeliveryPipelineEnabled()). A failure anywhere in
+    // this block throws to the outer catch — a delivery-pipeline property with
+    // no run can't be refined, so there's no meaningful partial-success
+    // fallback to swallow into (matches how insertPhotos/createProperty
+    // failures already propagate above).
+    let deliveryRunId: string | undefined;
+    if (isDeliveryPipelineEnabled()) {
+      // order_mode='operator' mirrors manualIngest (lib/operator-studio/
+      // ingest.ts, which sets it inline on the INSERT). createProperty() here
+      // has no order_mode param, so this is a direct, unconditional update.
+      const { error: orderModeError } = await getSupabase()
+        .from("properties")
+        .update({ order_mode: "operator", updated_at: new Date().toISOString() })
+        .eq("id", propertyId);
+      if (orderModeError) throw orderModeError;
+
+      const run = await createRun({
+        property_id: propertyId,
+        client_id: null,
+        video_type: DELIVERY_VIDEO_TYPE,
+        duration_seconds: DEFAULT_DURATION,
+        auto_run: true,
+      });
+      await setDeliveryRunId(intakeId, run.id);
+      deliveryRunId = run.id;
+    }
+
     // 7. Fire pipeline — fire-and-forget, exactly as in api/stripe/webhook.ts.
+    // It drives intake→analysis→pause at photo_selection; the auto-run sweep
+    // then takes over from there (a genuine MLS-miss at the details gate —
+    // beds/baths/price 0 or null — is EXPECTED and is what lets the
+    // conversational agent resolve it later; do not try to force past it).
     runPipeline(propertyId).catch((err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
@@ -233,6 +329,28 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
         msg,
       );
     });
+
+    // 7.5 Fire the scrape stage AFTER kicking runPipeline — replicates the
+    // exact call order the operator StudioNew flow uses (ingest → runPipeline
+    // → scrape; see src/pages/dashboard/studio/StudioNew.tsx lines ~340-358).
+    // Fire-and-forget: never block the webhook on a Redfin/Apify network
+    // call. Stage constraint verified: runScrapeStage only requires the run
+    // to be at 'intake' or 'scraping' — it advances intake→scraping itself
+    // when needed (idempotent CAS via advanceRun) and races safely against
+    // runPipeline's own intake→scraping→photo_selection bump
+    // (advanceRunToPhotoSelection in lib/delivery/photo-selection-stage.ts
+    // uses the same isBenignAdvanceRace-tolerant retry). In practice scrape's
+    // read of the fresh 'intake' run wins the race almost immediately, long
+    // before analysis (many seconds of Gemini calls) reaches photo_selection.
+    if (deliveryRunId) {
+      runScrapeStage(deliveryRunId).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[drive/orchestrate] runScrapeStage error for ${deliveryRunId}:`,
+          msg,
+        );
+      });
+    }
 
     await setStatus(intakeId, "generating");
 
@@ -322,6 +440,71 @@ export async function regenerateIntake(
           updated_at: new Date().toISOString(),
         })
         .eq("id", intake.property_id);
+    }
+
+    // Delivery-pipeline run reconciliation — only when this intake was routed
+    // through the operator delivery pipeline (approveIntake set
+    // delivery_run_id). Constraint: delivery_runs has a PARTIAL unique index
+    // on (property_id, video_type) WHERE stage <> 'delivered' (migration 080)
+    // — a second createRun while the existing run is still non-delivered
+    // would violate it, so revertRun re-drives the SAME row instead. Revert
+    // target is specifically 'intake' (not "one stage back"): the re-fire
+    // below is the generic runPipeline(propertyId), and its
+    // pauseForOperatorPhotoSelection → advanceRunToPhotoSelection helper
+    // (lib/delivery/photo-selection-stage.ts) only knows how to re-drive a
+    // run sitting at 'intake' or 'scraping' — reverting to any later stage
+    // would desync delivery_runs.stage from what actually re-runs. A
+    // delivered run frees the unique-index slot, so a fresh createRun is
+    // safe there (and necessary — a delivered run has nothing left to
+    // revert-and-rerun). This is intentionally minimal/mechanical; the rich
+    // conversational regenerate (targeted single-stage resume, notes fed to
+    // the planner, etc.) is Wave B/C's job.
+    if (intake.delivery_run_id) {
+      const run = await getRun(intake.delivery_run_id);
+      if (run) {
+        if (run.stage === "delivered") {
+          const freshRun = await createRun({
+            property_id: intake.property_id,
+            client_id: run.client_id,
+            video_type: run.video_type,
+            duration_seconds: run.duration_seconds,
+            auto_run: run.auto_run,
+          });
+          await setDeliveryRunId(intakeId, freshRun.id);
+
+          // Carry the delivered run's listing_details forward onto the fresh
+          // run. Without this, the fresh run starts at listing_details='{}'
+          // (migration 080 column default) and the auto-run 'details' gate
+          // (lib/delivery/auto-run.ts resolveDetails — requires price/beds/
+          // baths all present) pauses it unnecessarily, making the
+          // conversational agent ask for info this property already had.
+          // `run` here IS the prior/delivered run fetched above — no extra
+          // getRun call needed. setListingDetails is the same setter
+          // lib/delivery/scrape.ts's runScrapeStage uses (whole-column
+          // REPLACE). A delivered run should always carry real details (that
+          // gate is what let it reach 'delivered'); fall back to firing the
+          // scrape stage — fire-and-forget, exactly like approveIntake's 7.5
+          // — only in the defensive case where it somehow doesn't.
+          const priorDetails = run.listing_details;
+          if (priorDetails && Object.keys(priorDetails).length > 0) {
+            await setListingDetails(freshRun.id, priorDetails);
+          } else {
+            runScrapeStage(freshRun.id).catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(
+                `[drive/orchestrate] runScrapeStage error on regen (fresh run) for ${freshRun.id}:`,
+                msg,
+              );
+            });
+          }
+        } else if (run.stage !== "intake") {
+          await revertRun(run.id, "intake");
+        }
+        // else: already at 'intake' — nothing to revert.
+      }
+      // run === null: dangling delivery_run_id (should not normally happen —
+      // the FK is ON DELETE SET NULL) — tolerate and fall through to the
+      // property-level re-fire below.
     }
 
     // Reset property to 'queued' so tryClaimPipelineRun can acquire it

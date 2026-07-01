@@ -9,7 +9,7 @@
  *     integration suite (T7). Here we assert it was called with the right args.
  */
 
-import { describe, it, expect, afterEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi, type Mock } from 'vitest';
 import {
   resolveGate,
   resolveAssembling,
@@ -25,6 +25,8 @@ import {
   resolveCheckpointB,
   pauseForHuman,
   buildOrderedRoomSequence,
+  reclaimStrandedRefiningLocks,
+  STRANDED_REFINING_LOCK_TTL_MS,
 } from '../auto-run.js';
 import type { DeliveryRunRow } from '../../types/operator-studio.js';
 
@@ -35,6 +37,7 @@ vi.mock('../../client.js', () => ({
 }));
 
 vi.mock('../runs.js', () => ({
+  getRun: vi.fn(),
   getVariantsForRun: vi.fn(),
   updateRun: vi.fn(),
   recordMlEvent: vi.fn(),
@@ -123,7 +126,7 @@ vi.mock('@anthropic-ai/sdk', () => ({
 
 // Import mocked modules for use in tests
 import { getSupabase } from '../../client.js';
-import { getVariantsForRun, updateRun, recordMlEvent, advanceRun } from '../runs.js';
+import { getRun, getVariantsForRun, updateRun, recordMlEvent, advanceRun } from '../runs.js';
 import { generateDeliveryScript } from '../voiceover-script.js';
 import { runDeliveryAudio } from '../audio.js';
 import { runAssembleStage } from '../assemble.js';
@@ -232,6 +235,18 @@ afterEach(() => {
   }
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+});
+
+// Fresh-read guard (P1-1) default: every resolveGate/resolveAssembling test in
+// this file that does NOT itself exercise the new guard should behave exactly
+// as it did before the guard existed — i.e. the "fresh" read agrees with
+// whatever paused_reason the in-memory `run` fixture already carries (null,
+// for every pre-existing fixture). Dedicated tests below override this
+// per-call with mockResolvedValueOnce/mockResolvedValue. Set in beforeEach
+// (not afterEach) so it applies before the very first test too, and is
+// reasserted before every subsequent test regardless of what a prior test set.
+beforeEach(() => {
+  (getRun as Mock).mockResolvedValue({ paused_reason: null } as DeliveryRunRow);
 });
 
 // ─── canWrite() ───────────────────────────────────────────────────────────────
@@ -1092,10 +1107,13 @@ describe('resolveAssembling', () => {
           return {
             update: vi.fn().mockImplementation((patch: Record<string, unknown>) => {
               // Lease claim: resolving_at is a truthy ISO timestamp.
+              // Chain mirrors the real CAS: .eq().or().is('paused_reason', null).select()
               if (patch.resolving_at) {
                 return {
                   eq: vi.fn().mockReturnValue({
-                    or: vi.fn().mockReturnValue({ select: claimSelect }),
+                    or: vi.fn().mockReturnValue({
+                      is: vi.fn().mockReturnValue({ select: claimSelect }),
+                    }),
                   }),
                 };
               }
@@ -1175,6 +1193,9 @@ describe('resolveAssembling', () => {
     // No re-spend: runAssembleStage and pollAssemblyJob must NOT have been called.
     expect(runAssembleStage).not.toHaveBeenCalled();
     expect(pollAssemblyJob).not.toHaveBeenCalled();
+    // Fresh-read guard (P1-1): re-read happened and (default mock) agreed
+    // paused_reason is still null, so resolution proceeded as before.
+    expect(getRun).toHaveBeenCalledWith('run-1');
   });
 
   it('Path 2: in-flight job ID + poll times out → noop, NOT pauseForHuman', async () => {
@@ -1490,7 +1511,9 @@ describe('resolveAssembling', () => {
                 return {
                   eq: vi.fn().mockReturnValue({
                     or: vi.fn().mockReturnValue({
-                      select: vi.fn().mockResolvedValue({ data: [{ id: 'run-1' }], error: null }),
+                      is: vi.fn().mockReturnValue({
+                        select: vi.fn().mockResolvedValue({ data: [{ id: 'run-1' }], error: null }),
+                      }),
                     }),
                   }),
                 };
@@ -1586,8 +1609,8 @@ describe('resolveGate — resolve lease', () => {
     const releaseEq = vi.fn().mockResolvedValue({ error: null });
     const update = vi.fn().mockImplementation((patch: { resolving_at?: unknown }) => {
       if (patch && patch.resolving_at) {
-        // claim: .update({resolving_at: now}).eq().or().select()
-        return { eq: vi.fn().mockReturnValue({ or: vi.fn().mockReturnValue({ select: claimSelect }) }) };
+        // claim: .update({resolving_at: now}).eq().or().is('paused_reason', null).select()
+        return { eq: vi.fn().mockReturnValue({ or: vi.fn().mockReturnValue({ is: vi.fn().mockReturnValue({ select: claimSelect }) }) }) };
       }
       // release: .update({resolving_at: null}).eq()
       return { eq: releaseEq };
@@ -1622,6 +1645,71 @@ describe('resolveGate — resolve lease', () => {
     expect(result).toEqual({ action: 'advanced', to: 'voiceover' });
     expect(advanceRun).toHaveBeenCalledWith('run-1', 'voiceover');
     expect(releaseEq).toHaveBeenCalled(); // lease released in finally
+    // Fresh-read guard (P1-1): re-read happened and (default mock) agreed
+    // paused_reason is still null, so the resolver proceeded as before.
+    expect(getRun).toHaveBeenCalledWith('run-1');
+  });
+});
+
+// ─── resolveGate / resolveAssembling — fresh-read guard (P1-1) ───────────────
+
+describe('resolveGate — fresh-read guard (P1-1 double-submit fix)', () => {
+  it('no-ops WITHOUT touching the DB or dispatching when the fresh read shows paused_reason now set (stale in-memory null)', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    // In-memory `run` (as the sweep's earlier batch SELECT read it) is unpaused...
+    const run = makeRun({ stage: 'details', paused_reason: null, listing_details: { price: 1, beds: 1, baths: 1 } });
+    // ...but a refine executor locked it in the meantime — the FRESH read sees that.
+    (getRun as Mock).mockResolvedValue({ paused_reason: 'refining' } as DeliveryRunRow);
+
+    const result = await resolveGate(run);
+
+    expect(result).toEqual({ action: 'noop', reason: 'paused_reason changed since read (fresh-read guard)' });
+    expect(getRun).toHaveBeenCalledWith('run-1');
+    // Never reached the lease claim (no DB call at all) or any per-gate resolver.
+    expect(getSupabase).not.toHaveBeenCalled();
+    expect(advanceRun).not.toHaveBeenCalled();
+    expect(recordMlEvent).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the fresh read shows the run no longer exists', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'details', listing_details: { price: 1, beds: 1, baths: 1 } });
+    (getRun as Mock).mockResolvedValue(null);
+
+    const result = await resolveGate(run);
+
+    expect(result.action).toBe('noop');
+    expect(getSupabase).not.toHaveBeenCalled();
+    expect(advanceRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveAssembling — fresh-read guard (P1-1 double-submit fix)', () => {
+  it('no-ops WITHOUT touching the DB or calling runAssembleStage/pollAssemblyJob when the fresh read shows paused_reason now set', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'assembling', paused_reason: null });
+    (getRun as Mock).mockResolvedValue({ paused_reason: 'refining' } as DeliveryRunRow);
+
+    const result = await resolveAssembling(run);
+
+    expect(result).toEqual({ action: 'noop', reason: 'paused_reason changed since read (fresh-read guard)' });
+    expect(getRun).toHaveBeenCalledWith('run-1');
+    expect(getSupabase).not.toHaveBeenCalled();
+    expect(runAssembleStage).not.toHaveBeenCalled();
+    expect(pollAssemblyJob).not.toHaveBeenCalled();
+    expect(advanceRun).not.toHaveBeenCalled();
+  });
+
+  it('no-ops when the fresh read shows the run no longer exists', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const run = makeRun({ stage: 'assembling' });
+    (getRun as Mock).mockResolvedValue(null);
+
+    const result = await resolveAssembling(run);
+
+    expect(result.action).toBe('noop');
+    expect(getSupabase).not.toHaveBeenCalled();
+    expect(runAssembleStage).not.toHaveBeenCalled();
   });
 });
 
@@ -1784,5 +1872,322 @@ describe('pauseForHuman', () => {
     (getSupabase as Mock).mockReturnValue(db);
 
     await expect(pauseForHuman('run-99', 'reason')).rejects.toThrow('pauseForHuman: update failed');
+  });
+});
+
+// ─── reclaimStrandedRefiningLocks (FIX B1) ───────────────────────────────────
+
+describe('reclaimStrandedRefiningLocks', () => {
+  type ReclaimRow = { id: string; stage: string; auto_run: boolean; paused_reason: string | null; updated_at: string };
+  type UpdateOverride = { data: Array<{ id: string }> | null; error: { message: string } | null };
+  type UpdateCall = { id: string; eqArgs: Array<[string, unknown]>; ltArgs: Array<[string, unknown]> };
+
+  /**
+   * Fakes BOTH statements reclaimStrandedRefiningLocks issues against
+   * delivery_runs:
+   *   1. The batch SELECT (auto_run=true AND paused_reason='refining' AND
+   *      updated_at < staleBefore) — filtered in-memory against `rows`, same
+   *      as before FIX #2.
+   *   2. FIX #2's per-row CONDITIONAL clear —
+   *      .update({paused_reason:null}).eq('id',id).eq('paused_reason','refining')
+   *      .lt('updated_at',staleBefore).select('id') — by default this ALSO
+   *      re-checks the row's paused_reason in `rows` at clear time (so a row
+   *      already not 'refining' there is correctly excluded, exactly like a
+   *      real Postgres CAS would exclude it). Pass `updateOverrides` (keyed
+   *      by row id) to force a specific clear outcome regardless of `rows` —
+   *      used to simulate the select-then-update race directly.
+   *
+   * Each `.from()` call returns a FRESH object (matching how the real
+   * function calls db.from('delivery_runs') once for the SELECT, then again
+   * for EACH row's own conditional UPDATE) so select-chain and update-chain
+   * mock state never bleed into each other.
+   */
+  function makeReclaimDb(rows: ReclaimRow[], updateOverrides: Record<string, UpdateOverride> = {}) {
+    const updateCalls: UpdateCall[] = [];
+
+    const fromMock = vi.fn().mockImplementation(() => ({
+      select: vi.fn().mockImplementation(() => ({
+        eq: vi.fn().mockReturnThis(),
+        lt: vi.fn().mockImplementation((_col: string, value: string) => {
+          const filtered = rows.filter(
+            r => r.auto_run === true && r.paused_reason === 'refining' && r.updated_at < value,
+          );
+          return Promise.resolve({ data: filtered.map(({ id, stage }) => ({ id, stage })), error: null });
+        }),
+      })),
+      update: vi.fn().mockImplementation(() => {
+        const record: UpdateCall = { id: '', eqArgs: [], ltArgs: [] };
+        updateCalls.push(record);
+        const chain: Record<string, unknown> = {
+          eq: vi.fn().mockImplementation((col: string, val: unknown) => {
+            record.eqArgs.push([col, val]);
+            if (col === 'id') record.id = val as string;
+            return chain;
+          }),
+          lt: vi.fn().mockImplementation((col: string, val: unknown) => {
+            record.ltArgs.push([col, val]);
+            return chain;
+          }),
+          select: vi.fn().mockImplementation(() => {
+            if (updateOverrides[record.id]) return Promise.resolve(updateOverrides[record.id]);
+            const row = rows.find(r => r.id === record.id);
+            const stillStranded = Boolean(row && row.paused_reason === 'refining');
+            return Promise.resolve({ data: stillStranded ? [{ id: record.id }] : [], error: null });
+          }),
+        };
+        return chain;
+      }),
+    }));
+
+    return { db: { from: fromMock }, getUpdateCalls: () => updateCalls };
+  }
+
+  it('TTL constant is exactly 10 minutes', () => {
+    expect(STRANDED_REFINING_LOCK_TTL_MS).toBe(10 * 60 * 1000);
+  });
+
+  it('write guard: returns {reclaimed:0} and never touches the DB when canWrite() is false', async () => {
+    setEnv('VERCEL_ENV', undefined);
+    setEnv('LE_ALLOW_NONPROD_WRITES', undefined);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 0 });
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  it('SELECT is scoped correctly: auto_run=true, paused_reason=refining, updated_at < ~10min ago', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const selectMock = vi.fn().mockReturnThis();
+    const eqMock = vi.fn().mockReturnThis();
+    const ltMock = vi.fn().mockResolvedValue({ data: [], error: null });
+    const fromMock = vi.fn().mockReturnValue({ select: selectMock, eq: eqMock, lt: ltMock });
+    (getSupabase as Mock).mockReturnValue({ from: fromMock });
+
+    await reclaimStrandedRefiningLocks();
+
+    expect(fromMock).toHaveBeenCalledWith('delivery_runs');
+    expect(selectMock).toHaveBeenCalledWith('id, stage');
+    expect(eqMock).toHaveBeenCalledWith('auto_run', true);
+    expect(eqMock).toHaveBeenCalledWith('paused_reason', 'refining');
+    expect(ltMock).toHaveBeenCalledWith('updated_at', expect.any(String));
+
+    const cutoffArg = ltMock.mock.calls[0]![1] as string;
+    const cutoffMs = new Date(cutoffArg).getTime();
+    const expectedMs = Date.now() - STRANDED_REFINING_LOCK_TTL_MS;
+    expect(Math.abs(cutoffMs - expectedMs)).toBeLessThan(2000); // 2s tolerance for test exec time
+  });
+
+  it("reclaims a run stuck at paused_reason='refining' with updated_at 11 minutes ago", async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-stale', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 1 });
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.id).toBe('run-stale');
+  });
+
+  it("per-row clear is scoped correctly: eq('id',...), eq('paused_reason','refining'), lt('updated_at', staleBefore), select('id')", async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-stale', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    await reclaimStrandedRefiningLocks();
+
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.eqArgs).toContainEqual(['id', 'run-stale']);
+    // The CAS re-asserts BOTH conditions that made the row look stranded at
+    // SELECT time — this is what makes the clear conditional, not unconditional.
+    expect(calls[0]!.eqArgs).toContainEqual(['paused_reason', 'refining']);
+    expect(calls[0]!.ltArgs).toContainEqual(['updated_at', expect.any(String)]);
+  });
+
+  it('does NOT reclaim the same shape of run at 5 minutes old (still within the TTL)', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-fresh', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: fiveMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 0 });
+    // The SELECT itself excludes it — no per-row clear is ever attempted.
+    expect(getUpdateCalls()).toEqual([]);
+  });
+
+  it('NEVER reclaims a genuinely human-paused run regardless of age', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-human', stage: 'details', auto_run: true, paused_reason: 'missing listing field: price', updated_at: oneDayAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 0 });
+    expect(getUpdateCalls()).toEqual([]);
+  });
+
+  // ── FIX #2 — the per-row clear is a CAS, not an unconditional wipe ─────────
+  it("FIX #2: a row whose paused_reason changed to a genuine gate BETWEEN the select and its own clear is NOT cleared (conditional update affects 0 rows)", async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    // At SELECT time the row still matched (paused_reason='refining', stale
+    // enough) — but between that read and THIS row's own per-row clear, a
+    // genuine human gate ('missing listing field: price') landed. Forcing the
+    // conditional update to affect 0 rows is exactly what the real
+    // `.eq('paused_reason','refining')` term in its WHERE would do once the
+    // column no longer holds that value — the unconditional updateRun(...)
+    // this replaced would have wiped the genuine gate; the CAS must not.
+    const { db, getUpdateCalls } = makeReclaimDb(
+      [{ id: 'run-race', stage: 'details', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo }],
+      { 'run-race': { data: [], error: null } },
+    );
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 0 });
+    const calls = getUpdateCalls();
+    expect(calls).toHaveLength(1); // the clear WAS attempted...
+    expect(calls[0]!.id).toBe('run-race');
+    expect(calls[0]!.eqArgs).toContainEqual(['paused_reason', 'refining']); // ...CAS'd, not unconditional
+  });
+
+  it('reclaims only the stranded rows out of a mixed batch and counts correctly', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-stale-1', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+      { id: 'run-fresh', stage: 'checkpoint_a', auto_run: true, paused_reason: 'refining', updated_at: fiveMinAgo },
+      { id: 'run-human', stage: 'details', auto_run: true, paused_reason: 'missing listing field: price', updated_at: oneDayAgo },
+      { id: 'run-stale-2', stage: 'music', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 2 });
+    const ids = getUpdateCalls().map(c => c.id);
+    expect(ids).toEqual(['run-stale-1', 'run-stale-2']);
+  });
+
+  it('logs the run id + stage for each reclaim', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db } = makeReclaimDb([
+      { id: 'run-stale', stage: 'checkpoint_b', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await reclaimStrandedRefiningLocks();
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('run-stale'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('checkpoint_b'));
+    logSpy.mockRestore();
+  });
+
+  it('logs (does not throw) when a row is selected as stranded but no longer matches at clear time', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db } = makeReclaimDb(
+      [{ id: 'run-race', stage: 'details', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo }],
+      { 'run-race': { data: [], error: null } },
+    );
+    (getSupabase as Mock).mockReturnValue(db);
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
+
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('run-race'));
+    logSpy.mockRestore();
+  });
+
+  it('fails open (returns {reclaimed:0}, never throws) on a SELECT error', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const chain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      lt: vi.fn().mockResolvedValue({ data: null, error: { message: 'connection refused' } }),
+    };
+    (getSupabase as Mock).mockReturnValue({ from: vi.fn().mockReturnValue(chain) });
+
+    await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
+  });
+
+  it('fails open (returns {reclaimed:0}, never throws) when getSupabase itself throws', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    (getSupabase as Mock).mockImplementation(() => {
+      throw new Error('no client');
+    });
+
+    await expect(reclaimStrandedRefiningLocks()).resolves.toEqual({ reclaimed: 0 });
+  });
+
+  it('fails open (logs, does not abort the loop) when one row\'s conditional clear errors — other rows still reclaimed', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb(
+      [
+        { id: 'run-fails', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+        { id: 'run-ok', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+      ],
+      { 'run-fails': { data: null, error: { message: 'DB write failed' } } },
+    );
+    (getSupabase as Mock).mockReturnValue(db);
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 1 });
+    expect(getUpdateCalls().map(c => c.id)).toEqual(['run-fails', 'run-ok']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('run-fails'), 'DB write failed');
+    errSpy.mockRestore();
+  });
+
+  it('one row throwing (unexpected exception, not a returned error) does not abort the loop — other rows still reclaimed', async () => {
+    setEnv('LE_ALLOW_NONPROD_WRITES', 'true');
+    const elevenMinAgo = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const { db, getUpdateCalls } = makeReclaimDb([
+      { id: 'run-throws', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+      { id: 'run-ok', stage: 'assembling', auto_run: true, paused_reason: 'refining', updated_at: elevenMinAgo },
+    ]);
+    (getSupabase as Mock).mockReturnValue(db);
+    const realFrom = db.from;
+    let call = 0;
+    db.from = vi.fn().mockImplementation((table: string) => {
+      call++;
+      // 1st call = the batch SELECT; 2nd call = run-throws's own UPDATE chain
+      // (thrown instead of returned, e.g. a network exception from the client).
+      if (call === 2) {
+        return { update: vi.fn().mockImplementation(() => { throw new Error('network exception'); }) };
+      }
+      return realFrom(table);
+    });
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const result = await reclaimStrandedRefiningLocks();
+
+    expect(result).toEqual({ reclaimed: 1 });
+    expect(getUpdateCalls().map(c => c.id)).toEqual(['run-ok']);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining('run-throws'), expect.any(Error));
+    errSpy.mockRestore();
   });
 });

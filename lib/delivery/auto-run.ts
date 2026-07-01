@@ -7,11 +7,25 @@
  *
  * Write guard: mutating paths require prod env or LE_ALLOW_NONPROD_WRITES=true
  * (same rule as the rest of the delivery pipeline).
+ *
+ * Concurrency with the Telegram conversational-refine executor
+ * (lib/telegram/refine-conversation.ts): that executor CAS-locks a run for the
+ * duration of a refine by setting delivery_runs.paused_reason='refining'. Two
+ * protections against it here:
+ *   1. Fresh-read guard — resolveGate/resolveAssembling re-read paused_reason
+ *      directly from the DB right before claiming the resolving_at lease, so
+ *      a lock acquired AFTER the cron sweep's batch SELECT (but before this
+ *      run was reached) is still honored — closes a stale-in-memory-read
+ *      double-submit window. See the guard just above the lease claim in each.
+ *   2. reclaimStrandedRefiningLocks() — a separate cron-invoked reaper that
+ *      autonomously clears a 'refining' lock abandoned by a killed refine
+ *      executor (no dependency on a new Telegram message). See its own
+ *      section below for the full scenario.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabase } from '../client.js';
-import { advanceRun as _advanceRun, getVariantsForRun, updateRun, recordMlEvent } from './runs.js';
+import { advanceRun as _advanceRun, getRun, getVariantsForRun, updateRun, recordMlEvent } from './runs.js';
 import { claimResolveLease, releaseResolveLease } from './resolve-lease.js';
 import { generateDeliveryScript } from './voiceover-script.js';
 import { scoreTotal } from './judge.js';
@@ -101,6 +115,35 @@ export function canWrite(): boolean {
 // reuses the SAME CAS (see api/admin/studio/delivery/[runId].ts via
 // withResolveLease). Behavior here is unchanged.
 
+// ─── FRESH-READ GUARD (P1-1: double-submit / double-spend) ──────────────────
+// The cron sweep SELECTs its whole run batch ONCE, then iterates, calling
+// resolveGate/resolveAssembling on each row AS READ. If a Telegram refine
+// executor (lib/telegram/refine-conversation.ts) CAS-sets
+// delivery_runs.paused_reason='refining' AFTER that SELECT but BEFORE this
+// resolver reaches the run, the resolver would otherwise still see the STALE
+// in-memory `paused_reason: null` from the batch read and proceed — at
+// stage='assembling' there is no advanceRun CAS to catch this (runAssembleStage
+// submits the render BEFORE any stage transition), so the executor and the
+// sweep could both submit a Creatomate render for the same run: a double
+// charge. Re-reading paused_reason fresh, immediately before the resolving_at
+// lease claim, closes that window. This is additive IN FRONT OF the lease —
+// the lease itself and advanceRun's CAS are untouched.
+
+/** True iff a fresh DB read shows this run is now paused (or gone). Logged at
+ *  debug — this is an expected, non-error outcome under normal concurrency. */
+async function isPausedFresh(runId: string, caller: 'resolveGate' | 'resolveAssembling'): Promise<boolean> {
+  const fresh = await getRun(runId);
+  const paused = !fresh || fresh.paused_reason != null;
+  if (paused) {
+    console.debug(
+      `[auto-run] ${caller}: fresh-read guard — run ${runId} ${
+        fresh ? `now paused_reason=${JSON.stringify(fresh.paused_reason)}` : 'no longer exists'
+      }; skipping this tick (stale in-memory read)`,
+    );
+  }
+  return paused;
+}
+
 // ─── ENTRY POINT ─────────────────────────────────────────────────────────────
 
 /** Evaluate the current gate for an auto-run delivery run and take action.
@@ -127,6 +170,13 @@ export async function resolveGate(run: DeliveryRunRow): Promise<GateOutcome> {
   // Guard 4: write guard — no mutations outside prod unless explicitly unlocked
   if (!canWrite()) {
     return { action: 'noop', reason: 'write guard: non-prod' };
+  }
+
+  // Fresh-read guard (P1-1 double-submit fix): re-check paused_reason straight
+  // from the DB, not the in-memory `run` this call was handed — see the
+  // FRESH-READ GUARD section above for the full race this closes.
+  if (await isPausedFresh(run.id, 'resolveGate')) {
+    return { action: 'noop', reason: 'paused_reason changed since read (fresh-read guard)' };
   }
 
   // Lease guard: claim exclusive right to resolve this run before any spend.
@@ -176,6 +226,11 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
   if (run.paused_reason != null) return { action: 'noop', reason: 'paused' };
   if (run.stage !== 'assembling') return { action: 'noop', reason: 'not assembling stage' };
   if (!canWrite()) return { action: 'noop', reason: 'write guard: non-prod' };
+
+  // Fresh-read guard (P1-1) — identical rationale to resolveGate's guard above.
+  if (await isPausedFresh(run.id, 'resolveAssembling')) {
+    return { action: 'noop', reason: 'paused_reason changed since read (fresh-read guard)' };
+  }
 
   if (!(await claimResolveLease(run.id))) {
     return { action: 'noop', reason: 'resolve lease held by concurrent actor' };
@@ -433,6 +488,123 @@ export async function resolveAssembling(run: DeliveryRunRow, budgetMs?: number):
 
   } finally {
     await releaseResolveLease(run.id);
+  }
+}
+
+// ─── STRANDED REFINE-LOCK RECLAIM ────────────────────────────────────────────
+//
+// A Telegram "refine" executor (lib/telegram/refine-conversation.ts) CAS-locks
+// a run for the duration of a conversational refine by setting
+// delivery_runs.paused_reason='refining' (from NULL), bumping updated_at at
+// acquisition, holding it through its mutations plus a fire-and-forget render,
+// then clearing it back to NULL on completion (see that file's
+// acquireRefiningLock/releaseRefiningLock). The refine runs as a dangling
+// promise AFTER the Telegram webhook has already returned 200 — if the Vercel
+// instance running it is frozen/killed mid-render, nothing ever clears
+// paused_reason, and the run is invisible FOREVER to the normal sweep pass
+// above (its SELECT filters `.is('paused_reason', null)`) — no existing reaper
+// covers this, because the run is (falsely) "paused for a human".
+//
+// The executor's OWN acquireRefiningLock can also reclaim a stale 'refining'
+// lock past this same TTL, but only when a NEW Telegram message triggers a
+// fresh acquire attempt. If the conversation goes silent, nothing ever fires
+// that path — so this pass is the autonomous backstop: it runs on every sweep
+// tick with no dependency on new inbound Telegram traffic.
+//
+// Re-poll-without-re-spend after reclaim: once paused_reason is cleared here,
+// the run is picked up by THIS SAME tick's normal SELECT (the sweep runs this
+// pass first) and — if wedged at stage='assembling' — resolveAssembling's
+// Path 2 above resumes polling the ALREADY-SUBMITTED render via the persisted
+// assembly_h_job / assembly_v_job job token; it only falls through to Path 3
+// (runAssembleStage, which actually submits a NEW render) when no job token
+// AND no output URL exist. No re-spend on a reclaimed run.
+
+/** Reclaim TTL for a stranded 'refining' lock — matches the 10-minute TTL the
+ *  executor-side lock (lib/telegram/refine-conversation.ts's own private
+ *  REFINING_LOCK_TTL_MS) uses for its own same-conversation reclaim, so a run
+ *  is never "stranded" by one side while still considered "live" by the other. */
+export const STRANDED_REFINING_LOCK_TTL_MS = 10 * 60 * 1000;
+
+export type ReclaimOutcome = { reclaimed: number };
+
+/**
+ * Clear any delivery_runs row stuck at paused_reason='refining' for longer
+ * than STRANDED_REFINING_LOCK_TTL_MS. ONLY the exact sentinel 'refining' is
+ * ever selected — a genuinely human-paused run (any other paused_reason
+ * string, e.g. "missing listing field: price") never matches this query,
+ * regardless of age. Behind the same write guard as every other mutating path
+ * in this file. Never throws (fail-open, matching buildOrderedRoomSequence's
+ * style) so a hiccup here can never abort the sweep tick that calls it.
+ */
+export async function reclaimStrandedRefiningLocks(): Promise<ReclaimOutcome> {
+  if (!canWrite()) return { reclaimed: 0 };
+
+  try {
+    const db = getSupabase();
+    const staleBefore = new Date(Date.now() - STRANDED_REFINING_LOCK_TTL_MS).toISOString();
+
+    const { data: stranded, error } = await db
+      .from('delivery_runs')
+      .select('id, stage')
+      .eq('auto_run', true)
+      .eq('paused_reason', 'refining')
+      .lt('updated_at', staleBefore);
+
+    if (error) {
+      console.error('[auto-run] reclaimStrandedRefiningLocks: select failed:', error.message);
+      return { reclaimed: 0 };
+    }
+
+    const rows = (stranded ?? []) as Array<{ id: string; stage: string }>;
+    let reclaimed = 0;
+
+    for (const row of rows) {
+      try {
+        // Conditional clear, NOT the unconditional updateRun(row.id, {...}) this
+        // replaced: the batch SELECT above and this per-row clear are two
+        // separate round trips, so paused_reason could have changed to a
+        // GENUINE human gate (e.g. 'missing listing field: price') in between
+        // — an unconditional clear would silently wipe that real gate. Re-
+        // asserting `paused_reason = 'refining'` (and the staleness bound) in
+        // the UPDATE's own WHERE makes the clear a CAS: it only ever touches a
+        // row that is STILL stranded at the moment of the write. Uses the
+        // supabase client directly (updateRun has no conditional-WHERE
+        // support) — same client this function's own SELECT above uses.
+        const { data: cleared, error: clearError } = await db
+          .from('delivery_runs')
+          .update({ paused_reason: null })
+          .eq('id', row.id)
+          .eq('paused_reason', 'refining')
+          .lt('updated_at', staleBefore)
+          .select('id');
+
+        if (clearError) {
+          console.error(`[auto-run] reclaimStrandedRefiningLocks: failed to clear run ${row.id}:`, clearError.message);
+          continue;
+        }
+
+        if (Array.isArray(cleared) && cleared.length === 1) {
+          console.log(
+            `[auto-run] reclaimStrandedRefiningLocks: cleared stranded 'refining' lock — run=${row.id} stage=${row.stage} (stale > ${STRANDED_REFINING_LOCK_TTL_MS / 60_000}min)`,
+          );
+          reclaimed++;
+        } else {
+          // 0 rows matched: paused_reason changed (to a genuine gate, or was
+          // already cleared by another actor) between the SELECT and this
+          // write — never a bug, just a race this CAS is here to lose safely.
+          console.log(
+            `[auto-run] reclaimStrandedRefiningLocks: run=${row.id} no longer stranded at clear time (paused_reason changed) — skipped`,
+          );
+        }
+      } catch (err) {
+        console.error(`[auto-run] reclaimStrandedRefiningLocks: failed to clear run ${row.id}:`, err);
+      }
+    }
+
+    return { reclaimed };
+  } catch (err) {
+    console.error('[auto-run] reclaimStrandedRefiningLocks threw:', err);
+    return { reclaimed: 0 };
   }
 }
 
