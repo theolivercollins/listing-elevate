@@ -10,8 +10,16 @@
  *
  * Behind `--generate`, it goes on to actually render: submits each planned
  * segment via `AtlasProvider.generateReferenceClip()` (the same production
- * transport `lib/walkthrough/generate.ts` uses — no hand-rolled HTTP),
- * polls every segment to completion, downloads each mp4, and stitches them
+ * transport `lib/walkthrough/generate.ts` uses — no hand-rolled HTTP) when
+ * the segment has 2+ reference photos. Single-photo establishing beats
+ * (front exterior, back exterior, aerial hero — anything the spatial planner
+ * couldn't connect to another room) CANNOT go through that path: Atlas's
+ * `seedance-reference-walkthrough` SKU hard-requires 2-9 reference_images
+ * (lib/providers/atlas.ts buildAtlasReferenceRequestBody). Those segments
+ * instead render through the existing single-image production path —
+ * `AtlasProvider.generateClip()` on the `seedance-pro-pushin` SKU, exactly
+ * as lib/pipeline.ts's per-scene renderer calls it. Every segment, of either
+ * kind, polls to completion, downloads its mp4, and all get stitched
  * locally with a single ffmpeg xfade command (1s crossfades — matching the
  * plan's crossfade transitions, one video re-encode) into one cinematic
  * walkthrough file.
@@ -73,14 +81,59 @@ if (fs.existsSync(envPath)) {
 import { getSelectedPhotos, getPhotosForProperty, recordCostEvent } from "../lib/db.js";
 import { analyzeSpatialGraph, planRoute } from "../lib/walkthrough/spatial.js";
 import type { SpatialGraph, WalkthroughPlan, WalkthroughSegment } from "../lib/walkthrough/spatial.js";
-import { AtlasProvider, atlasClipCostCents } from "../lib/providers/atlas.js";
+import { AtlasProvider, atlasClipCostCents, ATLAS_MODELS } from "../lib/providers/atlas.js";
 import { pollUntilComplete } from "../lib/providers/provider.interface.js";
 
 const SKU = "seedance-reference-walkthrough" as const;
+// Single-photo establishing beats (1 reference image) can't use SKU above —
+// Atlas requires 2-9 reference_images for reference-to-video. They fall back
+// to the existing single-image production SKU (same one lib/pipeline.ts's
+// per-scene renderer uses for v1.1 push-in scenes).
+const PUSHIN_SKU = "seedance-pro-pushin" as const;
+// Establishing-shot variant of the walkthrough camera language, adapted for
+// a single reference image (no room-to-room path to describe).
+const PUSHIN_ESTABLISHING_PROMPT =
+  "Slow cinematic push-in on this scene, stabilized gimbal feel, preserve the exact scene from the reference photo, photorealistic, natural color grading, no cuts, no people, no text, no added objects, no distortion.";
 const RESOLUTION = "1080p" as const;
 const DEFAULT_PROPERTY_ID = "a30212b2-088a-40a2-9c7a-f4ec16d04e45"; // San Massimo
 const MAX_PHOTOS_FOR_ANALYSIS = 12; // matches spatial.ts's "up to ~12" docblock
 const CROSSFADE_SECONDS = 1;
+
+/** Which Atlas SKU a segment renders through, based on how many reference
+ *  photos the spatial planner gave it. */
+function skuForSegment(seg: WalkthroughSegment): typeof SKU | typeof PUSHIN_SKU {
+  return seg.photoIds.length >= 2 ? SKU : PUSHIN_SKU;
+}
+
+/** Snap `requested` to the closest value in a fixed allowed-durations set.
+ *  Mirrors lib/providers/atlas.ts's private clampDuration() for the
+ *  fixed-array branch (PUSHIN_SKU's allowedDurations is [5,10], not
+ *  "continuous" like the reference-walkthrough SKU) — kept local since that
+ *  helper isn't exported, and this probe needs the CLAMPED value up front
+ *  (not just inside generateClip()) so the printed cost estimate and the
+ *  recorded cost_events row both reflect what Atlas actually bills. */
+function clampToAllowedDurations(requested: number, allowed: readonly number[]): number {
+  let best = allowed[0];
+  let bestDist = Math.abs(requested - best);
+  for (const d of allowed) {
+    const dist = Math.abs(requested - d);
+    if (dist < bestDist) {
+      best = d;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+/** Effective (billed) duration for a segment: the reference-walkthrough SKU
+ *  is "continuous" (4-15s, no snapping), the push-in SKU only accepts 5 or
+ *  10 — a 4s single-photo beat becomes 5s. */
+function effectiveDurationForSegment(seg: WalkthroughSegment): number {
+  if (skuForSegment(seg) === PUSHIN_SKU) {
+    return clampToAllowedDurations(seg.durationSec, ATLAS_MODELS[PUSHIN_SKU].allowedDurations as readonly number[]);
+  }
+  return seg.durationSec;
+}
 
 function writesAllowed(): boolean {
   return process.env.VERCEL_ENV === "production" || process.env.LE_ALLOW_NONPROD_WRITES === "true";
@@ -121,7 +174,12 @@ function printPlan(plan: WalkthroughPlan, graph: SpatialGraph): void {
   const roomLabel = (id: string) => graph.rooms.find((r) => r.photoId === id)?.label ?? id.slice(0, 8);
   plan.segments.forEach((seg, i) => {
     const labels = seg.photoIds.map(roomLabel).join(" -> ");
-    console.log(`  Segment ${i}: ${labels}  (${seg.durationSec}s, ${seg.photoIds.length} photo${seg.photoIds.length === 1 ? "" : "s"})`);
+    const sku = skuForSegment(seg);
+    const billedDuration = effectiveDurationForSegment(seg);
+    const durationNote = billedDuration !== seg.durationSec ? `${seg.durationSec}s planned -> ${billedDuration}s billed` : `${seg.durationSec}s`;
+    console.log(
+      `  Segment ${i}: ${labels}  (${durationNote}, ${seg.photoIds.length} photo${seg.photoIds.length === 1 ? "" : "s"}, sku=${sku})`,
+    );
   });
   console.log(`\nFade points (${plan.transitions.length}):`);
   for (const t of plan.transitions) {
@@ -267,7 +325,7 @@ async function main(): Promise<void> {
   const photoUrlById = new Map(photos.map((p) => [p.id, p.file_url]));
   const analysisCostCents = graph.usage?.costCents ?? 0;
   const estimatedRenderCostCents = plan.segments.reduce(
-    (sum, s) => sum + atlasClipCostCents(SKU, s.durationSec),
+    (sum, s) => sum + atlasClipCostCents(skuForSegment(s), effectiveDurationForSegment(s)),
     0,
   );
   console.log(
@@ -286,29 +344,65 @@ async function main(): Promise<void> {
   //    stitch, and record cost — every completed segment writes exactly one
   //    cost_events row, and a cost-write failure is never swallowed. ──
   console.log(`\nSubmitting ${plan.segments.length} segment(s) to Atlas...`);
-  const provider = new AtlasProvider(SKU);
+  // Two separate provider instances (one per SKU), not one shared instance
+  // with a per-call modelOverride: AtlasProvider mutates `this.model` inside
+  // generateClip()/generateReferenceClip() so checkStatus()'s cost fields
+  // reflect the SKU that actually rendered (see atlas.ts's "cost-attribution
+  // fix" comments). That mutation is only safe when a single instance never
+  // renders two different SKUs concurrently — this probe submits all
+  // segments via Promise.all, so a shared instance across both SKUs would
+  // race. Cheap to just use two instances.
+  const referenceProvider = new AtlasProvider(SKU);
+  const pushinProvider = new AtlasProvider(PUSHIN_SKU);
   const jobs = await Promise.all(
     plan.segments.map(async (seg, i) => {
-      const referenceImageUrls = seg.photoIds.map((id) => {
-        const url = photoUrlById.get(id);
-        if (!url) throw new Error(`Segment ${i}: no file_url found for photo ${id}`);
-        return url;
-      });
-      const job = await provider.generateReferenceClip({
-        referenceImageUrls,
-        prompt: seg.prompt,
-        durationSeconds: seg.durationSec,
+      const sku = skuForSegment(seg);
+      if (sku === SKU) {
+        const referenceImageUrls = seg.photoIds.map((id) => {
+          const url = photoUrlById.get(id);
+          if (!url) throw new Error(`Segment ${i}: no file_url found for photo ${id}`);
+          return url;
+        });
+        const job = await referenceProvider.generateReferenceClip({
+          referenceImageUrls,
+          prompt: seg.prompt,
+          durationSeconds: seg.durationSec,
+          resolution: RESOLUTION,
+        });
+        console.log(`  Segment ${i}: job ${job.jobId} submitted (reference-walkthrough, ${seg.durationSec}s, ${seg.photoIds.length} refs)`);
+        return { segment: seg, index: i, jobId: job.jobId, sku, provider: referenceProvider as AtlasProvider };
+      }
+
+      // Single-photo establishing beat — no multi-ref support at 1 image;
+      // render through the production single-image push-in SKU instead.
+      // Mirrors lib/pipeline.ts's generateClip() call shape exactly
+      // (sourceImage: Buffer.alloc(0) placeholder — AtlasProvider only reads
+      // sourceImageUrl; see pipeline.ts:1243/1538).
+      const photoId = seg.photoIds[0];
+      const photoUrl = photoUrlById.get(photoId);
+      if (!photoUrl) throw new Error(`Segment ${i}: no file_url found for photo ${photoId}`);
+      const billedDuration = effectiveDurationForSegment(seg);
+      const job = await pushinProvider.generateClip({
+        sourceImage: Buffer.alloc(0),
+        sourceImageUrl: photoUrl,
+        prompt: PUSHIN_ESTABLISHING_PROMPT,
+        durationSeconds: billedDuration,
+        aspectRatio: "16:9",
         resolution: RESOLUTION,
+        modelOverride: PUSHIN_SKU,
       });
-      console.log(`  Segment ${i}: job ${job.jobId} submitted (${seg.durationSec}s, ${seg.photoIds.length} refs)`);
-      return { segment: seg, index: i, jobId: job.jobId };
+      console.log(`  Segment ${i}: job ${job.jobId} submitted (push-in establishing shot, ${seg.durationSec}s planned -> ${billedDuration}s billed, 1 photo)`);
+      // Record the CLAMPED duration on the segment carried forward so cost
+      // recording + metadata reflect what Atlas actually billed, not the
+      // planner's unclamped 4s.
+      return { segment: { ...seg, durationSec: billedDuration }, index: i, jobId: job.jobId, sku, provider: pushinProvider as AtlasProvider };
     }),
   );
 
   console.log("\nPolling all segments to completion (this can take several minutes per segment)...");
   const results = await Promise.all(
     jobs.map(async (j) => {
-      const result = await pollUntilComplete(provider, j.jobId, /* timeoutMs */ 900_000, /* intervalMs */ 8_000);
+      const result = await pollUntilComplete(j.provider, j.jobId, /* timeoutMs */ 900_000, /* intervalMs */ 8_000);
       return { ...j, result };
     }),
   );
@@ -335,7 +429,9 @@ async function main(): Promise<void> {
       `  Segment ${r.index}: downloaded ${(bytes.length / 1e6).toFixed(2)} MB, actual duration ${actualDurationSeconds.toFixed(2)}s -> ${destPath}`,
     );
 
-    const costCents = atlasClipCostCents(SKU, r.segment.durationSec) || r.result.costCents || 0;
+    // r.segment.durationSec is already the BILLED duration — the pushin
+    // branch above rewrote it to the clamped value before this loop runs.
+    const costCents = atlasClipCostCents(r.sku, r.segment.durationSec) || r.result.costCents || 0;
     // Cost recording is never optional and never silenced (P0 project
     // convention) — recordCostEvent throws on insert failure and that throw
     // propagates uncaught, matching lib/walkthrough/generate.ts's pattern.
@@ -348,7 +444,7 @@ async function main(): Promise<void> {
       unitType: r.result.providerUnitType ?? null,
       metadata: {
         probe: "cinematic-walkthrough-v2",
-        sku: SKU,
+        sku: r.sku,
         jobId: r.jobId,
         segmentIndex: r.index,
         durationSeconds: r.segment.durationSec,
