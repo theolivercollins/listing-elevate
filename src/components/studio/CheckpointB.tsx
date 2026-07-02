@@ -13,7 +13,7 @@
 import { useState } from 'react';
 import { Star, Loader2, Download } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
-import HlsPlayer from '@/components/preview/HlsPlayer';
+import { FinalVideoPlayer } from '@/components/studio/FinalVideoPlayer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,10 +30,17 @@ interface CheckpointBProps {
   videoUrl: string | null;
   /**
    * Bunny adaptive HLS playlist URL — from property.horizontal_hls_url (or the
-   * vertical fallback). Preferred over videoUrl when present; omit / pass null
-   * for legacy mp4-only rows so playback degrades to the mp4.
+   * vertical fallback). Used as the fallback source only when embedUrl and
+   * videoUrl are both absent (kept for legacy mp4-only rows without an mp4).
    */
   hlsUrl?: string | null;
+  /**
+   * Bunny iframe embed URL — from bundle.final_video.{horizontal,vertical}.embed_url.
+   * When present, renders the Bunny player (built-in adaptive-quality menu up
+   * to 1080p) instead of the raw HlsPlayer fallback. Null for non-Bunny-hosted
+   * videos (provider-URL fallback rows).
+   */
+  embedUrl?: string | null;
   /**
    * Poster/thumbnail URL — from property.horizontal_poster_url (or vertical),
    * or a hero-photo fallback composed by the caller. When null the player shows
@@ -119,11 +126,11 @@ function StarRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CheckpointB({ runId, propertyId, videoUrl, hlsUrl, posterUrl, onDelivered }: CheckpointBProps) {
-  // Prefer Bunny's adaptive HLS playlist when present; fall back to the
-  // progressive mp4 for legacy rows. HlsPlayer routes .m3u8 through hls.js
-  // (or native HLS on Safari) and plays a plain mp4 directly.
-  const playbackSrc = hlsUrl ?? videoUrl;
+export function CheckpointB({ runId, propertyId, videoUrl, hlsUrl, embedUrl, posterUrl, onDelivered }: CheckpointBProps) {
+  // A playback source exists (embed or raw fallback) whenever any of the
+  // three URLs is present — used below to decide whether to show the
+  // Download row alongside the player.
+  const hasPlayback = Boolean(embedUrl ?? videoUrl ?? hlsUrl);
   const [ratings, setRatings] = useState<Record<RatingKey, number>>({
     overall: 0, music: 0, voiceover: 0, script: 0,
   });
@@ -219,18 +226,20 @@ export function CheckpointB({ runId, propertyId, videoUrl, hlsUrl, posterUrl, on
         </h3>
       </div>
 
-      {/* Video player — HLS (adaptive) + a real poster frame when available,
-          gracefully falling back to the progressive mp4 + blank poster for
-          legacy mp4-only rows. HlsPlayer owns the leak-free hls.js lifecycle. */}
-      {playbackSrc ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <HlsPlayer
-            src={playbackSrc}
-            poster={posterUrl ?? undefined}
-            preload="metadata"
-            playsInline
-            style={{ width: '100%', maxHeight: 400, borderRadius: 'var(--le-r-sm)', background: '#000' }}
-          />
+      {/* Video player — Bunny iframe embed (built-in adaptive-quality menu up
+          to 1080p) when the video is Bunny-hosted; otherwise the raw
+          HlsPlayer fallback (mp4 preferred over HLS for a sharp picture).
+          FinalVideoPlayer owns the "processing" placeholder when no source
+          exists yet. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <FinalVideoPlayer
+          embedUrl={embedUrl ?? null}
+          mp4Url={videoUrl}
+          hlsUrl={hlsUrl}
+          posterUrl={posterUrl}
+          title="Final video review"
+        />
+        {hasPlayback && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
             {downloadError && (
               <span
@@ -254,23 +263,8 @@ export function CheckpointB({ runId, propertyId, videoUrl, hlsUrl, posterUrl, on
               {downloadPreparing ? 'Preparing…' : 'Download'}
             </button>
           </div>
-        </div>
-      ) : (
-        <div
-          style={{
-            height: 160,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'var(--le-surface-2, rgba(0,0,0,.04))',
-            borderRadius: "var(--le-r-sm)",
-            fontSize: 12.5,
-            color: 'var(--le-muted)',
-          }}
-        >
-          Video processing — refresh in a moment.
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Ratings */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

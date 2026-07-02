@@ -124,6 +124,38 @@ function makeActiveBundle() {
   };
 }
 
+/** Bundle with a client that has a logo but no colors/agent — exercises the
+ *  Brand kit "Not set" placeholder states (spec: brand kit clarity task). */
+function makeBundleWithPartialBrandClient() {
+  const bundle = makeBundle();
+  return {
+    ...bundle,
+    property: {
+      ...bundle.property,
+      client_id: 'client-1',
+      client: {
+        id: 'client-1',
+        name: 'Acme Realty',
+        contact_email: null,
+        phone: null,
+        monthly_rate_cents: null,
+        notes: null,
+        brand_logo_url: 'https://cdn.example.com/logo.png',
+        brand_primary_hex: null,
+        brand_secondary_hex: null,
+        agent_name: null,
+        agent_headshot_url: null,
+        voice_id: null,
+        brokerage: null,
+        realtor_suffix: false,
+        archived_at: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      },
+    },
+  };
+}
+
 function makeClientLink() {
   return {
     id: 'pv-client-1',
@@ -156,7 +188,8 @@ function makePublicLink() {
 
 function setupMocks({
   shareLinks = { client: makeClientLink(), public: makePublicLink() },
-} = {}) {
+  bundle = makeBundle(),
+}: { shareLinks?: unknown; bundle?: ReturnType<typeof makeBundle> } = {}) {
   authedFetch.mockImplementation((url: string, init?: RequestInit) => {
     // Bundle fetch (GET /api/admin/studio/properties/:id)
     if (
@@ -166,7 +199,7 @@ function setupMocks({
     ) {
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve(makeBundle()),
+        json: () => Promise.resolve(bundle),
       });
     }
     // Share links fetch (GET /api/admin/studio/properties/:id/preview-links)
@@ -480,5 +513,97 @@ describe('PropertyCommandCenter — poll scheduler (FIX 2: single chain)', () =>
       await vi.advanceTimersByTimeAsync(FAST_POLL_MS * 3);
     });
     expect(bundleGetCount()).toBe(before); // nothing fired after unmount
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Brand kit section clarity — explainer copy + explicit "Not set" placeholders
+// instead of silently omitting missing colors/agent fields.
+// ---------------------------------------------------------------------------
+
+describe('PropertyCommandCenter — Brand kit section clarity', () => {
+  it('renders the explainer line under the Brand kit title', async () => {
+    setupMocks({ bundle: makeBundleWithPartialBrandClient() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(
+      screen.getByText(/logo, colors, and agent card pulled from/i),
+    ).toBeTruthy();
+  });
+
+  it('shows explicit "Not set" placeholders for missing colors and agent instead of omitting them', async () => {
+    setupMocks({ bundle: makeBundleWithPartialBrandClient() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    // brand_logo_url is present, so we hit the full render branch (not the
+    // "incomplete" warning strip) — colors and agent are both missing.
+    const notSet = screen.getAllByText('Not set');
+    // Two color swatches (primary + secondary) + one agent row.
+    expect(notSet.length).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cost section — Task 5: explain re-renders and $0 events (founder doubted
+// accuracy; totals ARE accurate, the confusion was invisible QC re-renders
+// and unexplained $0 rows). Real prod shape for 326f005e: 7 Atlas events
+// totaling $3.92, 4 re-renders but only 1 tagged qc_rerender_discarded.
+// ---------------------------------------------------------------------------
+
+function makeBundleWithCostDetail() {
+  const bundle = makeBundle();
+  return {
+    ...bundle,
+    cost: {
+      total_cents: 392,
+      by_provider: { kling: 392, anthropic: 0 },
+      by_provider_detail: {
+        kling: { cost_cents: 392, event_count: 7, rerender_count: 1, rerender_cents: 56 },
+        anthropic: { cost_cents: 0, event_count: 1, rerender_count: 0, rerender_cents: 0 },
+      },
+      delivery: null,
+    },
+  };
+}
+
+describe('PropertyCommandCenter — Cost section re-render + $0 event clarity', () => {
+  it('shows per-provider event counts and the discarded-QC-re-render sub-line', async () => {
+    setupMocks({ bundle: makeBundleWithCostDetail() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    // kling: 7 events, 1 discarded re-render worth $0.56
+    expect(screen.getByText(/7 events/i)).toBeTruthy();
+    expect(screen.getByText(/1 discarded QC re-render/i)).toBeTruthy();
+    expect(screen.getByText(/-\$0\.56 of this total/i)).toBeTruthy();
+
+    // anthropic: 1 event, $0 — no re-render sub-line should render for it.
+    expect(screen.getByText(/^1 event$/i)).toBeTruthy();
+  });
+
+  it('renders the footer note explaining $0 events are still logged', async () => {
+    setupMocks({ bundle: makeBundleWithCostDetail() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(
+      screen.getByText(/every provider call is logged, including \$0 events/i),
+    ).toBeTruthy();
+  });
+
+  it('omits the re-render sub-line and footer note when there are no cost events', async () => {
+    setupMocks({ bundle: makeBundle() });
+    renderCenter();
+
+    await screen.findByText('123 Test St, Malibu CA');
+
+    expect(screen.getByText('No cost events yet.')).toBeTruthy();
+    expect(screen.queryByText(/every provider call is logged/i)).toBeNull();
   });
 });

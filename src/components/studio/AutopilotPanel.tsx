@@ -110,6 +110,34 @@ function describeEvent(pl: MlEventPayload, eventType: string): string {
   }
 }
 
+// ─── Pause-reason → actionable guidance ────────────────────────────────────────
+
+/**
+ * Maps a `paused_reason` string to one actionable next-step sentence for the
+ * founder. Recognized shapes today (all written by lib/delivery/auto-run.ts):
+ *   - resolveCheckpointA: "generation incomplete: N of M scenes have no clip (scenes ...)"
+ *     → missing-scenes guidance
+ *   - resolveCheckpointB with degraded scenes: "Final video scored X (needs Y):
+ *     N of M scenes missing clips; ..." → missing-scenes guidance too (the fix
+ *     is the scenes, not a Checkpoint B review)
+ *   - resolveCheckpointB without a missing-clips clause (low score from missing
+ *     listing details / voiceover / music) and its run-error / empty-run
+ *     siblings → generic Checkpoint B guidance
+ *
+ * Anything else — including legacy `paused_reason` values already sitting in
+ * prod rows from before this format existed (e.g. old "quality below threshold:
+ * X < Y" or "low judge margin on scene ...") — falls through to the generic
+ * Checkpoint B guidance. This function never throws on unrecognized input; it
+ * only ever does case-insensitive substring matches.
+ */
+export function getPauseGuidance(reason: string | null | undefined): string {
+  if (!reason) return '';
+  if (/generation incomplete/i.test(reason) || /scenes missing clips/i.test(reason)) {
+    return 'Generate or fix the missing scenes, then resume autopilot.';
+  }
+  return 'Review the video at Checkpoint B, then resume or take over.';
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function AutopilotPanel({
@@ -337,7 +365,7 @@ export function AutopilotPanel({
           <AlertTriangle size={14} strokeWidth={1.6} style={{ flexShrink: 0, marginTop: 1 }} />
           <div>
             <p style={{ margin: '0 0 2px', fontWeight: 600, fontSize: 13 }}>
-              Autopilot paused
+              Autopilot paused — needs your review
               {autoPausedAt && (
                 <span
                   style={{
@@ -354,6 +382,18 @@ export function AutopilotPanel({
             <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5 }}>
               {pausedReason}
             </p>
+            {pausedReason && (
+              <p
+                style={{
+                  margin: '4px 0 0',
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  fontWeight: 600,
+                }}
+              >
+                {getPauseGuidance(pausedReason)}
+              </p>
+            )}
           </div>
         </div>
       )}

@@ -129,6 +129,44 @@ export async function deleteBunnyVideo(guid: string): Promise<void> {
 
 // ── Playback URL helpers ──────────────────────────────────────────────
 
+const BUNNY_CDN_SUFFIX = ".b-cdn.net";
+const GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Derive the Bunny Stream video GUID from a persisted playback URL, e.g.
+ *   https://vz-XXXX.b-cdn.net/<guid>/play_1080p.mp4
+ *   https://vz-XXXX.b-cdn.net/<guid>/playlist.m3u8
+ *
+ * Mirrors the host-checked shape of `bunnyPosterUrl` in src/lib/image-url.ts
+ * (same `.b-cdn.net` suffix check + `<guid>/<file>` path shape) so both the
+ * server (this function) and the client (poster derivation) agree on what
+ * counts as "a Bunny URL". Returns null for:
+ *   - a non-Bunny host (e.g. a Creatomate/Shotstack provider-URL fallback
+ *     that was never rehosted on Bunny — see lib/assembly/finalize.ts)
+ *   - a Bunny host with an unexpected path shape (not exactly
+ *     `<guid>/<file>`, or `<guid>` isn't a UUID, or `<file>` isn't
+ *     `play_*.mp4` / `playlist.m3u8`)
+ *   - a malformed URL, or a nullish input
+ * Never throws.
+ */
+export function deriveBunnyGuid(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (!parsed.hostname.endsWith(BUNNY_CDN_SUFFIX)) return null;
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length !== 2) return null; // need exactly <guid>/<file>
+    const [guid, file] = parts;
+    if (!GUID_RE.test(guid)) return null;
+    const isMp4 = file.startsWith("play_") && file.endsWith(".mp4");
+    const isHls = file === "playlist.m3u8";
+    if (!isMp4 && !isHls) return null;
+    return guid;
+  } catch {
+    return null;
+  }
+}
+
 /** Embeddable iframe player URL (built-in controls + adaptive HLS). */
 export function bunnyEmbedUrl(
   guid: string,

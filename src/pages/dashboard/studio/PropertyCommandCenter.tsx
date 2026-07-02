@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { authedFetch } from "@/lib/api";
-import HlsPlayer from '@/components/preview/HlsPlayer';
 import { photoThumb, bunnyPosterUrl } from '@/lib/image-url';
 import {
   Loader2,
@@ -23,6 +22,7 @@ import { DeliveryStepper, DeliveryNextButton, DeliveryStageControls, ResumeGener
 import { PhotoCheckpointA } from '@/components/studio/PhotoCheckpointA';
 import { CheckpointA } from '@/components/studio/CheckpointA';
 import { CheckpointB, DeliveredCard } from '@/components/studio/CheckpointB';
+import { FinalVideoPlayer } from '@/components/studio/FinalVideoPlayer';
 import { DeliveryDetails } from '@/components/studio/DeliveryDetails';
 import { DeliveryVoiceover } from '@/components/studio/DeliveryVoiceover';
 import { DeliveryMusic } from '@/components/studio/DeliveryMusic';
@@ -67,9 +67,18 @@ interface SceneRow {
   status: string;
 }
 
+interface ProviderCostDetail {
+  cost_cents: number;
+  event_count: number;
+  rerender_count: number;
+  rerender_cents: number;
+}
+
 interface CostBundle {
   total_cents: number;
   by_provider: Record<string, number>;
+  // Optional: older cached bundles / tests may omit this additive field.
+  by_provider_detail?: Record<string, ProviderCostDetail>;
   delivery: { total_cents: number; by_stage: Record<string, number> } | null;
 }
 
@@ -92,6 +101,21 @@ interface DeliveryRunSummary {
   auto_paused_at: string | null;
 }
 
+/** Single-video-per-orientation descriptor built server-side from a Bunny-
+ *  hosted URL (see api/admin/studio/properties/[id].ts buildFinalVideo). Null
+ *  when the persisted URL isn't Bunny-hosted (provider-URL fallback row) —
+ *  callers fall back to the raw mp4/HLS player in that case. */
+interface FinalVideoEntry {
+  embed_url: string | null;
+  mp4_url: string;
+  hls_url: string | null;
+}
+
+interface FinalVideoBundle {
+  horizontal: FinalVideoEntry | null;
+  vertical: FinalVideoEntry | null;
+}
+
 interface Bundle {
   property: PropertyRow;
   scenes: SceneRow[];
@@ -99,6 +123,10 @@ interface Bundle {
   previews: PropertyPreviewRow[];
   cost: CostBundle;
   delivery_run: DeliveryRunSummary | null;
+  /** Optional for deploy-skew safety: an older API deployment (or a cached
+   *  response) may not include final_video yet — dereference with `?.` so a
+   *  stale bundle degrades to the raw mp4/HLS fallback instead of crashing. */
+  final_video?: FinalVideoBundle;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -606,6 +634,12 @@ const PropertyCommandCenter = () => {
   const { property, scenes, revision_notes, previews, cost } = bundle;
   const client = property.client;
   const baseUrl = window.location.origin;
+  // The Checkpoint B card (above, in the delivery stepper) already renders
+  // the single video player for the run while it's under review — the
+  // Output card must not render a second player for the same video (the
+  // founder's "video shows up twice" complaint). Once the run leaves
+  // checkpoint_b (delivered) or there's no active run, Output owns playback.
+  const isReviewingAtCheckpointB = bundle.delivery_run?.stage === 'checkpoint_b';
 
   return (
     <StudioShell>
@@ -767,6 +801,14 @@ const PropertyCommandCenter = () => {
               // Poster falls back to a Bunny-derived frame (and null on legacy
               // rows) so the review gate never shows a blank box while loading.
               hlsUrl={property.horizontal_video_url ? property.horizontal_hls_url : property.vertical_hls_url}
+              // Bunny iframe embed matched to whichever orientation is shown
+              // above — null for provider-URL fallback rows (falls back to
+              // the raw HlsPlayer inside CheckpointB).
+              embedUrl={
+                property.horizontal_video_url
+                  ? bundle.final_video?.horizontal?.embed_url ?? null
+                  : bundle.final_video?.vertical?.embed_url ?? null
+              }
               posterUrl={
                 (property.horizontal_video_url ? property.horizontal_poster_url : property.vertical_poster_url)
                 ?? bunnyPosterUrl(property.horizontal_video_url ?? property.vertical_video_url)
@@ -858,17 +900,35 @@ const PropertyCommandCenter = () => {
                     <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
                       Horizontal (16:9)
                     </span>
-                    <DownloadButton propertyId={property.id} format="horizontal" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <a
+                        href={property.horizontal_video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="studio-btn-ghost studio-btn-sm"
+                      >
+                        <ExternalLink size={11} strokeWidth={1.6} />
+                        Open
+                      </a>
+                      <DownloadButton propertyId={property.id} format="horizontal" />
+                    </div>
                   </div>
-                  <HlsPlayer
-                    src={property.horizontal_hls_url ?? property.horizontal_video_url}
-                    poster={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url) ?? undefined}
-                    preload="none"
-                    muted
-                    playsInline
-                    className="studio-video"
-                    style={{ maxHeight: 320 }}
-                  />
+                  {isReviewingAtCheckpointB ? (
+                    <div className="studio-kanban-empty" style={{ padding: '20px 16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 12, color: 'var(--le-muted)' }}>
+                        Playing above at Checkpoint B.
+                      </p>
+                    </div>
+                  ) : (
+                    <FinalVideoPlayer
+                      embedUrl={bundle.final_video?.horizontal?.embed_url ?? null}
+                      mp4Url={property.horizontal_video_url}
+                      hlsUrl={property.horizontal_hls_url}
+                      posterUrl={property.horizontal_poster_url ?? bunnyPosterUrl(property.horizontal_video_url)}
+                      title={`${property.address} — horizontal video`}
+                      style={{ maxHeight: 320 }}
+                    />
+                  )}
                 </div>
               )}
               {property.vertical_video_url && (
@@ -877,17 +937,36 @@ const PropertyCommandCenter = () => {
                     <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>
                       Vertical (9:16)
                     </span>
-                    <DownloadButton propertyId={property.id} format="vertical" />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <a
+                        href={property.vertical_video_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="studio-btn-ghost studio-btn-sm"
+                      >
+                        <ExternalLink size={11} strokeWidth={1.6} />
+                        Open
+                      </a>
+                      <DownloadButton propertyId={property.id} format="vertical" />
+                    </div>
                   </div>
-                  <HlsPlayer
-                    src={property.vertical_hls_url ?? property.vertical_video_url}
-                    poster={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url) ?? undefined}
-                    preload="none"
-                    muted
-                    playsInline
-                    className="studio-video"
-                    style={{ maxHeight: 320 }}
-                  />
+                  {isReviewingAtCheckpointB ? (
+                    <div className="studio-kanban-empty" style={{ padding: '20px 16px', textAlign: 'center' }}>
+                      <p style={{ fontSize: 12, color: 'var(--le-muted)' }}>
+                        Playing above at Checkpoint B.
+                      </p>
+                    </div>
+                  ) : (
+                    <FinalVideoPlayer
+                      embedUrl={bundle.final_video?.vertical?.embed_url ?? null}
+                      mp4Url={property.vertical_video_url}
+                      hlsUrl={property.vertical_hls_url}
+                      posterUrl={property.vertical_poster_url ?? bunnyPosterUrl(property.vertical_video_url)}
+                      title={`${property.address} — vertical video`}
+                      aspect="9:16"
+                      style={{ maxHeight: 320 }}
+                    />
+                  )}
                 </div>
               )}
             </div>
@@ -1094,6 +1173,10 @@ const PropertyCommandCenter = () => {
 
         {/* ── Brand kit summary ── */}
         <SectionCard eyebrow="Client" title="Brand kit">
+          <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)', marginBottom: 16 }}>
+            The client's branding applied to this video — logo, colors, and agent card pulled from
+            their client profile.
+          </p>
           {!property.client_id ? (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No client linked.</p>
           ) : !client ? (
@@ -1134,7 +1217,7 @@ const PropertyCommandCenter = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Colors</span>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {client.brand_primary_hex && (
+                  {client.brand_primary_hex ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       <span
                         style={{
@@ -1151,8 +1234,22 @@ const PropertyCommandCenter = () => {
                         {client.brand_primary_hex}
                       </span>
                     </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: "var(--le-r-sm)",
+                          background: 'var(--le-line-2)',
+                          border: '1px dashed var(--le-line)',
+                          display: 'block',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)' }}>Not set</span>
+                    </div>
                   )}
-                  {client.brand_secondary_hex && (
+                  {client.brand_secondary_hex ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                       <span
                         style={{
@@ -1169,13 +1266,27 @@ const PropertyCommandCenter = () => {
                         {client.brand_secondary_hex}
                       </span>
                     </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                      <span
+                        style={{
+                          width: 40,
+                          height: 28,
+                          borderRadius: "var(--le-r-sm)",
+                          background: 'var(--le-line-2)',
+                          border: '1px dashed var(--le-line)',
+                          display: 'block',
+                        }}
+                      />
+                      <span style={{ fontSize: 10, color: 'var(--le-muted-2)' }}>Not set</span>
+                    </div>
                   )}
                 </div>
               </div>
 
-              {(client.agent_name || client.agent_headshot_url) && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Agent</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--le-muted)' }}>Agent</span>
+                {client.agent_name || client.agent_headshot_url ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     {client.agent_headshot_url && (
                       <img
@@ -1198,8 +1309,10 @@ const PropertyCommandCenter = () => {
                       </span>
                     )}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <span style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>Not set</span>
+                )}
+              </div>
             </div>
           )}
         </SectionCard>
@@ -1252,36 +1365,63 @@ const PropertyCommandCenter = () => {
               <tbody>
                 {Object.entries(cost.by_provider)
                   .sort(([, a], [, b]) => b - a)
-                  .map(([provider, cents]) => (
-                    <tr key={provider} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
-                      <td
-                        style={{
-                          padding: '10px 0',
-                          fontSize: 13,
-                          color: 'var(--le-ink-2)',
-                          textTransform: 'capitalize',
-                        }}
-                      >
-                        {provider}
-                      </td>
-                      <td
-                        style={{
-                          padding: '10px 0',
-                          textAlign: 'right',
-                          fontSize: 13,
-                          color: 'var(--le-ink)',
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {formatCents(cents)}
-                      </td>
-                    </tr>
-                  ))}
+                  .map(([provider, cents]) => {
+                    const detail = cost.by_provider_detail?.[provider];
+                    return (
+                      <tr key={provider} style={{ borderBottom: '1px solid var(--le-line-2)' }}>
+                        <td style={{ padding: '10px 0' }}>
+                          <div
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--le-ink-2)',
+                              textTransform: 'capitalize',
+                            }}
+                          >
+                            {provider}
+                          </div>
+                          {detail && (
+                            <div style={{ fontSize: 11, color: 'var(--le-muted-2)', marginTop: 2 }}>
+                              {detail.event_count} {detail.event_count === 1 ? 'event' : 'events'}
+                              {detail.rerender_count > 0 && (
+                                <>
+                                  {' — includes '}
+                                  {detail.rerender_count}
+                                  {' discarded QC re-render'}
+                                  {detail.rerender_count === 1 ? '' : 's'}
+                                  {' (-'}
+                                  {formatCents(detail.rerender_cents)}
+                                  {' of this total)'}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td
+                          style={{
+                            padding: '10px 0',
+                            textAlign: 'right',
+                            fontSize: 13,
+                            color: 'var(--le-ink)',
+                            fontVariantNumeric: 'tabular-nums',
+                            verticalAlign: 'top',
+                          }}
+                        >
+                          {formatCents(cents)}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
             </div>
           ) : (
             <p style={{ fontSize: 12.5, color: 'var(--le-muted-2)' }}>No cost events yet.</p>
+          )}
+
+          {Object.keys(cost.by_provider).length > 0 && (
+            <p style={{ fontSize: 11, color: 'var(--le-muted-2)', marginTop: 10 }}>
+              Every provider call is logged, including $0 events.
+            </p>
           )}
 
           {/* ── Delivery run sub-block ── */}

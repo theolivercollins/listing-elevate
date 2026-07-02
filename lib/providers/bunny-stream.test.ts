@@ -16,7 +16,15 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { hostVideoOnBunny, bunnyStreamCostCents, bestMp4Res, BUNNY_STATUS, bunnyCdnHeaders, validateBunnyMp4Url } from "./bunny-stream.js";
+import {
+  hostVideoOnBunny,
+  bunnyStreamCostCents,
+  bestMp4Res,
+  BUNNY_STATUS,
+  bunnyCdnHeaders,
+  validateBunnyMp4Url,
+  deriveBunnyGuid,
+} from "./bunny-stream.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -360,5 +368,49 @@ describe("validateBunnyMp4Url", () => {
     await validateBunnyMp4Url("https://other-cdn.example.com/video.mp4");
     const sentHeaders = capturedInit[0]?.headers as Record<string, string> | undefined;
     expect(sentHeaders?.Referer).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveBunnyGuid — GUID extraction from a persisted playback URL
+// ---------------------------------------------------------------------------
+
+describe("deriveBunnyGuid", () => {
+  const GUID = "c2feb4b1-3421-4d34-9d80-31be5b0d9c2e";
+
+  it("extracts the guid from a Bunny mp4 URL", () => {
+    expect(deriveBunnyGuid(`https://vz-01cb8232-b48.b-cdn.net/${GUID}/play_1080p.mp4`)).toBe(GUID);
+  });
+
+  it("extracts the guid from a Bunny HLS playlist URL", () => {
+    expect(deriveBunnyGuid(`https://vz-01cb8232-b48.b-cdn.net/${GUID}/playlist.m3u8`)).toBe(GUID);
+  });
+
+  it("returns null for a non-Bunny URL (provider-URL fallback case)", () => {
+    expect(deriveBunnyGuid(`https://cdn.creatomate.com/renders/${GUID}.mp4`)).toBeNull();
+    expect(deriveBunnyGuid("https://storage.googleapis.com/some-bucket/video.mp4")).toBeNull();
+  });
+
+  it("returns null for a malformed URL", () => {
+    expect(deriveBunnyGuid("not-a-valid-url")).toBeNull();
+  });
+
+  it("returns null for a nullish or empty input", () => {
+    expect(deriveBunnyGuid(null)).toBeNull();
+    expect(deriveBunnyGuid(undefined)).toBeNull();
+    expect(deriveBunnyGuid("")).toBeNull();
+  });
+
+  it("returns null for a Bunny host with a non-guid path segment", () => {
+    expect(deriveBunnyGuid("https://vz-01cb8232-b48.b-cdn.net/not-a-guid/play_1080p.mp4")).toBeNull();
+  });
+
+  it("returns null for a Bunny host with an unrecognized file segment", () => {
+    expect(deriveBunnyGuid(`https://vz-01cb8232-b48.b-cdn.net/${GUID}/thumbnail.jpg`)).toBeNull();
+  });
+
+  it("returns null for a Bunny host with the wrong path depth", () => {
+    expect(deriveBunnyGuid(`https://vz-01cb8232-b48.b-cdn.net/${GUID}/nested/play_1080p.mp4`)).toBeNull();
+    expect(deriveBunnyGuid("https://vz-01cb8232-b48.b-cdn.net/play_1080p.mp4")).toBeNull();
   });
 });

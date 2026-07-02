@@ -27,6 +27,7 @@ import {
   buildOrderedRoomSequence,
   reclaimStrandedRefiningLocks,
   STRANDED_REFINING_LOCK_TTL_MS,
+  composeCheckpointBReason,
 } from '../auto-run.js';
 import type { DeliveryRunRow } from '../../types/operator-studio.js';
 
@@ -359,6 +360,33 @@ describe('resolveGate — Guard 4: write guard', () => {
 // ─── resolveCheckpointA ───────────────────────────────────────────────────────
 
 describe('resolveCheckpointA', () => {
+  /**
+   * Configure getSupabase for the generation-completeness gate's
+   * `.from('scenes').select('id, scene_number, status, clip_url').eq(...)`
+   * lookup, plus the update/insert chain pauseForHuman needs when a test
+   * expects a pause. Rows may omit status/clip_url (≠ operator-skipped);
+   * pass status:'qc_pass' + clip_url:null to model a scene skipped via
+   * api/scenes/[id]/skip.ts. Returns the db mock so a test can further
+   * customize it.
+   */
+  function mockSceneRows(
+    rows: Array<{ id: string; scene_number: number; status?: string; clip_url?: string | null }>,
+    scenesError: { message: string } | null = null,
+  ) {
+    const scenesEqMock = vi.fn().mockResolvedValue({ data: scenesError ? null : rows, error: scenesError });
+    const scenesSelectMock = vi.fn().mockReturnValue({ eq: scenesEqMock });
+    const updateEqMock = vi.fn().mockResolvedValue({ error: null });
+    const updateMock = vi.fn().mockReturnValue({ eq: updateEqMock });
+    const insertMock = vi.fn().mockResolvedValue({ error: null });
+    const fromMock = vi.fn().mockImplementation((table: string) => {
+      if (table === 'scenes') return { select: scenesSelectMock };
+      return { update: updateMock, insert: insertMock };
+    });
+    const db = { from: fromMock, update: updateMock, insert: insertMock };
+    (getSupabase as Mock).mockReturnValue(db);
+    return db;
+  }
+
   it('advances when all judged scenes have margin ≥ AUTO_JUDGE_MARGIN', async () => {
     // Scene with margin = 0.25 (above 0.15 threshold).
     // A=20 total, B=15 total → margin = |20-15| / 20 = 0.25
@@ -371,6 +399,7 @@ describe('resolveCheckpointA', () => {
       gemini_scores: { motion_quality: 4, artifacts: 4, realism: 4, composition: 3 }, // total 15
     });
     (getVariantsForRun as Mock).mockResolvedValue([variantA, variantB]);
+    mockSceneRows([{ id: 'sc1', scene_number: 1 }]);
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
 
@@ -391,6 +420,7 @@ describe('resolveCheckpointA', () => {
       variant: 'B', scene_id: 'sc1', winner: false, winner_source: null,
     });
     (getVariantsForRun as Mock).mockResolvedValue([variantA, variantB]);
+    mockSceneRows([{ id: 'sc1', scene_number: 1 }]);
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
 
@@ -410,12 +440,8 @@ describe('resolveCheckpointA', () => {
     });
     (getVariantsForRun as Mock).mockResolvedValue([variantA, variantB]);
 
-    // Mock pauseForHuman (it calls getSupabase internally)
-    const db = makeDbChain(null);
-    db.update.mockReturnThis();
-    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
-    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
-    (getSupabase as Mock).mockReturnValue(db);
+    // Mock the scenes lookup (completeness gate) + pauseForHuman's update/insert.
+    mockSceneRows([{ id: 'sc1', scene_number: 1 }]);
 
     const result = await resolveCheckpointA(makeRun());
     expect(result.action).toBe('paused');
@@ -427,8 +453,156 @@ describe('resolveCheckpointA', () => {
     (recordMlEvent as Mock).mockResolvedValue(undefined);
     (advanceRun as Mock).mockResolvedValue({});
 
+    // No variants at all → the completeness gate is skipped entirely (no
+    // scenes lookup, no getSupabase call needed) since this synthetic state
+    // is unreachable in prod (runJudgePass never advances an all-empty run
+    // to checkpoint_a).
     const result = await resolveCheckpointA(makeRun());
     expect(result).toEqual({ action: 'advanced', to: 'details' });
+    expect(getSupabase).not.toHaveBeenCalled();
+  });
+
+  // ─── Generation-completeness gate (2026-07-01 incident — run 4b15ef63) ───
+  //
+  // 4 of 7 scenes never got a scene_variants row (attempt_count=0,
+  // provider=null, no clip_url). The old code only ever iterated `variants`
+  // (built from getVariantsForRun), so those 4 scenes were invisible to the
+  // margin loop and the run was silently auto-accepted with a 3-clip partial
+  // scene_order. These tests assert the fix: pause instead of advancing.
+
+  it('pauses when some scenes never got a variant row at all (incident: 4 of 7 missing)', async () => {
+    // Only scenes 1 and 3 have judged, winning variant rows with clips.
+    // Scenes 2, 4, 5, 6, 7 never got a scene_variants row.
+    const v1a = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'gemini',
+      clip_url: 'https://example.com/1a.mp4',
+      gemini_scores: { motion_quality: 5, artifacts: 5, realism: 5, composition: 5 },
+    });
+    const v1b = makeVariant({
+      variant: 'B', scene_id: 'sc1', winner: false, winner_source: null,
+      clip_url: 'https://example.com/1b.mp4',
+      gemini_scores: { motion_quality: 4, artifacts: 4, realism: 4, composition: 3 },
+    });
+    const v3a = makeVariant({
+      variant: 'A', scene_id: 'sc3', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/3a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1a, v1b, v3a]);
+    mockSceneRows([
+      { id: 'sc1', scene_number: 1 },
+      { id: 'sc2', scene_number: 2 },
+      { id: 'sc3', scene_number: 3 },
+      { id: 'sc4', scene_number: 4 },
+      { id: 'sc5', scene_number: 5 },
+      { id: 'sc6', scene_number: 6 },
+      { id: 'sc7', scene_number: 7 },
+    ]);
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result.action).toBe('paused');
+    const reason = (result as { action: 'paused'; reason: string }).reason;
+    expect(reason).toBe('generation incomplete: 5 of 7 scenes have no clip (scenes 2, 4, 5, 6, 7)');
+    expect(advanceRun).not.toHaveBeenCalled();
+  });
+
+  it('pauses when a scene has a variant row but no winning clip (winner exists, clip_url null)', async () => {
+    const v1a = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'gemini',
+      clip_url: null,
+      gemini_scores: { motion_quality: 5, artifacts: 5, realism: 5, composition: 5 },
+    });
+    const v1b = makeVariant({
+      variant: 'B', scene_id: 'sc1', winner: false, winner_source: null,
+      clip_url: 'https://example.com/1b.mp4',
+      gemini_scores: { motion_quality: 4, artifacts: 4, realism: 4, composition: 3 },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1a, v1b]);
+    mockSceneRows([{ id: 'sc1', scene_number: 1 }]);
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toBe(
+      'generation incomplete: 1 of 1 scenes have no clip (scenes 1)',
+    );
+  });
+
+  it('regression: advances when all 7 scenes have a usable winner clip (no false-positive pause)', async () => {
+    const variants = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      makeVariant({
+        variant: 'A', scene_id: `sc${n}`, winner: true, winner_source: 'default',
+        clip_url: `https://example.com/${n}a.mp4`,
+        gemini_scores: { judge_error: 'degraded pair' },
+      }),
+    );
+    (getVariantsForRun as Mock).mockResolvedValue(variants);
+    mockSceneRows([1, 2, 3, 4, 5, 6, 7].map((n) => ({ id: `sc${n}`, scene_number: n })));
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result).toEqual({ action: 'advanced', to: 'details' });
+  });
+
+  it('propagates the error when the scenes-completeness lookup fails', async () => {
+    const variantA = makeVariant({ variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'default' });
+    (getVariantsForRun as Mock).mockResolvedValue([variantA]);
+    mockSceneRows([], { message: 'connection reset' });
+
+    await expect(resolveCheckpointA(makeRun())).rejects.toThrow(
+      'resolveCheckpointA: scenes lookup failed: connection reset',
+    );
+    expect(advanceRun).not.toHaveBeenCalled();
+  });
+
+  it('operator-skipped scenes (qc_pass, clip_url=null) do NOT trip the generation-incomplete pause', async () => {
+    // api/scenes/[id]/skip.ts marks a skipped scene status:'qc_pass' with
+    // clip_url:null — a deliberate human exclusion, not a generation failure.
+    // sc1 and sc2 have winning clips; sc3 was skipped by the operator.
+    const v1 = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/1a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    const v2 = makeVariant({
+      variant: 'A', scene_id: 'sc2', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/2a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1, v2]);
+    mockSceneRows([
+      { id: 'sc1', scene_number: 1, status: 'qc_pass', clip_url: 'https://example.com/1.mp4' },
+      { id: 'sc2', scene_number: 2, status: 'qc_pass', clip_url: 'https://example.com/2.mp4' },
+      { id: 'sc3', scene_number: 3, status: 'qc_pass', clip_url: null }, // operator-skipped
+    ]);
+    (recordMlEvent as Mock).mockResolvedValue(undefined);
+    (advanceRun as Mock).mockResolvedValue({});
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result).toEqual({ action: 'advanced', to: 'details' });
+  });
+
+  it('skipped scenes are excluded from BOTH sides of the incomplete count (reason reflects only real gaps)', async () => {
+    // sc1 has a clip, sc2 genuinely failed generation, sc3 was skipped.
+    // The pause reason must count 1 of 2 (skipped sc3 excluded entirely),
+    // naming only scene 2.
+    const v1 = makeVariant({
+      variant: 'A', scene_id: 'sc1', winner: true, winner_source: 'default',
+      clip_url: 'https://example.com/1a.mp4',
+      gemini_scores: { judge_error: 'degraded pair' },
+    });
+    (getVariantsForRun as Mock).mockResolvedValue([v1]);
+    mockSceneRows([
+      { id: 'sc1', scene_number: 1, status: 'qc_pass', clip_url: 'https://example.com/1.mp4' },
+      { id: 'sc2', scene_number: 2, status: 'pending', clip_url: null }, // never generated
+      { id: 'sc3', scene_number: 3, status: 'qc_pass', clip_url: null }, // operator-skipped
+    ]);
+
+    const result = await resolveCheckpointA(makeRun());
+    expect(result.action).toBe('paused');
+    expect((result as { action: 'paused'; reason: string }).reason).toBe(
+      'generation incomplete: 1 of 2 scenes have no clip (scenes 2)',
+    );
   });
 });
 
@@ -1713,6 +1887,41 @@ describe('resolveAssembling — fresh-read guard (P1-1 double-submit fix)', () =
   });
 });
 
+// ─── composeCheckpointBReason (pure) ─────────────────────────────────────────
+
+describe('composeCheckpointBReason', () => {
+  it('real incident: score 0.50, 4 of 7 scenes degraded/missing clips, listing+voiceover+music all present', () => {
+    const reason = composeCheckpointBReason({
+      score: 0.5,
+      threshold: AUTO_DELIVER_THRESHOLD,
+      degradedCount: 4,
+      totalScenes: 7,
+      listingComplete: true,
+      hasVoiceover: true,
+      hasMusic: true,
+    });
+    expect(reason).toBe(
+      'Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips; ' +
+      'listing details present; voiceover present; music present',
+    );
+  });
+
+  it('generic low-score case: no degraded scenes, all other factors missing — omits the missing-clips clause', () => {
+    const reason = composeCheckpointBReason({
+      score: 0.5,
+      threshold: AUTO_DELIVER_THRESHOLD,
+      degradedCount: 0,
+      totalScenes: 3,
+      listingComplete: false,
+      hasVoiceover: false,
+      hasMusic: false,
+    });
+    expect(reason).toBe(
+      'Final video scored 0.50 (needs 0.70): listing details missing; voiceover missing; music missing',
+    );
+  });
+});
+
 // ─── resolveCheckpointB ───────────────────────────────────────────────────────
 
 describe('resolveCheckpointB', () => {
@@ -1806,7 +2015,56 @@ describe('resolveCheckpointB', () => {
     const run = makeRun({ stage: 'checkpoint_b', listing_details: {} });
     const result = await resolveCheckpointB(run);
     expect(result.action).toBe('paused');
-    expect((result as { action: 'paused'; reason: string }).reason).toMatch(/quality below threshold/);
+    // Reason is now a plain human-readable sentence built from the scoring
+    // factors (score/threshold + 1 of 1 scenes missing clips + all-missing
+    // listing/voiceover/music) — NOT the old "quality below threshold: X < Y" code.
+    const reason = (result as { action: 'paused'; reason: string }).reason;
+    expect(reason).toBe(
+      'Final video scored 0.40 (needs 0.70): 1 of 1 scenes missing clips; ' +
+      'listing details missing; voiceover missing; music missing',
+    );
+  });
+
+  it('composes a human-readable reason naming missing clips + present factors (4/7 degraded, 3/7 confident, all other factors present)', async () => {
+    // 4 degraded scenes + 3 confident scenes (margin ≥ 0.15, capped at +0.2) with
+    // full listing/voiceover/music: 0.5 - 0.4(degraded) + 0.2(confident cap) + 0.1 + 0.1 + 0.1 = 0.6
+    const degraded = [1, 2, 3, 4].map(i => makeVariant({
+      variant: 'A', scene_id: `deg${i}`, winner: true, winner_source: 'default',
+      gemini_scores: { judge_error: 'degraded' },
+    }));
+    const confident = [1, 2, 3].map(i => {
+      const sceneId = `ok${i}`;
+      return [
+        makeVariant({
+          variant: 'A', scene_id: sceneId, winner: true, winner_source: 'gemini',
+          gemini_scores: { motion_quality: 5, artifacts: 5, realism: 5, composition: 5 }, // 20
+        }),
+        makeVariant({
+          variant: 'B', scene_id: sceneId, winner: false,
+          gemini_scores: { motion_quality: 4, artifacts: 4, realism: 3, composition: 3 }, // 14, margin 0.3
+        }),
+      ];
+    }).flat();
+    (getVariantsForRun as Mock).mockResolvedValue([...degraded, ...confident]);
+
+    const db = makeDbChain(null);
+    (db.update as unknown as Mock).mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
+    (db.insert as unknown as Mock).mockResolvedValue({ error: null });
+    (getSupabase as Mock).mockReturnValue(db);
+
+    const run = makeRun({
+      stage: 'checkpoint_b',
+      listing_details: { price: 500000, beds: 3, baths: 2 },
+      voiceover_audio_url: 'https://cdn.example.com/audio.mp3',
+      music_track_id: 'track-1',
+    });
+    const result = await resolveCheckpointB(run);
+    expect(result.action).toBe('paused');
+    const reason = (result as { action: 'paused'; reason: string }).reason;
+    expect(reason).toBe(
+      'Final video scored 0.60 (needs 0.70): 4 of 7 scenes missing clips; ' +
+      'listing details present; voiceover present; music present',
+    );
   });
 
   it('counts degraded variants as a penalty', async () => {

@@ -167,6 +167,91 @@ describe('GET /api/admin/studio/properties/[id]', () => {
     expect((body as unknown as { cost: { delivery: unknown } }).cost.delivery).toBeNull();
   });
 
+  it('returns a final_video entry with a Bunny embed_url when the persisted URL is Bunny-hosted', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+    process.env.BUNNY_STREAM_API_KEY = 'fake-key';
+    process.env.BUNNY_STREAM_LIBRARY_ID = '99999';
+    process.env.BUNNY_STREAM_CDN_HOSTNAME = 'vz-01cb8232-b48.b-cdn.net';
+    const guid = 'c2feb4b1-3421-4d34-9d80-31be5b0d9c2e';
+
+    const sampleProperty = {
+      id: 'prop-bunny',
+      address: '9 Bunny Way',
+      status: 'complete',
+      horizontal_video_url: `https://vz-01cb8232-b48.b-cdn.net/${guid}/play_1080p.mp4`,
+      horizontal_hls_url: `https://vz-01cb8232-b48.b-cdn.net/${guid}/playlist.m3u8`,
+      vertical_video_url: null,
+      vertical_hls_url: null,
+      client: null,
+    };
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]));
+
+    const res = makeRes();
+    try {
+      await handler(makeReq({ query: { id: 'prop-bunny' } }), res as unknown as VercelResponse);
+    } finally {
+      delete process.env.BUNNY_STREAM_API_KEY;
+      delete process.env.BUNNY_STREAM_LIBRARY_ID;
+      delete process.env.BUNNY_STREAM_CDN_HOSTNAME;
+    }
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      final_video: {
+        horizontal: { embed_url: string | null; mp4_url: string; hls_url: string | null } | null;
+        vertical: unknown;
+      };
+    };
+
+    expect(body.final_video.horizontal).not.toBeNull();
+    expect(body.final_video.horizontal!.mp4_url).toBe(sampleProperty.horizontal_video_url);
+    expect(body.final_video.horizontal!.hls_url).toBe(sampleProperty.horizontal_hls_url);
+    expect(body.final_video.horizontal!.embed_url).toBe(
+      `https://iframe.mediadelivery.net/embed/99999/${guid}`,
+    );
+    expect(body.final_video.vertical).toBeNull();
+  });
+
+  it('returns final_video: null for a non-Bunny (provider fallback) URL', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const sampleProperty = {
+      id: 'prop-fallback',
+      address: '4 Fallback Ln',
+      status: 'complete',
+      horizontal_video_url: 'https://cdn.creatomate.com/renders/abc123.mp4',
+      horizontal_hls_url: null,
+      vertical_video_url: null,
+      vertical_hls_url: null,
+      client: null,
+    };
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]));
+
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'prop-fallback' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as { final_video: { horizontal: unknown; vertical: unknown } };
+    expect(body.final_video.horizontal).toBeNull();
+    expect(body.final_video.vertical).toBeNull();
+  });
+
   it('returns delivery breakdown when active run has tagged cost events', async () => {
     mockRequireAdmin.mockResolvedValue(adminUser);
 
@@ -245,5 +330,64 @@ describe('GET /api/admin/studio/properties/[id]', () => {
     expect(body.cost.delivery).not.toBeNull();
     expect(body.cost.delivery!.total_cents).toBe(0);
     expect(Object.keys(body.cost.delivery!.by_stage)).toHaveLength(0);
+  });
+
+  it('surfaces per-provider event counts and QC re-render sub-totals in by_provider_detail', async () => {
+    mockRequireAdmin.mockResolvedValue(adminUser);
+
+    const sampleProperty = { id: 'prop-326f', address: '326f005e Ave', status: 'complete', client: null };
+    // Real prod shape (326f005e): 7 Atlas (kling) render events totaling $3.92,
+    // 3 kept clips + 4 re-renders, only 1 of the 4 re-renders tagged discarded
+    // (most re-render events lack render_outcome entirely — do not infer from
+    // untagged events).
+    const sampleCostEvents = [
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 1, duration_seconds: 5, generation_time_ms: 300000 } },
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 2, duration_seconds: 5, generation_time_ms: 300000 } },
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 3, duration_seconds: 5, generation_time_ms: 300000 } },
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 4, render_outcome: 'qc_rerender_discarded', duration_seconds: 5, generation_time_ms: 332307 } },
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 4, duration_seconds: 5, generation_time_ms: 300000 } },
+      // Untagged re-renders (real prod behavior: no render_outcome at all) — must NOT be counted as rerenders.
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 5, duration_seconds: 5, generation_time_ms: 300000 } },
+      { stage: 'generation', provider: 'kling', cost_cents: 56, metadata: { source: 'cron', scene_number: 5, duration_seconds: 5, generation_time_ms: 300000 } },
+      // $0 event — must still show up in event_count.
+      { stage: 'analysis', provider: 'anthropic', cost_cents: 0, metadata: { source: 'cron' } },
+    ];
+
+    mockGetSupabase.mockReturnValue(makeDb([
+      { data: sampleProperty, error: null },
+      { data: [], error: null },
+      { data: [], error: null },
+      { data: sampleCostEvents, error: null },
+      { data: [], error: null },
+      { data: null, error: null },
+    ]));
+
+    const res = makeRes();
+    await handler(makeReq({ query: { id: 'prop-326f' } }), res as unknown as VercelResponse);
+    expect(res._status).toBe(200);
+
+    const body = res._body as {
+      cost: {
+        total_cents: number;
+        by_provider: Record<string, number>;
+        by_provider_detail: Record<string, { cost_cents: number; event_count: number; rerender_count: number; rerender_cents: number }>;
+      };
+    };
+
+    // Totals unchanged — 7 kling events x 56 = 392 ($3.92), matching prod verification.
+    expect(body.cost.total_cents).toBe(392);
+    expect(body.cost.by_provider.kling).toBe(392);
+
+    // by_provider_detail is additive: event counts + tagged-only rerender sub-aggregate.
+    expect(body.cost.by_provider_detail.kling.cost_cents).toBe(392);
+    expect(body.cost.by_provider_detail.kling.event_count).toBe(7);
+    expect(body.cost.by_provider_detail.kling.rerender_count).toBe(1);
+    expect(body.cost.by_provider_detail.kling.rerender_cents).toBe(56);
+
+    // $0 anthropic event is still counted — proves "every call is logged" claim.
+    expect(body.cost.by_provider_detail.anthropic.cost_cents).toBe(0);
+    expect(body.cost.by_provider_detail.anthropic.event_count).toBe(1);
+    expect(body.cost.by_provider_detail.anthropic.rerender_count).toBe(0);
+    expect(body.cost.by_provider_detail.anthropic.rerender_cents).toBe(0);
   });
 });

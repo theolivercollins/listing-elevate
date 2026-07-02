@@ -688,11 +688,24 @@ export async function resolvePhotoSelection(run: DeliveryRunRow): Promise<GateOu
 /**
  * checkpoint_a — Judge-winner confirmation gate.
  *
- * For each scene pair, compute margin = abs(scoreA − scoreB) / 20.
- * Degraded pairs (winner_source='default', no real judge scores) are
- * auto-accepted — there's no meaningful choice to re-examine.
- * If ALL real-judged scenes have a margin ≥ AUTO_JUDGE_MARGIN, advance.
- * If any scene's margin is below the threshold, pause.
+ * Generation-completeness gate runs FIRST: a scene that never got a
+ * scene_variants row at all (submission silently dropped) never appears in
+ * `variants`, so the per-pair loop below — which only walks scenes that DO
+ * have a variant row — would never notice it and would silently accept a
+ * partial run. (Incident: delivery run 4b15ef63 — 4 of 7 scenes had
+ * attempt_count=0/provider=null/no clip_url; runJudgePass judged the 3 that
+ * did have variant rows, checkpoint_a auto-accepted, and assembly stitched a
+ * 3-clip video and marked the property complete.) We compare the property's
+ * scene set — minus operator-skipped scenes (status 'qc_pass' with null
+ * clip_url, per api/scenes/[id]/skip.ts), which are deliberate human
+ * exclusions — against which scenes have a winning clip, and pause for a
+ * human instead of advancing when any are missing.
+ *
+ * Then, for each scene pair that IS present, compute margin =
+ * abs(scoreA − scoreB) / 20. Degraded pairs (winner_source='default', no
+ * real judge scores) are auto-accepted — there's no meaningful choice to
+ * re-examine. If ALL real-judged scenes have a margin ≥ AUTO_JUDGE_MARGIN,
+ * advance. If any scene's margin is below the threshold, pause.
  */
 export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutcome> {
   const variants = await getVariantsForRun(run.id);
@@ -704,6 +717,44 @@ export async function resolveCheckpointA(run: DeliveryRunRow): Promise<GateOutco
     if (v.variant === 'A') entry.a = v;
     else if (v.variant === 'B') entry.b = v;
     byScene.set(v.scene_id, entry);
+  }
+
+  // Generation-completeness gate. Skipped only for the synthetic
+  // zero-variant case (unreachable in prod — runJudgePass never advances a
+  // run to checkpoint_a while `pairs.length === 0`), so there is nothing to
+  // reconcile against and no DB round trip is needed.
+  if (variants.length > 0) {
+    const { data: sceneRows, error: scenesErr } = await getSupabase()
+      .from('scenes')
+      .select('id, scene_number, status, clip_url')
+      .eq('property_id', run.property_id);
+    if (scenesErr) {
+      throw new Error(`resolveCheckpointA: scenes lookup failed: ${scenesErr.message}`);
+    }
+
+    // Operator-skipped scenes (api/scenes/[id]/skip.ts marks them
+    // status:'qc_pass' with clip_url:null) are a deliberate human exclusion,
+    // not a generation failure — drop them from BOTH sides of the count so a
+    // skipped scene can never trip the generation-incomplete pause.
+    const allScenes = ((sceneRows ?? []) as Array<{
+      id: string; scene_number: number; status: string | null; clip_url: string | null;
+    }>).filter((s) => !(s.status === 'qc_pass' && !s.clip_url));
+
+    const missingSceneNumbers: number[] = [];
+    for (const scene of allScenes) {
+      const entry = byScene.get(scene.id);
+      const winnerRow = entry ? (entry.a?.winner ? entry.a : entry.b?.winner ? entry.b : undefined) : undefined;
+      if (!winnerRow?.clip_url) missingSceneNumbers.push(scene.scene_number);
+    }
+
+    if (missingSceneNumbers.length > 0) {
+      missingSceneNumbers.sort((a, b) => a - b);
+      const reason =
+        `generation incomplete: ${missingSceneNumbers.length} of ${allScenes.length} scenes have no clip ` +
+        `(scenes ${missingSceneNumbers.join(', ')})`;
+      await pauseForHuman(run.id, reason);
+      return { action: 'paused', reason };
+    }
   }
 
   const margins: Array<{ sceneId: string; margin: number }> = [];
@@ -1164,6 +1215,39 @@ async function advanceMusicToAssembling(run: DeliveryRunRow): Promise<GateOutcom
  * If score ≥ AUTO_DELIVER_THRESHOLD: submit auto-ratings, log auto_advance, advance to 'delivered'.
  * If below: pause.
  */
+
+/**
+ * composeCheckpointBReason — build the human-readable pause reason for
+ * checkpoint_b from the actual scoring factors (no machine-only codes).
+ *
+ * Rendered by AutopilotPanel verbatim, e.g. for the real incident this fixes
+ * (score 0.50, 4 of 7 scenes degraded, listing/voiceover/music all present):
+ *   "Final video scored 0.50 (needs 0.70): 4 of 7 scenes missing clips;
+ *    listing details present; voiceover present; music present"
+ *
+ * Exported (pure, no I/O) so both auto-run.test.ts and AutopilotPanel's
+ * guidance-mapping tests can exercise it directly without mocking Supabase.
+ */
+export function composeCheckpointBReason(params: {
+  score: number;
+  threshold: number;
+  degradedCount: number;
+  totalScenes: number;
+  listingComplete: boolean;
+  hasVoiceover: boolean;
+  hasMusic: boolean;
+}): string {
+  const { score, threshold, degradedCount, totalScenes, listingComplete, hasVoiceover, hasMusic } = params;
+  const parts: string[] = [];
+  if (degradedCount > 0) {
+    parts.push(`${degradedCount} of ${totalScenes} scenes missing clips`);
+  }
+  parts.push(`listing details ${listingComplete ? 'present' : 'missing'}`);
+  parts.push(`voiceover ${hasVoiceover ? 'present' : 'missing'}`);
+  parts.push(`music ${hasMusic ? 'present' : 'missing'}`);
+  return `Final video scored ${score.toFixed(2)} (needs ${threshold.toFixed(2)}): ${parts.join('; ')}`;
+}
+
 export async function resolveCheckpointB(run: DeliveryRunRow): Promise<GateOutcome> {
   // Fail fast on any uncleared error.
   if (run.error) {
@@ -1233,7 +1317,15 @@ export async function resolveCheckpointB(run: DeliveryRunRow): Promise<GateOutco
   score = Math.max(0, Math.min(1, score));
 
   if (score < AUTO_DELIVER_THRESHOLD) {
-    const reason = `quality below threshold: ${score.toFixed(2)} < ${AUTO_DELIVER_THRESHOLD}`;
+    const reason = composeCheckpointBReason({
+      score,
+      threshold: AUTO_DELIVER_THRESHOLD,
+      degradedCount,
+      totalScenes: byScene.size,
+      listingComplete: Boolean(d.price && d.beds && d.baths),
+      hasVoiceover: Boolean(run.voiceover_audio_url),
+      hasMusic: Boolean(run.music_track_id),
+    });
     await pauseForHuman(run.id, reason);
     return { action: 'paused', reason };
   }
