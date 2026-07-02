@@ -54,18 +54,23 @@ describe("planRoute", () => {
   });
 
   it("dead-end handling: a room with no onward covered edge becomes its own trailing segment", () => {
+    // NB: this room used to be named/typed "Office" — renamed to "Family
+    // Room" 2026-07-02 so it stays a plain public-interior room and doesn't
+    // collide with the new isPrivateRoomType(/office/) exclusion (see the
+    // dedicated "private rooms" tests below for that behavior); the DFS
+    // start-pick/dead-end topology this test validates is unchanged.
     const g = graph(
       [
         room("ext", "Front Exterior", "exterior_front"),
-        room("office", "Office"), // most-interior leaf -> wins the chain start (score 0, degree 1)
+        room("family", "Family Room"), // most-interior leaf -> wins the chain start (score 0, degree 1)
         room("living", "Living Room"), // interior hub (score 0, degree 3)
         room("kitchen", "Kitchen"), // true dead end — reached only via backtrack, after the pool branch
         room("lanai", "Lanai"),
         room("pool", "Pool"),
       ],
       [
-        edge("ext", "office", 0.95), // ignored for chaining — ext is always its own opener, edges or not
-        edge("office", "living", 0.9),
+        edge("ext", "family", 0.95), // ignored for chaining — ext is always its own opener, edges or not
+        edge("family", "living", 0.9),
         edge("living", "kitchen", 0.65), // dead end — kitchen has no onward covered edge
         edge("living", "lanai", 0.85),
         edge("lanai", "pool", 0.9),
@@ -74,14 +79,14 @@ describe("planRoute", () => {
 
     const plan = planRoute(g);
 
-    // ext opens on its own; office (the lowest-degree interior room) starts
-    // the chain; forward-only DFS (highest-confidence neighbor first) fills
-    // the 4-space cap with office->living->lanai->pool before the kitchen
-    // branch is ever reached, so kitchen — the true dead end — lands in its
-    // own trailing segment exactly as the design intends.
+    // ext opens on its own; family room (the lowest-degree interior room)
+    // starts the chain; forward-only DFS (highest-confidence neighbor
+    // first) fills the 4-space cap with family->living->lanai->pool before
+    // the kitchen branch is ever reached, so kitchen — the true dead end —
+    // lands in its own trailing segment exactly as the design intends.
     expect(plan.segments.map((s) => s.photoIds)).toEqual([
       ["ext"],
-      ["office", "living", "lanai", "pool"],
+      ["family", "living", "lanai", "pool"],
       ["kitchen"],
     ]);
     expect(plan.transitions).toEqual([
@@ -220,5 +225,153 @@ describe("planRoute", () => {
     expect(new Set(allIds).size).toBe(allIds.length);
     expect(allIds).not.toContain("ext2");
     expect(allIds).not.toContain("pool2");
+  });
+
+  it("entry-first chain start: a foyer/entry room always starts the first interior chain, even when it isn't the lowest-degree room", () => {
+    // Without the entry-first override, the OLD start-pick tiebreak (lowest
+    // orientationScore, then lowest degree) would hand the start to whatever
+    // interior leaf has fewer edges than the foyer — here that's any of
+    // living/kitchen/dining (degree 1 each) over the foyer hub (degree 3).
+    // The override must win regardless of degree.
+    const g = graph(
+      [
+        room("ext", "Front Exterior", "exterior_front"),
+        room("foyer", "Foyer"), // entry room, degree 3 (a hub, NOT a leaf)
+        room("living", "Living Room"), // degree 1
+        room("kitchen", "Kitchen"), // degree 1
+        room("dining", "Dining Room"), // degree 1
+      ],
+      [
+        edge("foyer", "living", 0.9),
+        edge("foyer", "kitchen", 0.9),
+        edge("foyer", "dining", 0.9),
+      ],
+    );
+
+    const plan = planRoute(g);
+
+    // foyer opens the (only) interior chain, immediately followed by its
+    // highest-confidence neighbor; because none of living/kitchen/dining
+    // connect directly to each other, each subsequent one starts a new
+    // segment on the DFS backtrack — but foyer itself is never orphaned into
+    // its own trailing segment, and never appears anywhere but the head of
+    // the very first interior segment.
+    expect(plan.segments[0].photoIds).toEqual(["ext"]);
+    expect(plan.segments[1].photoIds[0]).toBe("foyer");
+    const allIds = plan.segments.flatMap((s) => s.photoIds);
+    expect(allIds.filter((id) => id === "foyer")).toHaveLength(1);
+  });
+
+  it("private-rooms-only exception: when every non-opener/non-aerial room is private, they stay in the main chain instead of forming separate suite segments", () => {
+    // bedroom<->bathroom<->closet is a linear 3-room private chain with NO
+    // public interior room anywhere in the graph — excluding them per the
+    // usual private-room rule would leave nothing to walk at all, so the
+    // exception keeps them in the MAIN chain (4-space cap) instead of the
+    // suite path (2-space cap). If the exception were missing, this would
+    // instead split into two capped-at-2 suite segments.
+    const g = graph(
+      [
+        room("ext", "Front Exterior", "exterior_front"),
+        room("bedroom", "Bedroom"),
+        room("bathroom", "Bathroom"),
+        room("closet", "Closet"),
+      ],
+      [edge("bedroom", "bathroom", 0.9), edge("bathroom", "closet", 0.9)],
+    );
+
+    const plan = planRoute(g);
+
+    expect(plan.segments.map((s) => s.photoIds)).toEqual([
+      ["ext"],
+      ["bedroom", "bathroom", "closet"], // stayed together — the 4-space main-chain cap, not the 2-space suite cap
+    ]);
+    expect(plan.transitions).toEqual([{ afterSegmentIndex: 0, type: "crossfade" }]);
+  });
+
+  it("real dry-run reproduction (property 1c2e7ae6, full MLS set): entry-first chain start + private rooms pulled into trailing suite segments", () => {
+    // Verbatim shape of the 2026-07-02 follow-up dry run: foyer, living,
+    // 5-photo kitchen duplicate group, a pool-type "Covered Lanai" node, a
+    // primary bedroom, a 4-photo bathroom duplicate group (one connected
+    // pair — vanity->shower — plus two evidence-free extras), a 3-photo
+    // exterior_front duplicate group, and a 3-photo aerial group with the
+    // rear aerial as hero. BAD plan before this fix: [FrontExt]
+    // [Kitchen->Living->Lanai->PrimaryBedroom] [Foyer] [Bathroom] [Aerial
+    // hero] — foyer orphaned AFTER the interior walk, and the chain ends by
+    // walking the camera INTO a bedroom.
+    const g = graph(
+      [
+        room("foyer", "Foyer"),
+        room("living", "Living Room", "living_room"),
+        room("kitchen1", "Kitchen 1", "kitchen"),
+        room("kitchen2", "Kitchen 2", "kitchen"),
+        room("kitchen3", "Kitchen 3", "kitchen"), // has the only edge evidence -> wins as kitchen's representative
+        room("kitchen4", "Kitchen 4", "kitchen"),
+        room("kitchen5", "Kitchen 5", "kitchen"),
+        room("lanai", "Covered Lanai", "lanai"),
+        room("bedroom1", "Primary Bedroom", "primary_bedroom"),
+        room("bath_vanity", "Bathroom - Vanity", "bathroom"),
+        room("bath_shower", "Bathroom - Shower", "bathroom"), // connected to bath_vanity below -> kept as a pair
+        room("bath_extra1", "Bathroom - Extra 1", "bathroom"), // duplicate, no edges -> drops onto bath_vanity
+        room("bath_extra2", "Bathroom - Extra 2", "bathroom"), // duplicate, no edges -> drops onto bath_vanity
+        room("ext1", "Front Exterior A", "exterior_front"),
+        room("ext2", "Front Exterior B", "exterior_front"), // duplicate — drops entirely
+        room("ext3", "Front Exterior C", "exterior_front"), // duplicate — drops entirely
+        room("aerial1", "Rear Aerial", "aerial"), // hero
+        room("aerial2", "Side Aerial", "aerial"), // duplicate — drops entirely
+        room("aerial3", "Front Aerial", "aerial"), // duplicate — drops entirely
+      ],
+      [
+        edge("living", "kitchen3", 0.95, "opening"),
+        edge("living", "lanai", 0.95, "doorway"),
+        edge("bedroom1", "lanai", 0.95, "doorway"),
+        edge("foyer", "living", 0.9, "opening"),
+        edge("bath_vanity", "bath_shower", 0.9, "opening"),
+        edge("living", "bedroom1", 0.8, "doorway"),
+      ],
+      "aerial1",
+    );
+
+    const plan = planRoute(g);
+
+    expect(plan.segments.map((s) => s.photoIds)).toEqual([
+      ["ext1"], // opener — first-listed exterior_front duplicate wins
+      ["foyer", "living", "kitchen3"], // entry-first main chain — starts at foyer, ends at the kitchen leaf
+      ["lanai"], // living's other covered edge, its own beat once living is already used
+      ["bedroom1"], // private suite beat 1 — never mid-chain or a chain-terminal of the main walk
+      ["bath_vanity", "bath_shower"], // private suite beat 2 — the vanity->shower micro-walk
+      ["aerial1"], // hero closer, always last
+    ]);
+    expect(plan.transitions).toEqual([
+      { afterSegmentIndex: 0, type: "crossfade" },
+      { afterSegmentIndex: 1, type: "crossfade" },
+      { afterSegmentIndex: 2, type: "crossfade" },
+      { afterSegmentIndex: 3, type: "crossfade" },
+      { afterSegmentIndex: 4, type: "crossfade" },
+    ]);
+
+    // Minimum bar from the dry-run repro, asserted explicitly:
+    const [opener, mainChain, lanaiBeat, bedroomBeat, bathroomBeat, hero] = plan.segments;
+    expect(mainChain.photoIds[0]).toBe("foyer"); // foyer starts the first interior chain
+    expect(mainChain.photoIds[mainChain.photoIds.length - 1]).toBe("kitchen3"); // kitchen ends it
+    // no bedroom/bathroom inside the main chain (opener + entry chain + outdoor beat):
+    for (const seg of [opener, mainChain, lanaiBeat]) {
+      expect(seg.photoIds).not.toContain("bedroom1");
+      expect(seg.photoIds.some((id) => id.startsWith("bath_"))).toBe(false);
+    }
+    // foyer never orphaned after the interior segments — it appears exactly
+    // once, at the head of the main chain, not as a later standalone segment:
+    const allIds = plan.segments.flatMap((s) => s.photoIds);
+    expect(allIds.filter((id) => id === "foyer")).toHaveLength(1);
+    expect(bedroomBeat.photoIds).toEqual(["bedroom1"]);
+    expect(bathroomBeat.photoIds).toEqual(["bath_vanity", "bath_shower"]);
+    // hero last:
+    expect(hero.photoIds).toEqual(["aerial1"]);
+    expect(plan.segments[plan.segments.length - 1]).toBe(hero);
+    // dropped duplicates never appear anywhere:
+    expect(allIds).not.toContain("ext2");
+    expect(allIds).not.toContain("ext3");
+    expect(allIds).not.toContain("kitchen1");
+    expect(allIds).not.toContain("bath_extra1");
+    expect(allIds).not.toContain("aerial2");
   });
 });

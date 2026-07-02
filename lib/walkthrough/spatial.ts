@@ -515,13 +515,36 @@ function isOutdoorAmenityRoomType(rt: string): boolean {
   return /pool|waterfront|exterior/.test(rt);
 }
 
-/** Orientation score for interior->outdoor chain ordering: interior spaces
- *  (kitchen/bedroom/bathroom/living/etc — anything not exterior/pool/lanai/
- *  aerial/waterfront) score 0, the semi-outdoor lanai scores 1, and pool/
- *  back-exterior/waterfront amenities score 2. Only meaningful for rooms
- *  already outside the exterior-front/aerial categories (those are pulled
- *  out of the chain graph entirely before this is ever consulted). */
-function orientationScore(rt: string): 0 | 1 | 2 {
+/** Entry rooms (foyer/entryway/hallway) — 2026-07-02 follow-up dry run
+ *  (property 1c2e7ae6) fix: these always win the chain-start slot in their
+ *  connected component (see orientationScore + planChainSegments' start
+ *  pick), so a tour walks IN from the front door instead of starting
+ *  mid-house and stranding the foyer as an orphaned segment after the rest
+ *  of the interior has already been shown. */
+function isEntryRoomType(rt: string): boolean {
+  return /foyer|entry|hall/.test(rt);
+}
+
+/** Private rooms (bedroom/bathroom/closet/office/den) — 2026-07-02
+ *  follow-up dry run fix: these never appear inside the main interior/
+ *  outdoor chain (see planRoute's chainRooms/privateRooms split); they get
+ *  their own short trailing "suite" segment(s) instead, so the primary walk
+ *  never ends by walking the camera INTO a bedroom. */
+function isPrivateRoomType(rt: string): boolean {
+  return /bedroom|bathroom|closet|office|den/.test(rt);
+}
+
+/** Orientation score for interior->outdoor chain ordering AND chain-start
+ *  priority: entry rooms (foyer/hallway) score -1 — most interior of all,
+ *  so they always win the start-room comparison in planChainSegments
+ *  regardless of degree (fix 2026-07-02) — plain interior spaces (kitchen/
+ *  living/etc — anything not entry/exterior/pool/lanai/aerial/waterfront)
+ *  score 0, the semi-outdoor lanai scores 1, and pool/back-exterior/
+ *  waterfront amenities score 2. Only meaningful for rooms already outside
+ *  the exterior-front/aerial categories (those are pulled out of the chain
+ *  graph entirely before this is ever consulted). */
+function orientationScore(rt: string): -1 | 0 | 1 | 2 {
+  if (isEntryRoomType(rt)) return -1;
   if (isLanaiRoomType(rt)) return 1;
   if (isOutdoorAmenityRoomType(rt)) return 2;
   return 0;
@@ -564,6 +587,42 @@ function dedupeRoomsByType(graph: SpatialGraph): { rooms: SpatialGraphNode[]; ed
   const dedupedRooms: SpatialGraphNode[] = [];
   for (const key of groupOrder) {
     const members = groups.get(key)!;
+
+    // Fix (private-room pair preservation, 2026-07-02 follow-up dry run,
+    // property 1c2e7ae6): a private room type (bedroom/bathroom/etc) can
+    // legitimately have MULTIPLE photos of the SAME physical room joined by
+    // a real edge — e.g. a bathroom's vanity-facing shot and its
+    // shower-facing shot, connected by a doorway/opening edge Gemini
+    // actually reported. Collapsing straight to one representative like
+    // every other room type would silently drop that second photo and the
+    // connection between them, which planRoute needs to build the private
+    // "suite" micro-walk (see isPrivateRoomType). When such an internal
+    // edge exists, keep BOTH its endpoints as separate rooms instead of the
+    // usual single-winner collapse; any other duplicates in the group still
+    // map onto the first (higher-confidence) endpoint. Falls through to the
+    // normal single-winner path below when there's no such edge (e.g. plain
+    // duplicate bedroom shots with no reported connection between them).
+    if (members.length > 1 && isPrivateRoomType(key)) {
+      const memberIds = new Set(members.map((m) => m.photoId));
+      const internalEdges = graph.edges.filter(
+        (e) =>
+          e.confidence >= MIN_EDGE_CONFIDENCE &&
+          e.from !== e.to &&
+          memberIds.has(e.from) &&
+          memberIds.has(e.to),
+      );
+      if (internalEdges.length > 0) {
+        const best = internalEdges.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+        const nodeA = members.find((m) => m.photoId === best.from)!;
+        const nodeB = members.find((m) => m.photoId === best.to)!;
+        for (const m of members) {
+          idMap.set(m.photoId, m.photoId === nodeB.photoId ? nodeB.photoId : nodeA.photoId);
+        }
+        dedupedRooms.push(nodeA, nodeB);
+        continue;
+      }
+    }
+
     let winner = members[0];
     let winnerDegree = degreeById.get(winner.photoId) ?? 0;
     for (const m of members.slice(1)) {
@@ -682,6 +741,16 @@ function applyHeroShotClosing(
  * degree 2), so the DFS walks kitchen->living->lanai->pool->back_ext->
  * waterfront instead of starting from whichever room happened to be listed
  * first in the graph.
+ *
+ * Entry-first override (2026-07-02 follow-up dry run, property 1c2e7ae6): an
+ * entry room (foyer/hallway) scores -1 in orientationScore, strictly below
+ * every other room type, so if a component contains one it ALWAYS wins the
+ * start-room comparison outright — the degree/index tiebreaks never even
+ * get consulted, because the score comparison short-circuits first. That's
+ * what stops a tour from starting mid-house and stranding the foyer as an
+ * orphaned segment after the interior has already been shown: a foyer that's
+ * connected to anything in its component is guaranteed to open that
+ * component's chain, whether it's a leaf or a branching hub.
  */
 function planChainSegments(
   rooms: SpatialGraphNode[],
@@ -782,43 +851,61 @@ function planChainSegments(
  * 2026-07-02 after a real dry run (property a30212b2) exposed three flaws:
  * duplicate exterior/pool photos both landing in the plan, chains walking
  * outdoor-to-outdoor instead of interior-to-outdoor, and cinematic ordering
- * (opener / hero closer) being at the mercy of raw DFS-backtrack order. See
- * dedupeRoomsByType / planChainSegments / applyHeroShotClosing above for the
- * mechanics; here's the assembly:
+ * (opener / hero closer) being at the mercy of raw DFS-backtrack order — and
+ * refined the same day after a second dry run (property 1c2e7ae6, full MLS
+ * photo set) exposed two more semantic gaps: the foyer could get stranded as
+ * its own segment AFTER the interior walk instead of opening it, and private
+ * rooms (bedrooms/bathrooms) could land mid-chain or even end the tour by
+ * walking the camera INTO a bedroom. See dedupeRoomsByType /
+ * planChainSegments / applyHeroShotClosing above for the mechanics; here's
+ * the assembly:
  *
  *   1. Dedup rooms by normalized room_type (fix 1) — two photos of the same
  *      physical room (e.g. two exterior_front shots) collapse to one node,
  *      keeping whichever photo has the most edge evidence as the
  *      representative. Edges are remapped onto survivors; self-loops created
  *      by the merge are dropped, duplicate edges between the same pair keep
- *      the higher-confidence copy.
- *   2. Split the deduped rooms into three groups: the exterior-front opener
+ *      the higher-confidence copy. Exception: a private room type (bedroom/
+ *      bathroom/etc) with a real internal edge between two of its own photos
+ *      (e.g. a bathroom's vanity shot doorway-connected to its shower shot)
+ *      keeps BOTH photos instead of collapsing to one — that pair becomes
+ *      the suite micro-walk in step 3.
+ *   2. Split the deduped rooms into FOUR groups: the exterior-front opener
  *      room(s) (always their own single-room opening segment, never chained
  *      with anything, edges into/out of them are ignored for chaining
  *      purposes), aerial room(s) (never a mid-segment member — hero/closer
- *      only, omitted entirely if not the hero shot), and everything else
- *      (the "chain graph": interior + amenity rooms available for
- *      connected, forward-only traversal).
+ *      only, omitted entirely if not the hero shot), private rooms (bedroom/
+ *      bathroom/closet/office/den — pulled out of the main walk entirely
+ *      UNLESS every remaining candidate room is private, in which case
+ *      excluding them would leave nothing to show and they stay put), and
+ *      everything else (the "chain graph": public interior + amenity rooms
+ *      available for connected, forward-only traversal).
  *   3. planChainSegments() walks the chain graph: no usable
  *      (>= MIN_EDGE_CONFIDENCE) edges anywhere → every chain room is its own
  *      segment (no-edges fallback). Otherwise, per connected component, a
  *      forward-only DFS starts at the most-interior, lowest-degree room
  *      (fix 2 — orients kitchen/living/bedroom-style rooms first, pool/
- *      back-exterior/waterfront-style amenities last) and chunks the
- *      traversal into segments exactly as before: a room stays in the
- *      current segment only while a covered edge directly connects it to
- *      the previous room AND the segment hasn't hit maxSpacesPerSegment;
- *      otherwise a new segment starts (this is what turns a DFS backtrack,
- *      or a genuine dead end, into a crossfade instead of an impossible
- *      camera move).
- *   4. Cinematic segment order (fix 3): opener segment(s) first, then the
- *      resulting chain segments that contain at least one interior room
+ *      back-exterior/waterfront-style amenities last; an entry room — foyer/
+ *      hallway — always wins this start slot outright, regardless of degree,
+ *      per orientationScore's -1) and chunks the traversal into segments
+ *      exactly as before: a room stays in the current segment only while a
+ *      covered edge directly connects it to the previous room AND the
+ *      segment hasn't hit maxSpacesPerSegment; otherwise a new segment
+ *      starts (this is what turns a DFS backtrack, or a genuine dead end,
+ *      into a crossfade instead of an impossible camera move). The SAME
+ *      function, called again over just the private rooms with a tighter
+ *      2-space cap, produces the trailing "suite" segments — a bedroom's
+ *      lone photo, a bathroom's vanity->shower pair, etc.
+ *   4. Cinematic segment order: opener segment(s) first, then the resulting
+ *      chain segments that contain at least one interior-or-entry room
  *      ("interior->outdoor" chains) sorted longest/most-covered first, then
  *      the remaining chain segments that are entirely outdoor/amenity rooms
- *      (also longest first), then the hero shot as a dedicated closing
- *      segment appended last (applyHeroShotClosing) — pulled out of wherever
- *      it currently sits if it's mid-chain, or appended fresh if it was an
- *      aerial/opener room that was never part of the chain graph at all.
+ *      (also longest first), then the private "suite" segments (component
+ *      order, capped at 2 spaces each), then the hero shot as a dedicated
+ *      closing segment appended last (applyHeroShotClosing) — pulled out of
+ *      wherever it currently sits if it's mid-chain, or appended fresh if it
+ *      was an aerial/opener room that was never part of the chain graph at
+ *      all.
  */
 export function planRoute(
   graph: SpatialGraph,
@@ -835,19 +922,49 @@ export function planRoute(
   const openerRooms = deduped.rooms.filter((r) => isExteriorFrontRoomType(normalizeRoomType(r.roomType)));
   const aerialRooms = deduped.rooms.filter((r) => isAerialRoomType(normalizeRoomType(r.roomType)));
   const excludedIds = new Set([...openerRooms, ...aerialRooms].map((r) => r.photoId));
-  const chainRooms = deduped.rooms.filter((r) => !excludedIds.has(r.photoId));
-  const chainEdges = deduped.edges.filter((e) => !excludedIds.has(e.from) && !excludedIds.has(e.to));
+  const candidateRooms = deduped.rooms.filter((r) => !excludedIds.has(r.photoId));
+
+  // Fix (private-room exclusion, 2026-07-02 follow-up dry run, property
+  // 1c2e7ae6): bedroom/bathroom/closet/office/den rooms never join the MAIN
+  // interior/outdoor chain — they get their own short trailing "suite"
+  // segment(s) below — UNLESS every remaining candidate room is private, in
+  // which case pulling them out would leave nothing for the main walk at
+  // all, so they stay in the chain graph exactly as before.
+  const hasPublicInterior = candidateRooms.some(
+    (r) => !isPrivateRoomType(normalizeRoomType(r.roomType)),
+  );
+  const privateRooms = hasPublicInterior
+    ? candidateRooms.filter((r) => isPrivateRoomType(normalizeRoomType(r.roomType)))
+    : [];
+  const chainRooms = hasPublicInterior
+    ? candidateRooms.filter((r) => !isPrivateRoomType(normalizeRoomType(r.roomType)))
+    : candidateRooms;
+
+  const chainRoomIds = new Set(chainRooms.map((r) => r.photoId));
+  const chainEdges = deduped.edges.filter((e) => chainRoomIds.has(e.from) && chainRoomIds.has(e.to));
 
   const chainIdSegments = planChainSegments(chainRooms, chainEdges, maxSpaces);
 
-  // Fix 3: interior-anchored chains (contain >= 1 interior room) come before
-  // purely-outdoor/amenity chains, each bucket sorted longest/most-covered
-  // first.
+  // Suite segments: private rooms walk their OWN short connected chains
+  // (>= MIN_EDGE_CONFIDENCE edges among themselves only — e.g. a bathroom's
+  // vanity->shower pair), capped at 2 spaces instead of maxSpaces, kept
+  // entirely separate from the main interior/outdoor chains. Reuses
+  // planChainSegments so start-pick/dead-end/no-edges behavior stays
+  // identical to the main chain, just tighter (a private-room beat is a
+  // couple of seconds, not a full room-to-room tour).
+  const privateRoomIds = new Set(privateRooms.map((r) => r.photoId));
+  const privateEdges = deduped.edges.filter((e) => privateRoomIds.has(e.from) && privateRoomIds.has(e.to));
+  const suiteIdSegments = planChainSegments(privateRooms, privateEdges, Math.min(2, maxSpaces));
+
+  // Fix 3: interior-anchored chains (contain >= 1 interior-or-entry room —
+  // orientationScore <= 0, so a lone foyer counts as interior-anchored too)
+  // come before purely-outdoor/amenity chains, each bucket sorted longest/
+  // most-covered first.
   const interiorAnchored: string[][] = [];
   const outdoorOnly: string[][] = [];
   for (const seg of chainIdSegments) {
     const hasInterior = seg.some(
-      (id) => orientationScore(normalizeRoomType(roomById.get(id)!.roomType)) === 0,
+      (id) => orientationScore(normalizeRoomType(roomById.get(id)!.roomType)) <= 0,
     );
     (hasInterior ? interiorAnchored : outdoorOnly).push(seg);
   }
@@ -858,6 +975,7 @@ export function planRoute(
     ...openerRooms.map((r) => [r.photoId]),
     ...interiorAnchored,
     ...outdoorOnly,
+    ...suiteIdSegments,
   ];
 
   applyHeroShotClosing(idSegments, deduped.heroShot, roomById);
