@@ -167,7 +167,11 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
     } else if (r.status === "skipped") {
       await sendMessage(`⚠️ Skipped (non-prod environment)`);
     } else {
-      await sendMessage(`⚠️ Failed: ${r.reason ?? "unknown error"}`);
+      // Plain-text — r.reason may contain Markdown special chars (e.g. "[")
+      // that crash Telegram's entity parser if sent with parse_mode:'Markdown'.
+      await sendMessage(`⚠️ Failed: ${r.reason ?? "unknown error"}`, {
+        parseMode: "none",
+      });
     }
     return;
   }
@@ -183,9 +187,11 @@ async function handleApprove(cbId: string, intakeId: string): Promise<void> {
       `⚠️ Skipped (non-prod environment)`,
     );
   } else {
+    // Plain-text for same reason — error text must not be Markdown-parsed.
     await editMessageText(
       telegram_message_id,
       `⚠️ Failed: ${r.reason ?? "unknown error"}`,
+      { parseMode: "none" },
     );
   }
 }

@@ -29,12 +29,19 @@ import { runPipeline } from "../pipeline.js";
 import { createRun, getRun, revertRun, setListingDetails } from "../delivery/runs.js";
 import { runScrapeStage } from "../delivery/scrape.js";
 import type { DeliveryVideoType } from "../types/operator-studio.js";
+import { errMsg } from "../utils/err-msg.js";
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
-// Match the only live production templates (JUST_LISTED 15/30 horizontal).
+// Match the only live production templates (just_listed 15/30 horizontal).
 // See docs/state/PROJECT-STATE.md and MEMORY.md operator-studio-template-config.
-
-const DEFAULT_PACKAGE = "JUST_LISTED";
+//
+// FIX: was "JUST_LISTED" (uppercase) — properties.selected_package CHECK
+// constraint (supabase/migrations/054_properties_order_form.sql:41-45) only
+// allows lowercase: 'just_listed'|'just_pended'|'just_closed'|'life_cycle'.
+// Every createProperty() call on the Drive-intake approve path was throwing a
+// Postgres 23514 violation, which is a plain Supabase object (not an Error),
+// so the old catch rendered it as "[object Object]" — see errMsg fix below.
+const DEFAULT_PACKAGE = "just_listed";
 const DEFAULT_DURATION = 30;
 const DEFAULT_ORIENTATION = "horizontal";
 
@@ -356,7 +363,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
 
     return { status: "generating", propertyId };
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = errMsg(err);
     console.error(
       `[drive/orchestrate] approveIntake failed for ${intakeId}:`,
       reason,
@@ -524,7 +531,7 @@ export async function regenerateIntake(
 
     return { status: "generating", propertyId: intake.property_id };
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = errMsg(err);
     console.error(
       `[drive/orchestrate] regenerateIntake failed for ${intakeId}:`,
       reason,
