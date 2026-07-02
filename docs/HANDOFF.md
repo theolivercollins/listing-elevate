@@ -725,7 +725,29 @@ Plus two follow-on niceties: after Sierra's success indicator, bounce to the blo
 **Still pending (gated on smoke):**
 - **`USE_THOMPSON_ROUTER=true`** — explicitly gated on Oliver eyeballing prod render with the new retrieval. Adds exploration so the system doesn't lock onto recipe monoculture. Vercel env flag flip; instant rollback.
 
-**Manual smoke when convenient:** trigger one render on listingelevate.com (any property), then look at the scene table: ≥5 different `camera_movement` values across 10-12 scenes, no single motion repeated >3 times. Vercel function logs should show "Per-photo retrieval: N/12 photos got retrieval blocks (R recipes, E exemplars, L losers)" — confirms the new code path fired. If a DA.3 override fires (warn log "DA.3 override: scene N picked X but ..."), the scene's prompt text should contain the replacement motion verb.
+**Manual smoke (no Vercel dashboard access required):**
+
+Verification script in repo at [`scripts/check-prompt-collapse.ts`](../scripts/check-prompt-collapse.ts). Run after the next render:
+
+```bash
+cd ~/listing-elevate && pnpm exec tsx scripts/check-prompt-collapse.ts
+```
+
+Prints four signals from the most recent property:
+- **[A]** Active prod director prompt body (already ✓ — version 4, source `lab_promotion`, hash `ac365465`)
+- **[1]** Pipeline-log confirmation that `resolveProductionPrompt` picked up v4
+- **[2]** Per-photo retrieval log line with counts: `N/12 photos got retrieval blocks (R recipes, E exemplars, L losers)`. If `R=E=L=0`, prod photos lack `image_embedding` and the new signal is starved — fix is `pnpm exec tsx scripts/backfill-image-embeddings.ts --target photos --write`
+- **[3]** DA.3 override log rows (only fires when validator overrides motion; metadata now contains both `original_prompt` and `rewritten_prompt`)
+- **[4]** Motion-variety verdict from the scene table
+
+**Verification status as of EOD 2026-05-13:** active prod prompt confirmed (signal [A] ✓). Signals [1]/[2]/[3] not yet observable because the most recent property in prod (`1c2e7ae6-…`) is from 2026-04-13 — no renders have fired against the new code yet. Verdict on that April render's motion variety: 9 distinct movements across 12 scenes, max 3× same — already healthy by the heuristic.
+
+**Open question for tomorrow:** Oliver reported "same prompt over and over (like low glide)" as the symptom that triggered this work. The April render's motion table looks healthy. Possibilities:
+  (a) the repetition Oliver observed was in **Lab renders**, not prod renders (Lab uses different code; bugs there still exist but weren't shipped today)
+  (b) the symptom was about prompt TEXT phrasing being near-identical even when `camera_movement` values differ (e.g. all "steady cinematic low angle glide toward [different feature]") — in which case the per-photo retrieval should help; metric to watch is prompt-text diversity, not motion-field diversity
+  (c) the symptom is on a recent prod render that didn't show up in the query for some reason
+
+**Resume tomorrow with:** confirm with Oliver which surface (Lab vs prod) and which metric (motion-field vs prompt-text) the original symptom referred to. Then trigger one prod render and run `scripts/check-prompt-collapse.ts` to verify the new code paths and quality improvement.
 
 ---
 
