@@ -29,12 +29,25 @@ import { runPipeline } from "../pipeline.js";
 import { createRun, getRun, revertRun, setListingDetails } from "../delivery/runs.js";
 import { runScrapeStage } from "../delivery/scrape.js";
 import type { DeliveryVideoType } from "../types/operator-studio.js";
+import { errMsg } from "../utils/err-msg.js";
 
 // ── Defaults ──────────────────────────────────────────────────────────────────
-// Match the only live production templates (JUST_LISTED 15/30 horizontal).
+// Match the only live production templates (just_listed 15/30 horizontal).
 // See docs/state/PROJECT-STATE.md and MEMORY.md operator-studio-template-config.
-
-const DEFAULT_PACKAGE = "JUST_LISTED";
+//
+// FIX (2026-07-02, same incident as this file's errMsg sweep): this was
+// "JUST_LISTED" (uppercase) — properties.selected_package's live CHECK
+// constraint (supabase/migrations/054_properties_order_form.sql:41-45) only
+// allows the lowercase set ('just_listed' | 'just_pended' | 'just_closed' |
+// 'life_cycle'). Every createProperty() call on the Drive-intake approve path
+// was passing a value that constraint rejects (Postgres 23514), which is
+// itself a plain, non-Error object when thrown — exactly the shape the
+// errMsg fix in this same file now renders readably instead of
+// "[object Object]". DEFAULT_ORIENTATION below was already lowercase and
+// correct; DEFAULT_PACKAGE was the sole mismatch (verified against this
+// repo's migration history; grepped for JUST_PENDED/JUST_CLOSED/LIFE_CYCLE/
+// HORIZONTAL/VERTICAL as insert values elsewhere in lib/api/src — none found).
+const DEFAULT_PACKAGE = "just_listed";
 const DEFAULT_DURATION = 30;
 const DEFAULT_ORIENTATION = "horizontal";
 
@@ -323,7 +336,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
     // beds/baths/price 0 or null — is EXPECTED and is what lets the
     // conversational agent resolve it later; do not try to force past it).
     runPipeline(propertyId).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       console.error(
         `[drive/orchestrate] runPipeline error for ${propertyId}:`,
         msg,
@@ -344,7 +357,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
     // before analysis (many seconds of Gemini calls) reaches photo_selection.
     if (deliveryRunId) {
       runScrapeStage(deliveryRunId).catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errMsg(err);
         console.error(
           `[drive/orchestrate] runScrapeStage error for ${deliveryRunId}:`,
           msg,
@@ -356,7 +369,7 @@ export async function approveIntake(intakeId: string): Promise<ApproveResult> {
 
     return { status: "generating", propertyId };
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = errMsg(err);
     console.error(
       `[drive/orchestrate] approveIntake failed for ${intakeId}:`,
       reason,
@@ -490,7 +503,7 @@ export async function regenerateIntake(
             await setListingDetails(freshRun.id, priorDetails);
           } else {
             runScrapeStage(freshRun.id).catch((err: unknown) => {
-              const msg = err instanceof Error ? err.message : String(err);
+              const msg = errMsg(err);
               console.error(
                 `[drive/orchestrate] runScrapeStage error on regen (fresh run) for ${freshRun.id}:`,
                 msg,
@@ -512,7 +525,7 @@ export async function regenerateIntake(
 
     // Fire pipeline — fire-and-forget
     runPipeline(intake.property_id).catch((err: unknown) => {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       console.error(
         `[drive/orchestrate] runPipeline error on regen for ${intake.property_id}:`,
         msg,
@@ -524,7 +537,7 @@ export async function regenerateIntake(
 
     return { status: "generating", propertyId: intake.property_id };
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = errMsg(err);
     console.error(
       `[drive/orchestrate] regenerateIntake failed for ${intakeId}:`,
       reason,

@@ -22,7 +22,16 @@ export class TelegramUnconfiguredError extends Error {
 
 export type InlineButton = { text: string; callbackData: string };
 
-type ParseMode = "Markdown" | "MarkdownV2" | "HTML";
+/**
+ * "none" omits Telegram's `parse_mode` entirely, so the message is sent as
+ * plain text — Telegram never attempts to parse Markdown/HTML entities in
+ * it, which makes it impossible for unbalanced/unescaped special characters
+ * (a stray "[", "_", etc. — e.g. from interpolated error text) to trigger a
+ * "can't parse entities" API error. Prefer this for pure error-reporting
+ * messages; keep "Markdown"/"MarkdownV2"/"HTML" + escapeMarkdown() for
+ * messages that intentionally mix formatting with dynamic text.
+ */
+type ParseMode = "Markdown" | "MarkdownV2" | "HTML" | "none";
 
 interface SendOpts {
   chatId?: string;
@@ -87,7 +96,7 @@ export async function sendMessage(
   const result = await post<{ message_id: number }>("sendMessage", {
     chat_id: chatId ?? getDefaultChatId(),
     text,
-    parse_mode: parseMode,
+    ...(parseMode !== "none" && { parse_mode: parseMode }),
     ...(buttons !== undefined && { reply_markup: buildReplyMarkup(buttons) }),
   });
   return { messageId: result.message_id };
@@ -106,7 +115,7 @@ export async function editMessageText(
     chat_id: chatId ?? getDefaultChatId(),
     message_id: messageId,
     text,
-    parse_mode: parseMode,
+    ...(parseMode !== "none" && { parse_mode: parseMode }),
     ...(buttons !== undefined && { reply_markup: buildReplyMarkup(buttons) }),
   });
 }

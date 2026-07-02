@@ -325,6 +325,51 @@ describe("api/telegram/webhook — approve callback", () => {
     expect(lastEdit?.[1]).toContain("Failed");
     expect(lastEdit?.[1]).toContain("intake not found");
   });
+
+  it("2026-07-02 live incident: a reason containing a naked, unbalanced '[' (e.g. a leaked '[object Object]') is sent WITHOUT crashing, in plain-text mode", async () => {
+    // Reproduces the exact live failure: a thrown Supabase-shaped plain
+    // object used to stringify to the literal "[object Object]" before the
+    // errMsg fix. Even now that orchestrate.ts can't produce that literal
+    // string anymore, this test locks in defense-in-depth at the webhook
+    // layer — ANY reason text containing an unescaped '[' must never be
+    // allowed to open a Markdown link entity that Telegram then rejects
+    // (webhook.ts:186 -> client.ts:69 in the original incident).
+    const intake = fakeIntake({ id: "intake-1", telegram_message_id: 55 });
+    vi.mocked(intakeDb.getIntake).mockResolvedValue(intake as never);
+    vi.mocked(orchestrate.approveIntake).mockResolvedValue({
+      status: "error",
+      reason: "[object Object]",
+    });
+
+    const req = makeReq({ body: callbackUpdate("approve:intake-1") });
+    const res = makeRes();
+    await handler(req, res);
+
+    const lastEdit = vi.mocked(telegramClient.editMessageText).mock.calls.at(-1);
+    expect(lastEdit?.[1]).toContain("[object Object]");
+    // The naked '[' is only safe because this call opts OUT of Markdown
+    // parsing entirely — assert the plain-text mode was actually requested.
+    expect(lastEdit?.[2]).toEqual({ parseMode: "none" });
+    expect(res._calls[0].status).toBe(200);
+  });
+
+  it("sends the failed message in plain-text mode via sendMessage when there is no telegram_message_id to edit", async () => {
+    const intake = fakeIntake({ id: "intake-1", telegram_message_id: null });
+    vi.mocked(intakeDb.getIntake).mockResolvedValue(intake as never);
+    vi.mocked(orchestrate.approveIntake).mockResolvedValue({
+      status: "error",
+      reason: "[object Object]",
+    });
+
+    const req = makeReq({ body: callbackUpdate("approve:intake-1") });
+    const res = makeRes();
+    await handler(req, res);
+
+    const lastSend = vi.mocked(telegramClient.sendMessage).mock.calls.at(-1);
+    expect(lastSend?.[0]).toContain("[object Object]");
+    expect(lastSend?.[1]).toEqual({ parseMode: "none" });
+    expect(res._calls[0].status).toBe(200);
+  });
 });
 
 describe("api/telegram/webhook — skip callback", () => {

@@ -72,6 +72,7 @@ import { runAssembleStage } from '../delivery/assemble.js';
 import { validateListingDetails } from '../delivery/details.js';
 import { generateMusicVariantsForRun, recordMusicTrackFeedback } from '../delivery/music-gen.js';
 import { getSupabase } from '../client.js';
+import { errMsg } from '../utils/err-msg.js';
 import type { DeliveryStage } from '../delivery/state.js';
 import type { DeliveryRunRow } from '../types/operator-studio.js';
 import { buildRefineContext, isRenderAffecting, validateRefineActions } from './refine-context.js';
@@ -185,10 +186,6 @@ type DispatchableAction = Exclude<RefineAction, { kind: 'resume' } | { kind: 're
 
 function isDispatchable(a: RefineAction): a is DispatchableAction {
   return a.kind !== 'resume' && a.kind !== 'regenerate_all';
-}
-
-function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 // ---------------------------------------------------------------------------
