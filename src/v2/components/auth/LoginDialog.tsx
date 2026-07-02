@@ -559,11 +559,23 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   // Google reports success once signInWithIdToken has resolved, but the
   // auth-context `session` may lag a tick behind — flag "pending" here and
   // let the effect below react once `session` reflects it (same
-  // watch-until-present pattern as the signup verify step).
+  // watch-until-present pattern as the signup verify step). If `session` is
+  // ALREADY populated by the time this handler runs (the common case — GSI's
+  // callback already awaited signInWithIdToken, and onAuthStateChange often
+  // lands before React re-renders this component), invoke the advance
+  // directly here rather than waiting on the effect's `[session]` deps to
+  // re-fire — a reference that's already current won't trigger a re-run.
+  // `googleHandledRef` (checked + set synchronously at the top of
+  // googleAdvanceRef.current, before any await) makes a direct-call +
+  // effect double-invocation a no-op either way.
   function handleGoogleSuccess() {
     setError("");
     googlePendingRef.current = true;
     googleHandledRef.current = false;
+    if (session) {
+      const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+      googleAdvanceRef.current(session.user.id, meta);
+    }
   }
   function handleGoogleError(message: string) {
     setError(message);
