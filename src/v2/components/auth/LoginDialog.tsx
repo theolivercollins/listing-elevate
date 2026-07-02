@@ -608,9 +608,16 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
         setStep("welcome");
       })
       .catch((e) => {
+        // The user IS authenticated at this point (Google already succeeded) —
+        // only the profile lookup failed. Retrying isn't wired (the session
+        // reference is unchanged, so nothing re-triggers this branch, and the
+        // sign-in session-watch already consumed its absent→present edge), so
+        // leaving them stuck behind an error would strand a signed-in user.
+        // Close the dialog; onboarding simply defers to a future open.
         googlePendingRef.current = false;
         googleHandledRef.current = false;
         setError(errMsg(e, "Couldn't confirm your account. Please try again."));
+        onClose();
       });
   };
 
@@ -758,7 +765,12 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   }
 
   // Clear the signup onboarding fields so switching flow / email never carries a
-  // stale name, brokerage, persona, or source into a different account.
+  // stale name, brokerage, persona, or source into a different account. Also
+  // clears the Google-pending flags here (defense-in-depth): every caller of
+  // this helper (changeEmail/toSignup/toSignin) represents the user leaving
+  // whatever step they were on, so a stuck `googlePendingRef` can never
+  // outlive it and suppress the sign-in session-watch for the rest of the
+  // open dialog.
   function resetOnboardingFields() {
     setFirstName("");
     setLastName("");
@@ -766,6 +778,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setPersona(null);
     setSourceCat(null);
     setSourceSub(null);
+    googlePendingRef.current = false;
+    googleHandledRef.current = false;
   }
   function changeEmail() {
     advancedRef.current = false;
