@@ -120,7 +120,7 @@ const CREATED_PROPERTY = {
   id: "prop-new",
   address: "123 Main St, Austin, TX",
   status: "queued",
-  selected_package: "JUST_LISTED",
+  selected_package: "just_listed",
   selected_duration: 30,
   selected_orientation: "horizontal",
 };
@@ -356,7 +356,7 @@ describe("approveIntake", () => {
         bedrooms: 4,
         bathrooms: 3,
         listing_agent: "Jane Doe",
-        selected_package: "JUST_LISTED",
+        selected_package: "just_listed",
         selected_duration: 30,
         selected_orientation: "horizontal",
         submitted_by: "drive-intake",

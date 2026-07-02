@@ -66,7 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (nullErr) throw nullErr;
 
     // Delete scenes for regeneration (rerun still produces a fresh video).
-    await supabase.from('scenes').delete().eq('property_id', id);
+    // Error is checked: a silent failure here would leave stale scenes in the DB
+    // (with old clip_url / provider_task_id) while the property is reset to
+    // 'queued', causing the next pipeline run to operate against stale data.
+    const { error: scenesErr } = await supabase.from('scenes').delete().eq('property_id', id);
+    if (scenesErr) throw scenesErr;
 
     await supabase
       .from('properties')
