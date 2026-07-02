@@ -97,6 +97,28 @@ const GUARDED_PATHS = [
   // studio hardening batch (PR #125) — post-approval decouple endpoint
   'api/pipeline/continue/[runId].ts',
 
+  // drive-pull-brian branch — new Drive Pull endpoints
+  'api/admin/studio/drive/folders.ts',
+  'api/admin/studio/drive/pull.ts',
+
+  // drive-telegram-intake branch — new endpoints
+  // Webhooks self-authenticate via header secrets; static paths covered by catch-all.
+  'api/drive/webhook.ts',
+  'api/telegram/webhook.ts',
+  'api/cron/drive-settle.ts',
+  'api/cron/drive-intake-poll.ts',
+  'api/cron/drive-channel-renew.ts',
+
+  // welcome-email branch (2026-07-01) — Supabase Database Webhook receiver.
+  // Static path, covered by the generic /api/(.*) catch-all; self-authenticates
+  // via x-le-webhook-secret header (see api/hooks/welcome-email.ts).
+  'api/hooks/welcome-email.ts',
+
+  // studio-resume-drafts branch — New Order autosave draft endpoints
+  'api/admin/studio/drafts/index.ts',
+  'api/admin/studio/drafts/[id].ts',
+  'api/cron/studio-draft-cleanup.ts',
+
   // Existing routes that must continue to be covered (regression guard)
   'api/preview/[token].ts',
   'api/scenes/[id]/approve.ts',
@@ -221,6 +243,22 @@ describe('vercel.json route coverage', () => {
     expect(embedIdx).toBeGreaterThanOrEqual(0);
     expect(bareIdx).toBeGreaterThanOrEqual(0);
     expect(embedIdx).toBeLessThan(bareIdx);
+  });
+
+  it('drafts/[id] entry precedes the bare drafts entry', () => {
+    const routes = vercelConfig.routes.filter(
+      (r): r is VercelRoute & { src: string } => typeof r.src === 'string',
+    );
+    const draftsWithId = routes.findIndex((r) =>
+      /\/admin\/studio\/drafts\/\(\[\^\/\]\+\)/.test(r.src),
+    );
+    const draftsBase = routes.findIndex((r) =>
+      /\/admin\/studio\/drafts$/.test(r.src),
+    );
+
+    expect(draftsWithId).toBeGreaterThanOrEqual(0);
+    expect(draftsBase).toBeGreaterThanOrEqual(0);
+    expect(draftsWithId).toBeLessThan(draftsBase);
   });
 
   it('pipeline/continue/[runId] entry precedes the bare pipeline/[propertyId] entry', () => {

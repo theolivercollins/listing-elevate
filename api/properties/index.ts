@@ -4,6 +4,7 @@ import {
   getSupabase,
   insertPhotos,
 } from '../../lib/db.js';
+import { isNonProdEnv } from '../../lib/env.js';
 import {
   createCheckoutSession,
   formatLineItemsForOrder,
@@ -47,6 +48,12 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
     // Non-admins may only see their own submitted properties.
     if (auth.profile.role !== 'admin') {
       query = query.eq('submitted_by', auth.user.id);
+    }
+
+    // On production, hide test rows created on preview/dev deploys.
+    // On non-prod, show everything so developers can see their own test data.
+    if (!isNonProdEnv()) {
+      query = query.eq('is_test', false);
     }
 
     if (status) query = query.eq('status', status);
@@ -98,15 +105,14 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       pipeline_mode,
     } = req.body;
 
-    console.log('POST /api/properties body:', JSON.stringify({
-      address, price, bedrooms, bathrooms, listing_agent,
-      tempId, driveLink,
+    // Non-PII request summary — no address, price, agent name, or driveLink.
+    console.log('[api/properties] POST create', JSON.stringify({
+      tempId: tempId || null,
       photoPathsCount: Array.isArray(photoPaths) ? photoPaths.length : 'not array',
-      photoPathsSample: Array.isArray(photoPaths) ? photoPaths.slice(0, 2) : photoPaths,
+      hasDriveLink: !!driveLink,
       selectedPackage, selectedDuration, selectedOrientation,
       addVoiceover, addVoiceClone, addCustomRequest,
       hasCustomRequestText: !!customRequestText,
-      daysOnMarket, soldPrice,
     }));
 
     if (!address || !price || !bedrooms || !bathrooms || !listing_agent) {
@@ -281,7 +287,7 @@ async function handlePost(req: VercelRequest, res: VercelResponse) {
       }
 
       console.log(
-        `[api/properties] Owner bypass for ${auth.user.email} — property ${property.id} comped (would have been ${amountCents}¢). Firing pipeline...`,
+        `[api/properties] Owner bypass — property ${property.id} comped (would have been ${amountCents}¢). Firing pipeline...`,
       );
       // Fire pipeline like the webhook does — async, errors captured inside.
       runPipeline(property.id).catch((err: unknown) => {

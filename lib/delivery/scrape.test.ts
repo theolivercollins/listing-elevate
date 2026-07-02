@@ -59,9 +59,13 @@ function fakeRun(stage: string) {
   };
 }
 
-/** Supabase chain stub: from().select().eq().maybeSingle() → { data, error } */
-function stubSupabase(address = '123 Main St') {
-  const chain = { data: { address }, error: null };
+/** Supabase chain stub: from().select().eq().maybeSingle() → { data, error }
+ *  Pass prefill fields to simulate a property row with bedrooms/bathrooms/price. */
+function stubSupabase(
+  address = '123 Main St',
+  prefill?: { bedrooms?: number | null; bathrooms?: number | null; price?: number | null },
+) {
+  const chain = { data: { address, ...(prefill ?? {}) }, error: null };
   const eq = () => ({ maybeSingle: () => Promise.resolve(chain) });
   const select = () => ({ eq });
   const from = () => ({ select });
@@ -129,5 +133,35 @@ describe('runScrapeStage', () => {
 
     expect(mockAdvanceRun).not.toHaveBeenCalled();
     expect(mockSetRunError).not.toHaveBeenCalled();
+  });
+
+  it('all three of bedrooms/bathrooms/price present → Apify NOT called, setListingDetails called with source=prefill', async () => {
+    // Simulate a Drive-pull order where pre-fill already populated the property row.
+    stubSupabase('456 Drive Ave', { bedrooms: 4, bathrooms: 3, price: 1250000 });
+    mockGetRun.mockResolvedValueOnce(fakeRun('scraping'));
+
+    await runScrapeStage(RUN_ID);
+
+    expect(mockScrapeRedfin).not.toHaveBeenCalled();
+    expect(mockSetListingDetails).toHaveBeenCalledWith(RUN_ID, {
+      price: 1250000,
+      beds: 4,
+      baths: 3,
+      sqft: undefined,
+      mls_description: undefined,
+      source: 'prefill',
+    });
+    expect(mockSetRunError).not.toHaveBeenCalled();
+  });
+
+  it('price is null → does NOT skip, runs the Apify scrape as normal', async () => {
+    // Only two of three fields present — fall through to live scrape.
+    stubSupabase('789 Partial Rd', { bedrooms: 3, bathrooms: 2, price: null });
+    mockGetRun.mockResolvedValueOnce(fakeRun('scraping'));
+    mockScrapeRedfin.mockResolvedValue(null);
+
+    await runScrapeStage(RUN_ID);
+
+    expect(mockScrapeRedfin).toHaveBeenCalled();
   });
 });

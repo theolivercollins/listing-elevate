@@ -3,6 +3,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabase } from "./client.js";
+import { isNonProdEnv } from "./env.js";
 import {
   PHOTO_ANALYSIS_SYSTEM,
   buildAnalysisUserPrompt,
@@ -970,6 +971,7 @@ export async function autoPromoteIfWinning(params: {
           tokens: embedded.usage.totalTokens,
           iteration_id: iterationRow.id,
         },
+        is_test: isNonProdEnv(),
       });
       if (costErr) console.error("[embeddings] cost_events insert failed:", costErr);
     }

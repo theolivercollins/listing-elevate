@@ -119,6 +119,22 @@ vi.mock("../providers/assembly-router.js", () => ({
   assemblyProviderCostCents: vi.fn().mockReturnValue(50),
 }));
 
+// Finalize — mocked so tests never make a real network call. Default mirrors
+// the real function's fallback shape (download/host skipped or failed):
+// url passes the provider URL through unchanged, hlsUrl/posterUrl stay null.
+// Migration-102 (hls/poster) tests below override this per-call via
+// mockImplementationOnce to exercise runAssemblyStep's persist wiring.
+vi.mock("../assembly/finalize.js", () => ({
+  finalizeAssemblyRender: vi.fn().mockImplementation(async (params: { providerUrl: string }) => ({
+    url: params.providerUrl,
+    bitrateKbps: null,
+    outputBytes: null,
+    bunnyWasCalled: false,
+    hlsUrl: null,
+    posterUrl: null,
+  })),
+}));
+
 // db.js mock — all factories use plain vi.fn() to avoid hoisting issues.
 vi.mock("../db.js", () => ({
   getSupabase: vi.fn(),
@@ -142,6 +158,7 @@ vi.mock("../db.js", () => ({
 import * as db from "../db.js";
 import { rerunAssembly } from "../pipeline.js";
 import * as assemblyRouter from "../providers/assembly-router.js";
+import { finalizeAssemblyRender } from "../assembly/finalize.js";
 
 // ── Fixture data ───────────────────────────────────────────────────────────
 
@@ -466,5 +483,126 @@ describe("rerunAssembly", () => {
       ([, , , msg]) => typeof msg === "string" && msg.includes("operator delivery scene order"),
     );
     expect(usedOperatorOrder).toBe(true);
+  });
+
+  // ── Bunny HLS + poster persist wiring (migration 102) ─────────────────────
+  //
+  // finalizeAssemblyRender returns hlsUrl/posterUrl only on the fully-successful
+  // Bunny host path (null on every fallback — see lib/assembly/finalize.ts).
+  // mp4 + hls + poster describe ONE encode and move together: whenever an
+  // orientation's mp4 is written, runAssemblyStep writes its hls/poster too —
+  // null when this render produced none. An un-rendered orientation is left
+  // untouched (its keys absent). finalStatusPatch() below reads exactly that
+  // "complete" patch. These tests drive the real pipeline.ts code path
+  // (rerunAssembly -> runAssemblyStep) with a mocked finalizeAssemblyRender.
+
+  describe("hls/poster persist wiring (migration 102)", () => {
+    it("sets horizontal_hls_url + horizontal_poster_url when finalize returns them (horizontal-only order)", async () => {
+      vi.mocked(db.getProperty).mockResolvedValue({
+        ...PROP_COMPLETE,
+        selected_orientation: "horizontal",
+      } as never);
+      vi.mocked(finalizeAssemblyRender).mockImplementationOnce(async (params: { providerUrl: string }) => ({
+        url: params.providerUrl,
+        bitrateKbps: 9500,
+        outputBytes: 50_000_000,
+        bunnyWasCalled: true,
+        hlsUrl: "https://cdn.example.com/h.m3u8",
+        posterUrl: "https://cdn.example.com/h-poster.jpg",
+      }));
+
+      await rerunAssembly("prop-1");
+
+      const patch = finalStatusPatch();
+      expect(patch.horizontal_hls_url).toBe("https://cdn.example.com/h.m3u8");
+      expect(patch.horizontal_poster_url).toBe("https://cdn.example.com/h-poster.jpg");
+      // Vertical wasn't rendered — its columns must be entirely absent, not null.
+      expect(patch.vertical_hls_url).toBeUndefined();
+      expect(patch.vertical_poster_url).toBeUndefined();
+    });
+
+    it("clears horizontal_hls_url/horizontal_poster_url to null when finalize falls back (hlsUrl/posterUrl null)", async () => {
+      vi.mocked(db.getProperty).mockResolvedValue({
+        ...PROP_COMPLETE,
+        selected_orientation: "horizontal",
+      } as never);
+      vi.mocked(finalizeAssemblyRender).mockImplementationOnce(async (params: { providerUrl: string }) => ({
+        url: params.providerUrl,
+        bitrateKbps: null,
+        outputBytes: null,
+        bunnyWasCalled: false,
+        hlsUrl: null,
+        posterUrl: null,
+      }));
+
+      await rerunAssembly("prop-1");
+
+      const patch = finalStatusPatch();
+      // mp4 + hls + poster are ONE coupled encode. This fallback re-render writes a
+      // new mp4 with no HLS, so hls/poster MUST be cleared to null in the same
+      // patch — never omitted. Omitting them would let a stale *_hls_url from a
+      // previous successful render survive, and the player would serve the OLD
+      // video (the bug this coupling fixes).
+      expect(patch.horizontal_video_url).toBe("https://cdn.example.com/h.mp4");
+      expect(patch.horizontal_hls_url).toBeNull();
+      expect(patch.horizontal_poster_url).toBeNull();
+    });
+
+    it("sets vertical_hls_url + vertical_poster_url when finalize returns them (vertical-only order)", async () => {
+      vi.mocked(db.getProperty).mockResolvedValue({
+        ...PROP_COMPLETE,
+        selected_orientation: "vertical",
+      } as never);
+      vi.mocked(finalizeAssemblyRender).mockImplementationOnce(async (params: { providerUrl: string }) => ({
+        url: params.providerUrl,
+        bitrateKbps: 5200,
+        outputBytes: 30_000_000,
+        bunnyWasCalled: true,
+        hlsUrl: "https://cdn.example.com/v.m3u8",
+        posterUrl: "https://cdn.example.com/v-poster.jpg",
+      }));
+
+      await rerunAssembly("prop-1");
+
+      const patch = finalStatusPatch();
+      expect(patch.vertical_hls_url).toBe("https://cdn.example.com/v.m3u8");
+      expect(patch.vertical_poster_url).toBe("https://cdn.example.com/v-poster.jpg");
+      expect(patch.horizontal_hls_url).toBeUndefined();
+      expect(patch.horizontal_poster_url).toBeUndefined();
+    });
+
+    it("sets BOTH orientations' hls/poster independently when order is 'both'", async () => {
+      vi.mocked(db.getProperty).mockResolvedValue({
+        ...PROP_COMPLETE,
+        selected_orientation: "both",
+      } as never);
+      // Horizontal renders first, vertical second — matches runAssemblyStep's
+      // sequential (not parallel) await order.
+      vi.mocked(finalizeAssemblyRender)
+        .mockImplementationOnce(async (params: { providerUrl: string }) => ({
+          url: params.providerUrl,
+          bitrateKbps: 9500,
+          outputBytes: 50_000_000,
+          bunnyWasCalled: true,
+          hlsUrl: "https://cdn.example.com/h.m3u8",
+          posterUrl: "https://cdn.example.com/h-poster.jpg",
+        }))
+        .mockImplementationOnce(async (params: { providerUrl: string }) => ({
+          url: params.providerUrl,
+          bitrateKbps: 5200,
+          outputBytes: 30_000_000,
+          bunnyWasCalled: true,
+          hlsUrl: "https://cdn.example.com/v.m3u8",
+          posterUrl: "https://cdn.example.com/v-poster.jpg",
+        }));
+
+      await rerunAssembly("prop-1");
+
+      const patch = finalStatusPatch();
+      expect(patch.horizontal_hls_url).toBe("https://cdn.example.com/h.m3u8");
+      expect(patch.horizontal_poster_url).toBe("https://cdn.example.com/h-poster.jpg");
+      expect(patch.vertical_hls_url).toBe("https://cdn.example.com/v.m3u8");
+      expect(patch.vertical_poster_url).toBe("https://cdn.example.com/v-poster.jpg");
+    });
   });
 });

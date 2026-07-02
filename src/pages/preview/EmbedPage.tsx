@@ -88,6 +88,10 @@ function sendBeaconEvent(token: string, body: Record<string, unknown>): void {
 type EmbedData = {
   video_url: string | null;
   videos: { horizontal: string | null; vertical: string | null };
+  // Bunny adaptive HLS playlists (migration 102). Always normalized to a
+  // {horizontal,vertical} shape in the fetch effect below (null slots when
+  // the API omits the field pre-migration or a render fell back to mp4-only).
+  hls: { horizontal: string | null; vertical: string | null };
   thumbnail_url: string | null;
 };
 
@@ -158,6 +162,7 @@ export default function EmbedPage() {
       setData({
         video_url: d.video_url ?? null,
         videos: d.videos ?? { horizontal: d.video_url ?? null, vertical: null },
+        hls: d.hls ?? { horizontal: null, vertical: null },
         thumbnail_url: d.thumbnail_url ?? null,
       });
     });
@@ -179,7 +184,7 @@ export default function EmbedPage() {
     return <div className="le-embed preview-scope" aria-hidden="true" />;
   }
 
-  const { videos, thumbnail_url } = data;
+  const { videos, hls, thumbnail_url } = data;
   const hasHorizontal = Boolean(videos.horizontal);
   const hasVertical = Boolean(videos.vertical);
 
@@ -192,6 +197,14 @@ export default function EmbedPage() {
       : hasVertical
       ? videos.vertical!
       : null;
+  // Mirrors activeVideoUrl's orientation selection — null when absent (legacy
+  // mp4-only render or pre-migration API response); LEPlayer falls back to `src`.
+  const activeHlsUrl =
+    orientation === 'horizontal' && hasHorizontal
+      ? hls.horizontal
+      : hasVertical
+      ? hls.vertical
+      : null;
 
   if (!activeVideoUrl) return <NotAvailableScreen />;
 
@@ -199,6 +212,7 @@ export default function EmbedPage() {
     <div className="le-embed preview-scope" role="main">
       <LEPlayer
         src={activeVideoUrl}
+        hlsSrc={activeHlsUrl ?? undefined}
         poster={thumbnail_url ?? undefined}
         orientation={orientation}
         onView={() => emit('view', orientation)}

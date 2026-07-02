@@ -80,15 +80,57 @@ export async function runAssembleStage(runId: string): Promise<void> {
       .eq('id', run.property_id);
     if (propErr) throw new Error(`property write-back failed: ${propErr.message}`);
 
-    // 3. Existing assembly path (records its own creatomate cost_events,
-    //    metadata.reason = 'manual_rerun').
-    const { rerunAssembly } = await import('../pipeline.js');
-    await rerunAssembly(run.property_id);
+    // 3. Idempotency: if the required video URLs already exist (render completed
+    //    before a prior Vercel function kill), skip resubmitting the render.
+    //    The run still needs to advance to checkpoint_b below.
+    const { data: propCheck } = await supabase
+      .from('properties')
+      .select('horizontal_video_url, vertical_video_url, selected_orientation')
+      .eq('id', run.property_id)
+      .maybeSingle();
+    const propOrientation = (propCheck as { selected_orientation?: string | null } | null)?.selected_orientation ?? 'horizontal';
+    const needH = propOrientation !== 'vertical';
+    const needV = propOrientation === 'vertical' || propOrientation === 'both';
+    const hUrlExists = Boolean((propCheck as { horizontal_video_url?: string | null } | null)?.horizontal_video_url);
+    const vUrlExists = Boolean((propCheck as { vertical_video_url?: string | null } | null)?.vertical_video_url);
 
-    await advanceRun(runId, 'checkpoint_b');
+    if (!(!needH || hUrlExists) || !(!needV || vUrlExists)) {
+      // At least one required URL is missing — submit/poll the render.
+      const { rerunAssembly } = await import('../pipeline.js');
+      await rerunAssembly(run.property_id, { runId });
+    }
+
+    const advancedRun = await advanceRun(runId, 'checkpoint_b');
+
+    // Inline autopilot kick: immediately resolve the gate if auto_run is enabled.
+    // Best-effort — wrapped so it never breaks the primary assembly path.
+    // resolveGate + advanceRun's CAS make double-fire with the sweep cron safe.
+    if (run.auto_run) {
+      try {
+        const { resolveGate } = await import('./auto-run.js');
+        await resolveGate(advancedRun);
+      } catch (kickErr) {
+        console.error(`[delivery/assemble] autopilot inline kick failed for run ${runId}:`, kickErr);
+      }
+    }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await setRunError(runId, `Assembly failed: ${msg}`);
+    // [ASSEMBLY_TIMEOUT] tagged errors mean the render is still in-flight (budget
+    // exceeded), NOT a permanent failure.
+    //
+    // auto_run=true: the autopilot sweep resumes via the persisted job token on the
+    // next cron tick — do NOT persist a run error (it would block future advance).
+    //
+    // auto_run=false (human-triggered): there is no sweep to resume it, so set a
+    // visible error row so the operator can see "render timed out" in the studio and
+    // click Rerun. This is a regression-fix: previously the human path also got no
+    // error row, leaving the run silently stalled at 'assembling'.
+    const isTimeout = Boolean((err as { isAssemblyTimeout?: unknown }).isAssemblyTimeout);
+    if (!isTimeout) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await setRunError(runId, `Assembly failed: ${msg}`);
+    } else if (!run.auto_run) {
+      await setRunError(runId, 'Assembly render timed out — render may still be in progress; rerun to retry');
+    }
     throw err;
   }
 }

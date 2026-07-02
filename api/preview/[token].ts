@@ -59,6 +59,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         horizontal: (property as { horizontal_video_url: string | null }).horizontal_video_url ?? null,
         vertical: (property as { vertical_video_url: string | null }).vertical_video_url ?? null,
       },
+      // Bunny adaptive HLS playlists (migration 102) — LEPlayer prefers these
+      // over the mp4 in `videos` when present; null on legacy/fallback renders
+      // or when fetchByToken fell back pre-migration (see lib/operator-studio/preview.ts).
+      hls: {
+        horizontal: (property as { horizontal_hls_url?: string | null }).horizontal_hls_url ?? null,
+        vertical: (property as { vertical_hls_url?: string | null }).vertical_hls_url ?? null,
+      },
       // hero_photo_url resolved from photos table — never a video file (bug fix: property.thumbnail_url was an .mp4)
       thumbnail_url: result.hero_photo_url ?? null,
       brand,

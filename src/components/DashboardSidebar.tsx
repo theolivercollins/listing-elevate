@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "@/lib/auth";
+import { useAuth, IMPERSONATABLE_ROLES } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { fetchLogs, fetchProperties } from "@/lib/api";
 import { Icon, type IconName } from "@/components/dashboard/icons";
+import { LEGlyphMark } from "@/v2/components/primitives/LEGlyphMark";
 import { Moon, Sun } from "lucide-react";
 
 const COLLAPSED_KEY = "le-dashboard-sidebar-collapsed";
@@ -183,10 +184,12 @@ function UserMenu({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, profile, realRole, isImpersonating, setImpersonatedRole } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const unread = useUnreadCount(isAdmin);
   const isDark = theme === "dark";
+  const [impersonationPending, setImpersonationPending] = useState(false);
+  const [impersonationError, setImpersonationError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -211,6 +214,24 @@ function UserMenu({
   const handleNotifications = () => {
     setOpen(false);
     navigate("/dashboard/logs");
+  };
+
+  // "Preview as" — real admins only. Reuses the exact impersonation contract
+  // from useAuth() (src/lib/auth.tsx); no logic duplicated here.
+  const canImpersonate = realRole === "admin";
+  const activeImpersonationValue = profile?.role ?? realRole;
+
+  const handleImpersonationSelect = async (value: "admin" | "user") => {
+    setImpersonationPending(true);
+    setImpersonationError(null);
+    try {
+      await setImpersonatedRole(value === realRole ? null : value);
+      setOpen(false);
+    } catch {
+      setImpersonationError("Couldn't switch preview.");
+    } finally {
+      setImpersonationPending(false);
+    }
   };
 
   const menu = open && (
@@ -268,6 +289,58 @@ function UserMenu({
         {isDark ? <Sun size={14} strokeWidth={1.7} /> : <Moon size={14} strokeWidth={1.7} />}
         <span style={{ flex: 1 }}>{isDark ? "Light mode" : "Dark mode"}</span>
       </button>
+      {canImpersonate && (
+        <>
+          <div style={{ height: 1, background: "var(--line-2)", margin: "4px 6px" }} />
+          <div
+            style={{
+              padding: "6px 12px 2px",
+              fontSize: 10.5,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+              color: "var(--muted-2)",
+            }}
+          >
+            Preview as
+          </div>
+          {IMPERSONATABLE_ROLES.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              role="menuitemradio"
+              aria-checked={activeImpersonationValue === r.value}
+              disabled={impersonationPending}
+              onClick={() => handleImpersonationSelect(r.value)}
+              style={{
+                ...menuItemStyle,
+                cursor: impersonationPending ? "default" : "pointer",
+                opacity: impersonationPending ? 0.6 : 1,
+              }}
+            >
+              <Icon name="users" size={14} />
+              <span style={{ flex: 1 }}>{r.label}</span>
+              {activeImpersonationValue === r.value && <Icon name="check" size={14} />}
+            </button>
+          ))}
+          {isImpersonating && (
+            <div
+              style={{
+                padding: "2px 12px 4px",
+                fontSize: 11,
+                color: "var(--warn)",
+              }}
+            >
+              Previewing — select your real role to exit.
+            </div>
+          )}
+          {impersonationError && (
+            <div style={{ padding: "0 12px 4px", fontSize: 11, color: "var(--bad)" }}>
+              {impersonationError}
+            </div>
+          )}
+        </>
+      )}
       <div style={{ height: 1, background: "var(--line-2)", margin: "4px 6px" }} />
       <button
         type="button"
@@ -366,24 +439,44 @@ const menuItemStyle = {
 export function DashboardSidebar({ collapsed, onToggleCollapsed }: DashboardSidebarProps) {
   const { user, profile } = useAuth();
   const location = useLocation();
+  const { theme } = useTheme();
   const isAdmin = profile?.role === "admin";
   const sections = getSections(profile?.role);
   const brandSub = isAdmin ? "Operator studio" : "Client studio";
+  // Same light-bg/dark-bg → dark/light logo rule as the marketing SiteNav.
+  const logoVariant = theme === "dark" ? "light" : "dark";
 
-  const initials = (user?.email ?? "Listing Elevate")
+  const emailInitials = (user?.email ?? "Listing Elevate")
     .split(/[\s@.]+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((s) => s[0]?.toUpperCase() ?? "")
     .join("") || "LE";
-  const displayName = user?.email?.split("@")[0]?.replace(/\./g, " ") ?? "Listing Elevate";
+  const emailDisplayName = user?.email?.split("@")[0]?.replace(/\./g, " ") ?? "Listing Elevate";
+  const firstName = profile?.first_name?.trim() || "";
+  const lastName = profile?.last_name?.trim() || "";
+  const fullName = `${firstName} ${lastName}`.trim();
+  const displayName = fullName || firstName || emailDisplayName || "Studio";
+  const initials =
+    firstName || lastName
+      ? `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase() || emailInitials
+      : emailInitials;
   const email = user?.email ?? "studio@listingelevate.com";
 
   return (
     <aside className="le-dash-sidebar">
       <Link to="/dashboard" className="le-sidebar-brand">
-        <span className="le-sidebar-logo">
-          <Icon name="logo" size={28} />
+        <span
+          className="le-sidebar-logo"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* Glyph-only mark — the wordmark is rendered separately below as
+              brand-name text. */}
+          <LEGlyphMark size={22} variant={logoVariant} />
         </span>
         {!collapsed && (
           <span className="le-sidebar-brand-text">

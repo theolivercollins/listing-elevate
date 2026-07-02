@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, type ChangeEvent } from 'reac
 import { useParams, useNavigate } from 'react-router-dom';
 import { Loader2, Trash2, ArrowLeft } from 'lucide-react';
 import { authedFetch } from "@/lib/api";
+import { photoThumb } from '@/lib/image-url';
 import { normalizePhone, formatAsYouType } from '../../../../lib/utils/phone';
 import {
   AlertDialog,
@@ -497,8 +498,10 @@ const ClientEdit = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {(logoPreview || form.brand_logo_url) && (
                   <img
-                    src={logoPreview ?? form.brand_logo_url}
+                    src={photoThumb(logoPreview ?? form.brand_logo_url)}
                     alt="Logo preview"
+                    loading="lazy"
+                    decoding="async"
                     style={{
                       width: 48,
                       height: 48,
@@ -646,8 +649,10 @@ const ClientEdit = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 {(headshotPreview || form.agent_headshot_url) && (
                   <img
-                    src={headshotPreview ?? form.agent_headshot_url}
+                    src={photoThumb(headshotPreview ?? form.agent_headshot_url)}
                     alt="Headshot preview"
+                    loading="lazy"
+                    decoding="async"
                     style={{
                       width: 48,
                       height: 48,

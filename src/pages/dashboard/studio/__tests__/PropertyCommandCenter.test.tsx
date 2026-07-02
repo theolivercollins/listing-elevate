@@ -11,7 +11,7 @@
  * dialog is opened, then we exercise toggles and assert network behaviour.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import PropertyCommandCenter from '../PropertyCommandCenter';
@@ -81,6 +81,34 @@ function makeBundle() {
       status: 'complete',
       horizontal_video_url: null,
       vertical_video_url: null,
+      client_id: null,
+      client: null,
+      bedrooms: 3,
+      bathrooms: 2,
+      square_footage: 1800,
+      price: 1200000,
+    },
+    scenes: [],
+    revision_notes: [],
+    previews: [],
+    cost: { total_cents: 0, by_provider: {}, delivery: null },
+    delivery_run: null,
+  };
+}
+
+/** Non-terminal bundle (status 'generating') so the smart poll keeps ticking. */
+function makeActiveBundle() {
+  return {
+    property: {
+      id: 'prop-1',
+      address: '123 Test St, Malibu CA',
+      status: 'generating',
+      horizontal_video_url: null,
+      vertical_video_url: null,
+      horizontal_hls_url: null,
+      horizontal_poster_url: null,
+      vertical_hls_url: null,
+      vertical_poster_url: null,
       client_id: null,
       client: null,
       bedrooms: 3,
@@ -330,5 +358,127 @@ describe('PropertyCommandCenter — share dialog toggle (spec §4b)', () => {
     // we can't distinguish, so we just check the PATCH path worked.
     // The key assertion: no bundle call was added synchronously after the create.
     expect(bundleCallsAfter).toBeLessThanOrEqual(bundleCallsBefore + 1); // at most 1 poll cycle
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Poll scheduler — a hidden→visible transition WHILE a fetchBundle() is in
+// flight must not spawn a second self-rescheduling timer chain (compounding
+// poll rate + a fetch that outlives unmount). See FIX 2.
+// ---------------------------------------------------------------------------
+
+// Mirrors FAST_POLL_MS in PropertyCommandCenter (active-stage cadence). The
+// 'generating' fixture is an active stage, so the scheduler uses this delay.
+const FAST_POLL_MS = 5_000;
+
+function isBundleGet(url: string, init?: RequestInit) {
+  return (
+    url.includes('/api/admin/studio/properties/prop-1') &&
+    !url.includes('/preview-links') &&
+    (!init || !init.method || init.method === 'GET')
+  );
+}
+
+/** Override document.hidden + fire visibilitychange (happy-dom has no setter). */
+function setDocumentHidden(hidden: boolean) {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => (hidden ? 'hidden' : 'visible'),
+  });
+  document.dispatchEvent(new Event('visibilitychange'));
+}
+
+/** Drain chained promise microtasks (fetch → json → setState → scheduleNext)
+ *  without advancing the fake clock. */
+async function flushMicrotasks(n = 12) {
+  for (let i = 0; i < n; i++) await Promise.resolve();
+}
+
+describe('PropertyCommandCenter — poll scheduler (FIX 2: single chain)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    setDocumentHidden(false); // reset visibility for the next test
+  });
+
+  /** Deferred bundle GETs so a fetch can be held "in flight"; everything else
+   *  resolves immediately. Returns the resolver queue for controlled timing. */
+  function setupDeferredBundle() {
+    const resolvers: Array<() => void> = [];
+    authedFetch.mockImplementation((url: string, init?: RequestInit) => {
+      if (isBundleGet(url, init)) {
+        return new Promise((resolve) => {
+          resolvers.push(() =>
+            resolve({ ok: true, json: () => Promise.resolve(makeActiveBundle()) }),
+          );
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    return resolvers;
+  }
+
+  function bundleGetCount() {
+    return authedFetch.mock.calls.filter((c) =>
+      isBundleGet(c[0] as string, c[1] as RequestInit),
+    ).length;
+  }
+
+  it('a hidden→visible transition during an in-flight fetch keeps ONE poll chain (no double-poll)', async () => {
+    vi.useFakeTimers();
+    const resolvers = setupDeferredBundle();
+
+    renderCenter();
+    // Mount fires exactly one bundle GET (generation 1), left in flight.
+    expect(resolvers.length).toBe(1);
+
+    // Tab hidden (pauses), then shown again while that mount fetch is STILL in
+    // flight — the show path starts a fresh cycle → a second in-flight GET.
+    act(() => setDocumentHidden(true));
+    act(() => setDocumentHidden(false));
+    expect(resolvers.length).toBe(2);
+
+    // Resolve both in-flight fetches (older chain first). The superseded gen-1
+    // chain must bail; only the current gen-2 chain schedules a timer.
+    await act(async () => {
+      resolvers[0]();
+      resolvers[1]();
+      await flushMicrotasks();
+    });
+
+    const before = bundleGetCount(); // 2 so far
+    // One fast tick. Buggy code has TWO live timers → 2 GETs; the fix has ONE.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FAST_POLL_MS);
+    });
+    expect(bundleGetCount() - before).toBe(1);
+  });
+
+  it('unmounting after that transition fires NO further fetch (no orphaned timer / no post-unmount setState)', async () => {
+    vi.useFakeTimers();
+    const resolvers = setupDeferredBundle();
+
+    const view = renderCenter();
+    expect(resolvers.length).toBe(1);
+
+    act(() => setDocumentHidden(true));
+    act(() => setDocumentHidden(false));
+    expect(resolvers.length).toBe(2);
+
+    // Resolve both so every chain has had the chance to schedule its timer.
+    await act(async () => {
+      resolvers[0]();
+      resolvers[1]();
+      await flushMicrotasks();
+    });
+
+    const before = bundleGetCount();
+    // Unmount clears the ONE tracked timer. The buggy scheduler left a second,
+    // untracked timer that survives cleanup and fires fetchBundle post-unmount.
+    view.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FAST_POLL_MS * 3);
+    });
+    expect(bundleGetCount()).toBe(before); // nothing fired after unmount
   });
 });

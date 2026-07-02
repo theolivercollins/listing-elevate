@@ -1,11 +1,17 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getPhotosForProperty, getScenesForProperty, getSupabase, getRatingsForProperty } from '../../lib/db.js';
-import { verifyAuth } from '../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../lib/auth.js';
 import type { PipelineMode } from '../../lib/types.js';
 
 const VALID_PIPELINE_MODES: PipelineMode[] = ['v1', 'v1.1'];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): this endpoint calls verifyAuth directly (not via
+  // requireAuth) so it must set no-store/Vary itself. Set before auth
+  // resolution so it applies to every response path, including errors —
+  // the same URL can return different bodies per impersonation token.
+  setNoStore(res);
+
   if (req.method === 'GET') {
     return handleGet(req, res);
   }
@@ -35,9 +41,21 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Forbidden' });
     }
 
-    const photos = await getPhotosForProperty(id);
-    const scenes = await getScenesForProperty(id);
-    const ratings = await getRatingsForProperty(id);
+    // Run all independent reads concurrently after the ownership check.
+    // Cost events contain internal margin data — admins only.
+    const [photos, scenes, ratings, costEvents] = await Promise.all([
+      getPhotosForProperty(id),
+      getScenesForProperty(id),
+      getRatingsForProperty(id),
+      isAdmin
+        ? getSupabase()
+            .from('cost_events')
+            .select('id, scene_id, stage, provider, units_consumed, unit_type, cost_cents, metadata, created_at')
+            .eq('property_id', id)
+            .order('created_at', { ascending: true })
+            .then((r): unknown[] => r.data ?? [])
+        : Promise.resolve<unknown[]>([]),
+    ]);
 
     // Denormalize ratings onto scenes so the frontend has one object per scene.
     const ratingByScene = new Map(ratings.map(r => [r.scene_id, r]));
@@ -45,17 +63,6 @@ async function handleGet(req: VercelRequest, res: VercelResponse) {
       ...s,
       rating: ratingByScene.get(s.id) ?? null,
     }));
-
-    // Cost events contain internal margin data — admins only.
-    let costEvents: unknown[] = [];
-    if (isAdmin) {
-      const { data } = await getSupabase()
-        .from('cost_events')
-        .select('id, scene_id, stage, provider, units_consumed, unit_type, cost_cents, metadata, created_at')
-        .eq('property_id', id)
-        .order('created_at', { ascending: true });
-      costEvents = data ?? [];
-    }
 
     return res.status(200).json({
       ...property,

@@ -8,6 +8,7 @@ import { getSupabase } from "../../../lib/client.js";
 import { DIRECTOR_SYSTEM } from "../../../lib/prompts/director.js";
 import { DIRECTOR_PATCH_SYSTEM } from "../../../lib/prompts/director-patch.js";
 import { computeClaudeCost } from "../../../lib/utils/claude-cost.js";
+import { isNonProdEnv } from "../../../lib/env.js";
 
 // POST /api/admin/prompt-lab/mine
 //   body: { days?: number }
@@ -173,6 +174,7 @@ Produce the JSON object per your instructions.`;
       unit_type: "tokens",
       cost_cents: Math.round(cost.costCents),
       metadata: { scope: "lab_rule_mining", model: MINE_MODEL, iterations_count: iterations.length, days },
+      is_test: isNonProdEnv(),
     });
     if (costErr) console.error("[mine] cost_events insert failed:", costErr);
 

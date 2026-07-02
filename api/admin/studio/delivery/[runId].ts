@@ -11,193 +11,34 @@ export const maxDuration = 300; // scrape/regenerate/assemble actions run long
 // ─── Factored stage helpers (called by both the existing action cases and 'rerun') ───
 
 /**
- * Core of the generate_audio action — extracted so 'rerun' can call it without
- * duplicating the duration-audit and auto-shorten loop.
- * Returns the response shape; caller is responsible for res.json().
+ * Core of the generate_audio action — thin delegate to the shared delivery audio
+ * runner (lib/delivery/audio.ts), which owns the duration-audit / auto-shorten
+ * loop, the per-call retry, and the setRunError failure surface. The same runner
+ * backs the autopilot voiceover gate (resolveVoiceover) so both paths produce
+ * duration-audited audio. Returns the response shape; caller does res.json().
  */
 async function runGenerateAudio(runId: string): Promise<
   | { ok: true; run: unknown; duration_warning?: string }
   | { ok: false; status: number; error: string }
 > {
-  const run = await getRun(runId);
-  if (!run) return { ok: false, status: 404, error: 'not_found' };
-  if (!run.voiceover_script) return { ok: false, status: 400, error: 'generate the script first' };
-  if (!run.voiceover_voice_id) return { ok: false, status: 400, error: 'pick a voice first' };
-
-  const { generateVoiceoverAudio } = await import('../../../../lib/voiceover/generate-audio.js');
-  const { updateRun: uRun3, setRunError: sre3, recordMlEvent: rme3 } = await import('../../../../lib/delivery/runs.js');
-
-  try {
-    const voiceId = run.voiceover_voice_id;
-    const genAudio = async (script: string) => {
-      const input = {
-        script, voiceId,
-        propertyId: run.property_id, storageFolder: run.property_id,
-        deliveryRunId: runId,
-      };
-      try {
-        return await generateVoiceoverAudio(input);
-      } catch {
-        return await generateVoiceoverAudio(input);
-      }
-    };
-
-    let script = run.voiceover_script;
-    let { audioUrl, durationMs } = await genAudio(script);
-
-    // Duration audit: the audio must fit the video. If it overruns the
-    // target by >1s, ask Claude to shorten naturally and re-render —
-    // at most 2 attempts, then proceed with a warning.
-    const targetSec = run.duration_seconds ?? 30;
-    const toleranceMs = 1000;
-    let shortenUnavailable = false;
-    if (durationMs > targetSec * 1000 + toleranceMs) {
-      const { shortenDeliveryScript } = await import('../../../../lib/delivery/voiceover-script.js');
-      const { countWords } = await import('../../../../lib/voiceover/generate-script.js');
-      const { stripAudioTags } = await import('../../../../lib/voiceover/audio-tags.js');
-      for (let attempt = 0; attempt < 2 && durationMs > targetSec * 1000 + toleranceMs; attempt++) {
-        const fromWords = countWords(stripAudioTags(script));
-        // A shorten or re-render failure must NOT discard the good audio
-        // we already paid for: keep the last good {script, audio} pair
-        // (always consistent — script is only swapped once its audio
-        // exists) and fall through to persist it with a warning.
-        try {
-          const { script: shortened } = await shortenDeliveryScript({
-            runId, propertyId: run.property_id, script,
-            actualSeconds: durationMs / 1000, targetSeconds: targetSec,
-          });
-          ({ audioUrl, durationMs } = await genAudio(shortened));
-          script = shortened;
-        } catch (shortenErr) {
-          console.error('[delivery] auto-shorten failed, keeping last good audio:', shortenErr);
-          shortenUnavailable = true;
-          break;
-        }
-        await rme3(runId, 'script_edit', {
-          source: 'auto_shorten',
-          from_words: fromWords,
-          to_words: countWords(stripAudioTags(script)),
-          target_seconds: targetSec,
-        });
-      }
-    }
-
-    // Persist the script actually spoken so the UI matches the audio.
-    const updated = await uRun3(runId, { voiceover_script: script, voiceover_audio_url: audioUrl } as never);
-    if (durationMs > targetSec * 1000 + toleranceMs) {
-      return {
-        ok: true,
-        run: updated,
-        duration_warning: `audio ${(durationMs / 1000).toFixed(1)}s > ${targetSec}s target${shortenUnavailable ? ' (auto-shorten unavailable)' : ''}`,
-      };
-    }
-    return { ok: true, run: updated };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    await sre3(runId, `Voiceover audio failed twice: ${msg} — you can skip (assembly proceeds without VO).`);
-    return { ok: false, status: 502, error: msg };
-  }
+  const { runDeliveryAudio } = await import('../../../../lib/delivery/audio.js');
+  return runDeliveryAudio(runId);
 }
 
 /**
- * Core of the generate_music action — extracted so 'rerun' can call it without
- * duplicating the 4-genre parallel generation logic.
- * Returns a structured result that the caller converts to a response.
+ * Core of the generate_music action — extracted to lib/delivery/music-gen.ts
+ * (generateMusicVariantsForRun) so both this route AND the Telegram refine
+ * executor (lib/telegram/refine-execute.ts) call the exact same 4-genre
+ * parallel generation logic. Kept as a dynamic import here (matching this
+ * file's existing lazy-loading convention for occasional/heavy deps) —
+ * behavior is unchanged, this is a pure move.
  */
 async function runGenerateMusic(runId: string): Promise<
   | { ok: true; status: number; body: unknown }
   | { ok: false; status: number; error: string }
 > {
-  const run = await getRun(runId);
-  if (!run) return { ok: false, status: 404, error: 'not_found' };
-
-  const { moodForPackage, pickRandom } = await import('../../../../lib/assembly/music.js');
-  const {
-    composeMusic, MOOD_PROMPTS, GENRE_VARIANTS, buildFeedbackBlock, buildGenrePrompt,
-  } = await import('../../../../lib/providers/elevenlabs-music.js');
-  const mood = moodForPackage(run.video_type);
-  const lengthMs = Math.max((run.duration_seconds ?? 30) * 1000, 15_000) + 5_000;
-  const db = (await import('../../../../lib/client.js')).getSupabase();
-
-  // Fetch the latest 5 feedback rows for this mood to build the feedback block.
-  const { data: feedbackRows } = await db
-    .from('music_track_feedback')
-    .select('verdict, genre, comment, created_at')
-    .eq('mood', mood)
-    .order('created_at', { ascending: false })
-    .limit(5);
-  const feedbackBlock = buildFeedbackBlock(
-    (feedbackRows ?? []) as Array<{ verdict: 'up' | 'down'; genre: string | null; comment: string | null; created_at: string }>,
-  );
-
-  // Fire 4 composeMusic calls in parallel — one per genre variant.
-  type TrackOption = { id: string; name: string; file_url: string; mood_tag: string; source: string; genre: string | null };
-  type SettledResult = { status: 'fulfilled'; value: TrackOption } | { status: 'rejected'; reason: unknown };
-
-  const today = new Date().toISOString().slice(0, 10);
-  const results = await Promise.allSettled(
-    GENRE_VARIANTS.map(async (variant) => {
-      const fullPrompt = buildGenrePrompt(MOOD_PROMPTS[mood], variant.promptFragment, feedbackBlock);
-      const { audio } = await composeMusic(fullPrompt, lengthMs, { propertyId: run.property_id, deliveryRunId: runId });
-      const path = `delivery/${run.id}/${Date.now()}-${variant.key}.mp3`;
-      const { error: upErr } = await db.storage.from('music').upload(path, audio, { contentType: 'audio/mpeg', upsert: true });
-      if (upErr) throw new Error(upErr.message);
-      const { data: urlData } = db.storage.from('music').getPublicUrl(path);
-      const { data: track, error: insErr } = await db.from('music_tracks').insert({
-        name: `Generated · ${mood} · ${variant.key} · ${today}`,
-        file_url: urlData.publicUrl,
-        mood_tag: mood,
-        source: 'elevenlabs_music',
-        genre: variant.key,
-        prompt: fullPrompt,
-        active: true,
-      }).select('id, name, file_url, mood_tag, source, genre').single();
-      if (insErr) throw new Error(insErr.message);
-      return track as TrackOption;
-    }),
-  ) as SettledResult[];
-
-  const successTracks = results
-    .filter((r): r is { status: 'fulfilled'; value: TrackOption } => r.status === 'fulfilled')
-    .map((r) => r.value);
-  const failures = results.filter((r) => r.status === 'rejected').length;
-
-  if (successTracks.length > 0) {
-    const warning = failures > 0 ? `${failures} of 4 generations failed` : undefined;
-    const body: { tracks: TrackOption[]; failures: number; warning?: string } = {
-      tracks: successTracks, failures,
-    };
-    if (warning) body.warning = warning;
-    return { ok: true, status: 201, body };
-  }
-
-  // All 4 failed — fall back to library.
-  const firstError = results.find((r) => r.status === 'rejected');
-  const msg = firstError?.status === 'rejected'
-    ? (firstError.reason instanceof Error ? firstError.reason.message : String(firstError.reason))
-    : 'All 4 music generations failed';
-
-  type LibraryTrackRow = { id: string; name: string; file_url: string; mood_tag: string; source: string };
-  const { data: moodPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', mood).eq('active', true).neq('source', 'elevenlabs_music');
-  const { data: neutralPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('mood_tag', 'neutral').eq('active', true).neq('source', 'elevenlabs_music');
-  const { data: anyPool } = await db.from('music_tracks').select('id, name, file_url, mood_tag, source').eq('active', true).neq('source', 'elevenlabs_music');
-
-  const fallbackRow = pickRandom(moodPool ?? []) ?? pickRandom(neutralPool ?? []) ?? pickRandom(anyPool ?? []);
-  if (!fallbackRow) {
-    const { setRunError: sre5 } = await import('../../../../lib/delivery/runs.js');
-    await sre5(runId, `Music generation failed: ${msg} — pick a library track or skip.`);
-    return { ok: false, status: 502, error: msg };
-  }
-
-  const { updateRun: uRun5, recordMlEvent: rme5 } = await import('../../../../lib/delivery/runs.js');
-  await uRun5(runId, { music_track_id: (fallbackRow as LibraryTrackRow).id } as never);
-  await rme5(runId, 'music_choice', {
-    music_track_id: (fallbackRow as LibraryTrackRow).id,
-    source: 'library_fallback',
-    generation_error: msg,
-  });
-  const fallbackTrack: TrackOption = { ...(fallbackRow as LibraryTrackRow), genre: null };
-  return { ok: true, status: 200, body: { tracks: [fallbackTrack], failures: 4, fallback: true, warning: msg } };
+  const { generateMusicVariantsForRun } = await import('../../../../lib/delivery/music-gen.js');
+  return generateMusicVariantsForRun(runId);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -246,39 +87,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             if (sceneErr) return res.status(500).json({ error: sceneErr.message });
             const sceneCount = (scenes ?? []).length;
             if (sceneCount === 0) {
-              // Atomic CAS claim: only the first concurrent caller wins the UPDATE.
-              // .lt('updated_at', cutoff) ensures the row is only stamped (and the
-              // claim granted) when the run hasn't been touched within the debounce
-              // window — mirrors the advanceRun / revertRun pattern in lib/delivery/runs.ts.
-              // Threshold: DELIVERY_GENERATING_REFIRE_MINUTES from lib/pipeline/stuck-reaper.ts.
-              const { DELIVERY_GENERATING_REFIRE_MINUTES } = await import('../../../../lib/pipeline/stuck-reaper.js');
-              const cutoff = new Date(Date.now() - DELIVERY_GENERATING_REFIRE_MINUTES * 60_000).toISOString();
-              const { data: claimed, error: claimErr } = await db.from('delivery_runs')
-                .update({ updated_at: new Date().toISOString() })
-                .eq('id', runId)
-                .lt('updated_at', cutoff)
-                .select('id')
-                .maybeSingle();
-              if (claimErr) return res.status(500).json({ error: claimErr.message });
-              if (!claimed) {
-                // Recently touched: another actor/click is already in flight.
-                // Do not double-fire — just clear the error and return.
-                const cleared = await clearRunError(runId);
-                return res.status(200).json({ run: cleared });
-              }
-              // We won the claim → safe to fire exactly once.
-              // Mirror api/pipeline/continue/[runId].ts: setRunError on throw so
-              // failures stay visible in the operator UI.
+              // Serialize with every other generating-stage (re)fire (rerun /
+              // stuck-reaper / continue hop) under the SHARED per-run resolve
+              // lease so two callers can never both pass runScripting's 0-scene
+              // guard and double-submit scenes = duplicate paid provider jobs.
+              // If the lease is already held, mirror the rerun contract: 409.
+              // On throw, setRunError so the failure stays visible in the UI.
+              let leaseOutcome: { ran: boolean };
               try {
-                const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
-                await continuePipelineAfterPhotoSelection(run.property_id, { order_mode: 'operator', delivery_run_id: runId });
-                const refreshed = await getRun(runId);
-                return res.status(200).json({ run: refreshed });
+                const { resumeGeneratingUnderLease } = await import('../../../../lib/delivery/resume-generation.js');
+                leaseOutcome = await resumeGeneratingUnderLease(runId, run.property_id);
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 await setRunError(runId, `Generation resume failed: ${msg}`);
                 return res.status(500).json({ status: 'failed', runId, error: msg });
               }
+              if (!leaseOutcome.ran) {
+                // Another resume is already in flight — don't double-fire.
+                return res.status(409).json({
+                  error: 'resume_already_in_progress',
+                  message: 'A resume is already in progress — give it a moment, then refresh.',
+                });
+              }
+              const refreshed = await getRun(runId);
+              return res.status(200).json({ run: refreshed });
             }
             // generating stage but scenes already exist → don't duplicate;
             // fall through to clear-error.
@@ -511,57 +343,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           const comment = req.body?.comment ? String(req.body.comment).trim() : null;
 
-          const db = (await import('../../../../lib/client.js')).getSupabase();
-
-          // Fetch the track to denormalize mood/genre/prompt.
-          const { data: trackRow } = await db
-            .from('music_tracks')
-            .select('id, mood_tag, genre, prompt, source, active')
-            .eq('id', trackId)
-            .maybeSingle();
-          const track = trackRow as { id: string; mood_tag: string | null; genre: string | null; prompt: string | null; source: string; active: boolean } | null;
-
-          // Upsert: conflict on (run_id, track_id) → update verdict/comment.
-          // A failed write must surface as an error — returning ok would let the
-          // UI show a verdict that was never stored (and never reaches prompts).
-          const { error: feedbackErr } = await db.from('music_track_feedback').upsert(
-            {
-              track_id: trackId,
-              run_id: runId,
-              mood: track?.mood_tag ?? null,
-              genre: track?.genre ?? null,
-              prompt: track?.prompt ?? null,
-              verdict,
-              comment,
-            },
-            { onConflict: 'run_id,track_id' },
-          );
-          if (feedbackErr) {
-            console.error('[delivery] music_track_feedback upsert failed:', feedbackErr);
-            return res.status(500).json({ error: `feedback save failed: ${feedbackErr.message}` });
-          }
-
-          const { recordMlEvent: rme6 } = await import('../../../../lib/delivery/runs.js');
-          await rme6(runId, 'music_feedback', {
-            track_id: trackId,
-            verdict,
-            has_comment: Boolean(comment),
-          });
-
-          // On 'down' + source='elevenlabs_music': deactivate the track.
-          // Library tracks are never auto-deactivated (curated pool must stay intact).
-          if (verdict === 'down' && track?.source === 'elevenlabs_music') {
-            // Supabase returns errors rather than throwing — check the result
-            // (a try/catch here would never fire). Non-fatal by design.
-            const { error: deactivateErr } = await db.from('music_tracks')
-              .update({ active: false })
-              .eq('id', trackId)
-              .eq('source', 'elevenlabs_music');
-            if (deactivateErr) {
-              console.error('[delivery] music_track deactivation failed (non-fatal):', deactivateErr);
-            }
-          }
-
+          // Core logic (upsert + conditional deactivation) lives in
+          // lib/delivery/music-gen.ts — shared with the Telegram refine
+          // executor. This route keeps only its own HTTP input validation.
+          const { recordMusicTrackFeedback } = await import('../../../../lib/delivery/music-gen.js');
+          const result = await recordMusicTrackFeedback(runId, trackId, verdict, comment);
+          if (result.ok === false) return res.status(result.status).json({ error: result.error });
           return res.status(200).json({ ok: true });
         }
         case 'assemble': {
@@ -656,17 +443,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(200).json({ run: updated });
             }
             case 'generating': {
-              const { continuePipelineAfterPhotoSelection } = await import('../../../../lib/pipeline.js');
+              // Concurrency guard: two rapid "Resume generation" clicks (or a
+              // click racing the autopilot sweep / stuck-reaper / continue hop)
+              // must NOT both run continuePipeline and double-submit scenes =
+              // duplicate paid provider jobs. ALL four generating-stage (re)fire
+              // sites funnel through resumeGeneratingUnderLease, which serializes
+              // them on the per-run resolve lease (delivery_runs.resolving_at CAS).
+              // If the lease is already held, no-op with a friendly 409.
+              let leaseOutcome: { ran: boolean };
               try {
-                await continuePipelineAfterPhotoSelection(rerunRun.property_id, {
-                  order_mode: 'operator',
-                  delivery_run_id: runId,
+                const { resumeGeneratingUnderLease } = await import('../../../../lib/delivery/resume-generation.js');
+                leaseOutcome = await resumeGeneratingUnderLease(runId, rerunRun.property_id, {
                   rerun_stage: 'generating',
                 });
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err);
                 await setRunError(runId, `Generation resume failed: ${msg}`);
                 return res.status(502).json({ error: 'generation_resume_failed', message: msg });
+              }
+              if (!leaseOutcome.ran) {
+                // Another resume is already in flight — don't double-fire.
+                return res.status(409).json({
+                  error: 'resume_already_in_progress',
+                  message: 'A resume is already in progress — give it a moment, then refresh.',
+                });
               }
               const updated = await getRun(runId);
               return res.status(200).json({ run: updated });
@@ -738,6 +538,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               return res.status(400).json({ error: `unhandled stage: ${String(exhausted)}` });
             }
           }
+        }
+
+        case 'set_auto_run': {
+          // Kill-switch / arm: flip auto_run on or off for this run.
+          // body: { enabled: boolean }
+          const enabled = req.body?.enabled;
+          if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+          const { updateRun: uRun9, recordMlEvent: rme9 } = await import('../../../../lib/delivery/runs.js');
+          const updated9 = await uRun9(runId, { auto_run: enabled } as never);
+          await rme9(runId, 'auto_advance', { source: 'operator', action: 'set_auto_run', enabled });
+          // Best-effort gate kick: when arming, resolve immediately if the run
+          // already sits at a gate stage rather than waiting for the next cron sweep.
+          let gateOutcome9: unknown;
+          if (enabled) {
+            try {
+              const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+              const freshRun9 = await getRun(runId);
+              if (freshRun9) gateOutcome9 = await resolveGate(freshRun9);
+            } catch (e) {
+              console.warn('[delivery] set_auto_run: resolveGate best-effort failed', e);
+            }
+          }
+          const body9: { run: unknown; gate_outcome?: unknown } = { run: updated9 };
+          if (gateOutcome9 !== undefined) body9.gate_outcome = gateOutcome9;
+          return res.status(200).json(body9);
+        }
+
+        case 'resume_autopilot': {
+          // Clear the pause state set by pauseForHuman, re-arm autopilot, and
+          // immediately kick the gate resolver so the run continues without delay.
+          const { updateRun: uRun10, recordMlEvent: rme10 } = await import('../../../../lib/delivery/runs.js');
+          const updated10 = await uRun10(runId, { paused_reason: null, auto_paused_at: null, auto_run: true } as never);
+          await rme10(runId, 'auto_resume', { source: 'operator' });
+          let gateOutcome10: unknown;
+          try {
+            const { resolveGate } = await import('../../../../lib/delivery/auto-run.js');
+            gateOutcome10 = await resolveGate(updated10);
+          } catch (e) {
+            console.warn('[delivery] resume_autopilot: resolveGate best-effort failed', e);
+          }
+          return res.status(200).json({ run: updated10, gate_outcome: gateOutcome10 });
         }
 
         default:

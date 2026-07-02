@@ -24,6 +24,7 @@ vi.mock('../../../components/preview/LEPlayer', () => ({
   __esModule: true,
   default: (props: {
     src: string;
+    hlsSrc?: string;
     poster?: string;
     orientation?: 'horizontal' | 'vertical';
     onView?: () => void;
@@ -34,7 +35,11 @@ vi.mock('../../../components/preview/LEPlayer', () => ({
     leViewSpy(props.src, props.orientation);
     props.onView?.();
     return (
-      <div data-testid="le-player" data-src={props.src} data-orientation={props.orientation}>
+      <div
+        data-testid="le-player"
+        data-src={props.src}
+        data-hls-src={props.hlsSrc ?? ''}
+        data-orientation={props.orientation}>
         <button data-testid="mock-play" onClick={() => props.onPlayFirst?.()}>play</button>
         <button data-testid="mock-p25" onClick={() => props.onProgress?.(25)}>p25</button>
         <button data-testid="mock-p50" onClick={() => props.onProgress?.(50)}>p50</button>
@@ -54,6 +59,7 @@ type PreviewApiPayload = {
   address_parts: { street: string; locality: string };
   video_url: string | null;
   videos: { horizontal: string | null; vertical: string | null };
+  hls?: { horizontal: string | null; vertical: string | null };
   thumbnail_url: string | null;
   brand: {
     logo: string | null;
@@ -73,6 +79,7 @@ function makePayload(overrides: Partial<PreviewApiPayload> = {}): PreviewApiPayl
     address_parts: { street: '123 Main St', locality: 'Springfield, IL 62701' },
     video_url: 'https://cdn/h.mp4',
     videos: { horizontal: 'https://cdn/h.mp4', vertical: null },
+    hls: { horizontal: 'https://cdn/h.m3u8', vertical: null },
     thumbnail_url: 'https://cdn/thumb.jpg',
     brand: null,
     kind: 'client',
@@ -358,6 +365,49 @@ describe('PreviewPage — orientation toggle', () => {
     fireEvent.click(screen.getByTestId('toggle-wide'));
     await waitFor(() => {
       expect(screen.getByTestId('le-player').getAttribute('data-src')).toContain('h.mp4');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hlsSrc wiring — migration 102
+// ---------------------------------------------------------------------------
+
+describe('PreviewPage — hlsSrc wiring (migration 102)', () => {
+  it('passes the horizontal hls playlist as hlsSrc when present', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, makePayload()));
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    expect(screen.getByTestId('le-player').getAttribute('data-hls-src')).toBe('https://cdn/h.m3u8');
+  });
+
+  it('omits hlsSrc when the API response has no hls field (backward-compat)', async () => {
+    const { hls: _omit, ...payloadWithoutHls } = makePayload();
+    vi.stubGlobal('fetch', mockFetch(200, payloadWithoutHls));
+    renderPreview();
+    await waitFor(() => screen.getByTestId('le-player'));
+    expect(screen.getByTestId('le-player').getAttribute('data-hls-src')).toBe('');
+  });
+
+  it('swaps hlsSrc alongside src when the orientation toggle is clicked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetch(
+        200,
+        makePayload({
+          videos: { horizontal: 'https://cdn/h.mp4', vertical: 'https://cdn/v.mp4' },
+          hls: { horizontal: 'https://cdn/h.m3u8', vertical: 'https://cdn/v.m3u8' },
+        }),
+      ),
+    );
+    renderPreview();
+    await waitFor(() => screen.getByTestId('orientation-toggle'));
+
+    expect(screen.getByTestId('le-player').getAttribute('data-hls-src')).toBe('https://cdn/h.m3u8');
+
+    fireEvent.click(screen.getByTestId('toggle-vertical'));
+    await waitFor(() => {
+      expect(screen.getByTestId('le-player').getAttribute('data-hls-src')).toBe('https://cdn/v.m3u8');
     });
   });
 });

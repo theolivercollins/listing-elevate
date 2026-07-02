@@ -19,6 +19,7 @@ export interface Voice {
 }
 
 export const VOICES: Voice[] = [
+  { id: "nPczCjzI2devNBz1zQrb", name: "Brian",   gender: "male",   description: "Deep, resonant, comforting narrator" },
   { id: "UgBBYS2sOqTuMpoF3BR0", name: "Mark",    gender: "male",   description: "Natural, conversational" },
   { id: "dtSEyYGNJqjrtBArPCVZ", name: "Jack",    gender: "male",   description: "Deep, commanding narrator" },
   { id: "F7hCTbeEDbm7osolS21j", name: "Amanda",  gender: "female", description: "Warm, polished, informative" },
@@ -27,13 +28,18 @@ export const VOICES: Voice[] = [
 
 /**
  * Default narrator for the pipeline auto-trigger when the order didn't pick a
- * voice. Amanda — warm, polished, informative — reads well for real estate.
- * Override via ELEVENLABS_DEFAULT_VOICE_ID.
+ * voice (and the fallback target when the LLM's tone pick doesn't match a
+ * catalog name). Brian — deep, resonant, comforting — is the house default
+ * male narrator for real estate. Override via ELEVENLABS_DEFAULT_VOICE_ID.
+ *
+ * Voice ID verified live 2026-06-30 against GET /v1/voices
+ * (xi-api-key) — ElevenLabs premade voice "Brian - Deep, Resonant and
+ * Comforting", category "premade", labels.gender "male".
  */
 export function defaultVoiceId(): string {
   const env = process.env.ELEVENLABS_DEFAULT_VOICE_ID;
   if (env && isValidVoiceId(env)) return env;
-  return "F7hCTbeEDbm7osolS21j"; // Amanda
+  return "nPczCjzI2devNBz1zQrb"; // Brian
 }
 
 /** Valid voice IDs — used for fast validation without iterating. */

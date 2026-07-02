@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { Star, Loader2, Download } from 'lucide-react';
 import { authedFetch } from '@/lib/api';
+import HlsPlayer from '@/components/preview/HlsPlayer';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,8 +21,25 @@ interface CheckpointBProps {
   runId: string;
   /** Property id — used to build the download endpoint URL. */
   propertyId: string;
-  /** Assembled horizontal video URL — from property.horizontal_video_url */
+  /**
+   * Progressive mp4 URL — from property.horizontal_video_url (or the vertical
+   * fallback). Always the safe, directly-fetchable fallback source; also the
+   * source the Download button relies on. Present for every completed render,
+   * including legacy mp4-only rows.
+   */
   videoUrl: string | null;
+  /**
+   * Bunny adaptive HLS playlist URL — from property.horizontal_hls_url (or the
+   * vertical fallback). Preferred over videoUrl when present; omit / pass null
+   * for legacy mp4-only rows so playback degrades to the mp4.
+   */
+  hlsUrl?: string | null;
+  /**
+   * Poster/thumbnail URL — from property.horizontal_poster_url (or vertical),
+   * or a hero-photo fallback composed by the caller. When null the player shows
+   * no poster (blank until the first frame decodes).
+   */
+  posterUrl?: string | null;
   onDelivered: () => void;
 }
 
@@ -101,7 +119,11 @@ function StarRow({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CheckpointB({ runId, propertyId, videoUrl, onDelivered }: CheckpointBProps) {
+export function CheckpointB({ runId, propertyId, videoUrl, hlsUrl, posterUrl, onDelivered }: CheckpointBProps) {
+  // Prefer Bunny's adaptive HLS playlist when present; fall back to the
+  // progressive mp4 for legacy rows. HlsPlayer routes .m3u8 through hls.js
+  // (or native HLS on Safari) and plays a plain mp4 directly.
+  const playbackSrc = hlsUrl ?? videoUrl;
   const [ratings, setRatings] = useState<Record<RatingKey, number>>({
     overall: 0, music: 0, voiceover: 0, script: 0,
   });
@@ -197,15 +219,17 @@ export function CheckpointB({ runId, propertyId, videoUrl, onDelivered }: Checkp
         </h3>
       </div>
 
-      {/* Video player */}
-      {videoUrl ? (
+      {/* Video player — HLS (adaptive) + a real poster frame when available,
+          gracefully falling back to the progressive mp4 + blank poster for
+          legacy mp4-only rows. HlsPlayer owns the leak-free hls.js lifecycle. */}
+      {playbackSrc ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <video
-            src={videoUrl}
-            controls
+          <HlsPlayer
+            src={playbackSrc}
+            poster={posterUrl ?? undefined}
+            preload="metadata"
             playsInline
-            className="studio-video"
-            style={{ width: '100%', maxHeight: 400, borderRadius: "var(--le-r-sm)", background: '#000' }}
+            style={{ width: '100%', maxHeight: 400, borderRadius: 'var(--le-r-sm)', background: '#000' }}
           />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
             {downloadError && (

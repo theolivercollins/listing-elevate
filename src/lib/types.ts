@@ -65,6 +65,13 @@ export interface Property {
   horizontal_video_url: string | null;
   vertical_video_url: string | null;
   thumbnail_url: string | null;
+  // Bunny Stream adaptive HLS playlist + per-encode poster URLs — added
+  // migration 102. Null for legacy mp4-only rows and any render whose Bunny
+  // host failed/was skipped (see lib/assembly/finalize.ts FinalizeResult).
+  horizontal_hls_url: string | null;
+  horizontal_poster_url: string | null;
+  vertical_hls_url: string | null;
+  vertical_poster_url: string | null;
 }
 
 export interface Photo {

@@ -30,10 +30,16 @@ const VIDEO_TYPE_LABELS: Record<DeliveryVideoType, string> = {
 
 const SYSTEM_PROMPT = `You write welcoming real-estate listing-video voiceover scripts.
 HARD word budget: {wordBudget} words maximum (spoken read ~150 wpm must fit the duration). This is a hard limit — the script MUST end with a complete sentence and never run past the budget; anything over gets cut off mid-read.
-Structure: a fresh opener naming the property -> 3-5 distinctive features from the MLS description and facts -> one short closing line tied to the video type.
+Structure: a fresh opener naming the property -> narration beats -> one short closing line tied to the video type.
+VISUAL ORDER: when a "Visual order" list is given, the video cuts between those rooms in that EXACT sequence. Your narration beats MUST track that same sequence — describe each room/feature only while it would be on screen, in the order listed. Do not mention a room that is not on the list, and do not get ahead of or behind the visuals (e.g. never narrate the garage while the kitchen is on screen). Spend more words on fewer rooms if the list is short; never invent or reorder rooms. When NO "Visual order" list is given, fall back to picking 3-5 distinctive features from the MLS description and facts in any natural order.
 OPENER: do NOT open with "Welcome to" or "Step inside". Vary the opener — lead with a standout feature, the lifestyle, the setting, or the address in a fresher construction.
 Tone: warm, inviting, real-estate-classic. Output the script ONLY.
 DELIVERY CUES (ElevenLabs v3 audio tags): sprinkle 2-4 of ONLY these inline cues: [warmly], [calmly], [softly], [gently], [enthusiastically], [pause]. Tags do not count toward the word budget.`;
+
+/** Turn a snake_case room_type ('exterior_front', 'master_bedroom') into prose. */
+function humanizeRoom(room: string): string {
+  return room.replace(/_/g, ' ').trim();
+}
 
 /**
  * Build the user-facing prompt from run metadata.
@@ -44,13 +50,35 @@ export function buildScriptUserMessage(input: {
   videoType: DeliveryVideoType;
   durationSec: number;
   details: ListingDetails;
+  /**
+   * Ordered rooms exactly as the finalized cut will show them (derived from
+   * delivery_runs.scene_order + each scene's room_type). When present, the
+   * model is told to narrate IN this order so the voiceover always matches
+   * what's on screen. Omit (or pass an empty array) when scene order / room
+   * data isn't available yet — the prompt falls back to whole-listing framing.
+   */
+  roomSequence?: Array<{ position: number; room: string }>;
+  /**
+   * Free-text steering from an operator/conversational request (e.g. "make it
+   * punchier", "mention the new roof"). Optional — omit for the default
+   * generation. Added for the Telegram refine agent's generate_script action;
+   * existing callers that don't pass this see byte-identical output.
+   */
+  guidanceNote?: string;
 }): string {
-  const { address, videoType, durationSec, details } = input;
+  const { address, videoType, durationSec, details, roomSequence, guidanceNote } = input;
   const facts: string[] = [];
   if (details.price) facts.push(`Price: $${details.price.toLocaleString('en-US')}`);
   if (details.beds) facts.push(`${details.beds} bedrooms`);
   if (details.baths) facts.push(`${details.baths} bathrooms`);
   if (details.sqft) facts.push(`${details.sqft.toLocaleString('en-US')} sqft`);
+
+  const roomOrderBlock =
+    roomSequence && roomSequence.length > 0
+      ? `\nVisual order (the video shows these rooms in this exact sequence — narrate to match, do not reorder or invent rooms):\n${roomSequence
+          .map((r) => `${r.position}. ${humanizeRoom(r.room)}`)
+          .join('\n')}`
+      : '';
 
   return [
     `Property: ${address}`,
@@ -60,6 +88,8 @@ export function buildScriptUserMessage(input: {
     details.mls_description
       ? `MLS description:\n${details.mls_description}`
       : 'No MLS description available — write from the facts.',
+    roomOrderBlock,
+    guidanceNote ? `\nAdditional guidance from the operator: ${guidanceNote}` : '',
     `\nWrite a ${durationSec} seconds voiceover script.`,
   ]
     .filter(Boolean)
@@ -80,6 +110,11 @@ export interface GenerateDeliveryScriptResult {
  * @param input.videoType    - 'just_listed' | 'just_pended' | 'just_closed'
  * @param input.durationSec  - target video duration; controls word budget
  * @param input.details      - scraped / manual listing facts
+ * @param input.roomSequence - ordered rooms as the finalized cut shows them (scene_order +
+ *                             room_type); omit when not available — falls back to
+ *                             whole-listing narration instead of crashing.
+ * @param input.guidanceNote - optional operator/conversational steering (Telegram refine's
+ *                             generate_script action); omit for the default generation.
  */
 export async function generateDeliveryScript(input: {
   runId: string;
@@ -88,6 +123,8 @@ export async function generateDeliveryScript(input: {
   videoType: DeliveryVideoType;
   durationSec: number;
   details: ListingDetails;
+  roomSequence?: Array<{ position: number; room: string }>;
+  guidanceNote?: string;
 }): Promise<GenerateDeliveryScriptResult> {
   const wordBudget = WORD_BUDGET[input.durationSec] ?? 75;
   const client = new Anthropic();
@@ -126,6 +163,10 @@ export async function generateDeliveryScript(input: {
       model: MODEL,
       duration_sec: input.durationSec,
       word_budget: wordBudget,
+      // Observability: was this script grounded in the actual visual order,
+      // or did it fall back to whole-listing narration (no scene_order yet)?
+      room_sequence_length: input.roomSequence?.length ?? 0,
+      has_guidance_note: Boolean(input.guidanceNote),
       input_tokens: response.usage.input_tokens,
       output_tokens: response.usage.output_tokens,
     },

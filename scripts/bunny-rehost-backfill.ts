@@ -36,6 +36,7 @@ import {
   deleteBunnyVideo,
   validateBunnyMp4Url,
 } from "../lib/providers/bunny-stream.js";
+import { isNonProdEnv } from "../lib/env.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -323,6 +324,7 @@ async function rehostRow(opts: {
         unit_type: "renders",
         cost_cents: costCents,
         metadata: { bunny_hosted: true, ...metadata },
+        is_test: isNonProdEnv(),
       });
       if (costErr) {
         console.warn(`  cost_event insert failed (non-fatal): ${costErr.message}`);

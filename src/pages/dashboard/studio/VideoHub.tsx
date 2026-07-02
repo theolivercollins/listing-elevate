@@ -45,7 +45,14 @@ interface RevisionNote {
 }
 
 interface HubBundle {
-  property: { id: string; address: string | null; videos: { horizontal: string | null; vertical: string | null } };
+  property: {
+    id: string;
+    address: string | null;
+    videos: { horizontal: string | null; vertical: string | null };
+    // Bunny adaptive HLS playlists (migration 102) — optional: absent on API
+    // responses from before this field was added, or on a pre-migration DB.
+    hls?: { horizontal: string | null; vertical: string | null };
+  };
   client: { id: string; name: string } | null;
   hero_photo_url: string | null;
   links: HubLink[];
@@ -285,8 +292,10 @@ const VideoHub = () => {
 
   // ── Derived state ──────────────────────────────────────────────────────────
   const videos = bundle?.property.videos ?? { horizontal: null, vertical: null };
+  const hls = bundle?.property.hls ?? { horizontal: null, vertical: null };
   const hasBoth = !!videos.horizontal && !!videos.vertical;
   const activeSrc = orientation === 'vertical' ? videos.vertical : videos.horizontal;
+  const activeHlsSrc = orientation === 'vertical' ? hls.vertical : hls.horizontal;
 
   const clientLinks = useMemo(
     () => (bundle?.links ?? []).filter((l) => l.kind === 'client').map(toPanelRow),
@@ -381,6 +390,7 @@ const VideoHub = () => {
                 <LEPlayer
                   key={orientation}
                   src={activeSrc}
+                  hlsSrc={activeHlsSrc ?? undefined}
                   poster={bundle.hero_photo_url ?? undefined}
                   orientation={orientation}
                 />

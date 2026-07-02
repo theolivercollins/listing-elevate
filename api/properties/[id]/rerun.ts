@@ -1,8 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getProperty, getSupabase, log, updatePropertyStatus } from '../../../lib/db.js';
-import { verifyAuth } from '../../../lib/auth.js';
+import { verifyAuth, setNoStore } from '../../../lib/auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Cache-safety (§8): verifyAuth is called directly here (not via
+  // requireAuth), so set no-store/Vary up front on every response path.
+  setNoStore(res);
+
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Method not allowed' });
@@ -62,7 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (nullErr) throw nullErr;
 
     // Delete scenes for regeneration (rerun still produces a fresh video).
-    await supabase.from('scenes').delete().eq('property_id', id);
+    // Error is checked: a silent failure here would leave stale scenes in the DB
+    // (with old clip_url / provider_task_id) while the property is reset to
+    // 'queued', causing the next pipeline run to operate against stale data.
+    const { error: scenesErr } = await supabase.from('scenes').delete().eq('property_id', id);
+    if (scenesErr) throw scenesErr;
 
     await supabase
       .from('properties')

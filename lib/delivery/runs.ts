@@ -6,6 +6,8 @@ const ML_EVENT_TYPES: readonly MlEventType[] = [
   'photo_selection', 'reorder', 'regenerate', 'variant_override', 'script_edit',
   'voice_choice', 'music_choice', 'rating', 'comment', 'details_edit',
   'music_feedback',
+  // Autopilot control events — DB migration 090 extends the CHECK constraint to include these.
+  'auto_pause', 'auto_advance', 'auto_resume',
 ];
 
 export async function createRun(input: {
@@ -13,10 +15,12 @@ export async function createRun(input: {
   client_id: string | null;
   video_type: DeliveryVideoType;
   duration_seconds: number | null;
+  /** Autopilot flag captured at intake. Defaults to false when omitted. */
+  auto_run?: boolean;
 }): Promise<DeliveryRunRow> {
   const { data, error } = await getSupabase()
     .from('delivery_runs')
-    .insert({ ...input, stage: 'intake' })
+    .insert({ ...input, stage: 'intake', auto_run: input.auto_run ?? false })
     .select('*')
     .single();
   if (error) throw new Error(`createRun: ${error.message}`);

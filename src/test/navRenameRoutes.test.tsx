@@ -20,6 +20,9 @@ const mockAuthValue = {
   profile: { role: "admin" } as { role: string } | null,
   session: null,
   loading: false,
+  adminVerified: true,
+  sendAdminEmailCode: vi.fn(),
+  verifyAdminEmailCode: vi.fn(),
   signInWithMagicLink: vi.fn(),
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
@@ -245,7 +248,7 @@ vi.mock("@/components/ui/tooltip", () => ({
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AppRoutes from "../AppRoutes";
 import { getSections } from "@/components/DashboardSidebar";
@@ -264,41 +267,52 @@ function getTestIds(container: HTMLElement) {
   );
 }
 
+// AppRoutes lazy-loads every dashboard page (feat/studio-perf) behind a
+// Suspense boundary, so page content mounts asynchronously even with the
+// module mocked below — assertions must `waitFor` it rather than read the
+// DOM synchronously right after `render()`.
+
 describe("Nav rename — routes unchanged after label rename", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuthValue.user = { id: "admin-user-id" };
     mockAuthValue.profile = { role: "admin" };
+    mockAuthValue.adminVerified = true;
   });
 
-  it("/dashboard/pipeline still renders Pipeline (sidebar label is now 'Orders')", () => {
+  it("/dashboard/pipeline still renders Pipeline (sidebar label is now 'Orders')", async () => {
     const { container } = renderAt("/dashboard/pipeline");
-    const ids = getTestIds(container);
-    expect(ids).toContain("page-pipeline");
+    await waitFor(() => {
+      expect(getTestIds(container)).toContain("page-pipeline");
+    });
   });
 
-  it("/dashboard/users still renders Users (sidebar label is now 'Agents')", () => {
+  it("/dashboard/users still renders Users (sidebar label is now 'Agents')", async () => {
     const { container } = renderAt("/dashboard/users");
-    const ids = getTestIds(container);
-    expect(ids).toContain("page-users");
+    await waitFor(() => {
+      expect(getTestIds(container)).toContain("page-users");
+    });
   });
 
-  it("/dashboard still renders Overview for admin (sidebar label is now 'Today')", () => {
+  it("/dashboard still renders Overview for admin (sidebar label is now 'Today')", async () => {
     const { container } = renderAt("/dashboard");
-    const ids = getTestIds(container);
-    expect(ids).toContain("page-overview");
+    await waitFor(() => {
+      expect(getTestIds(container)).toContain("page-overview");
+    });
   });
 
-  it("/dashboard/properties still renders Properties page", () => {
+  it("/dashboard/properties still renders Properties page", async () => {
     const { container } = renderAt("/dashboard/properties");
-    const ids = getTestIds(container);
-    expect(ids).toContain("page-properties");
+    await waitFor(() => {
+      expect(getTestIds(container)).toContain("page-properties");
+    });
   });
 
-  it("/dashboard/finances still renders Finances page", () => {
+  it("/dashboard/finances still renders Finances page", async () => {
     const { container } = renderAt("/dashboard/finances");
-    const ids = getTestIds(container);
-    expect(ids).toContain("page-finances");
+    await waitFor(() => {
+      expect(getTestIds(container)).toContain("page-finances");
+    });
   });
 });
 

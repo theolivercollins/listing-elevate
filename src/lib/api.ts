@@ -3,6 +3,34 @@ import { supabase } from './supabase';
 
 const API_BASE = '';
 
+// sessionStorage key for the active impersonation token (mirrors src/lib/auth.tsx).
+const IMPERSONATE_TOKEN_KEY = 'le_impersonate_token';
+// The impersonation control endpoint itself must NEVER receive the token —
+// otherwise STOP/START would run under the impersonated role context.
+const IMPERSONATION_ENDPOINT = '/api/admin/impersonation';
+
+/** Reads the active impersonation token from sessionStorage, if any. */
+export function getImpersonationToken(): string | null {
+  if (typeof sessionStorage === 'undefined') return null;
+  return sessionStorage.getItem(IMPERSONATE_TOKEN_KEY);
+}
+
+/**
+ * Attaches the `x-impersonate-token` header to an outgoing request when an
+ * impersonation token is present AND the path is not the impersonation control
+ * endpoint. Mutates and returns the supplied headers object.
+ */
+function applyImpersonationHeader(
+  headers: Record<string, string>,
+  path: string,
+): Record<string, string> {
+  const token = getImpersonationToken();
+  if (token && !path.startsWith(IMPERSONATION_ENDPOINT)) {
+    headers['x-impersonate-token'] = token;
+  }
+  return headers;
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
   const headers: Record<string, string> = {
@@ -11,6 +39,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
   }
+  applyImpersonationHeader(headers, path);
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
   if (!res.ok) {
@@ -33,6 +62,7 @@ export async function authedFetch(path: string, options?: RequestInit): Promise<
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
   }
+  applyImpersonationHeader(headers, path);
   return fetch(`${API_BASE}${path}`, { ...options, headers });
 }
 

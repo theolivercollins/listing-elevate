@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from 'lucide-react';
+import type Hls from 'hls.js';
 import '../../styles/preview-design.css';
 
 // ---------------------------------------------------------------------------
@@ -17,7 +18,16 @@ import '../../styles/preview-design.css';
 // ---------------------------------------------------------------------------
 
 export type LEPlayerProps = {
+  /** Progressive mp4 URL — the always-safe fallback source. */
   src: string;
+  /**
+   * Optional Bunny adaptive HLS playlist URL (.m3u8). Preferred over `src` when
+   * present: adaptive bitrate + an instant start. Falls back to `src` for
+   * legacy mp4-only rows, and to `src` on browsers without native HLS or
+   * MediaSource (hls.js) support. Backward compatible — omitting it keeps the
+   * exact pre-HLS behaviour (plain mp4 on `src`).
+   */
+  hlsSrc?: string;
   poster?: string;
   orientation?: 'horizontal' | 'vertical';
   /** Fired once on mount (page/player view). */
@@ -40,8 +50,24 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// Native HLS support (Safari + some mobile browsers) is a fixed browser
+// capability, so probe once per page load and cache — never once per mount.
+// Mirrors HlsPlayer.tsx's detection so both players agree on when hls.js is
+// needed.
+let nativeHlsSupportCache: boolean | null = null;
+function supportsNativeHls(): boolean {
+  if (nativeHlsSupportCache !== null) return nativeHlsSupportCache;
+  if (typeof document === 'undefined') return false;
+  const probe = document.createElement('video');
+  nativeHlsSupportCache =
+    typeof probe.canPlayType === 'function' &&
+    probe.canPlayType('application/vnd.apple.mpegurl') !== '';
+  return nativeHlsSupportCache;
+}
+
 export default function LEPlayer({
   src,
+  hlsSrc,
   poster,
   orientation = 'horizontal',
   onView,
@@ -49,6 +75,13 @@ export default function LEPlayer({
   onProgress,
   onComplete,
 }: LEPlayerProps) {
+  // Prefer Bunny's adaptive HLS playlist when provided; fall back to the
+  // progressive mp4 (`src`) for legacy rows. A plain file and Safari's native
+  // HLS both just need the `src` ATTRIBUTE; only a non-native browser with an
+  // .m3u8 needs the hls.js/MediaSource path in the effect below.
+  const preferredSrc = hlsSrc && hlsSrc.length > 0 ? hlsSrc : src;
+  const isHlsSource = preferredSrc.endsWith('.m3u8');
+  const direct = !isHlsSource || supportsNativeHls();
   const videoRef = useRef<HTMLVideoElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +109,45 @@ export default function LEPlayer({
     // onView is captured once; intentionally not in deps.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── HLS attach (non-native browsers only) ─────────────────────────────
+  // When preferredSrc is an .m3u8 and the browser has no native HLS, drive
+  // playback through hls.js/MediaSource. The `direct` path (plain mp4 or
+  // Safari) uses the <video src> attribute and skips this entirely. The Hls
+  // instance is destroyed on unmount AND on every preferredSrc change — React
+  // runs an effect's cleanup before re-running it on a dep change — which is
+  // the fix for the classic hls.js multi-mount memory leak (same lifecycle as
+  // HlsPlayer.tsx).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || direct) return undefined;
+
+    let hls: Hls | null = null;
+    let cancelled = false;
+
+    import('hls.js')
+      .then((mod) => {
+        if (cancelled) return;
+        const HlsCtor = mod.default;
+        if (!HlsCtor.isSupported()) {
+          // No native HLS and no MediaSource — last-resort direct assignment so
+          // playback at least tries.
+          video.src = preferredSrc;
+          return;
+        }
+        hls = new HlsCtor();
+        hls.loadSource(preferredSrc);
+        hls.attachMedia(video);
+      })
+      .catch(() => {
+        if (!cancelled) video.src = preferredSrc;
+      });
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+    };
+  }, [preferredSrc, direct]);
 
   // ── Auto-hide controls during playback ────────────────────────────────
   const revealControls = useCallback(() => {
@@ -257,7 +329,9 @@ export default function LEPlayer({
         ref={videoRef}
         className="le-player__video"
         data-testid="le-player-video"
-        src={src}
+        // Direct path (mp4 or native HLS) drives via the attribute; the hls.js
+        // path leaves it undefined and attaches MediaSource in the effect above.
+        src={direct ? preferredSrc : undefined}
         poster={poster}
         playsInline
         preload="metadata"

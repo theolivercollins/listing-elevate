@@ -1065,6 +1065,20 @@
 .le-dash-mobilebar { display: none; }
 .le-dash-backdrop { display: none; }
 
+/* ── Mid-desktop tightening (1025px–1439px) ──────────────────────────
+   Above the 1024px drawer breakpoint the sidebar is a fixed 256px column
+   alongside 36px of horizontal main-scroll padding. On laptop-class
+   viewports (~1280–1440 CSS px) that combo leaves too little room for
+   4-column grids + page-heading actions, causing horizontal overflow.
+   Reclaim ~60px of content width here; >=1440px and the <=1024px drawer
+   breakpoint are untouched. Specificity note: `.le-dash-shell.is-collapsed`
+   (two classes) still wins over the single-class rule below, so the
+   collapsed-sidebar width is unaffected. */
+@media (min-width: 1025px) and (max-width: 1439px) {
+  .le-dash-shell { --sidebar-w: 220px; }
+  .le-main-scroll { padding: 24px 24px 48px; }
+}
+
 @media (max-width: 1024px) {
   .le-dash-shell { grid-template-columns: 1fr; }
 

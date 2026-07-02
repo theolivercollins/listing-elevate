@@ -148,8 +148,20 @@ export interface Property {
   stripe_amount_cents: number | null;
   // v1.1 Seedance push-in toggle — added migration 062.
   pipeline_mode: PipelineMode;
+  // Test-data marker (migration adds `is_test boolean default false`).
+  // Set to true on Preview / dev deploys so rows are excluded from live
+  // views + cost reconciliation. Always false on production.
+  is_test: boolean;
   // Operator-selected video model SKU at inception — added migration 090.
   video_model_sku: string | null;
+  // Bunny Stream adaptive HLS playlist + per-encode poster URLs — added
+  // migration 102. Null for legacy mp4-only rows and any render whose Bunny
+  // host failed/was skipped (see lib/assembly/finalize.ts FinalizeResult
+  // hlsUrl/posterUrl — set only on the fully-successful Bunny path).
+  horizontal_hls_url: string | null;
+  horizontal_poster_url: string | null;
+  vertical_hls_url: string | null;
+  vertical_poster_url: string | null;
 }
 
 export interface UserProfile {

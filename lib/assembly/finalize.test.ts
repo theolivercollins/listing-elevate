@@ -33,15 +33,19 @@ vi.mock("../providers/bunny-stream.js", () => ({
   // validateBunnyMp4Url: defaults true so the happy-path test exercises the
   // mp4Valid branch. Tests exercising the HEAD-failure path override per-test.
   validateBunnyMp4Url: vi.fn().mockResolvedValue(true),
+  // bunnyThumbnailUrl: finalize derives the poster from the hosted guid on the
+  // fully-successful path. Mirror the real .../{guid}/thumbnail.jpg shape.
+  bunnyThumbnailUrl: vi.fn((guid: string) => `https://vz-test.b-cdn.net/${guid}/thumbnail.jpg`),
 }));
 
-import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url } from "../providers/bunny-stream.js";
+import { hostVideoOnBunny, isBunnyConfigured, deleteBunnyVideo, validateBunnyMp4Url, bunnyThumbnailUrl } from "../providers/bunny-stream.js";
 import { finalizeAssemblyRender } from "./finalize.js";
 
 const hostVideoOnBunnyMock = vi.mocked(hostVideoOnBunny);
 const isBunnyConfiguredMock = vi.mocked(isBunnyConfigured);
 const deleteBunnyVideoMock = vi.mocked(deleteBunnyVideo);
 const validateBunnyMp4UrlMock = vi.mocked(validateBunnyMp4Url);
+const bunnyThumbnailUrlMock = vi.mocked(bunnyThumbnailUrl);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,6 +54,7 @@ const validateBunnyMp4UrlMock = vi.mocked(validateBunnyMp4Url);
 const PROVIDER_URL = "https://creatomate.com/renders/abc123.mp4";
 const BUNNY_MP4_URL = "https://vz-test.b-cdn.net/guid-123/play_720p.mp4";
 const BUNNY_HLS_URL = "https://vz-test.b-cdn.net/guid-123/playlist.m3u8";
+const BUNNY_POSTER_URL = "https://vz-test.b-cdn.net/guid-123/thumbnail.jpg";
 
 function bunnySuccess() {
   return {
@@ -101,6 +106,11 @@ describe("finalizeAssemblyRender", () => {
     isBunnyConfiguredMock.mockReset();
     deleteBunnyVideoMock.mockReset();
     validateBunnyMp4UrlMock.mockReset();
+    bunnyThumbnailUrlMock.mockReset();
+    // Re-arm the poster derivation after reset (mockReset clears the impl).
+    bunnyThumbnailUrlMock.mockImplementation(
+      (guid: string) => `https://vz-test.b-cdn.net/${guid}/thumbnail.jpg`,
+    );
     // Default: Bunny configured and host succeeds.
     isBunnyConfiguredMock.mockReturnValue(true);
     hostVideoOnBunnyMock.mockResolvedValue(bunnySuccess());
@@ -454,6 +464,81 @@ describe("finalizeAssemblyRender", () => {
     expect(result.bitrateKbps).not.toBeNull();
 
     // deleteBunnyVideo must be called with the hosted guid to clean up the orphan.
+    expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
+  });
+
+  // ── 13. HLS + poster capture (the perf pass) ──────────────────────────────
+
+  it("captures Bunny HLS url and poster url on the fully-successful host path", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)));
+    process.env.VERCEL_ENV = "production";
+
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+
+    // url stays the directly-fetchable mp4 fallback...
+    expect(result.url).toBe(BUNNY_MP4_URL);
+    // ...and the additive adaptive HLS + poster are captured alongside it.
+    expect(result.hlsUrl).toBe(BUNNY_HLS_URL);
+    expect(result.posterUrl).toBe(BUNNY_POSTER_URL);
+    // poster is derived from the hosted guid via bunnyThumbnailUrl.
+    expect(bunnyThumbnailUrlMock).toHaveBeenCalledWith("guid-123");
+  });
+
+  // ── 14. Every fallback path keeps the legacy mp4-only shape (hls/poster null) ──
+
+  it("leaves hlsUrl/posterUrl null on the kill switch", async () => {
+    process.env.LE_ASSEMBLY_FINALIZE = "off";
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+  });
+
+  it("leaves hlsUrl/posterUrl null when the env write guard is absent", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)));
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+    expect(result.url).toBe(PROVIDER_URL);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+  });
+
+  it("leaves hlsUrl/posterUrl null on download failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network timeout")));
+    process.env.VERCEL_ENV = "production";
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+  });
+
+  it("leaves hlsUrl/posterUrl null when Bunny is not configured", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)));
+    isBunnyConfiguredMock.mockReturnValue(false);
+    process.env.VERCEL_ENV = "production";
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+  });
+
+  it("leaves hlsUrl/posterUrl null on Bunny host failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)));
+    hostVideoOnBunnyMock.mockRejectedValue(new Error("bunny encode timeout"));
+    process.env.VERCEL_ENV = "production";
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+  });
+
+  it("leaves hlsUrl/posterUrl null when the mp4 HEAD check fails (orphan deleted — a 404-ing playlist must never be persisted)", async () => {
+    validateBunnyMp4UrlMock.mockResolvedValueOnce(false);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeFetchResponse(LARGE_BYTES)));
+    process.env.VERCEL_ENV = "production";
+
+    const result = await finalizeAssemblyRender(BASE_PARAMS);
+
+    // Falls back to the provider mp4 — legacy mp4-only shape.
+    expect(result.url).toBe(PROVIDER_URL);
+    expect(result.hlsUrl).toBeNull();
+    expect(result.posterUrl).toBeNull();
+    // The orphaned Bunny object (whose playlist + poster would 404) is deleted.
     expect(deleteBunnyVideoMock).toHaveBeenCalledWith("guid-123");
   });
 });

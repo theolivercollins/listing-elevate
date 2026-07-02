@@ -78,6 +78,55 @@ export async function uploadPhotosToStorage(
 }
 
 /**
+ * Upload a single photo eagerly to the property-photos bucket, returning
+ * both the storage path and its absolute public URL.
+ *
+ * Used by StudioNew's autosave-draft flow, where each photo uploads the
+ * moment it's added rather than waiting for submit. Reuses the same
+ * filename-safety + timestamp convention as uploadPhotosToStorage's
+ * per-file logic, but disambiguates with a short random id instead of a
+ * batch index — this is called once per file over time (as photos trickle
+ * in), not as part of one batch with a shared loop index.
+ *
+ * @param file        the photo to upload
+ * @param folderPath  bucket-relative prefix, e.g. `${draftId}/raw`
+ */
+export async function uploadSinglePhoto(
+  file: File,
+  folderPath: string,
+): Promise<{ storagePath: string; publicUrl: string }> {
+  const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const unique = crypto.randomUUID().slice(0, 8);
+  const fileName = `${Date.now()}_${unique}_${safeName}`;
+  const storagePath = `${folderPath}/${fileName}`;
+
+  const res = await fetch(
+    `${SUPABASE_URL}/storage/v1/object/property-photos/${storagePath}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': file.type || 'image/jpeg',
+        'x-upsert': 'true',
+      },
+      body: file,
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Upload failed for ${file.name}: ${res.status} ${text}`);
+  }
+  return { storagePath, publicUrl: getStoragePublicUrl(storagePath) };
+}
+
+// NOTE: there is intentionally no client-side `deleteStoragePhoto` helper. The
+// `property-photos` bucket grants the anon role INSERT + SELECT only — there is
+// NO anon DELETE policy — so a browser-issued delete always 403s silently. All
+// real Storage deletion must go through the SERVICE-ROLE server side
+// (api/admin/studio/drafts/[id].ts?purge=1 and the studio-draft-cleanup cron),
+// both of which skip any object still referenced by a live property.
+
+/**
  * Upload a single file (logo, headshot, etc.) to Supabase Storage.
  *
  * Returns the storage path on success, or throws on failure.

@@ -135,6 +135,138 @@ export function resolveRoutingPreference(
   return scene.provider_preference ?? null;
 }
 
+// ─── GENERATION SUBMIT — SHARED CONTRACT ───────────────────────
+//
+// Pure helpers extracted from runGenerationSubmit / continuePipelineAfterPhoto-
+// Selection so the resume/idempotency + operator-messaging contract has one
+// authoritative implementation that is unit-testable without mocking Supabase.
+
+/** Operator-actionable error set on a delivery_run when generation could not
+ *  submit because the video provider account has no balance (Atlas HTTP 402).
+ *  Set at SUBMIT time so the operator sees it immediately (not only after the
+ *  stuck-reaper). The Resume button stays enabled at stage='generating'. */
+export const RESUME_BALANCE_ERROR =
+  'Video provider account out of balance — add funds, then Resume.';
+
+/** Operator-actionable error set on a delivery_run when a submit pass PARTIALLY
+ *  succeeded for a non-balance reason: some scenes submitted, others failed at
+ *  submit (now needs_review with no provider_task_id). Without this the run would
+ *  stall silently — poll-scenes can't assemble (dead scenes) and the reaper's
+ *  Path C skips it (some scenes are progressing). Resume is idempotent and
+ *  re-submits only the still-unsubmitted scenes, so the operator just re-Resumes. */
+export const RESUME_PARTIAL_FAILURE_ERROR =
+  'Some scenes failed to submit — Resume to retry the remaining scenes.';
+
+/** Outcome counts of one generation-submit pass. */
+export interface SubmitResult {
+  /** Scenes this pass tried to submit (those lacking task_id AND clip_url). */
+  attempted: number;
+  /** Scenes that submitted successfully THIS pass. */
+  submittedThisRound: number;
+  /** All scenes on the property now carrying a provider_task_id (re-queried). */
+  totalSubmitted: number;
+  /** Scenes now at needs_review with no provider_task_id (re-queried). */
+  failedAtSubmit: number;
+  /** True iff any this-pass failure was an Atlas insufficient-balance (402). */
+  insufficientBalance: boolean;
+}
+
+/**
+ * The scenes a (re)submit pass should act on: ONLY those lacking BOTH a
+ * provider_task_id AND a clip_url. Already-submitted (task_id set) and
+ * already-collected (clip_url set) scenes are left untouched — the core
+ * idempotency guarantee that makes "Resume generation" safe to click twice.
+ */
+export function scenesNeedingSubmit<
+  T extends { provider_task_id?: string | null; clip_url?: string | null },
+>(scenes: T[]): T[] {
+  return scenes.filter((s) => !s.provider_task_id && !s.clip_url);
+}
+
+/**
+ * Terminal generation-submit log. NEVER claims "all scenes submitted" when 0
+ * were — reflects the real counts and names the balance cause when applicable.
+ */
+export function submitCompletionLog(
+  r: SubmitResult,
+): { level: 'info' | 'warn'; message: string } {
+  const balanceNote = r.insufficientBalance
+    ? ' — video provider account out of balance; add funds, then Resume'
+    : '';
+  if (r.submittedThisRound > 0 || r.totalSubmitted > 0) {
+    // Progress was made — but if some scenes died at submit this is only a
+    // PARTIAL success. Do NOT log the fully-reassuring "cron will collect +
+    // assemble" line; warn and name the failure count (and balance cause).
+    if (r.failedAtSubmit > 0) {
+      return {
+        level: 'warn',
+        message: `${r.totalSubmitted} scene(s) submitted, but ${r.failedAtSubmit} failed at submit${balanceNote}. Cron will NOT assemble until the failed scenes are resubmitted.`,
+      };
+    }
+    return {
+      level: 'info',
+      message: `${r.totalSubmitted} scene(s) submitted to providers. Cron will collect clips + assemble.`,
+    };
+  }
+  return {
+    level: 'warn',
+    message: `No scenes submitted (${r.failedAtSubmit} failed at submit)${balanceNote}. Cron will NOT assemble until scenes are resubmitted.`,
+  };
+}
+
+/**
+ * What to do to delivery_run.error after a submit pass. Evaluated so a PARTIAL
+ * drain (some scenes submit, the rest fail) is never silently cleared:
+ *  - provider account out of balance with ANY attempt → SET RESUME_BALANCE_ERROR
+ *    (checked FIRST so a partial balance drain — 5 submit, 7 × 402 — surfaces,
+ *    not clears);
+ *  - some submitted but others died at submit for a non-balance reason → SET
+ *    RESUME_PARTIAL_FAILURE_ERROR (the dead scenes won't self-heal — no reaper
+ *    re-submits needs_review scenes — so the operator must re-Resume);
+ *  - real progress this pass AND nothing left dead at submit → CLEAR any stale
+ *    stall error;
+ *  - otherwise leave it (an all-fail non-balance pass self-heals via the poll
+ *    cron / reaper Path B).
+ */
+export function resumeRunErrorAction(
+  r: SubmitResult,
+): { type: 'clear' } | { type: 'set'; message: string } | { type: 'none' } {
+  if (r.insufficientBalance && r.attempted > 0) return { type: 'set', message: RESUME_BALANCE_ERROR };
+  if (r.submittedThisRound > 0 && r.failedAtSubmit > 0) return { type: 'set', message: RESUME_PARTIAL_FAILURE_ERROR };
+  if (r.submittedThisRound > 0 && r.failedAtSubmit === 0) return { type: 'clear' };
+  return { type: 'none' };
+}
+
+// ─── CLIP URL PROXY ────────────────────────────────────────────
+
+/**
+ * Rewrites a Bunny CDN clip URL to route through our /api/clip-proxy endpoint,
+ * which adds the Referer header required by Bunny library 679131.
+ *
+ * Bunny blocks server-side fetches that carry no Referer (HTTP 403) — browsers
+ * send it automatically, but Creatomate's render server does not. Routing
+ * through the proxy injects `Referer: https://www.listingelevate.com/` so the
+ * stitched render succeeds and horizontal_video_url is populated.
+ *
+ * Non-Bunny URLs pass through unchanged. Safe when BUNNY_STREAM_CDN_HOSTNAME
+ * is not configured — returns the original url so assembly still works with
+ * other CDN providers.
+ */
+export function proxifyClipUrl(url: string): string {
+  const cdnHostname = process.env.BUNNY_STREAM_CDN_HOSTNAME;
+  if (!cdnHostname) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === cdnHostname) {
+      const base = process.env.LE_PUBLIC_BASE_URL ?? 'https://listingelevate.com';
+      return `${base}/api/clip-proxy?url=${encodeURIComponent(url)}`;
+    }
+  } catch {
+    // Malformed URL — return unchanged so assembly falls back gracefully.
+  }
+  return url;
+}
+
 // ─── MAIN PIPELINE ─────────────────────────────────────────────
 
 // Snapshot every system prompt to prompt_revisions on each pipeline run so
@@ -284,9 +416,26 @@ export async function continuePipelineAfterPhotoSelection(
   // in ~60s instead of hitting the 300s maxDuration with half the
   // scenes never submitted. See poll-scenes.ts finalize block — when
   // all scenes have settled it calls runAssembly(propertyId).
-  await runGenerationSubmit(propertyId);
-  await log(propertyId, "generation", "info",
-    "All scenes submitted to providers. Cron will collect clips + assemble.", logContext);
+  const submitResult = await runGenerationSubmit(propertyId);
+
+  // Terminal log reflects REAL counts — never claims "all submitted" when 0 were.
+  const completion = submitCompletionLog(submitResult);
+  await log(propertyId, "generation", completion.level, completion.message, logContext);
+
+  // For operator / checkpoint-A runs, surface a resume-actionable state on the
+  // delivery_run at SUBMIT time (not only after the reaper): clear a stale stall
+  // error once generation makes real progress, or set the balance-specific
+  // error immediately when nothing submitted because Atlas is out of balance.
+  if (deliveryRunId) {
+    const errorAction = resumeRunErrorAction(submitResult);
+    if (errorAction.type === "set") {
+      const { setRunError } = await import("./delivery/runs.js");
+      await setRunError(deliveryRunId, errorAction.message);
+    } else if (errorAction.type === "clear") {
+      const { clearRunError } = await import("./delivery/runs.js");
+      await clearRunError(deliveryRunId);
+    }
+  }
 }
 
 // ─── STAGE 2: ANALYZE ──────────────────────────────────────────
@@ -474,10 +623,10 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
   const selected = selection.selected.map((result) => result.original);
   const selectionRank = new Map(selected.map((s, i) => [s.photo.id, i + 1]));
 
-  for (const { photo, analysis, provider } of allResults) {
+  await Promise.all(allResults.map(({ photo, analysis, provider }) => {
     const verdict = selection.verdicts.get(photo.id);
     const isSelected = verdict?.status === "selected";
-    await updatePhotoAnalysis(photo.id, {
+    return updatePhotoAnalysis(photo.id, {
       room_type: analysis.room_type,
       quality_score: analysis.quality_score,
       aesthetic_score: analysis.aesthetic_score,
@@ -499,7 +648,7 @@ async function runAnalysis(propertyId: string, photos: Photo[]): Promise<void> {
       },
       analysis_provider: provider,
     });
-  }
+  }));
 
   await getSupabase()
     .from("properties")
@@ -1037,22 +1186,32 @@ async function runScripting(
 // Splitting submit from collect makes the main function exit in
 // ~30-60s regardless of clip count.
 
-async function runGenerationSubmit(propertyId: string): Promise<void> {
+/** Per-scene submit outcome, collected so the caller can classify the pass
+ *  (how many submitted, and whether any failure was an Atlas 402). */
+type SubmitOutcome = { ok: true } | { ok: false; insufficientBalance: boolean };
+
+async function runGenerationSubmit(propertyId: string): Promise<SubmitResult> {
   await updatePropertyStatus(propertyId, "generating");
-  const allScenes = await getScenesForProperty(propertyId);
-  const scenes = allScenes.filter((scene) => !scene.provider_task_id && !scene.clip_url);
+  const [allScenes, property] = await Promise.all([
+    getScenesForProperty(propertyId),
+    getProperty(propertyId),
+  ]);
+  // Idempotent: only scenes lacking BOTH a task_id and a clip_url are (re)submitted.
+  const scenes = scenesNeedingSubmit(allScenes);
   const supabase = getSupabase();
 
   // v1.1: load pipeline_mode once for the whole submission. Defaults to 'v1'
   // on legacy properties created before migration 062.
-  const property = await getProperty(propertyId);
   const pipelineMode = property.pipeline_mode ?? "v1";
 
   const GENERATION_CONCURRENCY = parseInt(process.env.GENERATION_CONCURRENCY ?? "4", 10);
   await log(propertyId, "generation", "info",
     `Submitting ${scenes.length}/${allScenes.length} clips, up to ${GENERATION_CONCURRENCY} in parallel${pipelineMode === "v1.1" ? " (mode=v1.1 seedance push-in)" : ""}`);
 
-  const submitScene = async (scene: typeof scenes[number]) => {
+  const submitScene = async (scene: typeof scenes[number]): Promise<SubmitOutcome> => {
+    // Tracks whether this scene's failure was an Atlas 402 (insufficient
+    // balance) so the caller can surface a specific, operator-actionable error.
+    let insufficientBalance = false;
     // Get the source photo once. Providers share the same source image,
     // so a failover retry doesn't need to refetch.
     let photo: { file_url: string; room_type: string } | null;
@@ -1069,7 +1228,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
       await updateSceneStatus(scene.id, "needs_review");
       await log(propertyId, "generation", "error",
         `Scene ${scene.scene_number}: photo lookup failed: ${msg}`, undefined, scene.id);
-      return;
+      return { ok: false, insufficientBalance: false };
     }
 
     // C.2: Do NOT base64-encode the photo here. Providers that accept URLs
@@ -1157,7 +1316,7 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
         await log(propertyId, "generation", "info",
           `Scene ${scene.scene_number}: submitted to ${provider.name}${modelNote}${attempt > 0 ? ` (failover ${attempt})` : ""}`,
           { jobId: genJob.jobId, attempt: attempt + 1, modelKey: decision.modelKey }, scene.id);
-        return;
+        return { ok: true };
       } catch (err) {
         // Atlas 402 insufficient-balance: permanent billing failure.
         // Do NOT failover to another provider — that would silently degrade
@@ -1172,6 +1331,9 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
             `[atlas] insufficient balance — scene ${scene.scene_number} NOT submitted; operator action required: ${err.message}`,
             { kind: "permanent" }, scene.id);
           lastError = { message: err.message, kind: "permanent", provider: provider.name };
+          // Remember the billing cause so the caller can set a specific,
+          // operator-actionable "out of balance — Resume" error at submit time.
+          insufficientBalance = true;
           break;
         }
         const classified = classifyProviderError(err);
@@ -1199,22 +1361,29 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
     await log(propertyId, "generation", "error",
       `Scene ${scene.scene_number}: submit failed after ${excluded.length + 1} attempts: ${lastError?.message ?? "unknown"}`,
       { lastError }, scene.id);
+    return { ok: false, insufficientBalance };
   };
 
   // Pull-based worker pool so we don't burst past Kling's 5-concurrent
   // task limit on the provider side. Each worker does ONE submit and
   // moves on — no polling.
   const queue = [...scenes];
+  const outcomes: SubmitOutcome[] = [];
   const worker = async () => {
     while (queue.length > 0) {
       const next = queue.shift();
       if (!next) return;
-      await submitScene(next);
+      outcomes.push(await submitScene(next));
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(GENERATION_CONCURRENCY, scenes.length) }, () => worker()),
   );
+
+  const submittedThisRound = outcomes.filter((o) => o.ok).length;
+  // Explicit discriminant equality (o.ok === false) so TS narrows to the
+  // failure member before reading insufficientBalance.
+  const anyInsufficientBalance = outcomes.some((o) => o.ok === false && o.insufficientBalance);
 
   // Operator delivery A/B (spec 2026-06-09): when a delivery run exists,
   // submit a second independent render per scene for pairwise judging.
@@ -1241,10 +1410,18 @@ async function runGenerationSubmit(propertyId: string): Promise<void> {
   }
 
   const submittedScenes = await getScenesForProperty(propertyId);
-  const submitted = submittedScenes.filter(s => s.provider_task_id).length;
-  const failed = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
+  const totalSubmitted = submittedScenes.filter(s => s.provider_task_id).length;
+  const failedAtSubmit = submittedScenes.filter(s => s.status === "needs_review" && !s.provider_task_id).length;
   await log(propertyId, "generation", "info",
-    `Submission complete: ${submitted}/${scenes.length} submitted, ${failed} failed at submit`);
+    `Submission complete: ${totalSubmitted}/${scenes.length} submitted, ${failedAtSubmit} failed at submit`);
+
+  return {
+    attempted: scenes.length,
+    submittedThisRound,
+    totalSubmitted,
+    failedAtSubmit,
+    insufficientBalance: anyInsufficientBalance,
+  };
 }
 
 /**
@@ -1528,11 +1705,42 @@ async function runQCForScene(
 // rerunAssembly (manual clip-swap path). The `reason` flag is threaded
 // into cost_events metadata so the ledger can distinguish pipeline-driven
 // renders from operator-triggered re-renders.
+/**
+ * Fire-and-forget: persist an assembly render job token to delivery_runs so the
+ * autopilot sweep can resume polling on the next cron tick without re-submitting.
+ * Errors are logged but never rethrown — a cost-row failure must never block delivery.
+ */
+async function persistAssemblyJobId(
+  runId: string,
+  column: "assembly_h_job" | "assembly_v_job",
+  job: { jobId: string; environment: string; expectedDurationSeconds?: number },
+): Promise<void> {
+  const { error } = await getSupabase()
+    .from("delivery_runs")
+    .update({ [column]: job })
+    .eq("id", runId);
+  if (error) {
+    const code = (error as { code?: string }).code;
+    if (code === '42703') {
+      // migration 092 not applied: assembly_*_job column does not exist.
+      // Job token cannot be persisted → autopilot resume will re-submit the render
+      // (re-spend risk) until the migration is applied. Log at ERROR so this surfaces
+      // in observability dashboards. The sweep's leaseError counter also increments
+      // when it catches 42703 from resolveAssembling's job-column read.
+      console.error(
+        `[pipeline] persistAssemblyJobId: migration 092 not applied — ${column} column missing for run ${runId} (42703). Apply supabase/migrations/092_delivery_runs_assembly_jobs.sql to fix.`
+      );
+    } else {
+      console.error(`[pipeline] persistAssemblyJobId: failed to persist ${column} for run ${runId}:`, error.message);
+    }
+  }
+}
+
 async function runAssemblyStep(
   propertyId: string,
-  opts: { reason?: "pipeline" | "manual_rerun" } = {},
+  opts: { reason?: "pipeline" | "manual_rerun"; timeoutMs?: number; runId?: string } = {},
 ): Promise<void> {
-  const reason = opts.reason ?? "pipeline";
+  const { reason = "pipeline", timeoutMs = 240_000, runId } = opts;
   await log(propertyId, "assembly", "info", "Starting assembly");
 
   const property = await getProperty(propertyId);
@@ -1654,6 +1862,13 @@ async function runAssemblyStep(
 
   let horizontalUrl: string | null = null;
   let verticalUrl: string | null = null;
+  // Bunny HLS playlist + poster URLs (migration 102) — set alongside
+  // horizontalUrl/verticalUrl below only on the fully-successful Bunny host
+  // path (finalizeAssemblyRender leaves them null on every fallback).
+  let horizontalHlsUrl: string | null = null;
+  let horizontalPosterUrl: string | null = null;
+  let verticalHlsUrl: string | null = null;
+  let verticalPosterUrl: string | null = null;
   let assemblyErrored = false;
 
   // Use the assembly router to select the best provider.
@@ -1705,7 +1920,7 @@ async function runAssemblyStep(
         });
 
       const clipInputs = fitted.map((f) => ({
-        url: f.scene.clip_url as string,
+        url: proxifyClipUrl(f.scene.clip_url as string),
         durationSeconds: f.durationSeconds,
       }));
 
@@ -1909,8 +2124,21 @@ async function runAssemblyStep(
             });
         await log(propertyId, "assembly", "info",
           `${providerName} horizontal job queued: ${horizontalJob.jobId}`);
-        const horizontalResult = await pollAssemblyJob(provider, horizontalJob);
+        // Persist job token so the autopilot sweep can resume polling on the next
+        // cron tick if this Vercel function is killed before the render completes.
+        // Include expectedDurationSeconds (clip-sum) so the resume path can use it
+        // as a cost fallback when the provider poll doesn't return durationSeconds.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_h_job", { ...horizontalJob, expectedDurationSeconds: timelineDurationSeconds }); }
+        const horizontalResult = await pollAssemblyJob(provider, horizontalJob, timeoutMs);
         if (horizontalResult.status !== "complete" || !horizontalResult.videoUrl) {
+          if (horizontalResult.error === "Assembly render timed out") {
+            // Still in-flight — throw a tagged error so callers can distinguish a
+            // resumable timeout from a true provider failure (which warrants pauseForHuman).
+            throw Object.assign(
+              new Error(`[ASSEMBLY_TIMEOUT] Horizontal render timed out after ${timeoutMs}ms`),
+              { isAssemblyTimeout: true },
+            );
+          }
           throw new Error(`Horizontal render failed: ${horizontalResult.error ?? "unknown"}`);
         }
         horizontalRenderMs = horizontalResult.renderTimeMs ?? null;
@@ -1932,6 +2160,12 @@ async function runAssemblyStep(
           version: 1,
         });
         horizontalUrl = hFinalize.url;
+        horizontalHlsUrl = hFinalize.hlsUrl;
+        horizontalPosterUrl = hFinalize.posterUrl;
+        // Render complete — clear persisted job token (no longer needed for resume).
+        if (runId) {
+          void getSupabase().from("delivery_runs").update({ assembly_h_job: null }).eq("id", runId);
+        }
         await log(propertyId, "assembly", "info",
           `Horizontal finalize: bitrate=${hFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${hFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: hFinalize.bitrateKbps, output_bytes: hFinalize.outputBytes, url: hFinalize.url });
@@ -2003,8 +2237,17 @@ async function runAssemblyStep(
             });
         await log(propertyId, "assembly", "info",
           `${providerName} vertical job queued: ${verticalJob.jobId}`);
-        const verticalResult = await pollAssemblyJob(provider, verticalJob);
+        // Persist V job token for autopilot resume on next cron tick.
+        // Include expectedDurationSeconds so the resume path never falls to 0.
+        if (runId) { void persistAssemblyJobId(runId, "assembly_v_job", { ...verticalJob, expectedDurationSeconds: timelineDurationSeconds }); }
+        const verticalResult = await pollAssemblyJob(provider, verticalJob, timeoutMs);
         if (verticalResult.status !== "complete" || !verticalResult.videoUrl) {
+          if (verticalResult.error === "Assembly render timed out") {
+            throw Object.assign(
+              new Error(`[ASSEMBLY_TIMEOUT] Vertical render timed out after ${timeoutMs}ms`),
+              { isAssemblyTimeout: true },
+            );
+          }
           throw new Error(`Vertical render failed: ${verticalResult.error ?? "unknown"}`);
         }
         const verticalDuration =
@@ -2021,6 +2264,12 @@ async function runAssemblyStep(
           version: 1,
         });
         verticalUrl = vFinalize.url;
+        verticalHlsUrl = vFinalize.hlsUrl;
+        verticalPosterUrl = vFinalize.posterUrl;
+        // Render complete — clear persisted V job token.
+        if (runId) {
+          void getSupabase().from("delivery_runs").update({ assembly_v_job: null }).eq("id", runId);
+        }
         await log(propertyId, "assembly", "info",
           `Vertical finalize: bitrate=${vFinalize.bitrateKbps ?? "n/a"} kbps, bytes=${vFinalize.outputBytes ?? "n/a"}`,
           { delivered_bitrate_kbps: vFinalize.bitrateKbps, output_bytes: vFinalize.outputBytes, url: vFinalize.url });
@@ -2120,8 +2369,27 @@ async function runAssemblyStep(
   await updatePropertyStatus(propertyId, "complete", {
     thumbnail_url: thumbnailUrl,
     processing_time_ms: totalProcessingMs,
-    ...(horizontalUrl ? { horizontal_video_url: horizontalUrl } : {}),
-    ...(verticalUrl ? { vertical_video_url: verticalUrl } : {}),
+    // mp4 + HLS + poster describe ONE encode and MUST move together. Whenever an
+    // orientation's mp4 is (re)written we also write its hls/poster — as null when
+    // this render produced none (any fallback). Writing hls/poster on a separate
+    // "only if truthy" condition would let a STALE *_hls_url from a previous
+    // successful render survive a success→fallback re-render, so the player would
+    // serve the OLD video. An un-rendered orientation (falsy url) is left
+    // entirely untouched.
+    ...(horizontalUrl
+      ? {
+          horizontal_video_url: horizontalUrl,
+          horizontal_hls_url: horizontalHlsUrl ?? null,
+          horizontal_poster_url: horizontalPosterUrl ?? null,
+        }
+      : {}),
+    ...(verticalUrl
+      ? {
+          vertical_video_url: verticalUrl,
+          vertical_hls_url: verticalHlsUrl ?? null,
+          vertical_poster_url: verticalPosterUrl ?? null,
+        }
+      : {}),
   });
 
   // A single-orientation order intentionally produces just one URL, so the
@@ -2165,7 +2433,10 @@ export async function runAssembly(propertyId: string): Promise<void> {
  * on disk (e.g. after a clip swap). Guards against triggering mid-pipeline
  * or when no completed scenes exist.
  */
-export async function rerunAssembly(propertyId: string): Promise<void> {
+export async function rerunAssembly(
+  propertyId: string,
+  opts?: { timeoutMs?: number; runId?: string },
+): Promise<void> {
   const { data: property } = await getSupabase()
     .from("properties")
     .select("*")
@@ -2194,7 +2465,7 @@ export async function rerunAssembly(propertyId: string): Promise<void> {
 
   await updatePropertyStatus(propertyId, "assembling");
   await log(propertyId, "assembly", "info", "rerunAssembly: manual rerun triggered");
-  await runAssemblyStep(propertyId, { reason: "manual_rerun" });
+  await runAssemblyStep(propertyId, { reason: "manual_rerun", ...opts });
 }
 
 function formatPrice(price: number): string {

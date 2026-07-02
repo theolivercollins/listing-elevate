@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSupabase } from "./client.js";
+import { isNonProdEnv } from "./env.js";
 import { computeClaudeCost } from "./utils/claude-cost.js";
 import {
   analyzeSingleImage,
@@ -196,6 +197,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             reason: "gemini_failure",
             gemini_error: msg,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[analyzeListingPhotos] claude fallback cost_events insert failed:", costErr);
       }
@@ -235,6 +237,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             input_tokens: geminiUsage.inputTokens,
             output_tokens: geminiUsage.outputTokens,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[analyzeListingPhotos] gemini cost_events insert failed:", costErr);
       }
@@ -255,6 +258,7 @@ export async function analyzeListingPhotos(listingId: string): Promise<void> {
             listing_id: listingId,
             photo_id: p.id,
           },
+          is_test: isNonProdEnv(),
         });
         if (costErr) console.error("[embeddings] cost_events insert failed:", costErr);
       }
@@ -396,6 +400,7 @@ export async function directListingScenes(listingId: string): Promise<void> {
     unit_type: "tokens",
     cost_cents: Math.round(cost.costCents),
     metadata: { scope: "lab_listing_director", listing_id: listingId, model: LISTING_DIRECTOR_MODEL },
+    is_test: isNonProdEnv(),
   });
   if (costErr) console.error("[directListingScenes] cost_events insert failed:", costErr);
 
@@ -468,9 +473,22 @@ export async function directListingScenes(listingId: string): Promise<void> {
   }
 
   const photoUrlById = new Map(photos.map((p) => [p.id, p.image_url]));
+  // Accumulate rows so we can do one bulk insert instead of N serial round-trips.
+  const sceneRows: Array<{
+    listing_id: string;
+    scene_number: number;
+    photo_id: string;
+    end_photo_id: string | null;
+    end_image_url: string | null;
+    room_type: string;
+    camera_movement: string;
+    director_prompt: string;
+    director_intent: DirectorIntent;
+  }> = [];
   for (const scene of parsed.scenes) {
     const startUrl = photoUrlById.get(scene.photo_id);
     if (!startUrl) continue;
+    // resolveSceneEndFrame is async (network lookup) — must stay inside the loop.
     const resolution = await resolveSceneEndFrame({
       startPhotoUrl: startUrl,
       endPhotoId: scene.end_photo_id ?? null,
@@ -488,8 +506,7 @@ export async function directListingScenes(listingId: string): Promise<void> {
         subject: scene.prompt.slice(0, 80),
       });
     }
-
-    await supabase.from("prompt_lab_listing_scenes").insert({
+    sceneRows.push({
       listing_id: listingId,
       scene_number: scene.scene_number,
       photo_id: scene.photo_id,
@@ -500,6 +517,13 @@ export async function directListingScenes(listingId: string): Promise<void> {
       director_prompt: scene.prompt,
       director_intent: intent,
     });
+  }
+  // Single bulk insert — scene_number ordering preserved by array order.
+  if (sceneRows.length > 0) {
+    const { error: scenesInsertErr } = await supabase
+      .from("prompt_lab_listing_scenes")
+      .insert(sceneRows);
+    if (scenesInsertErr) throw new Error(`Insert scenes failed: ${scenesInsertErr.message}`);
   }
 
   await supabase.from("prompt_lab_listings").update({ status: "ready_to_render" }).eq("id", listingId);
