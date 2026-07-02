@@ -326,7 +326,7 @@ function stitchWithXfade(downloaded: DownloadedSegment[], outputPath: string): v
   // no-edges-fallback room).
   downloaded.forEach((_, i) => {
     filterParts.push(
-      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30[p${i}]`,
+      `[${i}:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30[p${i}]`,
     );
   });
 
