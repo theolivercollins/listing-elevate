@@ -180,6 +180,10 @@ async function walkToSourceStep() {
 
 beforeEach(() => {
   document.body.innerHTML = "";
+  // Scroll-lock tests assert against these directly — reset so a prior
+  // test's dialog (if its own cleanup somehow didn't run) can't leak in.
+  document.documentElement.style.overflow = "";
+  document.body.style.overflow = "";
   vi.clearAllMocks();
   setAuthMock();
 });
@@ -442,5 +446,139 @@ describe("LoginDialog — existing-account short-circuit", () => {
     expect(screen.queryByText("Create a password")).not.toBeInTheDocument();
     expect(screen.queryByText("Tell us about you")).not.toBeInTheDocument();
     expect(auth.completeOnboarding).not.toHaveBeenCalled();
+  });
+});
+
+// ── commit 2dec537d: Google onboarding branch, X-button fix, sent-step ──────
+// session watch, and dual-element scroll lock.
+
+describe("LoginDialog — Google sign-in: onboarding branch", () => {
+  // Google reports success synchronously (flips a ref); the auth-context
+  // `session` may lag a tick. We simulate that lag by changing the mocked
+  // `useAuth()` return value and forcing a re-render, exactly like a real
+  // `onAuthStateChange` update would re-render the tree.
+  function flipSessionAfterGoogleClick(base: ReturnType<typeof makeAuthMock>, userMetadata: Record<string, unknown>) {
+    setAuthMock({
+      ...base,
+      session: { user: { id: "google-user-1", user_metadata: userMetadata } },
+    });
+  }
+
+  it("no existing profile: prefills first/last from user_metadata and enters onboarding (welcome -> profile, brokerage revealed)", async () => {
+    const onClose = vi.fn();
+    const auth = setAuthMock({
+      fetchProfileSnapshot: vi.fn(() => Promise.resolve(null)),
+    });
+    const { rerender } = render(<LoginDialog open={true} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    flipSessionAfterGoogleClick(auth, { given_name: "Ada", family_name: "Lovelace" });
+    rerender(<LoginDialog open={true} onClose={onClose} />);
+
+    await waitFor(() => expect(auth.fetchProfileSnapshot).toHaveBeenCalledWith("google-user-1"));
+    expect(await screen.findByText("Welcome to Listing Elevate")).toBeInTheDocument();
+
+    await screen.findByText("Tell us about you", {}, { timeout: 2500 });
+    expect(screen.getByPlaceholderText("Jordan")).toHaveValue("Ada");
+    expect(screen.getByPlaceholderText("Rivera")).toHaveValue("Lovelace");
+    expect(screen.getByPlaceholderText("Compass, Coldwell Banker…")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("existing profile with an empty brokerage is treated as incomplete and also enters onboarding", async () => {
+    const onClose = vi.fn();
+    const auth = setAuthMock({
+      fetchProfileSnapshot: vi.fn(() => Promise.resolve({ first_name: "Ada", brokerage: "" })),
+    });
+    const { rerender } = render(<LoginDialog open={true} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    flipSessionAfterGoogleClick(auth, { given_name: "Ada", family_name: "Lovelace" });
+    rerender(<LoginDialog open={true} onClose={onClose} />);
+
+    expect(await screen.findByText("Welcome to Listing Elevate")).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("existing profile with a non-empty brokerage closes the dialog without onboarding", async () => {
+    const onClose = vi.fn();
+    const auth = setAuthMock({
+      fetchProfileSnapshot: vi.fn(() => Promise.resolve({ first_name: "Ada", brokerage: "Compass" })),
+    });
+    const { rerender } = render(<LoginDialog open={true} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+    flipSessionAfterGoogleClick(auth, {});
+    rerender(<LoginDialog open={true} onClose={onClose} />);
+
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Welcome to Listing Elevate")).not.toBeInTheDocument();
+    expect(auth.completeOnboarding).not.toHaveBeenCalled();
+  });
+});
+
+describe("LoginDialog — close (X) button", () => {
+  it("clicking the close (X) button calls onClose", () => {
+    const onClose = vi.fn();
+    render(<LoginDialog open={true} onClose={onClose} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("LoginDialog — session-watch: sign-in flow (sent step)", () => {
+  it("a session appearing while on the sent step (e.g. magic link opened in another tab) shows 'You're in' then closes", async () => {
+    const onClose = vi.fn();
+    setAuthMock();
+    const { rerender } = render(<LoginDialog open={true} onClose={onClose} />);
+
+    enterEmail("agent@example.com");
+    clickContinue();
+    fireEvent.click(screen.getByText("Email me a magic link"));
+    await screen.findByText("Check your inbox");
+
+    setAuthMock({ session: { user: { id: "sess-1", user_metadata: {} } } });
+    rerender(<LoginDialog open={true} onClose={onClose} />);
+
+    expect(await screen.findByText("You're in")).toBeInTheDocument();
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 1500 });
+  });
+
+  it("a session already present when the dialog opens does NOT auto-close (prevSessionRef gating)", () => {
+    const onClose = vi.fn();
+    setAuthMock({ session: { user: { id: "already-signed-in", user_metadata: {} } } });
+    render(<LoginDialog open={true} onClose={onClose} />);
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText("You're in")).not.toBeInTheDocument();
+    expect(screen.getByText("Enter your email to continue.")).toBeInTheDocument();
+  });
+});
+
+describe("LoginDialog — scroll lock", () => {
+  it("locks documentElement + body overflow while open and restores both when closed", () => {
+    const { rerender } = render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    rerender(<LoginDialog open={false} onClose={vi.fn()} />);
+
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("restores documentElement + body overflow on unmount", () => {
+    const { unmount } = render(<LoginDialog open={true} onClose={vi.fn()} />);
+
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.overflow).toBe("hidden");
+
+    unmount();
+
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.body.style.overflow).toBe("");
   });
 });
