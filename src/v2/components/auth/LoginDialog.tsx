@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
+import type { Session } from "@supabase/supabase-js";
 import { useAuth } from "@/lib/auth";
 import { LELogoMark } from "@/v2/components/primitives/LELogoMark";
 import { LEButton } from "@/v2/components/primitives/LEButton";
@@ -291,6 +292,17 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   // true (user was already authed), the session-watch effect must NOT auto-advance
   // — otherwise an already-signed-in user reaching verify flashes straight through.
   const sessionAtVerifyEntryRef = useRef(false);
+  // Google (GSI) sign-in: the button click flips googlePendingRef; the
+  // session-watch effect below picks up the authoritative user id once the
+  // auth-context session reflects it (may lag the click by a tick).
+  const googlePendingRef = useRef(false);
+  const googleHandledRef = useRef(false);
+  const googleAdvanceRef = useRef<(userId: string, meta: Record<string, unknown>) => void>(() => {});
+  // Tracks the previous `session` value so the sign-in-flow session-watch
+  // (an old magic link clicked in another tab) only fires on an absent→present
+  // transition — never on a session that already existed when the dialog was
+  // opened, and never more than once per transition.
+  const prevSessionRef = useRef<Session | null>(null);
 
   const isSignup = flow === "signup";
   const chk = pwChecks(password);
@@ -315,10 +327,20 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setError("");
     advancedRef.current = false;
     sessionAtVerifyEntryRef.current = false;
+    googlePendingRef.current = false;
+    googleHandledRef.current = false;
+    // Seed the baseline so the sign-in session-watch below only reacts to a
+    // session that appears WHILE the dialog is open, never one that already
+    // existed at open time.
+    prevSessionRef.current = session;
     if (doneTimerRef.current) {
       clearTimeout(doneTimerRef.current);
       doneTimerRef.current = null;
     }
+    // Intentionally only re-runs on `open`: this reset must fire exactly once
+    // per open, seeding `prevSessionRef` from whatever `session` is at that
+    // moment — not re-fire every time `session` itself changes afterward.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Capture/restore focus around the modal.
@@ -335,17 +357,33 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     setError("");
   }, [flow]);
 
-  // Lock scroll + Escape-to-close while open.
+  // Lock scroll + Escape-to-close while open. Locks BOTH <html> and <body>
+  // overflow — some layouts leave <html> independently scrollable when only
+  // body.overflow is touched, which read as visible page whitespace/scroll
+  // behind the dialog. Compensates body's padding-right for the vanished
+  // scrollbar so the page doesn't reflow/jump when the lock engages.
   useEffect(() => {
     if (!open) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const docEl = document.documentElement;
+    const body = document.body;
+    const scrollbarWidth = window.innerWidth - docEl.clientWidth;
+    const prevHtmlOverflow = docEl.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPaddingRight = body.style.paddingRight;
+    docEl.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      const currentPaddingRight = parseFloat(getComputedStyle(body).paddingRight) || 0;
+      body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = prevOverflow;
+      docEl.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.paddingRight = prevBodyPaddingRight;
       document.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
@@ -479,6 +517,28 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
     advanceRef.current(session.user.id);
   }, [step, session]);
 
+  // Sign-in-flow session-watch: if a session appears while the user sits on
+  // any sign-in step (most commonly "sent", after clicking the emailed magic
+  // link in a different tab — Supabase persists the session to localStorage
+  // and `onAuthStateChange` fires cross-tab), finish the flow here exactly
+  // like a successful password sign-in: a brief "You're in" then close.
+  // Signup steps (verify/newpw/welcome/…) are handled by their own effects
+  // above and are deliberately excluded here. Only fires on an absent→present
+  // transition (never one that already existed at open, never twice), and
+  // never while a Google sign-in is mid-flight — that has its own
+  // onboarding-aware branch above, which takes precedence.
+  useEffect(() => {
+    const prev = prevSessionRef.current;
+    prevSessionRef.current = session;
+    if (isSignup || googlePendingRef.current) return;
+    if (prev || !session) return;
+    if (!(step === "email" || step === "choose" || step === "password" || step === "sent")) return;
+    goDone("You're in", "Taking you to your workspace…");
+    // goDone is a stable function declaration; deps intentionally minimal —
+    // this must only re-evaluate on session/step/flow changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, step, isSignup]);
+
   // Welcome interstitial → profile.
   useEffect(() => {
     if (step !== "welcome") return;
@@ -496,13 +556,71 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
   }, [code, step, codeStage]);
 
   // ── Google (via SocialAuthButtons — GSI ID-token flow) ─────────────────────
+  // Google reports success once signInWithIdToken has resolved, but the
+  // auth-context `session` may lag a tick behind — flag "pending" here and
+  // let the effect below react once `session` reflects it (same
+  // watch-until-present pattern as the signup verify step).
   function handleGoogleSuccess() {
     setError("");
-    onClose();
+    googlePendingRef.current = true;
+    googleHandledRef.current = false;
   }
   function handleGoogleError(message: string) {
     setError(message);
   }
+
+  // Deterministic Google branch: an existing account with a brokerage already
+  // on file closes the dialog exactly as before. A missing profile row, or a
+  // row with no brokerage yet, is treated as incomplete and routes into
+  // onboarding — prefilled from whatever Google supplied — skipping the
+  // password/verify steps entirely (Google already proved the email).
+  googleAdvanceRef.current = (userId, meta) => {
+    if (googleHandledRef.current) return;
+    googleHandledRef.current = true;
+    void fetchProfileSnapshot(userId)
+      .then((snapshot) => {
+        googlePendingRef.current = false;
+        const hasBrokerage = !!(snapshot?.brokerage && snapshot.brokerage.trim());
+        if (snapshot && hasBrokerage) {
+          onClose();
+          return;
+        }
+        // New or incomplete (no brokerage) account — prefill from whatever
+        // Google supplied: given_name/family_name, else a full_name/name
+        // split on the first space, else leave blank.
+        const given = typeof meta.given_name === "string" ? meta.given_name : "";
+        const family = typeof meta.family_name === "string" ? meta.family_name : "";
+        let first = given;
+        let last = family;
+        if (!first) {
+          const full =
+            (typeof meta.full_name === "string" && meta.full_name) ||
+            (typeof meta.name === "string" && meta.name) ||
+            "";
+          if (full.trim()) {
+            const parts = full.trim().split(/\s+/);
+            first = parts[0];
+            last = last || parts.slice(1).join(" ");
+          }
+        }
+        setFirstName(first || "");
+        setLastName(last || "");
+        setStep("welcome");
+      })
+      .catch((e) => {
+        googlePendingRef.current = false;
+        googleHandledRef.current = false;
+        setError(errMsg(e, "Couldn't confirm your account. Please try again."));
+      });
+  };
+
+  // Fires once `session` reflects the Google sign-in (may already be true by
+  // the time handleGoogleSuccess runs, or arrive a tick later).
+  useEffect(() => {
+    if (!googlePendingRef.current || !session) return;
+    const meta = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+    googleAdvanceRef.current(session.user.id, meta);
+  }, [session]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   async function continueEmail() {
@@ -1329,6 +1447,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
         <motion.div
           key="le-login-overlay"
           ref={overlayRef}
+          className="le-login-overlay"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -1345,7 +1464,6 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             fontFamily: "var(--le-font-sans)",
             color: "var(--le-text)",
             isolation: "isolate",
-            background: "radial-gradient(120% 120% at 50% 40%, #f2f4f9 0%, #e9ecf3 60%, #e2e5ee 100%)",
           }}
         >
           {/* Backdrop parallax orbs (wrapper is parallaxed; inner drifts) */}
@@ -1368,8 +1486,8 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             />
           </div>
 
-          {/* Dim layer — click to close */}
-          <div aria-hidden="true" onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(16,20,34,.16)" }} />
+          {/* Lighter dim layer, on top of the glass blur — click to close */}
+          <div aria-hidden="true" onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(16,20,34,.10)" }} />
 
           {/* Tilt wrapper */}
           <div
@@ -1405,18 +1523,23 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             >
               {/* Header */}
               <div className="le-login-header" style={{ position: "relative", height: 132, background: "linear-gradient(165deg, #0b1730 0%, #0f2255 48%, #1d3f8f 100%)", overflow: "hidden" }}>
-                <div className="le-login-headorb-w le-login-headorb-w1" style={{ position: "absolute", left: "-16%", top: "-46%", width: 320, height: 320 }}>
+                {/* Decorative header orbs — explicitly non-interactive so they can
+                    never intercept a click meant for the close button (root cause
+                    of the "X doesn't close" bug: these defaulted to the browser's
+                    pointer-events:auto with no z-index of their own, sharing the
+                    header's stacking level with the close button). */}
+                <div className="le-login-headorb-w le-login-headorb-w1" style={{ position: "absolute", left: "-16%", top: "-46%", width: 320, height: 320, pointerEvents: "none" }}>
                   <div className="le-login-headorb-i1" style={{ width: "100%", height: "100%", borderRadius: "50%", background: "radial-gradient(circle at 45% 45%, rgba(var(--le-brand-blue-rgb),.5), rgba(var(--le-brand-blue-rgb),0) 66%)", filter: "blur(20px)" }} />
                 </div>
-                <div className="le-login-headorb-w le-login-headorb-w2" style={{ position: "absolute", left: "32%", top: "-62%", width: 260, height: 260 }}>
+                <div className="le-login-headorb-w le-login-headorb-w2" style={{ position: "absolute", left: "32%", top: "-62%", width: 260, height: 260, pointerEvents: "none" }}>
                   <div className="le-login-headorb-i2" style={{ width: "100%", height: "100%", borderRadius: "50%", background: "radial-gradient(circle at 50% 50%, rgba(80,150,255,.4), rgba(80,150,255,0) 66%)", filter: "blur(20px)" }} />
                 </div>
-                <div className="le-login-headorb-w le-login-headorb-w3" style={{ position: "absolute", right: "-14%", bottom: "-58%", width: 300, height: 300 }}>
+                <div className="le-login-headorb-w le-login-headorb-w3" style={{ position: "absolute", right: "-14%", bottom: "-58%", width: 300, height: 300, pointerEvents: "none" }}>
                   <div className="le-login-headorb-i3" style={{ width: "100%", height: "100%", borderRadius: "50%", background: "radial-gradient(circle at 50% 45%, rgba(20,40,90,.7), rgba(20,40,90,0) 64%)", filter: "blur(22px)" }} />
                 </div>
                 <div style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.22, mixBlendMode: "overlay", backgroundImage: NOISE_BG, backgroundSize: "140px 140px" }} />
-                <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44, background: "linear-gradient(to top, rgba(255,255,255,.10), rgba(255,255,255,0))" }} />
-                <div style={{ position: "absolute", left: 28, bottom: 18 }} id="le-login-heading">
+                <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 44, pointerEvents: "none", background: "linear-gradient(to top, rgba(255,255,255,.10), rgba(255,255,255,0))" }} />
+                <div style={{ position: "absolute", left: 28, bottom: 18, pointerEvents: "none" }} id="le-login-heading">
                   <LELogoMark size={40} variant="light" />
                 </div>
                 <button
@@ -1424,7 +1547,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
                   onClick={onClose}
                   aria-label="Close"
                   className="le-login-close"
-                  style={{ position: "absolute", right: 0, top: 0, width: 64, height: 64, border: "none", background: "none", display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 14, boxSizing: "border-box", cursor: "pointer", color: "rgba(255,255,255,.85)" }}
+                  style={{ position: "absolute", right: 0, top: 0, width: 64, height: 64, zIndex: 2, border: "none", background: "none", display: "flex", alignItems: "flex-start", justifyContent: "flex-end", padding: 14, boxSizing: "border-box", cursor: "pointer", pointerEvents: "auto", color: "rgba(255,255,255,.85)" }}
                 >
                   <span style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(255,255,255,.14)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <XIcon />

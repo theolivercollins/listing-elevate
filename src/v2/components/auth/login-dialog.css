@@ -11,6 +11,23 @@
  * var(--le-tile-sky-ink); rgba variants use rgba(var(--le-brand-blue-rgb), a).
  */
 
+/* ── Overlay — translucent glass over the real page behind ──────────────
+   The overlay is a portal to document.body, painted last, so backdrop-filter
+   blurs/saturates whatever route the user was actually on underneath it; the
+   tint + parallax orbs + a lighter dim layer sit on top of that blur. The
+   @supports fallback covers browsers without backdrop-filter with a heavier,
+   more opaque tint instead (no blur, but still not a fabricated flat page). */
+.le-login-overlay {
+  background: rgba(233, 236, 243, 0.42);
+  backdrop-filter: blur(32px) saturate(1.4);
+  -webkit-backdrop-filter: blur(32px) saturate(1.4);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .le-login-overlay {
+    background: rgba(228, 231, 240, 0.94);
+  }
+}
+
 /* ── Keyframes (mirrors option-5a-keyframes.css, prefixed) ──────────── */
 @keyframes le-login-spin { to { transform: rotate(360deg); } }
 @keyframes le-login-drift1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(46px, -34px) scale(1.09); } }
