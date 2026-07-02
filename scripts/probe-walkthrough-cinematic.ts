@@ -2,11 +2,15 @@
 /**
  * scripts/probe-walkthrough-cinematic.ts
  *
- * Cinematic walkthrough v2 engine probe. Fetches a property's selected
- * photos, runs the REAL production modules — `analyzeSpatialGraph()` +
- * `planRoute()` (lib/walkthrough/spatial.ts) — and prints the connectivity
- * map + segment plan so it can be reviewed BEFORE any render is submitted
- * (the DRY run, default behavior).
+ * Cinematic walkthrough v2 engine probe. Fetches a property's photos —
+ * merged across every other `properties` row sharing the same address
+ * (duplicate test-ingest records of the same house often split a home's
+ * photo coverage across records; see the cross-record merge comments in
+ * main() below), deduped, and room-type-diversity selected — runs the REAL
+ * production modules — `analyzeSpatialGraph()` + `planRoute()`
+ * (lib/walkthrough/spatial.ts) — and prints the connectivity map + segment
+ * plan so it can be reviewed BEFORE any render is submitted (the DRY run,
+ * default behavior).
  *
  * Behind `--generate`, it goes on to actually render: submits each planned
  * segment via `AtlasProvider.generateReferenceClip()` (the same production
@@ -78,7 +82,8 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-import { getSelectedPhotos, getPhotosForProperty, recordCostEvent } from "../lib/db.js";
+import { getSelectedPhotos, getPhotosForProperty, getProperty, getSupabase, recordCostEvent } from "../lib/db.js";
+import type { Photo } from "../lib/types.js";
 import { analyzeSpatialGraph, planRoute } from "../lib/walkthrough/spatial.js";
 import type { SpatialGraph, WalkthroughPlan, WalkthroughSegment } from "../lib/walkthrough/spatial.js";
 import { AtlasProvider, atlasClipCostCents, ATLAS_MODELS } from "../lib/providers/atlas.js";
@@ -145,6 +150,83 @@ function effectiveDurationForSegment(seg: WalkthroughSegment): number {
 
 function writesAllowed(): boolean {
   return process.env.VERCEL_ENV === "production" || process.env.LE_ALLOW_NONPROD_WRITES === "true";
+}
+
+// ─── cross-record photo merge (Oliver directive, 2026-07-02) ──────────────
+// The same house often exists as several duplicate `properties` rows
+// (separate test ingests of the same address), and each ingest can capture
+// a different subset of the home — San Massimo's foyer/kitchen/master
+// photos lived on a SIBLING record, invisible to analyzeSpatialGraph() no
+// matter how the single-record fetch was tuned. The functions below merge
+// candidate photos across every property row sharing an address, dedupe
+// re-ingested duplicates of the same shot, and pick a final set that
+// guarantees room-type coverage instead of just taking the highest-ranked
+// photos overall (which can let one over-photographed room crowd out a
+// room with only one or two shots).
+
+/** Shared ranking key: `selected` always outranks any aesthetic_score gap
+ *  (matches the getSelectedPhotos ordering convention in lib/db.ts), then
+ *  aesthetic_score descending, null treated as 0. */
+function photoRank(p: Photo): number {
+  return (p.selected ? 1 : 0) * 1000 + (p.aesthetic_score ?? 0);
+}
+
+/** Collapses re-ingested duplicates of the same shot (same file_name,
+ *  different property row/id) down to one copy — the one with the higher
+ *  photoRank() (selected wins first, then aesthetic_score). Photos with no
+ *  file_name (defensive — schema allows null) are never merged with
+ *  anything, since there's no reliable identity to dedupe on. */
+function dedupeByFileName(photos: Photo[]): Photo[] {
+  const byFileName = new Map<string, Photo>();
+  let noNameCounter = 0;
+  for (const p of photos) {
+    const key = p.file_name ?? `__no-file-name__${noNameCounter++}`;
+    const existing = byFileName.get(key);
+    if (!existing || photoRank(p) > photoRank(existing)) {
+      byFileName.set(key, p);
+    }
+  }
+  return [...byFileName.values()];
+}
+
+/**
+ * Selects up to `cap` photos from `candidates`, guaranteeing at least one
+ * photo of every distinct room_type present before filling remaining slots
+ * by photoRank() (selected desc, aesthetic_score desc). Room types compete
+ * for their guaranteed slot in order of their own best candidate's rank, so
+ * if the cap can't fit every room type, the strongest ones win the
+ * guarantee first. `room_type === null` is its own bucket ("(unknown)"),
+ * matching the real-world case of an unanalyzed sibling-record photo.
+ */
+function selectWithRoomTypeDiversity(candidates: Photo[], cap: number): Photo[] {
+  const sorted = [...candidates].sort((a, b) => photoRank(b) - photoRank(a));
+
+  const byRoomType = new Map<string, Photo[]>();
+  for (const p of sorted) {
+    const key = p.room_type ?? "(unknown)";
+    const bucket = byRoomType.get(key);
+    if (bucket) bucket.push(p);
+    else byRoomType.set(key, [p]);
+  }
+  const roomTypesByBestRank = [...byRoomType.entries()].sort(
+    (a, b) => photoRank(b[1][0]) - photoRank(a[1][0]),
+  );
+
+  const chosen: Photo[] = [];
+  const chosenIds = new Set<string>();
+  for (const [, bucket] of roomTypesByBestRank) {
+    if (chosen.length >= cap) break;
+    chosen.push(bucket[0]);
+    chosenIds.add(bucket[0].id);
+  }
+  for (const p of sorted) {
+    if (chosen.length >= cap) break;
+    if (chosenIds.has(p.id)) continue;
+    chosen.push(p);
+    chosenIds.add(p.id);
+  }
+
+  return chosen.sort((a, b) => photoRank(b) - photoRank(a));
 }
 
 // ─── printing ─────────────────────────────────────────────────────────────
@@ -310,33 +392,70 @@ async function main(): Promise<void> {
   console.log(`Mode: ${generate ? "GENERATE (paid render + stitch)" : "DRY RUN (analysis + plan only)"}`);
 
   console.log("\nFetching photos...");
+  const primaryProperty = await getProperty(propertyId);
+
   // Fetching only `selected` photos silently starves analyzeSpatialGraph()
   // of evidence: San Massimo had 10 selected photos (well above the old "< 2
   // -> fall back to all photos" threshold, so the fallback never tripped) but
   // no selected foyer shot, so the connectivity map had no evidence for the
   // front-door edge and planRoute() produced the wrong route. Whenever the
-  // selected set doesn't already fill the analysis cap, fall back to the
-  // property's FULL photo set (still requiring a real file_url — a photo row
-  // can exist with a null/failed upload) so unselected-but-useful shots are
-  // still eligible, then re-sort selected-first (so selected photos still
-  // win ties) and by aesthetic_score descending within each group before
-  // capping.
-  let photos = await getSelectedPhotos(propertyId);
-  if (photos.length < MAX_PHOTOS_FOR_ANALYSIS) {
-    const allPhotos = await getPhotosForProperty(propertyId);
-    photos = allPhotos
-      .filter((p) => !!p.file_url)
-      .sort((a, b) => {
-        if (a.selected !== b.selected) return a.selected ? -1 : 1;
-        return (b.aesthetic_score ?? 0) - (a.aesthetic_score ?? 0);
-      });
+  // selected set doesn't already fill the analysis cap, widen to the
+  // PRIMARY property's FULL photo set too, so unselected-but-useful shots on
+  // this record are still eligible.
+  const primarySelected = await getSelectedPhotos(propertyId);
+  const primaryPhotos =
+    primarySelected.length < MAX_PHOTOS_FOR_ANALYSIS
+      ? await getPhotosForProperty(propertyId)
+      : primarySelected;
+
+  // Cross-record merge: the same house often exists as several duplicate
+  // property rows (separate test ingests of the same address), and the
+  // room this specific record is missing may only be photographed on a
+  // SIBLING record. Pull in every OTHER property row sharing the primary's
+  // address (case-insensitive) and fetch ALL of those photos too — a
+  // sibling record's photos were never curated for THIS property, so there
+  // is no per-sibling "selected" signal worth trusting; the dedupe +
+  // diversity selection below sorts the merged pool out. A null/blank
+  // address never matches anything, so an address-less property just gets
+  // its own photos, unchanged.
+  let siblingPhotos: Photo[] = [];
+  const address = (primaryProperty.address ?? "").trim();
+  if (address) {
+    const { data: siblingRows, error: siblingErr } = await getSupabase()
+      .from("properties")
+      .select("id")
+      .ilike("address", address)
+      .neq("id", propertyId);
+    if (siblingErr) throw siblingErr;
+    const siblingIds = (siblingRows ?? []).map((r: { id: string }) => r.id);
+    if (siblingIds.length > 0) {
+      console.log(
+        `  Address "${address}" also matches ${siblingIds.length} sibling property record(s): ${siblingIds.join(", ")}`,
+      );
+      const siblingPhotoLists = await Promise.all(siblingIds.map((id) => getPhotosForProperty(id)));
+      siblingPhotos = siblingPhotoLists.flat();
+    }
   }
-  photos = photos.slice(0, MAX_PHOTOS_FOR_ANALYSIS);
+
+  const union = [...primaryPhotos, ...siblingPhotos].filter((p) => !!p.file_url);
+  const deduped = dedupeByFileName(union);
+  const photos = selectWithRoomTypeDiversity(deduped, MAX_PHOTOS_FOR_ANALYSIS);
   if (photos.length < 2) {
-    console.error(`ERROR: property ${propertyId} has fewer than 2 usable photos (${photos.length}).`);
+    console.error(
+      `ERROR: property ${propertyId} (plus ${siblingPhotos.length > 0 ? "its sibling record(s)" : "no sibling records"}) has fewer than 2 usable photos (${photos.length}).`,
+    );
     process.exit(1);
   }
-  console.log(`  ${photos.length} photos (capped at ${MAX_PHOTOS_FOR_ANALYSIS})`);
+  console.log(
+    `  ${photos.length} photos selected (capped at ${MAX_PHOTOS_FOR_ANALYSIS}; ${union.length} candidate photo(s) across all matching property records, ${deduped.length} after file_name dedupe, room-type-diversity-aware selection)`,
+  );
+  console.log("  Chosen photos:");
+  for (const p of photos) {
+    const fromNote = p.property_id === propertyId ? "primary" : `sibling ${p.property_id.slice(0, 8)}`;
+    console.log(
+      `    [${p.id.slice(0, 8)}] property=${fromNote} room_type=${p.room_type ?? "(unknown)"} selected=${p.selected} aesthetic_score=${p.aesthetic_score ?? "n/a"} file=${p.file_name ?? "(no file_name)"}`,
+    );
+  }
 
   console.log("\nRunning spatial analysis (1 Gemini vision call over all photos)...");
   const graph = await analyzeSpatialGraph(
