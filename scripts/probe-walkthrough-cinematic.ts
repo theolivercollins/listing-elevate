@@ -96,7 +96,15 @@ const PUSHIN_ESTABLISHING_PROMPT =
   "Slow cinematic push-in on this scene, stabilized gimbal feel, preserve the exact scene from the reference photo, photorealistic, natural color grading, no cuts, no people, no text, no added objects, no distortion.";
 const RESOLUTION = "1080p" as const;
 const DEFAULT_PROPERTY_ID = "a30212b2-088a-40a2-9c7a-f4ec16d04e45"; // San Massimo
-const MAX_PHOTOS_FOR_ANALYSIS = 12; // matches spatial.ts's "up to ~12" docblock
+// 2026-07-02: raised from 12 to 24 after a real dry run against San Massimo
+// starved analyzeSpatialGraph() of evidence — only 10 photos were `selected`
+// (all under the old 12 cap, so the selected-only fetch never even fell back
+// to the full set), and the foyer/entry shot that would have proven the
+// front-door edge wasn't among them. Gemini's multimodal call handles 24
+// images fine in one request; this cap is unrelated to the per-SEGMENT
+// Seedance reference-image caps (2-9, see WALKTHROUGH_MAX_REFERENCE_IMAGES /
+// SEEDANCE_MAX_REFERENCE_IMAGES in generate.ts / atlas.ts), which stay as-is.
+const MAX_PHOTOS_FOR_ANALYSIS = 24;
 const CROSSFADE_SECONDS = 1;
 
 /** Which Atlas SKU a segment renders through, based on how many reference
@@ -302,9 +310,26 @@ async function main(): Promise<void> {
   console.log(`Mode: ${generate ? "GENERATE (paid render + stitch)" : "DRY RUN (analysis + plan only)"}`);
 
   console.log("\nFetching photos...");
+  // Fetching only `selected` photos silently starves analyzeSpatialGraph()
+  // of evidence: San Massimo had 10 selected photos (well above the old "< 2
+  // -> fall back to all photos" threshold, so the fallback never tripped) but
+  // no selected foyer shot, so the connectivity map had no evidence for the
+  // front-door edge and planRoute() produced the wrong route. Whenever the
+  // selected set doesn't already fill the analysis cap, fall back to the
+  // property's FULL photo set (still requiring a real file_url — a photo row
+  // can exist with a null/failed upload) so unselected-but-useful shots are
+  // still eligible, then re-sort selected-first (so selected photos still
+  // win ties) and by aesthetic_score descending within each group before
+  // capping.
   let photos = await getSelectedPhotos(propertyId);
-  if (photos.length < 2) {
-    photos = await getPhotosForProperty(propertyId);
+  if (photos.length < MAX_PHOTOS_FOR_ANALYSIS) {
+    const allPhotos = await getPhotosForProperty(propertyId);
+    photos = allPhotos
+      .filter((p) => !!p.file_url)
+      .sort((a, b) => {
+        if (a.selected !== b.selected) return a.selected ? -1 : 1;
+        return (b.aesthetic_score ?? 0) - (a.aesthetic_score ?? 0);
+      });
   }
   photos = photos.slice(0, MAX_PHOTOS_FOR_ANALYSIS);
   if (photos.length < 2) {
