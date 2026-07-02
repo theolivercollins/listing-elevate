@@ -1,0 +1,84 @@
+/*
+ * login-dialog.css — scoped styles for the immersive LoginDialog (option 5a).
+ *
+ * Everything is prefixed `.le-login-` so it can live in the global CSS bundle
+ * without colliding with app-wide rules. Static geometry stays inline in the
+ * component (matching the design spec + the file's existing idiom); this sheet
+ * owns only the keyframes, drift animations, hover reactions, focus rings, and
+ * the prefers-reduced-motion escape hatch.
+ *
+ * Blue accents map to the repo tokens: solid rgb(47,109,240) === #2f6df0 ===
+ * var(--le-tile-sky-ink); rgba variants use rgba(var(--le-brand-blue-rgb), a).
+ */
+
+/* ── Keyframes (mirrors option-5a-keyframes.css, prefixed) ──────────── */
+@keyframes le-login-spin { to { transform: rotate(360deg); } }
+@keyframes le-login-drift1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(46px, -34px) scale(1.09); } }
+@keyframes le-login-drift2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-52px, 38px) scale(1.12); } }
+@keyframes le-login-drift3 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(34px, 44px) scale(.93); } }
+@keyframes le-login-fadeStep { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes le-login-reveal { from { opacity: 0; transform: translateY(10px); filter: blur(2px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
+@keyframes le-login-bob2 { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-9px); } }
+
+/* ── Spinner / step-fade helpers ────────────────────────────────────── */
+.le-login-spin { animation: le-login-spin .7s linear infinite; }
+.le-login-fade { animation: le-login-fadeStep .22s ease; }
+.le-login-reveal { animation: le-login-reveal .45s cubic-bezier(.16, 1, .3, 1); }
+.le-login-bob { animation: le-login-bob2 1.8s ease-in-out infinite; }
+
+/* ── Backdrop drifting orbs (inner element drifts; wrapper is parallaxed) ── */
+.le-login-bgorb1 { animation: le-login-drift1 30s ease-in-out infinite; }
+.le-login-bgorb2 { animation: le-login-drift2 34s ease-in-out infinite; }
+
+/* ── Header orbs — inner drift + wrapper hover reaction ─────────────── */
+.le-login-headorb-i1 { animation: le-login-drift1 22s ease-in-out infinite; }
+.le-login-headorb-i2 { animation: le-login-drift2 26s ease-in-out infinite; }
+.le-login-headorb-i3 { animation: le-login-drift3 24s ease-in-out infinite; }
+
+.le-login-headorb-w { transition: transform .8s cubic-bezier(.16, 1, .3, 1); will-change: transform; }
+.le-login-headorb-w2 { transition-delay: .05s; }
+.le-login-headorb-w3 { transition-delay: .1s; }
+.le-login-header:hover .le-login-headorb-w1 { transform: translate(26px, 22px) scale(1.28); }
+.le-login-header:hover .le-login-headorb-w2 { transform: translate(-18px, 30px) scale(1.24); }
+.le-login-header:hover .le-login-headorb-w3 { transform: translate(-24px, -18px) scale(1.3); }
+
+/* ── Close button — fades in on header hover / keyboard focus ───────── */
+.le-login-close { opacity: 0; transition: opacity .2s ease; }
+.le-login-header:hover .le-login-close,
+.le-login-close:focus-visible { opacity: 1; }
+.le-login-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ── Method / persona / source cards — hover lift ──────────────────── */
+.le-login-method { transition: border-color .15s, box-shadow .15s, transform .15s; }
+.le-login-method:hover { border-color: var(--le-text); box-shadow: var(--le-shadow-md); transform: translateY(-1px); }
+
+/* ── Inputs + interactive controls — visible focus ring ────────────── */
+.le-login-input:focus-visible {
+  outline: none;
+  border-color: var(--le-tile-sky-ink);
+  box-shadow: 0 0 0 3px rgba(var(--le-brand-blue-rgb), 0.18);
+}
+.le-login-card :focus-visible {
+  outline: 2px solid var(--le-tile-sky-ink);
+  outline-offset: 2px;
+}
+.le-login-input:focus-visible { outline: none; }
+
+/* ── prefers-reduced-motion — kill drift, parallax, tilt, bob, spin ──
+   JS also skips the mouse parallax/tilt listeners; this covers CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .le-login-spin,
+  .le-login-fade,
+  .le-login-reveal,
+  .le-login-bob,
+  .le-login-bgorb1,
+  .le-login-bgorb2,
+  .le-login-headorb-i1,
+  .le-login-headorb-i2,
+  .le-login-headorb-i3 { animation: none !important; }
+
+  .le-login-headorb-w { transition: none !important; }
+  .le-login-header:hover .le-login-headorb-w1,
+  .le-login-header:hover .le-login-headorb-w2,
+  .le-login-header:hover .le-login-headorb-w3 { transform: none !important; }
+}

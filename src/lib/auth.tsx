@@ -53,6 +53,22 @@ export interface UserProfile {
   updated_at: string;
   voice_clone_status?: "none" | "requested" | "enrolling" | "ready" | "failed" | null;
   elevenlabs_voice_id?: string | null;
+  /** Persona self-selected during onboarding (migration 105). Nullable / additive. */
+  persona?: "agent" | "team_leader" | "broker" | "marketing" | null;
+  /** Acquisition source category, e.g. "search" (migration 105). */
+  signup_source?: string | null;
+  /** Acquisition source sub-choice, e.g. "Google" (migration 105). */
+  signup_source_detail?: string | null;
+}
+
+/** Onboarding details captured by the signup flow's profile/role/source steps. */
+export interface OnboardingDetails {
+  firstName: string;
+  lastName: string;
+  brokerage: string;
+  persona: "agent" | "team_leader" | "broker" | "marketing";
+  signupSource: string;
+  signupSourceDetail: string | null;
 }
 
 // ─── Admin-verified session marker ───────────────────────────────────────────
@@ -110,6 +126,17 @@ function sessionProvesEmailPossession(session: Session | null): boolean {
   return ["otp", "magiclink", "email"].includes(latest?.method ?? "");
 }
 
+// True only for a missing-column error (migration-105 columns not yet applied
+// on the shared DB): Postgres undefined_column (42703) or PostgREST's schema
+// cache miss (PGRST204). Falls back to a message check naming the specific
+// migration-105 columns as belt-and-braces. Any other error (RLS, network,
+// etc.) must NOT be treated as "retry with fewer columns" — it should surface.
+function isMissingColumnError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "PGRST204") return true;
+  return /persona|signup_source/.test(error.message ?? "");
+}
+
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface AuthContextType {
@@ -158,6 +185,28 @@ interface AuthContextType {
     password: string,
     meta: { first_name?: string; last_name?: string; brokerage?: string }
   ) => Promise<void>;
+  /** Sends a 6-digit signup OTP (creates the user if new). Throws on error. */
+  sendSignupCode: (email: string) => Promise<void>;
+  /**
+   * Verifies the typed signup OTP; a session is established on success. Returns
+   * the verified `User` (from verifyOtp) so callers have the authoritative user
+   * id to branch on deterministically. Throws on error.
+   */
+  verifySignupCode: (email: string, code: string) => Promise<User>;
+  /**
+   * Read-only, direct fetch of a profile row by user id (no state mutation).
+   * Used post-verify to deterministically decide existing-vs-new account.
+   */
+  fetchProfileSnapshot: (userId: string) => Promise<UserProfile | null>;
+  /** Sets the password for the currently-authenticated (just-verified) user. Throws on error. */
+  setPassword: (password: string) => Promise<void>;
+  /**
+   * Persists onboarding details: writes auth metadata (best-effort) and the
+   * `user_profiles` row. If the migration-105 columns are absent, retries with
+   * only the pre-existing columns so onboarding never hard-fails. Refreshes
+   * the local profile at the end.
+   */
+  completeOnboarding: (details: OnboardingDetails) => Promise<void>;
   listIdentities: () => Promise<UserIdentity[]>;
   linkIdentity: (provider: "google" | "azure") => Promise<void>;
   unlinkIdentity: (identity: UserIdentity) => Promise<void>;
@@ -182,6 +231,11 @@ const AuthContext = createContext<AuthContextType>({
   signInWithGoogle: async () => {},
   signInWithMicrosoft: async () => {},
   signUp: async () => {},
+  sendSignupCode: async () => {},
+  verifySignupCode: async () => ({} as User),
+  fetchProfileSnapshot: async () => null,
+  setPassword: async () => {},
+  completeOnboarding: async () => {},
   listIdentities: async () => [],
   linkIdentity: async () => {},
   unlinkIdentity: async () => {},
@@ -272,6 +326,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshProfile() {
     if (user) await fetchProfile(user.id);
+  }
+
+  // Read-only snapshot of a profile row (mirrors fetchProfile's query but never
+  // mutates state). Returns null when no row exists yet — the authoritative
+  // signal that a just-verified account is genuinely new. THROWS on a real
+  // fetch error (network/RLS) — a failed lookup must never be silently treated
+  // as "no row" (that would misclassify an existing user as new and route to
+  // password-overwrite). `.maybeSingle()` returns data:null, error:null for the
+  // legitimate no-row case, which is the only case that resolves to null.
+  async function fetchProfileSnapshot(userId: string): Promise<UserProfile | null> {
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .select()
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as UserProfile | null) ?? null;
   }
 
   async function sendAdminEmailCode() {
@@ -395,6 +466,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  // ── Immersive signup: OTP → password → onboarding ──────────────────────────
+  async function sendSignupCode(email: string) {
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: true, emailRedirectTo: AUTH_CALLBACK_URL },
+    });
+    if (error) throw error;
+  }
+
+  async function verifySignupCode(email: string, code: string): Promise<User> {
+    const { data, error } = await supabase.auth.verifyOtp({
+      email,
+      token: code,
+      type: "email",
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error("Verification succeeded but no user was returned.");
+    // Session is now live; onAuthStateChange picks it up and fetches the profile.
+    // Returning the verified user lets the caller branch on the authoritative id.
+    return data.user;
+  }
+
+  async function setPassword(password: string) {
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+  }
+
+  async function completeOnboarding(details: OnboardingDetails) {
+    const firstName = details.firstName.trim();
+    const lastName = details.lastName.trim();
+    const brokerage = details.brokerage.trim();
+
+    // 1) Auth metadata — best-effort, never blocks the flow.
+    try {
+      await supabase.auth.updateUser({
+        data: {
+          first_name: firstName,
+          last_name: lastName,
+          brokerage,
+          persona: details.persona,
+          signup_source: details.signupSource,
+          signup_source_detail: details.signupSourceDetail,
+        },
+      });
+    } catch {
+      /* metadata is non-critical — the profile row below is the source of truth */
+    }
+
+    // 2) Profile row. Upsert (onConflict user_id) rather than update: the row is
+    //    normally created by onAuthStateChange, but upsert closes the silent
+    //    0-row hole where a missing row made a no-op update look like success.
+    //    `role` is intentionally omitted — it is NOT NULL DEFAULT 'user' (migration
+    //    001), so a fresh insert gets the default and an existing admin's role is
+    //    never clobbered. Try the full write (incl. migration-105 columns); if those
+    //    columns don't exist yet on the shared DB (missing-column error only),
+    //    retry with only the pre-existing columns. Any other error (RLS, network,
+    //    etc.) rethrows immediately rather than being masked by the fallback.
+    const uid = user?.id;
+    if (!uid) throw new Error("No signed-in user");
+
+    const { error } = await supabase
+      .from("user_profiles")
+      .upsert(
+        {
+          user_id: uid,
+          first_name: firstName,
+          last_name: lastName,
+          brokerage,
+          persona: details.persona,
+          signup_source: details.signupSource,
+          signup_source_detail: details.signupSourceDetail,
+        },
+        { onConflict: "user_id" },
+      );
+    if (error) {
+      if (!isMissingColumnError(error)) throw error;
+      // persona/source is best-effort until migration 105 lands; core fields
+      // must persist. A retry failure is a real failure — throw it.
+      const { error: retryError } = await supabase
+        .from("user_profiles")
+        .upsert(
+          { user_id: uid, first_name: firstName, last_name: lastName, brokerage },
+          { onConflict: "user_id" },
+        );
+      if (retryError) throw retryError;
+    }
+
+    await refreshProfile();
+  }
+
   async function listIdentities(): Promise<UserIdentity[]> {
     const { data, error } = await supabase.auth.getUserIdentities();
     if (error) throw error;
@@ -500,6 +661,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithGoogle,
         signInWithMicrosoft,
         signUp,
+        sendSignupCode,
+        verifySignupCode,
+        fetchProfileSnapshot,
+        setPassword,
+        completeOnboarding,
         listIdentities,
         linkIdentity,
         unlinkIdentity,
