@@ -28,7 +28,7 @@ import {
   upsertDetectedFolder,
   setLastPausedReason,
 } from "./intake-db.js";
-import { sendMessage, escapeMarkdown } from "../telegram/client.js";
+import { sendMessage, escapeMarkdown, type InlineButton } from "../telegram/client.js";
 import { getSupabase } from "../db.js";
 import { getRun } from "../delivery/runs.js";
 import type { Property } from "../types.js";
@@ -92,6 +92,35 @@ export async function reconcileWatchedFolder(): Promise<{ seen: number }> {
 // ── settleAndPrompt ───────────────────────────────────────────────────────────
 
 /**
+ * Build the approval-card Telegram message text for a drive_intake row: bold
+ * address + photo count + "Generate a video?". Exported (rather than inlined
+ * below) so any other caller that needs to (re)send this EXACT card for an
+ * existing row reuses the identical wording instead of re-typing a
+ * near-duplicate — e.g. the Telegram create-intent flow
+ * (lib/telegram/refine-conversation.ts: "make a vid for <name>") that finds a
+ * matching (often pre-seeded/skipped) Drive folder by name and needs to show
+ * the operator the same confirm card a fresh detection would have shown.
+ */
+export function buildApprovalPromptText(address: string, photoCount: number): string {
+  return `🏠 New property detected: *${escapeMarkdown(address)}* — ${photoCount} photos in Final.\nGenerate a video?`;
+}
+
+/**
+ * The [✅ Generate | ❌ Skip] inline keyboard wired to the approve:<id>/
+ * skip:<id> callback data api/telegram/webhook.ts's handleApprove/handleSkip
+ * already run the whole generate pipeline against. Exported alongside
+ * buildApprovalPromptText for the same reuse reason.
+ */
+export function buildApprovalButtons(intakeId: string): InlineButton[][] {
+  return [
+    [
+      { text: "✅ Generate", callbackData: `approve:${intakeId}` },
+      { text: "❌ Skip", callbackData: `skip:${intakeId}` },
+    ],
+  ];
+}
+
+/**
  * For every "detected" intake row that has been stable for at least
  * `settleMinutes`, send a Telegram approval prompt and flip the row to
  * 'awaiting_approval'.
@@ -107,15 +136,8 @@ export async function settleAndPrompt(
   for (const row of rows) {
     try {
       const { messageId } = await sendMessage(
-        `🏠 New property detected: *${escapeMarkdown(row.address)}* — ${row.photo_count} photos in Final.\nGenerate a video?`,
-        {
-          buttons: [
-            [
-              { text: "✅ Generate", callbackData: `approve:${row.id}` },
-              { text: "❌ Skip", callbackData: `skip:${row.id}` },
-            ],
-          ],
-        },
+        buildApprovalPromptText(row.address, row.photo_count),
+        { buttons: buildApprovalButtons(row.id) },
       );
       await setTelegramMessageId(row.id, messageId);
       await setStatus(row.id, "awaiting_approval");

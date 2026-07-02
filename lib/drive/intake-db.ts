@@ -218,6 +218,39 @@ export async function getByStatus(status: DriveIntakeStatus): Promise<DriveIntak
   return (data ?? []) as DriveIntake[];
 }
 
+/**
+ * Case-insensitive substring search over drive_intake.address — resolves a
+ * free-text listing name (e.g. "kinglet") to candidate Drive-intake rows for
+ * the Telegram create-intent flow ("make a vid for <name>" — see
+ * parseCreateIntent/handleCreateIntent, lib/telegram/refine-conversation.ts).
+ *
+ * Matches across EVERY status — deliberately not filtered here. A folder can
+ * legitimately be found in any status (pre-seeded 'skipped', freshly
+ * 'detected', mid-flight 'generating', already 'rendered', a prior 'error',
+ * etc.), and what each status means for a create-intent request differs
+ * (start it / already in flight / already done / retry-eligible). The
+ * CALLER decides that — see handleCreateIntent's per-status branching — so
+ * this stays a plain lookup, not a policy decision.
+ *
+ * `%`/`_` are escaped in `query` before building the ilike pattern (mirrors
+ * api/admin/studio/videos/index.ts's existing convention) so a listing name
+ * containing either character can't be misread as a SQL LIKE wildcard.
+ * Ordered newest-first, capped at 5 — enough to disambiguate a handful of
+ * near-duplicate addresses; more than that is a UX smell the operator should
+ * resolve by typing a more specific query, not something worth paginating.
+ */
+export async function findIntakesByAddress(query: string): Promise<DriveIntake[]> {
+  const escaped = query.replace(/[%_]/g, "\\$&");
+  const { data, error } = await getSupabase()
+    .from("drive_intake")
+    .select()
+    .ilike("address", `%${escaped}%`)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error) throw error;
+  return (data ?? []) as DriveIntake[];
+}
+
 export async function setStatus(
   id: string,
   status: DriveIntakeStatus,

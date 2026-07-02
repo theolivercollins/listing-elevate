@@ -33,6 +33,7 @@ import {
   claimForApproval,
   reapStuckIngesting,
   claimForRegenerate,
+  findIntakesByAddress,
   getWatchState,
   upsertWatchState,
   appendChatMessages,
@@ -76,6 +77,7 @@ function makeChain(result: DbResult) {
     "in",
     "is",
     "not",
+    "ilike",
     "order",
     "limit",
     "range",
@@ -469,6 +471,63 @@ describe("getByStatus", () => {
     );
     const rows = await getByStatus("detected");
     expect(rows).toHaveLength(1);
+  });
+});
+
+// ── findIntakesByAddress ──────────────────────────────────────────────────────
+
+describe("findIntakesByAddress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns matching rows and scopes the query to ilike(address)/order(created_at desc)/limit(5)", async () => {
+    const rows: DriveIntake[] = [
+      { ...BASE_ROW, id: "i1", address: "Kinglet Dr 1418" },
+      { ...BASE_ROW, id: "i2", address: "Kinglet Ct 22" },
+    ];
+    const client = makeClient([{ data: rows, error: null }]);
+    vi.mocked(getSupabase).mockReturnValue(client as unknown as ReturnType<typeof getSupabase>);
+
+    const result = await findIntakesByAddress("kinglet");
+
+    expect(result).toHaveLength(2);
+    expect(client.from).toHaveBeenCalledWith("drive_intake");
+    const chain = client.from.mock.results[0]!.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(chain.ilike).toHaveBeenCalledWith("address", "%kinglet%");
+    expect(chain.order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(chain.limit).toHaveBeenCalledWith(5);
+  });
+
+  it("escapes % and _ wildcard characters in the query before building the ilike pattern", async () => {
+    const client = makeClient([{ data: [], error: null }]);
+    vi.mocked(getSupabase).mockReturnValue(client as unknown as ReturnType<typeof getSupabase>);
+
+    await findIntakesByAddress("50%_off");
+
+    const chain = client.from.mock.results[0]!.value as Record<string, ReturnType<typeof vi.fn>>;
+    expect(chain.ilike).toHaveBeenCalledWith("address", "%50\\%\\_off%");
+  });
+
+  it("returns an empty array when nothing matches", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: [], error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await findIntakesByAddress("nonexistentia")).toEqual([]);
+  });
+
+  it("returns an empty array when data is null", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: null }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    expect(await findIntakesByAddress("kinglet")).toEqual([]);
+  });
+
+  it("throws on DB error", async () => {
+    vi.mocked(getSupabase).mockReturnValue(
+      makeClient([{ data: null, error: new Error("DB error") }]) as unknown as ReturnType<typeof getSupabase>,
+    );
+    await expect(findIntakesByAddress("kinglet")).rejects.toThrow("DB error");
   });
 });
 
